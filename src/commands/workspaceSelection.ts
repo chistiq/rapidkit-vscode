@@ -1,9 +1,16 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs-extra';
 import type { WorkspaiProject, WorkspaiWorkspace } from '../types';
 import { Logger } from '../utils/logger';
 import { ModulesCatalogService } from '../core/modulesCatalogService';
 import { WelcomePanel } from '../ui/panels/welcomePanel';
 import { openWorkspace, openWorkspaceFolder, copyWorkspacePath } from './workspaceContextMenu';
+import { openTerminal } from '../utils/terminalExecutor';
+import {
+  downloadWorkspaceArchiveToTemp,
+  verifyWorkspaceArchive,
+  type WorkspaceArchiveVerificationResult,
+} from '../utils/workspaceArchive';
 
 type WorkspaceLike = WorkspaiWorkspace;
 type ProjectLike = WorkspaiProject;
@@ -47,6 +54,12 @@ type ModuleExplorerLike = {
 type WorkspaceCommandItem = {
   workspace?: WorkspaceLike;
   path?: string;
+};
+type WorkspaceArchiveAction = 'inspect' | 'verify' | 'doctor';
+type ArchiveSource = {
+  archivePath: string;
+  sourceLabel: string;
+  cleanupPaths: string[];
 };
 
 const PROJECT_TYPES: ReadonlySet<ProjectLike['type']> = new Set([
@@ -142,6 +155,89 @@ function resolveProjectFromItem(item: unknown): ProjectLike | undefined {
   return undefined;
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  const units = ['KB', 'MB', 'GB'];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function buildArchiveReportLines(input: {
+  sourceLabel: string;
+  verification: WorkspaceArchiveVerificationResult;
+  mode: WorkspaceArchiveAction;
+}): string[] {
+  const { sourceLabel, verification, mode } = input;
+  const manifest = verification.manifest;
+  const issues = [
+    ...verification.missingArchiveEntries.map((entry) => `Missing archive entry: ${entry}`),
+    ...verification.extraArchiveEntries.map((entry) => `Unexpected archive entry: ${entry}`),
+    ...verification.missingChecksumFiles.map((entry) => `Missing checksum: ${entry}`),
+    ...verification.mismatches.map(
+      (entry) =>
+        `Checksum or size mismatch: ${entry.path} (expected ${entry.expected.size ?? 'unknown'} bytes, got ${entry.actual.size} bytes)`
+    ),
+  ];
+
+  const lines = [
+    `Workspace Archive ${mode === 'doctor' ? 'Doctor' : mode === 'inspect' ? 'Inspect' : 'Verify'}`,
+    '',
+    `Source: ${sourceLabel}`,
+    `Status: ${verification.status.toUpperCase()}`,
+    `Workspace: ${manifest.workspaceName || 'unknown'}`,
+    `Exported at: ${manifest.exportedAt || 'unknown'}`,
+    `Exported by: ${manifest.exportedBy || 'unknown'}`,
+    `Archive format: ${manifest.archiveFormat || 'unknown'}`,
+    `Files: ${verification.verifiedFiles}/${verification.fileCount} verified`,
+    `Security: env files included = ${manifest.security?.envFilesIncluded === true ? 'yes' : 'no'}`,
+  ];
+
+  if (mode === 'inspect') {
+    const totalSize = manifest.files.reduce((sum, file) => sum + file.size, 0);
+    lines.push(`Total manifest size: ${formatBytes(totalSize)}`);
+    lines.push('');
+    lines.push('Files:');
+    for (const file of manifest.files.slice(0, 100)) {
+      lines.push(`- ${file.path} (${formatBytes(file.size)})`);
+    }
+    if (manifest.files.length > 100) {
+      lines.push(`- ... ${manifest.files.length - 100} more file(s)`);
+    }
+  }
+
+  if (mode === 'doctor') {
+    lines.push('');
+    lines.push('Readiness checks:');
+    lines.push(`- Integrity: ${verification.status === 'passed' ? 'passed' : 'failed'}`);
+    lines.push(
+      `- Checksums: ${verification.missingChecksumFiles.length === 0 ? 'complete' : 'incomplete'}`
+    );
+    lines.push(
+      `- Unexpected entries: ${verification.extraArchiveEntries.length === 0 ? 'none' : verification.extraArchiveEntries.length}`
+    );
+    lines.push(
+      `- Secret posture: ${manifest.security?.envFilesIncluded === true ? 'review required' : 'safe default'}`
+    );
+  }
+
+  if (issues.length > 0) {
+    lines.push('');
+    lines.push('Issues:');
+    for (const issue of issues) {
+      lines.push(`- ${issue}`);
+    }
+  }
+
+  return lines;
+}
+
 export function registerWorkspaceSelectionCommands(options: {
   logger: Logger;
   getWorkspaceExplorer: () => WorkspaceExplorerLike | undefined;
@@ -149,6 +245,163 @@ export function registerWorkspaceSelectionCommands(options: {
   getModuleExplorer: () => ModuleExplorerLike | undefined;
 }): vscode.Disposable[] {
   const { logger, getWorkspaceExplorer, getProjectExplorer, getModuleExplorer } = options;
+
+  const pickArchiveSource = async (): Promise<ArchiveSource | undefined> => {
+    const source = await vscode.window.showQuickPick(
+      [
+        {
+          label: '$(file-zip) Local archive',
+          description: 'Inspect a .rapidkit-archive.zip file from disk',
+          value: 'local',
+        },
+        {
+          label: '$(cloud-download) Remote archive URL',
+          description: 'Download to a temporary file before inspection',
+          value: 'remote',
+        },
+      ],
+      {
+        title: 'Workspace Archive Source',
+        placeHolder: 'Choose archive source',
+        ignoreFocusOut: true,
+      }
+    );
+
+    if (!source) {
+      return undefined;
+    }
+
+    if (source.value === 'local') {
+      const result = await vscode.window.showOpenDialog({
+        canSelectFiles: true,
+        canSelectFolders: false,
+        canSelectMany: false,
+        openLabel: 'Select Archive',
+        title: 'Select Workspai Workspace Archive',
+        filters: {
+          'Workspai Archive': ['zip'],
+          'All Files': ['*'],
+        },
+      });
+      if (!result?.[0]) {
+        return undefined;
+      }
+      return {
+        archivePath: result[0].fsPath,
+        sourceLabel: result[0].fsPath,
+        cleanupPaths: [],
+      };
+    }
+
+    const archiveUrl = await vscode.window.showInputBox({
+      title: 'Workspace Archive URL',
+      prompt: 'Paste a HTTPS/HTTP .rapidkit-archive.zip URL',
+      placeHolder: 'https://example.com/team-workspace.rapidkit-archive.zip',
+      ignoreFocusOut: true,
+      validateInput: (value) => {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          return 'Archive URL is required.';
+        }
+        try {
+          const parsed = new URL(trimmed);
+          return parsed.protocol === 'https:' || parsed.protocol === 'http:'
+            ? undefined
+            : 'Use a HTTPS or HTTP URL.';
+        } catch {
+          return 'Enter a valid URL.';
+        }
+      },
+    });
+
+    if (!archiveUrl) {
+      return undefined;
+    }
+
+    const downloaded = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'Downloading workspace archive...',
+        cancellable: false,
+      },
+      async (progress) => {
+        progress.report({ increment: 10, message: 'Fetching archive...' });
+        const result = await downloadWorkspaceArchiveToTemp({ url: archiveUrl.trim() });
+        progress.report({ increment: 90, message: 'Download complete.' });
+        return result;
+      }
+    );
+
+    return {
+      archivePath: downloaded.archivePath,
+      sourceLabel: downloaded.finalUrl,
+      cleanupPaths: [downloaded.tempRoot],
+    };
+  };
+
+  const runArchiveAction = async (action: WorkspaceArchiveAction): Promise<void> => {
+    let archiveSource: ArchiveSource | undefined;
+    try {
+      archiveSource = await pickArchiveSource();
+      if (!archiveSource) {
+        return;
+      }
+
+      const verification = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Workspace Archive: ${action}`,
+          cancellable: false,
+        },
+        async (progress) => {
+          progress.report({ increment: 40, message: 'Reading archive manifest...' });
+          const result = verifyWorkspaceArchive({ archivePath: archiveSource!.archivePath });
+          progress.report({ increment: 60, message: 'Integrity checks complete.' });
+          return result;
+        }
+      );
+
+      const lines = buildArchiveReportLines({
+        sourceLabel: archiveSource.sourceLabel,
+        verification,
+        mode: action,
+      });
+      const output = vscode.window.createOutputChannel('Workspai: Workspace Archive');
+      output.clear();
+      output.appendLine(lines.join('\n'));
+      output.show(true);
+
+      const passed = verification.status === 'passed';
+      const message =
+        action === 'inspect'
+          ? `Archive inspected: ${verification.fileCount} file(s) in manifest.`
+          : passed
+            ? `Archive ${action === 'doctor' ? 'doctor' : 'verification'} passed: ${verification.verifiedFiles}/${verification.fileCount} file(s).`
+            : `Archive ${action === 'doctor' ? 'doctor' : 'verification'} found issues.`;
+
+      if (passed || action === 'inspect') {
+        vscode.window.showInformationMessage(message, 'Show Report').then((choice) => {
+          if (choice === 'Show Report') {
+            output.show(true);
+          }
+        });
+      } else {
+        vscode.window.showWarningMessage(message, 'Show Report').then((choice) => {
+          if (choice === 'Show Report') {
+            output.show(true);
+          }
+        });
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        `Workspace archive ${action} failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      for (const cleanupPath of archiveSource?.cleanupPaths || []) {
+        await fs.remove(cleanupPath).catch(() => undefined);
+      }
+    }
+  };
 
   return [
     vscode.commands.registerCommand('workspai.refreshWorkspaces', () => {
@@ -239,6 +492,49 @@ export function registerWorkspaceSelectionCommands(options: {
       await getWorkspaceExplorer()?.importWorkspace();
     }),
 
+    vscode.commands.registerCommand('workspai.workspaceArchive', async () => {
+      const selected = await vscode.window.showQuickPick(
+        [
+          {
+            label: '$(search) Inspect archive',
+            description: 'Show manifest, producer, security posture, and file list',
+            value: 'inspect' as WorkspaceArchiveAction,
+          },
+          {
+            label: '$(verified) Verify archive',
+            description: 'Check manifest entries, SHA-256 checksums, and unexpected files',
+            value: 'verify' as WorkspaceArchiveAction,
+          },
+          {
+            label: '$(pulse) Doctor archive',
+            description: 'Run readiness guidance before import or handoff',
+            value: 'doctor' as WorkspaceArchiveAction,
+          },
+        ],
+        {
+          title: 'Workspace Archive',
+          placeHolder: 'Choose archive operation',
+          ignoreFocusOut: true,
+        }
+      );
+
+      if (selected) {
+        await runArchiveAction(selected.value);
+      }
+    }),
+
+    vscode.commands.registerCommand('workspai.workspaceArchiveInspect', async () => {
+      await runArchiveAction('inspect');
+    }),
+
+    vscode.commands.registerCommand('workspai.workspaceArchiveVerify', async () => {
+      await runArchiveAction('verify');
+    }),
+
+    vscode.commands.registerCommand('workspai.workspaceArchiveDoctor', async () => {
+      await runArchiveAction('doctor');
+    }),
+
     vscode.commands.registerCommand('workspai.removeWorkspace', async (item: unknown) => {
       const workspacePath = resolveWorkspacePathFromItem(item);
       if (workspacePath && typeof workspacePath === 'string') {
@@ -260,6 +556,21 @@ export function registerWorkspaceSelectionCommands(options: {
       if (workspace && workspaceExplorer) {
         await workspaceExplorer.exportWorkspace(workspace);
       }
+    }),
+
+    vscode.commands.registerCommand('workspai.workspaceTerminal', async (item: unknown) => {
+      const workspaceExplorer = getWorkspaceExplorer();
+      const workspace = resolveWorkspaceFromItem(item, workspaceExplorer);
+      if (!workspace?.path) {
+        vscode.window.showWarningMessage('Select a workspace first.');
+        return;
+      }
+
+      openTerminal({
+        name: `Workspai: ${workspace.name || 'Workspace'}`,
+        cwd: workspace.path,
+      });
+      logger.info('Opened terminal for workspace:', workspace.path);
     }),
 
     vscode.commands.registerCommand('workspai.discoverWorkspaces', async () => {

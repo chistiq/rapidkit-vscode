@@ -189,6 +189,12 @@
         "icon": "$(folder-opened)"
       },
       {
+        "command": "workspai.workspaceTerminal",
+        "title": "Open Workspace Terminal",
+        "category": "Workspai",
+        "icon": "$(terminal)"
+      },
+      {
         "command": "workspai.copyWorkspacePath",
         "title": "Copy Path",
         "category": "Workspai",
@@ -349,6 +355,30 @@
         "title": "Import Workspace",
         "category": "Workspai",
         "icon": "$(cloud-download)"
+      },
+      {
+        "command": "workspai.workspaceArchive",
+        "title": "Workspace Archive",
+        "category": "Workspai",
+        "icon": "$(file-zip)"
+      },
+      {
+        "command": "workspai.workspaceArchiveInspect",
+        "title": "Workspace Archive: Inspect",
+        "category": "Workspai",
+        "icon": "$(search)"
+      },
+      {
+        "command": "workspai.workspaceArchiveVerify",
+        "title": "Workspace Archive: Verify",
+        "category": "Workspai",
+        "icon": "$(verified)"
+      },
+      {
+        "command": "workspai.workspaceArchiveDoctor",
+        "title": "Workspace Archive: Doctor",
+        "category": "Workspai",
+        "icon": "$(pulse)"
       },
       {
         "command": "workspai.importWorkspaceShareBundle",
@@ -966,6 +996,18 @@
           "command": "workspai.exportWorkspaceShareBundle"
         },
         {
+          "command": "workspai.workspaceArchive"
+        },
+        {
+          "command": "workspai.workspaceArchiveInspect"
+        },
+        {
+          "command": "workspai.workspaceArchiveVerify"
+        },
+        {
+          "command": "workspai.workspaceArchiveDoctor"
+        },
+        {
           "command": "workspai.exportVerifyPackContract"
         },
         {
@@ -1178,14 +1220,19 @@
           "group": "inline@2"
         },
         {
-          "command": "workspai.checkWorkspaceHealth",
+          "command": "workspai.workspaceTerminal",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
           "group": "inline@3"
         },
         {
-          "command": "workspai.workspaceRunTest",
+          "command": "workspai.checkWorkspaceHealth",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
           "group": "inline@4"
+        },
+        {
+          "command": "workspai.workspaceRunTest",
+          "when": "view == rapidkitWorkspaces && viewItem == workspace",
+          "group": "inline@5"
         },
         {
           "command": "workspai.openWorkspace",
@@ -1489,6 +1536,22 @@
         {
           "command": "workspai.exportWorkspace",
           "group": "archive@1"
+        },
+        {
+          "command": "workspai.workspaceArchive",
+          "group": "archive@2"
+        },
+        {
+          "command": "workspai.workspaceArchiveInspect",
+          "group": "archive@3"
+        },
+        {
+          "command": "workspai.workspaceArchiveVerify",
+          "group": "archive@4"
+        },
+        {
+          "command": "workspai.workspaceArchiveDoctor",
+          "group": "archive@5"
         }
       ],
       "workspai.workspace.contract": [
