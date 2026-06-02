@@ -16,6 +16,7 @@ import {
   extractWorkspaceArchiveToTemp,
   sanitizeWorkspaceArchiveName,
   shouldExcludeWorkspaceArchivePath,
+  verifyWorkspaceArchive,
   WORKSPACE_ARCHIVE_MANIFEST_PATH,
 } from '../../utils/workspaceArchive';
 
@@ -426,7 +427,32 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
 
           const extractPath = path.join(destinationResult[0].fsPath, archiveName);
 
-          progress.report({ increment: 30, message: 'Extracting files...' });
+          progress.report({ increment: 20, message: 'Verifying archive integrity...' });
+
+          const verification = verifyWorkspaceArchive({ archivePath });
+          if (verification.status !== 'passed') {
+            const details = [
+              verification.mismatches.length
+                ? `mismatches: ${verification.mismatches.map((item) => item.path).join(', ')}`
+                : '',
+              verification.missingArchiveEntries.length
+                ? `missing entries: ${verification.missingArchiveEntries.join(', ')}`
+                : '',
+              verification.extraArchiveEntries.length
+                ? `unexpected entries: ${verification.extraArchiveEntries.join(', ')}`
+                : '',
+              verification.missingChecksumFiles.length
+                ? `missing checksums: ${verification.missingChecksumFiles.join(', ')}`
+                : '',
+            ]
+              .filter(Boolean)
+              .join('; ');
+            throw new Error(
+              `Archive integrity verification failed${details ? ` (${details})` : ''}.`
+            );
+          }
+
+          progress.report({ increment: 10, message: 'Extracting files...' });
 
           const extracted = await extractWorkspaceArchiveToTemp({ archivePath });
 
