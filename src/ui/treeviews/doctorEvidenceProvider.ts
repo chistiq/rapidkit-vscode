@@ -244,6 +244,11 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
           vscode.TreeItemCollapsibleState.None
         );
         item.iconPath = new vscode.ThemeIcon('workspace');
+        item.command = {
+          command: 'workspai.quickSwitchWorkspace',
+          title: 'Select Workspace',
+        };
+        item.tooltip = 'Click to choose a workspace, then run doctor for health evidence.';
         return [item];
       }
 

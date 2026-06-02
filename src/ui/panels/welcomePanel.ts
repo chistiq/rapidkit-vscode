@@ -878,6 +878,9 @@ export class WelcomePanel {
               vscode.commands.executeCommand('workspai.createWorkspace');
             }
             break;
+          case 'openWorkspaceModal':
+            this._panel.webview.postMessage({ command: 'openWorkspaceModal' });
+            break;
           case 'createFastAPIProject':
             // Close project modal immediately
             this._panel.webview.postMessage({ command: 'closeProjectModal' });
@@ -1427,6 +1430,8 @@ export class WelcomePanel {
               vscode.commands.executeCommand('workspai.checkWorkspaceHealth', {
                 path: message.data.path,
               });
+            } else {
+              await vscode.commands.executeCommand('workspai.checkWorkspaceHealth');
             }
             break;
 
@@ -1437,6 +1442,42 @@ export class WelcomePanel {
                 path: message.data.path,
               });
             }
+            break;
+          case 'importWorkspace':
+            await vscode.commands.executeCommand('workspai.importWorkspace');
+            break;
+          case 'workspaceTerminal':
+            await vscode.commands.executeCommand('workspai.workspaceTerminal');
+            break;
+          case 'workspaceBootstrap':
+            await vscode.commands.executeCommand('workspai.workspaceBootstrap');
+            break;
+          case 'workspaceRunTest':
+            await vscode.commands.executeCommand('workspai.workspaceRunTest');
+            break;
+          case 'workspaceAutopilotRelease':
+            await vscode.commands.executeCommand('workspai.workspaceAutopilotRelease');
+            break;
+          case 'workspaceContract':
+            await vscode.commands.executeCommand('workspai.workspaceContract');
+            break;
+          case 'workspaceContractGraph':
+            await vscode.commands.executeCommand('workspai.workspaceContractGraph');
+            break;
+          case 'workspaceContractVerify':
+            await vscode.commands.executeCommand('workspai.workspaceContractVerify');
+            break;
+          case 'workspaceArchive':
+            await vscode.commands.executeCommand('workspai.workspaceArchive');
+            break;
+          case 'workspaceArchiveDoctor':
+            await vscode.commands.executeCommand('workspai.workspaceArchiveDoctor');
+            break;
+          case 'workspaceArchiveVerify':
+            await vscode.commands.executeCommand('workspai.workspaceArchiveVerify');
+            break;
+          case 'workspacePolicyShow':
+            await vscode.commands.executeCommand('workspai.workspacePolicyShow');
             break;
           case 'aiForWorkspace':
             WelcomePanel.showAIModal(WelcomePanel._extensionContext!, {

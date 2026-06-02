@@ -83,6 +83,11 @@ export class WorkspaceContractGraphProvider implements vscode.TreeDataProvider<W
           vscode.TreeItemCollapsibleState.None
         );
         item.iconPath = new vscode.ThemeIcon('type-hierarchy');
+        item.command = {
+          command: 'workspai.quickSwitchWorkspace',
+          title: 'Select Workspace',
+        };
+        item.tooltip = 'Click to choose a workspace, then inspect service topology and ports.';
         return [item];
       }
 
@@ -94,6 +99,7 @@ export class WorkspaceContractGraphProvider implements vscode.TreeDataProvider<W
           vscode.TreeItemCollapsibleState.None,
           model
         );
+        item.description = 'click to create';
         item.iconPath = new vscode.ThemeIcon('add');
         item.command = {
           command: 'workspai.workspaceContractInit',

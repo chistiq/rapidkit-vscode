@@ -560,7 +560,10 @@ export function registerWorkspaceSelectionCommands(options: {
 
     vscode.commands.registerCommand('workspai.workspaceTerminal', async (item: unknown) => {
       const workspaceExplorer = getWorkspaceExplorer();
-      const workspace = resolveWorkspaceFromItem(item, workspaceExplorer);
+      const workspace =
+        resolveWorkspaceFromItem(item, workspaceExplorer) ??
+        workspaceExplorer?.getSelectedWorkspace?.() ??
+        undefined;
       if (!workspace?.path) {
         vscode.window.showWarningMessage('Select a workspace first.');
         return;
