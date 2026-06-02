@@ -1,5 +1,7 @@
 import * as fs from 'fs-extra';
 import * as crypto from 'crypto';
+import * as http from 'http';
+import * as https from 'https';
 import * as os from 'os';
 import * as path from 'path';
 import AdmZip from 'adm-zip';
@@ -27,6 +29,13 @@ export interface WorkspaceArchiveManifest {
 export interface WorkspaceArchiveExtractionResult {
   tempRoot: string;
   workspaceRoot: string;
+}
+
+export interface DownloadedWorkspaceArchive {
+  archivePath: string;
+  tempRoot: string;
+  finalUrl: string;
+  bytes: number;
 }
 
 export type WorkspaceArchiveVerificationStatus = 'passed' | 'failed';
@@ -77,6 +86,20 @@ function toArchivePath(inputPath: string): string {
 
 function sha256(data: Buffer): string {
   return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+function assertWorkspaceArchiveUrl(rawUrl: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error('Enter a valid HTTPS or HTTP archive URL.');
+  }
+
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error('Archive URL must use HTTPS or HTTP.');
+  }
+  return parsed;
 }
 
 export function sanitizeWorkspaceArchiveName(rawName: string): string {
@@ -188,6 +211,83 @@ export function verifyWorkspaceArchive(input: {
     extraArchiveEntries,
     mismatches,
   };
+}
+
+export async function downloadWorkspaceArchiveToTemp(input: {
+  url: string;
+  maxBytes?: number;
+  redirectsRemaining?: number;
+}): Promise<DownloadedWorkspaceArchive> {
+  const parsed = assertWorkspaceArchiveUrl(input.url);
+  const maxBytes = input.maxBytes ?? 1024 * 1024 * 1024;
+  const redirectsRemaining = input.redirectsRemaining ?? 3;
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-archive-download-'));
+  const archivePath = path.join(
+    tempRoot,
+    sanitizeWorkspaceArchiveName(path.basename(parsed.pathname))
+  );
+
+  try {
+    const result = await new Promise<DownloadedWorkspaceArchive>((resolve, reject) => {
+      const client = parsed.protocol === 'https:' ? https : http;
+      const request = client.get(parsed, (response) => {
+        const statusCode = response.statusCode ?? 0;
+        const location = response.headers.location;
+        if (statusCode >= 300 && statusCode < 400 && location) {
+          response.resume();
+          if (redirectsRemaining <= 0) {
+            reject(new Error('Too many redirects while downloading workspace archive.'));
+            return;
+          }
+          const redirectedUrl = new URL(location, parsed).toString();
+          void fs.remove(tempRoot).catch(() => undefined);
+          downloadWorkspaceArchiveToTemp({
+            url: redirectedUrl,
+            maxBytes,
+            redirectsRemaining: redirectsRemaining - 1,
+          })
+            .then(resolve)
+            .catch(reject);
+          return;
+        }
+
+        if (statusCode < 200 || statusCode >= 300) {
+          response.resume();
+          reject(new Error(`Failed to download workspace archive: HTTP ${statusCode}.`));
+          return;
+        }
+
+        const output = fs.createWriteStream(archivePath);
+        let bytes = 0;
+        response.on('data', (chunk: Buffer) => {
+          bytes += chunk.length;
+          if (bytes > maxBytes) {
+            request.destroy(new Error('Workspace archive download exceeded the size limit.'));
+          }
+        });
+        response.on('error', reject);
+        output.on('error', reject);
+        output.on('finish', () => {
+          resolve({
+            archivePath,
+            tempRoot,
+            finalUrl: parsed.toString(),
+            bytes,
+          });
+        });
+        response.pipe(output);
+      });
+      request.on('error', reject);
+      request.setTimeout(60_000, () => {
+        request.destroy(new Error('Workspace archive download timed out.'));
+      });
+    });
+
+    return result;
+  } catch (error) {
+    await fs.remove(tempRoot).catch(() => undefined);
+    throw error;
+  }
 }
 
 export function shouldExcludeWorkspaceArchivePath(relativePath: string): boolean {

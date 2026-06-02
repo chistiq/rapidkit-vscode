@@ -842,6 +842,40 @@
         "when": "!workspai.workspaceSelected"
       }
     ],
+    "submenus": [
+      {
+        "id": "workspai.workspace.ai",
+        "label": "AI & Insights"
+      },
+      {
+        "id": "workspai.workspace.run",
+        "label": "Run & Release"
+      },
+      {
+        "id": "workspai.workspace.recovery",
+        "label": "Snapshots & Recovery"
+      },
+      {
+        "id": "workspai.workspace.contract",
+        "label": "Contract Graph"
+      },
+      {
+        "id": "workspai.workspace.governance",
+        "label": "Policy & Sharing"
+      },
+      {
+        "id": "workspai.workspace.cache",
+        "label": "Cache"
+      },
+      {
+        "id": "workspai.workspace.mirror",
+        "label": "Mirror"
+      },
+      {
+        "id": "workspai.workspace.telemetry",
+        "label": "Telemetry"
+      }
+    ],
     "menus": {
       "commandPalette": [
         {
@@ -1136,20 +1170,15 @@
         {
           "command": "workspai.openIncidentStudio",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "inline@0"
+          "group": "inline@1"
         },
         {
           "command": "workspai.openWorkspace",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "inline@1"
-        },
-        {
-          "command": "workspai.checkWorkspaceHealth",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
           "group": "inline@2"
         },
         {
-          "command": "workspai.workspaceBootstrap",
+          "command": "workspai.checkWorkspaceHealth",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
           "group": "inline@3"
         },
@@ -1159,239 +1188,64 @@
           "group": "inline@4"
         },
         {
-          "command": "workspai.openIncidentStudio",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "ai_studio@1"
-        },
-        {
-          "command": "workspai.aiForWorkspace",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "ai_studio@2"
-        },
-        {
-          "command": "workspai.openArchitectureMap",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "ai_studio@3"
-        },
-        {
-          "command": "workspai.aiReleaseReadinessCommander",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "ai_studio@4"
-        },
-        {
-          "command": "workspai.aiQuickActions",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "ai_studio@5"
-        },
-        {
-          "command": "workspai.aiWorkspaceCommandCenter",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "ai_studio@6"
-        },
-        {
           "command": "workspai.openWorkspace",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
           "group": "navigation@1"
         },
         {
-          "command": "workspai.workspaceInit",
+          "command": "workspai.openWorkspaceFolder",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
           "group": "navigation@2"
         },
         {
-          "command": "workspai.openWorkspaceFolder",
+          "command": "workspai.copyWorkspacePath",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
           "group": "navigation@3"
         },
         {
-          "command": "workspai.exportWorkspace",
+          "submenu": "workspai.workspace.ai",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "navigation@4"
+          "group": "workspace@1"
         },
         {
-          "command": "workspai.editWorkspaceMemory",
+          "submenu": "workspai.workspace.run",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "navigation@5"
+          "group": "workspace@2"
         },
         {
-          "command": "workspai.aiWorkspaceMemoryWizard",
+          "submenu": "workspai.workspace.recovery",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "navigation@6"
+          "group": "workspace@3"
         },
         {
-          "command": "workspai.copyWorkspacePath",
+          "submenu": "workspai.workspace.contract",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "navigation@7"
+          "group": "workspace@4"
         },
         {
-          "command": "workspai.showTelemetrySummary",
+          "submenu": "workspai.workspace.governance",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "telemetry@1"
+          "group": "workspace@5"
         },
         {
-          "command": "workspai.resetTelemetry",
+          "submenu": "workspai.workspace.cache",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "telemetry@2"
+          "group": "workspace@6"
         },
         {
-          "command": "workspai.showOnboardingExperimentStats",
+          "submenu": "workspai.workspace.mirror",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "telemetry@3"
+          "group": "workspace@7"
+        },
+        {
+          "submenu": "workspai.workspace.telemetry",
+          "when": "view == rapidkitWorkspaces && viewItem == workspace",
+          "group": "workspace@8"
         },
         {
           "command": "workspai.removeWorkspace",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
           "group": "z_danger@99"
-        },
-        {
-          "command": "workspai.workspaceBootstrap",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_ops@1"
-        },
-        {
-          "command": "workspai.workspaceSetup",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_ops@2"
-        },
-        {
-          "command": "workspai.workspaceRunStage",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_ops@3"
-        },
-        {
-          "command": "workspai.workspaceAnalyze",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_ops@4"
-        },
-        {
-          "command": "workspai.workspaceRunInit",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_run@1"
-        },
-        {
-          "command": "workspai.workspaceRunTest",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_run@2"
-        },
-        {
-          "command": "workspai.workspaceRunBuild",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_run@3"
-        },
-        {
-          "command": "workspai.workspaceRunStart",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_run@4"
-        },
-        {
-          "command": "workspai.workspaceAutopilotRelease",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_run@5"
-        },
-        {
-          "command": "workspai.workspaceSnapshot",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_recovery@1"
-        },
-        {
-          "command": "workspai.workspaceSnapshotCreate",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_recovery@2"
-        },
-        {
-          "command": "workspai.workspaceSnapshotList",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_recovery@3"
-        },
-        {
-          "command": "workspai.workspaceSnapshotInspect",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_recovery@4"
-        },
-        {
-          "command": "workspai.workspaceSnapshotRestore",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_recovery@5"
-        },
-        {
-          "command": "workspai.exportVerifyPackContract",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_run@6"
-        },
-        {
-          "command": "workspai.workspaceContract",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_contract@1"
-        },
-        {
-          "command": "workspai.workspaceContractGraph",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_contract@2"
-        },
-        {
-          "command": "workspai.workspaceContractVerify",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_contract@3"
-        },
-        {
-          "command": "workspai.workspaceContractOpen",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_contract@4"
-        },
-        {
-          "command": "workspai.workspacePolicyShow",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_policy@1"
-        },
-        {
-          "command": "workspai.workspacePolicySet",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_policy@2"
-        },
-        {
-          "command": "workspai.exportWorkspaceShareBundle",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_policy@3"
-        },
-        {
-          "command": "workspai.cacheStatus",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_cache@1"
-        },
-        {
-          "command": "workspai.cacheClear",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_cache@2"
-        },
-        {
-          "command": "workspai.cachePrune",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_cache@3"
-        },
-        {
-          "command": "workspai.cacheRepair",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_cache@4"
-        },
-        {
-          "command": "workspai.mirrorStatus",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_mirror@1"
-        },
-        {
-          "command": "workspai.mirrorSync",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_mirror@2"
-        },
-        {
-          "command": "workspai.mirrorVerify",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_mirror@3"
-        },
-        {
-          "command": "workspai.mirrorRotate",
-          "when": "view == rapidkitWorkspaces && viewItem == workspace",
-          "group": "workspace_mirror@4"
         },
         {
           "command": "workspai.addModule",
@@ -1529,6 +1383,198 @@
           "command": "workspai.createProject",
           "when": "explorerResourceIsFolder",
           "group": "rapidkit@1"
+        }
+      ],
+      "workspai.workspace.ai": [
+        {
+          "command": "workspai.openIncidentStudio",
+          "group": "ai@1"
+        },
+        {
+          "command": "workspai.aiForWorkspace",
+          "group": "ai@2"
+        },
+        {
+          "command": "workspai.openArchitectureMap",
+          "group": "ai@3"
+        },
+        {
+          "command": "workspai.aiReleaseReadinessCommander",
+          "group": "ai@4"
+        },
+        {
+          "command": "workspai.aiQuickActions",
+          "group": "ai@5"
+        },
+        {
+          "command": "workspai.aiWorkspaceCommandCenter",
+          "group": "ai@6"
+        },
+        {
+          "command": "workspai.editWorkspaceMemory",
+          "group": "memory@1"
+        },
+        {
+          "command": "workspai.aiWorkspaceMemoryWizard",
+          "group": "memory@2"
+        }
+      ],
+      "workspai.workspace.run": [
+        {
+          "command": "workspai.workspaceBootstrap",
+          "group": "ops@1"
+        },
+        {
+          "command": "workspai.workspaceSetup",
+          "group": "ops@2"
+        },
+        {
+          "command": "workspai.workspaceInit",
+          "group": "ops@3"
+        },
+        {
+          "command": "workspai.workspaceRunStage",
+          "group": "run@1"
+        },
+        {
+          "command": "workspai.workspaceRunInit",
+          "group": "run@2"
+        },
+        {
+          "command": "workspai.workspaceRunTest",
+          "group": "run@3"
+        },
+        {
+          "command": "workspai.workspaceRunBuild",
+          "group": "run@4"
+        },
+        {
+          "command": "workspai.workspaceRunStart",
+          "group": "run@5"
+        },
+        {
+          "command": "workspai.workspaceAnalyze",
+          "group": "release@1"
+        },
+        {
+          "command": "workspai.workspaceAutopilotRelease",
+          "group": "release@2"
+        },
+        {
+          "command": "workspai.exportVerifyPackContract",
+          "group": "release@3"
+        }
+      ],
+      "workspai.workspace.recovery": [
+        {
+          "command": "workspai.workspaceSnapshot",
+          "group": "snapshot@1"
+        },
+        {
+          "command": "workspai.workspaceSnapshotCreate",
+          "group": "snapshot@2"
+        },
+        {
+          "command": "workspai.workspaceSnapshotList",
+          "group": "snapshot@3"
+        },
+        {
+          "command": "workspai.workspaceSnapshotInspect",
+          "group": "snapshot@4"
+        },
+        {
+          "command": "workspai.workspaceSnapshotRestore",
+          "group": "snapshot@5"
+        },
+        {
+          "command": "workspai.exportWorkspace",
+          "group": "archive@1"
+        }
+      ],
+      "workspai.workspace.contract": [
+        {
+          "command": "workspai.workspaceContract",
+          "group": "contract@1"
+        },
+        {
+          "command": "workspai.workspaceContractInit",
+          "group": "contract@2"
+        },
+        {
+          "command": "workspai.workspaceContractGraph",
+          "group": "contract@3"
+        },
+        {
+          "command": "workspai.workspaceContractVerify",
+          "group": "contract@4"
+        },
+        {
+          "command": "workspai.workspaceContractOpen",
+          "group": "contract@5"
+        }
+      ],
+      "workspai.workspace.governance": [
+        {
+          "command": "workspai.workspacePolicyShow",
+          "group": "policy@1"
+        },
+        {
+          "command": "workspai.workspacePolicySet",
+          "group": "policy@2"
+        },
+        {
+          "command": "workspai.exportWorkspaceShareBundle",
+          "group": "sharing@1"
+        }
+      ],
+      "workspai.workspace.cache": [
+        {
+          "command": "workspai.cacheStatus",
+          "group": "cache@1"
+        },
+        {
+          "command": "workspai.cacheClear",
+          "group": "cache@2"
+        },
+        {
+          "command": "workspai.cachePrune",
+          "group": "cache@3"
+        },
+        {
+          "command": "workspai.cacheRepair",
+          "group": "cache@4"
+        }
+      ],
+      "workspai.workspace.mirror": [
+        {
+          "command": "workspai.mirrorStatus",
+          "group": "mirror@1"
+        },
+        {
+          "command": "workspai.mirrorSync",
+          "group": "mirror@2"
+        },
+        {
+          "command": "workspai.mirrorVerify",
+          "group": "mirror@3"
+        },
+        {
+          "command": "workspai.mirrorRotate",
+          "group": "mirror@4"
+        }
+      ],
+      "workspai.workspace.telemetry": [
+        {
+          "command": "workspai.showTelemetrySummary",
+          "group": "telemetry@1"
+        },
+        {
+          "command": "workspai.resetTelemetry",
+          "group": "telemetry@2"
+        },
+        {
+          "command": "workspai.showOnboardingExperimentStats",
+          "group": "telemetry@3"
         }
       ]
     },

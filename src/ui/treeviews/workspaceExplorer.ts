@@ -12,6 +12,7 @@ import { WorkspaiWorkspace } from '../../types';
 import { WorkspaceManager } from '../../core/workspaceManager';
 import { CoreVersionService, CoreVersionInfo } from '../../core/coreVersionService';
 import {
+  downloadWorkspaceArchiveToTemp,
   buildWorkspaceArchiveManifest,
   extractWorkspaceArchiveToTemp,
   sanitizeWorkspaceArchiveName,
@@ -313,6 +314,12 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
           detail: 'Full workspace restore with all files',
           value: 'archive',
         },
+        {
+          label: '$(cloud-download) Import from Remote Archive',
+          description: 'Download, verify, and import a workspace archive URL',
+          detail: 'Remote handoff with integrity check before files are written',
+          value: 'remote-archive',
+        },
       ],
       {
         placeHolder: 'Choose import method',
@@ -326,9 +333,15 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
 
     if (importType.value === 'folder') {
       await this.importFromFolder();
-    } else {
-      await this.importFromArchive();
+      return;
     }
+
+    if (importType.value === 'remote-archive') {
+      await this.importFromRemoteArchive();
+      return;
+    }
+
+    await this.importFromArchive();
   }
 
   private async importFromFolder(): Promise<void> {
@@ -397,7 +410,72 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
     }
 
     const archivePath = result[0].fsPath;
+    await this.importArchivePath(archivePath);
+  }
 
+  private async importFromRemoteArchive(): Promise<void> {
+    const archiveUrl = await vscode.window.showInputBox({
+      title: 'Import Remote Workspace Archive',
+      prompt: 'Paste a HTTPS/HTTP .rapidkit-archive.zip URL',
+      placeHolder: 'https://example.com/team-workspace.rapidkit-archive.zip',
+      ignoreFocusOut: true,
+      validateInput: (value) => {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          return 'Archive URL is required.';
+        }
+        try {
+          const parsed = new URL(trimmed);
+          return parsed.protocol === 'https:' || parsed.protocol === 'http:'
+            ? undefined
+            : 'Use a HTTPS or HTTP URL.';
+        } catch {
+          return 'Enter a valid URL.';
+        }
+      },
+    });
+
+    if (!archiveUrl) {
+      return;
+    }
+
+    let downloaded: Awaited<ReturnType<typeof downloadWorkspaceArchiveToTemp>> | undefined;
+    try {
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'Downloading workspace archive...',
+          cancellable: false,
+        },
+        async (progress) => {
+          progress.report({ increment: 20, message: 'Fetching archive...' });
+          downloaded = await downloadWorkspaceArchiveToTemp({ url: archiveUrl.trim() });
+          progress.report({ increment: 80, message: 'Download complete.' });
+        }
+      );
+
+      if (!downloaded) {
+        return;
+      }
+
+      await this.importArchivePath(downloaded.archivePath, {
+        sourceLabel: downloaded.finalUrl,
+        cleanupPaths: [downloaded.tempRoot],
+      });
+    } catch (error) {
+      if (downloaded?.tempRoot) {
+        await fs.remove(downloaded.tempRoot).catch(() => undefined);
+      }
+      vscode.window.showErrorMessage(
+        `Failed to import remote archive: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  private async importArchivePath(
+    archivePath: string,
+    options?: { sourceLabel?: string; cleanupPaths?: string[] }
+  ): Promise<void> {
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
@@ -452,6 +530,16 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
             );
           }
 
+          const verificationAction = await vscode.window.showInformationMessage(
+            `Archive verified: ${verification.verifiedFiles}/${verification.fileCount} files. Import workspace${options?.sourceLabel ? ` from ${options.sourceLabel}` : ''}?`,
+            { modal: true },
+            'Import Workspace',
+            'Cancel'
+          );
+          if (verificationAction !== 'Import Workspace') {
+            return;
+          }
+
           progress.report({ increment: 10, message: 'Extracting files...' });
 
           const extracted = await extractWorkspaceArchiveToTemp({ archivePath });
@@ -503,6 +591,10 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
           vscode.window.showErrorMessage(
             `Failed to import archive: ${error instanceof Error ? error.message : String(error)}`
           );
+        } finally {
+          for (const cleanupPath of options?.cleanupPaths || []) {
+            await fs.remove(cleanupPath).catch(() => undefined);
+          }
         }
       }
     );
