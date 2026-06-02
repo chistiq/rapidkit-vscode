@@ -47,6 +47,9 @@ describe('workspaceArchive', () => {
 
     expect(shouldExcludeWorkspaceArchivePath('api/node_modules/pkg/index.js')).toBe(true);
     expect(shouldExcludeWorkspaceArchivePath('api/.venv/bin/python')).toBe(true);
+    expect(shouldExcludeWorkspaceArchivePath('api/.env')).toBe(true);
+    expect(shouldExcludeWorkspaceArchivePath('api/.env.example')).toBe(false);
+    expect(shouldExcludeWorkspaceArchivePath('api/private.key')).toBe(true);
     expect(shouldExcludeWorkspaceArchivePath('api/server.log')).toBe(true);
     expect(shouldExcludeWorkspaceArchivePath('api/src/main.ts')).toBe(false);
   });
@@ -66,6 +69,8 @@ describe('workspaceArchive', () => {
     });
 
     expect(manifest.kind).toBe('workspai.workspace.archive');
+    expect(manifest.exportedBy).toBe('workspai-vscode');
+    expect(manifest.security?.envFilesIncluded).toBe(false);
     expect(manifest.files.map((file) => file.path)).toEqual([
       '.rapidkit-workspace',
       'api/src/main.ts',

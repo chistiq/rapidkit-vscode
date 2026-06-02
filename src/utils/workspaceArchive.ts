@@ -10,9 +10,16 @@ export interface WorkspaceArchiveManifest {
   kind: 'workspai.workspace.archive';
   workspaceName: string;
   exportedAt: string;
+  exportedBy?: 'workspai-vscode' | 'rapidkit-npm';
+  archiveFormat?: 'zip-deflate' | 'zip-store';
+  security?: {
+    envFilesIncluded: boolean;
+    excludedByDefault: string[];
+  };
   files: Array<{
     path: string;
     size: number;
+    sha256?: string;
   }>;
 }
 
@@ -36,6 +43,15 @@ const EXCLUDED_SEGMENTS = new Set([
 ]);
 
 const EXCLUDED_BASENAMES = new Set(['.DS_Store', 'Thumbs.db', '.coverage']);
+
+const SECRET_BASENAME_PATTERNS = [
+  /^\.env$/i,
+  /^\.env\.(?!example$|sample$|template$).+/i,
+  /^.*\.pem$/i,
+  /^.*\.key$/i,
+  /^id_rsa$/i,
+  /^id_ed25519$/i,
+];
 
 function toArchivePath(inputPath: string): string {
   return inputPath.replace(/\\/g, '/');
@@ -87,6 +103,9 @@ export function shouldExcludeWorkspaceArchivePath(relativePath: string): boolean
   if (EXCLUDED_BASENAMES.has(basename)) {
     return true;
   }
+  if (SECRET_BASENAME_PATTERNS.some((pattern) => pattern.test(basename))) {
+    return true;
+  }
 
   return basename.endsWith('.pyc') || basename.endsWith('.log');
 }
@@ -135,6 +154,23 @@ export async function buildWorkspaceArchiveManifest(input: {
     kind: 'workspai.workspace.archive',
     workspaceName: input.workspaceName,
     exportedAt: input.exportedAt ?? new Date().toISOString(),
+    exportedBy: 'workspai-vscode',
+    archiveFormat: 'zip-deflate',
+    security: {
+      envFilesIncluded: false,
+      excludedByDefault: [
+        '.git',
+        'node_modules',
+        '.venv',
+        'dist',
+        'build',
+        'target',
+        '.env',
+        '*.pem',
+        '*.key',
+        '*.log',
+      ],
+    },
     files: files.sort((a, b) => a.path.localeCompare(b.path)),
   };
 }
