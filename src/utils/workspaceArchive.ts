@@ -137,7 +137,7 @@ export function verifyWorkspaceArchive(input: {
   const manifest = parseWorkspaceArchiveManifest(zip);
   const entryByName = new Map(
     entries
-      .filter((entry) => entry.entryName !== WORKSPACE_ARCHIVE_MANIFEST_PATH)
+      .filter((entry) => entry.entryName !== WORKSPACE_ARCHIVE_MANIFEST_PATH && !entry.isDirectory)
       .map((entry) => [entry.entryName, entry])
   );
   const manifestPaths = new Set(manifest.files.map((file) => file.path));

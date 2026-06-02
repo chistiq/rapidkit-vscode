@@ -19,6 +19,7 @@ import {
   type DoctorIssueAIContext,
   type ProjectEvidence,
 } from './ui/treeviews/doctorEvidenceProvider';
+import { WorkspaceContractGraphProvider } from './ui/treeviews/workspaceContractGraphProvider';
 import { checkAndNotifyUpdates } from './utils/updateChecker';
 // templateExplorer removed in v0.4.3 (redundant with npm package)
 import { registerCoreCommands } from './commands/coreCommands';
@@ -62,6 +63,7 @@ let workspaceExplorer: WorkspaceExplorerProvider;
 let projectExplorer: ProjectExplorerProvider;
 let moduleExplorer: ModuleExplorerProvider;
 let doctorEvidenceExplorer: DoctorEvidenceProvider;
+let workspaceContractGraphExplorer: WorkspaceContractGraphProvider;
 let architectureInlineDecorations: WorkspaiArchitectureInlineDecorationController;
 // templateExplorer removed
 
@@ -647,6 +649,9 @@ export async function activate(context: vscode.ExtensionContext) {
     doctorEvidenceExplorer = new DoctorEvidenceProvider(
       () => workspaceExplorer?.getSelectedWorkspace()?.path ?? null
     );
+    workspaceContractGraphExplorer = new WorkspaceContractGraphProvider(
+      () => workspaceExplorer?.getSelectedWorkspace()?.path ?? null
+    );
 
     context.subscriptions.push(
       vscode.commands.registerCommand('workspai.getSelectedWorkspace', () => {
@@ -707,9 +712,14 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
       vscode.window.registerTreeDataProvider('rapidkitModules', moduleExplorer),
       vscode.window.registerTreeDataProvider('rapidkitDoctorEvidence', doctorEvidenceExplorer),
+      vscode.window.registerTreeDataProvider(
+        'rapidkitWorkspaceContractGraph',
+        workspaceContractGraphExplorer
+      ),
       // Refresh evidence panel whenever workspace tree changes (fires right after selectedWorkspace is updated)
       workspaceExplorer.onDidChangeTreeData(() => {
         doctorEvidenceExplorer.refresh();
+        workspaceContractGraphExplorer.refresh();
       })
     );
 
@@ -717,6 +727,9 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
       vscode.commands.registerCommand('workspai.doctorEvidence.refresh', () => {
         doctorEvidenceExplorer.refresh();
+      }),
+      vscode.commands.registerCommand('workspai.workspaceContractGraph.refresh', () => {
+        workspaceContractGraphExplorer.refresh();
       }),
       vscode.commands.registerCommand('workspai.doctorEvidence.rerun', async () => {
         const ws = workspaceExplorer.getSelectedWorkspace();
@@ -794,6 +807,7 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('workspai.workspaceSelected', (workspace: unknown) => {
         projectExplorer?.setWorkspace(asWorkspaiWorkspace(workspace));
         doctorEvidenceExplorer.refresh();
+        workspaceContractGraphExplorer.refresh();
       })
     );
 
@@ -881,6 +895,7 @@ export async function activate(context: vscode.ExtensionContext) {
         // Sync evidence panel with whatever workspace was auto-selected on load
         const initialWs = workspaceExplorer.getSelectedWorkspace();
         doctorEvidenceExplorer.setWorkspacePath(initialWs?.path ?? null);
+        workspaceContractGraphExplorer.setWorkspacePath(initialWs?.path ?? null);
 
         // Show welcome page on first activation
         logger.info('Step 10: Checking welcome page settings...');

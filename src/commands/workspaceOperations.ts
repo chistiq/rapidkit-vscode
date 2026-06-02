@@ -53,12 +53,14 @@ type WorkspaceBootstrapProfile =
   | 'polyglot'
   | 'enterprise';
 type WorkspaceSnapshotAction = 'create' | 'list' | 'inspect' | 'restore';
+type WorkspaceContractAction = 'init' | 'inspect' | 'verify' | 'graph' | 'open';
 
 type ProfileQuickPickItem = vscode.QuickPickItem & { value: WorkspaceBootstrapProfile };
 type RuntimeQuickPickItem = vscode.QuickPickItem & { value: 'python' | 'node' | 'go' | 'java' };
 type SnapshotActionQuickPickItem = vscode.QuickPickItem & { value: WorkspaceSnapshotAction };
 type SnapshotModeQuickPickItem = vscode.QuickPickItem & { value: 'metadata' | 'full' };
 type SnapshotRestoreModeQuickPickItem = vscode.QuickPickItem & { value: 'dry-run' | 'force' };
+type ContractActionQuickPickItem = vscode.QuickPickItem & { value: WorkspaceContractAction };
 
 function asWorkspaceCommandItem(item: unknown): WorkspaceCommandItem | undefined {
   if (!item || typeof item !== 'object') {
@@ -763,7 +765,114 @@ export function registerWorkspaceOperationsCommands(options: {
     });
   };
 
+  const runWorkspaceContractAction = async (
+    item: unknown,
+    action: WorkspaceContractAction
+  ): Promise<void> => {
+    const workspaceTarget = requireWorkspaceTarget(item, getWorkspaceExplorer());
+    if (!workspaceTarget) {
+      return;
+    }
+
+    const { workspacePath, workspaceName } = workspaceTarget;
+    const contractPath = path.join(workspacePath, '.rapidkit', 'workspace.contract.json');
+
+    if (action === 'open') {
+      const fsContract = await import('fs-extra');
+      if (!(await fsContract.default.pathExists(contractPath))) {
+        const selected = await vscode.window.showInformationMessage(
+          `No workspace contract exists for "${workspaceName}".`,
+          'Initialize Contract'
+        );
+        if (selected === 'Initialize Contract') {
+          await runWorkspaceContractAction(item, 'init');
+        }
+        return;
+      }
+      const document = await vscode.workspace.openTextDocument(contractPath);
+      await vscode.window.showTextDocument(document);
+      return;
+    }
+
+    const command = ['workspace', 'contract', action];
+    if (action === 'verify') {
+      command.push('--strict');
+    }
+    if (action === 'inspect' || action === 'verify' || action === 'graph') {
+      command.push('--json');
+    }
+
+    runRapidkitCommandsInTerminal({
+      name: `Workspai: Contract ${action} — ${workspaceName}`,
+      cwd: workspacePath,
+      commands: [command],
+    });
+  };
+
   return [
+    vscode.commands.registerCommand('workspai.workspaceContract', async (item?: unknown) => {
+      const selected = await vscode.window.showQuickPick<ContractActionQuickPickItem>(
+        [
+          {
+            label: '$(add) Initialize contract',
+            description: 'Create .rapidkit/workspace.contract.json',
+            value: 'init',
+          },
+          {
+            label: '$(json) Inspect contract',
+            description: 'Print the current contract as JSON',
+            value: 'inspect',
+          },
+          {
+            label: '$(shield) Verify contract',
+            description: 'Strictly validate ports, dependencies, events, and paths',
+            value: 'verify',
+          },
+          {
+            label: '$(type-hierarchy) Show graph',
+            description: 'Render service/dependency/event topology in terminal',
+            value: 'graph',
+          },
+          {
+            label: '$(go-to-file) Open contract file',
+            description: 'Open the canonical contract JSON',
+            value: 'open',
+          },
+        ],
+        {
+          title: 'Workspace Contract',
+          placeHolder: 'Choose contract operation',
+          ignoreFocusOut: true,
+        }
+      );
+
+      if (!selected) {
+        return;
+      }
+
+      await runWorkspaceContractAction(item, selected.value);
+    }),
+
+    vscode.commands.registerCommand('workspai.workspaceContractInit', async (item?: unknown) => {
+      await runWorkspaceContractAction(item, 'init');
+    }),
+
+    vscode.commands.registerCommand('workspai.workspaceContractInspect', async (item?: unknown) => {
+      await runWorkspaceContractAction(item, 'inspect');
+    }),
+
+    vscode.commands.registerCommand('workspai.workspaceContractVerify', async (item?: unknown) => {
+      await runWorkspaceContractAction(item, 'verify');
+    }),
+
+    vscode.commands.registerCommand('workspai.workspaceContractGraph', async (item?: unknown) => {
+      await runWorkspaceContractAction(item, 'graph');
+    }),
+
+    vscode.commands.registerCommand('workspai.workspaceContractOpen', async (item?: unknown) => {
+      await runWorkspaceContractAction(item, 'open');
+    }),
+
     vscode.commands.registerCommand('workspai.workspaceSnapshot', async (item?: unknown) => {
       const selected = await vscode.window.showQuickPick<SnapshotActionQuickPickItem>(
         [

@@ -137,6 +137,45 @@ describe('workspaceArchive', () => {
     expect(result.verifiedFiles).toBe(2);
   });
 
+  it('ignores ZIP directory entries when verifying external archives', async () => {
+    const archiveRoot = await makeTempDir('workspai-archive-dir-entry-');
+    const archivePath = path.join(archiveRoot, 'directory-entry.rapidkit-archive.zip');
+    const zip = new AdmZip();
+    const workspaceMarker = Buffer.from('{}');
+    const packageJson = Buffer.from('{"name":"api"}');
+    zip.addFile('.rapidkit-workspace', workspaceMarker);
+    zip.addFile('api/', Buffer.alloc(0));
+    zip.addFile('api/package.json', packageJson);
+    zip.addFile(
+      WORKSPACE_ARCHIVE_MANIFEST_PATH,
+      Buffer.from(
+        JSON.stringify({
+          version: 1,
+          kind: 'workspai.workspace.archive',
+          workspaceName: 'directory-entry',
+          exportedAt: '2026-06-02T00:00:00.000Z',
+          files: [
+            {
+              path: '.rapidkit-workspace',
+              size: workspaceMarker.length,
+              sha256: '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+            },
+            {
+              path: 'api/package.json',
+              size: packageJson.length,
+              sha256: '131cbbc05e91cf54ce9aa2aa6a7d0e86b9d1d66f4bf69d6de02a0a9e19d0633c',
+            },
+          ],
+        })
+      )
+    );
+    zip.writeZip(archivePath);
+
+    const result = verifyWorkspaceArchive({ archivePath });
+    expect(result.status).toBe('passed');
+    expect(result.extraArchiveEntries).toEqual([]);
+  });
+
   it('rejects archive payloads that do not match manifest checksums', async () => {
     const archiveRoot = await makeTempDir('workspai-archive-tampered-');
     const archivePath = path.join(archiveRoot, 'tampered.rapidkit-archive.zip');

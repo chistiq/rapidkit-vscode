@@ -369,6 +369,48 @@
         "icon": "$(verified)"
       },
       {
+        "command": "workspai.workspaceContract",
+        "title": "Workspace Contract",
+        "category": "Workspai",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "workspai.workspaceContractInit",
+        "title": "Workspace Contract: Initialize",
+        "category": "Workspai",
+        "icon": "$(add)"
+      },
+      {
+        "command": "workspai.workspaceContractInspect",
+        "title": "Workspace Contract: Inspect",
+        "category": "Workspai",
+        "icon": "$(json)"
+      },
+      {
+        "command": "workspai.workspaceContractVerify",
+        "title": "Workspace Contract: Verify",
+        "category": "Workspai",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "workspai.workspaceContractGraph",
+        "title": "Workspace Contract: Show Graph",
+        "category": "Workspai",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "workspai.workspaceContractOpen",
+        "title": "Workspace Contract: Open File",
+        "category": "Workspai",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "workspai.workspaceContractGraph.refresh",
+        "title": "Refresh Contract Graph",
+        "category": "Workspai",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "workspai.editWorkspaceMemory",
         "title": "Edit Workspace Memory",
         "category": "Workspai",
@@ -759,6 +801,13 @@
           "name": "Workspace Health",
           "icon": "media/icons/icon-128.png",
           "contextualTitle": "Workspai Workspace Health"
+        },
+        {
+          "id": "rapidkitWorkspaceContractGraph",
+          "name": "Contract Graph",
+          "icon": "media/icons/icon-128.png",
+          "contextualTitle": "Workspai Workspace Contract Graph",
+          "showCollapseAll": true
         }
       ]
     },
@@ -786,6 +835,11 @@
         "view": "rapidkitModules",
         "contents": "$(sync~spin) Loading available modules…",
         "when": "workspai:projectSelected"
+      },
+      {
+        "view": "rapidkitWorkspaceContractGraph",
+        "contents": "No workspace selected.\n\nSelect a workspace to inspect service topology, ports, APIs, dependencies, and events.",
+        "when": "!workspai.workspaceSelected"
       }
     ],
     "menus": {
@@ -879,6 +933,24 @@
         },
         {
           "command": "workspai.exportVerifyPackContract"
+        },
+        {
+          "command": "workspai.workspaceContract"
+        },
+        {
+          "command": "workspai.workspaceContractInit"
+        },
+        {
+          "command": "workspai.workspaceContractInspect"
+        },
+        {
+          "command": "workspai.workspaceContractVerify"
+        },
+        {
+          "command": "workspai.workspaceContractGraph"
+        },
+        {
+          "command": "workspai.workspaceContractOpen"
         },
         {
           "command": "workspai.cacheStatus"
@@ -1037,6 +1109,21 @@
         {
           "command": "workspai.doctorEvidence.refresh",
           "when": "view == rapidkitDoctorEvidence",
+          "group": "navigation@3"
+        },
+        {
+          "command": "workspai.workspaceContractGraph.refresh",
+          "when": "view == rapidkitWorkspaceContractGraph",
+          "group": "navigation@1"
+        },
+        {
+          "command": "workspai.workspaceContractVerify",
+          "when": "view == rapidkitWorkspaceContractGraph",
+          "group": "navigation@2"
+        },
+        {
+          "command": "workspai.workspaceContractOpen",
+          "when": "view == rapidkitWorkspaceContractGraph",
           "group": "navigation@3"
         }
       ],
@@ -1230,6 +1317,26 @@
           "command": "workspai.exportVerifyPackContract",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
           "group": "workspace_run@6"
+        },
+        {
+          "command": "workspai.workspaceContract",
+          "when": "view == rapidkitWorkspaces && viewItem == workspace",
+          "group": "workspace_contract@1"
+        },
+        {
+          "command": "workspai.workspaceContractGraph",
+          "when": "view == rapidkitWorkspaces && viewItem == workspace",
+          "group": "workspace_contract@2"
+        },
+        {
+          "command": "workspai.workspaceContractVerify",
+          "when": "view == rapidkitWorkspaces && viewItem == workspace",
+          "group": "workspace_contract@3"
+        },
+        {
+          "command": "workspai.workspaceContractOpen",
+          "when": "view == rapidkitWorkspaces && viewItem == workspace",
+          "group": "workspace_contract@4"
         },
         {
           "command": "workspai.workspacePolicyShow",
