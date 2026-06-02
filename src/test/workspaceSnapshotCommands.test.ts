@@ -148,7 +148,7 @@ describe('workspace snapshot commands', () => {
     const manifest = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
       contributes?: {
         commands?: Array<{ command?: string }>;
-        menus?: Record<string, Array<{ command?: string; when?: string }>>;
+        menus?: Record<string, Array<{ command?: string; submenu?: string; when?: string }>>;
       };
     };
 
@@ -160,9 +160,13 @@ describe('workspace snapshot commands', () => {
         .filter((item) => item.when === 'view == rapidkitWorkspaces && viewItem == workspace')
         .map((item) => item.command)
     );
+    const workspaceRunCommands = new Set(
+      (manifest.contributes?.menus?.['workspai.workspace.run'] || []).map((item) => item.command)
+    );
 
     expect(contributedCommands.has('workspai.workspaceAnalyze')).toBe(true);
-    expect(workspaceContextCommands.has('workspai.workspaceAnalyze')).toBe(true);
+    expect(workspaceContextCommands.has('workspai.workspaceAnalyze')).toBe(false);
+    expect(workspaceRunCommands.has('workspai.workspaceAnalyze')).toBe(true);
   });
 
   it('inspects a named snapshot', async () => {
@@ -218,7 +222,7 @@ describe('workspace snapshot commands', () => {
     const manifest = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
       contributes?: {
         commands?: Array<{ command?: string }>;
-        menus?: Record<string, Array<{ command?: string; when?: string }>>;
+        menus?: Record<string, Array<{ command?: string; submenu?: string; when?: string }>>;
       };
     };
 
@@ -241,11 +245,23 @@ describe('workspace snapshot commands', () => {
         .filter((item) => item.when === 'view == rapidkitWorkspaces && viewItem == workspace')
         .map((item) => item.command)
     );
+    const workspaceContextSubmenus = new Set(
+      (manifest.contributes?.menus?.['view/item/context'] || [])
+        .filter((item) => item.when === 'view == rapidkitWorkspaces && viewItem == workspace')
+        .map((item) => item.submenu)
+    );
+    const workspaceRecoveryCommands = new Set(
+      (manifest.contributes?.menus?.['workspai.workspace.recovery'] || []).map(
+        (item) => item.command
+      )
+    );
 
     for (const command of snapshotCommands) {
       expect(contributedCommands.has(command)).toBe(true);
       expect(paletteCommands.has(command)).toBe(true);
-      expect(workspaceContextCommands.has(command)).toBe(true);
+      expect(workspaceContextCommands.has(command)).toBe(false);
+      expect(workspaceRecoveryCommands.has(command)).toBe(true);
     }
+    expect(workspaceContextSubmenus.has('workspai.workspace.recovery')).toBe(true);
   });
 });
