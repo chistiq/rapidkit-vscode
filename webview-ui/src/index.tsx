@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from '@/App';
 import { SetupExperience } from '@/components/SetupExperience';
+import { WebviewErrorBoundary } from '@/components/WebviewErrorBoundary';
 import '@/styles-tailwind.css';
 import '@/styles/responsive.css';
 
@@ -18,7 +19,7 @@ if (root) {
 
     createRoot(root).render(
         <StrictMode>
-            {content}
+            <WebviewErrorBoundary>{content}</WebviewErrorBoundary>
         </StrictMode>
     );
 }

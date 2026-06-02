@@ -639,12 +639,64 @@ export class WelcomePanel {
     }
   }
 
+  public static async refreshDashboardForWorkspaceSelection() {
+    const dashboardPanel = WelcomePanel._dashboardPanel;
+    if (!dashboardPanel) {
+      return;
+    }
+
+    await dashboardPanel._sendRecentWorkspaces();
+    await dashboardPanel._sendWorkspaceStatus();
+    await dashboardPanel._refreshModulesCatalog();
+  }
+
   private _getSelectedWorkspaceInfo(): { name: string; path: string } | null {
     const ws = WelcomePanel._workspaceExplorer?.getSelectedWorkspace();
     if (!ws) {
       return null;
     }
     return { name: ws.name, path: ws.path };
+  }
+
+  private _getSelectedProjectCommandContext(): {
+    workspace?: { name?: string; path?: string };
+    project: {
+      name?: string;
+      path: string;
+      type?: string;
+      workspacePath?: string;
+    };
+  } | null {
+    const selectedProject = WelcomePanel._selectedProject;
+    if (!selectedProject?.path) {
+      vscode.window.showWarningMessage('Select a project first.');
+      return null;
+    }
+
+    const selectedWorkspace = this._getSelectedWorkspaceInfo();
+    const workspacePath =
+      selectedWorkspace?.path ||
+      (selectedProject.path ? path.dirname(selectedProject.path) : undefined);
+
+    return {
+      workspace: selectedWorkspace
+        ? {
+            name: selectedWorkspace.name,
+            path: selectedWorkspace.path,
+          }
+        : workspacePath
+          ? {
+              name: path.basename(workspacePath),
+              path: workspacePath,
+            }
+          : undefined,
+      project: {
+        name: selectedProject.name,
+        path: selectedProject.path,
+        type: selectedProject.type,
+        workspacePath,
+      },
+    };
   }
 
   private async _buildWorkspaceProjectCandidatesBlock(
@@ -1214,8 +1266,7 @@ export class WelcomePanel {
           case 'selectWorkspace':
             if (message.data) {
               await vscode.commands.executeCommand('workspai.selectWorkspace', message.data);
-              // Send updated workspace status
-              await this._sendWorkspaceStatus();
+              await WelcomePanel.refreshDashboardForWorkspaceSelection();
             }
             break;
           case 'removeWorkspace':
@@ -1225,6 +1276,9 @@ export class WelcomePanel {
             break;
           case 'refreshModules':
             this._sendModulesCatalog();
+            break;
+          case 'dashboardPerf':
+            console.info('[WelcomePanel] dashboard performance', message.data);
             break;
           case 'requestWorkspaceToolStatus':
             await this._sendWorkspaceToolStatus();
@@ -1445,6 +1499,12 @@ export class WelcomePanel {
             break;
           case 'importWorkspace':
             await vscode.commands.executeCommand('workspai.importWorkspace');
+            break;
+          case 'importProject':
+            await vscode.commands.executeCommand('workspai.importProject');
+            break;
+          case 'quickSwitchWorkspace':
+            await vscode.commands.executeCommand('workspai.quickSwitchWorkspace');
             break;
           case 'workspaceTerminal':
             await vscode.commands.executeCommand('workspai.workspaceTerminal');
@@ -1782,6 +1842,57 @@ export class WelcomePanel {
               });
             }
             break;
+          case 'projectDoctor':
+            if (WelcomePanel._selectedProject) {
+              await vscode.commands.executeCommand('workspai.projectDoctor', {
+                projectPath: WelcomePanel._selectedProject.path,
+                preferredAction: 'check',
+              });
+            }
+            break;
+          case 'projectArchitecture': {
+            const contextItem = this._getSelectedProjectCommandContext();
+            if (contextItem) {
+              await vscode.commands.executeCommand('workspai.openArchitectureMap', contextItem);
+            }
+            break;
+          }
+          case 'projectIncident': {
+            const contextItem = this._getSelectedProjectCommandContext();
+            if (contextItem) {
+              await vscode.commands.executeCommand('workspai.openIncidentStudio', contextItem);
+            }
+            break;
+          }
+          case 'projectAI': {
+            const contextItem = this._getSelectedProjectCommandContext();
+            if (contextItem) {
+              await vscode.commands.executeCommand('workspai.aiForProject', contextItem);
+            }
+            break;
+          }
+          case 'projectRelease': {
+            const contextItem = this._getSelectedProjectCommandContext();
+            if (contextItem) {
+              await vscode.commands.executeCommand('workspai.aiReleaseReadinessCommander', {
+                ...contextItem,
+                source: 'dashboard',
+                trigger: 'project_actions',
+              });
+            }
+            break;
+          }
+          case 'projectImpact': {
+            const contextItem = this._getSelectedProjectCommandContext();
+            if (contextItem) {
+              await vscode.commands.executeCommand('workspai.aiChangeImpactLite', {
+                ...contextItem,
+                source: 'dashboard',
+                trigger: 'project_actions',
+              });
+            }
+            break;
+          }
           case 'projectBrowser':
             if (WelcomePanel._selectedProject) {
               await vscode.commands.executeCommand('workspai.projectBrowser', {
@@ -8805,6 +8916,10 @@ No markdown, no explanation outside the JSON.`;
     let installedModules: { slug: string; version: string; display_name: string }[] = [];
     let projectType: 'fastapi' | 'nestjs' | 'go' | 'springboot' | undefined;
 
+    if (!selectedWorkspace) {
+      WelcomePanel._selectedProject = null;
+    }
+
     // Keep project-scoped details only when selected project belongs to selected workspace.
     if (
       WelcomePanel._selectedProject &&
@@ -9192,7 +9307,7 @@ No markdown, no explanation outside the JSON.`;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${this._panel.webview.cspSource} 'unsafe-inline'; font-src ${this._panel.webview.cspSource}; img-src ${this._panel.webview.cspSource} https:; script-src 'nonce-${nonce}';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'none'; frame-src 'none'; media-src 'none'; object-src 'none'; style-src ${this._panel.webview.cspSource} 'unsafe-inline'; font-src ${this._panel.webview.cspSource}; img-src ${this._panel.webview.cspSource} https:; script-src 'nonce-${nonce}';">
     <title>Welcome to Workspai</title>
     <link rel="stylesheet" type="text/css" href="${cssUri}">
     <style>

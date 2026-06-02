@@ -2368,7 +2368,7 @@ export class SetupPanel {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'none'; style-src ${this._panel.webview.cspSource} 'unsafe-inline'; font-src ${this._panel.webview.cspSource}; img-src ${this._panel.webview.cspSource} https:; script-src 'nonce-${nonce}';"
+    content="default-src 'none'; connect-src 'none'; frame-src 'none'; media-src 'none'; object-src 'none'; style-src ${this._panel.webview.cspSource} 'unsafe-inline'; font-src ${this._panel.webview.cspSource}; img-src ${this._panel.webview.cspSource} https:; script-src 'nonce-${nonce}';"
   />
   <title>Workspai Setup & Installation</title>
   <link rel="icon" type="image/svg+xml" href="${rapidkitIconUri}" />

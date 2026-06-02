@@ -804,10 +804,11 @@ export async function activate(context: vscode.ExtensionContext) {
         }
       ),
       // Refresh evidence panel whenever workspace selection changes
-      vscode.commands.registerCommand('workspai.workspaceSelected', (workspace: unknown) => {
+      vscode.commands.registerCommand('workspai.workspaceSelected', async (workspace: unknown) => {
         projectExplorer?.setWorkspace(asWorkspaiWorkspace(workspace));
         doctorEvidenceExplorer.refresh();
         workspaceContractGraphExplorer.refresh();
+        await WelcomePanel.refreshDashboardForWorkspaceSelection();
       })
     );
 

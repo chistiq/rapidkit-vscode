@@ -12,16 +12,12 @@ import type {
     WorkspaceToolStatus,
 } from '@/types';
 import { Header } from '@/components/Header';
-import { HeroAction } from '@/components/HeroAction';
-import { QuickLinks } from '@/components/QuickLinks';
-import { Features } from '@/components/Features';
 import { RecentWorkspaces } from '@/components/RecentWorkspaces';
 import { ExampleWorkspaces } from '@/components/ExampleWorkspaces';
 import { ModuleBrowser } from '@/components/ModuleBrowser';
-import { CommandReference } from '@/components/CommandReference';
-import { KeyboardShortcuts } from '@/components/KeyboardShortcuts';
 import { Footer } from '@/components/Footer';
-import { AIActions } from '@/components/AIActions';
+import { EnterpriseDashboardFlow } from '@/components/EnterpriseDashboardFlow';
+import { WorkspaceOverview } from '@/components/WorkspaceOverview';
 import { AIIncidentStudio } from '@/components/AIIncidentStudio';
 import {
     DEFAULT_INCIDENT_STUDIO_DISPLAY_MODE,
@@ -369,6 +365,8 @@ export function App() {
     const [installStatusChecked, setInstallStatusChecked] = useState(false);
     const [isRefreshingWorkspaces, setIsRefreshingWorkspaces] = useState(false);
     const [activeView, setActiveView] = useState<'dashboard' | 'incident-studio'>('dashboard');
+    const [dashboardTemplatesReady, setDashboardTemplatesReady] = useState(false);
+    const [dashboardModulesReady, setDashboardModulesReady] = useState(false);
     const [importedWorkspaceShare, setImportedWorkspaceShare] =
         useState<ImportedWorkspaceShareSummary | null>(null);
     const [incidentUserMode, setIncidentUserMode] = useState<IncidentUserMode>(DEFAULT_INCIDENT_USER_MODE);
@@ -396,6 +394,9 @@ export function App() {
     const chatBrainLastErrorRequestIdRef = useRef<string | null>(null);
     const lastIncidentBootstrapWorkspaceRef = useRef<string | null>(null);
     const incidentStudioDisplayModeOverrideRef = useRef<IncidentStudioDisplayMode | null>(null);
+    const dashboardMountedAtRef = useRef<number>(
+        typeof performance !== 'undefined' ? performance.now() : Date.now()
+    );
 
     const activeWorkspace =
         recentWorkspaces.find((workspace) => workspace.path === workspaceStatus.workspacePath) || null;
@@ -1161,13 +1162,6 @@ export function App() {
                     );
                     setIncidentAutoLearningPrompt(message.data?.incidentAutoLearningPrompt !== false);
                     break;
-                case 'reportExistsResult':
-                    setAnalyzeReportExists(Boolean(message.data?.exists));
-                    break;
-                case 'reportLoaded':
-                    setAnalyzeReport(message.data?.data ?? null);
-                    setAnalyzeReportError(typeof message.data?.error === 'string' ? message.data.error : null);
-                    break;
             }
         };
 
@@ -1221,6 +1215,15 @@ export function App() {
         setAICreateTargetWorkspaceName(activeWorkspaceName ?? undefined);
         setAICreateTargetWorkspacePath(workspaceStatus.workspacePath ?? undefined);
         setShowAICreateModal(true);
+    };
+
+    const handleOpenManualProjectModal = (framework: 'fastapi' | 'nestjs' | 'go' | 'springboot') => {
+        if (installStatusChecked && !installStatus.coreInstalled) {
+            vscode.postMessage('openSetup');
+            return;
+        }
+        setSelectedFramework(framework);
+        setShowProjectModal(true);
     };
 
     const handleOpenAICreateWorkspace = () => {
@@ -1675,6 +1678,60 @@ export function App() {
         setChatBrainConversationId(null);
     }, [activeView, chatBrainConversationId]);
 
+    useEffect(() => {
+        if (activeView !== 'dashboard') {
+            setDashboardTemplatesReady(false);
+            setDashboardModulesReady(false);
+            return;
+        }
+
+        dashboardMountedAtRef.current =
+            typeof performance !== 'undefined' ? performance.now() : Date.now();
+        setDashboardTemplatesReady(false);
+        setDashboardModulesReady(false);
+        const scheduleIdle = window.requestIdleCallback ?? ((callback) => window.setTimeout(callback, 80));
+        const cancelIdle = window.cancelIdleCallback ?? window.clearTimeout;
+        const templatesHandle = scheduleIdle(() => setDashboardTemplatesReady(true));
+        const modulesHandle = window.setTimeout(() => {
+            scheduleIdle(() => setDashboardModulesReady(true));
+        }, 140);
+
+        return () => {
+            cancelIdle(templatesHandle);
+            window.clearTimeout(modulesHandle);
+        };
+    }, [activeView]);
+
+    useEffect(() => {
+        if (activeView !== 'dashboard') {
+            return;
+        }
+
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        vscode.postMessage('dashboardPerf', {
+            stage: dashboardModulesReady
+                ? 'modules-ready'
+                : dashboardTemplatesReady
+                  ? 'templates-ready'
+                  : 'shell-ready',
+            elapsedMs: Math.max(0, Math.round(now - dashboardMountedAtRef.current)),
+            recentWorkspaceCount: recentWorkspaces.length,
+            templateCount: exampleWorkspaces.length,
+            moduleCount: modulesCatalog.length,
+            hasWorkspace: hasActiveWorkspace,
+            hasProject: Boolean(workspaceStatus.hasProjectSelected),
+        });
+    }, [
+        activeView,
+        dashboardModulesReady,
+        dashboardTemplatesReady,
+        exampleWorkspaces.length,
+        hasActiveWorkspace,
+        modulesCatalog.length,
+        recentWorkspaces.length,
+        workspaceStatus.hasProjectSelected,
+    ]);
+
     return (
         <div className={`container`}>
             <Header version={version} />
@@ -1783,15 +1840,27 @@ export function App() {
                         </section>
                     ) : null}
 
-                    <div className="mb-8">
-                        <HeroAction
-                            onClick={handleOpenAICreateWorkspace}
-                            isLoading={isCreatingWorkspace}
-                        />
-                        <QuickLinks onOpenProjectModal={handleOpenProjectModal} />
-                    </div>
+                    <WorkspaceOverview
+                        workspaceName={activeWorkspaceName}
+                        workspaceProfile={activeWorkspaceProfile}
+                        workspaceStatus={workspaceStatus}
+                        moduleCount={modulesCatalog.length}
+                        templateCount={exampleWorkspaces.length}
+                        recentWorkspaceCount={recentWorkspaces.length}
+                        modules={modulesCatalog}
+                        isCreatingWorkspace={isCreatingWorkspace}
+                        onCreateWorkspace={handleOpenAICreateWorkspace}
+                        onImportWorkspace={() => vscode.postMessage('importWorkspace')}
+                    />
 
-                    <AIActions
+                    <EnterpriseDashboardFlow
+                        workspaceName={activeWorkspaceName}
+                        workspaceProfile={activeWorkspaceProfile}
+                        workspaceStatus={workspaceStatus}
+                        selectedFramework={selectedFramework}
+                        onSelectFramework={setSelectedFramework}
+                        onOpenProjectBuilder={handleOpenProjectModal}
+                        onOpenManualProject={handleOpenManualProjectModal}
                         onRunFixPreview={() => runIncidentAction('aiFixPreviewLite')}
                         onRunChangeImpact={() => runIncidentAction('aiChangeImpactLite')}
                         onRunTerminalBridge={() => runIncidentAction('aiTerminalBridge')}
@@ -1819,35 +1888,77 @@ export function App() {
                         onAnalyze={handleAnalyzeWorkspace}
                     />
 
-                    <ExampleWorkspaces
-                        examples={exampleWorkspaces}
-                        onClone={(example) => vscode.postMessage('cloneExample', example)}
-                        onUpdate={(example) => vscode.postMessage('updateExample', example)}
-                        cloningExample={cloningExample}
-                        updatingExample={updatingExample}
-                    />
+                    {dashboardTemplatesReady ? (
+                        <>
+                            <ExampleWorkspaces
+                                examples={exampleWorkspaces}
+                                onClone={(example) => vscode.postMessage('cloneExample', example)}
+                                onUpdate={(example) => vscode.postMessage('updateExample', example)}
+                                cloningExample={cloningExample}
+                                updatingExample={updatingExample}
+                            />
 
-                    <ModuleBrowser
-                        modules={modulesCatalog}
-                        workspaceStatus={workspaceStatus}
-                        categoryInfo={categoryInfo}
-                        onRefresh={() => vscode.postMessage('refreshModules')}
-                        onInstall={handleOpenInstallModal}
-                        onShowDetails={(moduleId) => vscode.postMessage('showModuleDetails', moduleId)}
-                        onAI={(module) => vscode.postMessage('aiForModule', { moduleId: module.id, moduleName: module.display_name || module.name, moduleSlug: module.slug })}
-                        onProjectTerminal={() => vscode.postMessage('projectTerminal')}
-                        onProjectInit={() => vscode.postMessage('projectInit')}
-                        onProjectDev={() => vscode.postMessage('projectDev')}
-                        onProjectStop={() => vscode.postMessage('projectStop')}
-                        onProjectTest={() => vscode.postMessage('projectTest')}
-                        onProjectBrowser={() => vscode.postMessage('projectBrowser')}
-                        onProjectBuild={() => vscode.postMessage('projectBuild')}
-                        modulesDisabled={
-                            workspaceStatus.projectType === 'go' || workspaceStatus.projectType === 'springboot'
-                        }
-                    />
-
-                    <Features />
+                            {dashboardModulesReady ? (
+                                <ModuleBrowser
+                                    modules={modulesCatalog}
+                                    workspaceStatus={workspaceStatus}
+                                    categoryInfo={categoryInfo}
+                                    onRefresh={() => vscode.postMessage('refreshModules')}
+                                    onInstall={handleOpenInstallModal}
+                                    onShowDetails={(moduleId) => vscode.postMessage('showModuleDetails', moduleId)}
+                                    onAI={(module) => vscode.postMessage('aiForModule', { moduleId: module.id, moduleName: module.display_name || module.name, moduleSlug: module.slug })}
+                                    onProjectTerminal={() => vscode.postMessage('projectTerminal')}
+                                    onProjectInit={() => vscode.postMessage('projectInit')}
+                                    onProjectDev={() => vscode.postMessage('projectDev')}
+                                    onProjectStop={() => vscode.postMessage('projectStop')}
+                                    onProjectTest={() => vscode.postMessage('projectTest')}
+                                    onProjectDoctor={() => vscode.postMessage('projectDoctor')}
+                                    onProjectArchitecture={() => vscode.postMessage('projectArchitecture')}
+                                    onProjectIncident={() => vscode.postMessage('projectIncident')}
+                                    onProjectAI={() => vscode.postMessage('projectAI')}
+                                    onProjectRelease={() => vscode.postMessage('projectRelease')}
+                                    onProjectImpact={() => vscode.postMessage('projectImpact')}
+                                    onProjectBrowser={() => vscode.postMessage('projectBrowser')}
+                                    onProjectBuild={() => vscode.postMessage('projectBuild')}
+                                    modulesDisabled={
+                                        workspaceStatus.projectType === 'go' || workspaceStatus.projectType === 'springboot'
+                                    }
+                                />
+                            ) : (
+                                <section
+                                    className="catalog-loading-shell catalog-loading-shell--modules"
+                                    aria-live="polite"
+                                    aria-label="Preparing module catalog"
+                                >
+                                    <div className="catalog-loading-header">
+                                        <span>Preparing module catalog</span>
+                                        <small>Package manager surface</small>
+                                    </div>
+                                    <div className="catalog-skeleton-grid">
+                                        {Array.from({ length: 4 }).map((_, index) => (
+                                            <span key={index} className="catalog-skeleton-card" />
+                                        ))}
+                                    </div>
+                                </section>
+                            )}
+                        </>
+                    ) : (
+                        <section
+                            className="catalog-loading-shell catalog-loading-shell--templates"
+                            aria-live="polite"
+                            aria-label="Loading workspace catalogs"
+                        >
+                            <div className="catalog-loading-header">
+                                <span>Loading workspace catalogs</span>
+                                <small>Templates, examples, and module inventory</small>
+                            </div>
+                            <div className="catalog-skeleton-grid catalog-skeleton-grid--templates">
+                                {Array.from({ length: 3 }).map((_, index) => (
+                                    <span key={index} className="catalog-skeleton-card" />
+                                ))}
+                            </div>
+                        </section>
+                    )}
                 </>
             ) : (
                 <>
@@ -2050,21 +2161,6 @@ export function App() {
                 onCancel={handleAICancelQuery}
                 onQuery={handleAIQuery}
             />
-            {activeView === 'dashboard' ? (
-                <CommandReference
-                    workspaceProfile={activeWorkspaceProfile}
-                    hasActiveWorkspace={hasActiveWorkspace}
-                    workspaceName={activeWorkspaceName}
-                />
-            ) : null}
-
-            {activeView === 'dashboard' ? (
-                <KeyboardShortcuts />
-            ) : null}
-
-
-
-
             <Footer />
         </div>
     );

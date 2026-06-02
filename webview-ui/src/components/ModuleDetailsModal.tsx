@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import type { ModuleData } from '@/types';
 import {
-    X, Package, Settings, Layers, Sparkles, BookOpen, Download, Link2, CheckCircle2, Tag,
+    Package, Settings, Layers, Sparkles, BookOpen, Download, Link2, CheckCircle2, Tag,
     Database, Zap, Lock, Eye, Shield, FileText, CreditCard, MessageSquare, Users, Calendar, Brain
 } from 'lucide-react';
+import { EnterpriseModal } from './EnterpriseModal';
 
 type TabType = 'overview' | 'dependencies' | 'configuration' | 'profiles' | 'features' | 'docs';
 
@@ -36,55 +37,25 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
     const IconComponent = categoryIcons[module.category] || Package;
 
     return (
-        <div
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-            onClick={onClose}
+        <EnterpriseModal
+            isOpen={Boolean(module)}
+            title={module.display_name || module.name}
+            subtitle={module.description || 'Module manifest, dependencies, configuration, features, and documentation.'}
+            kicker="Module details"
+            scope={`v${module.version || 'N/A'} · ${module.category}`}
+            icon={<IconComponent size={16} />}
+            size="xl"
+            onClose={onClose}
         >
-            <div
-                className="bg-[var(--vscode-editor-background)] rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col"
-                onClick={(e) => e.stopPropagation()}
-            >
-                {/* Header */}
-                <div className="bg-[var(--vscode-sideBar-background)] p-6 border-b border-[var(--vscode-panel-border)]">
-                    <div className="flex items-start gap-4">
-                        <div className="p-3 bg-[var(--vscode-button-secondaryBackground)] rounded-lg">
-                            <IconComponent size={40} className="text-[var(--vscode-foreground)]" />
-                        </div>
-                        <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                                <h2 className="text-2xl font-bold text-[var(--vscode-foreground)]">
-                                    {module.display_name || module.name}
-                                </h2>
-                                <button
-                                    onClick={onClose}
-                                    className="ml-auto p-1 hover:bg-[var(--vscode-list-hoverBackground)] rounded"
-                                >
-                                    <X size={20} className="text-[var(--vscode-foreground)]" />
-                                </button>
-                            </div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-sm text-[var(--vscode-descriptionForeground)]">
-                                    v{module.version || 'N/A'}
-                                </span>
-                                <span className={`px-2 py-0.5 text-xs font-semibold rounded ${module.status === 'stable' ? 'bg-green-600 text-white' :
-                                    module.status === 'beta' ? 'bg-orange-600 text-white' :
-                                        'bg-red-600 text-white'
-                                    }`}>
-                                    {module.status || 'stable'}
-                                </span>
-                                <span className="px-2 py-0.5 text-xs font-semibold rounded bg-[var(--vscode-button-secondaryBackground)] text-[var(--vscode-button-secondaryForeground)]">
-                                    {module.category}
-                                </span>
-                                <span className="px-2 py-0.5 text-xs font-mono rounded bg-[var(--vscode-button-secondaryBackground)] text-[var(--vscode-button-secondaryForeground)]">
-                                    {module.slug}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <div className="modal-chip-row" style={{ marginTop: -4, marginBottom: 12 }}>
+                <span className={`modal-chip ${module.status && module.status !== 'stable' ? 'modal-chip--warning' : ''}`}>
+                    {module.status || 'stable'}
+                </span>
+                <span className="modal-chip modal-chip--mono">{module.slug}</span>
+            </div>
 
                 {/* Tabs */}
-                <div className="flex gap-1 px-6 bg-[var(--vscode-editor-background)] border-b border-[var(--vscode-panel-border)] overflow-x-auto">
+                <div className="module-details-tabs">
                     {[
                         { id: 'overview', label: 'Overview', icon: Package },
                         { id: 'dependencies', label: 'Dependencies', icon: Link2 },
@@ -98,9 +69,9 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id as TabType)}
-                                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === tab.id
-                                    ? 'border-[#6C5CE7] text-[#6C5CE7]'
-                                    : 'border-transparent text-[var(--vscode-descriptionForeground)] hover:text-[var(--vscode-foreground)] hover:bg-[var(--vscode-list-hoverBackground)]'
+                                className={`module-details-tab ${activeTab === tab.id
+                                    ? 'module-details-tab--active'
+                                    : ''
                                     }`}
                             >
                                 <Icon size={16} />
@@ -111,7 +82,7 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-6">
+                <div className="module-details-content">
                     {activeTab === 'overview' && (
                         <div className="space-y-6">
                             <section>
@@ -142,7 +113,7 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
 
                             {module.capabilities && module.capabilities.length > 0 && (
                                 <section>
-                                    <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">⚡ Capabilities</h3>
+                                    <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">Capabilities</h3>
                                     <ul className="space-y-2">
                                         {module.capabilities.map((cap, i) => (
                                             <li key={i} className="flex items-start gap-2 text-[var(--vscode-foreground)]">
@@ -426,7 +397,7 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
                                 <>
                                     {module.documentation.readme && (
                                         <section>
-                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">📄 README</h3>
+                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">README</h3>
                                             <div className="text-sm text-[var(--vscode-foreground)] font-mono bg-[var(--vscode-textCodeBlock-background)] border border-[var(--vscode-panel-border)] rounded px-3 py-2">
                                                 {module.documentation.readme}
                                             </div>
@@ -435,7 +406,7 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
 
                                     {module.documentation.overview && (
                                         <section>
-                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">📖 Overview</h3>
+                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">Overview</h3>
                                             <div className="text-sm text-[var(--vscode-foreground)] font-mono bg-[var(--vscode-textCodeBlock-background)] border border-[var(--vscode-panel-border)] rounded px-3 py-2">
                                                 {module.documentation.overview}
                                             </div>
@@ -444,7 +415,7 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
 
                                     {module.documentation.usage && (
                                         <section>
-                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">🚀 Usage Guide</h3>
+                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">Usage Guide</h3>
                                             <div className="text-sm text-[var(--vscode-foreground)] font-mono bg-[var(--vscode-textCodeBlock-background)] border border-[var(--vscode-panel-border)] rounded px-3 py-2">
                                                 {module.documentation.usage}
                                             </div>
@@ -453,7 +424,7 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
 
                                     {module.documentation.advanced && (
                                         <section>
-                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">⚙️ Advanced</h3>
+                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">Advanced</h3>
                                             <div className="text-sm text-[var(--vscode-foreground)] font-mono bg-[var(--vscode-textCodeBlock-background)] border border-[var(--vscode-panel-border)] rounded px-3 py-2">
                                                 {module.documentation.advanced}
                                             </div>
@@ -462,7 +433,7 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
 
                                     {module.documentation.api_docs && (
                                         <section>
-                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">🔧 API Reference</h3>
+                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">API Reference</h3>
                                             <div className="text-sm text-[var(--vscode-foreground)] font-mono bg-[var(--vscode-textCodeBlock-background)] border border-[var(--vscode-panel-border)] rounded px-3 py-2">
                                                 {module.documentation.api_docs}
                                             </div>
@@ -471,7 +442,7 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
 
                                     {module.documentation.migration && (
                                         <section>
-                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">🔄 Migration Guide</h3>
+                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">Migration Guide</h3>
                                             <div className="text-sm text-[var(--vscode-foreground)] font-mono bg-[var(--vscode-textCodeBlock-background)] border border-[var(--vscode-panel-border)] rounded px-3 py-2">
                                                 {module.documentation.migration}
                                             </div>
@@ -480,7 +451,7 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
 
                                     {module.documentation.troubleshooting && (
                                         <section>
-                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">🩹 Troubleshooting</h3>
+                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">Troubleshooting</h3>
                                             <div className="text-sm text-[var(--vscode-foreground)] font-mono bg-[var(--vscode-textCodeBlock-background)] border border-[var(--vscode-panel-border)] rounded px-3 py-2">
                                                 {module.documentation.troubleshooting}
                                             </div>
@@ -489,7 +460,7 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
 
                                     {module.documentation.changelog && (
                                         <section>
-                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">📝 Changelog</h3>
+                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">Changelog</h3>
                                             <div className="text-sm text-[var(--vscode-foreground)] font-mono bg-[var(--vscode-textCodeBlock-background)] border border-[var(--vscode-panel-border)] rounded px-3 py-2">
                                                 {module.documentation.changelog}
                                             </div>
@@ -498,7 +469,7 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
 
                                     {module.documentation.quick_guide && (
                                         <section>
-                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">⚡ Quick Start</h3>
+                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">Quick Start</h3>
                                             <p className="text-[var(--vscode-foreground)] leading-relaxed whitespace-pre-wrap">
                                                 {module.documentation.quick_guide}
                                             </p>
@@ -507,7 +478,7 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
 
                                     {module.documentation.links && Object.keys(module.documentation.links).length > 0 && (
                                         <section>
-                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">🔗 Links</h3>
+                                            <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">Links</h3>
                                             <ul className="space-y-2">
                                                 {Object.entries(module.documentation.links).map(([key, url]) => (
                                                     <li key={key}>
@@ -528,7 +499,7 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
 
                             {module.changelog && module.changelog.length > 0 && (
                                 <section>
-                                    <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">📋 Version History</h3>
+                                    <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">Version History</h3>
                                     <div className="space-y-2">
                                         {module.changelog.map((entry, i) => (
                                             <div
@@ -548,7 +519,7 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
 
                             {module.support && (
                                 <section>
-                                    <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">💬 Support</h3>
+                                    <h3 className="text-lg font-semibold mb-3 text-[#6C5CE7]">Support</h3>
                                     <ul className="space-y-2">
                                         {module.support.issues && (
                                             <li>
@@ -596,7 +567,6 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
                         </div>
                     )}
                 </div>
-            </div>
-        </div>
+        </EnterpriseModal>
     );
 }
