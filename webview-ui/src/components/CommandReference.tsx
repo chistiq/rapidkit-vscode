@@ -1,17 +1,19 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  Copy,
-  ChevronDown,
-  FolderOpen,
-  Rocket,
-  Package as PackageIcon,
-  Settings,
   Activity,
   Archive,
+  Boxes,
+  CheckCircle2,
+  ChevronDown,
+  Copy,
+  FolderOpen,
   GitBranch,
   HeartPulse,
+  Package as PackageIcon,
+  PanelTopOpen,
   Play,
-  Share2,
+  Rocket,
+  Settings,
   Terminal,
 } from 'lucide-react';
 import { vscode } from '@/vscode';
@@ -29,26 +31,20 @@ interface CommandCategory {
   commands: Command[];
 }
 
-interface OperationAction {
+interface CommandAction {
+  id: string;
   title: string;
   detail: string;
   icon: any;
   command: string;
   requiresWorkspace?: boolean;
+  tone?: 'primary' | 'default';
 }
 
-interface WorkflowStep {
+interface WorkflowRow {
   title: string;
   detail: string;
-  command: string;
-  requiresWorkspace?: boolean;
-}
-
-interface IntentCommand {
-  intent: string;
-  useWhen: string;
-  primary: string;
-  commands: string[];
+  action: CommandAction;
 }
 
 type WorkspaceProfile =
@@ -82,20 +78,19 @@ function buildWorkspaceCommands(profile: WorkspaceProfile): Command[] {
   const common: Command[] = [
     {
       code: 'npx --yes --package rapidkit rapidkit create workspace my-workspace --yes --profile polyglot',
-      description: 'Create a workspace with explicit profile (recommended canonical form)',
+      description: 'Create a workspace with explicit profile',
     },
     {
       code: `npx --yes --package rapidkit rapidkit bootstrap --profile ${profile}`,
-      description: `Sync and bootstrap runtimes for the active profile (${profile})`,
+      description: `Bootstrap runtimes for the active profile (${profile})`,
     },
     {
       code: 'npx --yes --package rapidkit rapidkit init',
-      description:
-        'Full init (workspace + projects). Mirror aliases at workspace root: `workspace init` and `workspace run init`.',
+      description: 'Initialize workspace files and project dependencies',
     },
     {
       code: 'npx --yes --package rapidkit rapidkit doctor workspace',
-      description: 'Run workspace health checks (canonical doctor contract)',
+      description: 'Run workspace health checks',
     },
     {
       code: 'npx --yes --package rapidkit rapidkit cache status',
@@ -103,7 +98,7 @@ function buildWorkspaceCommands(profile: WorkspaceProfile): Command[] {
     },
     {
       code: 'npx --yes --package rapidkit rapidkit mirror status',
-      description: 'Inspect mirror/offline artifact status',
+      description: 'Inspect mirror and offline artifact status',
     },
   ];
 
@@ -169,13 +164,13 @@ function buildWorkspaceCommands(profile: WorkspaceProfile): Command[] {
       },
       {
         code: 'npx --yes --package rapidkit rapidkit mirror verify',
-        description: 'Verify mirrored artifacts and policy compliance (enterprise)',
+        description: 'Verify mirrored artifacts and policy compliance',
       },
     ],
     minimal: [
       {
         code: 'npx --yes --package rapidkit rapidkit setup python',
-        description: 'Validate Python runtime prerequisites (optional for minimal)',
+        description: 'Validate Python runtime prerequisites',
       },
     ],
   };
@@ -183,150 +178,12 @@ function buildWorkspaceCommands(profile: WorkspaceProfile): Command[] {
   return [...common, ...runtimeByProfile[profile]];
 }
 
-export function CommandReference({
-  workspaceProfile = 'minimal',
-  hasActiveWorkspace = false,
-  workspaceName,
-}: CommandReferenceProps) {
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['workspace']));
-  const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
-
-  const operationActions: OperationAction[] = [
-    {
-      title: 'Create',
-      detail: 'Start a new workspace',
-      icon: Rocket,
-      command: 'openWorkspaceModal',
-    },
-    {
-      title: 'Import',
-      detail: 'Folder, local archive, or remote archive',
-      icon: FolderOpen,
-      command: 'importWorkspace',
-    },
-    {
-      title: 'Health',
-      detail: 'Doctor checks and fixes',
-      icon: HeartPulse,
-      command: 'checkWorkspaceHealth',
-      requiresWorkspace: true,
-    },
-    {
-      title: 'Run',
-      detail: 'Test/build/start selected workspace',
-      icon: Play,
-      command: 'workspaceRunTest',
-      requiresWorkspace: true,
-    },
-    {
-      title: 'Contract',
-      detail: 'Service topology and ports',
-      icon: GitBranch,
-      command: 'workspaceContractGraph',
-      requiresWorkspace: true,
-    },
-    {
-      title: 'Archive',
-      detail: 'Inspect, verify, or doctor archive',
-      icon: Archive,
-      command: 'workspaceArchive',
-    },
-    {
-      title: 'Terminal',
-      detail: 'Open at workspace root',
-      icon: Terminal,
-      command: 'workspaceTerminal',
-      requiresWorkspace: true,
-    },
-    {
-      title: 'Release',
-      detail: 'Autopilot release gate',
-      icon: Activity,
-      command: 'workspaceAutopilotRelease',
-      requiresWorkspace: true,
-    },
-  ];
-
-  const guidedSteps: WorkflowStep[] = [
-    {
-      title: 'Create or import a workspace',
-      detail: 'Start from a new workspace, an existing folder, or a verified archive.',
-      command: hasActiveWorkspace ? 'importWorkspace' : 'openWorkspaceModal',
-    },
-    {
-      title: 'Run doctor',
-      detail: 'Check local tools, workspace files, and project readiness.',
-      command: 'checkWorkspaceHealth',
-      requiresWorkspace: true,
-    },
-    {
-      title: 'Initialize contract graph',
-      detail: 'Create or verify the service contract for topology, ports, APIs, and events.',
-      command: 'workspaceContract',
-      requiresWorkspace: true,
-    },
-    {
-      title: 'Run workspace tests',
-      detail: 'Execute the workspace test stage with safety gates.',
-      command: 'workspaceRunTest',
-      requiresWorkspace: true,
-    },
-    {
-      title: 'Share safely',
-      detail: 'Export a full archive or diagnose an incoming archive before import.',
-      command: 'workspaceArchive',
-    },
-  ];
-
-  const intentCommands: IntentCommand[] = [
-    {
-      intent: 'Share a workspace with a teammate',
-      useWhen: 'You need a portable handoff or remote import.',
-      primary: 'Workspace Archive',
-      commands: [
-        'rapidkit workspace export --output team.rapidkit-archive.zip',
-        'rapidkit workspace archive doctor team.rapidkit-archive.zip',
-        'rapidkit workspace hydrate team.rapidkit-archive.zip --output ./team',
-      ],
-    },
-    {
-      intent: 'Understand services and ports',
-      useWhen: 'You need topology, dependencies, APIs, events, or port conflict visibility.',
-      primary: 'Contract Graph',
-      commands: [
-        'rapidkit workspace contract init',
-        'rapidkit workspace contract verify --strict',
-        'rapidkit workspace contract graph',
-      ],
-    },
-    {
-      intent: 'Run the workspace safely',
-      useWhen: 'You want affected/blast-radius execution instead of ad hoc scripts.',
-      primary: 'Workspace Run',
-      commands: [
-        'rapidkit workspace run test --affected --blast-radius',
-        'rapidkit workspace run build --strict',
-        'rapidkit autopilot release --mode enforce',
-      ],
-    },
-    {
-      intent: 'Prepare enterprise/offline workflows',
-      useWhen: 'You need cache, mirror, policy, and reproducible setup checks.',
-      primary: 'Governance',
-      commands: [
-        'rapidkit bootstrap --profile enterprise',
-        'rapidkit mirror sync',
-        'rapidkit mirror verify',
-        'rapidkit workspace policy show',
-      ],
-    },
-  ];
-
-  const workspaceCommands = buildWorkspaceCommands(workspaceProfile);
+function buildCategories(profile: WorkspaceProfile): CommandCategory[] {
+  const workspaceCommands = buildWorkspaceCommands(profile);
   const devCommands: Command[] = [
     {
       code: 'npx --yes --package rapidkit rapidkit doctor workspace --fix',
-      description: 'Run doctor with safe auto-fixes for workspace issues',
+      description: 'Run doctor with safe auto-fixes',
     },
     {
       code: 'npx --yes --package rapidkit rapidkit --version',
@@ -334,11 +191,11 @@ export function CommandReference({
     },
     {
       code: 'npx --yes --package rapidkit rapidkit --help',
-      description: 'Display all available commands and options',
+      description: 'Display all available commands',
     },
     {
       code: 'npx --yes --package rapidkit rapidkit mirror sync',
-      description: 'Sync mirror artifacts for offline/controlled environments',
+      description: 'Sync mirror artifacts for controlled environments',
     },
     {
       code: 'npx --yes --package rapidkit rapidkit mirror verify',
@@ -346,17 +203,17 @@ export function CommandReference({
     },
   ];
 
-  const categories: CommandCategory[] = [
+  return [
     {
       id: 'workspace',
-      title: 'Workspace Commands',
+      title: 'Workspace',
       icon: FolderOpen,
       count: workspaceCommands.length,
       commands: workspaceCommands,
     },
     {
       id: 'project',
-      title: 'Project Commands',
+      title: 'Project',
       icon: Rocket,
       count: 7,
       commands: [
@@ -392,7 +249,7 @@ export function CommandReference({
     },
     {
       id: 'module',
-      title: 'Module Commands',
+      title: 'Module',
       icon: PackageIcon,
       count: 5,
       commands: [
@@ -420,10 +277,155 @@ export function CommandReference({
     },
     {
       id: 'dev',
-      title: 'Development & Utilities',
+      title: 'Development',
       icon: Settings,
       count: devCommands.length,
       commands: devCommands,
+    },
+  ];
+}
+
+export function CommandReference({
+  workspaceProfile = 'minimal',
+  hasActiveWorkspace = false,
+  workspaceName,
+}: CommandReferenceProps) {
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['workspace']));
+  const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
+  const categories = useMemo(() => buildCategories(workspaceProfile), [workspaceProfile]);
+
+  const actions: CommandAction[] = [
+    {
+      id: 'create',
+      title: 'Create',
+      detail: 'New workspace',
+      icon: Rocket,
+      command: 'openWorkspaceModal',
+      tone: 'primary',
+    },
+    {
+      id: 'import',
+      title: 'Import',
+      detail: 'Folder or archive',
+      icon: FolderOpen,
+      command: 'importWorkspace',
+    },
+    {
+      id: 'doctor',
+      title: 'Doctor',
+      detail: 'Readiness scan',
+      icon: HeartPulse,
+      command: 'checkWorkspaceHealth',
+      requiresWorkspace: true,
+    },
+    {
+      id: 'test',
+      title: 'Test',
+      detail: 'Safe run',
+      icon: Play,
+      command: 'workspaceRunTest',
+      requiresWorkspace: true,
+    },
+    {
+      id: 'contract',
+      title: 'Graph',
+      detail: 'Services, ports',
+      icon: GitBranch,
+      command: 'workspaceContractGraph',
+      requiresWorkspace: true,
+    },
+    {
+      id: 'archive',
+      title: 'Archive',
+      detail: 'Share safely',
+      icon: Archive,
+      command: 'workspaceArchive',
+    },
+    {
+      id: 'terminal',
+      title: 'Terminal',
+      detail: 'Workspace root',
+      icon: Terminal,
+      command: 'workspaceTerminal',
+      requiresWorkspace: true,
+    },
+    {
+      id: 'release',
+      title: 'Release',
+      detail: 'Autopilot gate',
+      icon: Activity,
+      command: 'workspaceAutopilotRelease',
+      requiresWorkspace: true,
+    },
+  ];
+
+  const nextRows: WorkflowRow[] = hasActiveWorkspace
+    ? [
+        {
+          title: 'Prove workspace health',
+          detail: 'Run doctor before changing or sharing the workspace.',
+          action: actions[2],
+        },
+        {
+          title: 'Inspect topology',
+          detail: 'Open service graph, port ownership, dependencies, APIs, and events.',
+          action: actions[4],
+        },
+        {
+          title: 'Validate execution',
+          detail: 'Run the selected workspace test path with guardrails.',
+          action: actions[3],
+        },
+        {
+          title: 'Prepare handoff',
+          detail: 'Create or inspect a portable archive before sharing.',
+          action: actions[5],
+        },
+      ]
+    : [
+        {
+          title: 'Create a workspace',
+          detail: 'Start with a deterministic profile and a clean local contract.',
+          action: actions[0],
+        },
+        {
+          title: 'Import existing work',
+          detail: 'Open a folder, local archive, or remote archive URL.',
+          action: actions[1],
+        },
+        {
+          title: 'Doctor an archive',
+          detail: 'Check integrity before importing shared workspace assets.',
+          action: {
+            id: 'archive-doctor',
+            title: 'Doctor Archive',
+            detail: 'Verify first',
+            icon: Archive,
+            command: 'workspaceArchiveDoctor',
+          },
+        },
+      ];
+
+  const workflowRows: WorkflowRow[] = [
+    {
+      title: 'Workspace handoff',
+      detail: 'Export, verify, doctor, and hydrate portable workspace archives.',
+      action: actions[5],
+    },
+    {
+      title: 'Contract registry',
+      detail: 'Keep service ownership, ports, APIs, events, and dependencies explicit.',
+      action: actions[4],
+    },
+    {
+      title: 'Release safety',
+      detail: 'Use workspace tests and autopilot gates before publish or delivery.',
+      action: actions[7],
+    },
+    {
+      title: 'Operator loop',
+      detail: 'Doctor, terminal, policy, and mirror checks from one consistent surface.',
+      action: actions[6],
     },
   ];
 
@@ -445,7 +447,7 @@ export function CommandReference({
     setTimeout(() => setCopiedCommand(null), 2000);
   };
 
-  const runAction = (action: OperationAction | WorkflowStep) => {
+  const runAction = (action: CommandAction) => {
     if (action.requiresWorkspace && !hasActiveWorkspace) {
       vscode.postMessage('openWorkspaceModal');
       return;
@@ -453,284 +455,347 @@ export function CommandReference({
     vscode.postMessage(action.command);
   };
 
+  const renderActionButton = (action: CommandAction) => {
+    const Icon = action.icon;
+    const disabled = action.requiresWorkspace && !hasActiveWorkspace;
+
+    return (
+      <button
+        key={action.id}
+        type="button"
+        onClick={() => runAction(action)}
+        title={disabled ? 'Select a workspace first' : action.detail}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '18px minmax(0, 1fr)',
+          alignItems: 'center',
+          gap: '7px',
+          minHeight: '36px',
+          border: `1px solid ${
+            action.tone === 'primary' ? 'var(--vscode-focusBorder)' : 'var(--vscode-panel-border)'
+          }`,
+          borderRadius: '6px',
+          padding: '7px 9px',
+          background:
+            action.tone === 'primary'
+              ? 'var(--vscode-button-background)'
+              : 'var(--vscode-button-secondaryBackground)',
+          color:
+            action.tone === 'primary'
+              ? 'var(--vscode-button-foreground)'
+              : 'var(--vscode-button-secondaryForeground)',
+          cursor: 'pointer',
+          opacity: disabled ? 0.55 : 1,
+          textAlign: 'left',
+        }}
+      >
+        <Icon size={15} />
+        <span style={{ minWidth: 0 }}>
+          <span style={{ display: 'block', fontSize: '12px', fontWeight: 700 }}>
+            {action.title}
+          </span>
+          <span
+            style={{
+              display: 'block',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontSize: '10.5px',
+              color:
+                action.tone === 'primary'
+                  ? 'var(--vscode-button-foreground)'
+                  : 'var(--vscode-descriptionForeground)',
+            }}
+          >
+            {disabled ? 'Select workspace' : action.detail}
+          </span>
+        </span>
+      </button>
+    );
+  };
+
   return (
     <div className="section command-reference">
-      <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <Copy size={18} style={{ color: '#6C5CE7' }} />
-        Command Reference
-        {hasActiveWorkspace ? (
-          <span
-            className="ws-tag ws-tag--profile"
-            style={{ marginLeft: '6px' }}
-            title="Commands are filtered by the active workspace profile"
-          >
-            {workspaceProfile}
-          </span>
-        ) : (
-          <span
-            className="ws-tag"
-            style={{ marginLeft: '6px' }}
-            title="Select a workspace to see profile-specific command suggestions"
-          >
-            Select workspace
-          </span>
-        )}
-      </div>
-
-      {!hasActiveWorkspace && (
-        <div
-          className="command-hint"
-          style={{
-            marginTop: '8px',
-            marginBottom: '10px',
-            padding: '8px 10px',
-            borderRadius: '6px',
-            border: '1px solid var(--vscode-panel-border)',
-            background: 'var(--vscode-editor-inactiveSelectionBackground)',
-            fontSize: '11px',
-            color: 'var(--vscode-descriptionForeground)',
-          }}
-        >
-          💡 To see profile-specific commands, select a workspace from the{' '}
-          <strong style={{ color: 'var(--vscode-foreground)' }}>WORKSPACES</strong> sidebar panel
-          first.
-        </div>
-      )}
-
-      {hasActiveWorkspace && workspaceName && (
-        <div
-          style={{
-            marginTop: '8px',
-            marginBottom: '10px',
-            fontSize: '11px',
-            color: 'var(--vscode-descriptionForeground)',
-          }}
-        >
-          Workspace: <strong style={{ color: 'var(--vscode-foreground)' }}>{workspaceName}</strong>
-        </div>
-      )}
-
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-          gap: '8px',
-          margin: '12px 0',
-        }}
-      >
-        {operationActions.map((action) => {
-          const Icon = action.icon;
-          const disabled = action.requiresWorkspace && !hasActiveWorkspace;
-          return (
-            <button
-              key={action.command}
-              type="button"
-              onClick={() => runAction(action)}
-              title={disabled ? 'Select a workspace first' : action.detail}
-              style={{
-                border: '1px solid var(--vscode-panel-border)',
-                borderRadius: '6px',
-                padding: '9px',
-                textAlign: 'left',
-                background: disabled
-                  ? 'var(--vscode-editor-inactiveSelectionBackground)'
-                  : 'var(--vscode-button-secondaryBackground)',
-                color: 'var(--vscode-foreground)',
-                cursor: 'pointer',
-                minHeight: '74px',
-              }}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
-                <Icon size={14} />
-                {action.title}
-              </span>
-              <span
-                style={{
-                  display: 'block',
-                  marginTop: '6px',
-                  fontSize: '11px',
-                  color: 'var(--vscode-descriptionForeground)',
-                  lineHeight: 1.35,
-                }}
-              >
-                {disabled ? 'Select workspace first' : action.detail}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div
-        style={{
-          margin: '10px 0',
-          padding: '10px',
+          gap: '12px',
           border: '1px solid var(--vscode-panel-border)',
-          borderRadius: '6px',
-          background: 'var(--vscode-editor-inactiveSelectionBackground)',
+          borderRadius: '8px',
+          background: 'var(--vscode-editor-background)',
+          padding: '12px',
         }}
       >
-        <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '8px' }}>
-          Professional start path
-        </div>
-        <div style={{ display: 'grid', gap: '6px' }}>
-          {guidedSteps.map((step, index) => (
-            <button
-              key={step.title}
-              type="button"
-              onClick={() => runAction(step)}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '22px 1fr',
-                gap: '8px',
-                alignItems: 'start',
-                border: '1px solid transparent',
-                borderRadius: '6px',
-                padding: '7px',
-                background: 'transparent',
-                color: 'var(--vscode-foreground)',
-                textAlign: 'left',
-                cursor: 'pointer',
-              }}
-            >
-              <span
-                style={{
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '50%',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'var(--vscode-badge-background)',
-                  color: 'var(--vscode-badge-foreground)',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                }}
-              >
-                {index + 1}
-              </span>
-              <span>
-                <span style={{ display: 'block', fontSize: '12px', fontWeight: 700 }}>
-                  {step.title}
-                </span>
-                <span
-                  style={{
-                    display: 'block',
-                    marginTop: '2px',
-                    fontSize: '11px',
-                    color: 'var(--vscode-descriptionForeground)',
-                  }}
-                >
-                  {step.requiresWorkspace && !hasActiveWorkspace
-                    ? 'Select a workspace first.'
-                    : step.detail}
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gap: '8px', margin: '10px 0 12px' }}>
-        {intentCommands.map((item) => (
-          <div
-            key={item.intent}
-            style={{
-              border: '1px solid var(--vscode-panel-border)',
-              borderRadius: '6px',
-              padding: '9px',
-              background: 'var(--vscode-editor-background)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Share2 size={13} />
-              <strong style={{ fontSize: '12px' }}>{item.intent}</strong>
-              <span className="ws-tag" style={{ marginLeft: 'auto' }}>
-                {item.primary}
-              </span>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            minWidth: 0,
+          }}
+        >
+          <PanelTopOpen size={17} style={{ color: 'var(--vscode-focusBorder)' }} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              <strong style={{ fontSize: '13px' }}>Command Center</strong>
+              <span className="ws-tag ws-tag--profile">{workspaceProfile}</span>
             </div>
             <div
               style={{
-                marginTop: '4px',
+                marginTop: '2px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
                 fontSize: '11px',
                 color: 'var(--vscode-descriptionForeground)',
               }}
             >
-              {item.useWhen}
+              {hasActiveWorkspace && workspaceName
+                ? `Workspace: ${workspaceName}`
+                : 'No workspace selected. Start with Create or Import.'}
             </div>
-            <div style={{ marginTop: '7px', display: 'grid', gap: '4px' }}>
-              {item.commands.map((command) => (
+          </div>
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              border: '1px solid var(--vscode-panel-border)',
+              borderRadius: '999px',
+              padding: '3px 8px',
+              fontSize: '11px',
+              color: 'var(--vscode-descriptionForeground)',
+            }}
+          >
+            <CheckCircle2 size={13} />
+            Guided
+          </span>
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
+            gap: '7px',
+          }}
+        >
+          {actions.map(renderActionButton)}
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1.05fr) minmax(0, 0.95fr)',
+            gap: '10px',
+          }}
+        >
+          <div
+            style={{
+              border: '1px solid var(--vscode-panel-border)',
+              borderRadius: '7px',
+              overflow: 'hidden',
+              background: 'var(--vscode-editor-inactiveSelectionBackground)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '8px 10px',
+                borderBottom: '1px solid var(--vscode-panel-border)',
+                fontSize: '12px',
+                fontWeight: 700,
+              }}
+            >
+              <Activity size={14} />
+              Next best actions
+            </div>
+            <div style={{ display: 'grid' }}>
+              {nextRows.map((row) => (
                 <button
-                  key={command}
+                  key={row.title}
                   type="button"
-                  onClick={() => copyCommand(command)}
-                  className="command-copy-btn"
+                  onClick={() => runAction(row.action)}
                   style={{
-                    justifyContent: 'space-between',
-                    width: '100%',
-                    fontFamily: 'var(--vscode-editor-font-family)',
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) auto',
+                    gap: '10px',
+                    alignItems: 'center',
+                    border: 0,
+                    borderBottom: '1px solid var(--vscode-panel-border)',
+                    padding: '8px 10px',
+                    background: 'transparent',
+                    color: 'var(--vscode-foreground)',
+                    cursor: 'pointer',
+                    textAlign: 'left',
                   }}
                 >
-                  <span>{simplifyCommandForDisplay(command)}</span>
-                  <Copy size={12} />
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: '12px', fontWeight: 700 }}>
+                      {row.title}
+                    </span>
+                    <span
+                      style={{
+                        display: 'block',
+                        marginTop: '2px',
+                        fontSize: '11px',
+                        color: 'var(--vscode-descriptionForeground)',
+                      }}
+                    >
+                      {row.detail}
+                    </span>
+                  </span>
+                  <span className="ws-tag">{row.action.title}</span>
                 </button>
               ))}
             </div>
           </div>
-        ))}
-      </div>
 
-      {categories.map((category) => {
-        const Icon = category.icon;
-        const isExpanded = expandedCategories.has(category.id);
-
-        return (
-          <div key={category.id} className="command-category">
+          <div
+            style={{
+              border: '1px solid var(--vscode-panel-border)',
+              borderRadius: '7px',
+              overflow: 'hidden',
+              background: 'var(--vscode-editor-inactiveSelectionBackground)',
+            }}
+          >
             <div
-              className={`category-header ${isExpanded ? 'expanded' : ''}`}
-              onClick={() => toggleCategory(category.id)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '8px 10px',
+                borderBottom: '1px solid var(--vscode-panel-border)',
+                fontSize: '12px',
+                fontWeight: 700,
+              }}
             >
-              <div className="category-title">
-                <Icon size={16} className="category-icon-lucide" />
-                <span>{category.title}</span>
-                <span className="category-count">{category.count}</span>
-              </div>
-              <ChevronDown
-                size={16}
-                className="category-toggle"
-                style={{
-                  transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.2s',
-                }}
-              />
+              <Boxes size={14} />
+              Enterprise workflows
             </div>
-            <div className={`category-content ${isExpanded ? 'expanded' : ''}`}>
-              <div className="command-list">
-                {category.commands.map((cmd, index) => (
-                  <div key={index} className="command-item">
-                    <div className="command-header">
-                      <div className="command-code">{simplifyCommandForDisplay(cmd.code)}</div>
-                      <button
-                        className={`command-copy-btn ${copiedCommand === cmd.code ? 'copied' : ''}`}
-                        onClick={() => copyCommand(cmd.code)}
-                        title="Copy command"
+            <div style={{ display: 'grid' }}>
+              {workflowRows.map((row) => {
+                const Icon = row.action.icon;
+                return (
+                  <button
+                    key={row.title}
+                    type="button"
+                    onClick={() => runAction(row.action)}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '17px minmax(0, 1fr)',
+                      gap: '8px',
+                      alignItems: 'start',
+                      border: 0,
+                      borderBottom: '1px solid var(--vscode-panel-border)',
+                      padding: '8px 10px',
+                      background: 'transparent',
+                      color: 'var(--vscode-foreground)',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <Icon
+                      size={14}
+                      style={{ marginTop: '1px', color: 'var(--vscode-focusBorder)' }}
+                    />
+                    <span>
+                      <span style={{ display: 'block', fontSize: '12px', fontWeight: 700 }}>
+                        {row.title}
+                      </span>
+                      <span
+                        style={{
+                          display: 'block',
+                          marginTop: '2px',
+                          fontSize: '11px',
+                          color: 'var(--vscode-descriptionForeground)',
+                          lineHeight: 1.35,
+                        }}
                       >
-                        {copiedCommand === cmd.code ? (
-                          <>✓ Copied!</>
-                        ) : (
-                          <>
-                            <Copy size={12} /> Copy
-                          </>
-                        )}
-                      </button>
-                    </div>
-                    <div className="command-desc">{cmd.description}</div>
-                  </div>
-                ))}
-              </div>
+                        {row.detail}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
-        );
-      })}
+        </div>
+
+        <div style={{ display: 'grid', gap: '8px' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '7px',
+              fontSize: '12px',
+              fontWeight: 700,
+            }}
+          >
+            <Terminal size={14} />
+            CLI Reference
+          </div>
+
+          {categories.map((category) => {
+            const Icon = category.icon;
+            const isExpanded = expandedCategories.has(category.id);
+
+            return (
+              <div key={category.id} className="command-category" style={{ marginBottom: 0 }}>
+                <div
+                  className={`category-header ${isExpanded ? 'expanded' : ''}`}
+                  onClick={() => toggleCategory(category.id)}
+                  style={{ padding: '8px 10px', borderRadius: isExpanded ? '6px 6px 0 0' : '6px' }}
+                >
+                  <div className="category-title" style={{ fontSize: '12px' }}>
+                    <Icon size={14} className="category-icon-lucide" />
+                    <span>{category.title}</span>
+                    <span className="category-count">{category.count}</span>
+                  </div>
+                  <ChevronDown
+                    size={15}
+                    className="category-toggle"
+                    style={{
+                      transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.2s',
+                    }}
+                  />
+                </div>
+                <div className={`category-content ${isExpanded ? 'expanded' : ''}`}>
+                  <div className="command-list" style={{ padding: '8px', gap: '7px' }}>
+                    {category.commands.map((cmd) => (
+                      <div key={cmd.code} className="command-item" style={{ padding: '8px' }}>
+                        <div className="command-header" style={{ marginBottom: '6px' }}>
+                          <div className="command-code" title={cmd.code}>
+                            {simplifyCommandForDisplay(cmd.code)}
+                          </div>
+                          <button
+                            className={`command-copy-btn ${
+                              copiedCommand === cmd.code ? 'copied' : ''
+                            }`}
+                            onClick={() => copyCommand(cmd.code)}
+                            title="Copy command"
+                          >
+                            {copiedCommand === cmd.code ? (
+                              <>Copied</>
+                            ) : (
+                              <>
+                                <Copy size={12} /> Copy
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <div className="command-desc">{cmd.description}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
