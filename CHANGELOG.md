@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-06-02
+
+### Added
+
+* Enterprise Workspai dashboard flow with clearer workspace operations, project build, share/handoff, recent workspace, template, and module browsing sections.
+* Workspace Contract Registry documentation surface with screenshot coverage for sidebar Contract Graph and `workspace.contract.json` inspection.
+* Shared enterprise modal foundation for workspace creation, project creation, module installation, module details, and AI creation flows.
+* Webview error boundary support so dashboard rendering failures can surface recoverable errors instead of blank screens.
+* Updated screenshot inventory, README tour, and media documentation for Marketplace/readme preparation.
+
+### Changed
+
+* Reworked dashboard IA so workspace-level actions, project-level actions, and share/archive flows sit in their correct scopes.
+* Refined Project Actions and Module Browser copy to show selected project/workspace context without exposing local absolute paths.
+* Simplified onboarding and setup entry points around Workspai command-center language.
+* Refreshed modal interaction design with denser enterprise layout, command previews, clearer targets, and consistent footer actions.
+* Updated package metadata version to `0.32.0` across `package.json` and `package-lock.json`.
+* Added safe npm overrides for vulnerable transitive test dependencies while keeping the VS Code test CLI on the current release line.
+
+### Fixed
+
+* Fixed dashboard switch/selection refresh behavior paths covered by the redesigned workspace overview flow.
+* Fixed module install/details surfaces that previously showed workspace paths where project context was expected.
+* Fixed duplicate webview message-case behavior encountered during dashboard/modal integration.
+* Cleared npm audit findings for the release package without using `npm audit fix --force`.
+
+### Verification
+
+* `./node_modules/.bin/tsc --noEmit`
+* `node esbuild.js` from `webview-ui`
+* `npm audit --json` reports 0 vulnerabilities
+* `git diff --check`
+
 ## [0.31.0] - 2026-05-31
 
 ### Added
@@ -2059,7 +2092,14 @@ Thank you for using RapidKit! 🚀
 
 ---
 
-[Unreleased]: https://github.com/rapidkitlabs/rapidkit-vscode/compare/v0.24.1...HEAD
+[Unreleased]: https://github.com/rapidkitlabs/rapidkit-vscode/compare/v0.32.0...HEAD
+[0.32.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.32.0
+[0.31.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.31.0
+[0.30.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.30.0
+[0.29.1]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.29.1
+[0.29.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.29.0
+[0.28.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.28.0
+[0.27.3]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.27.3
 [0.24.1]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.24.1
 [0.24.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.24.0
 [0.18.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.18.0

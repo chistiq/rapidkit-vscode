@@ -1,5 +1,29 @@
 # Release Notes
 
+## v0.32.0 (June 2, 2026)
+
+### ✦ Enterprise Workspai Dashboard and Workspace Contract Release
+
+Summary:
+- Redesign the Workspai dashboard as an enterprise command center for governed workspace operations.
+- Add a contract-first workspace graph surface covering services, ports, dependencies, events, and contract file inspection.
+- Align workspace archive, import, export, verify, and handoff flows with the npm workspace archive contract.
+- Redesign core workspace, project, module install, module details, and AI creation modals with a consistent enterprise modal system.
+- Refresh README and media documentation with the new dashboard, modal, module, and contract registry screenshots.
+
+Highlights:
+- Dashboard now separates workspace operations, project build actions, share/handoff actions, recent workspaces, templates, and module browsing with clearer scope boundaries.
+- Project actions now focus on project-level operations and avoid showing workspace-local absolute paths in user-facing module surfaces.
+- Added resilient webview error handling to prevent blank dashboard failures from hiding actionable recovery paths.
+- Added updated screenshot set including `workspai-screenshot-9.png` for the Workspace Contract Registry documentation.
+- Cleared npm audit findings with safe dependency updates and targeted transitive overrides for vulnerable test-cli dependencies.
+
+Validation:
+- `./node_modules/.bin/tsc --noEmit` passed during the release preparation window.
+- `node esbuild.js` passed in `webview-ui`.
+- `npm audit --json` reports 0 vulnerabilities.
+- `git diff --check` passed.
+
 ## v0.31.0 (May 31, 2026)
 
 ### ✦ Stable Analyze Integration and Incident Studio Reuse
