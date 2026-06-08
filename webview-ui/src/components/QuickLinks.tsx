@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { MessageSquarePlus, Sparkles } from 'lucide-react';
 
 interface QuickLinksProps {
-    onOpenProjectModal: (framework: 'fastapi' | 'nestjs' | 'go' | 'springboot', kitName?: string) => void;
+    onOpenProjectModal: (framework: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet', kitName?: string) => void;
 }
 
 const POLL_OPTIONS = ['Django', 'Express', 'Ruby on Rails', 'Laravel'] as const;
@@ -11,11 +11,12 @@ export function QuickLinks({ onOpenProjectModal }: QuickLinksProps) {
     const [voted, setVoted] = useState<string | null>(null);
 
     const links: Array<{
-        framework: 'fastapi' | 'nestjs' | 'go' | 'springboot';
+        framework: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
         className: string;
         title: string;
         subtitle: string;
-        icon: string;
+        icon?: string;
+        monogram: string;
         alt: string;
     }> = [
             {
@@ -24,6 +25,7 @@ export function QuickLinks({ onOpenProjectModal }: QuickLinksProps) {
                 title: 'FastAPI',
                 subtitle: 'Python + Async',
                 icon: (window as any).FASTAPI_ICON_URI,
+                monogram: 'Py',
                 alt: 'FastAPI'
             },
             {
@@ -32,6 +34,7 @@ export function QuickLinks({ onOpenProjectModal }: QuickLinksProps) {
                 title: 'NestJS',
                 subtitle: 'TypeScript + DI',
                 icon: (window as any).NESTJS_ICON_URI,
+                monogram: 'TS',
                 alt: 'NestJS'
             },
             {
@@ -40,6 +43,7 @@ export function QuickLinks({ onOpenProjectModal }: QuickLinksProps) {
                 title: 'Go',
                 subtitle: 'Go + High Perf',
                 icon: (window as any).GO_ICON_URI,
+                monogram: 'Go',
                 alt: 'Go'
             },
             {
@@ -48,7 +52,16 @@ export function QuickLinks({ onOpenProjectModal }: QuickLinksProps) {
                 title: 'Spring Boot',
                 subtitle: 'Java + Spring',
                 icon: (window as any).SPRINGBOOT_ICON_URI,
+                monogram: 'JVM',
                 alt: 'Spring Boot'
+            },
+            {
+                framework: 'dotnet',
+                className: 'dotnet',
+                title: '.NET',
+                subtitle: 'C# + Web API',
+                monogram: '.NET',
+                alt: '.NET'
             }
         ];
 
@@ -62,7 +75,7 @@ export function QuickLinks({ onOpenProjectModal }: QuickLinksProps) {
                     build with AI
                 </span>
             </div>
-            <div className="quick-links" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+            <div className="quick-links" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))', gap: '12px' }}>
                 {links.map((link) => (
                     <button
                         key={link.framework}
@@ -72,7 +85,7 @@ export function QuickLinks({ onOpenProjectModal }: QuickLinksProps) {
                         aria-label={`Create ${link.title} project`}
                     >
                         <span className="quick-link-icon" aria-hidden="true">
-                            <img src={link.icon} alt={link.alt} />
+                            {link.icon ? <img src={link.icon} alt={link.alt} /> : <span>{link.monogram}</span>}
                         </span>
                         <div className="quick-link-title">{link.title}</div>
                         <div className="quick-link-subtitle">{link.subtitle}</div>

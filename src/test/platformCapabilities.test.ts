@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildNpxRapidkitArgs,
   buildRapidkitCommand,
   buildShellCommand,
   detectPlatformKind,
@@ -54,6 +55,17 @@ describe('platformCapabilities', () => {
     expect(buildRapidkitCommand(['create', 'workspace', 'my folder'], 'linux')).toBe(
       "npx --yes --package rapidkit rapidkit create workspace 'my folder'"
     );
+  });
+
+  it('builds the pinned npx rapidkit argument contract for extension host calls', () => {
+    expect(buildNpxRapidkitArgs(['doctor', 'workspace'])).toEqual([
+      '--yes',
+      '--package',
+      'rapidkit',
+      'rapidkit',
+      'doctor',
+      'workspace',
+    ]);
   });
 
   it('keeps scenario command matrix stable across linux/macos/windows', () => {

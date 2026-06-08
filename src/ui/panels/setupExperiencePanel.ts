@@ -10,6 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { runCommandsInTerminal, runRapidkitCommandsInTerminal } from '../../utils/terminalExecutor';
 import { run } from '../../utils/exec';
+import { buildNpxRapidkitArgs } from '../../utils/platformCapabilities';
 
 const SETUP_PREFERENCES_KEY = 'workspai.setup.preferences';
 
@@ -1130,7 +1131,7 @@ export class SetupPanel {
     // Check if rapidkit is available via npx (even if not globally installed)
     if (!status.npmInstalled) {
       try {
-        const npxResult = await execa('npx', ['rapidkit', '--version'], {
+        const npxResult = await execa('npx', buildNpxRapidkitArgs(['--version']), {
           shell: status.isWindows,
           timeout: 5000,
           reject: false,
@@ -1144,8 +1145,8 @@ export class SetupPanel {
             status.npmLocation = 'npx (not global)';
             status.detections.cli = {
               source: 'fallback',
-              command: 'npx rapidkit --version',
-              note: 'CLI available via npx cache rather than a global install.',
+              command: 'npx --yes --package rapidkit rapidkit --version',
+              note: 'CLI available through the pinned npm package wrapper rather than a global install.',
             };
           }
         }

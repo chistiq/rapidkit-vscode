@@ -5,7 +5,7 @@
  * VerifyPackOutputContract to the workspace's `.rapidkit/reports/` directory.
  *
  * This closes the workspace-readiness blocker:
- *   `npx rapidkit readiness` requires `*verify-pack-contract*.json` to exist in
+ *   `npx --yes --package rapidkit rapidkit readiness` requires `*verify-pack-contract*.json` to exist in
  *   `.rapidkit/reports/`.  The extension generates this artifact via the sandbox
  *   simulation engine and writes it to the canonical location so the CLI gate
  *   can evaluate it.

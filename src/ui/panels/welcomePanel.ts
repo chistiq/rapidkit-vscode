@@ -223,7 +223,7 @@ export class WelcomePanel {
    */
   public static openProjectModal(
     context: vscode.ExtensionContext,
-    framework: 'fastapi' | 'nestjs' | 'go' | 'springboot'
+    framework: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet'
   ): void {
     // Dashboard-scoped modal: always target dashboard panel if available.
     if (WelcomePanel._dashboardPanel?._isReady) {
@@ -1429,12 +1429,11 @@ export class WelcomePanel {
           }
           case 'showModuleDetails':
             if (message.data) {
-              const moduleId = message.data;
-              const moduleData = MODULES.find((m) => m.id === moduleId || m.slug === moduleId);
+              const moduleData = this._resolveModuleDetailsInput(message.data);
               if (moduleData) {
                 await this._showModuleDetails(moduleData);
               } else {
-                console.error('Module not found:', moduleId);
+                console.error('Module not found:', message.data);
               }
             }
             break;
@@ -1512,14 +1511,47 @@ export class WelcomePanel {
           case 'workspaceBootstrap':
             await vscode.commands.executeCommand('workspai.workspaceBootstrap');
             break;
+          case 'workspaceRunInit':
+            await vscode.commands.executeCommand('workspai.workspaceRunInit');
+            break;
           case 'workspaceRunTest':
             await vscode.commands.executeCommand('workspai.workspaceRunTest');
+            break;
+          case 'workspaceRunBuild':
+            await vscode.commands.executeCommand('workspai.workspaceRunBuild');
+            break;
+          case 'workspaceRunStart':
+            await vscode.commands.executeCommand('workspai.workspaceRunStart');
+            break;
+          case 'workspaceAnalyze':
+            await vscode.commands.executeCommand('workspai.workspaceAnalyze');
             break;
           case 'workspaceAutopilotRelease':
             await vscode.commands.executeCommand('workspai.workspaceAutopilotRelease');
             break;
+          case 'workspaceSnapshot':
+            await vscode.commands.executeCommand('workspai.workspaceSnapshot');
+            break;
+          case 'workspaceSnapshotCreate':
+            await vscode.commands.executeCommand('workspai.workspaceSnapshotCreate');
+            break;
+          case 'workspaceSnapshotList':
+            await vscode.commands.executeCommand('workspai.workspaceSnapshotList');
+            break;
+          case 'workspaceSnapshotInspect':
+            await vscode.commands.executeCommand('workspai.workspaceSnapshotInspect');
+            break;
+          case 'workspaceSnapshotRestore':
+            await vscode.commands.executeCommand('workspai.workspaceSnapshotRestore');
+            break;
           case 'workspaceContract':
             await vscode.commands.executeCommand('workspai.workspaceContract');
+            break;
+          case 'workspaceContractInit':
+            await vscode.commands.executeCommand('workspai.workspaceContractInit');
+            break;
+          case 'workspaceContractInspect':
+            await vscode.commands.executeCommand('workspai.workspaceContractInspect');
             break;
           case 'workspaceContractGraph':
             await vscode.commands.executeCommand('workspai.workspaceContractGraph');
@@ -1530,11 +1562,20 @@ export class WelcomePanel {
           case 'workspaceArchive':
             await vscode.commands.executeCommand('workspai.workspaceArchive');
             break;
+          case 'workspaceArchiveInspect':
+            await vscode.commands.executeCommand('workspai.workspaceArchiveInspect');
+            break;
           case 'workspaceArchiveDoctor':
             await vscode.commands.executeCommand('workspai.workspaceArchiveDoctor');
             break;
           case 'workspaceArchiveVerify':
             await vscode.commands.executeCommand('workspai.workspaceArchiveVerify');
+            break;
+          case 'workspaceShare':
+            await vscode.commands.executeCommand('workspai.exportWorkspaceShareBundle');
+            break;
+          case 'workspaceImportShare':
+            await vscode.commands.executeCommand('workspai.importWorkspaceShareBundle');
             break;
           case 'workspacePolicyShow':
             await vscode.commands.executeCommand('workspai.workspacePolicyShow');
@@ -1678,7 +1719,7 @@ export class WelcomePanel {
                   let finalCommand = inlineCommand;
                   const normalizedCommand = inlineCommand.replace(/\s+/g, ' ').trim();
                   const isWorkspaceScopedRapidkitCommand =
-                    /^(?:(?:npx\s+(?:(?:--yes\s+--package\s+rapidkit\s+)?rapidkit))|rapidkit|poetry\s+run\s+rapidkit|\.\/\.venv\/bin\/rapidkit|\.\/rapidkit)\s+(?:create(?:\s+workspace|\s+project)?|bootstrap\b|setup\b|workspace\b|cache\b|mirror\b|readiness\b|doctor\s+workspace\b|autopilot\s+release\b)/.test(
+                    /^(?:(?:npx\s+(?:(?:--yes\s+--package\s+rapidkit\s+)?rapidkit))|rapidkit|poetry\s+run\s+rapidkit|\.\/\.venv\/bin\/rapidkit|\.\/rapidkit)\s+(?:create(?:\s+workspace|\s+project)?|bootstrap\b|setup\b|workspace\b|cache\b|mirror\b|readiness\b|analyze\b|import\b|snapshot\b|project\s+(?:archive|archives|restore|delete)\b|doctor(?:\s+(?:workspace|project))?\b|autopilot\s+release\b)/.test(
                       normalizedCommand
                     );
                   const effectiveCwd =
@@ -1973,6 +2014,18 @@ export class WelcomePanel {
     }
 
     const panel = this._panel;
+    if (fw !== 'fastapi' && fw !== 'nestjs') {
+      panel.webview.postMessage({
+        command: 'aiModuleSuggestions',
+        data: {
+          loading: false,
+          suggestions: [],
+          error: 'AI module suggestions are available only for FastAPI and NestJS projects.',
+        },
+      });
+      return;
+    }
+
     try {
       const { selectModelWithPreference } = await import('../../core/aiService.js');
       const { model, modelId } = await selectModelWithPreference();
@@ -2847,15 +2900,17 @@ No markdown, no explanation outside the JSON.`;
       '/usr/local/gradle/bin/gradle',
     ].filter(Boolean);
 
-    const [javaResult, mavenResult, gradleResult] = await Promise.all([
+    const [javaResult, mavenResult, gradleResult, dotnetResult] = await Promise.all([
       probeBinaryWithFallbacks('java', ['-version'], javaFallbacks),
       probeBinaryWithFallbacks('mvn', ['--version'], mavenFallbacks),
       probeBinaryWithFallbacks('gradle', ['--version'], gradleFallbacks),
+      probeBinaryWithFallbacks('dotnet', ['--version']),
     ]);
 
     const javaAvailable = javaResult.available;
     const mavenAvailable = mavenResult.available;
     const gradleAvailable = gradleResult.available;
+    const dotnetAvailable = dotnetResult.available;
 
     this._panel.webview.postMessage({
       command: 'workspaceToolStatus',
@@ -2867,6 +2922,7 @@ No markdown, no explanation outside the JSON.`;
         javaAvailable,
         mavenAvailable,
         gradleAvailable,
+        dotnetAvailable,
         preferredInstallMethod,
       },
     });
@@ -2990,12 +3046,34 @@ No markdown, no explanation outside the JSON.`;
       { framework: 'nestjs', file: path.join(workspacePath, 'src', 'main.ts') },
       { framework: 'go', file: path.join(workspacePath, 'go.mod') },
       { framework: 'springboot', file: path.join(workspacePath, 'pom.xml') },
+      {
+        framework: 'dotnet',
+        file: path.join(workspacePath, `${path.basename(workspacePath)}.csproj`),
+      },
+      {
+        framework: 'dotnet',
+        file: path.join(workspacePath, `${path.basename(workspacePath)}.sln`),
+      },
     ];
 
     for (const check of checks) {
       if (await fs.pathExists(check.file)) {
         return check.framework;
       }
+    }
+
+    try {
+      const entries = await fs.readdir(workspacePath, { withFileTypes: true });
+      if (
+        entries.some(
+          (entry) =>
+            entry.isFile() && (entry.name.endsWith('.csproj') || entry.name.endsWith('.sln'))
+        )
+      ) {
+        return 'dotnet';
+      }
+    } catch {
+      // fall through to scoped project detection
     }
 
     const scopedProject = await this._resolveScopedProjectForWorkspace({ workspacePath });
@@ -8875,6 +8953,81 @@ No markdown, no explanation outside the JSON.`;
     await this._refreshModulesCatalog();
   }
 
+  private _resolveModuleDetailsInput(input: unknown): ModuleData | null {
+    if (typeof input === 'object' && input !== null && !Array.isArray(input)) {
+      const record = input as Partial<ModuleData> & { display_name?: unknown };
+      const slug = typeof record.slug === 'string' && record.slug.trim() ? record.slug : undefined;
+      const id =
+        typeof record.id === 'string' && record.id.trim()
+          ? record.id
+          : slug?.split('/').filter(Boolean).pop();
+      const displayName =
+        typeof record.display_name === 'string' && record.display_name.trim()
+          ? record.display_name
+          : undefined;
+      const name =
+        typeof record.name === 'string' && record.name.trim()
+          ? record.name
+          : displayName || id || slug;
+
+      if (!id && !slug && !name) {
+        return null;
+      }
+
+      return {
+        ...record,
+        id: id || name || slug || 'unknown',
+        name: name || id || slug || 'Unknown module',
+        display_name: displayName || name || id || slug || 'Unknown module',
+        version:
+          typeof record.version === 'string' && record.version.trim() ? record.version : '0.0.0',
+        category:
+          typeof record.category === 'string' && record.category.trim()
+            ? record.category
+            : slug?.split('/').filter(Boolean)[1] || 'unknown',
+        icon: typeof record.icon === 'string' && record.icon.trim() ? record.icon : '📦',
+        description: typeof record.description === 'string' ? record.description : '',
+        status:
+          record.status === 'beta' || record.status === 'experimental' || record.status === 'stable'
+            ? record.status
+            : 'stable',
+        dependencies: Array.isArray(record.dependencies)
+          ? record.dependencies.filter((value): value is string => typeof value === 'string')
+          : undefined,
+        tags: Array.isArray(record.tags)
+          ? record.tags.filter((value): value is string => typeof value === 'string')
+          : undefined,
+        slug: slug || id || name || 'unknown',
+      } as ModuleData;
+    }
+
+    if (typeof input !== 'string' || !input.trim()) {
+      return null;
+    }
+
+    const moduleId = input.trim();
+    const moduleData =
+      this._modulesCatalog.find((m) => m.id === moduleId || m.slug === moduleId) ||
+      MODULES.find((m) => m.id === moduleId || m.slug === moduleId);
+
+    if (moduleData) {
+      return moduleData;
+    }
+
+    const parts = moduleId.split('/').filter(Boolean);
+    return {
+      id: parts[parts.length - 1] || moduleId,
+      name: parts[parts.length - 1] || moduleId,
+      version: '0.0.0',
+      category: parts.length >= 3 ? parts[1] : 'unknown',
+      icon: '📦',
+      description: '',
+      status: 'stable',
+      tags: [],
+      slug: moduleId,
+    };
+  }
+
   private async _refreshModulesCatalog(): Promise<void> {
     try {
       const service = ModulesCatalogService.getInstance();
@@ -8914,7 +9067,7 @@ No markdown, no explanation outside the JSON.`;
     const hasWorkspace = selectedWorkspace !== null;
     let hasProjectSelected = false;
     let installedModules: { slug: string; version: string; display_name: string }[] = [];
-    let projectType: 'fastapi' | 'nestjs' | 'go' | 'springboot' | undefined;
+    let projectType: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet' | undefined;
 
     if (!selectedWorkspace) {
       WelcomePanel._selectedProject = null;
@@ -8981,6 +9134,7 @@ No markdown, no explanation outside the JSON.`;
         nestjs?: number;
         springboot?: number;
         go?: number;
+        dotnet?: number;
       };
       bootstrapProfile?:
         | 'minimal'
@@ -9011,7 +9165,13 @@ No markdown, no explanation outside the JSON.`;
             let lastModified: number | undefined;
             let projectCount: number | undefined;
             let projectStats:
-              | { fastapi?: number; nestjs?: number; springboot?: number; go?: number }
+              | {
+                  fastapi?: number;
+                  nestjs?: number;
+                  springboot?: number;
+                  go?: number;
+                  dotnet?: number;
+                }
               | undefined;
             try {
               const stats = await fs.stat(ws.path);
@@ -9019,7 +9179,7 @@ No markdown, no explanation outside the JSON.`;
 
               // Detect projects in workspace root (not projects/ subfolder!)
               const entries = await fs.readdir(ws.path, { withFileTypes: true });
-              const stats_counter = { fastapi: 0, nestjs: 0, springboot: 0, go: 0 };
+              const stats_counter = { fastapi: 0, nestjs: 0, springboot: 0, go: 0, dotnet: 0 };
               let count = 0;
 
               for (const entry of entries) {
@@ -9043,6 +9203,8 @@ No markdown, no explanation outside the JSON.`;
                       stats_counter.springboot++;
                     } else if (type === 'go') {
                       stats_counter.go++;
+                    } else if (type === 'dotnet') {
+                      stats_counter.dotnet++;
                     }
                   }
                   // Fallback: Check for FastAPI project
@@ -9063,6 +9225,13 @@ No markdown, no explanation outside the JSON.`;
                   else if (await fs.pathExists(path.join(projectPath, 'go.mod'))) {
                     count++;
                     stats_counter.go++;
+                  }
+                  // Fallback: Check for .NET project
+                  else if (
+                    (await WelcomePanel._detectProjectTypeStatic(projectPath)) === 'dotnet'
+                  ) {
+                    count++;
+                    stats_counter.dotnet++;
                   }
                   // Fallback: Check for NestJS project
                   else if (await fs.pathExists(path.join(projectPath, 'package.json'))) {
@@ -9088,6 +9257,7 @@ No markdown, no explanation outside the JSON.`;
                       springboot:
                         stats_counter.springboot > 0 ? stats_counter.springboot : undefined,
                       go: stats_counter.go > 0 ? stats_counter.go : undefined,
+                      dotnet: stats_counter.dotnet > 0 ? stats_counter.dotnet : undefined,
                     }
                   : undefined;
             } catch (err) {
@@ -9218,13 +9388,13 @@ No markdown, no explanation outside the JSON.`;
 
   private async _detectProjectType(
     projectPath: string
-  ): Promise<'fastapi' | 'nestjs' | 'go' | 'springboot' | null> {
+  ): Promise<'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet' | null> {
     return WelcomePanel._detectProjectTypeStatic(projectPath);
   }
 
   static async _detectProjectTypeStatic(
     projectPath: string
-  ): Promise<'fastapi' | 'nestjs' | 'go' | 'springboot' | null> {
+  ): Promise<'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet' | null> {
     try {
       // Check for Go indicators
       const goModPath = path.join(projectPath, 'go.mod');
@@ -9242,6 +9412,16 @@ No markdown, no explanation outside the JSON.`;
         (await fs.pathExists(gradleKtsPath))
       ) {
         return 'springboot';
+      }
+
+      const entries = await fs.readdir(projectPath, { withFileTypes: true }).catch(() => []);
+      if (
+        entries.some(
+          (entry) =>
+            entry.isFile() && (entry.name.endsWith('.csproj') || entry.name.endsWith('.sln'))
+        )
+      ) {
+        return 'dotnet';
       }
 
       // Check for FastAPI indicators

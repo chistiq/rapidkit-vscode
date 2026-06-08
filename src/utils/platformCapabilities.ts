@@ -63,6 +63,10 @@ export function buildRapidkitCommand(
   );
 }
 
+export function buildNpxRapidkitArgs(args: string[] = []): string[] {
+  return ['--yes', '--package', 'rapidkit', 'rapidkit', ...args];
+}
+
 export function getWorkspaceVenvRapidkitCandidates(workspacePath: string): string[] {
   return [
     path.join(workspacePath, '.venv', 'bin', 'rapidkit'),

@@ -1,6 +1,6 @@
 /**
  * Add Module Command
- * Add a module to an existing Workspai project via npx rapidkit add module <module-slug>
+ * Add a module to an existing Workspai project via npx --yes --package rapidkit rapidkit add module <module-slug>
  * Requires an active/selected project: right-click project in Projects panel, or open project folder.
  *
  * Project target is never persisted: it is always derived from current context at invocation time

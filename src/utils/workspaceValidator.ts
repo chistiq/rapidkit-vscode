@@ -58,7 +58,7 @@ export async function validateWorkspace(workspacePath: string): Promise<Workspac
       } else {
         result.errors.push('Workspace does not have a virtual environment (.venv not found)');
         result.warnings.push(
-          'Run "npx rapidkit" in the workspace directory to create a proper environment'
+          'Run "npx --yes --package rapidkit rapidkit" in the workspace directory to create a proper environment'
         );
         return result;
       }

@@ -283,7 +283,7 @@ describe('chatParticipant', () => {
         missing: ['workspace.path'],
         clarificationNeeded: true,
         clarificationReason:
-          'No workspace or project evidence is available. Please select a workspace and run `npx rapidkit doctor workspace` to generate evidence.',
+          'No workspace or project evidence is available. Please select a workspace and run `npx --yes --package rapidkit rapidkit doctor workspace` to generate evidence.',
       },
     });
 

@@ -6,6 +6,7 @@
 import * as vscode from 'vscode';
 import { run } from './exec';
 import { Logger } from './logger';
+import { buildNpxRapidkitArgs } from './platformCapabilities';
 
 /**
  * Check if this is user's first time using Workspai extension
@@ -15,7 +16,7 @@ export async function isFirstTimeSetup(): Promise<boolean> {
 
   // Check if rapidkit npm is available (cached by npx)
   try {
-    const result = await run('npx', ['rapidkit', '--version'], {
+    const result = await run('npx', buildNpxRapidkitArgs(['--version']), {
       timeout: 3000,
       stdio: 'pipe',
     });

@@ -127,6 +127,8 @@ const MODULE_SUPPORT_DISABLED_FRAMEWORKS = new Set([
   'gogin.standard',
   'springboot',
   'springboot.standard',
+  'dotnet',
+  'dotnet.webapi.clean',
 ]);
 
 function frameworkSupportsModules(framework: string | undefined, kit: string | undefined): boolean {
@@ -186,11 +188,14 @@ export function detectPersonaFromEvidence(
     return 'midlevel';
   }
 
-  // Go/Spring projects with many production deps → experienced user
+  // Go/Spring/.NET projects with many production deps → experienced user
   // (these kits have no module marketplace so dep count is the signal)
   const kit = scanned?.kit ?? '';
   const isNonModuleKit =
-    kit === 'gofiber.standard' || kit === 'gogin.standard' || kit === 'springboot.standard';
+    kit === 'gofiber.standard' ||
+    kit === 'gogin.standard' ||
+    kit === 'springboot.standard' ||
+    kit === 'dotnet.webapi.clean';
   if (isNonModuleKit) {
     const depCount = scanned?.productionDeps?.length ?? 0;
     if (depCount >= 10) {

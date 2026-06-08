@@ -11,7 +11,7 @@ export type AICreateProfile =
     | 'polyglot'
     | 'enterprise';
 
-export type AICreateFramework = 'fastapi' | 'nestjs' | 'go' | 'springboot';
+export type AICreateFramework = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
 
 export interface AICreationPlan {
     type: 'workspace' | 'project';
@@ -317,6 +317,29 @@ const PROJECT_PRESET_CATEGORIES: Record<AICreateFramework, PresetCategory[]> = {
             ],
         },
     ],
+    dotnet: [
+        {
+            id: 'dotnet-core',
+            label: '.NET core',
+            options: [
+                {
+                    id: 'dn-clean-api',
+                    text: 'Clean architecture Web API with controllers and services',
+                    tags: ['dotnet', 'csharp', 'webapi', 'clean-architecture', 'api'],
+                },
+                {
+                    id: 'dn-crud',
+                    text: '.NET CRUD API with validation and health checks',
+                    tags: ['dotnet', 'crud', 'validation', 'health', 'webapi'],
+                },
+                {
+                    id: 'dn-enterprise',
+                    text: 'Enterprise .NET service with layered boundaries',
+                    tags: ['dotnet', 'enterprise', 'layers', 'service', 'architecture'],
+                },
+            ],
+        },
+    ],
 };
 
 function tokenizeContextHint(raw: string): string[] {
@@ -393,6 +416,7 @@ const FRAMEWORK_META: Record<AICreateFramework, { icon: string; iconUri?: string
         label: 'Spring Boot',
         color: '#6db33f',
     },
+    dotnet: { icon: '.NET', label: '.NET', color: '#512bd4' },
 };
 
 const MODULE_LABELS: Record<string, string> = {
@@ -834,13 +858,15 @@ export function AICreateModal({
                         </div>
 
                         {/* Suggested modules */}
-                        {plan.framework === 'go' || plan.framework === 'springboot' ? (
+                        {plan.framework === 'go' || plan.framework === 'springboot' || plan.framework === 'dotnet' ? (
                             <div className="ai-create-go-no-modules">
                                 <span>ℹ️</span>
                                 <span>
                                     {plan.framework === 'go'
                                         ? 'Go projects do not use the RapidKit module system. Extend functionality with native Go packages and internal adapters after creation.'
-                                        : 'Spring Boot projects do not use the RapidKit module system. Extend functionality with native Spring starters/libraries and internal adapters after creation.'}
+                                        : plan.framework === 'dotnet'
+                                            ? '.NET projects do not use the RapidKit module system. Extend functionality with native NuGet packages and internal adapters after creation.'
+                                            : 'Spring Boot projects do not use the RapidKit module system. Extend functionality with native Spring starters/libraries and internal adapters after creation.'}
                                 </span>
                             </div>
                         ) : plan.suggestedModules.length > 0 && (

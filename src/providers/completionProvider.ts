@@ -38,10 +38,10 @@ export class WorkspaiCompletionProvider implements vscode.CompletionItemProvider
     );
     frameworkItem.detail = 'Framework type';
     frameworkItem.documentation = new vscode.MarkdownString(
-      'Specify the framework: `fastapi`, `nestjs`, `go`, or `springboot`'
+      'Specify the framework: `fastapi`, `nestjs`, `go`, `springboot`, or `dotnet`'
     );
     frameworkItem.insertText = new vscode.SnippetString(
-      '"framework": "${1|fastapi,nestjs,go,springboot|}"'
+      '"framework": "${1|fastapi,nestjs,go,springboot,dotnet|}"'
     );
     items.push(frameworkItem);
 

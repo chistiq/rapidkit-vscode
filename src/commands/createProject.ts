@@ -21,7 +21,7 @@ type CliExecutionResult = {
 
 export async function createProjectCommand(
   selectedWorkspacePath?: string,
-  preselectedFramework?: 'fastapi' | 'nestjs' | 'go' | 'springboot',
+  preselectedFramework?: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet',
   projectName?: string,
   kitName?: string
 ) {

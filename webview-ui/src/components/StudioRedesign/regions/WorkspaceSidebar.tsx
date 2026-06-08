@@ -70,7 +70,7 @@ const ACTION_MATRIX: ActionMatrixEntry[] = [
     {
         id: 'action-doctor',
         title: 'Run Doctor',
-        command: 'rapidkit doctor',
+        command: 'npx --yes --package rapidkit rapidkit doctor workspace',
         scope: 'workspace',
         stability: 'stable',
         description: 'Baseline health and structure evidence.',

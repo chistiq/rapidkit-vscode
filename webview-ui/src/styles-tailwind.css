@@ -626,6 +626,12 @@
     @apply w-6 h-6 mx-auto;
   }
 
+  .quick-link-icon span {
+    @apply mx-auto grid h-6 w-10 place-items-center rounded border text-[10px] font-bold;
+    border-color: var(--vscode-panel-border);
+    color: var(--vscode-foreground);
+  }
+
   .quick-link-title {
     @apply text-xs font-semibold mb-1;
   }
@@ -1073,6 +1079,20 @@
     width: 16px;
     height: 16px;
     flex: 0 0 auto;
+  }
+
+  .enterprise-framework-monogram {
+    width: 24px;
+    height: 16px;
+    flex: 0 0 auto;
+    display: inline-grid;
+    place-items: center;
+    border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 80%, transparent);
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 800;
+    color: var(--vscode-foreground);
+    background: color-mix(in srgb, var(--vscode-editor-background) 70%, transparent);
   }
 
   .enterprise-framework-grid-wide {

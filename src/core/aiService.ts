@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { Logger } from '../utils/logger';
 import { ModulesCatalogService } from './modulesCatalogService';
 import { run } from '../utils/exec';
+import { buildNpxRapidkitArgs } from '../utils/platformCapabilities';
 import { sanitizePromptText } from '../utils/promptSecurity';
 import {
   buildDirTree,
@@ -326,6 +327,7 @@ export type RapidKitType =
   | 'gofiber.standard'
   | 'gogin.standard'
   | 'springboot.standard'
+  | 'dotnet.webapi.clean'
   | 'unknown';
 
 export interface InstalledModule {
@@ -356,7 +358,7 @@ export interface ScannedProjectContext {
   runtime: string | null;
   engine: string | null;
   pythonVersion: string | null;
-  /** Java version (from pom.xml <java.version>) or Go version (from go.mod). */
+  /** Java version, Go version, or .NET target framework detected from native project files. */
   runtimeVersion: string | null;
   rapidkitCoreVersion: string | null;
   rapidkitCliVersion: string | null;
@@ -440,6 +442,48 @@ function extractJavaVersionFromPom(pomXml: string): string | null {
   }
 
   return null;
+}
+
+function extractDotnetPackageRefs(csprojXml: string): string[] {
+  if (!csprojXml.trim()) {
+    return [];
+  }
+
+  const sanitized = csprojXml.replace(/<!--([\s\S]*?)-->/g, '');
+  const deps = new Set<string>();
+  const packageRefs = [
+    ...sanitized.matchAll(/<PackageReference\b([^>]*)\/?>/gi),
+    ...sanitized.matchAll(/<PackageReference\b([^>]*)>([\s\S]*?)<\/PackageReference>/gi),
+  ];
+
+  for (const entry of packageRefs) {
+    const attrs = entry[1] ?? '';
+    const body = entry[2] ?? '';
+    const include =
+      attrs.match(/\bInclude=["']([^"']+)["']/i)?.[1] ??
+      attrs.match(/\bUpdate=["']([^"']+)["']/i)?.[1];
+    if (!include) {
+      continue;
+    }
+
+    const privateAssets =
+      attrs.match(/\bPrivateAssets=["']([^"']+)["']/i)?.[1] ??
+      body.match(/<PrivateAssets>([^<]+)<\/PrivateAssets>/i)?.[1];
+    if (privateAssets?.toLowerCase() === 'all') {
+      continue;
+    }
+
+    deps.add(include.trim().toLowerCase());
+  }
+
+  return [...deps];
+}
+
+function extractDotnetTargetFramework(csprojXml: string): string | null {
+  const target =
+    csprojXml.match(/<TargetFramework>([^<]+)<\/TargetFramework>/i)?.[1] ??
+    csprojXml.match(/<TargetFrameworks>([^<]+)<\/TargetFrameworks>/i)?.[1];
+  return target?.split(';')[0]?.trim() || null;
 }
 
 function getCommandTimeoutMs(fallback: number): number {
@@ -584,10 +628,11 @@ export async function scanProjectContext(
   const hasPyproject = await exists('pyproject.toml');
   const hasPackageJson = await exists('package.json');
   const hasGoMod = await exists('go.mod');
+  const rootEntries = await listDir('');
 
   let inferredFramework = resolvedFramework;
   if (!inferredFramework) {
-    const candidates: Array<'fastapi' | 'nestjs' | 'go' | 'springboot'> = [];
+    const candidates: AICreateFramework[] = [];
     if (hasPyproject) {
       candidates.push('fastapi');
     }
@@ -603,6 +648,9 @@ export async function scanProjectContext(
       (await exists('build.gradle.kts'))
     ) {
       candidates.push('springboot');
+    }
+    if (rootEntries.some((entry) => entry.endsWith('.csproj') || entry.endsWith('.sln'))) {
+      candidates.push('dotnet');
     }
 
     if (candidates.length === 1) {
@@ -628,6 +676,14 @@ export async function scanProjectContext(
         resolved.engine === 'mvn'
       ) {
         inferredFramework = 'springboot';
+      } else if (
+        resolved.runtime === 'dotnet' ||
+        resolved.runtime === 'csharp' ||
+        resolved.engine === 'dotnet'
+      ) {
+        inferredFramework = 'dotnet';
+      } else if (candidates.includes('dotnet')) {
+        inferredFramework = 'dotnet';
       } else if (candidates.includes('springboot')) {
         inferredFramework = 'springboot';
       } else if (candidates.includes('go')) {
@@ -719,6 +775,16 @@ export async function scanProjectContext(
       ctx.productionDeps = extractMavenProductionDeps(pomXml);
       ctx.runtimeVersion = extractJavaVersionFromPom(pomXml);
     }
+  } else if (inferredFramework === 'dotnet') {
+    if (ctx.kit === 'unknown') {
+      ctx.kit = 'dotnet.webapi.clean';
+    }
+    const csprojName = rootEntries.find((entry) => entry.endsWith('.csproj'));
+    const csproj = csprojName ? ((await readText(csprojName)) ?? '') : '';
+    if (csproj) {
+      ctx.productionDeps = extractDotnetPackageRefs(csproj);
+      ctx.runtimeVersion = extractDotnetTargetFramework(csproj);
+    }
   }
 
   // ── v0.18: rich context ──────────────────────────────────────────────────
@@ -795,8 +861,8 @@ const LIVE_MODULES_TTL_MS = 5 * 60 * 1000; // 5 minutes
  * Try to fetch the live module list from the installed rapidkit engine.
  * Strategy:
  *   1. Try the locally installed `rapidkit` binary (fastest, no network).
- *   2. Fall back to `npx` WITHOUT --yes — requires rapidkit to already be cached
- *      by npm, preventing supply-chain installs from unknown versions.
+ *   2. Fall back to the pinned npm wrapper (`npx --yes --package rapidkit rapidkit`)
+ *      so local rapidkit/rapidkit.cmd launchers cannot shadow the package command.
  * Returns `null` when rapidkit is not installed or the command fails.
  * Results are cached for `LIVE_MODULES_TTL_MS` to avoid overhead.
  */
@@ -812,9 +878,9 @@ export async function fetchLiveModules(): Promise<LiveModuleEntry[] | null> {
   // 1. Try local rapidkit binary first (no npx overhead, no network risk)
   let res = await run('rapidkit', moduleArgs, { timeout });
 
-  // 2. Fall back to npx WITHOUT --yes (uses npm cache only, no auto-install)
+  // 2. Fall back to the pinned npm wrapper.
   if (res.exitCode !== 0) {
-    res = await run('npx', ['--package', 'rapidkit', 'rapidkit', ...moduleArgs], { timeout });
+    res = await run('npx', buildNpxRapidkitArgs(moduleArgs), { timeout });
   }
 
   if (res.exitCode !== 0) {
@@ -1119,7 +1185,7 @@ export type AICreateProfile =
   | 'java-only'
   | 'polyglot'
   | 'enterprise';
-export type AICreateFramework = 'fastapi' | 'nestjs' | 'go' | 'springboot';
+export type AICreateFramework = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
 
 export interface AICreationPlan {
   type: 'workspace' | 'project';
@@ -1155,6 +1221,7 @@ const FRAMEWORK_TO_KITS: Record<AICreateFramework, string[]> = {
   nestjs: ['nestjs.standard'],
   go: ['gofiber.standard', 'gogin.standard'],
   springboot: ['springboot.standard'],
+  dotnet: ['dotnet.webapi.clean'],
 };
 
 const STATIC_MODULE_SLUGS = new Set<string>([
@@ -1218,11 +1285,20 @@ function defaultProfile(fw: string): AICreateProfile {
   if (fw === 'springboot') {
     return 'java-only';
   }
+  if (fw === 'dotnet') {
+    return 'polyglot';
+  }
   return 'python-only';
 }
 
 function isCreateFramework(value: unknown): value is AICreateFramework {
-  return value === 'fastapi' || value === 'nestjs' || value === 'go' || value === 'springboot';
+  return (
+    value === 'fastapi' ||
+    value === 'nestjs' ||
+    value === 'go' ||
+    value === 'springboot' ||
+    value === 'dotnet'
+  );
 }
 
 function normalizeCreationFramework(value: unknown, frameworkHint?: string): AICreateFramework {
@@ -1244,6 +1320,9 @@ function defaultKitForFramework(framework: AICreateFramework): string {
   }
   if (framework === 'springboot') {
     return 'springboot.standard';
+  }
+  if (framework === 'dotnet') {
+    return 'dotnet.webapi.clean';
   }
   return 'fastapi.standard';
 }
@@ -1277,8 +1356,8 @@ function normalizeSuggestedModules(
   liveModules: LiveModuleEntry[] | null,
   framework?: AICreateFramework
 ): string[] {
-  // Go and Spring Boot kits do not support the RapidKit module marketplace.
-  if (framework === 'go' || framework === 'springboot') {
+  // Go, Spring Boot, and .NET kits do not support the RapidKit module marketplace.
+  if (framework === 'go' || framework === 'springboot' || framework === 'dotnet') {
     return [];
   }
 
@@ -1386,7 +1465,7 @@ Available workspace profiles:
   "polyglot"     — mixed Python + Node + Go + Java
   "enterprise"   — multi-team governance
 
-Available frameworks: "fastapi" | "nestjs" | "go" | "springboot"
+Available frameworks: "fastapi" | "nestjs" | "go" | "springboot" | "dotnet"
 
 Available kits (use EXACT names):
   "fastapi.standard"  — FastAPI flat structure (default for Python)
@@ -1395,6 +1474,7 @@ Available kits (use EXACT names):
   "gofiber.standard"  — Go + Fiber v2 HTTP (fast, minimal)
   "gogin.standard"    — Go + Gin HTTP (classic REST)
   "springboot.standard" — Spring Boot service (default for Java)
+  "dotnet.webapi.clean" — .NET Web API clean architecture service (default for C#)
 
 ${modulesSection}
 

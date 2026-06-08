@@ -39,6 +39,7 @@ export class TemplateExplorerProvider implements vscode.TreeDataProvider<Templat
       { name: 'NestJS', icon: 'symbol-class' },
       { name: 'Go', icon: 'symbol-namespace' },
       { name: 'Spring Boot', icon: 'coffee' },
+      { name: '.NET', icon: 'symbol-method' },
     ];
 
     return frameworks.map((fw) => {
@@ -109,6 +110,17 @@ export class TemplateExplorerProvider implements vscode.TreeDataProvider<Templat
           displayName: 'Spring Boot Standard',
           description: 'Java + Spring Boot starter with Maven/Gradle workflow',
           framework: 'springboot',
+          category: 'starter',
+          files: [],
+        },
+      ],
+      '.NET': [
+        {
+          id: 'dotnet.webapi.clean',
+          name: 'dotnet.webapi.clean',
+          displayName: '.NET Web API Clean',
+          description: '.NET Web API starter with clean architecture defaults',
+          framework: 'dotnet',
           category: 'starter',
           files: [],
         },

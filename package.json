@@ -2,7 +2,7 @@
   "name": "rapidkit-vscode",
   "displayName": "Workspai",
   "description": "The AI workspace for backend teams. Build backend systems with AI that knows your workspace, generate projects and modules from intent, debug with full context, and ship faster — all inside VS Code. FastAPI, NestJS, Spring Boot, Go/Fiber & Go/Gin.",
-  "version": "0.32.0",
+  "version": "0.32.1",
   "publisher": "rapidkit",
   "icon": "media/icons/icon.png",
   "galleryBanner": {
@@ -1568,12 +1568,16 @@
           "group": "contract@3"
         },
         {
-          "command": "workspai.workspaceContractVerify",
+          "command": "workspai.workspaceContractInspect",
           "group": "contract@4"
         },
         {
-          "command": "workspai.workspaceContractOpen",
+          "command": "workspai.workspaceContractVerify",
           "group": "contract@5"
+        },
+        {
+          "command": "workspai.workspaceContractOpen",
+          "group": "contract@6"
         }
       ],
       "workspai.workspace.governance": [
@@ -1588,6 +1592,10 @@
         {
           "command": "workspai.exportWorkspaceShareBundle",
           "group": "sharing@1"
+        },
+        {
+          "command": "workspai.importWorkspaceShareBundle",
+          "group": "sharing@2"
         }
       ],
       "workspai.workspace.cache": [
@@ -1659,14 +1667,17 @@
             "nestjs.standard",
             "gofiber.standard",
             "gogin.standard",
-            "springboot.standard"
+            "springboot.standard",
+            "dotnet.webapi.clean"
           ],
           "enumDescriptions": [
             "FastAPI with standard features",
+            "FastAPI with DDD-oriented clean architecture",
             "NestJS with standard features",
             "Go/Fiber with standard features",
             "Go/Gin with standard features",
-            "Spring Boot with standard features"
+            "Spring Boot with standard features",
+            ".NET Web API with clean architecture"
           ],
           "description": "Default kit for new projects"
         },

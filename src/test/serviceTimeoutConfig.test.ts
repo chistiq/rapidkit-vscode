@@ -94,7 +94,7 @@ describe('service timeout config', () => {
 
     expect(mockRun).toHaveBeenCalledWith(
       'npx',
-      ['rapidkit', 'list', '--json'],
+      ['--yes', '--package', 'rapidkit', 'rapidkit', 'list', '--json'],
       expect.objectContaining({ timeout: 60000 })
     );
   });
@@ -123,7 +123,7 @@ describe('service timeout config', () => {
 
     expect(mockRun).toHaveBeenCalledWith(
       'npx',
-      ['rapidkit', 'list', '--json'],
+      ['--yes', '--package', 'rapidkit', 'rapidkit', 'list', '--json'],
       expect.objectContaining({ timeout: 15000 })
     );
   });

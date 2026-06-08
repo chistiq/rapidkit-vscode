@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import { Logger } from './logger';
 import { runShellCommandInTerminal } from './terminalExecutor';
 import { run } from './exec';
+import { buildNpxRapidkitArgs } from './platformCapabilities';
 
 interface VersionInfo {
   current: string | null;
@@ -25,7 +26,7 @@ export async function getCurrentVersion(): Promise<string | null> {
   const logger = Logger.getInstance();
 
   try {
-    const result = await run('npx', ['rapidkit', '--version'], {
+    const result = await run('npx', buildNpxRapidkitArgs(['--version']), {
       timeout: 10000,
       reject: false,
     });

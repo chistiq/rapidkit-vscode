@@ -319,7 +319,7 @@ export function App() {
     const [aiCreationStage, setAICreationStage] = useState<'workspace_done' | null>(null);
     const [aiCreationError, setAICreationError] = useState<string | null>(null);
     const [aiCreateModelId, setAICreateModelId] = useState<string | null>(null);
-    const [selectedFramework, setSelectedFramework] = useState<'fastapi' | 'nestjs' | 'go' | 'springboot'>('fastapi');
+    const [selectedFramework, setSelectedFramework] = useState<AICreateFramework>('fastapi');
     const [selectedModule, setSelectedModule] = useState<ModuleData | null>(null);
     const [moduleDetails, setModuleDetails] = useState<ModuleData | null>(null);
     const [recentWorkspaces, setRecentWorkspaces] = useState<Workspace[]>([]);
@@ -498,7 +498,8 @@ export function App() {
                             rawProjectType === 'fastapi' ||
                                 rawProjectType === 'nestjs' ||
                                 rawProjectType === 'go' ||
-                                rawProjectType === 'springboot'
+                                rawProjectType === 'springboot' ||
+                                rawProjectType === 'dotnet'
                                 ? rawProjectType
                                 : undefined;
 
@@ -1198,7 +1199,7 @@ export function App() {
         vscode.postMessage('createWorkspace', config);
     };
 
-    const handleOpenProjectModal = (framework: 'fastapi' | 'nestjs' | 'go' | 'springboot', _kitName?: string) => {
+    const handleOpenProjectModal = (framework: AICreateFramework, _kitName?: string) => {
         if (installStatusChecked && !installStatus.coreInstalled) {
             vscode.postMessage('openSetup');
             return;
@@ -1217,7 +1218,7 @@ export function App() {
         setShowAICreateModal(true);
     };
 
-    const handleOpenManualProjectModal = (framework: 'fastapi' | 'nestjs' | 'go' | 'springboot') => {
+    const handleOpenManualProjectModal = (framework: AICreateFramework) => {
         if (installStatusChecked && !installStatus.coreInstalled) {
             vscode.postMessage('openSetup');
             return;
@@ -1253,7 +1254,7 @@ export function App() {
         });
     };
 
-    const handleCreateProject = (projectName: string, framework: 'fastapi' | 'nestjs' | 'go' | 'springboot', kitName: string) => {
+    const handleCreateProject = (projectName: string, framework: AICreateFramework, kitName: string) => {
         console.log('[React Webview] Creating project:', projectName, framework, kitName);
         vscode.postMessage('createProjectWithKit', { name: projectName, framework, kit: kitName });
     };
@@ -1905,7 +1906,7 @@ export function App() {
                                     categoryInfo={categoryInfo}
                                     onRefresh={() => vscode.postMessage('refreshModules')}
                                     onInstall={handleOpenInstallModal}
-                                    onShowDetails={(moduleId) => vscode.postMessage('showModuleDetails', moduleId)}
+                                    onShowDetails={(module) => vscode.postMessage('showModuleDetails', module)}
                                     onAI={(module) => vscode.postMessage('aiForModule', { moduleId: module.id, moduleName: module.display_name || module.name, moduleSlug: module.slug })}
                                     onProjectTerminal={() => vscode.postMessage('projectTerminal')}
                                     onProjectInit={() => vscode.postMessage('projectInit')}
@@ -1921,7 +1922,7 @@ export function App() {
                                     onProjectBrowser={() => vscode.postMessage('projectBrowser')}
                                     onProjectBuild={() => vscode.postMessage('projectBuild')}
                                     modulesDisabled={
-                                        workspaceStatus.projectType === 'go' || workspaceStatus.projectType === 'springboot'
+                                        workspaceStatus.projectType === 'go' || workspaceStatus.projectType === 'springboot' || workspaceStatus.projectType === 'dotnet'
                                     }
                                 />
                             ) : (

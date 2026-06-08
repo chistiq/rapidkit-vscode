@@ -239,9 +239,20 @@ async function detectProjectStack(projectPath: string): Promise<StackDetection> 
     hasPomXml: await fs.pathExists(path.join(projectPath, 'pom.xml')),
     hasGradle: await fs.pathExists(path.join(projectPath, 'build.gradle')),
     hasGradleKts: await fs.pathExists(path.join(projectPath, 'build.gradle.kts')),
+    hasCsproj: await hasFileWithExtension(projectPath, '.csproj'),
+    hasSln: await hasFileWithExtension(projectPath, '.sln'),
     hasPackageJson,
     hasNestDependency,
   });
+}
+
+async function hasFileWithExtension(rootPath: string, extension: string): Promise<boolean> {
+  try {
+    const entries = await fs.readdir(rootPath, { withFileTypes: true });
+    return entries.some((entry) => entry.isFile() && entry.name.endsWith(extension));
+  } catch {
+    return false;
+  }
 }
 
 async function ensureWorkspaceRegistration(workspacePath: string): Promise<WorkspaceLike | null> {

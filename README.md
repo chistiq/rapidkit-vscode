@@ -145,10 +145,10 @@ Workspai: Create Project
 For CLI workflows, use the RapidKit npm package:
 
 ```bash
-npx rapidkit doctor workspace
-npx rapidkit init
-npx rapidkit dev
-npx rapidkit test
+npx --yes --package rapidkit rapidkit doctor workspace
+npx --yes --package rapidkit rapidkit init
+npx --yes --package rapidkit rapidkit dev
+npx --yes --package rapidkit rapidkit test
 ```
 
 ---
@@ -202,8 +202,10 @@ Typical categories:
 Install from the extension Module Browser or the CLI:
 
 ```bash
-npx rapidkit add module <module-slug>
+npx --yes --package rapidkit rapidkit add module <module-slug>
 ```
+
+Module installation is currently supported for FastAPI and NestJS projects. Go, Spring Boot, and .NET projects are scaffold/import/runtime-supported, but they use their native package ecosystems instead of the RapidKit module marketplace.
 
 ---
 

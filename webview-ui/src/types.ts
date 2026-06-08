@@ -126,6 +126,7 @@ export interface Workspace {
     nestjs?: number;
     springboot?: number;
     go?: number;
+    dotnet?: number;
   };
 }
 
@@ -143,6 +144,7 @@ export interface WorkspaceToolStatus {
   javaAvailable?: boolean;
   mavenAvailable?: boolean;
   gradleAvailable?: boolean;
+  dotnetAvailable?: boolean;
   preferredInstallMethod: 'poetry' | 'venv' | 'pipx';
 }
 
@@ -153,7 +155,7 @@ export interface WorkspaceStatus {
   workspacePath?: string;
   projectName?: string;
   projectPath?: string;
-  projectType?: 'fastapi' | 'nestjs' | 'go' | 'springboot';
+  projectType?: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
   installedModules?: { slug: string; version: string; display_name: string }[];
   isRunning?: boolean;
   runningPort?: number;
@@ -162,7 +164,7 @@ export interface WorkspaceStatus {
 
 export interface ExampleProject {
   name: string;
-  type: 'fastapi' | 'nestjs' | 'go' | 'springboot';
+  type: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
   description: string;
 }
 
@@ -184,7 +186,7 @@ export interface ExampleWorkspace {
 export interface Kit {
   name: string;
   display_name: string;
-  category: 'fastapi' | 'nestjs' | 'go' | 'springboot' | string;
+  category: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet' | string;
   version: string;
   tags?: string[];
   modules?: string[];

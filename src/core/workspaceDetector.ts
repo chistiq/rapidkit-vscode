@@ -120,7 +120,7 @@ export class WorkspaceDetector {
   private async analyzeProject(projectPath: string): Promise<WorkspaiProject | null> {
     try {
       const projectName = path.basename(projectPath);
-      let type: 'fastapi' | 'nestjs' | 'go' | 'springboot' = 'fastapi';
+      let type: WorkspaiProject['type'] = 'fastapi';
       let kit = 'unknown';
       const modules: string[] = [];
 
@@ -146,6 +146,8 @@ export class WorkspaceDetector {
               type = 'go';
             } else if (kit.startsWith('springboot')) {
               type = 'springboot';
+            } else if (kit.startsWith('dotnet.')) {
+              type = 'dotnet';
             }
           }
         } catch {
@@ -205,12 +207,22 @@ export class WorkspaceDetector {
         kit = 'springboot.standard';
       }
 
+      const hasDotnetProject =
+        (await this.hasFileWithExtension(projectPath, '.csproj')) ||
+        (await this.hasFileWithExtension(projectPath, '.sln'));
+
+      if (kit === 'unknown' && type !== 'go' && type !== 'springboot' && hasDotnetProject) {
+        type = 'dotnet';
+        kit = 'dotnet.webapi.clean';
+      }
+
       // Check pyproject.toml for FastAPI
       const pyprojectPath = path.join(projectPath, 'pyproject.toml');
       if (
         kit === 'unknown' &&
         type !== 'go' &&
         type !== 'springboot' &&
+        type !== 'dotnet' &&
         (await fs.pathExists(pyprojectPath))
       ) {
         type = 'fastapi';
@@ -228,6 +240,7 @@ export class WorkspaceDetector {
         type !== 'go' &&
         type !== 'springboot' &&
         type !== 'fastapi' &&
+        type !== 'dotnet' &&
         (await fs.pathExists(packageJsonPath))
       ) {
         type = 'nestjs';
@@ -292,5 +305,14 @@ export class WorkspaceDetector {
    */
   public async refresh(): Promise<void> {
     await this.detectRapidKitProjects();
+  }
+
+  private async hasFileWithExtension(rootPath: string, extension: string): Promise<boolean> {
+    try {
+      const entries = await fs.readdir(rootPath, { withFileTypes: true });
+      return entries.some((entry) => entry.isFile() && entry.name.endsWith(extension));
+    } catch {
+      return false;
+    }
   }
 }

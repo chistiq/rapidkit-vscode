@@ -86,6 +86,9 @@ function kitForType(projectType: AdoptableProjectType): string {
   if (projectType === 'springboot') {
     return 'springboot.standard';
   }
+  if (projectType === 'dotnet') {
+    return 'dotnet.webapi.clean';
+  }
   return 'generic.imported';
 }
 
@@ -192,11 +195,22 @@ async function detectProjectType(
     hasPomXml: await fs.pathExists(path.join(projectPath, 'pom.xml')),
     hasGradle: await fs.pathExists(path.join(projectPath, 'build.gradle')),
     hasGradleKts: await fs.pathExists(path.join(projectPath, 'build.gradle.kts')),
+    hasCsproj: await hasFileWithExtension(projectPath, '.csproj'),
+    hasSln: await hasFileWithExtension(projectPath, '.sln'),
     hasPackageJson,
     hasNestDependency,
   });
 
   return detection.stack;
+}
+
+async function hasFileWithExtension(rootPath: string, extension: string): Promise<boolean> {
+  try {
+    const entries = await fs.readdir(rootPath, { withFileTypes: true });
+    return entries.some((entry) => entry.isFile() && entry.name.endsWith(extension));
+  } catch {
+    return false;
+  }
 }
 
 async function hasManagedMarker(projectPath: string): Promise<boolean> {

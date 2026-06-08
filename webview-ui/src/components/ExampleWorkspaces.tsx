@@ -14,7 +14,7 @@ import { vscode } from '@/vscode';
 
 export interface ExampleProject {
   name: string;
-  type: 'fastapi' | 'nestjs' | 'go' | 'springboot';
+  type: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
   description: string;
 }
 
@@ -26,7 +26,9 @@ interface ExampleWorkspacesProps {
   updatingExample?: string | null;
 }
 
-const getProjectTypeLabel = (type: 'fastapi' | 'nestjs' | 'go' | 'springboot'): string => {
+const getProjectTypeLabel = (
+  type: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet'
+): string => {
   if (type === 'fastapi') {
     return 'API';
   }
@@ -35,6 +37,9 @@ const getProjectTypeLabel = (type: 'fastapi' | 'nestjs' | 'go' | 'springboot'): 
   }
   if (type === 'go') {
     return 'GO';
+  }
+  if (type === 'dotnet') {
+    return '.NET';
   }
   return 'JVM';
 };
@@ -49,9 +54,9 @@ export function ExampleWorkspaces({
   const [expandedExample, setExpandedExample] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [query, setQuery] = useState('');
-  const [framework, setFramework] = useState<'all' | 'fastapi' | 'nestjs' | 'go' | 'springboot'>(
-    'all'
-  );
+  const [framework, setFramework] = useState<
+    'all' | 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet'
+  >('all');
   const [readiness, setReadiness] = useState<'all' | 'cloned' | 'updates' | 'available'>('all');
 
   const frameworkCounts = useMemo(() => {
@@ -119,7 +124,7 @@ export function ExampleWorkspaces({
           />
         </label>
         <div className="template-filter-group" aria-label="Framework filter">
-          {(['all', 'fastapi', 'nestjs', 'go', 'springboot'] as const).map((item) => (
+          {(['all', 'fastapi', 'nestjs', 'go', 'springboot', 'dotnet'] as const).map((item) => (
             <button
               key={item}
               type="button"

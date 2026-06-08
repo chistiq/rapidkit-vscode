@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.1] - 2026-06-08
+
+### Added
+
+* Shared runtime command surface contract for extension/npm parity covering scaffold kits, module-support boundaries, lifecycle commands, and runtime tiers.
+* Runtime command surface parity tests to keep dashboard, AI creation, module suggestions, and CLI snippets aligned with the npm wrapper.
+* .NET project creation and dashboard surfaces alongside the existing FastAPI, NestJS, Go, and Spring Boot flows.
+
+### Changed
+
+* Updated extension-host RapidKit calls to use the pinned npm wrapper form: `npx --yes --package rapidkit rapidkit ...`.
+* Aligned dashboard command reference, quick links, setup flows, project creation, and module browser copy with the latest RapidKit npm command surface.
+* Restricted AI module suggestions to FastAPI and NestJS, with explicit native package ecosystem guidance for Go, Spring Boot, and .NET.
+* Hardened AI prompt guidance so generated recommendations use current doctor/project/module command scopes.
+
+### Fixed
+
+* Fixed `.NET` AI creation messaging that could incorrectly describe Spring Boot module behavior.
+* Fixed user-facing module install snippets that used unpinned `rapidkit add module` commands.
+* Fixed stale doctor command examples such as `rapidkit doctor --scope=workspace` in Studio surfaces.
+* Fixed module details and browser command previews so they copy the same supported CLI form documented by npm.
+
+### Verification
+
+* `npm run typecheck`
+* `npm run check:parity-snapshot`
+* `vitest run src/test/runtimeCommandSurfaceParity.test.ts src/test/driftGuard.test.ts src/test/platformCapabilities.test.ts src/test/springSupportContracts.test.ts src/test/aiService.test.ts`
+* `npm run lint:stabilization` (passes with existing warning budget)
+* `npm run build`
+* `git diff --check`
+
 ## [0.32.0] - 2026-06-02
 
 ### Added

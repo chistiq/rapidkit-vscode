@@ -101,7 +101,7 @@ export interface ProjectConfig {
     | 'springboot'
     | 'rails'
     | 'dotnet';
-  kit: string; // Kit name (e.g., 'fastapi.standard', 'fastapi.ddd', 'nestjs.standard', 'gofiber.standard', 'gogin.standard', 'springboot.standard')
+  kit: string; // Kit name (e.g., 'fastapi.standard', 'fastapi.ddd', 'nestjs.standard', 'gofiber.standard', 'gogin.standard', 'springboot.standard', 'dotnet.webapi.clean')
   packageManager?: string; // For NestJS: npm, yarn, pnpm
 }
 

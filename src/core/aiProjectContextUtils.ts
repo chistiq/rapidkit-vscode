@@ -192,6 +192,7 @@ export function normalizeKitName(
   | 'gofiber.standard'
   | 'gogin.standard'
   | 'springboot.standard'
+  | 'dotnet.webapi.clean'
   | 'unknown' {
   switch (value) {
     case 'fastapi.ddd':
@@ -206,6 +207,8 @@ export function normalizeKitName(
       return 'gogin.standard';
     case 'springboot.standard':
       return 'springboot.standard';
+    case 'dotnet.webapi.clean':
+      return 'dotnet.webapi.clean';
     default:
       return 'unknown';
   }
@@ -231,11 +234,21 @@ export function normalizeFrameworkHint(
   if (normalizedKit.startsWith('springboot')) {
     return 'springboot';
   }
+  if (normalizedKit.startsWith('dotnet')) {
+    return 'dotnet';
+  }
   if (resolved.runtime === 'node' || resolved.engine === 'node' || resolved.engine === 'npm') {
     return 'nestjs';
   }
   if (resolved.runtime === 'java' || resolved.engine === 'java' || resolved.engine === 'mvn') {
     return 'springboot';
+  }
+  if (
+    resolved.runtime === 'dotnet' ||
+    resolved.runtime === 'csharp' ||
+    resolved.engine === 'dotnet'
+  ) {
+    return 'dotnet';
   }
   if (resolved.runtime === 'go' || resolved.engine === 'go') {
     return 'go';

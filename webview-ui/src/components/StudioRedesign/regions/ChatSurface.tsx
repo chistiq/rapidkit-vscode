@@ -699,7 +699,7 @@ interface LiveDemoScenarioProps {
     onDismiss: () => void;
 }
 
-const DEMO_COMMAND = 'rapidkit doctor --scope=workspace';
+const DEMO_COMMAND = 'npx --yes --package rapidkit rapidkit doctor workspace';
 
 const demoEvidence = [
     { severity: 'high' as const, text: 'Coverage dropped 6.4% after merge #2847 into core/policy' },
@@ -1222,8 +1222,14 @@ const buildDecisionDeck = (
                 status: 'Baseline ready',
                 riskLabel: 'Low risk',
                 nextActionLabel: 'Run doctor',
-                nextCommand: `rapidkit doctor --scope=${scopeType}`,
-                verifyCommand: `rapidkit doctor verify --scope=${scopeType}`,
+                nextCommand:
+                    scopeType === 'workspace'
+                        ? 'npx --yes --package rapidkit rapidkit doctor workspace'
+                        : 'npx --yes --package rapidkit rapidkit doctor project',
+                verifyCommand:
+                    scopeType === 'workspace'
+                        ? 'npx --yes --package rapidkit rapidkit doctor workspace'
+                        : 'npx --yes --package rapidkit rapidkit doctor project',
                 confidence: '84%',
                 risk: 'Low',
                 assumptions: `${scopeLabel} metrics only; no live backend connected.`,

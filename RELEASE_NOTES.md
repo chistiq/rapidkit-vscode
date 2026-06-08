@@ -1,5 +1,32 @@
 # Release Notes
 
+## v0.32.1 (June 8, 2026)
+
+### ✦ Runtime Command Surface Parity and Module Boundary Hardening
+
+Summary:
+- Align the Workspai extension with RapidKit npm `0.32.1` command contracts.
+- Add a shared runtime command surface contract so scaffold kits, lifecycle commands, runtime tiers, and module-support boundaries cannot drift silently.
+- Restrict AI module suggestions to FastAPI and NestJS, while clearly guiding Go, Spring Boot, and .NET users toward their native package ecosystems.
+- Update dashboard, setup, command reference, module browser, module details, and AI creation surfaces to the pinned npm wrapper form.
+
+Highlights:
+- Extension-host calls now use `npx --yes --package rapidkit rapidkit ...` instead of relying on ambiguous local/global command resolution.
+- FastAPI and NestJS remain module-capable; Go, Spring Boot, and .NET are scaffold/import/runtime-supported but do not expose RapidKit module marketplace suggestions.
+- `.NET` AI creation copy now correctly explains NuGet/native adapter extension paths instead of reusing Spring Boot module text.
+- Studio and README command snippets now use current `doctor workspace/project` scopes and pinned npm commands.
+- Runtime parity tests cover scaffold kit exposure, AI module suggestion boundaries, command snippets, and npm wrapper usage.
+
+Validation:
+- `npm run typecheck`
+- `npm run check:parity-snapshot`
+- `vitest run src/test/runtimeCommandSurfaceParity.test.ts src/test/driftGuard.test.ts src/test/platformCapabilities.test.ts src/test/springSupportContracts.test.ts src/test/aiService.test.ts`
+- `npm run lint:stabilization`
+- `npm run build`
+- `git diff --check`
+
+Release posture: `contract-parity-and-extension-stabilization`
+
 ## v0.32.0 (June 2, 2026)
 
 ### ✦ Enterprise Workspai Dashboard and Workspace Contract Release

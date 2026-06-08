@@ -115,7 +115,7 @@ export function InstallModuleModal({
 
       <EnterpriseModalSection title="Command Preview">
         <div className="modal-command-preview">
-          <code>rapidkit add module {moduleSlug}</code>
+          <code>npx --yes --package rapidkit rapidkit add module {moduleSlug}</code>
         </div>
       </EnterpriseModalSection>
     </EnterpriseModal>

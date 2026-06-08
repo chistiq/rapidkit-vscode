@@ -20,6 +20,10 @@ export function buildAIModalUserMessage(
           scanned.kit === 'springboot.standard' || scanned.runtime === 'java'
             ? scanned.runtimeVersion
             : null,
+        dotnet_version:
+          scanned.kit === 'dotnet.webapi.clean' || scanned.runtime === 'dotnet'
+            ? scanned.runtimeVersion
+            : null,
         go_version:
           scanned.kit === 'gofiber.standard' ||
           scanned.kit === 'gogin.standard' ||

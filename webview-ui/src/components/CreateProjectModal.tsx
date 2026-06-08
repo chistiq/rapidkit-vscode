@@ -4,7 +4,7 @@ import { vscode } from '@/vscode';
 import type { Kit, WorkspaceToolStatus } from '@/types';
 import { EnterpriseModal, EnterpriseModalNotice, EnterpriseModalSection } from './EnterpriseModal';
 
-type ProjectFramework = 'fastapi' | 'nestjs' | 'go' | 'springboot';
+type ProjectFramework = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
 
 interface CreateProjectModalProps {
     isOpen: boolean;
@@ -51,6 +51,12 @@ const FRAMEWORK_INFO: Record<ProjectFramework, {
         description: 'Create a Java service with Spring Boot conventions and workspace governance.',
         placeholder: 'my-spring-service',
     },
+    dotnet: {
+        title: '.NET Web API Project',
+        subtitle: 'C# service',
+        description: 'Create a clean architecture .NET Web API inside the selected workspace.',
+        placeholder: 'dotnet-api',
+    },
 };
 
 export function CreateProjectModal({ isOpen, framework, availableKits, onClose, onCreate, onSwitchToAI, toolStatus }: CreateProjectModalProps) {
@@ -65,6 +71,7 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
     const frameworkKits = availableKits.filter((kit) => kit.category === framework);
     const selectedKitData = frameworkKits.find((kit) => kit.name === selectedKit);
     const info = FRAMEWORK_INFO[framework];
+    const supportsModuleSuggestions = framework === 'fastapi' || framework === 'nestjs';
     const canCreate = projectName.trim() && !error && selectedKit;
 
     useEffect(() => {
@@ -117,6 +124,10 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
     };
 
     const handleAISuggest = () => {
+        if (!supportsModuleSuggestions) {
+            return;
+        }
+
         setAiSuggestLoading(true);
         setAiSuggestions([]);
         setAiSuggestError('');
@@ -209,6 +220,18 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
                     </div>
                 )}
 
+                {framework === 'dotnet' && toolStatus && !toolStatus.dotnetAvailable && (
+                    <div className="modal-field--wide">
+                        <EnterpriseModalNotice tone="warning">
+                            <AlertCircle size={14} />
+                            <span>.NET Web API projects require the dotnet SDK.</span>
+                            <button type="button" className="modal-inline-link" onClick={() => vscode.postMessage('openSetup')}>
+                                Open Setup
+                            </button>
+                        </EnterpriseModalNotice>
+                    </div>
+                )}
+
                 <label className="modal-field modal-field--wide">
                     <span>Project name</span>
                     <input
@@ -264,28 +287,30 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
                     </ul>
                 </EnterpriseModalSection>
 
-                <EnterpriseModalSection title="AI module suggestions" meta="Optional">
-                    <button
-                        type="button"
-                        className="enterprise-button enterprise-button--secondary"
-                        onClick={handleAISuggest}
-                        disabled={aiSuggestLoading}
-                    >
-                        {aiSuggestLoading ? <Loader2 size={13} className="ai-modal-spinner" /> : <Sparkles size={13} />}
-                        {aiSuggestLoading ? 'Asking AI' : 'Suggest modules'}
-                    </button>
-                    {aiSuggestError && <div className="modal-field__error">{aiSuggestError}</div>}
-                    {aiSuggestions.length > 0 && (
-                        <div className="modal-suggestion-list">
-                            {aiSuggestions.map((suggestion) => (
-                                <div key={suggestion.slug} className="modal-suggestion-row">
-                                    <strong>{suggestion.slug}</strong>
-                                    <span>{suggestion.reason}</span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </EnterpriseModalSection>
+                {supportsModuleSuggestions && (
+                    <EnterpriseModalSection title="AI module suggestions" meta="Optional">
+                        <button
+                            type="button"
+                            className="enterprise-button enterprise-button--secondary"
+                            onClick={handleAISuggest}
+                            disabled={aiSuggestLoading}
+                        >
+                            {aiSuggestLoading ? <Loader2 size={13} className="ai-modal-spinner" /> : <Sparkles size={13} />}
+                            {aiSuggestLoading ? 'Asking AI' : 'Suggest modules'}
+                        </button>
+                        {aiSuggestError && <div className="modal-field__error">{aiSuggestError}</div>}
+                        {aiSuggestions.length > 0 && (
+                            <div className="modal-suggestion-list">
+                                {aiSuggestions.map((suggestion) => (
+                                    <div key={suggestion.slug} className="modal-suggestion-row">
+                                        <strong>{suggestion.slug}</strong>
+                                        <span>{suggestion.reason}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </EnterpriseModalSection>
+                )}
             </div>
         </EnterpriseModal>
     );

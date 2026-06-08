@@ -18,7 +18,7 @@ import {
 import type { WorkspaceStatus } from '@/types';
 import { vscode } from '@/vscode';
 
-type Framework = 'fastapi' | 'nestjs' | 'go' | 'springboot';
+type Framework = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
 
 interface EnterpriseDashboardFlowProps {
   workspaceName?: string;
@@ -37,32 +37,43 @@ interface EnterpriseDashboardFlowProps {
 const frameworks: Array<{
   framework: Framework;
   title: string;
-  icon: string;
+  icon?: string;
+  monogram: string;
   detail: string;
 }> = [
   {
     framework: 'fastapi',
     title: 'FastAPI',
     icon: (window as any).FASTAPI_ICON_URI,
+    monogram: 'Py',
     detail: 'Python API',
   },
   {
     framework: 'nestjs',
     title: 'NestJS',
     icon: (window as any).NESTJS_ICON_URI,
+    monogram: 'TS',
     detail: 'TypeScript service',
   },
   {
     framework: 'go',
     title: 'Go',
     icon: (window as any).GO_ICON_URI,
+    monogram: 'Go',
     detail: 'Go service',
   },
   {
     framework: 'springboot',
     title: 'Spring Boot',
     icon: (window as any).SPRINGBOOT_ICON_URI,
+    monogram: 'JVM',
     detail: 'Java service',
+  },
+  {
+    framework: 'dotnet',
+    title: '.NET',
+    monogram: '.NET',
+    detail: 'C# Web API',
   },
 ];
 
@@ -158,6 +169,20 @@ export function EnterpriseDashboardFlow({
                 <small>Safe run</small>
               </span>
             </button>
+            <button type="button" onClick={() => runWorkspaceAction('workspaceRunBuild')}>
+              <CheckCircle2 size={15} />
+              <span>
+                <strong>Build</strong>
+                <small>Affected projects</small>
+              </span>
+            </button>
+            <button type="button" onClick={() => runWorkspaceAction('workspaceAnalyze')}>
+              <Layers size={15} />
+              <span>
+                <strong>Analyze</strong>
+                <small>Evidence scan</small>
+              </span>
+            </button>
             <button type="button" onClick={() => runWorkspaceAction('workspaceTerminal')}>
               <Terminal size={15} />
               <span>
@@ -216,7 +241,11 @@ export function EnterpriseDashboardFlow({
                 }}
                 title={hasWorkspace ? `Create ${item.title} project` : 'Select a workspace first'}
               >
-                <img src={item.icon} alt="" />
+                {item.icon ? (
+                  <img src={item.icon} alt="" />
+                ) : (
+                  <span className="enterprise-framework-monogram">{item.monogram}</span>
+                )}
                 <span>
                   <strong>{item.title}</strong>
                   <small>{item.detail}</small>
@@ -259,6 +288,13 @@ export function EnterpriseDashboardFlow({
               <span>
                 <strong>Archive</strong>
                 <small>Share safely</small>
+              </span>
+            </button>
+            <button type="button" onClick={() => runWorkspaceAction('workspaceShare')}>
+              <Upload size={15} />
+              <span>
+                <strong>Share Bundle</strong>
+                <small>Source-safe metadata</small>
               </span>
             </button>
             <button
@@ -311,12 +347,26 @@ export function EnterpriseDashboardFlow({
                 <small>Archive integrity</small>
               </span>
             </button>
+            <button type="button" onClick={() => runWorkspaceAction('workspaceArchiveDoctor')}>
+              <HeartPulse size={15} />
+              <span>
+                <strong>Doctor Archive</strong>
+                <small>Import readiness</small>
+              </span>
+            </button>
+            <button type="button" onClick={() => runWorkspaceAction('workspaceSnapshot')}>
+              <Archive size={15} />
+              <span>
+                <strong>Snapshot</strong>
+                <small>Recovery point</small>
+              </span>
+            </button>
           </div>
         </div>
       </div>
 
       <div className="enterprise-flow-rail" aria-label="Recommended workflow">
-        {['Doctor', 'Graph', 'Test', 'Archive', 'Release'].map((step, index) => (
+        {['Doctor', 'Analyze', 'Graph', 'Build', 'Archive', 'Release'].map((step, index) => (
           <span key={step}>
             <em>{index + 1}</em>
             {step}

@@ -428,6 +428,57 @@ describe('contract drift guard', () => {
     expect(setupPanelSource).not.toContain('PORT=');
   });
 
+  it('keeps extension-host rapidkit npm calls on the pinned cross-platform wrapper', () => {
+    const sourceFiles = [
+      'src/core/rapidkitCLI.ts',
+      'src/core/kitsService.ts',
+      'src/core/aiService.ts',
+      'src/utils/firstTimeSetup.ts',
+      'src/utils/updateChecker.ts',
+      'src/ui/panels/setupExperiencePanel.ts',
+    ];
+
+    for (const file of sourceFiles) {
+      const source = read(file);
+      if (source.includes("'npx'") || source.includes('"npx"')) {
+        expect(source, file).toContain('buildNpxRapidkitArgs');
+      }
+    }
+
+    const combined = sourceFiles.map((file) => read(file)).join('\n');
+    expect(combined).not.toContain("['rapidkit', '--version']");
+    expect(combined).not.toContain("['rapidkit', 'list', '--json']");
+    expect(combined).not.toContain("['--package', 'rapidkit', 'rapidkit'");
+  });
+
+  it('keeps user-facing CLI snippets on the pinned npm wrapper and current doctor scope', () => {
+    const readmeSource = read('README.md');
+    const moduleBrowserSource = read('webview-ui/src/components/ModuleBrowser.tsx');
+    const moduleDetailsSource = read('webview-ui/src/components/ModuleDetailsModal.tsx');
+    const installModuleSource = read('webview-ui/src/components/InstallModuleModal.tsx');
+    const workspaceSidebarSource = read(
+      'webview-ui/src/components/StudioRedesign/regions/WorkspaceSidebar.tsx'
+    );
+    const chatSurfaceSource = read(
+      'webview-ui/src/components/StudioRedesign/regions/ChatSurface.tsx'
+    );
+    const combined = [
+      readmeSource,
+      moduleBrowserSource,
+      moduleDetailsSource,
+      installModuleSource,
+      workspaceSidebarSource,
+      chatSurfaceSource,
+    ].join('\n');
+
+    expect(combined).toContain('npx --yes --package rapidkit rapidkit doctor workspace');
+    expect(combined).toContain('npx --yes --package rapidkit rapidkit add module');
+    expect(combined).not.toContain('npx rapidkit doctor workspace');
+    expect(combined).not.toContain('npx rapidkit add module');
+    expect(combined).not.toContain('rapidkit doctor --scope=workspace');
+    expect(combined).not.toContain('rapidkit doctor verify --scope=');
+  });
+
   it('keeps AI modal stop-generation contract aligned across webview and panel', () => {
     const appSource = read('webview-ui/src/App.tsx');
     const aiModalSource = read('webview-ui/src/components/AIModal.tsx');

@@ -23,18 +23,22 @@ describe('spring support contracts', () => {
     );
 
     expect(createProjectSource).toContain(
-      "preselectedFramework?: 'fastapi' | 'nestjs' | 'go' | 'springboot'"
+      "preselectedFramework?: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet'"
     );
     expect(projectWizardSource).toContain("framework: 'springboot' as const");
+    expect(projectWizardSource).toContain("framework: 'dotnet' as const");
     expect(projectWizardSource).toContain('Spring Boot');
+    expect(projectWizardSource).toContain('.NET Web API');
 
     expect(rapidkitCliSource).toContain('springboot.standard');
+    expect(rapidkitCliSource).toContain('dotnet.webapi.clean');
     expect(rapidkitCliSource).toContain("'create',");
     expect(rapidkitCliSource).toContain('options.kit');
 
     expect(quickLinksSource).toContain("framework: 'springboot'");
+    expect(quickLinksSource).toContain("framework: 'dotnet'");
     expect(appSource).toContain(
-      "const handleCreateProject = (projectName: string, framework: 'fastapi' | 'nestjs' | 'go' | 'springboot', kitName: string) =>"
+      'const handleCreateProject = (projectName: string, framework: AICreateFramework, kitName: string) =>'
     );
   });
 

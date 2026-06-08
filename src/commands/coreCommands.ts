@@ -307,7 +307,7 @@ export function registerCoreCommands(options: {
 
     vscode.commands.registerCommand(
       'workspai.openProjectModal',
-      (framework: 'fastapi' | 'nestjs' | 'go' | 'springboot') => {
+      (framework: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet') => {
         WelcomePanel.openProjectModal(context, framework);
       }
     ),

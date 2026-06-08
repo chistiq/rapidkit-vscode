@@ -7,11 +7,12 @@ import * as vscode from 'vscode';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import { run } from '../utils/exec';
+import { buildNpxRapidkitArgs } from '../utils/platformCapabilities';
 
 export interface Kit {
   name: string;
   display_name: string;
-  category: 'fastapi' | 'nestjs' | 'go' | 'springboot' | string;
+  category: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet' | string;
   version: string;
   tags?: string[];
   modules?: string[];
@@ -90,7 +91,7 @@ export class KitsService {
 
       // Fetch from CLI
       console.log('[KitsService] Fetching kits from CLI...');
-      const result = await run('npx', ['rapidkit', 'list', '--json'], {
+      const result = await run('npx', buildNpxRapidkitArgs(['list', '--json']), {
         timeout: this.getCommandTimeoutMs(DEFAULT_KITS_FETCH_TIMEOUT_MS),
         stdio: ['pipe', 'pipe', 'pipe'],
       });
@@ -151,7 +152,9 @@ export class KitsService {
   /**
    * Get kits by category
    */
-  async getKitsByCategory(category: 'fastapi' | 'nestjs' | 'go' | 'springboot'): Promise<Kit[]> {
+  async getKitsByCategory(
+    category: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet'
+  ): Promise<Kit[]> {
     const allKits = await this.getKits();
     return allKits.filter((kit) => kit.category === category);
   }
@@ -242,6 +245,15 @@ export class KitsService {
         tags: ['java', 'spring', 'springboot', 'maven', 'enterprise'],
         description:
           'Production-ready Spring Boot starter with Maven wrapper, actuator, and OpenAPI defaults.',
+      },
+      {
+        name: 'dotnet.webapi.clean',
+        display_name: '.NET Web API Clean Kit',
+        category: 'dotnet',
+        version: '0.1.0',
+        tags: ['dotnet', 'csharp', 'webapi', 'clean-architecture', 'enterprise'],
+        description:
+          'Clean architecture .NET Web API starter aligned with RapidKit workspace contracts.',
       },
     ];
   }

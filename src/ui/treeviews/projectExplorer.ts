@@ -89,6 +89,9 @@ function frameworkLabel(type: string): string {
   if (type === 'springboot') {
     return 'Spring Boot';
   }
+  if (type === 'dotnet') {
+    return '.NET';
+  }
   if (type === 'unknown') {
     return 'Generic';
   }
@@ -107,6 +110,9 @@ function inferKit(type: WorkspaiProject['type']): string {
   }
   if (type === 'springboot') {
     return 'springboot.standard';
+  }
+  if (type === 'dotnet') {
+    return 'dotnet.webapi.clean';
   }
   return 'generic.imported';
 }
@@ -128,8 +134,20 @@ function stackFromKitName(kitName?: string): WorkspaiProject['type'] {
   if (kitName.startsWith('springboot.')) {
     return 'springboot';
   }
+  if (kitName.startsWith('dotnet.')) {
+    return 'dotnet';
+  }
 
   return 'unknown';
+}
+
+async function hasFileWithExtension(rootPath: string, extension: string): Promise<boolean> {
+  try {
+    const entries = await fs.readdir(rootPath, { withFileTypes: true });
+    return entries.some((entry) => entry.isFile() && entry.name.endsWith(extension));
+  } catch {
+    return false;
+  }
 }
 
 function projectBadgeLabel(project: WorkspaiProject): string {
@@ -424,6 +442,8 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
             hasPomXml,
             hasGradle,
             hasGradleKts,
+            hasCsproj: await hasFileWithExtension(projectPath, '.csproj'),
+            hasSln: await hasFileWithExtension(projectPath, '.sln'),
             hasPackageJson,
             hasNestDependency,
           });

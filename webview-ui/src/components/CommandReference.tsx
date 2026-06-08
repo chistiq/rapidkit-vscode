@@ -84,17 +84,33 @@ function buildWorkspaceCommands(profile: WorkspaceProfile): Command[] {
       code: `npx --yes --package rapidkit rapidkit bootstrap --profile ${profile}`,
       description: `Bootstrap runtimes for the active profile (${profile})`,
     },
-    {
-      code: 'npx --yes --package rapidkit rapidkit init',
-      description: 'Initialize workspace files and project dependencies',
-    },
-    {
-      code: 'npx --yes --package rapidkit rapidkit doctor workspace',
-      description: 'Run workspace health checks',
-    },
-    {
-      code: 'npx --yes --package rapidkit rapidkit cache status',
-      description: 'Inspect workspace cache policy and status',
+      {
+        code: 'npx --yes --package rapidkit rapidkit init',
+        description: 'Initialize workspace files and project dependencies',
+      },
+      {
+        code: 'npx --yes --package rapidkit rapidkit workspace run init --affected --json',
+        description: 'Initialize affected projects through the workspace runner',
+      },
+      {
+        code: 'npx --yes --package rapidkit rapidkit doctor workspace',
+        description: 'Run workspace health checks',
+      },
+      {
+        code: 'npx --yes --package rapidkit rapidkit analyze --workspace . --json --output .rapidkit/reports/analyze-last-run.json',
+        description: 'Capture workspace architecture and delivery evidence',
+      },
+      {
+        code: 'npx --yes --package rapidkit rapidkit workspace list',
+        description: 'List known local workspaces',
+      },
+      {
+        code: 'npx --yes --package rapidkit rapidkit workspace share --output .rapidkit/reports/share-bundle.json',
+        description: 'Create a source-safe workspace share bundle',
+      },
+      {
+        code: 'npx --yes --package rapidkit rapidkit cache status',
+        description: 'Inspect workspace cache policy and status',
     },
     {
       code: 'npx --yes --package rapidkit rapidkit mirror status',
@@ -144,6 +160,10 @@ function buildWorkspaceCommands(profile: WorkspaceProfile): Command[] {
         code: 'npx --yes --package rapidkit rapidkit setup java --warm-deps',
         description: 'Validate Java runtime and pre-warm Maven/Gradle dependencies',
       },
+      {
+        code: 'npx --yes --package rapidkit rapidkit setup dotnet --warm-deps',
+        description: '.NET runtime and restore cache warm-up',
+      },
     ],
     enterprise: [
       {
@@ -163,6 +183,10 @@ function buildWorkspaceCommands(profile: WorkspaceProfile): Command[] {
         description: 'Validate Java runtime and pre-warm Maven/Gradle dependencies',
       },
       {
+        code: 'npx --yes --package rapidkit rapidkit setup dotnet --warm-deps',
+        description: '.NET runtime and restore cache warm-up',
+      },
+      {
         code: 'npx --yes --package rapidkit rapidkit mirror verify',
         description: 'Verify mirrored artifacts and policy compliance',
       },
@@ -180,10 +204,130 @@ function buildWorkspaceCommands(profile: WorkspaceProfile): Command[] {
 
 function buildCategories(profile: WorkspaceProfile): CommandCategory[] {
   const workspaceCommands = buildWorkspaceCommands(profile);
+  const projectCommands: Command[] = [
+    {
+      code: 'npx --yes --package rapidkit rapidkit create project fastapi.standard my-api --yes --skip-install',
+      description: 'Create FastAPI Standard project in current workspace',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit create project fastapi.ddd my-ddd-api --yes --skip-install',
+      description: 'Create FastAPI DDD project with clean architecture',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit create project nestjs.standard my-service --yes --skip-install',
+      description: 'Create NestJS project in current workspace',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit create project gofiber.standard my-go-service --yes --skip-install',
+      description: 'Create Go/Fiber project in current workspace',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit create project gogin.standard my-gin-service --yes --skip-install',
+      description: 'Create Go/Gin project in current workspace',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit create project springboot.standard billing-api --yes --skip-install',
+      description: 'Create Spring Boot project in current workspace',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit create project dotnet.webapi.clean dotnet-api --yes --skip-install',
+      description: 'Create .NET Web API clean architecture project',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit import ../orders-api --json',
+      description: 'Import an existing backend project into the workspace',
+    },
+  ];
+  const handoffCommands: Command[] = [
+    {
+      code: 'npx --yes --package rapidkit rapidkit workspace export --output team-workspace.rapidkit-archive.zip',
+      description: 'Export a portable workspace archive',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit workspace archive inspect team-workspace.rapidkit-archive.zip',
+      description: 'Inspect archive contents and metadata',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit workspace archive verify team-workspace.rapidkit-archive.zip',
+      description: 'Verify archive integrity before sharing',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit workspace archive doctor team-workspace.rapidkit-archive.zip',
+      description: 'Run archive diagnostics before hydrate/import',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit workspace hydrate team-workspace.rapidkit-archive.zip --output ./restored-workspace',
+      description: 'Hydrate a verified archive into a local workspace',
+    },
+  ];
+  const contractCommands: Command[] = [
+    {
+      code: 'npx --yes --package rapidkit rapidkit workspace contract init',
+      description: 'Create the workspace contract registry baseline',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit workspace contract inspect --json',
+      description: 'Inspect service ownership, ports, APIs, events, and dependencies',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit workspace contract verify --json',
+      description: 'Verify workspace contract consistency',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit workspace contract graph --json',
+      description: 'Render a graph-ready workspace contract snapshot',
+    },
+  ];
+  const recoveryCommands: Command[] = [
+    {
+      code: 'npx --yes --package rapidkit rapidkit snapshot create before-upgrade --reason "before dependency update"',
+      description: 'Create a named workspace snapshot',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit snapshot list --json',
+      description: 'List available workspace snapshots',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit snapshot inspect before-upgrade --json',
+      description: 'Inspect snapshot metadata and restore scope',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit snapshot restore before-upgrade --force',
+      description: 'Restore a workspace snapshot intentionally',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit project archive api-service --json',
+      description: 'Archive one project without losing workspace context',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit project restore api-service --json',
+      description: 'Restore an archived project',
+    },
+  ];
   const devCommands: Command[] = [
     {
       code: 'npx --yes --package rapidkit rapidkit doctor workspace --fix',
       description: 'Run doctor with safe auto-fixes',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit doctor project --fix',
+      description: 'Run project-scoped doctor with safe fixes',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit workspace run test --affected --json',
+      description: 'Run affected project tests through the workspace runner',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit workspace run build --affected --json',
+      description: 'Build affected projects through the workspace runner',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit readiness --json --strict',
+      description: 'Run strict readiness checks before handoff',
+    },
+    {
+      code: 'npx --yes --package rapidkit rapidkit autopilot release --mode enforce --json --output .rapidkit/reports/autopilot-release.json',
+      description: 'Run the release enforcement gate',
     },
     {
       code: 'npx --yes --package rapidkit rapidkit --version',
@@ -215,37 +359,8 @@ function buildCategories(profile: WorkspaceProfile): CommandCategory[] {
       id: 'project',
       title: 'Project',
       icon: Rocket,
-      count: 7,
-      commands: [
-        {
-          code: 'npx --yes --package rapidkit rapidkit create project fastapi.standard my-api --output .',
-          description: 'Create FastAPI Standard project in current workspace',
-        },
-        {
-          code: 'npx --yes --package rapidkit rapidkit create project fastapi.ddd my-ddd-api --output .',
-          description: 'Create FastAPI DDD project with clean architecture',
-        },
-        {
-          code: 'npx --yes --package rapidkit rapidkit create project nestjs.standard my-service --output .',
-          description: 'Create NestJS project in current workspace',
-        },
-        {
-          code: 'npx --yes --package rapidkit rapidkit create project gofiber.standard my-go-service --output .',
-          description: 'Create Go/Fiber project in current workspace',
-        },
-        {
-          code: 'npx --yes --package rapidkit rapidkit create project springboot.standard my-spring-service --output .',
-          description: 'Create Spring Boot project in current workspace',
-        },
-        {
-          code: 'npx --yes --package rapidkit rapidkit create project springboot.standard billing-api --output ~/projects',
-          description: 'Create standalone Spring Boot project at custom location',
-        },
-        {
-          code: 'npx --yes --package rapidkit rapidkit init && npx --yes --package rapidkit rapidkit dev',
-          description: 'Initialize dependencies and start development server',
-        },
-      ],
+      count: projectCommands.length,
+      commands: projectCommands,
     },
     {
       id: 'module',
@@ -281,6 +396,27 @@ function buildCategories(profile: WorkspaceProfile): CommandCategory[] {
       icon: Settings,
       count: devCommands.length,
       commands: devCommands,
+    },
+    {
+      id: 'contract',
+      title: 'Contract',
+      icon: GitBranch,
+      count: contractCommands.length,
+      commands: contractCommands,
+    },
+    {
+      id: 'handoff',
+      title: 'Handoff',
+      icon: Archive,
+      count: handoffCommands.length,
+      commands: handoffCommands,
+    },
+    {
+      id: 'recovery',
+      title: 'Recovery',
+      icon: Activity,
+      count: recoveryCommands.length,
+      commands: recoveryCommands,
     },
   ];
 }
@@ -327,6 +463,22 @@ export function CommandReference({
       requiresWorkspace: true,
     },
     {
+      id: 'build',
+      title: 'Build',
+      detail: 'Affected projects',
+      icon: CheckCircle2,
+      command: 'workspaceRunBuild',
+      requiresWorkspace: true,
+    },
+    {
+      id: 'analyze',
+      title: 'Analyze',
+      detail: 'Evidence scan',
+      icon: Boxes,
+      command: 'workspaceAnalyze',
+      requiresWorkspace: true,
+    },
+    {
       id: 'contract',
       title: 'Graph',
       detail: 'Services, ports',
@@ -340,6 +492,22 @@ export function CommandReference({
       detail: 'Share safely',
       icon: Archive,
       command: 'workspaceArchive',
+    },
+    {
+      id: 'share',
+      title: 'Share',
+      detail: 'Bundle metadata',
+      icon: PanelTopOpen,
+      command: 'workspaceShare',
+      requiresWorkspace: true,
+    },
+    {
+      id: 'snapshot',
+      title: 'Snapshot',
+      detail: 'Recovery point',
+      icon: Activity,
+      command: 'workspaceSnapshot',
+      requiresWorkspace: true,
     },
     {
       id: 'terminal',
@@ -369,7 +537,7 @@ export function CommandReference({
         {
           title: 'Inspect topology',
           detail: 'Open service graph, port ownership, dependencies, APIs, and events.',
-          action: actions[4],
+          action: actions[6],
         },
         {
           title: 'Validate execution',
@@ -377,9 +545,14 @@ export function CommandReference({
           action: actions[3],
         },
         {
+          title: 'Capture evidence',
+          detail: 'Analyze the workspace before release, handoff, or AI-assisted changes.',
+          action: actions[5],
+        },
+        {
           title: 'Prepare handoff',
           detail: 'Create or inspect a portable archive before sharing.',
-          action: actions[5],
+          action: actions[7],
         },
       ]
     : [
@@ -410,22 +583,27 @@ export function CommandReference({
     {
       title: 'Workspace handoff',
       detail: 'Export, verify, doctor, and hydrate portable workspace archives.',
-      action: actions[5],
+      action: actions[7],
     },
     {
       title: 'Contract registry',
       detail: 'Keep service ownership, ports, APIs, events, and dependencies explicit.',
-      action: actions[4],
+      action: actions[6],
+    },
+    {
+      title: 'Recovery loop',
+      detail: 'Create, inspect, and restore snapshots before risky changes.',
+      action: actions[9],
     },
     {
       title: 'Release safety',
       detail: 'Use workspace tests and autopilot gates before publish or delivery.',
-      action: actions[7],
+      action: actions[11],
     },
     {
       title: 'Operator loop',
       detail: 'Doctor, terminal, policy, and mirror checks from one consistent surface.',
-      action: actions[6],
+      action: actions[10],
     },
   ];
 

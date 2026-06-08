@@ -101,9 +101,14 @@ import {
 } from '../ui/panels/incidentStudioPolicyGates';
 
 type StackFixture = {
-  framework: 'fastapi' | 'nestjs' | 'go' | 'springboot';
+  framework: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
   projectName: string;
-  expectedKit: 'fastapi.standard' | 'nestjs.standard' | 'gofiber.standard' | 'springboot.standard';
+  expectedKit:
+    | 'fastapi.standard'
+    | 'nestjs.standard'
+    | 'gofiber.standard'
+    | 'springboot.standard'
+    | 'dotnet.webapi.clean';
   expectedPromptSignal: string;
   moduleSupportExpected: boolean;
 };
@@ -135,6 +140,13 @@ const STACK_FIXTURES: StackFixture[] = [
     projectName: 'billing-api',
     expectedKit: 'springboot.standard',
     expectedPromptSignal: 'PROJECT ARCHITECTURE: Spring Boot Standard Kit',
+    moduleSupportExpected: false,
+  },
+  {
+    framework: 'dotnet',
+    projectName: 'inventory-api',
+    expectedKit: 'dotnet.webapi.clean',
+    expectedPromptSignal: 'PROJECT ARCHITECTURE: .NET Web API Clean Kit',
     moduleSupportExpected: false,
   },
 ];
@@ -221,6 +233,27 @@ function createStackProject(root: string, fixture: StackFixture): string {
         '  </dependencies>',
         '</project>',
       ].join('\n')
+    );
+  }
+
+  if (fixture.framework === 'dotnet') {
+    fs.mkdirSync(path.join(projectPath, 'src', 'Inventory.Api'), { recursive: true });
+    fs.writeFileSync(
+      path.join(projectPath, 'inventory-api.csproj'),
+      [
+        '<Project Sdk="Microsoft.NET.Sdk.Web">',
+        '  <PropertyGroup>',
+        '    <TargetFramework>net9.0</TargetFramework>',
+        '  </PropertyGroup>',
+        '  <ItemGroup>',
+        '    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />',
+        '  </ItemGroup>',
+        '</Project>',
+      ].join('\n')
+    );
+    fs.writeFileSync(
+      path.join(projectPath, 'src', 'Inventory.Api', 'Program.cs'),
+      'var builder = WebApplication.CreateBuilder(args);\n'
     );
   }
 

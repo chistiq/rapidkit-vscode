@@ -46,7 +46,7 @@ interface ModuleBrowserProps {
   categoryInfo: CategoryInfo;
   onRefresh: () => void;
   onInstall: (module: ModuleData) => void;
-  onShowDetails: (moduleId: string) => void;
+  onShowDetails: (module: ModuleData) => void;
   onAI?: (module: ModuleData) => void;
   onProjectTerminal?: () => void;
   onProjectInit?: () => void;
@@ -193,15 +193,16 @@ export function ModuleBrowser({
     .join(' · ');
 
   const handleCopyCommand = (moduleId: string, slug: string) => {
-    const command = `rapidkit add module ${slug}`;
+    const command = `npx --yes --package rapidkit rapidkit add module ${slug}`;
     navigator.clipboard.writeText(command);
     setCopiedModuleId(moduleId);
     setTimeout(() => setCopiedModuleId(null), 2000);
   };
 
-  const handleShowDetails = (moduleId: string) => {
+  const handleShowDetails = (module: ModuleData) => {
+    const moduleId = module.id || module.slug || module.name;
     setLoadingModuleId(moduleId);
-    onShowDetails(moduleId);
+    onShowDetails(module);
     setTimeout(() => setLoadingModuleId(null), 1500);
   };
 
@@ -423,7 +424,7 @@ export function ModuleBrowser({
                     })()}
                     <button
                       className={`module-action-btn ${loadingModuleId === module.id ? 'loading' : ''}`}
-                      onClick={() => handleShowDetails(module.id)}
+                      onClick={() => handleShowDetails(module)}
                       title="View Details"
                       disabled={loadingModuleId === module.id}
                     >

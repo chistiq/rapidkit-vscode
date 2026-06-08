@@ -3,14 +3,18 @@
  * Wraps the rapidkit NPM package for use in VS Code extension.
  *
  * Uses the current npm workflow (no deprecated --template):
- * - Workspace: npx rapidkit <workspace-name> [--yes] [--skip-git]
- * - Project:   npx rapidkit create project <kit> <name> --output <dir> [--yes] [--skip-git] [--skip-install]
- *   Kit slugs: fastapi.standard, fastapi.ddd, nestjs.standard, gofiber.standard, gogin.standard, springboot.standard.
+ * - Workspace: npx --yes --package rapidkit rapidkit <workspace-name> [--yes] [--skip-git]
+ * - Project:   npx --yes --package rapidkit rapidkit create project <kit> <name> --output <dir> [--yes] [--skip-git] [--skip-install]
+ *   Kit slugs: fastapi.standard, fastapi.ddd, nestjs.standard, gofiber.standard,
+ *   gogin.standard, springboot.standard, dotnet.webapi.clean.
  */
 
 import { Logger } from '../utils/logger';
 import { run } from '../utils/exec';
-import { getWorkspaceVenvRapidkitCandidates } from '../utils/platformCapabilities';
+import {
+  buildNpxRapidkitArgs,
+  getWorkspaceVenvRapidkitCandidates,
+} from '../utils/platformCapabilities';
 import * as path from 'path';
 
 type ExecaReturnValue = any;
@@ -35,7 +39,7 @@ export interface CreateWorkspaceOptions {
 
 export interface CreateProjectOptions {
   name: string;
-  kit: string; // Kit name (e.g., 'fastapi.standard', 'nestjs.standard', 'gofiber.standard', 'springboot.standard')
+  kit: string; // Kit name (e.g., 'fastapi.standard', 'nestjs.standard', 'gofiber.standard', 'dotnet.webapi.clean')
   parentPath: string;
   skipGit?: boolean;
   skipInstall?: boolean;
@@ -44,7 +48,7 @@ export interface CreateProjectOptions {
 
 export interface CreateProjectInWorkspaceOptions {
   name: string;
-  kit: string; // Kit name (e.g., 'fastapi.standard', 'nestjs.standard', 'gofiber.standard', 'springboot.standard')
+  kit: string; // Kit name (e.g., 'fastapi.standard', 'nestjs.standard', 'gofiber.standard', 'dotnet.webapi.clean')
   workspacePath: string;
   skipGit?: boolean;
   skipInstall?: boolean;
@@ -58,16 +62,16 @@ export class WorkspaiCLI {
   }
 
   private buildPortableNpxRapidkitArgs(args: string[]): string[] {
-    return ['--yes', '--package', 'rapidkit', 'rapidkit', ...args];
+    return buildNpxRapidkitArgs(args);
   }
 
   /**
    * Create a new RapidKit workspace using npm package
-   * Uses: npx rapidkit <workspace-name> [--yes] [--skip-git]
+   * Uses: npx --yes --package rapidkit rapidkit <workspace-name> [--yes] [--skip-git]
    * Creates workspace at the specified parent path
    */
   async createWorkspace(options: CreateWorkspaceOptions): Promise<ExecaReturnValue> {
-    // Use: npx rapidkit create workspace <name> --yes  (skip interactive prompts)
+    // Use: npx --yes --package rapidkit rapidkit create workspace <name> --yes  (skip interactive prompts)
     const args = ['create', 'workspace', options.name, '--yes'];
 
     if (options.installMethod) {
@@ -100,7 +104,7 @@ export class WorkspaiCLI {
 
   /**
    * Create a standalone project (Direct mode)
-   * Uses core: npx rapidkit create project <kit> <project-name> --output <dir> [--skip-git] [--skip-install]
+   * Uses core: npx --yes --package rapidkit rapidkit create project <kit> <project-name> --output <dir> [--skip-git] [--skip-install]
    */
   async createProject(options: CreateProjectOptions): Promise<ExecaReturnValue> {
     const args = [
@@ -148,7 +152,7 @@ export class WorkspaiCLI {
 
   /**
    * Create a project inside an existing workspace.
-   * Runs from workspace dir: npx rapidkit create project <kit> <project-name> --output .
+   * Runs from workspace dir: npx --yes --package rapidkit rapidkit create project <kit> <project-name> --output .
    * So project is created at <workspacePath>/<project-name>.
    */
   async createProjectInWorkspace(
@@ -212,7 +216,7 @@ export class WorkspaiCLI {
    */
   async isAvailable(): Promise<boolean> {
     // Prefer direct `rapidkit` binary if available (user-installed global),
-    // fallback to `npx rapidkit` otherwise. This avoids environment/path
+    // fallback to `npx --yes --package rapidkit rapidkit` otherwise. This avoids environment/path
     // differences between VS Code extension host and the user's interactive shell.
     try {
       // Try direct executable first
@@ -348,7 +352,7 @@ export class WorkspaiCLI {
     this.logger.info('Adding module to project:', { projectPath, moduleSlug });
 
     // Run from project directory - npm package will auto-detect workspace
-    // Equivalent command from that directory: npx rapidkit add module <moduleSlug>
+    // Equivalent command from that directory: npx --yes --package rapidkit rapidkit add module <moduleSlug>
     return await this.run(['add', 'module', moduleSlug], projectPath, true);
   }
 }

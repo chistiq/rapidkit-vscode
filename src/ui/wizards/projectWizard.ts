@@ -9,7 +9,7 @@ import { KitsService } from '../../core/kitsService';
 
 export class ProjectWizard {
   async show(
-    preselectedFramework?: 'fastapi' | 'nestjs' | 'go' | 'springboot',
+    preselectedFramework?: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet',
     prefilledName?: string,
     preselectedKit?: string
   ): Promise<ProjectConfig | undefined> {
@@ -46,7 +46,7 @@ export class ProjectWizard {
     }
 
     // Step 2: Choose framework (skip if preselected)
-    let framework: 'fastapi' | 'nestjs' | 'go' | 'springboot';
+    let framework: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
 
     if (preselectedFramework) {
       framework = preselectedFramework;
@@ -75,6 +75,12 @@ export class ProjectWizard {
           description: 'Java + Spring ecosystem',
           detail: 'Production-ready Java service with Maven/Gradle',
           framework: 'springboot' as const,
+        },
+        {
+          label: '$(symbol-method) .NET Web API',
+          description: 'C# + ASP.NET Core ecosystem',
+          detail: 'Clean architecture Web API service',
+          framework: 'dotnet' as const,
         },
       ];
 

@@ -29,6 +29,8 @@ export interface BackendImportMarkerSignals {
   hasPomXml: boolean;
   hasGradle: boolean;
   hasGradleKts: boolean;
+  hasCsproj?: boolean;
+  hasSln?: boolean;
   hasPackageJson: boolean;
   hasNestDependency: boolean;
 }
@@ -191,6 +193,10 @@ export function detectStackFromMarkerSignals(signals: BackendImportMarkerSignals
 
   if (signals.hasPomXml || signals.hasGradle || signals.hasGradleKts) {
     return detectStackFromBackendHints({ framework: 'springboot', confidenceLevel: 'high' });
+  }
+
+  if (signals.hasCsproj || signals.hasSln) {
+    return detectStackFromBackendHints({ framework: 'dotnet', confidenceLevel: 'high' });
   }
 
   return { stack: 'unknown', confidence: 'low' };
