@@ -56,10 +56,10 @@ export class WorkspaiCompletionProvider implements vscode.CompletionItemProvider
     const profileItem = new vscode.CompletionItem('profile', vscode.CompletionItemKind.Property);
     profileItem.detail = 'Project profile';
     profileItem.documentation = new vscode.MarkdownString(
-      'Specify the profile: `minimal`, `python-only`, `node-only`, `go-only`, `java-only`, `polyglot`, or `enterprise`'
+      'Specify the profile: `minimal`, `python-only`, `node-only`, `go-only`, `java-only`, `dotnet-only`, `polyglot`, or `enterprise`'
     );
     profileItem.insertText = new vscode.SnippetString(
-      '"profile": "${1|minimal,python-only,node-only,go-only,java-only,polyglot,enterprise|}"'
+      '"profile": "${1|minimal,python-only,node-only,go-only,java-only,dotnet-only,polyglot,enterprise|}"'
     );
     items.push(profileItem);
 

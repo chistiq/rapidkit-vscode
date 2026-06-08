@@ -321,7 +321,7 @@ const AI_WORKSPACE_COMMANDS: WorkspaceCommandPick[] = [
   },
   {
     label: 'Setup Workspace Runtime',
-    detail: 'Verify runtime prerequisites (Python/Node/Go/Java)',
+    detail: 'Verify runtime prerequisites (Python/Node/Go/Java/.NET)',
     command: 'workspai.workspaceSetup',
     category: 'Workspace Governance',
   },

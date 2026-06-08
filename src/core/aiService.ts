@@ -1183,6 +1183,7 @@ export type AICreateProfile =
   | 'node-only'
   | 'go-only'
   | 'java-only'
+  | 'dotnet-only'
   | 'polyglot'
   | 'enterprise';
 export type AICreateFramework = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
@@ -1205,6 +1206,7 @@ const VALID_PROFILES = new Set<AICreateProfile>([
   'node-only',
   'go-only',
   'java-only',
+  'dotnet-only',
   'polyglot',
   'enterprise',
 ]);

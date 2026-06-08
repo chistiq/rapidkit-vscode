@@ -14,8 +14,17 @@ import { buildNpxRapidkitArgs } from '../../utils/platformCapabilities';
 
 const SETUP_PREFERENCES_KEY = 'workspai.setup.preferences';
 
-type SetupToolKey = 'python' | 'pip' | 'pipx' | 'poetry' | 'go' | 'java' | 'maven' | 'gradle';
-type InstallMethodKey = 'python' | 'core' | 'cli' | 'go' | 'java';
+type SetupToolKey =
+  | 'python'
+  | 'pip'
+  | 'pipx'
+  | 'poetry'
+  | 'go'
+  | 'java'
+  | 'maven'
+  | 'gradle'
+  | 'dotnet';
+type InstallMethodKey = 'python' | 'core' | 'cli' | 'go' | 'java' | 'dotnet';
 type DetectionSource = 'manual-path' | 'path' | 'fallback' | 'workspace';
 type PathDoctorSuggestion = {
   id: string;
@@ -676,6 +685,26 @@ export class SetupPanel {
               });
               break;
             }
+            case 'installDotnet': {
+              vscode.env.openExternal(vscode.Uri.parse('https://dotnet.microsoft.com/download'));
+              vscode.window.showInformationMessage(
+                'Opening .NET downloads — install .NET SDK 8+ for ASP.NET Core workspaces.'
+              );
+              break;
+            }
+            case 'verifyDotnet': {
+              const prefs = this._getSetupPreferences();
+              const manualDotnet = prefs.manualPaths.dotnet;
+              runCommandsInTerminal({
+                name: 'Verify .NET',
+                commands: [
+                  ...(manualDotnet ? [`${this._quoteExecutable(manualDotnet)} --version`] : []),
+                  'dotnet --version',
+                  'dotnet --info',
+                ].filter((value, index, array) => array.indexOf(value) === index),
+              });
+              break;
+            }
             case 'installJava': {
               const javaInstallUrl =
                 process.platform === 'darwin'
@@ -947,6 +976,9 @@ export class SetupPanel {
       mavenVersion: null as string | null,
       gradleInstalled: false,
       gradleVersion: null as string | null,
+      dotnetInstalled: false,
+      dotnetVersion: null as string | null,
+      dotnetPath: null as string | null,
 
       coreInstalled: false,
       coreVersion: null as string | null,
@@ -1025,6 +1057,35 @@ export class SetupPanel {
       status.goVersion = goProbe.version;
       status.goPath = goProbe.cmd;
       status.detections.go = this._buildDetection(goProbe.cmd, preferences.manualPaths.go);
+    }
+
+    const dotnetCandidates = status.isWindows
+      ? [
+          preferences.manualPaths.dotnet || '',
+          'dotnet',
+          'C:\\Program Files\\dotnet\\dotnet.exe',
+          process.env.DOTNET_ROOT ? path.join(process.env.DOTNET_ROOT, 'dotnet.exe') : '',
+        ]
+      : [
+          preferences.manualPaths.dotnet || '',
+          'dotnet',
+          '/usr/bin/dotnet',
+          '/usr/local/bin/dotnet',
+          process.env.DOTNET_ROOT ? path.join(process.env.DOTNET_ROOT, 'dotnet') : '',
+        ];
+
+    const dotnetProbe = await runVersionProbe(dotnetCandidates, ['--version'], (output) => {
+      const match = output.match(/(\d+\.\d+\.\d+)/);
+      return match?.[1] || null;
+    });
+    if (dotnetProbe) {
+      status.dotnetInstalled = true;
+      status.dotnetVersion = dotnetProbe.version;
+      status.dotnetPath = dotnetProbe.cmd;
+      status.detections.dotnet = this._buildDetection(
+        dotnetProbe.cmd,
+        preferences.manualPaths.dotnet
+      );
     }
 
     const javaCandidates = status.isWindows
@@ -2207,6 +2268,7 @@ export class SetupPanel {
         cli: 'recommended',
         go: 'recommended',
         java: 'recommended',
+        dotnet: 'recommended',
       },
       lastPathDoctorReport: null,
     };

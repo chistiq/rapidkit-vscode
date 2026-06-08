@@ -50,13 +50,16 @@ type WorkspaceBootstrapProfile =
   | 'node-only'
   | 'go-only'
   | 'java-only'
+  | 'dotnet-only'
   | 'polyglot'
   | 'enterprise';
 type WorkspaceSnapshotAction = 'create' | 'list' | 'inspect' | 'restore';
 type WorkspaceContractAction = 'init' | 'inspect' | 'verify' | 'graph' | 'open';
 
 type ProfileQuickPickItem = vscode.QuickPickItem & { value: WorkspaceBootstrapProfile };
-type RuntimeQuickPickItem = vscode.QuickPickItem & { value: 'python' | 'node' | 'go' | 'java' };
+type RuntimeQuickPickItem = vscode.QuickPickItem & {
+  value: 'python' | 'node' | 'go' | 'java' | 'dotnet';
+};
 type SnapshotActionQuickPickItem = vscode.QuickPickItem & { value: WorkspaceSnapshotAction };
 type SnapshotModeQuickPickItem = vscode.QuickPickItem & { value: 'metadata' | 'full' };
 type SnapshotRestoreModeQuickPickItem = vscode.QuickPickItem & { value: 'dry-run' | 'force' };
@@ -965,13 +968,18 @@ export function registerWorkspaceOperationsCommands(options: {
             value: 'java-only',
           },
           {
+            label: '$(symbol-interface) dotnet-only',
+            description: '.NET runtime bootstrap for ASP.NET Core services',
+            value: 'dotnet-only',
+          },
+          {
             label: '$(layers) polyglot',
-            description: 'Python + Node + Go + Java — multi-runtime workspace',
+            description: 'Python + Node + Go + Java + .NET — multi-runtime workspace',
             value: 'polyglot',
           },
           {
             label: '$(shield) enterprise',
-            description: 'Polyglot + governance + Sigstore verification',
+            description: 'Polyglot + .NET + governance + Sigstore verification',
             value: 'enterprise',
           },
         ],
@@ -1041,6 +1049,11 @@ export function registerWorkspaceOperationsCommands(options: {
             label: '$(symbol-class) java',
             description: 'Check Java / Maven / Gradle prerequisites',
             value: 'java',
+          },
+          {
+            label: '$(symbol-interface) dotnet',
+            description: 'Check .NET SDK prerequisites',
+            value: 'dotnet',
           },
         ],
         {

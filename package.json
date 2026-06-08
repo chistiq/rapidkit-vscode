@@ -1,8 +1,8 @@
 {
   "name": "rapidkit-vscode",
   "displayName": "Workspai",
-  "description": "The AI workspace for backend teams. Build backend systems with AI that knows your workspace, generate projects and modules from intent, debug with full context, and ship faster — all inside VS Code. FastAPI, NestJS, Spring Boot, Go/Fiber & Go/Gin.",
-  "version": "0.32.1",
+  "description": "The AI workspace for backend teams. Build backend systems with AI that knows your workspace, generate projects and modules from intent, debug with full context, and ship faster — all inside VS Code. FastAPI, NestJS, Spring Boot, Go/Fiber, Go/Gin, and .NET Web API.",
+  "version": "0.33.0",
   "publisher": "rapidkit",
   "icon": "media/icons/icon.png",
   "galleryBanner": {
@@ -35,6 +35,8 @@
     "spring",
     "springboot",
     "java",
+    "dotnet",
+    "csharp",
     "go",
     "backend",
     "scaffold",

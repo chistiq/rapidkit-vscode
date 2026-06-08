@@ -8,6 +8,7 @@ export type AICreateProfile =
     | 'node-only'
     | 'go-only'
     | 'java-only'
+    | 'dotnet-only'
     | 'polyglot'
     | 'enterprise';
 
@@ -402,6 +403,7 @@ const PROFILE_META: Record<AICreateProfile, { icon: string; iconUri?: string; la
         label: 'Java',
         color: '#6db33f',
     },
+    'dotnet-only': { icon: '.NET', label: '.NET', color: '#512bd4' },
     polyglot: { icon: '⊞', label: 'Polyglot', color: '#a855f7' },
     enterprise: { icon: '🛡️', label: 'Enterprise', color: '#f59e0b' },
 };

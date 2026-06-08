@@ -122,6 +122,8 @@ describe('contract drift guard', () => {
       'python-only',
       'node-only',
       'go-only',
+      'java-only',
+      'dotnet-only',
       'polyglot',
       'enterprise',
     ];
@@ -177,6 +179,23 @@ describe('contract drift guard', () => {
     expect(setupPanelSource).toContain("'python3 -m pip --version'");
     expect(setupPanelSource).toContain("'python -m pip install --user pipx'");
     expect(setupPanelSource).toContain("'python -m pipx ensurepath'");
+  });
+
+  it('keeps dotnet workspace setup surfaced across command and setup experiences', () => {
+    const workspaceOpsSource = read('src/commands/workspaceOperations.ts');
+    const setupPanelSource = read('src/ui/panels/setupExperiencePanel.ts');
+    const setupExperienceSource = read('webview-ui/src/components/SetupExperience.tsx');
+    const commandCenterSource = read('src/commands/aiFreeFeatures.ts');
+
+    expect(workspaceOpsSource).toContain("value: 'dotnet'");
+    expect(workspaceOpsSource).toContain("value: 'dotnet-only'");
+    expect(setupPanelSource).toContain("'dotnet'");
+    expect(setupPanelSource).toContain("case 'verifyDotnet'");
+    expect(setupPanelSource).toContain("case 'installDotnet'");
+    expect(setupExperienceSource).toContain('dotnetInstalled?: boolean');
+    expect(setupExperienceSource).toContain("verifyCommand: 'verifyDotnet'");
+    expect(setupExperienceSource).toContain('ToolGroup title=".NET / ASP.NET Core"');
+    expect(commandCenterSource).toContain('Python/Node/Go/Java/.NET');
   });
 
   it('keeps release stop automation wired to gate script and CI workflow', () => {

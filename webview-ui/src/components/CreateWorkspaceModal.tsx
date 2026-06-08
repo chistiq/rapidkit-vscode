@@ -10,6 +10,7 @@ export type WorkspaceProfile =
     | 'node-only'
     | 'go-only'
     | 'java-only'
+    | 'dotnet-only'
     | 'polyglot'
     | 'enterprise';
 export type WorkspaceInstallMethod = 'auto' | 'poetry' | 'venv' | 'pipx';
@@ -37,7 +38,8 @@ const PROFILES: { value: WorkspaceProfile; icon: string; iconUri?: string; label
     { value: 'node-only', icon: 'JS', label: 'Node.js', desc: 'npm/NestJS' },
     { value: 'go-only', icon: 'Go', label: 'Go', desc: 'Go runtime' },
     { value: 'java-only', icon: 'Java', iconUri: (typeof window !== 'undefined' ? (window as any).SPRINGBOOT_ICON_URI : undefined), label: 'Java', desc: 'Spring Boot' },
-    { value: 'polyglot', icon: 'All', label: 'Polyglot', desc: 'Py+Node+Go+Java' },
+    { value: 'dotnet-only', icon: '.NET', label: '.NET', desc: 'ASP.NET Core' },
+    { value: 'polyglot', icon: 'All', label: 'Polyglot', desc: 'Py+Node+Go+Java+.NET' },
     { value: 'enterprise', icon: 'Gov', label: 'Enterprise', desc: '+Governance' },
 ];
 
@@ -148,6 +150,8 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, 
     };
 
     const needsJava = profile === 'java-only' || profile === 'polyglot' || profile === 'enterprise';
+    const needsDotnet =
+        profile === 'dotnet-only' || profile === 'polyglot' || profile === 'enterprise';
     const canCreate = workspaceName.trim() && !error;
 
     return (
@@ -240,6 +244,18 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, 
                     </div>
                 )}
 
+                {needsDotnet && toolStatus && !toolStatus.dotnetAvailable && (
+                    <div className="modal-field--wide">
+                        <EnterpriseModalNotice tone="warning">
+                            <AlertCircle size={14} />
+                            <span>.NET SDK 8+ is required for this profile.</span>
+                            <button type="button" className="modal-inline-link" onClick={() => vscode.postMessage('openSetup')}>
+                                Open Setup
+                            </button>
+                        </EnterpriseModalNotice>
+                    </div>
+                )}
+
                 <div className="modal-field modal-field--wide">
                     <span>Install method</span>
                     <div className="modal-option-grid modal-option-grid--two">
@@ -266,7 +282,7 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, 
                     </div>
                     {toolStatus && (
                         <span className="modal-field__hint">
-                            Active: {toolStatus.preferredInstallMethod} · Java {toolStatus.javaAvailable ? 'ok' : 'missing'} · Maven {toolStatus.mavenAvailable ? 'ok' : 'missing'} · Gradle {toolStatus.gradleAvailable ? 'ok' : 'missing'}
+                            Active: {toolStatus.preferredInstallMethod} · Java {toolStatus.javaAvailable ? 'ok' : 'missing'} · Maven {toolStatus.mavenAvailable ? 'ok' : 'missing'} · Gradle {toolStatus.gradleAvailable ? 'ok' : 'missing'} · .NET {toolStatus.dotnetAvailable ? 'ok' : 'missing'}
                         </span>
                     )}
                 </div>

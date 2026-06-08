@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-06-08
+
+### Added
+
+* Full `.NET` setup-runtime support across the command palette setup flow and the dashboard setup experience.
+* `dotnet-only` workspace bootstrap profile across schemas, completion, hover help, AI create flows, command reference, and workspace creation UI.
+* Drift guard coverage that keeps `.NET` and `dotnet-only` surfaced in setup/runtime/profile experiences.
+
+### Changed
+
+* Updated marketplace/package metadata to include `.NET Web API` and C# discovery terms.
+* Expanded polyglot and enterprise workspace profile copy to include `.NET` alongside Python, Node.js, Go, and Java.
+* Hardened release-stop-gate tests so script subprocesses run with a clean Node CLI environment instead of inheriting Vitest worker hooks.
+* Reset RapidKit CLI test mocks between tests and aligned fallback expectations with the actual direct-binary-to-npx execution path.
+
+### Fixed
+
+* Fixed setup/runtime UI drift where `.NET` projects were supported by project creation but missing from runtime verification flows.
+* Fixed dashboard setup guidance so `.NET SDK 8+` install, verify, path detection, and AI setup suggestions are visible.
+* Fixed profile parity gaps where `dotnet-only` could be accepted by the CLI surface but omitted from extension schemas or UI helpers.
+
+### Verification
+
+* `./node_modules/.bin/tsc --noEmit`
+* `./node_modules/.bin/vitest run`
+* `./node_modules/.bin/eslint src --ext ts --max-warnings 100`
+* `node scripts/sync-import-stack-parity-snapshot.mjs --check`
+* `node esbuild.js --production`
+* `node esbuild.js` from `webview-ui`
+
 ## [0.32.1] - 2026-06-08
 
 ### Added

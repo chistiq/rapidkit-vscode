@@ -111,6 +111,7 @@ export interface Workspace {
     | 'node-only'
     | 'go-only'
     | 'java-only'
+    | 'dotnet-only'
     | 'polyglot'
     | 'enterprise';
   /** Phase 4: dependency sharing mode from .rapidkit/policies.yml */

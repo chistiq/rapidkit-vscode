@@ -41,6 +41,7 @@ export class WorkspaceWizard {
         | 'node-only'
         | 'go-only'
         | 'java-only'
+        | 'dotnet-only'
         | 'polyglot'
         | 'enterprise';
     };
@@ -77,8 +78,14 @@ export class WorkspaceWizard {
           value: 'java-only',
         },
         {
+          label: '$(symbol-interface) dotnet-only',
+          description: '.NET runtime bootstrap',
+          detail: 'Best for: ASP.NET Core services and C# APIs',
+          value: 'dotnet-only',
+        },
+        {
           label: '$(layers) polyglot',
-          description: 'Python + Node.js + Go — full multi-runtime workspace',
+          description: 'Python + Node.js + Go + Java + .NET — full multi-runtime workspace',
           detail: 'Best for: microservice monorepos, mixed-language teams',
           value: 'polyglot',
         },

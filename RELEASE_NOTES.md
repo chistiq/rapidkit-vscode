@@ -1,5 +1,32 @@
 # Release Notes
 
+## v0.33.0 (June 8, 2026)
+
+### ✦ .NET Setup Runtime and Enterprise Profile Parity
+
+Summary:
+- Promote the extension release to `0.33.0` because `0.32.1` was pushed but not published to the marketplace.
+- Complete `.NET` runtime setup coverage across the VS Code command palette and dashboard setup experience.
+- Add `dotnet-only` profile parity across schemas, completions, hover help, AI creation, command reference, and workspace creation UI.
+- Harden subprocess-based release gate tests and RapidKit CLI fallback tests so CI remains deterministic across operating systems.
+
+Highlights:
+- Setup Runtime now includes `.NET` alongside Python, Node.js, Go, and Java.
+- The setup dashboard can detect, verify, and guide installation for `.NET SDK 8+`.
+- Workspace bootstrap profiles now include `dotnet-only`, and polyglot/enterprise copy clearly includes `.NET`.
+- Extension metadata now advertises `.NET Web API` and C# support for marketplace discovery.
+- Drift guards now protect `.NET` and profile parity from silently regressing.
+
+Validation:
+- `./node_modules/.bin/tsc --noEmit`
+- `./node_modules/.bin/vitest run`
+- `./node_modules/.bin/eslint src --ext ts --max-warnings 100`
+- `node scripts/sync-import-stack-parity-snapshot.mjs --check`
+- `node esbuild.js --production`
+- `node esbuild.js` from `webview-ui`
+
+Release posture: `runtime-profile-parity-and-extension-stabilization`
+
 ## v0.32.1 (June 8, 2026)
 
 ### ✦ Runtime Command Surface Parity and Module Boundary Hardening

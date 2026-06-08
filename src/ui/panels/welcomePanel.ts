@@ -9142,6 +9142,7 @@ No markdown, no explanation outside the JSON.`;
         | 'node-only'
         | 'go-only'
         | 'java-only'
+        | 'dotnet-only'
         | 'polyglot'
         | 'enterprise';
       dependencySharingMode?: 'isolated' | 'shared-runtime-caches' | 'shared-node-deps';
@@ -9271,6 +9272,7 @@ No markdown, no explanation outside the JSON.`;
               | 'node-only'
               | 'go-only'
               | 'java-only'
+              | 'dotnet-only'
               | 'polyglot'
               | 'enterprise'
               | undefined;

@@ -4,6 +4,23 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+const repoRoot = path.resolve(__dirname, '..', '..');
+const releaseStopGateScriptPath = path.join(repoRoot, 'scripts', 'release-stop-gate.mjs');
+
+function releaseStopGateEnv() {
+  const env = { ...process.env };
+
+  // Keep the child process isolated from Vitest/coverage worker hooks so these
+  // script-level tests exercise the release gate as a normal Node CLI.
+  delete env.NODE_OPTIONS;
+  delete env.VITEST;
+  delete env.VITEST_POOL_ID;
+  delete env.VITEST_WORKER_ID;
+  delete env.VITEST_TEST_NAME;
+
+  return env;
+}
+
 function buildRecentEvent(
   command: string,
   at: string,
@@ -119,15 +136,13 @@ describe('release-stop-gate open-issue freshness hardening', () => {
   });
 
   function runReleaseStopGate(extraArgs: string[]) {
-    const scriptPath = path.resolve(process.cwd(), 'scripts', 'release-stop-gate.mjs');
-
     return spawnSync(
       process.execPath,
-      [scriptPath, '--skip-contract-checks', '--skip-kpi', ...extraArgs],
+      [releaseStopGateScriptPath, '--skip-contract-checks', '--skip-kpi', ...extraArgs],
       {
-        cwd: process.cwd(),
+        cwd: repoRoot,
         encoding: 'utf-8',
-        env: { ...process.env },
+        env: releaseStopGateEnv(),
       }
     );
   }
@@ -239,12 +254,10 @@ describe('release-stop-gate telemetry integrity hardening', () => {
   }
 
   function runReleaseStopGateForMarker(markerPath: string) {
-    const scriptPath = path.resolve(process.cwd(), 'scripts', 'release-stop-gate.mjs');
-
     return spawnSync(
       process.execPath,
       [
-        scriptPath,
+        releaseStopGateScriptPath,
         '--skip-contract-checks',
         '--marker',
         markerPath,
@@ -270,9 +283,9 @@ describe('release-stop-gate telemetry integrity hardening', () => {
         'off',
       ],
       {
-        cwd: process.cwd(),
+        cwd: repoRoot,
         encoding: 'utf-8',
-        env: { ...process.env },
+        env: releaseStopGateEnv(),
       }
     );
   }
@@ -344,15 +357,13 @@ describe('release-stop-gate release notes claim safety', () => {
   });
 
   function runReleaseStopGate(extraArgs: string[]) {
-    const scriptPath = path.resolve(process.cwd(), 'scripts', 'release-stop-gate.mjs');
-
     return spawnSync(
       process.execPath,
-      [scriptPath, '--skip-contract-checks', '--skip-kpi', ...extraArgs],
+      [releaseStopGateScriptPath, '--skip-contract-checks', '--skip-kpi', ...extraArgs],
       {
-        cwd: process.cwd(),
+        cwd: repoRoot,
         encoding: 'utf-8',
-        env: { ...process.env },
+        env: releaseStopGateEnv(),
       }
     );
   }

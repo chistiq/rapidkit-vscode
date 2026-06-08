@@ -33,7 +33,7 @@ describe('WorkspaiCLI', () => {
   });
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it('should check if CLI is available', async () => {
@@ -75,8 +75,6 @@ describe('WorkspaiCLI', () => {
     const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'rapidkit-cli-fallback-'));
 
     vi.mocked(run)
-      // optional workspace .venv runner or first direct attempt can fail
-      .mockRejectedValueOnce(new Error('rapidkit missing'))
       // direct rapidkit fallback attempt fails too
       .mockRejectedValueOnce(new Error('rapidkit missing'))
       // npx fallback succeeds

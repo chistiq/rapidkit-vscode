@@ -53,6 +53,7 @@ type WorkspaceProfile =
   | 'node-only'
   | 'go-only'
   | 'java-only'
+  | 'dotnet-only'
   | 'polyglot'
   | 'enterprise';
 
@@ -129,6 +130,12 @@ function buildWorkspaceCommands(profile: WorkspaceProfile): Command[] {
       {
         code: 'npx --yes --package rapidkit rapidkit setup java --warm-deps',
         description: 'Validate Java runtime and pre-warm build dependencies',
+      },
+    ],
+    'dotnet-only': [
+      {
+        code: 'npx --yes --package rapidkit rapidkit setup dotnet --warm-deps',
+        description: 'Validate .NET runtime and pre-warm restore cache',
       },
     ],
     'node-only': [

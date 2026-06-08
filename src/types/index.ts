@@ -78,6 +78,7 @@ export interface WorkspaceConfig {
     | 'node-only'
     | 'go-only'
     | 'java-only'
+    | 'dotnet-only'
     | 'polyglot'
     | 'enterprise';
   /** Python install backend. 'auto' = let CLI probe; explicit value overrides CLI detection. */

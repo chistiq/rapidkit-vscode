@@ -30,6 +30,9 @@ type SetupStatus = {
     goInstalled?: boolean;
     goVersion?: string | null;
     goPath?: string | null;
+    dotnetInstalled?: boolean;
+    dotnetVersion?: string | null;
+    dotnetPath?: string | null;
     javaInstalled?: boolean;
     javaVersion?: string | null;
     mavenInstalled?: boolean;
@@ -58,8 +61,17 @@ type SetupDetection = {
     needsShellReload?: boolean;
 };
 
-type ManualPathTool = 'python' | 'pip' | 'pipx' | 'poetry' | 'go' | 'java' | 'maven' | 'gradle';
-type InstallMethodKey = 'python' | 'core' | 'cli' | 'go' | 'java';
+type ManualPathTool =
+    | 'python'
+    | 'pip'
+    | 'pipx'
+    | 'poetry'
+    | 'go'
+    | 'java'
+    | 'maven'
+    | 'gradle'
+    | 'dotnet';
+type InstallMethodKey = 'python' | 'core' | 'cli' | 'go' | 'java' | 'dotnet';
 
 type PathDoctorReport = {
     generatedAt: string;
@@ -147,6 +159,7 @@ const MANUAL_PATH_TOOLS: Array<{
         { key: 'pipx', label: 'pipx', placeholder: '/usr/local/bin/pipx', verifyCommand: 'verifyPipx' },
         { key: 'poetry', label: 'Poetry', placeholder: '~/.local/bin/poetry', verifyCommand: 'verifyPoetry' },
         { key: 'go', label: 'Go', placeholder: '/usr/local/go/bin/go', verifyCommand: 'verifyGo' },
+        { key: 'dotnet', label: '.NET', placeholder: '/usr/bin/dotnet', verifyCommand: 'verifyDotnet' },
         { key: 'java', label: 'Java', placeholder: '/usr/bin/java', verifyCommand: 'verifyJava' },
         { key: 'maven', label: 'Maven', placeholder: '/usr/bin/mvn', verifyCommand: 'verifyMaven' },
         { key: 'gradle', label: 'Gradle', placeholder: '/usr/bin/gradle', verifyCommand: 'verifyGradle' },
@@ -596,10 +609,29 @@ export function SetupExperience() {
         ];
     }, [status]);
 
+    const dotnetTools = useMemo<ToolDef[]>(() => {
+        const s = status;
+        return [
+            {
+                key: 'dotnet', monogram: '.NET', color: '#512bd4',
+                title: '.NET SDK 8+', subtitle: 'ASP.NET Core runtime',
+                installed: Boolean(s?.dotnetInstalled), version: s?.dotnetVersion,
+                detection: s?.detections?.dotnet,
+                hint: s?.dotnetInstalled
+                    ? (s.dotnetPath || 'Detected in environment')
+                    : (preferences.manualPaths.dotnet
+                        ? `Manual path configured: ${preferences.manualPaths.dotnet}`
+                        : 'Install .NET SDK 8+ for dotnet.webapi.clean projects'),
+                primaryAction: { label: 'Install', command: 'installDotnet' },
+                secondaryActions: [{ label: 'Verify', command: 'verifyDotnet' }],
+            },
+        ];
+    }, [status, preferences.manualPaths.dotnet]);
+
     const coreReady = useMemo(() => coreTools.filter(t => t.installed).length, [coreTools]);
     const allTools = useMemo(
-        () => [...coreTools, ...pythonTools, ...goTools, ...javaTools],
-        [coreTools, pythonTools, goTools, javaTools]
+        () => [...coreTools, ...pythonTools, ...goTools, ...dotnetTools, ...javaTools],
+        [coreTools, pythonTools, goTools, dotnetTools, javaTools]
     );
     const allReady = useMemo(() => allTools.every(t => t.installed), [allTools]);
     const readinessScore = useMemo(() => {
@@ -636,6 +668,12 @@ export function SetupExperience() {
         if (!s?.goInstalled && preferences.manualPaths.go) {
             suggestions.push('Go not detected but manual path exists. Run Verify Go; if it still fails, fix executable permission.');
         }
+        if (!s?.dotnetInstalled) {
+            suggestions.push('.NET SDK missing. Install .NET SDK 8+ for ASP.NET Core services, then run Verify .NET.');
+        }
+        if (!s?.dotnetInstalled && preferences.manualPaths.dotnet) {
+            suggestions.push('.NET not detected but manual path exists. Run Verify .NET; check executable permission or path accuracy.');
+        }
         // Java-specific insights
         if (!s?.javaInstalled) {
             suggestions.push('Java (JDK) missing. Install Temurin 21+ via adoptium.net or use SDKMAN: sdk install java 21-tem');
@@ -669,7 +707,14 @@ export function SetupExperience() {
         }
 
         return suggestions;
-    }, [status, preferences.manualPaths.go, pathDoctor, readinessScore, validationResult]);
+    }, [
+        status,
+        preferences.manualPaths.go,
+        preferences.manualPaths.dotnet,
+        pathDoctor,
+        readinessScore,
+        validationResult,
+    ]);
 
     const copilotCommands = useMemo(() => {
         if (validationResult?.suggestedCommands?.length) {
@@ -778,6 +823,7 @@ export function SetupExperience() {
             <ToolGroup title="Core Requirements" tools={coreTools} loading={loading} />
             <ToolGroup title="Python Ecosystem" tools={pythonTools} loading={loading} />
             <ToolGroup title="Go" tools={goTools} loading={loading} />
+            <ToolGroup title=".NET / ASP.NET Core" tools={dotnetTools} loading={loading} />
             <ToolGroup title="Java / Spring Boot" tools={javaTools} loading={loading} />
 
             <section className="spc-panel-card">
@@ -838,6 +884,7 @@ export function SetupExperience() {
                         ['core', 'RapidKit Core'],
                         ['cli', 'RapidKit CLI'],
                         ['go', 'Go'],
+                        ['dotnet', '.NET'],
                         ['java', 'Java'],
                     ] as Array<[InstallMethodKey, string]>).map(([key, label]) => (
                         <label key={key} className="spc-strategy-row">

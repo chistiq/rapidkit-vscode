@@ -33,6 +33,7 @@ export interface CreateWorkspaceOptions {
     | 'node-only'
     | 'go-only'
     | 'java-only'
+    | 'dotnet-only'
     | 'polyglot'
     | 'enterprise';
 }

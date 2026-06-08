@@ -56,6 +56,7 @@ export class WorkspaiHoverProvider implements vscode.HoverProvider {
           '- `node-only` - Node.js-focused dependencies\n' +
           '- `go-only` - Go-focused dependencies\n' +
           '- `java-only` - Java-focused dependencies\n' +
+          '- `dotnet-only` - .NET-focused dependencies\n' +
           '- `polyglot` - Multi-runtime dependencies\n' +
           '- `enterprise` - Full enterprise setup'
       ),
