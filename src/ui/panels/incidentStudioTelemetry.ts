@@ -556,6 +556,118 @@ export function buildIncidentStudioTelemetryFromCache(
   };
 }
 
+function normalizeProjectPathForScope(value: string): string {
+  return value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+}
+
+/**
+ * When Incident Studio runs in project scope, doctor KPI cards should reflect
+ * the selected project rather than the full workspace aggregate.
+ */
+export function filterDoctorSummaryForProjectScope(
+  doctorSummary: unknown | null,
+  projectPath?: string
+): unknown | null {
+  if (!doctorSummary || typeof doctorSummary !== 'object' || Array.isArray(doctorSummary)) {
+    return doctorSummary;
+  }
+
+  const normalizedProjectPath =
+    typeof projectPath === 'string' && projectPath.trim().length > 0
+      ? normalizeProjectPathForScope(projectPath.trim())
+      : undefined;
+
+  if (!normalizedProjectPath) {
+    return doctorSummary;
+  }
+
+  const summary = doctorSummary as Record<string, unknown>;
+  const projects = Array.isArray(summary.projects)
+    ? summary.projects.filter((entry) => {
+        if (!entry || typeof entry !== 'object') {
+          return false;
+        }
+        const path = (entry as Record<string, unknown>).path;
+        return (
+          typeof path === 'string' && normalizeProjectPathForScope(path) === normalizedProjectPath
+        );
+      })
+    : [];
+
+  if (projects.length === 0) {
+    return {
+      ...summary,
+      projectCount: 0,
+      projectsWithIssues: 0,
+      issueCount: 0,
+      scopeProvenance: {
+        ...(typeof summary.scopeProvenance === 'object' && summary.scopeProvenance
+          ? (summary.scopeProvenance as Record<string, unknown>)
+          : {}),
+        scopedCount: 0,
+        aggregatedCount: 0,
+        mixedCount: 0,
+        dominantScope: 'project',
+      },
+      projects: [],
+    };
+  }
+
+  let passed = 0;
+  let warnings = 0;
+  let errors = 0;
+  let issueCount = 0;
+
+  for (const project of projects) {
+    const row = project as Record<string, unknown>;
+    issueCount += Number(row.issues ?? 0);
+    const probes = Array.isArray(row.probes) ? row.probes : [];
+    for (const probe of probes) {
+      if (!probe || typeof probe !== 'object') {
+        continue;
+      }
+      const status = String((probe as Record<string, unknown>).status ?? '').toLowerCase();
+      const severity = String((probe as Record<string, unknown>).severity ?? '').toLowerCase();
+      if (status === 'pass' || status === 'passed') {
+        passed += 1;
+      } else if (severity === 'error' || status === 'fail' || status === 'failed') {
+        errors += 1;
+      } else if (severity === 'warn' || status === 'warn' || status === 'warning') {
+        warnings += 1;
+      }
+    }
+  }
+
+  const total = passed + warnings + errors;
+  const percent = total > 0 ? Math.round((passed / total) * 100) : 0;
+
+  return {
+    ...summary,
+    projectCount: projects.length,
+    projectsWithIssues: projects.filter(
+      (entry) => Number((entry as Record<string, unknown>).issues ?? 0) > 0
+    ).length,
+    issueCount,
+    health: {
+      passed,
+      warnings,
+      errors,
+      total,
+      percent,
+    },
+    scopeProvenance: {
+      ...(typeof summary.scopeProvenance === 'object' && summary.scopeProvenance
+        ? (summary.scopeProvenance as Record<string, unknown>)
+        : {}),
+      scopedCount: total,
+      aggregatedCount: 0,
+      mixedCount: 0,
+      dominantScope: 'project',
+    },
+    projects,
+  };
+}
+
 export function buildIncidentStudioTelemetryPayload(
   commandSummary: {
     totalEvents: number;

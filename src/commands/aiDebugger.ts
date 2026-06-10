@@ -164,8 +164,9 @@ export function registerAIDebuggerCommand(context: vscode.ExtensionContext): vsc
       }
 
       const { rawText, parsedTrace, filePath } = logCtx;
+      const baseContext: AIModalContext = await resolvePreferredAIModalContext();
+      const workspacePath = baseContext.workspaceRootPath ?? baseContext.path;
 
-      // Build a prefill question that includes the parsed trace context
       const traceHeader = parsedTrace.errorType
         ? `${parsedTrace.errorType}: ${parsedTrace.errorMessage ?? ''}`
         : '';
@@ -173,7 +174,8 @@ export function registerAIDebuggerCommand(context: vscode.ExtensionContext): vsc
         parsedTrace.relatedFiles.length > 0
           ? `Related files detected: ${parsedTrace.relatedFiles.slice(0, 5).join(', ')}`
           : '';
-      const prefillQuestion = [
+      const initialQuery = [
+        'Analyze this production log trace and propose the smallest safe fix with verification steps.',
         traceHeader || `Log file: ${vscode.workspace.asRelativePath(filePath)}`,
         relatedFilesNote,
         '',
@@ -182,10 +184,22 @@ export function registerAIDebuggerCommand(context: vscode.ExtensionContext): vsc
         .filter(Boolean)
         .join('\n');
 
-      const baseContext: AIModalContext = await resolvePreferredAIModalContext();
+      if (workspacePath) {
+        WelcomePanel.openIncidentStudio(context, {
+          workspacePath,
+          workspaceName: baseContext.name,
+          projectPath: baseContext.path,
+          projectName: baseContext.name,
+          projectType: baseContext.framework,
+          initialQuery,
+          preferredDisplayMode: 'lite',
+        });
+        return;
+      }
+
       WelcomePanel.showAIModal(context, {
         ...baseContext,
-        prefillQuestion,
+        prefillQuestion: initialQuery,
         prefillMode: 'debug',
       });
     }

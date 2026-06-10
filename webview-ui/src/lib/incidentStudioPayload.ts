@@ -1835,11 +1835,33 @@ export function buildIncidentChatSyncWorkspacePayload(input: {
   workspacePath: string;
   requestId: string;
   forceRefresh?: boolean;
+  projectSelection?: IncidentProjectSelection | null;
+}) {
+  return withProjectSelection(
+    {
+      workspacePath: input.workspacePath,
+      requestId: input.requestId,
+      ...(input.forceRefresh ? { forceRefresh: true } : {}),
+    },
+    input.projectSelection
+  );
+}
+
+export function buildIncidentChatApplyPatchPayload(input: {
+  conversationId: string;
+  patchId: string;
+  acceptedPaths: string[];
+  branchSafeApply: boolean;
+  workspacePath: string;
+  requestId: string;
 }) {
   return {
+    conversationId: input.conversationId,
+    patchId: input.patchId,
+    acceptedPaths: input.acceptedPaths,
+    branchSafeApply: input.branchSafeApply,
     workspacePath: input.workspacePath,
     requestId: input.requestId,
-    ...(input.forceRefresh ? { forceRefresh: true } : {}),
   };
 }
 

@@ -5,6 +5,7 @@ import {
   buildIncidentChatExecuteActionPayload,
   buildIncidentChatQueryPayload,
   buildIncidentChatSyncWorkspacePayload,
+  buildIncidentChatApplyPatchPayload,
   buildIncidentChatStartPayload,
   isIncidentDuplicateRequest,
   normalizeIncidentActionProgressPayload,
@@ -155,6 +156,42 @@ describe('incidentStudioPayload', () => {
     ).toEqual({
       workspacePath: '/tmp/wsp',
       requestId: 'sync-2',
+    });
+  });
+
+  it('builds aiChatSyncWorkspace payload with project selection', () => {
+    expect(
+      buildIncidentChatSyncWorkspacePayload({
+        workspacePath: '/tmp/wsp',
+        requestId: 'sync-3',
+        projectSelection: { path: '/tmp/wsp/api', name: 'api', type: 'fastapi' },
+      })
+    ).toEqual({
+      workspacePath: '/tmp/wsp',
+      requestId: 'sync-3',
+      projectPath: '/tmp/wsp/api',
+      projectName: 'api',
+      projectType: 'fastapi',
+    });
+  });
+
+  it('builds aiChatApplyPatch payload', () => {
+    expect(
+      buildIncidentChatApplyPatchPayload({
+        conversationId: 'conv-1',
+        patchId: 'patch-1',
+        acceptedPaths: ['src/a.ts'],
+        branchSafeApply: true,
+        workspacePath: '/tmp/wsp',
+        requestId: 'patch-req-1',
+      })
+    ).toEqual({
+      conversationId: 'conv-1',
+      patchId: 'patch-1',
+      acceptedPaths: ['src/a.ts'],
+      branchSafeApply: true,
+      workspacePath: '/tmp/wsp',
+      requestId: 'patch-req-1',
     });
   });
 

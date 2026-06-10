@@ -10565,4 +10565,46 @@
       flex-wrap: wrap;
     }
   }
+
+  .incident-studio-analyze-card--panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .incident-studio-analyze-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .incident-feedback-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 12px;
+    opacity: 0.9;
+  }
+
+  .incident-feedback-btn {
+    border: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.12));
+    background: transparent;
+    color: inherit;
+    border-radius: 4px;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+
+  .incident-feedback-btn.is-active {
+    border-color: var(--vscode-focusBorder, #007fd4);
+    background: rgba(0, 127, 212, 0.12);
+  }
+
+  .incident-diff-btn {
+    margin-left: 4px;
+  }
 }

@@ -60,9 +60,11 @@ import { buildIncidentPredictiveWarning } from './incidentPredictiveWarning';
 import {
   buildIncidentStudioTelemetryFromCache,
   buildIncidentStudioTelemetryPayload,
+  filterDoctorSummaryForProjectScope,
   shouldUseIncidentStudioTelemetryCache,
   type CachedIncidentStudioTelemetry,
 } from './incidentStudioTelemetry';
+import { buildSyncSystemGraphSnapshot } from './incidentStudioSyncGraph';
 import { buildIncidentLifecycleMetrics } from './incidentConversationMetrics';
 import {
   analyzeReportExists,
@@ -1358,17 +1360,7 @@ export class WelcomePanel {
             break;
           }
           case 'aiChatFeedback':
-            this._panel.webview.postMessage({
-              command: 'aiChatDone',
-              data: {
-                conversationId: message.data?.conversationId,
-                messageId: message.data?.messageId || `feedback-${Date.now()}`,
-                phase: 'learn',
-                confidence: 75,
-                nextActions: ['Continue investigation', 'Run verification checks'],
-              },
-              meta: { requestId: protocolRequestId, version: 'v1' },
-            });
+            await this._handleAiChatFeedback(message.data, protocolRequestId);
             break;
           case 'aiChatClose': {
             const conversationId = message.data?.conversationId;
@@ -3351,6 +3343,18 @@ No markdown, no explanation outside the JSON.`;
   private async _handleAiChatSyncWorkspace(data: unknown, requestId?: string) {
     const input = asRecord(data) || {};
     const workspacePath = typeof input.workspacePath === 'string' ? input.workspacePath : undefined;
+    const explicitProjectPath =
+      typeof input.projectPath === 'string' && input.projectPath.trim()
+        ? input.projectPath.trim()
+        : undefined;
+    const explicitProjectName =
+      typeof input.projectName === 'string' && input.projectName.trim()
+        ? input.projectName.trim()
+        : undefined;
+    const explicitProjectType =
+      typeof input.projectType === 'string' && input.projectType.trim()
+        ? input.projectType.trim()
+        : undefined;
 
     // If a stream is active for another workspace, cancel it before applying sync.
     const activeConversationId = this._activeChatBrainConversationId;
@@ -3371,28 +3375,44 @@ No markdown, no explanation outside the JSON.`;
     }
 
     const selectedProjectPath =
-      WelcomePanel._selectedProject &&
+      explicitProjectPath ||
+      (WelcomePanel._selectedProject &&
       isWorkspacePathAncestor(workspacePath, WelcomePanel._selectedProject.path)
         ? WelcomePanel._selectedProject.path
-        : 'none';
-    const cacheKey = `chat-brain-workspace-graph-${workspacePath || 'default'}-${selectedProjectPath}`;
+        : undefined);
+    const cacheKey = `chat-brain-workspace-graph-${workspacePath || 'default'}-${selectedProjectPath || 'none'}`;
     const now = Date.now();
     const cacheTtl = 2 * 60 * 1000;
     const forceRefresh = input.forceRefresh === true;
 
-    const cached = this._context.globalState.get<{ graph: unknown; timestamp: number }>(cacheKey);
-    if (!forceRefresh && cached && now - cached.timestamp < cacheTtl) {
+    const postSyncedPayload = async (graph: IncidentWorkspaceGraphSnapshot, cacheHit: boolean) => {
+      const systemGraphSnapshot = await buildSyncSystemGraphSnapshot({
+        requestId,
+        workspacePath: workspacePath || graph.workspace.path || '',
+        projectPath: selectedProjectPath,
+        graphSnapshot: graph,
+      });
+
       this._panel.webview.postMessage({
         command: 'aiChatWorkspaceSynced',
         data: {
           workspacePath,
-          selectedProjectPath: selectedProjectPath !== 'none' ? selectedProjectPath : undefined,
-          snapshotVersion: String(cached.timestamp),
-          graph: cached.graph,
-          cacheHit: true,
+          selectedProjectPath,
+          snapshotVersion: String(graph.lastUpdatedAt || now),
+          graph,
+          systemGraphSnapshot,
+          cacheHit,
         },
         meta: { requestId, version: 'v1' },
       });
+    };
+
+    const cached = this._context.globalState.get<{
+      graph: IncidentWorkspaceGraphSnapshot;
+      timestamp: number;
+    }>(cacheKey);
+    if (!forceRefresh && cached && now - cached.timestamp < cacheTtl) {
+      await postSyncedPayload(cached.graph, true);
       return;
     }
 
@@ -3401,18 +3421,87 @@ No markdown, no explanation outside the JSON.`;
 
     const graph = await this._getWorkspaceGraphSnapshot({
       workspacePath,
-      scopeIntent: 'workspace',
+      projectPath: selectedProjectPath,
+      projectName: explicitProjectName,
+      projectType: explicitProjectType,
+      scopeIntent: selectedProjectPath ? 'project' : 'workspace',
     });
     await this._context.globalState.update(cacheKey, { graph, timestamp: now });
 
+    await postSyncedPayload(graph, false);
+  }
+
+  private async _handleAiChatFeedback(data: unknown, requestId?: string): Promise<void> {
+    const input = asRecord(data) || {};
+    const conversationId =
+      typeof input.conversationId === 'string' ? input.conversationId : undefined;
+    const messageId =
+      typeof input.messageId === 'string' ? input.messageId : `feedback-${Date.now()}`;
+    const rating = input.rating === 'not-helpful' ? 'not-helpful' : 'helpful';
+    const note = typeof input.note === 'string' ? input.note.trim().slice(0, 500) : undefined;
+
+    const conv = conversationId ? this._chatBrainConversations.get(conversationId) : undefined;
+    const workspacePath =
+      (typeof input.workspacePath === 'string' && input.workspacePath.trim()
+        ? input.workspacePath.trim()
+        : undefined) ?? conv?.workspacePath;
+
+    if (conv) {
+      conv.phase = rating === 'helpful' ? 'learn' : conv.phase === 'learn' ? 'verify' : conv.phase;
+      conv.lastActivityAt = Date.now();
+      this._chatBrainConversations.set(conversationId!, conv);
+    }
+
+    this._trackStudioEvent('workspai.studio.response_feedback', workspacePath, {
+      conversationId,
+      messageId,
+      rating,
+      note,
+      framework: conv?.framework ?? 'unknown',
+      projectPath: conv?.projectPath,
+    });
+
+    const uiPrefs = this._getUiPreferences(workspacePath);
+    const confidence =
+      rating === 'helpful'
+        ? Math.min(95, (conv?.verifyPassedAt ? 85 : 70) + (note ? 5 : 0))
+        : Math.max(25, 55);
+
+    const nextActions =
+      rating === 'helpful'
+        ? uiPrefs.incidentAutoLearningPrompt
+          ? ['Capture workspace memory from this fix', 'Run verification checks', 'Close incident']
+          : ['Run verification checks', 'Close incident']
+        : ['Clarify the failing behavior', 'Run doctor checks', 'Try a narrower verify command'];
+
+    if (rating === 'helpful' && uiPrefs.incidentAutoLearningPrompt && workspacePath) {
+      const memorySuggestion = buildIncidentMemoryEnrichmentSuggestion({
+        verifySuccess: Boolean(conv?.verifyPassedAt),
+        actionType: 'incident-feedback',
+        verifyChecklist: ['User confirmed the assistant response was helpful.'],
+      });
+      if (memorySuggestion) {
+        this._panel.webview.postMessage({
+          command: 'aiChatSuggestedQuestions',
+          data: {
+            conversationId,
+            messageId: `feedback-learn-${Date.now()}`,
+            questions: memorySuggestion.questions,
+          },
+          meta: { requestId, version: 'v1' },
+        });
+      }
+    }
+
     this._panel.webview.postMessage({
-      command: 'aiChatWorkspaceSynced',
+      command: 'aiChatDone',
       data: {
-        workspacePath,
-        selectedProjectPath: selectedProjectPath !== 'none' ? selectedProjectPath : undefined,
-        snapshotVersion: String(now),
-        graph,
-        cacheHit: false,
+        conversationId,
+        messageId,
+        phase: rating === 'helpful' ? 'learn' : (conv?.phase ?? 'verify'),
+        confidence,
+        nextActions,
+        feedbackAccepted: rating === 'helpful',
       },
       meta: { requestId, version: 'v1' },
     });
@@ -8178,13 +8267,16 @@ No markdown, no explanation outside the JSON.`;
   ) {
     const workspacePath = explicitWorkspacePath || this._resolveTelemetryWorkspacePath();
     const tracker = WorkspaceUsageTracker.getInstance();
-    const doctorSummary = await this._readDoctorEvidenceSnapshot(workspacePath);
-
-    // Check cache first (5 minute TTL)
     const normalizedProjectPath =
       typeof explicitProjectPath === 'string' && explicitProjectPath.trim().length > 0
         ? explicitProjectPath.trim()
         : undefined;
+    const doctorSummary = filterDoctorSummaryForProjectScope(
+      await this._readDoctorEvidenceSnapshot(workspacePath),
+      normalizedProjectPath
+    );
+
+    // Check cache first (5 minute TTL)
     const cacheKey = normalizedProjectPath
       ? `incident-studio-telemetry-${workspacePath}::${normalizedProjectPath}`
       : `incident-studio-telemetry-${workspacePath}`;

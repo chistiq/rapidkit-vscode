@@ -18,6 +18,7 @@ import {
     Send,
 } from 'lucide-react';
 
+import AnalyzeReportViewer from './AnalyzeReportViewer';
 import {
     getActionResultPresentation,
     getBoardActionGuardHint,
@@ -32,9 +33,14 @@ import {
     createVerifyCommandState,
     canRerun,
     prepareRerun,
+    recordVerifyExecution,
+    completeRerun,
+    getLastFailedExecution,
+    getLastSuccessfulExecution,
     type VerifyCommandState,
 } from '../../../src/ui/panels/incidentStudioVerifyRerun';
 import {
+    compareExecutions,
     indicatesSuccessfulFix,
     type ExecutionComparison,
 } from '../../../src/ui/panels/incidentStudioVerifyDiff';
@@ -430,6 +436,19 @@ interface AIIncidentStudioProps {
     }) => void;
     onPredictiveWarningAccepted?: (warningId: string, predictionKey: string) => void;
     onApplyPatch?: (patchId: string, acceptedPaths: string[], branchSafeApply: boolean) => void;
+    onChatBrainFeedback?: (payload: {
+        messageId: string;
+        rating: 'helpful' | 'not-helpful';
+        note?: string;
+    }) => void;
+    appliedPatchSummary?: string | null;
+    lastInlineCommandResult?: {
+        command: string;
+        success: boolean;
+        output?: string;
+        error?: string;
+    } | null;
+    onInlineCommandResultAcknowledged?: () => void;
     onExportIncidentReproPack?: (
         reproPack: NonNullable<NormalizedIncidentActionResultPayload['incidentReproPack']>
     ) => void;
@@ -1389,6 +1408,10 @@ export function AIIncidentStudio({
     onRevealArchitectureTarget,
     onPredictiveWarningAccepted,
     onApplyPatch,
+    onChatBrainFeedback,
+    appliedPatchSummary,
+    lastInlineCommandResult,
+    onInlineCommandResultAcknowledged,
     onExportIncidentReproPack,
     onExportSandboxSimulationEvidence,
     onExportReleaseReadinessCommander,
@@ -1433,18 +1456,78 @@ export function AIIncidentStudio({
     >({});
     // S3-002: Diff view state management (quick diff comparison)
     const [showDiffModal, setShowDiffModal] = useState(false);
-    const [selectedDiffComparison] = useState<ExecutionComparison | null>(null);
+    const [selectedDiffComparison, setSelectedDiffComparison] = useState<ExecutionComparison | null>(
+        null
+    );
+    const [feedbackByMessageId, setFeedbackByMessageId] = useState<
+        Record<string, 'helpful' | 'not-helpful'>
+    >({});
     // S4-003: Confidence UI state (breakdown visibility and expert mode)
     const [confidenceUIStates, setConfidenceUIStates] = useState<Record<string, ConfidenceUIState>>(
         {}
     );
     const threadRef = useRef<HTMLDivElement>(null);
     const architectureLensScopeRef = useRef<string | null>(null);
+    const pendingVerifyActionIdRef = useRef<string | null>(null);
     const isLiteDisplay = studioDisplayMode === 'lite';
     const isFullDisplay = studioDisplayMode === 'full';
 
-    const analyzeReportSummary = analyzeReport?.summary;
-    const analyzeReportFindings = analyzeReportSummary?.findings;
+    useEffect(() => {
+        if (!lastInlineCommandResult?.command) {
+            return;
+        }
+
+        const command = normalizeCommandText(lastInlineCommandResult.command);
+        if (!command) {
+            onInlineCommandResultAcknowledged?.();
+            return;
+        }
+
+        const actionId =
+            pendingVerifyActionIdRef.current ?? `verify-cmd:${command}`;
+        pendingVerifyActionIdRef.current = null;
+        const scope = inferCommandExecutionScope(command, hasProjectSelected);
+        const status = lastInlineCommandResult.success ? 'success' : 'failed';
+        const output = lastInlineCommandResult.success
+            ? lastInlineCommandResult.output
+            : lastInlineCommandResult.error;
+
+        setVerifyCommandStates((prev) => {
+            const existing = prev[actionId] ?? createVerifyCommandState(command, scope);
+            const nextState = { ...existing, isRunning: false };
+            if (existing.isRunning) {
+                completeRerun(nextState, status, output);
+            } else {
+                recordVerifyExecution(nextState, status, output);
+            }
+            return { ...prev, [actionId]: nextState };
+        });
+
+        onInlineCommandResultAcknowledged?.();
+    }, [lastInlineCommandResult, hasProjectSelected, onInlineCommandResultAcknowledged]);
+
+    const handleOpenVerifyDiff = (actionId: string) => {
+        const state = verifyCommandStates[actionId];
+        if (!state) {
+            return;
+        }
+        const failed = getLastFailedExecution(state);
+        const passed = getLastSuccessfulExecution(state);
+        if (!failed?.output || !passed?.output) {
+            return;
+        }
+        setSelectedDiffComparison(compareExecutions(failed.output, passed.output));
+        setShowDiffModal(true);
+    };
+
+    const handleResponseFeedback = (
+        messageId: string,
+        rating: 'helpful' | 'not-helpful'
+    ) => {
+        setFeedbackByMessageId((prev) => ({ ...prev, [messageId]: rating }));
+        onChatBrainFeedback?.({ messageId, rating });
+    };
+
     const isAnalyzeReportLoaded = Boolean(analyzeReport);
     const isAnalyzeReportMissing = analyzeReportExists === false && !analyzeReportError;
     const isAnalyzeError = Boolean(analyzeReportError);
@@ -1454,64 +1537,43 @@ export function AIIncidentStudio({
             return null;
         }
 
-        if (isAnalyzeError) {
-            return (
-                <div className="incident-studio-analyze-card incident-studio-analyze-card--error">
-                    <div>
-                        <strong>Analyze report failed to load:</strong> {analyzeReportError}
-                    </div>
+        return (
+            <div className="incident-studio-analyze-card incident-studio-analyze-card--panel">
+                <div className="incident-studio-analyze-card__header">
+                    <strong>Workspace analyze evidence</strong>
                     <button
                         type="button"
                         className="incident-studio-analyze-card__action"
                         onClick={onRunAnalyze}
                     >
-                        Retry analyze
+                        {isAnalyzeReportLoaded ? 'Re-run analyze' : 'Run analyze'}
                     </button>
                 </div>
-            );
-        }
-
-        if (isAnalyzeReportMissing) {
-            return (
-                <div className="incident-studio-analyze-card incident-studio-analyze-card--warning">
-                    <div>
-                        <strong>Workspace analysis not found.</strong> Run <code>rapidkit analyze</code> to populate workspace health diagnostics.
-                    </div>
-                    <button
-                        type="button"
-                        className="incident-studio-analyze-card__action"
-                        onClick={onRunAnalyze}
-                    >
-                        Run analyze
-                    </button>
-                </div>
-            );
-        }
-
-        if (isAnalyzeReportLoaded) {
-            return (
-                <div className="incident-studio-analyze-card incident-studio-analyze-card--info">
-                    <div>
-                        <strong>Analyze report loaded.</strong>
-                        {analyzeReportSummary?.score != null && (
-                            <span> Score: {analyzeReportSummary.score}%.</span>
-                        )}
-                        {analyzeReportFindings ? (
-                            <span> Findings: {analyzeReportFindings.fail} fail, {analyzeReportFindings.warn} warn, {analyzeReportFindings.info} info.</span>
-                        ) : null}
-                    </div>
-                    <button
-                        type="button"
-                        className="incident-studio-analyze-card__action"
-                        onClick={onRunAnalyze}
-                    >
-                        Re-run analyze
-                    </button>
-                </div>
-            );
-        }
-
-        return null;
+                <AnalyzeReportViewer
+                    embedded
+                    report={isAnalyzeReportLoaded ? analyzeReport : null}
+                    isLoading={Boolean(isAnalyzeLoading)}
+                    error={
+                        isAnalyzeError
+                            ? analyzeReportError
+                            : isAnalyzeReportMissing
+                              ? 'Workspace analysis not found. Run rapidkit analyze to populate diagnostics.'
+                              : null
+                    }
+                    onRunAnalyze={onRunAnalyze}
+                    onCopyCommand={(text) => {
+                        void navigator.clipboard?.writeText(text);
+                    }}
+                    onRevealEvidence={(path) => {
+                        onRevealArchitectureTarget?.({
+                            path,
+                            label: path,
+                            kind: 'file',
+                        });
+                    }}
+                />
+            </div>
+        );
     };
 
     // Auto-scroll to bottom whenever history grows or streaming is active
@@ -3708,6 +3770,7 @@ export function AIIncidentStudio({
         setVerifyCommandStates((prev) => ({ ...prev, [actionId]: updatedState }));
 
         // Execute the command
+        pendingVerifyActionIdRef.current = actionId;
         runCommand(command);
     };
 
@@ -4041,7 +4104,7 @@ export function AIIncidentStudio({
                         title={analysisScopePath || analysisScopeLabel || undefined}
                     >
                         {analysisScopeType === 'project'
-                            ? `Project: ${analysisScopeLabel || 'No active scope'} (commands: project | telemetry: workspace aggregate)`
+                            ? `Project: ${analysisScopeLabel || 'No active scope'} (commands + doctor KPIs: project-scoped)`
                             : `Workspace: ${analysisScopeLabel || 'No active scope'}`}
                     </span>
                 </div>
@@ -6284,7 +6347,52 @@ export function AIIncidentStudio({
                                                         {isExpanded ? (
                                                             <div className="incident-msg-body">
                                                                 {entry.role === 'assistant' ? (
-                                                                    renderAssistantText(entry.text)
+                                                                    <>
+                                                                        {renderAssistantText(entry.text)}
+                                                                        {onChatBrainFeedback && isLatest ? (
+                                                                            <div
+                                                                                className="incident-feedback-row"
+                                                                                role="group"
+                                                                                aria-label="Response feedback"
+                                                                            >
+                                                                                <span>Was this helpful?</span>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className={`incident-feedback-btn${
+                                                                                        feedbackByMessageId[entry.id] ===
+                                                                                        'helpful'
+                                                                                            ? ' is-active'
+                                                                                            : ''
+                                                                                    }`}
+                                                                                    onClick={() =>
+                                                                                        handleResponseFeedback(
+                                                                                            entry.id,
+                                                                                            'helpful'
+                                                                                        )
+                                                                                    }
+                                                                                >
+                                                                                    Yes
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className={`incident-feedback-btn${
+                                                                                        feedbackByMessageId[entry.id] ===
+                                                                                        'not-helpful'
+                                                                                            ? ' is-active'
+                                                                                            : ''
+                                                                                    }`}
+                                                                                    onClick={() =>
+                                                                                        handleResponseFeedback(
+                                                                                            entry.id,
+                                                                                            'not-helpful'
+                                                                                        )
+                                                                                    }
+                                                                                >
+                                                                                    No
+                                                                                </button>
+                                                                            </div>
+                                                                        ) : null}
+                                                                    </>
                                                                 ) : (
                                                                     <p>{entry.text}</p>
                                                                 )}
@@ -7126,6 +7234,21 @@ export function AIIncidentStudio({
                                                                         >
                                                                             <RotateCw size={12} />
                                                                             <span>Rerun</span>
+                                                                        </button>
+                                                                    ) : null}
+                                                                    {actionState &&
+                                                                    getLastFailedExecution(actionState)?.output &&
+                                                                    getLastSuccessfulExecution(actionState)?.output ? (
+                                                                        <button
+                                                                            type="button"
+                                                                            className="incident-btn incident-diff-btn"
+                                                                            onClick={() =>
+                                                                                handleOpenVerifyDiff(action.id)
+                                                                            }
+                                                                            title="Compare failed vs passed verify output"
+                                                                        >
+                                                                            <BarChart3 size={12} />
+                                                                            <span>Compare</span>
                                                                         </button>
                                                                     ) : null}
                                                                     {/* S4-001: Evidence badges */}

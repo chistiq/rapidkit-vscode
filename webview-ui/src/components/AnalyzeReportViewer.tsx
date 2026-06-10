@@ -43,6 +43,7 @@ interface Props {
   report: AnalyzeReport | null | undefined;
   isLoading?: boolean;
   error?: string | null;
+  embedded?: boolean;
   onRunAnalyze?: () => void;
   onCopyCommand?: (text: string) => void;
   onRevealEvidence?: (path: string) => void;
@@ -172,10 +173,13 @@ export const AnalyzeReportViewer: React.FC<Props> = ({
   report,
   isLoading,
   error,
+  embedded = false,
   onRunAnalyze,
   onCopyCommand,
   onRevealEvidence,
 }) => {
+  const containerHeight = embedded ? 'auto' : '100vh';
+  const containerMinHeight = embedded ? '0' : '100vh';
   const sortedFindings = useMemo(() => {
     if (!report?.findings) return [];
     return [...report.findings].sort((a, b) => {
@@ -191,7 +195,8 @@ export const AnalyzeReportViewer: React.FC<Props> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          height: '100vh',
+          height: containerHeight,
+          minHeight: embedded ? '120px' : containerMinHeight,
           fontSize: '14px',
           color: 'var(--vscode-foreground)',
         }}
@@ -211,8 +216,9 @@ export const AnalyzeReportViewer: React.FC<Props> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          height: '100vh',
-          padding: '20px',
+          height: containerHeight,
+          minHeight: embedded ? '120px' : containerMinHeight,
+          padding: embedded ? '12px' : '20px',
         }}
       >
         <div
@@ -256,7 +262,8 @@ export const AnalyzeReportViewer: React.FC<Props> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          height: '100vh',
+          height: containerHeight,
+          minHeight: embedded ? '80px' : containerMinHeight,
           fontSize: '14px',
           color: 'var(--vscode-foreground)',
         }}
@@ -279,8 +286,10 @@ export const AnalyzeReportViewer: React.FC<Props> = ({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        height: '100vh',
-        overflow: 'hidden',
+        height: containerHeight,
+        minHeight: embedded ? '0' : containerMinHeight,
+        maxHeight: embedded ? '420px' : undefined,
+        overflow: embedded ? 'auto' : 'hidden',
         background: 'var(--vscode-editor-background)',
       }}
     >

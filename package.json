@@ -683,6 +683,12 @@
         "icon": "$(lightbulb)"
       },
       {
+        "command": "workspai.ingestLogFile",
+        "title": "Ingest Log File into Incident Studio",
+        "category": "Workspai AI",
+        "icon": "$(file-text)"
+      },
+      {
         "command": "workspai.workspaceBrain",
         "title": "Ask Workspace Brain",
         "category": "Workspai",
@@ -1169,6 +1175,9 @@
         },
         {
           "command": "workspai.explainErrorWithAI"
+        },
+        {
+          "command": "workspai.ingestLogFile"
         },
         {
           "command": "workspai.workspaceBrain"
