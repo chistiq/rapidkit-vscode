@@ -13,6 +13,7 @@ import { ExamplesService } from '../../core/examplesService';
 import { KitsService } from '../../core/kitsService';
 import { WorkspaceMemoryService } from '../../core/workspaceMemoryService';
 import { getGitDiffStat } from '../../core/aiProjectContextUtils';
+import { readLanguageModelResponseText } from '../../core/languageModelResponse';
 import type { AIOutputScenario } from '../../core/aiOutputQuality';
 import { isWorkspacePathAncestor } from '../../core/aiContextResolver';
 import {
@@ -1039,6 +1040,17 @@ export class WelcomePanel {
               break;
             }
             await runWorkspaceAnalyze({ workspacePath, workspaceName });
+            const { report, error } = loadAnalyzeReport({ workspacePath, workspaceName });
+            this._panel.webview.postMessage({
+              command: 'reportLoaded',
+              data: report,
+              error,
+            });
+            this._panel.webview.postMessage({
+              command: 'reportExistsResult',
+              exists: Boolean(report),
+              workspacePath,
+            });
             break;
           }
           case 'checkReportExists': {
@@ -2061,13 +2073,7 @@ No markdown, no explanation outside the JSON.`;
           requestTokenSource.token
         );
 
-        let raw = '';
-        for await (const chunk of response.text) {
-          if (requestTokenSource.token.isCancellationRequested) {
-            break;
-          }
-          raw += chunk;
-        }
+        const raw = await readLanguageModelResponseText(response, requestTokenSource.token);
 
         if (requestTokenSource.token.isCancellationRequested) {
           throw new Error(`AI module suggestion timed out after ${requestTimeoutMs}ms.`);
@@ -2160,13 +2166,13 @@ No markdown, no explanation outside the JSON.`;
       ) {
         workspacePath = vscode.workspace.workspaceFolders[0].uri.fsPath;
       }
-      const { plan, modelId } = await parseCreationIntent(
+      const { plan, modelId, planSource } = await parseCreationIntent(
         creationPrompt,
         creationMode,
         creationFw,
         workspacePath
       );
-      panel.webview.postMessage({ command: 'aiCreationPlan', data: { plan, modelId } });
+      panel.webview.postMessage({ command: 'aiCreationPlan', data: { plan, modelId, planSource } });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       panel.webview.postMessage({ command: 'aiCreationError', data: { error: errMsg } });

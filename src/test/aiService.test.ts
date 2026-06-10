@@ -933,4 +933,38 @@ describe('aiService', () => {
     expect(plan.suggestedModules).toContain('free/security/rate_limiting');
     expect(plan.suggestedModules).toContain('free/essentials/settings');
   });
+
+  it('uses response.text when stream is empty and marks heuristic fallback on invalid JSON', async () => {
+    const model = {
+      id: 'gpt-4o',
+      name: 'GPT-4o',
+      sendRequest: vi.fn(async () => ({
+        stream: (async function* () {
+          // Some providers return no stream chunks.
+        })(),
+        text: (async function* () {
+          yield 'not-json';
+        })(),
+      })),
+    };
+
+    mockSelectChatModels.mockResolvedValue([model]);
+
+    const { plan, planSource } = await parseCreationIntent(
+      'NestJS SaaS with Stripe payments and PostgreSQL',
+      'workspace',
+      undefined,
+      tempProjectPath
+    );
+
+    expect(planSource).toBe('heuristic');
+    expect(plan.framework).toBe('nestjs');
+    expect(plan.suggestedModules).toEqual(
+      expect.arrayContaining([
+        'free/essentials/settings',
+        'free/billing/stripe_payment',
+        'free/database/db_postgres',
+      ])
+    );
+  });
 });

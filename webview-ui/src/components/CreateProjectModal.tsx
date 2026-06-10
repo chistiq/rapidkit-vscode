@@ -140,17 +140,23 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
             if (event.data?.command !== 'aiModuleSuggestions') {
                 return;
             }
-            const { loading, suggestions, error: err } = event.data.data ?? {};
-            if (!loading) {
-                setAiSuggestLoading(false);
-                if (err) {
-                    setAiSuggestError(err);
-                } else {
-                    setAiSuggestions(suggestions ?? []);
-                }
-                window.removeEventListener('message', listener);
-                suggestListenerRef.current = null;
+            const payload = event.data?.data ?? event.data ?? {};
+            const { loading, suggestions, error: err } = payload as {
+                loading?: boolean;
+                suggestions?: { slug: string; reason: string }[];
+                error?: string;
+            };
+            if (loading) {
+                return;
             }
+            setAiSuggestLoading(false);
+            if (err) {
+                setAiSuggestError(err);
+            } else {
+                setAiSuggestions(suggestions ?? []);
+            }
+            window.removeEventListener('message', listener);
+            suggestListenerRef.current = null;
         };
         suggestListenerRef.current = listener;
         window.addEventListener('message', listener);

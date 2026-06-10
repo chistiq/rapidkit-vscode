@@ -26,6 +26,8 @@ import {
   selectModelAuto,
   selectModelWithPreference as selectModelWithPreferenceInternal,
 } from './aiModelSelection';
+import { buildHeuristicCreationDraft } from './aiCreationHeuristic';
+import { readLanguageModelResponseText } from './languageModelResponse';
 import { buildAIModalUserMessage as buildAIModalUserMessageInternal } from './aiPromptMessageBuilder';
 import { buildWorkspaiSystemPrompt as buildWorkspaiSystemPromptInternal } from './aiSystemPromptBuilder';
 import {
@@ -1450,7 +1452,8 @@ export async function parseCreationIntent(
   frameworkHint?: string,
   workspacePath?: string,
   token?: vscode.CancellationToken
-): Promise<{ plan: AICreationPlan; modelId: string }> {
+): Promise<{ plan: AICreationPlan; modelId: string; planSource: 'llm' | 'heuristic' }> {
+  const logger = Logger.getInstance();
   const liveModules = await getWorkspaceAwareLiveModules(workspacePath);
   const modulesSection = buildModuleListForPrompt(liveModules);
   const installedElsewhere = await collectWorkspaceInstalledModules(workspacePath);
@@ -1513,49 +1516,42 @@ Rules:
     ? `Framework: ${frameworkHint}\nMode: ${mode}\nDescription: ${prompt}`
     : `Mode: ${mode}\nDescription: ${prompt}`;
 
-  // Call the LLM
-  // Creation intent parsing runs in background flow; always use auto unless user explicitly picks a model elsewhere.
-  const { model, modelId } = await selectModelAuto();
-  const lmMessages = [
-    vscode.LanguageModelChatMessage.User(SYSTEM),
-    vscode.LanguageModelChatMessage.Assistant('I will respond with only the JSON object.'),
-    vscode.LanguageModelChatMessage.User(USER),
-  ];
-
-  const response = await model.sendRequest(lmMessages, {}, token);
   let rawText = '';
-  for await (const part of response.stream) {
-    if (part instanceof vscode.LanguageModelTextPart) {
-      rawText += part.value;
+  let modelId = 'heuristic';
+  let planSource: 'llm' | 'heuristic' = 'heuristic';
+
+  try {
+    const { model, modelId: selectedModelId } = await selectModelAuto();
+    modelId = selectedModelId;
+    const lmMessages = [
+      vscode.LanguageModelChatMessage.User(SYSTEM),
+      vscode.LanguageModelChatMessage.Assistant('I will respond with only the JSON object.'),
+      vscode.LanguageModelChatMessage.User(USER),
+    ];
+    const response = await model.sendRequest(lmMessages, {}, token);
+    rawText = await readLanguageModelResponseText(response, token);
+    if (rawText.trim()) {
+      planSource = 'llm';
     }
-    if (token?.isCancellationRequested) {
-      break;
-    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn(`[AI] Creation intent LLM request failed, using heuristic planner: ${msg}`);
   }
 
   // Parse JSON with graceful fallback
   let parsed: Partial<AICreationPlan> = {};
-  try {
-    parsed = JSON.parse(extractJSON(rawText));
-  } catch {
-    // Build a reasonable default from whatever we can extract
-    const fw = normalizeCreationFramework(undefined, frameworkHint);
-    parsed = {
-      workspaceName: 'my-workspace',
-      profile: defaultProfile(fw),
-      framework: fw,
-      kit:
-        fw === 'nestjs'
-          ? 'nestjs.standard'
-          : fw === 'go'
-            ? 'gofiber.standard'
-            : fw === 'springboot'
-              ? 'springboot.standard'
-              : 'fastapi.standard',
-      projectName: 'api',
-      suggestedModules: ['free/essentials/settings'],
-      description: prompt,
-    };
+  if (rawText.trim()) {
+    try {
+      parsed = JSON.parse(extractJSON(rawText));
+    } catch {
+      logger.warn('[AI] Creation intent JSON parse failed, using heuristic planner');
+      parsed = buildHeuristicCreationDraft(prompt, mode, frameworkHint);
+      planSource = 'heuristic';
+    }
+  } else {
+    logger.warn('[AI] Creation intent LLM returned empty text, using heuristic planner');
+    parsed = buildHeuristicCreationDraft(prompt, mode, frameworkHint);
+    planSource = 'heuristic';
   }
 
   const fw = normalizeCreationFramework(parsed.framework, frameworkHint);
@@ -1576,7 +1572,7 @@ Rules:
         : prompt.trim().slice(0, 240),
   };
 
-  return { plan, modelId };
+  return { plan, modelId, planSource };
 }
 
 /**

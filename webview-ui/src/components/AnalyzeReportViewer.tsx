@@ -188,6 +188,56 @@ export const AnalyzeReportViewer: React.FC<Props> = ({
     });
   }, [report]);
 
+  if (error) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: containerHeight,
+          minHeight: embedded ? '120px' : containerMinHeight,
+          padding: embedded ? '12px' : '20px',
+        }}
+      >
+        <div
+          style={{
+            maxWidth: embedded ? '100%' : '500px',
+            width: '100%',
+            background: 'rgba(241, 76, 76, 0.1)',
+            border: '1px solid rgba(241, 76, 76, 0.3)',
+            borderRadius: '6px',
+            padding: embedded ? '12px' : '20px',
+            textAlign: embedded ? 'left' : 'center',
+          }}
+        >
+          <div style={{ fontSize: '14px', marginBottom: '12px', color: '#f14c4c' }}>
+            {embedded ? 'Analyze unavailable' : `✕ ${error}`}
+          </div>
+          <p style={{ fontSize: '13px', margin: embedded ? '0 0 12px' : '0 0 12px', opacity: 0.9 }}>
+            {embedded ? error : null}
+          </p>
+          {onRunAnalyze ? (
+            <button
+              onClick={onRunAnalyze}
+              style={{
+                background: 'var(--vscode-button-background, #0078d4)',
+                color: 'var(--vscode-button-foreground, #fff)',
+                border: 'none',
+                padding: '8px 16px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '13px',
+              }}
+            >
+              Run Analyze
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div
@@ -204,52 +254,6 @@ export const AnalyzeReportViewer: React.FC<Props> = ({
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '20px', marginBottom: '12px' }}>⏳</div>
           Loading workspace analysis...
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: containerHeight,
-          minHeight: embedded ? '120px' : containerMinHeight,
-          padding: embedded ? '12px' : '20px',
-        }}
-      >
-        <div
-          style={{
-            maxWidth: '500px',
-            background: 'rgba(241, 76, 76, 0.1)',
-            border: '1px solid rgba(241, 76, 76, 0.3)',
-            borderRadius: '6px',
-            padding: '20px',
-            textAlign: 'center',
-          }}
-        >
-          <div style={{ fontSize: '14px', marginBottom: '12px', color: '#f14c4c' }}>
-            ✕ {error}
-          </div>
-          {onRunAnalyze && (
-            <button
-              onClick={onRunAnalyze}
-              style={{
-                background: 'var(--vscode-button-background, #0078d4)',
-                color: 'var(--vscode-button-foreground, #fff)',
-                border: 'none',
-                padding: '8px 16px',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '13px',
-              }}
-            >
-              Run Analyze
-            </button>
-          )}
         </div>
       </div>
     );

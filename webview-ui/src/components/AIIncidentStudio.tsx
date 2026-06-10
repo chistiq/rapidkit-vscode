@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 
 import AnalyzeReportViewer from './AnalyzeReportViewer';
+import { isAnalyzeEvidencePending } from '../lib/analyzeReportBridge';
 import {
     getActionResultPresentation,
     getBoardActionGuardHint,
@@ -1462,6 +1463,7 @@ export function AIIncidentStudio({
     const [feedbackByMessageId, setFeedbackByMessageId] = useState<
         Record<string, 'helpful' | 'not-helpful'>
     >({});
+    const [analyzePanelExpanded, setAnalyzePanelExpanded] = useState(true);
     // S4-003: Confidence UI state (breakdown visibility and expert mode)
     const [confidenceUIStates, setConfidenceUIStates] = useState<Record<string, ConfidenceUIState>>(
         {}
@@ -1531,16 +1533,44 @@ export function AIIncidentStudio({
     const isAnalyzeReportLoaded = Boolean(analyzeReport);
     const isAnalyzeReportMissing = analyzeReportExists === false && !analyzeReportError;
     const isAnalyzeError = Boolean(analyzeReportError);
+    const analyzeScore =
+        typeof analyzeReport?.summary?.score === 'number' ? analyzeReport.summary.score : null;
+    const analyzePending = isAnalyzeEvidencePending({
+        isLoading: Boolean(isAnalyzeLoading),
+        report: analyzeReport ?? null,
+        error: analyzeReportError ?? null,
+        exists: analyzeReportExists ?? null,
+    });
 
     const renderAnalyzeCard = () => {
         if (!onRunAnalyze) {
             return null;
         }
 
+        const analyzeStatusLabel = analyzePending
+            ? 'Loading…'
+            : isAnalyzeReportLoaded && analyzeScore != null
+              ? `Score ${analyzeScore}%`
+              : isAnalyzeError || isAnalyzeReportMissing
+                ? 'Action needed'
+                : 'Not run yet';
+
         return (
             <div className="incident-studio-analyze-card incident-studio-analyze-card--panel">
                 <div className="incident-studio-analyze-card__header">
-                    <strong>Workspace analyze evidence</strong>
+                    <button
+                        type="button"
+                        className="incident-studio-analyze-card__toggle"
+                        onClick={() => setAnalyzePanelExpanded((prev) => !prev)}
+                        aria-expanded={analyzePanelExpanded}
+                    >
+                        <ChevronDown
+                            size={14}
+                            className={analyzePanelExpanded ? 'is-open' : 'is-collapsed'}
+                        />
+                        <strong>Workspace analyze evidence</strong>
+                        <span className="incident-studio-analyze-card__badge">{analyzeStatusLabel}</span>
+                    </button>
                     <button
                         type="button"
                         className="incident-studio-analyze-card__action"
@@ -1549,29 +1579,37 @@ export function AIIncidentStudio({
                         {isAnalyzeReportLoaded ? 'Re-run analyze' : 'Run analyze'}
                     </button>
                 </div>
-                <AnalyzeReportViewer
-                    embedded
-                    report={isAnalyzeReportLoaded ? analyzeReport : null}
-                    isLoading={Boolean(isAnalyzeLoading)}
-                    error={
-                        isAnalyzeError
-                            ? analyzeReportError
-                            : isAnalyzeReportMissing
-                              ? 'Workspace analysis not found. Run rapidkit analyze to populate diagnostics.'
-                              : null
-                    }
-                    onRunAnalyze={onRunAnalyze}
-                    onCopyCommand={(text) => {
-                        void navigator.clipboard?.writeText(text);
-                    }}
-                    onRevealEvidence={(path) => {
-                        onRevealArchitectureTarget?.({
-                            path,
-                            label: path,
-                            kind: 'file',
-                        });
-                    }}
-                />
+                {analyzePanelExpanded ? (
+                    <AnalyzeReportViewer
+                        embedded
+                        report={isAnalyzeReportLoaded ? analyzeReport : null}
+                        isLoading={analyzePending}
+                        error={
+                            isAnalyzeError
+                                ? analyzeReportError
+                                : isAnalyzeReportMissing
+                                  ? 'No analyze report yet. Run rapidkit analyze to generate workspace health diagnostics.'
+                                  : null
+                        }
+                        onRunAnalyze={onRunAnalyze}
+                        onCopyCommand={(text) => {
+                            void navigator.clipboard?.writeText(text);
+                        }}
+                        onRevealEvidence={(path) => {
+                            onRevealArchitectureTarget?.({
+                                path,
+                                label: path,
+                                kind: 'file',
+                            });
+                        }}
+                    />
+                ) : (
+                    <p className="incident-studio-analyze-card__hint">
+                        {isAnalyzeReportLoaded
+                            ? 'Expand to review findings, enterprise gates, and remediation steps.'
+                            : 'Expand to inspect workspace health evidence or run analyze.'}
+                    </p>
+                )}
             </div>
         );
     };

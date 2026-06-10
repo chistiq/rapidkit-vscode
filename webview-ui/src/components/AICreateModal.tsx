@@ -37,6 +37,7 @@ interface AICreateModalProps {
     isCreating: boolean;
     creationStage?: 'workspace_done' | null;
     planError: string | null;
+    planSource?: 'llm' | 'heuristic' | null;
     modelId?: string | null;
     onClose: () => void;
     onPromptSubmit: (prompt: string, mode: 'workspace' | 'project', framework?: string) => void;
@@ -462,6 +463,7 @@ export function AICreateModal({
     isCreating,
     creationStage,
     planError,
+    planSource,
     modelId,
     onClose,
     onPromptSubmit,
@@ -788,6 +790,20 @@ export function AICreateModal({
                 {/* ── Step: Preview ── */}
                 {step === 'preview' && plan && (
                     <div className="ai-create-body">
+                        {planError && (
+                            <div className="ai-create-error">
+                                <span>⚠ {planError}</span>
+                            </div>
+                        )}
+
+                        {planSource === 'heuristic' && (
+                            <div className="ai-create-error ai-create-error--info">
+                                <span>
+                                    AI model output was unavailable or invalid. Plan was inferred locally from your description — review framework and modules before creating.
+                                </span>
+                            </div>
+                        )}
+
                         {/* Description */}
                         <div className="ai-create-desc">
                             <Sparkles size={12} className="ai-create-desc-icon" />

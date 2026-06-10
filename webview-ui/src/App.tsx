@@ -61,6 +61,11 @@ import {
     type IncidentProjectSelection,
 } from '@/lib/incidentStudioPayload';
 import { logChatBrain } from '@/lib/chatBrainDebug';
+import {
+    isAnalyzeEvidencePending,
+    parseReportExistsResult,
+    parseReportLoadedMessage,
+} from '@/lib/analyzeReportBridge';
 import { AIModal, AIModalContext, AIContextContractSummary } from '@/components/AIModal';
 import { AICreateModal, AICreationPlan, AICreateFramework } from '@/components/AICreateModal';
 import { CreateWorkspaceModal, WorkspaceCreationConfig } from '@/components/CreateWorkspaceModal';
@@ -321,6 +326,7 @@ export function App() {
     const [aiCreationStage, setAICreationStage] = useState<'workspace_done' | null>(null);
     const [aiCreationError, setAICreationError] = useState<string | null>(null);
     const [aiCreateModelId, setAICreateModelId] = useState<string | null>(null);
+    const [aiCreationPlanSource, setAICreationPlanSource] = useState<'llm' | 'heuristic' | null>(null);
     const [selectedFramework, setSelectedFramework] = useState<AICreateFramework>('fastapi');
     const [selectedModule, setSelectedModule] = useState<ModuleData | null>(null);
     const [moduleDetails, setModuleDetails] = useState<ModuleData | null>(null);
@@ -402,6 +408,8 @@ export function App() {
     const chatBrainLastPartialFailureRequestIdRef = useRef<string | null>(null);
     const chatBrainLastErrorRequestIdRef = useRef<string | null>(null);
     const lastIncidentBootstrapWorkspaceRef = useRef<string | null>(null);
+    const lastAnalyzeLoadKeyRef = useRef<string | null>(null);
+    const analyzeLoadTimeoutRef = useRef<number | null>(null);
     const incidentStudioDisplayModeOverrideRef = useRef<IncidentStudioDisplayMode | null>(null);
     const dashboardMountedAtRef = useRef<number>(
         typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -526,13 +534,20 @@ export function App() {
                     }
                     break;
                 case 'reportExistsResult':
-                    setAnalyzeReportExists(Boolean(message.data?.exists));
+                    setAnalyzeReportExists(parseReportExistsResult(message));
                     break;
-                case 'reportLoaded':
+                case 'reportLoaded': {
+                    if (analyzeLoadTimeoutRef.current != null) {
+                        window.clearTimeout(analyzeLoadTimeoutRef.current);
+                        analyzeLoadTimeoutRef.current = null;
+                    }
+                    const parsedReport = parseReportLoadedMessage(message);
                     setIsAnalyzeLoading(false);
-                    setAnalyzeReport(message.data?.data ?? null);
-                    setAnalyzeReportError(typeof message.data?.error === 'string' ? message.data.error : null);
+                    setAnalyzeReport(parsedReport.report);
+                    setAnalyzeReportError(parsedReport.error);
+                    setAnalyzeReportExists(parsedReport.report != null);
                     break;
+                }
                 case 'updateRecentWorkspaces':
                     console.log('[React Webview] Updating workspaces:', message.data);
                     setRecentWorkspaces(message.data);
@@ -613,6 +628,7 @@ export function App() {
                     setAICreationCreating(false);
                     setAICreationStage(null);
                     setAICreateModelId(null);
+                    setAICreationPlanSource(null);
                     setAICreateTargetWorkspaceName(message.data?.targetWorkspaceName ?? undefined);
                     setAICreateTargetWorkspacePath(message.data?.targetWorkspacePath ?? undefined);
                     setShowAICreateModal(true);
@@ -746,6 +762,9 @@ export function App() {
                     break;
                 case 'aiCreationPlan':
                     setAICreationPlan(message.data?.plan ?? null);
+                    setAICreationPlanSource(
+                        message.data?.planSource === 'heuristic' ? 'heuristic' : 'llm'
+                    );
                     if (message.data?.modelId) {
                         setAICreateModelId(message.data.modelId);
                     }
@@ -756,6 +775,7 @@ export function App() {
                     break;
                 case 'aiCreationReset':
                     setAICreationPlan(null);
+                    setAICreationPlanSource(null);
                     setAICreationError(null);
                     setAICreationStage(null);
                     break;
@@ -1390,6 +1410,7 @@ export function App() {
         vscode.postMessage('aiGetModels');
 
         // Refresh = restart analysis loop from the current scope (workspace/project)
+        lastAnalyzeLoadKeyRef.current = null;
         bootstrapIncidentStudioForWorkspace(
             workspacePath,
             workspaceName,
@@ -1397,6 +1418,10 @@ export function App() {
             undefined,
             selectedProjectForAnalysis
         );
+        vscode.postMessage('checkReportExists', { workspacePath });
+        vscode.postMessage('loadReport', { workspacePath, workspaceName });
+        setIsAnalyzeLoading(true);
+        setAnalyzeReportError(null);
     };
 
     const runIncidentInlineCommand = (command: string) => {
@@ -1524,6 +1549,28 @@ export function App() {
         bootstrapIncidentStudioForWorkspace(workspace.path, workspace.name, true, undefined, null);
     };
 
+    const requestAnalyzeEvidence = (workspacePath: string, workspaceName?: string) => {
+        if (analyzeLoadTimeoutRef.current != null) {
+            window.clearTimeout(analyzeLoadTimeoutRef.current);
+        }
+
+        setIsAnalyzeLoading(true);
+        setAnalyzeReport(null);
+        setAnalyzeReportError(null);
+        setAnalyzeReportExists(null);
+
+        analyzeLoadTimeoutRef.current = window.setTimeout(() => {
+            setIsAnalyzeLoading(false);
+            setAnalyzeReportError(
+                'Analyze evidence timed out while loading. Run analyze or retry refresh.'
+            );
+            analyzeLoadTimeoutRef.current = null;
+        }, 8000);
+
+        vscode.postMessage('checkReportExists', { workspacePath });
+        vscode.postMessage('loadReport', { workspacePath, workspaceName });
+    };
+
     const handleRunAnalyze = () => {
         const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
         const workspaceName = activeWorkspaceName || undefined;
@@ -1533,10 +1580,31 @@ export function App() {
             return;
         }
 
+        if (analyzeLoadTimeoutRef.current != null) {
+            window.clearTimeout(analyzeLoadTimeoutRef.current);
+        }
+
         setIsAnalyzeLoading(true);
         setAnalyzeReportError(null);
+        setAnalyzeReport(null);
+        setAnalyzeReportExists(null);
+
+        analyzeLoadTimeoutRef.current = window.setTimeout(() => {
+            setIsAnalyzeLoading(false);
+            setAnalyzeReportError('Analyze timed out. Check terminal output and retry.');
+            analyzeLoadTimeoutRef.current = null;
+        }, 120000);
+
         vscode.postMessage('runAnalyze', { workspacePath, workspaceName });
     };
+
+    useEffect(() => {
+        return () => {
+            if (analyzeLoadTimeoutRef.current != null) {
+                window.clearTimeout(analyzeLoadTimeoutRef.current);
+            }
+        };
+    }, []);
 
     useEffect(() => {
         if (activeView !== 'incident-studio') {
@@ -1569,10 +1637,26 @@ export function App() {
             return;
         }
 
-        setIsAnalyzeLoading(true);
-        vscode.postMessage('checkReportExists', { workspacePath });
-        vscode.postMessage('loadReport', { workspacePath, workspaceName: activeWorkspaceName });
-    }, [activeView, selectedWorkspaceForAnalysis, workspaceStatus.workspacePath, activeWorkspaceName]);
+        if (lastAnalyzeLoadKeyRef.current === workspacePath) {
+            return;
+        }
+        lastAnalyzeLoadKeyRef.current = workspacePath;
+
+        const workspaceName =
+            selectedWorkspaceForAnalysisObj?.name ||
+            workspaceStatus.workspaceName ||
+            activeWorkspaceName ||
+            undefined;
+
+        requestAnalyzeEvidence(workspacePath, workspaceName);
+    }, [activeView, selectedWorkspaceForAnalysis, workspaceStatus.workspacePath]);
+
+    const analyzeEvidencePending = isAnalyzeEvidencePending({
+        isLoading: isAnalyzeLoading,
+        report: analyzeReport,
+        error: analyzeReportError,
+        exists: analyzeReportExists,
+    });
 
     const handleChatBrainQuery = (query: string) => {
         const trimmedQuery = query.trim();
@@ -2146,7 +2230,7 @@ export function App() {
                         analyzeReport={analyzeReport}
                         analyzeReportError={analyzeReportError}
                         analyzeReportExists={analyzeReportExists}
-                        isAnalyzeLoading={isAnalyzeLoading}
+                        isAnalyzeLoading={analyzeEvidencePending}
                         onRunInlineCommand={runIncidentInlineCommand}
                         onRevealArchitectureTarget={revealArchitectureTarget}
                         onPredictiveWarningAccepted={handlePredictiveWarningAccepted}
@@ -2215,6 +2299,7 @@ export function App() {
                 isCreating={aiCreationCreating}
                 creationStage={aiCreationStage}
                 planError={aiCreationError}
+                planSource={aiCreationPlanSource}
                 modelId={aiCreateModelId}
                 onClose={() => {
                     if (!aiCreationThinking && !aiCreationCreating) {
