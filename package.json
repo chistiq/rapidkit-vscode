@@ -2,7 +2,7 @@
   "name": "rapidkit-vscode",
   "displayName": "Workspai",
   "description": "The AI workspace for backend teams. Build backend systems with AI that knows your workspace, generate projects and modules from intent, debug with full context, and ship faster — all inside VS Code. FastAPI, NestJS, Spring Boot, Go/Fiber, Go/Gin, and .NET Web API.",
-  "version": "0.33.0",
+  "version": "0.34.0",
   "publisher": "rapidkit",
   "icon": "media/icons/icon.png",
   "galleryBanner": {
@@ -789,6 +789,108 @@
         "title": "Record Release Outcome Validation",
         "category": "Workspai AI",
         "icon": "$(pass-filled)"
+      },
+      {
+        "command": "workspai.infra",
+        "title": "Workspace Infrastructure",
+        "category": "Workspai",
+        "icon": "$(server-environment)"
+      },
+      {
+        "command": "workspai.infraPlan",
+        "title": "Infra: Plan",
+        "category": "Workspai",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "workspai.infraUp",
+        "title": "Infra: Up",
+        "category": "Workspai",
+        "icon": "$(play)"
+      },
+      {
+        "command": "workspai.infraDown",
+        "title": "Infra: Down",
+        "category": "Workspai",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "workspai.infraStatus",
+        "title": "Infra: Status",
+        "category": "Workspai",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "workspai.infraOpenCompose",
+        "title": "Infra: Open Compose File",
+        "category": "Workspai",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "workspai.workspaceFoundationEnsure",
+        "title": "Workspace Foundation: Ensure",
+        "category": "Workspai",
+        "icon": "$(law)"
+      },
+      {
+        "command": "workspai.projectBuild",
+        "title": "Build Project",
+        "category": "Workspai",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "workspai.projectStart",
+        "title": "Start Project (Production)",
+        "category": "Workspai",
+        "icon": "$(debug-start)"
+      },
+      {
+        "command": "workspai.projectLint",
+        "title": "Lint Project",
+        "category": "Workspai",
+        "icon": "$(search-fuzzy)"
+      },
+      {
+        "command": "workspai.projectFormat",
+        "title": "Format Project",
+        "category": "Workspai",
+        "icon": "$(symbol-color)"
+      },
+      {
+        "command": "workspai.moduleMaintenance",
+        "title": "Module Maintenance",
+        "category": "Workspai",
+        "icon": "$(extensions)"
+      },
+      {
+        "command": "workspai.moduleUpgrade",
+        "title": "Module: Upgrade",
+        "category": "Workspai",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "workspai.moduleDiff",
+        "title": "Module: Diff",
+        "category": "Workspai",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "workspai.moduleRollback",
+        "title": "Module: Rollback",
+        "category": "Workspai",
+        "icon": "$(history)"
+      },
+      {
+        "command": "workspai.moduleUninstall",
+        "title": "Module: Uninstall",
+        "category": "Workspai",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "workspai.moduleCheckpoint",
+        "title": "Module: Checkpoint",
+        "category": "Workspai",
+        "icon": "$(save)"
       }
     ],
     "viewsContainers": {
@@ -906,6 +1008,14 @@
       {
         "id": "workspai.workspace.telemetry",
         "label": "Telemetry"
+      },
+      {
+        "id": "workspai.workspace.infra",
+        "label": "Infrastructure"
+      },
+      {
+        "id": "workspai.project.modules",
+        "label": "Module Maintenance"
       }
     ],
     "menus": {
@@ -1121,6 +1231,57 @@
         {
           "command": "workspai.showModuleInstallModal",
           "when": "false"
+        },
+        {
+          "command": "workspai.infra"
+        },
+        {
+          "command": "workspai.infraPlan"
+        },
+        {
+          "command": "workspai.infraUp"
+        },
+        {
+          "command": "workspai.infraDown"
+        },
+        {
+          "command": "workspai.infraStatus"
+        },
+        {
+          "command": "workspai.infraOpenCompose"
+        },
+        {
+          "command": "workspai.workspaceFoundationEnsure"
+        },
+        {
+          "command": "workspai.projectBuild"
+        },
+        {
+          "command": "workspai.projectStart"
+        },
+        {
+          "command": "workspai.projectLint"
+        },
+        {
+          "command": "workspai.projectFormat"
+        },
+        {
+          "command": "workspai.moduleMaintenance"
+        },
+        {
+          "command": "workspai.moduleUpgrade"
+        },
+        {
+          "command": "workspai.moduleDiff"
+        },
+        {
+          "command": "workspai.moduleRollback"
+        },
+        {
+          "command": "workspai.moduleUninstall"
+        },
+        {
+          "command": "workspai.moduleCheckpoint"
         }
       ],
       "view/title": [
@@ -1292,6 +1453,11 @@
           "group": "workspace@8"
         },
         {
+          "submenu": "workspai.workspace.infra",
+          "when": "view == rapidkitWorkspaces && viewItem == workspace",
+          "group": "workspace@9"
+        },
+        {
           "command": "workspai.removeWorkspace",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
           "group": "z_danger@99"
@@ -1392,6 +1558,31 @@
           "group": "inline@5"
         },
         {
+          "command": "workspai.projectBuild",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
+          "group": "lifecycle@1"
+        },
+        {
+          "command": "workspai.projectStart",
+          "when": "view == rapidkitProjects && viewItem == project",
+          "group": "lifecycle@2"
+        },
+        {
+          "command": "workspai.projectLint",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
+          "group": "lifecycle@3"
+        },
+        {
+          "command": "workspai.projectFormat",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
+          "group": "lifecycle@4"
+        },
+        {
+          "submenu": "workspai.project.modules",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
+          "group": "lifecycle@5"
+        },
+        {
           "command": "workspai.projectBrowser",
           "when": "view == rapidkitProjects && viewItem == project-running",
           "group": "project@8"
@@ -1480,6 +1671,10 @@
         {
           "command": "workspai.workspaceInit",
           "group": "ops@3"
+        },
+        {
+          "command": "workspai.workspaceFoundationEnsure",
+          "group": "ops@4"
         },
         {
           "command": "workspai.workspaceRunStage",
@@ -1648,6 +1843,50 @@
         {
           "command": "workspai.showOnboardingExperimentStats",
           "group": "telemetry@3"
+        }
+      ],
+      "workspai.workspace.infra": [
+        {
+          "command": "workspai.infraPlan",
+          "group": "infra@1"
+        },
+        {
+          "command": "workspai.infraUp",
+          "group": "infra@2"
+        },
+        {
+          "command": "workspai.infraDown",
+          "group": "infra@3"
+        },
+        {
+          "command": "workspai.infraStatus",
+          "group": "infra@4"
+        },
+        {
+          "command": "workspai.infraOpenCompose",
+          "group": "infra@5"
+        }
+      ],
+      "workspai.project.modules": [
+        {
+          "command": "workspai.moduleUpgrade",
+          "group": "modules@1"
+        },
+        {
+          "command": "workspai.moduleDiff",
+          "group": "modules@2"
+        },
+        {
+          "command": "workspai.moduleCheckpoint",
+          "group": "modules@3"
+        },
+        {
+          "command": "workspai.moduleRollback",
+          "group": "modules@4"
+        },
+        {
+          "command": "workspai.moduleUninstall",
+          "group": "modules@5"
         }
       ]
     },

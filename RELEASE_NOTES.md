@@ -1,5 +1,29 @@
 # Release Notes
 
+## v0.34.0 (June 10, 2026)
+
+### ✦ CLI Parity: Infra, Foundation, Project Lifecycle, and Module Maintenance
+
+Summary:
+- Close major RapidKit npm CLI gaps inside the Workspai VS Code extension.
+- Add workspace infrastructure orchestration (`infra plan/up/down/status`) with Docker readiness checks and compose file access.
+- Add workspace foundation ensure with safe and force re-sync modes.
+- Expose project build/start/lint/format and module upgrade/diff/checkpoint/rollback/uninstall from the sidebar with guarded UX.
+
+Highlights:
+- New **Infrastructure** workspace submenu wraps `rapidkit infra` with optional plan flags, volume-removal confirmation, and compose file open flow.
+- **Foundation Ensure** sits in Run & Release and dispatches `workspace foundation ensure [--force]` with modal guardrails.
+- Project tree now includes build, production start, lint, and format commands aligned with npm lifecycle adapters.
+- **Module Maintenance** submenu reads installed modules from `registry.json`, supports dry-run previews, and requires confirmation before upgrade/rollback/uninstall.
+- Added focused vitest suites asserting exact terminal command arrays for all new surfaces.
+
+Validation:
+- `npm run compile`
+- `npm run lint`
+- `vitest run`
+
+Release posture: `cli-parity-and-workspace-command-surface`
+
 ## v0.33.0 (June 8, 2026)
 
 ### ✦ .NET Setup Runtime and Enterprise Profile Parity

@@ -30,6 +30,8 @@ import { showWelcomeCommand } from './commands/showWelcome';
 import { showIncidentStudioNextCommand } from './commands/incidentStudioNext';
 import { registerWorkspaceSelectionCommands } from './commands/workspaceSelection';
 import { registerWorkspaceOperationsCommands } from './commands/workspaceOperations';
+import { registerInfraOperationsCommands } from './commands/infraOperations';
+import { registerModuleMaintenanceCommands } from './commands/moduleMaintenance';
 import { WorkspaiStatusBar } from './ui/statusBar';
 import { ConfigurationManager } from './core/configurationManager';
 import { WorkspaceDetector } from './core/workspaceDetector';
@@ -388,6 +390,14 @@ export async function activate(context: vscode.ExtensionContext) {
         logger,
         getWorkspaceExplorer: () => workspaceExplorer,
         context,
+      }),
+      ...registerInfraOperationsCommands({
+        logger,
+        getWorkspaceExplorer: () => workspaceExplorer,
+      }),
+      ...registerModuleMaintenanceCommands({
+        logger,
+        getProjectExplorer: () => projectExplorer,
       }),
       ...registerProjectContextAndLogCommands(),
       ...registerProjectLifecycleCommands({

@@ -440,6 +440,81 @@ export function registerProjectLifecycleCommands(options: {
       }
     }),
 
+    vscode.commands.registerCommand('workspai.projectBuild', async (item: unknown) => {
+      const { projectPath, projectName } = resolveProjectCommandTarget(item);
+
+      if (projectPath) {
+        runRapidkitCommandsInTerminal({
+          name: `🏗️ ${projectName} [build]`,
+          cwd: projectPath,
+          commands: [['build']],
+        });
+
+        logger.info(`Running build for project: ${projectPath}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('workspai.projectStart', async (item: unknown) => {
+      const { projectPath, projectName } = resolveProjectCommandTarget(item);
+
+      if (!projectPath) {
+        return;
+      }
+
+      const existingTerminal = runningServers.get(projectPath);
+      if (existingTerminal) {
+        const choice = await vscode.window.showWarningMessage(
+          `A server terminal is already tracked for "${projectName}". Stop it before starting a production server?`,
+          'Stop & Start',
+          'Cancel'
+        );
+        if (choice !== 'Stop & Start') {
+          return;
+        }
+        interruptTerminal(existingTerminal);
+        runningServers.delete(projectPath);
+      }
+
+      const terminal = runRapidkitCommandsInTerminal({
+        name: `🚀 ${projectName} [start]`,
+        cwd: projectPath,
+        commands: [['start']],
+      });
+
+      runningServers.set(projectPath, terminal);
+      getProjectExplorer()?.refresh();
+
+      logger.info(`Running production start for project: ${projectPath}`);
+    }),
+
+    vscode.commands.registerCommand('workspai.projectLint', async (item: unknown) => {
+      const { projectPath, projectName } = resolveProjectCommandTarget(item);
+
+      if (projectPath) {
+        runRapidkitCommandsInTerminal({
+          name: `🔍 ${projectName} [lint]`,
+          cwd: projectPath,
+          commands: [['lint']],
+        });
+
+        logger.info(`Running lint for project: ${projectPath}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('workspai.projectFormat', async (item: unknown) => {
+      const { projectPath, projectName } = resolveProjectCommandTarget(item);
+
+      if (projectPath) {
+        runRapidkitCommandsInTerminal({
+          name: `✨ ${projectName} [format]`,
+          cwd: projectPath,
+          commands: [['format']],
+        });
+
+        logger.info(`Running format for project: ${projectPath}`);
+      }
+    }),
+
     vscode.commands.registerCommand('workspai.projectDoctor', async (item: unknown) => {
       const { projectPath, projectName, preferredAction } = resolveProjectCommandTarget(item);
 

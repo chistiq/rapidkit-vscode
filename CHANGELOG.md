@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-06-10
+
+### Added
+
+* Workspace **Infrastructure** commands: plan, up, down, status, and open compose file, with Docker pre-flight checks, optional flags, and a dedicated workspace sidebar submenu.
+* **Workspace Foundation: Ensure** command with non-destructive and force re-sync modes plus modal confirmation before rewriting foundation files.
+* Project lifecycle commands for **Build**, **Start (production)**, **Lint**, and **Format** from the Projects tree, including running-server conflict handling on start.
+* **Module Maintenance** commands: upgrade, diff, checkpoint, rollback, and uninstall, with registry-backed module selection, dry-run modes, and guarded confirmations for destructive actions.
+* Vitest coverage for infra, foundation, project lifecycle stage, and module maintenance terminal dispatch paths.
+
+### Changed
+
+* Expanded `package.json` command palette, workspace context menus, and project context menus to expose the new CLI parity surfaces.
+
+### Verification
+
+* `npm run compile`
+* `npm run lint`
+* `vitest run` (1094 tests)
+
 ## [0.33.0] - 2026-06-08
 
 ### Added

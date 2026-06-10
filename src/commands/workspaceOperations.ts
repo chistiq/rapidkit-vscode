@@ -1075,6 +1075,62 @@ export function registerWorkspaceOperationsCommands(options: {
       });
     }),
 
+    vscode.commands.registerCommand(
+      'workspai.workspaceFoundationEnsure',
+      async (item?: unknown) => {
+        const workspaceTarget = requireWorkspaceTarget(item, getWorkspaceExplorer());
+        if (!workspaceTarget) {
+          return;
+        }
+
+        const { workspacePath, workspaceName } = workspaceTarget;
+
+        const mode = await vscode.window.showQuickPick(
+          [
+            {
+              label: '$(check) Ensure foundation',
+              description: 'Create missing foundation files only (non-destructive)',
+              value: 'ensure' as const,
+            },
+            {
+              label: '$(sync) Force re-sync foundation',
+              description: 'Rewrite foundation files from current defaults (--force)',
+              value: 'force' as const,
+            },
+          ],
+          {
+            title: `Workspace Foundation — ${workspaceName}`,
+            placeHolder: 'Choose foundation mode',
+            ignoreFocusOut: true,
+          }
+        );
+
+        if (!mode) {
+          return;
+        }
+
+        const command = ['workspace', 'foundation', 'ensure'];
+        if (mode.value === 'force') {
+          const confirmed = await vscode.window.showWarningMessage(
+            `Force re-sync foundation files for "${workspaceName}"? Existing workspace marker, policies, and toolchain stubs will be rewritten from defaults.`,
+            { modal: true },
+            'Re-sync Foundation'
+          );
+          if (confirmed !== 'Re-sync Foundation') {
+            return;
+          }
+          command.push('--force');
+        }
+
+        runRapidkitCommandsInTerminal({
+          name: `Workspai: Foundation — ${workspaceName}`,
+          cwd: workspacePath,
+          commands: [command],
+        });
+        logger.info(`Running workspace foundation ensure for: ${workspacePath}`);
+      }
+    ),
+
     vscode.commands.registerCommand('workspai.workspaceInit', async (item?: unknown) => {
       const workspaceExplorer = getWorkspaceExplorer();
       const { workspacePath, workspaceName } = resolveWorkspaceTarget(item, workspaceExplorer);
