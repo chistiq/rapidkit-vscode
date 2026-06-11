@@ -298,7 +298,7 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
     }
   }
 
-  public async importWorkspace(): Promise<void> {
+  public async importWorkspace(): Promise<WorkspaiWorkspace | undefined> {
     // Step 1: Ask user for import type
     const importType = await vscode.window.showQuickPick(
       [
@@ -328,23 +328,21 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
     );
 
     if (!importType) {
-      return; // User cancelled
+      return undefined;
     }
 
     if (importType.value === 'folder') {
-      await this.importFromFolder();
-      return;
+      return this.importFromFolder();
     }
 
     if (importType.value === 'remote-archive') {
-      await this.importFromRemoteArchive();
-      return;
+      return this.importFromRemoteArchive();
     }
 
-    await this.importFromArchive();
+    return this.importFromArchive();
   }
 
-  private async importFromFolder(): Promise<void> {
+  private async importFromFolder(): Promise<WorkspaiWorkspace | undefined> {
     const result = await vscode.window.showOpenDialog({
       canSelectFiles: false,
       canSelectFolders: true,
@@ -354,13 +352,13 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
     });
 
     if (!result || !result[0]) {
-      return;
+      return undefined;
     }
 
     const workspacePath = result[0].fsPath;
 
     // Show progress while validating
-    await vscode.window.withProgress(
+    return vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
         title: 'Validating Workspai workspace...',
@@ -381,18 +379,20 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
             `✅ Workspace "${workspace.name}" imported successfully!`,
             'OK'
           );
-        } else {
-          // Not a valid Workspai workspace
-          vscode.window.showErrorMessage(
-            `❌ Invalid Workspai workspace\n\nThe selected folder is not a valid Workspai workspace.\n\nA valid workspace must have:\n• .rapidkit-workspace marker file, OR\n• pyproject.toml + .venv + rapidkit script, OR\n• .rapidkit/project.json or .rapidkit/context.json`,
-            'OK'
-          );
+          return workspace;
         }
+
+        // Not a valid Workspai workspace
+        vscode.window.showErrorMessage(
+          `❌ Invalid Workspai workspace\n\nThe selected folder is not a valid Workspai workspace.\n\nA valid workspace must have:\n• .rapidkit-workspace marker file, OR\n• pyproject.toml + .venv + rapidkit script, OR\n• .rapidkit/project.json or .rapidkit/context.json`,
+          'OK'
+        );
+        return undefined;
       }
     );
   }
 
-  private async importFromArchive(): Promise<void> {
+  private async importFromArchive(): Promise<WorkspaiWorkspace | undefined> {
     const result = await vscode.window.showOpenDialog({
       canSelectFiles: true,
       canSelectFolders: false,
@@ -406,14 +406,14 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
     });
 
     if (!result || !result[0]) {
-      return;
+      return undefined;
     }
 
     const archivePath = result[0].fsPath;
-    await this.importArchivePath(archivePath);
+    return this.importArchivePath(archivePath);
   }
 
-  private async importFromRemoteArchive(): Promise<void> {
+  private async importFromRemoteArchive(): Promise<WorkspaiWorkspace | undefined> {
     const archiveUrl = await vscode.window.showInputBox({
       title: 'Import Remote Workspace Archive',
       prompt: 'Paste a HTTPS/HTTP .rapidkit-archive.zip URL',
@@ -436,7 +436,7 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
     });
 
     if (!archiveUrl) {
-      return;
+      return undefined;
     }
 
     let downloaded: Awaited<ReturnType<typeof downloadWorkspaceArchiveToTemp>> | undefined;
@@ -455,10 +455,10 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
       );
 
       if (!downloaded) {
-        return;
+        return undefined;
       }
 
-      await this.importArchivePath(downloaded.archivePath, {
+      return this.importArchivePath(downloaded.archivePath, {
         sourceLabel: downloaded.finalUrl,
         cleanupPaths: [downloaded.tempRoot],
       });
@@ -469,14 +469,15 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
       vscode.window.showErrorMessage(
         `Failed to import remote archive: ${error instanceof Error ? error.message : String(error)}`
       );
+      return undefined;
     }
   }
 
   private async importArchivePath(
     archivePath: string,
     options?: { sourceLabel?: string; cleanupPaths?: string[] }
-  ): Promise<void> {
-    await vscode.window.withProgress(
+  ): Promise<WorkspaiWorkspace | undefined> {
+    return vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
         title: 'Importing workspace from archive...',
@@ -500,7 +501,7 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
           });
 
           if (!destinationResult || !destinationResult[0]) {
-            return;
+            return undefined;
           }
 
           const extractPath = path.join(destinationResult[0].fsPath, archiveName);
@@ -537,7 +538,7 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
             'Cancel'
           );
           if (verificationAction !== 'Import Workspace') {
-            return;
+            return undefined;
           }
 
           progress.report({ increment: 10, message: 'Extracting files...' });
@@ -555,7 +556,7 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
             );
             if (overwrite !== 'Replace Workspace') {
               await fs.remove(extracted.tempRoot).catch(() => undefined);
-              return;
+              return undefined;
             }
             await fs.remove(extractPath);
           }
@@ -586,11 +587,15 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
                 vscode.Uri.file(extractPath)
               );
             }
+            return workspace;
           }
+
+          return undefined;
         } catch (error) {
           vscode.window.showErrorMessage(
             `Failed to import archive: ${error instanceof Error ? error.message : String(error)}`
           );
+          return undefined;
         } finally {
           for (const cleanupPath of options?.cleanupPaths || []) {
             await fs.remove(cleanupPath).catch(() => undefined);

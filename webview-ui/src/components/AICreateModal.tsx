@@ -42,6 +42,7 @@ interface AICreateModalProps {
     onClose: () => void;
     onPromptSubmit: (prompt: string, mode: 'workspace' | 'project', framework?: string) => void;
     onConfirm: (plan: AICreationPlan) => void;
+    onStartOver: () => void;
     onManualFallback: () => void;
 }
 
@@ -419,7 +420,12 @@ const FRAMEWORK_META: Record<AICreateFramework, { icon: string; iconUri?: string
         label: 'Spring Boot',
         color: '#6db33f',
     },
-    dotnet: { icon: '.NET', label: '.NET', color: '#512bd4' },
+    dotnet: {
+        icon: '.NET',
+        iconUri: (typeof window !== 'undefined' ? (window as any).DOTNET_ICON_URI : undefined),
+        label: '.NET',
+        color: '#512bd4',
+    },
 };
 
 const MODULE_LABELS: Record<string, string> = {
@@ -468,6 +474,7 @@ export function AICreateModal({
     onClose,
     onPromptSubmit,
     onConfirm,
+    onStartOver,
     onManualFallback,
 }: AICreateModalProps) {
     const [prompt, setPrompt] = useState('');
@@ -595,8 +602,7 @@ export function AICreateModal({
     const handleStartOver = () => {
         setPrompt('');
         setShowAllPresets(false);
-        // Trigger reset by calling with empty plan signal
-        onPromptSubmit('__reset__', mode, framework);
+        onStartOver();
     };
 
     const fwMeta = framework ? FRAMEWORK_META[framework] : null;

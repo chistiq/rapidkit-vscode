@@ -14,6 +14,11 @@ import { KitsService } from '../../core/kitsService';
 import { WorkspaceMemoryService } from '../../core/workspaceMemoryService';
 import { getGitDiffStat } from '../../core/aiProjectContextUtils';
 import { readLanguageModelResponseText } from '../../core/languageModelResponse';
+import {
+  openWorkspaiExtensionSettings,
+  readWorkspaiSettings,
+  setWorkspaiPreferredModel,
+} from '../../core/workspaiSettingsBridge';
 import type { AIOutputScenario } from '../../core/aiOutputQuality';
 import { isWorkspacePathAncestor } from '../../core/aiContextResolver';
 import {
@@ -51,7 +56,29 @@ import {
 } from '../../utils/terminalExecutor';
 import { WorkspaceUsageTracker } from '../../utils/workspaceUsageTracker';
 import type { WorkspaceExplorerProvider } from '../treeviews/workspaceExplorer';
-import { createDoctorTelemetryRefreshController } from './doctorTelemetryRefresh';
+import {
+  createDoctorTelemetryRefreshController,
+  type DashboardEvidenceRefreshContext,
+} from './doctorTelemetryRefresh';
+import {
+  buildDashboardEvidenceBundle,
+  resolveCardForReportKind,
+} from '../../core/dashboardEvidenceBridge';
+import {
+  appendDashboardActivity,
+  clearDashboardActivity,
+  finalizeDashboardActivityFromReport,
+  getDashboardActivityLog,
+  resolveDashboardCommandActivity,
+} from '../../core/dashboardActivityBridge';
+import {
+  advanceDashboardOpsChain,
+  getDashboardOpsChain,
+  getNextOpsChainCommand,
+  startDashboardOpsChain,
+  clearDashboardOpsChain,
+} from '../../core/dashboardOpsChainBridge';
+import { resolveReportBinding } from '../../core/dashboardReportRegistry';
 import { routeIncidentActionTypeFromMessage, type RoutingResult } from './incidentRouting';
 import {
   findIncidentNavigatorSelection,
@@ -594,6 +621,9 @@ export class WelcomePanel {
 
       await currentPanel._refreshModulesCatalog();
       console.log('[WelcomePanel] ✅ Modules catalog refreshed for project switch');
+      if (currentPanel._panelRole === 'dashboard') {
+        void currentPanel._sendDashboardEvidence();
+      }
     } else {
       console.log('[WelcomePanel] ❌ No currentPanel - stored for later');
     }
@@ -619,6 +649,9 @@ export class WelcomePanel {
           installedModules: [],
         },
       });
+      if (WelcomePanel.currentPanel._panelRole === 'dashboard') {
+        void WelcomePanel.currentPanel._sendDashboardEvidence();
+      }
     }
   }
 
@@ -629,6 +662,22 @@ export class WelcomePanel {
     if (WelcomePanel.currentPanel) {
       WelcomePanel.currentPanel._sendRecentWorkspaces();
     }
+  }
+
+  /**
+   * After a workspace is imported from disk or archive, kick off the governance ops chain
+   * on the dashboard and refresh recent workspace evidence.
+   */
+  public static async notifyWorkspaceImported(
+    workspacePath: string,
+    workspaceName?: string
+  ): Promise<void> {
+    WelcomePanel.refreshRecentWorkspaces();
+    const dashboardPanel = WelcomePanel._dashboardPanel;
+    if (!dashboardPanel) {
+      return;
+    }
+    await dashboardPanel._beginGovernanceChainForWorkspace(workspacePath, workspaceName, 'import');
   }
 
   /**
@@ -819,8 +868,10 @@ export class WelcomePanel {
   /** Per-workspace system graph watchers for incremental refresh on file change. */
   private _systemGraphWatcherByPath = new Map<string, ProjectSystemGraphWatcherHandle>();
   private _doctorTelemetryRefreshController = createDoctorTelemetryRefreshController({
-    onRefresh: (explicitWorkspacePath?: string) =>
-      this._sendIncidentStudioTelemetry(explicitWorkspacePath),
+    onRefresh: (context) => {
+      void this._sendDashboardEvidence(context);
+      return this._sendIncidentStudioTelemetry(context?.workspacePath);
+    },
     onError: (error) => {
       console.warn('[WelcomePanel] Doctor telemetry refresh failed:', error);
     },
@@ -1135,6 +1186,21 @@ export class WelcomePanel {
             }
             break;
           }
+          case 'requestWorkspaiSettings': {
+            await this._sendWorkspaiSettings();
+            break;
+          }
+          case 'setPreferredModel': {
+            const modelId =
+              typeof message.data?.modelId === 'string' ? message.data.modelId : 'auto';
+            const preferredModel = await setWorkspaiPreferredModel(modelId);
+            await this._sendWorkspaiSettings(preferredModel);
+            break;
+          }
+          case 'openWorkspaiExtensionSettings': {
+            await openWorkspaiExtensionSettings();
+            break;
+          }
           case 'aiCancelQuery': {
             await this._runOptionalMessageLane('aiCancelQuery', () => {
               this._handleAICancelQueryMessage(message.data);
@@ -1214,6 +1280,13 @@ export class WelcomePanel {
                   command: 'aiCreationDone',
                   data: { plan, workspaceCreated: wsExists },
                 });
+                if (wsExists) {
+                  void this._beginGovernanceChainForWorkspace(
+                    wsPath,
+                    plan.workspaceName,
+                    'ai-create'
+                  );
+                }
               } else {
                 // Project-only creation (inside existing selected workspace).
                 // Prefer the workspace path that was captured when the modal opened (passed from
@@ -1297,6 +1370,36 @@ export class WelcomePanel {
           case 'requestWorkspaceToolStatus':
             await this._sendWorkspaceToolStatus();
             break;
+          case 'requestDashboardEvidence':
+            await this._sendDashboardEvidence({
+              workspacePath:
+                typeof message.data?.workspacePath === 'string'
+                  ? message.data.workspacePath
+                  : undefined,
+            });
+            break;
+          case 'clearDashboardActivity':
+            await clearDashboardActivity(this._context);
+            await this._sendDashboardEvidence();
+            break;
+          case 'dismissDashboardOpsChain':
+            await clearDashboardOpsChain(this._context);
+            await this._sendDashboardEvidence();
+            break;
+          case 'trackDashboardCommand': {
+            const command =
+              typeof message.data?.command === 'string' ? message.data.command.trim() : '';
+            if (command.length > 0) {
+              const resolved = resolveDashboardCommandActivity(command);
+              await appendDashboardActivity(this._context, {
+                command,
+                label: resolved.label,
+                scope: resolved.scope,
+              });
+              await this._sendDashboardEvidence();
+            }
+            break;
+          }
           case 'requestAvailableKits':
             await this._sendAvailableKits();
             break;
@@ -1513,7 +1616,74 @@ export class WelcomePanel {
             await vscode.commands.executeCommand('workspai.workspaceTerminal');
             break;
           case 'workspaceBootstrap':
-            await vscode.commands.executeCommand('workspai.workspaceBootstrap');
+            if (message.data?.path) {
+              await vscode.commands.executeCommand('workspai.workspaceBootstrap', {
+                path: message.data.path,
+                name: message.data.name,
+              });
+            } else {
+              await vscode.commands.executeCommand('workspai.workspaceBootstrap');
+            }
+            break;
+          case 'workspaceSetup':
+            if (message.data?.path) {
+              await vscode.commands.executeCommand('workspai.workspaceSetup', {
+                path: message.data.path,
+                name: message.data.name,
+              });
+            } else {
+              await vscode.commands.executeCommand('workspai.workspaceSetup');
+            }
+            break;
+          case 'workspaceReadiness':
+            if (message.data?.path) {
+              await vscode.commands.executeCommand('workspai.workspaceReadiness', {
+                path: message.data.path,
+                name: message.data.name,
+              });
+            } else {
+              await vscode.commands.executeCommand('workspai.workspaceReadiness');
+            }
+            break;
+          case 'mirrorStatus':
+            if (message.data?.path) {
+              await vscode.commands.executeCommand('workspai.mirrorStatus', {
+                path: message.data.path,
+                name: message.data.name,
+              });
+            } else {
+              await vscode.commands.executeCommand('workspai.mirrorStatus');
+            }
+            break;
+          case 'mirrorSync':
+            if (message.data?.path) {
+              await vscode.commands.executeCommand('workspai.mirrorSync', {
+                path: message.data.path,
+                name: message.data.name,
+              });
+            } else {
+              await vscode.commands.executeCommand('workspai.mirrorSync');
+            }
+            break;
+          case 'cacheStatus':
+            if (message.data?.path) {
+              await vscode.commands.executeCommand('workspai.cacheStatus', {
+                path: message.data.path,
+                name: message.data.name,
+              });
+            } else {
+              await vscode.commands.executeCommand('workspai.cacheStatus');
+            }
+            break;
+          case 'workspaceInfra':
+            if (message.data?.path) {
+              await vscode.commands.executeCommand('workspai.infra', {
+                path: message.data.path,
+                name: message.data.name,
+              });
+            } else {
+              await vscode.commands.executeCommand('workspai.infra');
+            }
             break;
           case 'workspaceRunInit':
             await vscode.commands.executeCommand('workspai.workspaceRunInit');
@@ -1958,6 +2128,55 @@ export class WelcomePanel {
               );
             }
             break;
+          case 'projectLint':
+            if (WelcomePanel._selectedProject) {
+              await vscode.commands.executeCommand('workspai.projectLint', {
+                projectPath: WelcomePanel._selectedProject.path,
+              });
+            }
+            break;
+          case 'projectFormat':
+            if (WelcomePanel._selectedProject) {
+              await vscode.commands.executeCommand('workspai.projectFormat', {
+                projectPath: WelcomePanel._selectedProject.path,
+              });
+            }
+            break;
+          case 'moduleDiff':
+          case 'moduleRollback':
+          case 'moduleUninstall':
+          case 'moduleUpgrade': {
+            if (!WelcomePanel._selectedProject) {
+              vscode.window.showWarningMessage('Select a project in the sidebar first.');
+              break;
+            }
+            const moduleSlug =
+              typeof message.data?.moduleSlug === 'string' ? message.data.moduleSlug : undefined;
+            const maintenancePayload = {
+              project: WelcomePanel._selectedProject,
+              projectPath: WelcomePanel._selectedProject.path,
+              moduleSlug,
+              module: moduleSlug ? { slug: moduleSlug } : undefined,
+            };
+            switch (message.command) {
+              case 'moduleDiff':
+                await vscode.commands.executeCommand('workspai.moduleDiff', maintenancePayload);
+                break;
+              case 'moduleRollback':
+                await vscode.commands.executeCommand('workspai.moduleRollback', maintenancePayload);
+                break;
+              case 'moduleUninstall':
+                await vscode.commands.executeCommand(
+                  'workspai.moduleUninstall',
+                  maintenancePayload
+                );
+                break;
+              case 'moduleUpgrade':
+                await vscode.commands.executeCommand('workspai.moduleUpgrade', maintenancePayload);
+                break;
+            }
+            break;
+          }
         }
       },
       null,
@@ -2731,7 +2950,7 @@ No markdown, no explanation outside the JSON.`;
 
   private _registerDoctorEvidenceWatcher() {
     const watcher = vscode.workspace.createFileSystemWatcher(
-      '**/.rapidkit/reports/doctor-last-run.json',
+      '**/.rapidkit/reports/**/*.json',
       false,
       false,
       true
@@ -2746,6 +2965,162 @@ No markdown, no explanation outside the JSON.`;
     watcher.onDidDelete((uri) => scheduleRefresh(uri));
 
     this._disposables.push(watcher);
+  }
+
+  private _resolveDashboardProjectContext(workspacePath?: string): {
+    projectPath?: string;
+    projectName?: string;
+  } {
+    const selectedProject = WelcomePanel._selectedProject;
+    if (!selectedProject?.path) {
+      return {};
+    }
+    if (workspacePath && !selectedProject.path.startsWith(`${workspacePath}${path.sep}`)) {
+      return {};
+    }
+    return {
+      projectPath: selectedProject.path,
+      projectName: selectedProject.name,
+    };
+  }
+
+  private async _runDashboardOpsChainCommand(
+    command: string,
+    workspacePath: string,
+    workspaceName?: string
+  ): Promise<void> {
+    const payload = { path: workspacePath, name: workspaceName };
+    const resolved = resolveDashboardCommandActivity(command);
+    await appendDashboardActivity(this._context, {
+      command,
+      label: resolved.label,
+      scope: resolved.scope,
+    });
+
+    switch (command) {
+      case 'workspaceBootstrap':
+        await vscode.commands.executeCommand('workspai.workspaceBootstrap', payload);
+        return;
+      case 'checkWorkspaceHealth':
+        await vscode.commands.executeCommand('workspai.checkWorkspaceHealth', {
+          ...payload,
+          preferredAction: 'check',
+        });
+        return;
+      case 'workspaceAnalyze':
+        await vscode.commands.executeCommand('workspai.workspaceAnalyze', payload);
+        return;
+      case 'workspaceReadiness':
+        await vscode.commands.executeCommand('workspai.workspaceReadiness', payload);
+        return;
+      default:
+        return;
+    }
+  }
+
+  private async _beginGovernanceChainForWorkspace(
+    workspacePath: string,
+    workspaceName: string | undefined,
+    triggeredBy: 'clone' | 'ai-create' | 'import'
+  ): Promise<void> {
+    if (this._panelRole !== 'dashboard') {
+      return;
+    }
+    await startDashboardOpsChain(this._context, {
+      workspacePath,
+      workspaceName,
+      triggeredBy,
+    });
+    const chain = getDashboardOpsChain(this._context);
+    const firstCommand = getNextOpsChainCommand(chain);
+    if (firstCommand) {
+      await this._runDashboardOpsChainCommand(firstCommand, workspacePath, workspaceName);
+    }
+    await this._sendDashboardEvidence({ workspacePath });
+  }
+
+  private async _sendDashboardEvidence(context?: DashboardEvidenceRefreshContext | string) {
+    if (this._panelRole !== 'dashboard') {
+      return;
+    }
+
+    const normalizedContext: DashboardEvidenceRefreshContext | undefined =
+      typeof context === 'string' ? { workspacePath: context } : context;
+
+    const selectedWorkspace = this._getSelectedWorkspaceInfo();
+    const workspacePath =
+      normalizedContext?.workspacePath ||
+      selectedWorkspace?.path ||
+      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const projectContext = this._resolveDashboardProjectContext(workspacePath);
+    const recentWorkspaces = await this._getRecentWorkspaces();
+    const hasActiveWorkspace = Boolean(selectedWorkspace?.path);
+    const recentWorkspaceCount = recentWorkspaces.length;
+    const isFreshInstall = recentWorkspaceCount === 0 && !hasActiveWorkspace;
+
+    const bundle = await buildDashboardEvidenceBundle({
+      workspacePath,
+      projectPath: projectContext.projectPath,
+      projectName: projectContext.projectName,
+    });
+
+    if (normalizedContext?.reportPath) {
+      const binding = resolveReportBinding(normalizedContext.reportPath);
+      const card = binding
+        ? resolveCardForReportKind(bundle, binding.kind, projectContext.projectPath)
+        : undefined;
+      if (card) {
+        await finalizeDashboardActivityFromReport(
+          this._context,
+          normalizedContext.reportPath,
+          card.status,
+          card.blockers?.[0] ?? card.summary
+        );
+      }
+    }
+
+    const chainBefore = getDashboardOpsChain(this._context);
+    const chainAfter =
+      workspacePath && bundle.cards.length > 0
+        ? await advanceDashboardOpsChain(this._context, bundle.cards, workspacePath)
+        : chainBefore;
+
+    if (
+      chainAfter &&
+      chainBefore &&
+      chainAfter.status === 'running' &&
+      chainAfter.currentStep !== chainBefore.currentStep &&
+      workspacePath
+    ) {
+      const nextCommand = getNextOpsChainCommand(chainAfter);
+      if (nextCommand) {
+        await this._runDashboardOpsChainCommand(
+          nextCommand,
+          workspacePath,
+          chainAfter.workspaceName ?? selectedWorkspace?.name
+        );
+      }
+    }
+
+    const activity = getDashboardActivityLog(this._context);
+    const opsChain = getDashboardOpsChain(this._context);
+
+    this._panel.webview.postMessage({
+      command: 'dashboardEvidence',
+      data: {
+        workspacePath: bundle.workspacePath,
+        projectPath: bundle.projectPath,
+        projectName: bundle.projectName,
+        cards: bundle.cards,
+        activity,
+        opsChain,
+        onboarding: {
+          isFreshInstall,
+          recentWorkspaceCount,
+          hasActiveWorkspace,
+        },
+      },
+    });
   }
 
   public static createOrShow(
@@ -2809,6 +3184,8 @@ No markdown, no explanation outside the JSON.`;
     this._sendWorkspaceStatus();
     this._sendWorkspaceToolStatus();
     this._sendUiPreferences();
+    void this._sendWorkspaiSettings();
+    void this._sendDashboardEvidence();
   }
 
   private async _sendWorkspaceToolStatus() {
@@ -8374,6 +8751,7 @@ No markdown, no explanation outside the JSON.`;
     incidentPrimaryCtaExperimentVariant: 'single' | 'multi';
     incidentRollbackApprovalMode: 'never' | 'high-risk-only' | 'mutating-only' | 'always';
     incidentRollbackProtectedPaths: string[];
+    dashboardSection: 'overview' | 'console' | 'catalog' | 'workspaces';
   } {
     const prefs = this._context.globalState.get<Record<string, unknown>>(
       WelcomePanel.UI_PREFS_KEY,
@@ -8394,6 +8772,12 @@ No markdown, no explanation outside the JSON.`;
       incidentRollbackProtectedPaths: normalizeIncidentRollbackProtectedPaths(
         prefs?.incidentRollbackProtectedPaths
       ),
+      dashboardSection:
+        prefs?.dashboardSection === 'console' ||
+        prefs?.dashboardSection === 'catalog' ||
+        prefs?.dashboardSection === 'workspaces'
+          ? prefs.dashboardSection
+          : 'overview',
     };
   }
 
@@ -8401,6 +8785,27 @@ No markdown, no explanation outside the JSON.`;
     this._panel.webview.postMessage({
       command: 'uiPreferences',
       data: this._getUiPreferences(workspacePath),
+    });
+  }
+
+  private async _sendWorkspaiSettings(preferredModelOverride?: string) {
+    const settings = readWorkspaiSettings();
+    let models: Array<{ id: string; name: string; vendor: string }> = [];
+
+    try {
+      const { listAvailableModels } = await import('../../core/aiService.js');
+      models = await listAvailableModels();
+    } catch {
+      models = [];
+    }
+
+    this._panel.webview.postMessage({
+      command: 'workspaiSettings',
+      data: {
+        preferredModel: preferredModelOverride ?? settings.preferredModel,
+        aiStreamTimeoutMs: settings.aiStreamTimeoutMs,
+        models,
+      },
     });
   }
 
@@ -8468,6 +8873,7 @@ No markdown, no explanation outside the JSON.`;
       command: 'updateRecentWorkspaces',
       data: workspaces,
     });
+    void this._sendDashboardEvidence();
   }
 
   private async _sendExampleWorkspaces() {
@@ -8630,6 +9036,7 @@ No markdown, no explanation outside the JSON.`;
         const workspaceManager = WorkspaceManager.getInstance();
         await workspaceManager.addWorkspace(targetPath);
         await this._sendRecentWorkspaces();
+        void this._beginGovernanceChainForWorkspace(targetPath, example.name, 'clone');
 
         // Refresh examples list to show new clone status
         await this._sendExampleWorkspaces();
@@ -9208,6 +9615,7 @@ No markdown, no explanation outside the JSON.`;
         installedModules,
       },
     });
+    void this._sendDashboardEvidence();
   }
 
   private _getRecentWorkspaces(): Promise<
@@ -9574,6 +9982,9 @@ No markdown, no explanation outside the JSON.`;
     const springbootIconUri = this._panel.webview.asWebviewUri(
       vscode.Uri.joinPath(context.extensionUri, 'media', 'icons', 'springboot.svg')
     );
+    const dotnetIconUri = this._panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(context.extensionUri, 'media', 'icons', 'dotnet.svg')
+    );
 
     // Generate nonce for CSP
     let nonce = '';
@@ -9605,6 +10016,7 @@ No markdown, no explanation outside the JSON.`;
             --nestjs-icon-uri: url('${nestjsIconUri}');
             --go-icon-uri: url('${goIconUri}');
           --springboot-icon-uri: url('${springbootIconUri}');
+          --dotnet-icon-uri: url('${dotnetIconUri}');
         }
     </style>
 </head>
@@ -9617,6 +10029,7 @@ No markdown, no explanation outside the JSON.`;
         window.NESTJS_ICON_URI = '${nestjsIconUri}';
         window.GO_ICON_URI = '${goIconUri}';
         window.SPRINGBOOT_ICON_URI = '${springbootIconUri}';
+        window.DOTNET_ICON_URI = '${dotnetIconUri}';
     </script>
     <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>

@@ -7,10 +7,12 @@ import {
   RefreshCw,
   Search,
   Server,
+  ChevronDown,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { ExampleWorkspace } from '@/types';
 import { vscode } from '@/vscode';
+import { SectionHeader } from './SectionHeader';
 
 export interface ExampleProject {
   name: string;
@@ -103,13 +105,12 @@ export function ExampleWorkspaces({
 
   return (
     <div className="section">
-      <div className="section-title">
-        <GitBranch className="w-6 h-6" />
-        Workspace Templates
-        <span className="section-count">
-          {filteredExamples.length}/{examples.length}
-        </span>
-      </div>
+      <SectionHeader
+        icon={<GitBranch className="w-6 h-6" />}
+        title="Workspace Templates"
+        scope="catalog"
+        count={`${filteredExamples.length}/${examples.length}`}
+      />
 
       <div className="template-catalog-toolbar">
         <label className="template-search">
@@ -269,7 +270,9 @@ export function ExampleWorkspaces({
                     {example.projects.length}{' '}
                     {example.projects.length === 1 ? 'project' : 'projects'}
                   </span>
-                  <span className={`example-chevron ${isExpanded ? 'expanded' : ''}`}>▼</span>
+                  <span className={`example-chevron ${isExpanded ? 'expanded' : ''}`}>
+                    <ChevronDown size={12} aria-hidden="true" />
+                  </span>
                 </button>
                 {isExpanded && (
                   <div className="example-projects-list">

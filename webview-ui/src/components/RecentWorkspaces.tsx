@@ -1,9 +1,11 @@
 import {
   RefreshCw,
   Folder,
+  FolderOpen,
   X,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   XCircle,
   ArrowUpCircle,
   Stethoscope,
@@ -13,9 +15,13 @@ import {
   ChevronUp,
   Sparkles,
   Activity,
+  ShieldCheck,
+  Database,
 } from 'lucide-react';
 import { useState } from 'react';
 import type { Workspace } from '@/types';
+import { WorkspaiEmptyState } from './WorkspaiEmptyState';
+import { SectionHeader } from './SectionHeader';
 
 const PAGE_SIZE = 5;
 
@@ -30,6 +36,8 @@ interface RecentWorkspacesProps {
   onExport?: (workspace: Workspace) => void;
   onAI?: (workspace: Workspace) => void;
   onAnalyze?: (workspace: Workspace) => void;
+  onBootstrap?: (workspace: Workspace) => void;
+  onMirrorSync?: (workspace: Workspace) => void;
 }
 
 const getStatusIcon = (status?: string) => {
@@ -38,31 +46,31 @@ const getStatusIcon = (status?: string) => {
     case 'ok':
       return (
         <span title="RapidKit Core installed and up to date" aria-label="Up to date">
-          <CheckCircle2 className="w-4 h-4 text-green-500" />
+          <CheckCircle2 className="ws-status-icon ws-status-icon--pass" />
         </span>
       );
     case 'update-available':
       return (
         <span title="Update available for RapidKit Core" aria-label="Update available">
-          <ArrowUpCircle className="w-4 h-4 text-yellow-500" />
+          <ArrowUpCircle className="ws-status-icon ws-status-icon--warn" />
         </span>
       );
     case 'outdated':
       return (
         <span title="RapidKit Core is outdated" aria-label="Outdated">
-          <AlertCircle className="w-4 h-4 text-orange-500" />
+          <AlertCircle className="ws-status-icon ws-status-icon--warn" />
         </span>
       );
     case 'not-installed':
       return (
         <span title="RapidKit Core not installed" aria-label="Not installed">
-          <XCircle className="w-4 h-4 text-red-500" />
+          <XCircle className="ws-status-icon ws-status-icon--error" />
         </span>
       );
     case 'error':
       return (
         <span title="Error checking RapidKit Core status" aria-label="Status error">
-          <AlertCircle className="w-4 h-4 text-gray-500" />
+          <AlertCircle className="ws-status-icon ws-status-icon--muted" />
         </span>
       );
     default:
@@ -107,6 +115,8 @@ export function RecentWorkspaces({
   onExport,
   onAI,
   onAnalyze,
+  onBootstrap,
+  onMirrorSync,
 }: RecentWorkspacesProps) {
   const [showAll, setShowAll] = useState(false);
   /** path of workspace currently performing an action (health/export/upgrade) */
@@ -129,26 +139,30 @@ export function RecentWorkspaces({
 
   return (
     <div className="section">
-      <div className="section-title">
-        <Folder className="w-6 h-6" />
-        Recent Workspaces
-        <button
-          className="refresh-btn"
-          onClick={onRefresh}
-          disabled={isRefreshing}
-          title="Refresh workspaces"
-          aria-label="Refresh workspaces"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'spinning' : ''}`} />
-        </button>
-      </div>
+      <SectionHeader
+        icon={<Folder className="w-6 h-6" />}
+        title="Recent Workspaces"
+        scope="workspace"
+        actions={
+          <button
+            className="refresh-btn"
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            title="Refresh workspaces"
+            aria-label="Refresh workspaces"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'spinning' : ''}`} />
+          </button>
+        }
+      />
 
       <div className="workspace-list">
         {workspaces.length === 0 ? (
-          <div className="empty-state">
-            <div className="workspace-empty-icon">📂</div>
-            No recent workspaces found.
-          </div>
+          <WorkspaiEmptyState
+            icon={<FolderOpen size={18} />}
+            title="No recent workspaces"
+            description="Add or import a workspace to get started."
+          />
         ) : (
           <>
             {visible.map((workspace) => {
@@ -183,7 +197,7 @@ export function RecentWorkspaces({
                         className="ws-tag ws-tag--danger"
                         title="Bootstrap compliance failing — run: rapidkit bootstrap"
                       >
-                        ⚠ Policy
+                        <AlertTriangle size={11} aria-hidden="true" /> Policy
                       </span>
                     )}
 
@@ -283,6 +297,32 @@ export function RecentWorkspaces({
                             aria-label={`Check health of ${workspace.name}`}
                           >
                             <Stethoscope size={12} />
+                          </button>
+                        )}
+                        {onBootstrap && workspace.complianceStatus === 'failing' && (
+                          <button
+                            className="ws-inline-action ws-inline-action--bootstrap"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              withBusy(workspace.path, () => onBootstrap(workspace));
+                            }}
+                            title="Fix bootstrap compliance (rapidkit bootstrap)"
+                            aria-label={`Bootstrap ${workspace.name}`}
+                          >
+                            <ShieldCheck size={12} />
+                          </button>
+                        )}
+                        {onMirrorSync && workspace.mirrorStatus === 'stale' && (
+                          <button
+                            className="ws-inline-action ws-inline-action--mirror"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              withBusy(workspace.path, () => onMirrorSync(workspace));
+                            }}
+                            title="Sync stale mirror (rapidkit mirror sync)"
+                            aria-label={`Sync mirror for ${workspace.name}`}
+                          >
+                            <Database size={12} />
                           </button>
                         )}
                         {onExport && (

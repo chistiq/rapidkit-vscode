@@ -1,10 +1,11 @@
 interface HeaderProps {
   version: string;
+  variant?: 'default' | 'topbar';
 }
 
-export function Header({ version: _version }: HeaderProps) {
+export function Header({ version: _version, variant = 'default' }: HeaderProps) {
   return (
-    <div className="header">
+    <div className={`header ${variant === 'topbar' ? 'header--topbar' : ''}`}>
       <img className="logo" src={(window as any).ICON_URI} alt="Workspai Logo" />
       <div className="header-copy">
         <h1>

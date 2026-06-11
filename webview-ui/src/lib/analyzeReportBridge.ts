@@ -53,7 +53,8 @@ export function isAnalyzeEvidencePending(input: {
   isLoading: boolean;
   report: unknown | null;
   error: string | null;
-  exists: boolean | null;
+  exists?: boolean | null;
 }): boolean {
-  return input.isLoading && input.report == null && input.error == null && input.exists === null;
+  void input.exists;
+  return input.isLoading && input.report == null && input.error == null;
 }

@@ -20,9 +20,17 @@ import {
   Download,
   CheckCircle,
   ArrowUp,
+  Sparkles,
+  Check,
+  History,
+  Trash2,
+  GitCompare,
 } from 'lucide-react';
 import type { ModuleData, CategoryInfo, WorkspaceStatus } from '@/types';
+import { getProjectFrameworkLabel, isUnsupportedModuleProjectType } from '@/lib/moduleSupport';
 import { ProjectActions } from './ProjectActions';
+import { WorkspaiEmptyState } from './WorkspaiEmptyState';
+import { SectionHeader } from './SectionHeader';
 
 // Icon mapping based on category
 const categoryIcons: Record<string, any> = {
@@ -47,6 +55,9 @@ interface ModuleBrowserProps {
   onRefresh: () => void;
   onInstall: (module: ModuleData) => void;
   onShowDetails: (module: ModuleData) => void;
+  onModuleDiff?: (module: ModuleData) => void;
+  onModuleRollback?: (module: ModuleData) => void;
+  onModuleUninstall?: (module: ModuleData) => void;
   onAI?: (module: ModuleData) => void;
   onProjectTerminal?: () => void;
   onProjectInit?: () => void;
@@ -62,6 +73,10 @@ interface ModuleBrowserProps {
   onProjectBrowser?: () => void;
   onProjectBuild?: () => void;
   modulesDisabled?: boolean;
+  /** Console = project-scoped installs; Catalog = browse-only catalog surface */
+  surface?: 'console' | 'catalog';
+  /** When false, ProjectActions must be rendered by the parent (Console tab). */
+  includeProjectActions?: boolean;
 }
 
 export function ModuleBrowser({
@@ -71,6 +86,9 @@ export function ModuleBrowser({
   onRefresh,
   onInstall,
   onShowDetails,
+  onModuleDiff,
+  onModuleRollback,
+  onModuleUninstall,
   onAI,
   onProjectTerminal,
   onProjectInit,
@@ -86,6 +104,8 @@ export function ModuleBrowser({
   onProjectBrowser,
   onProjectBuild,
   modulesDisabled = false,
+  surface = 'console',
+  includeProjectActions = true,
 }: ModuleBrowserProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -97,6 +117,21 @@ export function ModuleBrowser({
   );
   const [showAllModules, setShowAllModules] = useState(false);
   const hasProjectSelected = workspaceStatus.hasProjectSelected === true;
+  const isCatalogSurface = surface === 'catalog';
+  const unsupportedProject =
+    modulesDisabled || isUnsupportedModuleProjectType(workspaceStatus.projectType);
+  const unsupportedFrameworkLabel = getProjectFrameworkLabel(workspaceStatus.projectType);
+  const canInstall = hasProjectSelected && !unsupportedProject;
+  const showModuleControls =
+    modules.length > 0 && (isCatalogSurface || (hasProjectSelected && !unsupportedProject));
+  const showModuleList =
+    modules.length > 0 && (isCatalogSurface || (hasProjectSelected && !unsupportedProject));
+
+  const installBlockedReason = !hasProjectSelected
+    ? 'Select a FastAPI or NestJS project in Console to install modules'
+    : unsupportedProject
+      ? `Module installs are not supported for ${unsupportedFrameworkLabel} projects yet`
+      : undefined;
 
   // Get unique categories
   const categories = useMemo(() => {
@@ -214,80 +249,121 @@ export function ModuleBrowser({
 
   return (
     <div className="section module-browser">
-      <div className="section-title">
-        <div className="module-title-row">
-          <Package className="w-6 h-6" />
-          <span className="module-title-text">Module Browser</span>
-          <span className="module-count" style={{ marginLeft: '4px' }}>
-            {modules.length} free modules
-          </span>
-          {hasProjectSelected && workspaceStatus.installedModules && (
-            <span className="module-count installed-count">
-              {workspaceStatus.installedModules.length} installed
-            </span>
-          )}
-        </div>
-        <button className="refresh-btn" onClick={handleRefresh} title="Refresh modules">
-          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'spinning' : ''}`} />
-        </button>
-      </div>
+      <SectionHeader
+        icon={<Package className="w-6 h-6" />}
+        title={isCatalogSurface ? 'Module Catalog' : 'Module Browser'}
+        scope="catalog"
+        count={
+          <>
+            {modules.length} free
+            {hasProjectSelected && workspaceStatus.installedModules
+              ? ` · ${workspaceStatus.installedModules.length} installed`
+              : ''}
+          </>
+        }
+        actions={
+          <button className="refresh-btn" onClick={handleRefresh} title="Refresh modules" aria-label="Refresh modules">
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'spinning' : ''}`} />
+          </button>
+        }
+      />
 
-      {!hasProjectSelected ? (
+      {isCatalogSurface ? (
+        <div className="workspace-warning workspace-warning--info">
+          <Info className="warning-icon" />
+          <div className="warning-content">
+            <div className="warning-title">FastAPI & NestJS modules</div>
+            <div className="warning-desc">
+              The catalog below lists Workspai modules built for{' '}
+              <strong>FastAPI</strong> and <strong>NestJS</strong> projects. Browse freely here;
+              install or update from the <strong>Console</strong> tab with a supported project
+              selected.
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {hasProjectSelected && unsupportedProject ? (
+        <div className="workspace-warning">
+          <AlertTriangle className="warning-icon" />
+          <div className="warning-content">
+            <div className="warning-title">Module installs not supported yet</div>
+            <div className="warning-desc">
+              <strong>{unsupportedFrameworkLabel}</strong> projects are not supported for Workspai
+              module installs at this time. Select a <strong>FastAPI</strong> or{' '}
+              <strong>NestJS</strong> project from the <strong>PROJECTS</strong> panel to use
+              modules.
+              {isCatalogSurface ? (
+                <>
+                  {' '}
+                  You can still browse the catalog below — modules are specific to those two
+                  frameworks.
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {!isCatalogSurface && hasProjectSelected ? (
+        <div className="workspace-info-box">
+          <Folder className="workspace-info-icon" />
+          <div className="workspace-details">
+            <div className="workspace-name-info">{selectedProjectName}</div>
+            <div className="workspace-path-info">{selectedProjectMeta}</div>
+          </div>
+        </div>
+      ) : null}
+
+      {!isCatalogSurface && !hasProjectSelected ? (
         <div className="workspace-warning">
           <AlertTriangle className="warning-icon" />
           <div className="warning-content">
             <div className="warning-title">No Project Selected</div>
             <div className="warning-desc">
-              Select a project from the <strong>PROJECTS</strong> panel in the sidebar to install
-              modules, or create a new project.
+              Select a FastAPI or NestJS project from the <strong>PROJECTS</strong> panel in the
+              sidebar to install modules, or create a new supported project.
             </div>
           </div>
         </div>
-      ) : (
-        <>
-          <div className="workspace-info-box">
-            <Folder className="workspace-info-icon" />
-            <div className="workspace-details">
-              <div className="workspace-name-info">{selectedProjectName}</div>
-              <div className="workspace-path-info">{selectedProjectMeta}</div>
-            </div>
-          </div>
+      ) : null}
 
-          {onProjectTerminal &&
-            onProjectInit &&
-            onProjectDev &&
-            onProjectStop &&
-            onProjectTest &&
-            onProjectDoctor &&
-            onProjectArchitecture &&
-            onProjectIncident &&
-            onProjectAI &&
-            onProjectRelease &&
-            onProjectImpact &&
-            onProjectBrowser &&
-            onProjectBuild && (
-              <ProjectActions
-                workspaceStatus={workspaceStatus}
-                onTerminal={onProjectTerminal}
-                onInit={onProjectInit}
-                onDev={onProjectDev}
-                onStop={onProjectStop}
-                onTest={onProjectTest}
-                onDoctor={onProjectDoctor}
-                onArchitecture={onProjectArchitecture}
-                onIncident={onProjectIncident}
-                onAI={onProjectAI}
-                onRelease={onProjectRelease}
-                onImpact={onProjectImpact}
-                onBrowser={onProjectBrowser}
-                onBuild={onProjectBuild}
-              />
-            )}
-        </>
-      )}
+      {!isCatalogSurface &&
+        includeProjectActions &&
+        hasProjectSelected &&
+        onProjectTerminal &&
+        onProjectInit &&
+        onProjectDev &&
+        onProjectStop &&
+        onProjectTest &&
+        onProjectDoctor &&
+        onProjectArchitecture &&
+        onProjectIncident &&
+        onProjectAI &&
+        onProjectRelease &&
+        onProjectImpact &&
+        onProjectBrowser &&
+        onProjectBuild && (
+          <ProjectActions
+            workspaceStatus={workspaceStatus}
+            onTerminal={onProjectTerminal}
+            onInit={onProjectInit}
+            onDev={onProjectDev}
+            onStop={onProjectStop}
+            onTest={onProjectTest}
+            onDoctor={onProjectDoctor}
+            onArchitecture={onProjectArchitecture}
+            onIncident={onProjectIncident}
+            onAI={onProjectAI}
+            onRelease={onProjectRelease}
+            onImpact={onProjectImpact}
+            onBrowser={onProjectBrowser}
+            onBuild={onProjectBuild}
+          />
+        )}
 
       {/* Always show search and filters when modules exist */}
-      {modules.length > 0 && !modulesDisabled && hasProjectSelected && (
+      {showModuleControls && (
         <div className="module-controls">
           <div className="module-view-tabs" aria-label="Module status filter">
             {[
@@ -299,7 +375,7 @@ export function ModuleBrowser({
               <button
                 key={value}
                 type="button"
-                className={moduleView === value ? 'active' : ''}
+                className={moduleView === value ? 'is-active' : ''}
                 onClick={() => {
                   setModuleView(value as typeof moduleView);
                   setShowAllModules(false);
@@ -337,32 +413,12 @@ export function ModuleBrowser({
         </div>
       )}
 
-      {!hasProjectSelected ? null : modulesDisabled ? (
-        <div className="empty-state" style={{ opacity: 0.7 }}>
-          <Package className="workspace-empty-icon workspace-empty-icon--lucide" />
-          <div style={{ fontWeight: 600, marginBottom: 4 }}>
-            Modules not available for{' '}
-            {workspaceStatus.projectType === 'springboot' ? 'Spring Boot' : 'Go'} projects
-          </div>
-          <div style={{ fontSize: '12px', opacity: 0.75 }}>
-            Workspai modules support FastAPI and NestJS only.
-            <br />
-            {workspaceStatus.projectType === 'springboot' ? (
-              <>
-                Spring Boot kits manage dependencies via <code>Maven/Gradle</code>.
-              </>
-            ) : (
-              <>
-                Go kits manage dependencies via <code>go mod</code>.
-              </>
-            )}
-          </div>
-        </div>
-      ) : filteredRows.length === 0 && modules.length > 0 ? (
-        <div className="empty-state">
-          <Package className="workspace-empty-icon workspace-empty-icon--lucide" />
-          No modules found matching your search.
-        </div>
+      {!showModuleList ? null : filteredRows.length === 0 && modules.length > 0 ? (
+        <WorkspaiEmptyState
+          icon={<Package size={18} />}
+          title="No modules match your filters"
+          description="Try a different search term or category."
+        />
       ) : (
         <>
           <div className="module-row-header" aria-hidden="true">
@@ -393,13 +449,17 @@ export function ModuleBrowser({
                       const installedInfo = row.installedInfo;
                       const hasUpdate = row.hasUpdate;
 
-                      if (hasUpdate) {
+                      if (hasUpdate && installedInfo) {
                         return (
                           <button
                             className="module-install-btn update"
                             onClick={() => onInstall(module)}
-                            disabled={!hasProjectSelected}
-                            title={`Update from v${installedInfo.version} to v${module.version}`}
+                            disabled={!canInstall}
+                            title={
+                              canInstall
+                                ? `Update from v${installedInfo.version} to v${module.version}`
+                                : installBlockedReason
+                            }
                           >
                             <ArrowUp size={16} /> Update
                           </button>
@@ -415,7 +475,8 @@ export function ModuleBrowser({
                           <button
                             className="module-install-btn"
                             onClick={() => onInstall(module)}
-                            disabled={!hasProjectSelected}
+                            disabled={!canInstall}
+                            title={canInstall ? 'Install module' : installBlockedReason}
                           >
                             <Download size={16} /> Install
                           </button>
@@ -440,7 +501,7 @@ export function ModuleBrowser({
                       title={copiedModuleId === module.id ? 'Copied!' : 'Copy install command'}
                     >
                       {copiedModuleId === module.id ? (
-                        <span style={{ fontSize: '11px', fontWeight: 'bold' }}>✓</span>
+                        <Check size={14} aria-hidden="true" />
                       ) : (
                         <Copy size={14} />
                       )}
@@ -451,9 +512,36 @@ export function ModuleBrowser({
                         onClick={() => onAI(module)}
                         title="Ask AI about this module"
                       >
-                        ✦
+                        <Sparkles size={14} aria-hidden="true" />
                       </button>
                     )}
+                    {!isCatalogSurface && row.installed && onModuleDiff ? (
+                      <button
+                        className="module-action-btn"
+                        onClick={() => onModuleDiff(module)}
+                        title="Diff installed module against catalog template"
+                      >
+                        <GitCompare size={14} aria-hidden="true" />
+                      </button>
+                    ) : null}
+                    {!isCatalogSurface && row.installed && onModuleRollback ? (
+                      <button
+                        className="module-action-btn"
+                        onClick={() => onModuleRollback(module)}
+                        title="Rollback module from last checkpoint"
+                      >
+                        <History size={14} aria-hidden="true" />
+                      </button>
+                    ) : null}
+                    {!isCatalogSurface && row.installed && onModuleUninstall ? (
+                      <button
+                        className="module-action-btn module-action-btn--danger"
+                        onClick={() => onModuleUninstall(module)}
+                        title="Uninstall module from project"
+                      >
+                        <Trash2 size={14} aria-hidden="true" />
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               );

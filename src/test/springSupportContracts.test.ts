@@ -14,7 +14,7 @@ describe('spring support contracts', () => {
     const createProjectSource = read('src/commands/createProject.ts');
     const projectWizardSource = read('src/ui/wizards/projectWizard.ts');
     const rapidkitCliSource = read('src/core/rapidkitCLI.ts');
-    const quickLinksSource = read('webview-ui/src/components/QuickLinks.tsx');
+    const enterpriseFlowSource = read('webview-ui/src/components/EnterpriseDashboardFlow.tsx');
     const appSource = read('webview-ui/src/App.tsx');
 
     expect(coreCommandsSource).toContain("'workspai.createSpringBootProject'");
@@ -35,8 +35,8 @@ describe('spring support contracts', () => {
     expect(rapidkitCliSource).toContain("'create',");
     expect(rapidkitCliSource).toContain('options.kit');
 
-    expect(quickLinksSource).toContain("framework: 'springboot'");
-    expect(quickLinksSource).toContain("framework: 'dotnet'");
+    expect(enterpriseFlowSource).toContain("framework: 'springboot'");
+    expect(enterpriseFlowSource).toContain("framework: 'dotnet'");
     expect(appSource).toContain(
       'const handleCreateProject = (projectName: string, framework: AICreateFramework, kitName: string) =>'
     );

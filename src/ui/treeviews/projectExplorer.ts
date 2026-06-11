@@ -158,6 +158,23 @@ function projectBadgeLabel(project: WorkspaiProject): string {
   return frameworkLabel(project.type);
 }
 
+function frameworkIconFileName(type: WorkspaiProject['type']): string | undefined {
+  switch (type) {
+    case 'fastapi':
+      return 'fastapi.svg';
+    case 'nestjs':
+      return 'nestjs.svg';
+    case 'springboot':
+      return 'springboot.svg';
+    case 'go':
+      return 'go.svg';
+    case 'dotnet':
+      return 'dotnet.svg';
+    default:
+      return undefined;
+  }
+}
+
 export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectTreeItem> {
   private _onDidChangeTreeData: vscode.EventEmitter<ProjectTreeItem | undefined | null | void> =
     new vscode.EventEmitter<ProjectTreeItem | undefined | null | void>();
@@ -514,15 +531,12 @@ export class ProjectTreeItem extends vscode.TreeItem {
         if (project.type === 'unknown') {
           this.iconPath = new vscode.ThemeIcon('package', new vscode.ThemeColor('charts.gray'));
         } else {
-          const iconName =
-            project.type === 'fastapi'
-              ? 'fastapi.svg'
-              : project.type === 'nestjs'
-                ? 'nestjs.svg'
-                : project.type === 'springboot'
-                  ? 'springboot.svg'
-                  : 'go.svg';
-          this.iconPath = vscode.Uri.file(path.join(extensionPath, 'media', 'icons', iconName));
+          const iconName = frameworkIconFileName(project.type);
+          if (iconName) {
+            this.iconPath = vscode.Uri.file(path.join(extensionPath, 'media', 'icons', iconName));
+          } else {
+            this.iconPath = new vscode.ThemeIcon('package', new vscode.ThemeColor('charts.gray'));
+          }
         }
       } else {
         const iconId =
@@ -534,9 +548,11 @@ export class ProjectTreeItem extends vscode.TreeItem {
                 ? 'symbol-structure'
                 : project.type === 'go'
                   ? 'symbol-namespace'
-                  : project.managed
-                    ? 'shield'
-                    : 'package';
+                  : project.type === 'dotnet'
+                    ? 'symbol-interface'
+                    : project.managed
+                      ? 'shield'
+                      : 'package';
         const colorId = isSelected
           ? 'charts.blue'
           : project.type === 'fastapi'
@@ -547,7 +563,9 @@ export class ProjectTreeItem extends vscode.TreeItem {
                 ? 'charts.green'
                 : project.type === 'go'
                   ? 'charts.blue'
-                  : 'charts.gray';
+                  : project.type === 'dotnet'
+                    ? 'charts.purple'
+                    : 'charts.gray';
         this.iconPath = new vscode.ThemeIcon(iconId, new vscode.ThemeColor(colorId));
       }
 
@@ -578,15 +596,15 @@ export class ProjectTreeItem extends vscode.TreeItem {
             new vscode.ThemeColor(isSelected ? 'charts.blue' : 'testing.runAction')
           );
         } else {
-          const iconName =
-            project.type === 'fastapi'
-              ? 'fastapi.svg'
-              : project.type === 'nestjs'
-                ? 'nestjs.svg'
-                : project.type === 'springboot'
-                  ? 'springboot.svg'
-                  : 'go.svg';
-          this.iconPath = vscode.Uri.file(path.join(extensionPath, 'media', 'icons', iconName));
+          const iconName = frameworkIconFileName(project.type);
+          if (iconName) {
+            this.iconPath = vscode.Uri.file(path.join(extensionPath, 'media', 'icons', iconName));
+          } else {
+            this.iconPath = new vscode.ThemeIcon(
+              'vm-running',
+              new vscode.ThemeColor(isSelected ? 'charts.blue' : 'testing.runAction')
+            );
+          }
         }
       } else {
         this.iconPath = new vscode.ThemeIcon(

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createDoctorTelemetryRefreshController,
   extractWorkspacePathFromDoctorReportPath,
+  extractWorkspacePathFromReportPath,
 } from '../ui/panels/doctorTelemetryRefresh';
 
 describe('doctorTelemetryRefresh', () => {
@@ -20,13 +21,23 @@ describe('doctorTelemetryRefresh', () => {
     ).toBeUndefined();
   });
 
+  it('extracts the workspace root from generic report paths', () => {
+    expect(
+      extractWorkspacePathFromReportPath('/tmp/demo/.rapidkit/reports/analyze-last-run.json')
+    ).toBe('/tmp/demo');
+    expect(extractWorkspacePathFromReportPath('/tmp/demo/.rapidkit/archive-manifest.json')).toBe(
+      '/tmp/demo'
+    );
+  });
+
   it('debounces doctor telemetry refresh and keeps the latest workspace path', async () => {
     const onRefresh = vi.fn();
     const controller = createDoctorTelemetryRefreshController({ onRefresh, delayMs: 250 });
+    const thirdReport = '/tmp/third/.rapidkit/reports/doctor-last-run.json';
 
     controller.schedule('/tmp/first/.rapidkit/reports/doctor-last-run.json');
     controller.schedule('/tmp/second/.rapidkit/reports/doctor-last-run.json');
-    controller.schedule('/tmp/third/.rapidkit/reports/doctor-last-run.json');
+    controller.schedule(thirdReport);
 
     vi.advanceTimersByTime(249);
     expect(onRefresh).toHaveBeenCalledTimes(0);
@@ -35,7 +46,10 @@ describe('doctorTelemetryRefresh', () => {
     await Promise.resolve();
 
     expect(onRefresh).toHaveBeenCalledTimes(1);
-    expect(onRefresh).toHaveBeenCalledWith('/tmp/third');
+    expect(onRefresh).toHaveBeenCalledWith({
+      workspacePath: '/tmp/third',
+      reportPath: thirdReport,
+    });
 
     controller.dispose();
   });
@@ -68,7 +82,10 @@ describe('doctorTelemetryRefresh', () => {
     await Promise.resolve();
 
     expect(onRefresh).toHaveBeenCalledTimes(1);
-    expect(onRefresh).toHaveBeenCalledWith('/tmp/demo');
+    expect(onRefresh).toHaveBeenCalledWith({
+      workspacePath: '/tmp/demo',
+      reportPath: '/tmp/demo/.rapidkit/reports/doctor-last-run.json',
+    });
     expect(onError).toHaveBeenCalledTimes(1);
     expect(onError).toHaveBeenCalledWith(refreshError);
   });

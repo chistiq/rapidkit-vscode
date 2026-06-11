@@ -33,7 +33,7 @@ type WorkspaceExplorerLike = {
   selectWorkspace(workspace: WorkspaceLike): Promise<void>;
   getSelectedWorkspace?(): WorkspaceLike | null | undefined;
   addWorkspace(): Promise<void>;
-  importWorkspace(): Promise<void>;
+  importWorkspace(): Promise<WorkspaiWorkspace | undefined>;
   removeWorkspace(workspace: WorkspaceLike): Promise<void>;
   exportWorkspace(workspace: WorkspaceLike): Promise<void>;
   autoDiscover(): Promise<void>;
@@ -489,7 +489,11 @@ export function registerWorkspaceSelectionCommands(options: {
     }),
 
     vscode.commands.registerCommand('workspai.importWorkspace', async () => {
-      await getWorkspaceExplorer()?.importWorkspace();
+      const workspace = await getWorkspaceExplorer()?.importWorkspace();
+      if (workspace?.path) {
+        await WelcomePanel.notifyWorkspaceImported(workspace.path, workspace.name);
+      }
+      return workspace;
     }),
 
     vscode.commands.registerCommand('workspai.workspaceArchive', async () => {

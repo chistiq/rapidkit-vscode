@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Bug, BrainCircuit, Sparkles, Send, Square } from 'lucide-react';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { ModelSelect } from './ModelSelect';
 
 export interface AIModalContext {
     type: 'workspace' | 'project' | 'module';
@@ -35,6 +36,7 @@ interface AIModalProps {
     onClose: () => void;
     onCancel: () => void;
     onQuery: (mode: 'debug' | 'ask', question: string, context: AIModalContext) => void;
+    onStartNewQuery?: () => void;
 }
 
 type Mode = 'debug' | 'ask';
@@ -126,6 +128,7 @@ export function AIModal({
     onClose,
     onCancel,
     onQuery,
+    onStartNewQuery,
 }: AIModalProps) {
     const [mode, setMode] = useState<Mode>('ask');
     const [input, setInput] = useState('');
@@ -237,21 +240,15 @@ export function AIModal({
                     </div>
                     <div className="ai-modal-header-right">
                         {availableModels.length > 0 && (
-                            <select
-                                className="ai-model-selector-inline"
-                                value={selectedModelId ?? ''}
-                                onChange={(e) => onModelChange?.(e.target.value || null)}
+                            <ModelSelect
+                                className="ai-model-selector-inline workspai-model-select"
+                                value={selectedModelId ?? null}
+                                models={availableModels}
                                 disabled={isStreaming}
-                                title="Choose AI model"
-                                aria-label="AI model"
-                            >
-                                <option value="">Auto</option>
-                                {availableModels.map((m) => (
-                                    <option key={m.id} value={m.id}>
-                                        {m.name}
-                                    </option>
-                                ))}
-                            </select>
+                                ariaLabel="AI model"
+                                autoLabel="Auto"
+                                onChange={onModelChange}
+                            />
                         )}
                         <button
                             type="button"
@@ -271,7 +268,11 @@ export function AIModal({
                     <button
                         type="button"
                         className={`ai-modal-tab ${mode === 'ask' ? 'ai-modal-tab--active' : ''}`}
-                        onClick={() => { setMode('ask'); setInput(''); }}
+                        onClick={() => {
+                            setMode('ask');
+                            setInput('');
+                            onStartNewQuery?.();
+                        }}
                     >
                         <BrainCircuit size={13} />
                         Ask AI
@@ -279,7 +280,11 @@ export function AIModal({
                     <button
                         type="button"
                         className={`ai-modal-tab ${mode === 'debug' ? 'ai-modal-tab--active' : ''}`}
-                        onClick={() => { setMode('debug'); setInput(''); }}
+                        onClick={() => {
+                            setMode('debug');
+                            setInput('');
+                            onStartNewQuery?.();
+                        }}
                     >
                         <Bug size={13} />
                         Debug
@@ -349,7 +354,10 @@ export function AIModal({
                         <button
                             type="button"
                             className="ai-modal-new-query"
-                            onClick={() => { setInput(''); }}
+                            onClick={() => {
+                                setInput('');
+                                onStartNewQuery?.();
+                            }}
                         >
                             ↩ Ask another question
                         </button>

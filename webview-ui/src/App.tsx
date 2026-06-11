@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { LayoutDashboard, Wrench, Sparkles } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { LayoutDashboard, Wrench, Sparkles, Settings2 } from 'lucide-react';
 import { vscode } from '@/vscode';
 import type {
     ModuleData,
@@ -15,6 +15,17 @@ import { Header } from '@/components/Header';
 import { RecentWorkspaces } from '@/components/RecentWorkspaces';
 import { ExampleWorkspaces } from '@/components/ExampleWorkspaces';
 import { ModuleBrowser } from '@/components/ModuleBrowser';
+import { DashboardSubNav } from '@/components/DashboardSubNav';
+import { DashboardNextStepRail } from '@/components/DashboardNextStepRail';
+import { FreshInstallOnboarding } from '@/components/FreshInstallOnboarding';
+import { CommandActivityPanel } from '@/components/CommandActivityPanel';
+import { EvidenceOutcomePanel } from '@/components/EvidenceOutcomePanel';
+import { OpsChainBanner } from '@/components/OpsChainBanner';
+import { ReleaseHub } from '@/components/ReleaseHub';
+import { WorkspaceGovernancePanel } from '@/components/WorkspaceGovernancePanel';
+import { CommandCheatsheet } from '@/components/CommandCheatsheet';
+import { ProjectActions } from '@/components/ProjectActions';
+import { WorkspaiEmptyState } from '@/components/WorkspaiEmptyState';
 import { Footer } from '@/components/Footer';
 import { EnterpriseDashboardFlow } from '@/components/EnterpriseDashboardFlow';
 import { WorkspaceOverview } from '@/components/WorkspaceOverview';
@@ -72,6 +83,17 @@ import { CreateWorkspaceModal, WorkspaceCreationConfig } from '@/components/Crea
 import { CreateProjectModal } from '@/components/CreateProjectModal';
 import { InstallModuleModal } from '@/components/InstallModuleModal';
 import { ModuleDetailsModal } from '@/components/ModuleDetailsModal';
+import { WorkspaiSettingsPanel } from '@/components/WorkspaiSettingsPanel';
+import { WorkspaiBanner } from '@/components/WorkspaiBanner';
+import { buildAnalyzeLoadKey } from '@/lib/analyzeScopeKey';
+import {
+    dashboardSectionNeedsCatalog,
+    normalizeDashboardSection,
+    type DashboardSection,
+} from '@/lib/dashboardSections';
+import { isUnsupportedModuleProjectType } from '@/lib/moduleSupport';
+import { buildDashboardNextSteps } from '@/lib/dashboardNextSteps';
+import type { DashboardEvidenceCard, DashboardEvidencePayload } from '@/lib/dashboardEvidence';
 
 function normalizeSelectedModelId(raw: unknown): string | null {
     if (typeof raw !== 'string') {
@@ -84,6 +106,28 @@ function normalizeSelectedModelId(raw: unknown): string | null {
     }
 
     return trimmed;
+}
+
+function normalizeAvailableModels(raw: unknown): Array<{ id: string; name: string; vendor: string }> {
+    if (!Array.isArray(raw)) {
+        return [];
+    }
+
+    return raw
+        .filter(
+            (model: unknown): model is { id: string; name: string; vendor: string } =>
+                Boolean(model) &&
+                typeof (model as { id?: unknown }).id === 'string' &&
+                ((model as { id: string }).id).trim().length > 0
+        )
+        .map((model) => ({
+            id: model.id,
+            name:
+                typeof model.name === 'string' && model.name.trim().length > 0
+                    ? model.name
+                    : model.id,
+            vendor: typeof model.vendor === 'string' ? model.vendor : '',
+        }));
 }
 
 export function App() {
@@ -309,6 +353,8 @@ export function App() {
     const [aiStreamError, setAIStreamError] = useState<string | null>(null);
     const [aiModelId, setAIModelId] = useState<string | null>(null);
     const [aiAvailableModels, setAIAvailableModels] = useState<{ id: string; name: string; vendor: string }[]>([]);
+    const [preferredModelId, setPreferredModelId] = useState<string>('auto');
+    const [aiModelsLoading, setAiModelsLoading] = useState(false);
     const [aiSelectedModelId, setAISelectedModelId] = useState<string | null>(null);
     const [aiContextContract, setAIContextContract] = useState<AIContextContractSummary | null>(null);
     const [incidentSelectedModelId, setIncidentSelectedModelId] = useState<string | null>(null);
@@ -379,9 +425,11 @@ export function App() {
     /** true once extension has sent at least one installStatusUpdate — before that, initial false values must not be trusted */
     const [installStatusChecked, setInstallStatusChecked] = useState(false);
     const [isRefreshingWorkspaces, setIsRefreshingWorkspaces] = useState(false);
-    const [activeView, setActiveView] = useState<'dashboard' | 'incident-studio'>('dashboard');
+    const [activeView, setActiveView] = useState<'dashboard' | 'incident-studio' | 'settings'>('dashboard');
     const [dashboardTemplatesReady, setDashboardTemplatesReady] = useState(false);
     const [dashboardModulesReady, setDashboardModulesReady] = useState(false);
+    const [dashboardSection, setDashboardSection] = useState<DashboardSection>('overview');
+    const [dashboardEvidence, setDashboardEvidence] = useState<DashboardEvidencePayload | null>(null);
     const [importedWorkspaceShare, setImportedWorkspaceShare] =
         useState<ImportedWorkspaceShareSummary | null>(null);
     const [incidentUserMode, setIncidentUserMode] = useState<IncidentUserMode>(DEFAULT_INCIDENT_USER_MODE);
@@ -410,10 +458,121 @@ export function App() {
     const lastIncidentBootstrapWorkspaceRef = useRef<string | null>(null);
     const lastAnalyzeLoadKeyRef = useRef<string | null>(null);
     const analyzeLoadTimeoutRef = useRef<number | null>(null);
+    const incidentSelectedModelIdRef = useRef<string | null>(null);
     const incidentStudioDisplayModeOverrideRef = useRef<IncidentStudioDisplayMode | null>(null);
     const dashboardMountedAtRef = useRef<number>(
         typeof performance !== 'undefined' ? performance.now() : Date.now()
     );
+
+    const syncPreferredModelToSelectors = (preferredModel: string) => {
+        const sessionModelId = preferredModel === 'auto' ? null : preferredModel;
+        setAISelectedModelId(sessionModelId);
+        setIncidentSelectedModelId(sessionModelId);
+    };
+
+    const refreshWorkspaiSettings = () => {
+        setAiModelsLoading(true);
+        vscode.postMessage('requestWorkspaiSettings');
+    };
+
+    const handlePreferredModelChange = (modelId: string) => {
+        const normalized = modelId.trim() || 'auto';
+        setPreferredModelId(normalized);
+        syncPreferredModelToSelectors(normalized);
+        vscode.postMessage('setPreferredModel', { modelId: normalized });
+    };
+
+    incidentSelectedModelIdRef.current = incidentSelectedModelId;
+
+    const handleAIModalNewQuery = () => {
+        aiRequestIdRef.current += 1;
+        setAIStreamContent('');
+        setAIStreamError(null);
+        setAIModelId(null);
+        setAIContextContract(null);
+        setAIConversationHistory([]);
+    };
+
+    const handleAICreateStartOver = () => {
+        setAICreationPlan(null);
+        setAICreationPlanSource(null);
+        setAICreationError(null);
+        setAICreationThinking(false);
+        setAICreationStage(null);
+    };
+
+    const openIncidentStudioInPanel = (initialQuery?: string) => {
+        const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
+        if (!workspacePath) {
+            vscode.postMessage('quickSwitchWorkspace');
+            return;
+        }
+
+        const workspaceName =
+            selectedWorkspaceForAnalysisObj?.name ||
+            workspaceStatus.workspaceName ||
+            activeWorkspaceName ||
+            workspacePath;
+
+        setActiveView('incident-studio');
+        bootstrapIncidentStudioForWorkspace(
+            workspacePath,
+            workspaceName,
+            true,
+            initialQuery,
+            selectedProjectForAnalysis
+        );
+    };
+
+    const openIncidentStudioForEvidence = (card: DashboardEvidenceCard) => {
+        const workspacePath =
+            dashboardEvidence?.workspacePath || workspaceStatus.workspacePath || undefined;
+        if (!workspacePath) {
+            vscode.postMessage('quickSwitchWorkspace');
+            return;
+        }
+
+        const workspaceName =
+            selectedWorkspaceForAnalysisObj?.name ||
+            workspaceStatus.workspaceName ||
+            activeWorkspaceName ||
+            workspacePath;
+        const projectSelection =
+            card.scope === 'project' && dashboardEvidence?.projectPath
+                ? {
+                      path: dashboardEvidence.projectPath,
+                      name: dashboardEvidence.projectName,
+                      type: selectedProjectForAnalysis?.type,
+                  }
+                : selectedProjectForAnalysis;
+
+        setActiveView('incident-studio');
+        bootstrapIncidentStudioForWorkspace(
+            workspacePath,
+            workspaceName,
+            false,
+            undefined,
+            projectSelection
+        );
+        vscode.postMessage('requestIncidentStudioTelemetry', {
+            workspacePath,
+            projectPath: projectSelection?.path,
+            forceRefresh: true,
+        });
+    };
+
+    const openIncidentStudioTarget = (
+        target: NonNullable<DashboardEvidenceCard['incidentStudioTarget']>
+    ) => {
+        const card =
+            dashboardEvidence?.cards.find((entry) => entry.incidentStudioTarget === target) ??
+            dashboardEvidence?.cards.find((entry) => entry.id === target);
+        if (card) {
+            openIncidentStudioForEvidence(card);
+            return;
+        }
+        openIncidentStudioInPanel();
+    };
 
     const activeWorkspace =
         recentWorkspaces.find((workspace) => workspace.path === workspaceStatus.workspacePath) || null;
@@ -422,6 +581,43 @@ export function App() {
     const hasActiveWorkspace = Boolean(workspaceStatus.hasWorkspace && workspaceStatus.workspacePath);
     const activeWorkspaceProfile = activeWorkspace?.bootstrapProfile;
     const activeWorkspaceName = selectedWorkspaceForAnalysisObj?.name || workspaceStatus.workspaceName || activeWorkspace?.name;
+    const workspaceCommandPayload = () => ({
+        path: workspaceStatus.workspacePath,
+        name: activeWorkspaceName,
+    });
+    const handleDashboardCommand = (command: string, data?: Record<string, unknown>) => {
+        if (command === 'openSetup') {
+            vscode.postMessage('openSetup');
+            return;
+        }
+        if (command === 'openCreateWorkspace') {
+            handleOpenAICreateWorkspace();
+            return;
+        }
+        vscode.postMessage('trackDashboardCommand', { command });
+        vscode.postMessage(command, data ?? workspaceCommandPayload());
+    };
+    const isFreshInstall =
+        dashboardEvidence?.onboarding?.isFreshInstall ??
+        (recentWorkspaces.length === 0 && !hasActiveWorkspace);
+    const dashboardNextSteps = useMemo(
+        () =>
+            buildDashboardNextSteps({
+                workspaceStatus,
+                activeWorkspace,
+                installStatusChecked,
+                coreInstalled: installStatus.coreInstalled,
+                evidence: dashboardEvidence,
+            }),
+        [
+            workspaceStatus,
+            activeWorkspace,
+            installStatusChecked,
+            installStatus.coreInstalled,
+            dashboardEvidence,
+            exampleWorkspaces.length,
+        ]
+    );
     const analysisScopeType: 'workspace' | 'project' = selectedProjectForAnalysis?.path
         ? 'project'
         : 'workspace';
@@ -479,6 +675,103 @@ export function App() {
             value: enabled,
         });
     };
+
+    const updateDashboardSection = (section: DashboardSection) => {
+        const normalizedSection = normalizeDashboardSection(section);
+        setDashboardSection(normalizedSection);
+        vscode.postMessage('setUiPreference', {
+            key: 'dashboardSection',
+            value: normalizedSection,
+        });
+    };
+
+    const modulesDisabledForProject =
+        Boolean(workspaceStatus.hasProjectSelected) &&
+        isUnsupportedModuleProjectType(workspaceStatus.projectType);
+
+    const renderDashboardModuleBrowser = (surface: 'console' | 'catalog') => (
+        <ModuleBrowser
+            modules={modulesCatalog}
+            workspaceStatus={workspaceStatus}
+            categoryInfo={categoryInfo}
+            surface={surface}
+            includeProjectActions={false}
+            onRefresh={() => vscode.postMessage('refreshModules')}
+            onInstall={handleOpenInstallModal}
+            onShowDetails={(module) => vscode.postMessage('showModuleDetails', module)}
+            onModuleDiff={
+                surface === 'console'
+                    ? (module) =>
+                          vscode.postMessage('moduleDiff', {
+                              moduleSlug: module.slug,
+                          })
+                    : undefined
+            }
+            onModuleRollback={
+                surface === 'console'
+                    ? (module) =>
+                          vscode.postMessage('moduleRollback', {
+                              moduleSlug: module.slug,
+                          })
+                    : undefined
+            }
+            onModuleUninstall={
+                surface === 'console'
+                    ? (module) =>
+                          vscode.postMessage('moduleUninstall', {
+                              moduleSlug: module.slug,
+                          })
+                    : undefined
+            }
+            onAI={(module) =>
+                vscode.postMessage('aiForModule', {
+                    moduleId: module.id,
+                    moduleName: module.display_name || module.name,
+                    moduleSlug: module.slug,
+                })
+            }
+            onProjectTerminal={() => vscode.postMessage('projectTerminal')}
+            onProjectInit={() => vscode.postMessage('projectInit')}
+            onProjectDev={() => vscode.postMessage('projectDev')}
+            onProjectStop={() => vscode.postMessage('projectStop')}
+            onProjectTest={() => vscode.postMessage('projectTest')}
+            onProjectDoctor={() => vscode.postMessage('projectDoctor')}
+            onProjectArchitecture={() => vscode.postMessage('projectArchitecture')}
+            onProjectIncident={() => vscode.postMessage('projectIncident')}
+            onProjectAI={() => vscode.postMessage('projectAI')}
+            onProjectRelease={() => vscode.postMessage('projectRelease')}
+            onProjectImpact={() => vscode.postMessage('projectImpact')}
+            onProjectBrowser={() => vscode.postMessage('projectBrowser')}
+            onProjectBuild={() => vscode.postMessage('projectBuild')}
+            modulesDisabled={modulesDisabledForProject}
+        />
+    );
+
+    const renderDashboardCatalogLoadingShell = (variant: 'templates' | 'modules') => (
+        <section
+            className={`catalog-loading-shell catalog-loading-shell--${variant}`}
+            aria-live="polite"
+            aria-label={variant === 'templates' ? 'Loading workspace catalogs' : 'Preparing module catalog'}
+        >
+            <div className="catalog-loading-header">
+                <span>{variant === 'templates' ? 'Loading workspace catalogs' : 'Preparing module catalog'}</span>
+                <small>
+                    {variant === 'templates'
+                        ? 'Templates, examples, and module inventory'
+                        : 'Package manager surface'}
+                </small>
+            </div>
+            <div
+                className={`catalog-skeleton-grid ${
+                    variant === 'templates' ? 'catalog-skeleton-grid--templates' : ''
+                }`}
+            >
+                {Array.from({ length: variant === 'templates' ? 3 : 4 }).map((_, index) => (
+                    <span key={index} className="catalog-skeleton-card" />
+                ))}
+            </div>
+        </section>
+    );
 
     // Listen for messages from extension
     useEffect(() => {
@@ -552,6 +845,9 @@ export function App() {
                     console.log('[React Webview] Updating workspaces:', message.data);
                     setRecentWorkspaces(message.data);
                     setIsRefreshingWorkspaces(false);
+                    break;
+                case 'dashboardEvidence':
+                    setDashboardEvidence(message.data ?? null);
                     break;
                 case 'updateExampleWorkspaces':
                     console.log('[React Webview] Updating examples:', message.data);
@@ -645,8 +941,7 @@ export function App() {
                     setAIContextContract(null);
                     setAIConversationHistory([]);
                     setShowAIModal(true);
-                    // Fetch available models for the selector
-                    vscode.postMessage('aiGetModels');
+                    refreshWorkspaiSettings();
                     break;
                 case 'aiChunkUpdate':
                     if (
@@ -715,24 +1010,9 @@ export function App() {
                     break;
                 case 'aiModelsList':
                     if (Array.isArray(message.data?.models)) {
-                        const incomingModels = message.data.models as Array<unknown>;
-                        const normalizedModels = incomingModels
-                            .filter(
-                                (model: unknown): model is { id: string; name: string; vendor: string } =>
-                                    Boolean(model) &&
-                                    typeof (model as { id?: unknown }).id === 'string' &&
-                                    ((model as { id: string }).id).trim().length > 0
-                            )
-                            .map((model: { id: string; name: string; vendor: string }) => ({
-                                id: model.id,
-                                name:
-                                    typeof model.name === 'string' && model.name.trim().length > 0
-                                        ? model.name
-                                        : model.id,
-                                vendor: typeof model.vendor === 'string' ? model.vendor : '',
-                            }));
-
+                        const normalizedModels = normalizeAvailableModels(message.data.models);
                         setAIAvailableModels(normalizedModels);
+                        setAiModelsLoading(false);
                         setAISelectedModelId((current) => {
                             const normalizedCurrent = normalizeSelectedModelId(current);
                             if (!normalizedCurrent) {
@@ -753,6 +1033,21 @@ export function App() {
                         });
                     }
                     break;
+                case 'workspaiSettings': {
+                    const preferredModel =
+                        typeof message.data?.preferredModel === 'string' &&
+                        message.data.preferredModel.trim().length > 0
+                            ? message.data.preferredModel.trim()
+                            : 'auto';
+                    const normalizedModels = normalizeAvailableModels(message.data?.models);
+                    const sessionModelId = preferredModel === 'auto' ? null : preferredModel;
+                    setPreferredModelId(preferredModel);
+                    setAIAvailableModels(normalizedModels);
+                    setAiModelsLoading(false);
+                    setAISelectedModelId((current) => current ?? sessionModelId);
+                    setIncidentSelectedModelId((current) => current ?? sessionModelId);
+                    break;
+                }
                 // ── AI Create events ────────────────────────────────────────
                 case 'aiCreationThinking':
                     setAICreationThinking(message.data?.thinking ?? false);
@@ -812,7 +1107,11 @@ export function App() {
                     setWorkspaceToolStatus(message.data);
                     break;
                 case 'setActiveView':
-                    if (message.data?.view === 'dashboard' || message.data?.view === 'incident-studio') {
+                    if (
+                        message.data?.view === 'dashboard' ||
+                        message.data?.view === 'incident-studio' ||
+                        message.data?.view === 'settings'
+                    ) {
                         setActiveView(message.data.view);
                     }
                     break;
@@ -1242,6 +1541,7 @@ export function App() {
                         )
                     );
                     setIncidentAutoLearningPrompt(message.data?.incidentAutoLearningPrompt !== false);
+                    setDashboardSection(normalizeDashboardSection(message.data?.dashboardSection));
                     break;
             }
         };
@@ -1251,6 +1551,7 @@ export function App() {
         // Request initial data
         vscode.postMessage('ready');
         vscode.postMessage('getUiPreferences');
+        vscode.postMessage('requestDashboardEvidence');
         vscode.postMessage('requestIncidentStudioTelemetry', {
             workspacePath: selectedWorkspaceForAnalysis || workspaceStatus.workspacePath,
             projectPath: selectedProjectForAnalysis?.path,
@@ -1406,10 +1707,8 @@ export function App() {
             workspaceStatus.workspaceName ||
             workspacePath;
 
-        // Refresh model selector from Copilot LM API on each studio refresh.
-        vscode.postMessage('aiGetModels');
+        refreshWorkspaiSettings();
 
-        // Refresh = restart analysis loop from the current scope (workspace/project)
         lastAnalyzeLoadKeyRef.current = null;
         bootstrapIncidentStudioForWorkspace(
             workspacePath,
@@ -1418,10 +1717,7 @@ export function App() {
             undefined,
             selectedProjectForAnalysis
         );
-        vscode.postMessage('checkReportExists', { workspacePath });
-        vscode.postMessage('loadReport', { workspacePath, workspaceName });
-        setIsAnalyzeLoading(true);
-        setAnalyzeReportError(null);
+        requestAnalyzeEvidence(workspacePath, workspaceName);
     };
 
     const runIncidentInlineCommand = (command: string) => {
@@ -1532,7 +1828,8 @@ export function App() {
                         conversationId,
                         workspacePath,
                         requestId,
-                        modelId: normalizeSelectedModelId(incidentSelectedModelId) ?? undefined,
+                        modelId:
+                            normalizeSelectedModelId(incidentSelectedModelIdRef.current) ?? undefined,
                         projectSelection,
                         message:
                             initialQuery ||
@@ -1611,7 +1908,7 @@ export function App() {
             return;
         }
 
-        vscode.postMessage('aiGetModels');
+        refreshWorkspaiSettings();
 
         const workspacePath = workspaceStatus.workspacePath;
         if (!workspacePath) {
@@ -1633,14 +1930,16 @@ export function App() {
 
     useEffect(() => {
         const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
+        const projectPath = selectedProjectForAnalysis?.path ?? null;
         if (activeView !== 'incident-studio' || !workspacePath) {
             return;
         }
 
-        if (lastAnalyzeLoadKeyRef.current === workspacePath) {
+        const loadKey = buildAnalyzeLoadKey(workspacePath, projectPath);
+        if (lastAnalyzeLoadKeyRef.current === loadKey) {
             return;
         }
-        lastAnalyzeLoadKeyRef.current = workspacePath;
+        lastAnalyzeLoadKeyRef.current = loadKey;
 
         const workspaceName =
             selectedWorkspaceForAnalysisObj?.name ||
@@ -1649,7 +1948,12 @@ export function App() {
             undefined;
 
         requestAnalyzeEvidence(workspacePath, workspaceName);
-    }, [activeView, selectedWorkspaceForAnalysis, workspaceStatus.workspacePath]);
+    }, [
+        activeView,
+        selectedWorkspaceForAnalysis,
+        selectedProjectForAnalysis?.path,
+        workspaceStatus.workspacePath,
+    ]);
 
     const analyzeEvidencePending = isAnalyzeEvidencePending({
         isLoading: isAnalyzeLoading,
@@ -1880,7 +2184,7 @@ export function App() {
     }, [activeView, chatBrainConversationId]);
 
     useEffect(() => {
-        if (activeView !== 'dashboard') {
+        if (activeView !== 'dashboard' || !dashboardSectionNeedsCatalog(dashboardSection)) {
             setDashboardTemplatesReady(false);
             setDashboardModulesReady(false);
             return;
@@ -1901,7 +2205,16 @@ export function App() {
             cancelIdle(templatesHandle);
             window.clearTimeout(modulesHandle);
         };
-    }, [activeView]);
+    }, [activeView, dashboardSection]);
+
+    useEffect(() => {
+        if (activeView !== 'dashboard') {
+            return;
+        }
+        vscode.postMessage('requestDashboardEvidence', {
+            workspacePath: workspaceStatus.workspacePath,
+        });
+    }, [activeView, workspaceStatus.workspacePath, recentWorkspaces.length]);
 
     useEffect(() => {
         if (activeView !== 'dashboard') {
@@ -1935,232 +2248,358 @@ export function App() {
 
     return (
         <div className={`container`}>
-            <Header version={version} />
+            <div className="workspai-top-bar">
+                <Header version={version} variant="topbar" />
 
-            <div className="workspai-view-tabs" role="tablist" aria-label="Workspai views">
-                <button
-                    type="button"
-                    role="tab"
-                    aria-selected={activeView === 'dashboard'}
-                    className={`workspai-view-tab ${activeView === 'dashboard' ? 'is-active' : ''}`}
-                    onClick={() => {
-                        if (activeView === 'incident-studio') {
-                            vscode.postMessage('openDashboardTab');
-                            return;
-                        }
-                        setActiveView('dashboard');
-                    }}
-                >
-                    <span className="workspai-view-tab-content">
-                        <LayoutDashboard size={13} aria-hidden="true" />
-                        <span>Dashboard</span>
-                    </span>
-                </button>
-                <button
-                    type="button"
-                    className="workspai-view-tab"
-                    onClick={() => vscode.postMessage('openSetup')}
-                >
-                    <span className="workspai-view-tab-content">
-                        <Wrench size={13} aria-hidden="true" />
-                        <span>Setup & Installation</span>
-                    </span>
-                </button>
-                <button
-                    type="button"
-                    role="tab"
-                    aria-selected={activeView === 'incident-studio'}
-                    className={`workspai-view-tab ${activeView === 'incident-studio' ? 'is-active' : ''}`}
-                    onClick={() => {
-                        if (activeView === 'dashboard') {
-                            vscode.postMessage('openIncidentStudioTab', {
-                                workspacePath: selectedWorkspaceForAnalysis || workspaceStatus.workspacePath,
-                                workspaceName: activeWorkspaceName,
-                                projectPath: selectedProjectForAnalysis?.path,
-                                projectName: selectedProjectForAnalysis?.name,
-                                projectType: selectedProjectForAnalysis?.type,
-                                preferredDisplayMode: incidentStudioDisplayMode,
-                                preferredArchitectureLensView: incidentArchitectureLensViewOverride || undefined,
-                            });
-                            return;
-                        }
-                        setActiveView('incident-studio');
-                    }}
-                >
-                    <span className="workspai-view-tab-content">
-                        <Sparkles size={13} aria-hidden="true" />
-                        <span>WorkspAi Incident Studio</span>
-                    </span>
-                </button>
+                <div className="workspai-view-tabs" role="tablist" aria-label="Workspai views">
+                    <div className="workspai-view-tabs__group workspai-view-tabs__group--primary">
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={activeView === 'dashboard'}
+                            className={`workspai-view-tab ${activeView === 'dashboard' ? 'is-active' : ''}`}
+                            onClick={() => {
+                                setActiveView('dashboard');
+                            }}
+                        >
+                            <span className="workspai-view-tab-content">
+                                <LayoutDashboard size={13} aria-hidden="true" />
+                                <span className="workspai-view-tab-label">Dashboard</span>
+                            </span>
+                        </button>
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={activeView === 'incident-studio'}
+                            className={`workspai-view-tab ${activeView === 'incident-studio' ? 'is-active' : ''}`}
+                            onClick={() => {
+                                if (activeView !== 'incident-studio') {
+                                    openIncidentStudioInPanel();
+                                }
+                            }}
+                        >
+                            <span className="workspai-view-tab-content">
+                                <Sparkles size={13} aria-hidden="true" />
+                                <span className="workspai-view-tab-label">Incident Studio</span>
+                            </span>
+                        </button>
+                    </div>
+
+                    <div className="workspai-view-tabs__group workspai-view-tabs__group--trailing">
+                        <button
+                            type="button"
+                            role="tab"
+                            aria-selected={activeView === 'settings'}
+                            className={`workspai-view-tab ${activeView === 'settings' ? 'is-active' : ''}`}
+                            onClick={() => {
+                                setActiveView('settings');
+                                refreshWorkspaiSettings();
+                            }}
+                        >
+                            <span className="workspai-view-tab-content">
+                                <Settings2 size={13} aria-hidden="true" />
+                                <span className="workspai-view-tab-label">Settings</span>
+                            </span>
+                        </button>
+                        <button
+                            type="button"
+                            className="workspai-view-tab"
+                            onClick={() => vscode.postMessage('openSetup')}
+                        >
+                            <span className="workspai-view-tab-content">
+                                <Wrench size={13} aria-hidden="true" />
+                                <span className="workspai-view-tab-label workspai-view-tab-label--setup">
+                                    Setup & Installation
+                                </span>
+                            </span>
+                        </button>
+                    </div>
+                </div>
             </div>
 
             {activeView === 'dashboard' ? (
                 <>
-                    {importedWorkspaceShare ? (
-                        <section
-                            style={{
-                                border: '1px solid var(--vscode-panel-border)',
-                                borderRadius: '10px',
-                                padding: '12px',
-                                marginBottom: '12px',
-                                background: 'var(--vscode-editor-inactiveSelectionBackground)',
-                            }}
-                        >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                                <h3 style={{ margin: 0, fontSize: '13px' }}>Imported Share Bundle</h3>
-                                <button
-                                    type="button"
-                                    onClick={() => setImportedWorkspaceShare(null)}
-                                    style={{
-                                        border: '1px solid var(--vscode-panel-border)',
-                                        background: 'var(--vscode-editor-background)',
-                                        color: 'var(--vscode-foreground)',
-                                        borderRadius: '6px',
-                                        padding: '4px 8px',
-                                        cursor: 'pointer',
-                                        fontSize: '11px',
-                                    }}
-                                >
-                                    Dismiss
-                                </button>
-                            </div>
-                            <p style={{ margin: '8px 0 4px 0', fontSize: '12px' }}>
-                                <strong>{importedWorkspaceShare.workspaceName}</strong>
-                                {importedWorkspaceShare.workspaceProfile ? ` (${importedWorkspaceShare.workspaceProfile})` : ''}
-                                {' · '}
-                                {importedWorkspaceShare.projectCount} projects
-                                {' · schema '}
-                                {importedWorkspaceShare.schemaVersion}
-                            </p>
-                            <p style={{ margin: '0 0 4px 0', fontSize: '12px' }}>
-                                Runtimes: {importedWorkspaceShare.runtimes.length > 0 ? importedWorkspaceShare.runtimes.join(', ') : 'unknown'}
-                            </p>
-                            <p style={{ margin: 0, fontSize: '12px' }}>
-                                Health totals: {importedWorkspaceShare.healthTotals.passed} passed, {importedWorkspaceShare.healthTotals.warnings} warnings, {importedWorkspaceShare.healthTotals.errors} errors
-                            </p>
-                        </section>
+                    <DashboardSubNav
+                        activeSection={dashboardSection}
+                        onSectionChange={updateDashboardSection}
+                        hasProjectSelected={Boolean(workspaceStatus.hasProjectSelected)}
+                        recentWorkspaceCount={recentWorkspaces.length}
+                    />
+
+                    {isFreshInstall ? (
+                        <FreshInstallOnboarding
+                            templateCount={exampleWorkspaces.length}
+                            onCreateWorkspace={handleOpenAICreateWorkspace}
+                            onImportWorkspace={() => handleDashboardCommand('importWorkspace')}
+                            onBrowseCatalog={() => updateDashboardSection('catalog')}
+                        />
+                    ) : (
+                        <DashboardNextStepRail
+                            steps={dashboardNextSteps}
+                            onNavigateSection={updateDashboardSection}
+                            onRunCommand={handleDashboardCommand}
+                            onOpenIncidentStudio={openIncidentStudioTarget}
+                        />
+                    )}
+
+                    {dashboardEvidence?.opsChain &&
+                    (dashboardEvidence.opsChain.status === 'running' ||
+                        dashboardEvidence.opsChain.status === 'blocked') ? (
+                        <OpsChainBanner
+                            chain={dashboardEvidence.opsChain}
+                            onDismiss={() => vscode.postMessage('dismissDashboardOpsChain')}
+                        />
                     ) : null}
 
-                    <WorkspaceOverview
-                        workspaceName={activeWorkspaceName}
-                        workspaceProfile={activeWorkspaceProfile}
-                        workspaceStatus={workspaceStatus}
-                        moduleCount={modulesCatalog.length}
-                        templateCount={exampleWorkspaces.length}
-                        recentWorkspaceCount={recentWorkspaces.length}
-                        modules={modulesCatalog}
-                        isCreatingWorkspace={isCreatingWorkspace}
-                        onCreateWorkspace={handleOpenAICreateWorkspace}
-                        onImportWorkspace={() => vscode.postMessage('importWorkspace')}
-                    />
+                    {dashboardSection === 'overview' ? (
+                        <div
+                            id="dashboard-panel-overview"
+                            role="tabpanel"
+                            aria-labelledby="dashboard-tab-overview"
+                        >
+                            {importedWorkspaceShare ? (
+                                <WorkspaiBanner
+                                    title="Imported Share Bundle"
+                                    onDismiss={() => setImportedWorkspaceShare(null)}
+                                >
+                                    <p className="workspai-banner__body">
+                                        <strong>{importedWorkspaceShare.workspaceName}</strong>
+                                        {importedWorkspaceShare.workspaceProfile
+                                            ? ` (${importedWorkspaceShare.workspaceProfile})`
+                                            : ''}
+                                        {' · '}
+                                        {importedWorkspaceShare.projectCount} projects
+                                        {' · schema '}
+                                        {importedWorkspaceShare.schemaVersion}
+                                    </p>
+                                    <p className="workspai-banner__meta">
+                                        Runtimes:{' '}
+                                        {importedWorkspaceShare.runtimes.length > 0
+                                            ? importedWorkspaceShare.runtimes.join(', ')
+                                            : 'unknown'}
+                                    </p>
+                                    <p className="workspai-banner__meta">
+                                        Health totals: {importedWorkspaceShare.healthTotals.passed} passed,{' '}
+                                        {importedWorkspaceShare.healthTotals.warnings} warnings,{' '}
+                                        {importedWorkspaceShare.healthTotals.errors} errors
+                                    </p>
+                                </WorkspaiBanner>
+                            ) : null}
 
-                    <EnterpriseDashboardFlow
-                        workspaceName={activeWorkspaceName}
-                        workspaceProfile={activeWorkspaceProfile}
-                        workspaceStatus={workspaceStatus}
-                        selectedFramework={selectedFramework}
-                        onSelectFramework={setSelectedFramework}
-                        onOpenProjectBuilder={handleOpenProjectModal}
-                        onOpenManualProject={handleOpenManualProjectModal}
-                        onRunFixPreview={() => runIncidentAction('aiFixPreviewLite')}
-                        onRunChangeImpact={() => runIncidentAction('aiChangeImpactLite')}
-                        onRunTerminalBridge={() => runIncidentAction('aiTerminalBridge')}
-                        onOpenIncidentStudio={() => {
-                            vscode.postMessage('openIncidentStudioTab', {
-                                workspacePath: workspaceStatus.workspacePath,
-                                workspaceName: activeWorkspaceName,
-                                projectPath: selectedProjectForAnalysis?.path,
-                                projectName: selectedProjectForAnalysis?.name,
-                                projectType: selectedProjectForAnalysis?.type,
-                            });
-                        }}
-                    />
-
-                    <RecentWorkspaces
-                        workspaces={recentWorkspaces}
-                        isRefreshing={isRefreshingWorkspaces}
-                        onRefresh={() => { setIsRefreshingWorkspaces(true); vscode.postMessage('refreshWorkspaces'); }}
-                        onSelect={(workspace) => vscode.postMessage('openWorkspaceFolder', { path: workspace.path })}
-                        onRemove={(workspace) => vscode.postMessage('removeWorkspace', { path: workspace.path })}
-                        onUpgrade={(workspace) => vscode.postMessage('upgradeCore', { path: workspace.path, version: workspace.coreLatestVersion })}
-                        onCheckHealth={(workspace) => vscode.postMessage('checkWorkspaceHealth', { path: workspace.path })}
-                        onExport={(workspace) => vscode.postMessage('exportWorkspace', { path: workspace.path })}
-                        onAI={(workspace) => vscode.postMessage('aiForWorkspace', { workspacePath: workspace.path, workspaceName: workspace.name })}
-                        onAnalyze={handleAnalyzeWorkspace}
-                    />
-
-                    {dashboardTemplatesReady ? (
-                        <>
-                            <ExampleWorkspaces
-                                examples={exampleWorkspaces}
-                                onClone={(example) => vscode.postMessage('cloneExample', example)}
-                                onUpdate={(example) => vscode.postMessage('updateExample', example)}
-                                cloningExample={cloningExample}
-                                updatingExample={updatingExample}
+                            <CommandActivityPanel
+                                evidence={dashboardEvidence}
+                                onRunCommand={(command) => handleDashboardCommand(command)}
+                                onClearActivity={() => vscode.postMessage('clearDashboardActivity')}
+                                onRevealArtifact={(artifactPath) =>
+                                    vscode.postMessage('revealEvidence', {
+                                        path: artifactPath,
+                                        workspacePath:
+                                            dashboardEvidence?.workspacePath ||
+                                            workspaceStatus.workspacePath,
+                                    })
+                                }
                             />
 
-                            {dashboardModulesReady ? (
-                                <ModuleBrowser
-                                    modules={modulesCatalog}
-                                    workspaceStatus={workspaceStatus}
-                                    categoryInfo={categoryInfo}
-                                    onRefresh={() => vscode.postMessage('refreshModules')}
-                                    onInstall={handleOpenInstallModal}
-                                    onShowDetails={(module) => vscode.postMessage('showModuleDetails', module)}
-                                    onAI={(module) => vscode.postMessage('aiForModule', { moduleId: module.id, moduleName: module.display_name || module.name, moduleSlug: module.slug })}
-                                    onProjectTerminal={() => vscode.postMessage('projectTerminal')}
-                                    onProjectInit={() => vscode.postMessage('projectInit')}
-                                    onProjectDev={() => vscode.postMessage('projectDev')}
-                                    onProjectStop={() => vscode.postMessage('projectStop')}
-                                    onProjectTest={() => vscode.postMessage('projectTest')}
-                                    onProjectDoctor={() => vscode.postMessage('projectDoctor')}
-                                    onProjectArchitecture={() => vscode.postMessage('projectArchitecture')}
-                                    onProjectIncident={() => vscode.postMessage('projectIncident')}
-                                    onProjectAI={() => vscode.postMessage('projectAI')}
-                                    onProjectRelease={() => vscode.postMessage('projectRelease')}
-                                    onProjectImpact={() => vscode.postMessage('projectImpact')}
-                                    onProjectBrowser={() => vscode.postMessage('projectBrowser')}
-                                    onProjectBuild={() => vscode.postMessage('projectBuild')}
-                                    modulesDisabled={
-                                        workspaceStatus.projectType === 'go' || workspaceStatus.projectType === 'springboot' || workspaceStatus.projectType === 'dotnet'
+                            <EvidenceOutcomePanel
+                                evidence={dashboardEvidence}
+                                onRunCommand={(command) => handleDashboardCommand(command)}
+                                onOpenIncidentStudio={openIncidentStudioForEvidence}
+                                onRevealArtifact={(artifactPath) =>
+                                    vscode.postMessage('revealEvidence', {
+                                        path: artifactPath,
+                                        workspacePath:
+                                            dashboardEvidence?.workspacePath ||
+                                            workspaceStatus.workspacePath,
+                                    })
+                                }
+                            />
+
+                            <ReleaseHub
+                                evidence={dashboardEvidence}
+                                hasWorkspace={hasActiveWorkspace}
+                                onReadiness={() => handleDashboardCommand('workspaceReadiness')}
+                                onAnalyze={() => handleDashboardCommand('workspaceAnalyze')}
+                                onAutopilotRelease={() =>
+                                    handleDashboardCommand('workspaceAutopilotRelease')
+                                }
+                            />
+
+                            <WorkspaceOverview
+                                workspaceName={activeWorkspaceName}
+                                workspaceProfile={activeWorkspaceProfile}
+                                workspaceStatus={workspaceStatus}
+                                moduleCount={modulesCatalog.length}
+                                templateCount={exampleWorkspaces.length}
+                                recentWorkspaceCount={recentWorkspaces.length}
+                                modules={modulesCatalog}
+                                isCreatingWorkspace={isCreatingWorkspace}
+                                onCreateWorkspace={handleOpenAICreateWorkspace}
+                                onImportWorkspace={() => vscode.postMessage('importWorkspace')}
+                            />
+
+                            <EnterpriseDashboardFlow
+                                workspaceName={activeWorkspaceName}
+                                workspaceProfile={activeWorkspaceProfile}
+                                workspaceStatus={workspaceStatus}
+                                selectedFramework={selectedFramework}
+                                onSelectFramework={setSelectedFramework}
+                                onOpenProjectBuilder={handleOpenProjectModal}
+                                onOpenManualProject={handleOpenManualProjectModal}
+                                onRunFixPreview={() => runIncidentAction('aiFixPreviewLite')}
+                                onRunChangeImpact={() => runIncidentAction('aiChangeImpactLite')}
+                                onRunTerminalBridge={() => runIncidentAction('aiTerminalBridge')}
+                                onOpenIncidentStudio={() => openIncidentStudioInPanel()}
+                            />
+
+                            <WorkspaceGovernancePanel
+                                workspaceStatus={workspaceStatus}
+                                onBootstrap={() => handleDashboardCommand('workspaceBootstrap')}
+                                onSetup={() => handleDashboardCommand('workspaceSetup')}
+                                onReadiness={() => handleDashboardCommand('workspaceReadiness')}
+                                onMirrorStatus={() => handleDashboardCommand('mirrorStatus')}
+                                onMirrorSync={() => handleDashboardCommand('mirrorSync')}
+                                onCacheStatus={() => handleDashboardCommand('cacheStatus')}
+                                onPolicy={() => vscode.postMessage('workspacePolicyShow')}
+                                onInfra={() => handleDashboardCommand('workspaceInfra')}
+                            />
+
+                            <CommandCheatsheet />
+                        </div>
+                    ) : null}
+
+                    {dashboardSection === 'console' ? (
+                        <div
+                            id="dashboard-panel-console"
+                            role="tabpanel"
+                            aria-labelledby="dashboard-tab-console"
+                        >
+                            {!workspaceStatus.hasProjectSelected ? (
+                                <WorkspaiEmptyState
+                                    icon={<LayoutDashboard size={18} />}
+                                    title="No project selected"
+                                    description={
+                                        <>
+                                            Select a project from the <strong>PROJECTS</strong> panel in the
+                                            sidebar, or create one from the <strong>Overview</strong> tab.
+                                        </>
                                     }
                                 />
+                            ) : dashboardModulesReady ? (
+                                <>
+                                    <ProjectActions
+                                        workspaceStatus={workspaceStatus}
+                                        onTerminal={() => vscode.postMessage('projectTerminal')}
+                                        onInit={() => vscode.postMessage('projectInit')}
+                                        onDev={() => vscode.postMessage('projectDev')}
+                                        onStop={() => vscode.postMessage('projectStop')}
+                                        onTest={() => vscode.postMessage('projectTest')}
+                                        onDoctor={() => vscode.postMessage('projectDoctor')}
+                                        onArchitecture={() => vscode.postMessage('projectArchitecture')}
+                                        onIncident={() => vscode.postMessage('projectIncident')}
+                                        onAI={() => vscode.postMessage('projectAI')}
+                                        onRelease={() => vscode.postMessage('projectRelease')}
+                                        onImpact={() => vscode.postMessage('projectImpact')}
+                                        onBrowser={() => vscode.postMessage('projectBrowser')}
+                                        onBuild={() => vscode.postMessage('projectBuild')}
+                                        onLint={() => vscode.postMessage('projectLint')}
+                                        onFormat={() => vscode.postMessage('projectFormat')}
+                                    />
+                                    {renderDashboardModuleBrowser('console')}
+                                </>
                             ) : (
-                                <section
-                                    className="catalog-loading-shell catalog-loading-shell--modules"
-                                    aria-live="polite"
-                                    aria-label="Preparing module catalog"
-                                >
-                                    <div className="catalog-loading-header">
-                                        <span>Preparing module catalog</span>
-                                        <small>Package manager surface</small>
-                                    </div>
-                                    <div className="catalog-skeleton-grid">
-                                        {Array.from({ length: 4 }).map((_, index) => (
-                                            <span key={index} className="catalog-skeleton-card" />
-                                        ))}
-                                    </div>
-                                </section>
+                                renderDashboardCatalogLoadingShell('modules')
                             )}
-                        </>
-                    ) : (
-                        <section
-                            className="catalog-loading-shell catalog-loading-shell--templates"
-                            aria-live="polite"
-                            aria-label="Loading workspace catalogs"
+                        </div>
+                    ) : null}
+
+                    {dashboardSection === 'catalog' ? (
+                        <div
+                            id="dashboard-panel-catalog"
+                            role="tabpanel"
+                            aria-labelledby="dashboard-tab-catalog"
                         >
-                            <div className="catalog-loading-header">
-                                <span>Loading workspace catalogs</span>
-                                <small>Templates, examples, and module inventory</small>
-                            </div>
-                            <div className="catalog-skeleton-grid catalog-skeleton-grid--templates">
-                                {Array.from({ length: 3 }).map((_, index) => (
-                                    <span key={index} className="catalog-skeleton-card" />
-                                ))}
-                            </div>
-                        </section>
-                    )}
+                            {dashboardTemplatesReady ? (
+                                <>
+                                    <ExampleWorkspaces
+                                        examples={exampleWorkspaces}
+                                        onClone={(example) => vscode.postMessage('cloneExample', example)}
+                                        onUpdate={(example) => vscode.postMessage('updateExample', example)}
+                                        cloningExample={cloningExample}
+                                        updatingExample={updatingExample}
+                                    />
+
+                                    {dashboardModulesReady
+                                        ? renderDashboardModuleBrowser('catalog')
+                                        : renderDashboardCatalogLoadingShell('modules')}
+                                </>
+                            ) : (
+                                renderDashboardCatalogLoadingShell('templates')
+                            )}
+                        </div>
+                    ) : null}
+
+                    {dashboardSection === 'workspaces' ? (
+                        <div
+                            id="dashboard-panel-workspaces"
+                            role="tabpanel"
+                            aria-labelledby="dashboard-tab-workspaces"
+                        >
+                            <RecentWorkspaces
+                                workspaces={recentWorkspaces}
+                                isRefreshing={isRefreshingWorkspaces}
+                                onRefresh={() => {
+                                    setIsRefreshingWorkspaces(true);
+                                    vscode.postMessage('refreshWorkspaces');
+                                }}
+                                onSelect={(workspace) =>
+                                    vscode.postMessage('openWorkspaceFolder', { path: workspace.path })
+                                }
+                                onRemove={(workspace) =>
+                                    vscode.postMessage('removeWorkspace', { path: workspace.path })
+                                }
+                                onUpgrade={(workspace) =>
+                                    vscode.postMessage('upgradeCore', {
+                                        path: workspace.path,
+                                        version: workspace.coreLatestVersion,
+                                    })
+                                }
+                                onCheckHealth={(workspace) =>
+                                    vscode.postMessage('checkWorkspaceHealth', { path: workspace.path })
+                                }
+                                onExport={(workspace) =>
+                                    vscode.postMessage('exportWorkspace', { path: workspace.path })
+                                }
+                                onAI={(workspace) =>
+                                    vscode.postMessage('aiForWorkspace', {
+                                        workspacePath: workspace.path,
+                                        workspaceName: workspace.name,
+                                    })
+                                }
+                                onAnalyze={handleAnalyzeWorkspace}
+                                onBootstrap={(workspace) =>
+                                    vscode.postMessage('workspaceBootstrap', {
+                                        path: workspace.path,
+                                        name: workspace.name,
+                                    })
+                                }
+                                onMirrorSync={(workspace) =>
+                                    vscode.postMessage('mirrorSync', {
+                                        path: workspace.path,
+                                        name: workspace.name,
+                                    })
+                                }
+                            />
+                        </div>
+                    ) : null}
                 </>
+            ) : activeView === 'settings' ? (
+                <WorkspaiSettingsPanel
+                    availableModels={aiAvailableModels}
+                    preferredModelId={preferredModelId}
+                    modelsLoading={aiModelsLoading}
+                    onPreferredModelChange={handlePreferredModelChange}
+                    onRefreshModels={refreshWorkspaiSettings}
+                />
             ) : (
                 <>
                     <AIIncidentStudio
@@ -2312,6 +2751,7 @@ export function App() {
                 }}
                 onPromptSubmit={handleAICreatePromptSubmit}
                 onConfirm={handleAICreateConfirm}
+                onStartOver={handleAICreateStartOver}
                 onManualFallback={() => {
                     setShowAICreateModal(false);
                     if (aiCreateMode === 'workspace') {
@@ -2367,6 +2807,7 @@ export function App() {
                 }}
                 onCancel={handleAICancelQuery}
                 onQuery={handleAIQuery}
+                onStartNewQuery={handleAIModalNewQuery}
             />
             <Footer />
         </div>

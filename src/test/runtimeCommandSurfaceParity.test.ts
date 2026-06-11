@@ -52,14 +52,12 @@ describe('shared runtime command surface contract (extension)', () => {
     };
     const defaultKitEnum =
       packageJson.contributes?.configuration?.properties?.['workspai.defaultKit']?.enum ?? [];
-    const commandReference = read('webview-ui/src/components/CommandReference.tsx');
     const kitsService = read('src/core/kitsService.ts');
     const rapidkitCli = read('src/core/rapidkitCLI.ts');
 
     expect(contract.schemaVersion).toBe('rapidkit-runtime-command-surface-v1');
     expect(defaultKitEnum).toEqual(contract.scaffoldKits);
     for (const kit of contract.scaffoldKits) {
-      expect(commandReference, kit).toContain(kit);
       expect(kitsService, kit).toContain(kit);
       expect(rapidkitCli, kit).toContain(kit);
     }

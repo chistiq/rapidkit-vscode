@@ -52,6 +52,7 @@ const FRAMEWORK_INFO: Record<ProjectFramework, {
         placeholder: 'my-spring-service',
     },
     dotnet: {
+        iconUrl: (typeof window !== 'undefined' ? (window as any).DOTNET_ICON_URI : undefined),
         title: '.NET Web API Project',
         subtitle: 'C# service',
         description: 'Create a clean architecture .NET Web API inside the selected workspace.',
@@ -67,6 +68,7 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
     const [aiSuggestLoading, setAiSuggestLoading] = useState(false);
     const [aiSuggestError, setAiSuggestError] = useState('');
     const suggestListenerRef = useRef<((event: MessageEvent) => void) | null>(null);
+    const suggestTimeoutRef = useRef<number | null>(null);
 
     const frameworkKits = availableKits.filter((kit) => kit.category === framework);
     const selectedKitData = frameworkKits.find((kit) => kit.name === selectedKit);
@@ -91,6 +93,9 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
             if (suggestListenerRef.current) {
                 window.removeEventListener('message', suggestListenerRef.current);
                 suggestListenerRef.current = null;
+            }
+            if (suggestTimeoutRef.current != null) {
+                window.clearTimeout(suggestTimeoutRef.current);
             }
         };
     }, []);
@@ -136,6 +141,21 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
             window.removeEventListener('message', suggestListenerRef.current);
         }
 
+        const finishSuggest = (errorMessage?: string, suggestions?: { slug: string; reason: string }[]) => {
+            setAiSuggestLoading(false);
+            if (suggestTimeoutRef.current != null) {
+                window.clearTimeout(suggestTimeoutRef.current);
+                suggestTimeoutRef.current = null;
+            }
+            if (errorMessage) {
+                setAiSuggestError(errorMessage);
+            } else {
+                setAiSuggestions(suggestions ?? []);
+            }
+            window.removeEventListener('message', listener);
+            suggestListenerRef.current = null;
+        };
+
         const listener = (event: MessageEvent) => {
             if (event.data?.command !== 'aiModuleSuggestions') {
                 return;
@@ -149,17 +169,13 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
             if (loading) {
                 return;
             }
-            setAiSuggestLoading(false);
-            if (err) {
-                setAiSuggestError(err);
-            } else {
-                setAiSuggestions(suggestions ?? []);
-            }
-            window.removeEventListener('message', listener);
-            suggestListenerRef.current = null;
+            finishSuggest(typeof err === 'string' && err.trim() ? err : undefined, suggestions);
         };
         suggestListenerRef.current = listener;
         window.addEventListener('message', listener);
+        suggestTimeoutRef.current = window.setTimeout(() => {
+            finishSuggest('Module suggestion timed out. Check AI entitlement and retry.');
+        }, 30_000);
         vscode.postMessage('aiSuggestModules', { framework, projectName });
     };
 

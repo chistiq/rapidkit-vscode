@@ -1193,6 +1193,24 @@ export function registerWorkspaceOperationsCommands(options: {
       });
     }),
 
+    vscode.commands.registerCommand('workspai.workspaceReadiness', async (item?: unknown) => {
+      const workspaceExplorer = getWorkspaceExplorer();
+      const { workspacePath, workspaceName } = resolveWorkspaceTarget(item, workspaceExplorer);
+      if (!workspacePath) {
+        vscode.window.showErrorMessage(
+          'No workspace selected. Select a workspace in the sidebar first.'
+        );
+        return;
+      }
+
+      const wsName = workspaceName || path.basename(workspacePath);
+      runRapidkitCommandsInTerminal({
+        name: `Workspai: Readiness — ${wsName}`,
+        cwd: workspacePath,
+        commands: [['readiness', '--json']],
+      });
+    }),
+
     vscode.commands.registerCommand('workspai.workspaceRunStage', async (item?: unknown) => {
       const typedItem = asWorkspaceCommandItem(item);
       const requestedStage = parseWorkspaceRunStage(typedItem?.stage);

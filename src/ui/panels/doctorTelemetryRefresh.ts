@@ -9,10 +9,31 @@ export function extractWorkspacePathFromDoctorReportPath(filePath: string): stri
   return filePath.slice(0, idx);
 }
 
+export function extractWorkspacePathFromReportPath(filePath: string): string | undefined {
+  const reportsMarker = `${path.sep}.rapidkit${path.sep}reports${path.sep}`;
+  const reportsIdx = filePath.lastIndexOf(reportsMarker);
+  if (reportsIdx > 0) {
+    return filePath.slice(0, reportsIdx);
+  }
+
+  const archiveSuffix = `${path.sep}.rapidkit${path.sep}archive-manifest.json`;
+  const archiveIdx = filePath.lastIndexOf(archiveSuffix);
+  if (archiveIdx > 0) {
+    return filePath.slice(0, archiveIdx);
+  }
+
+  return extractWorkspacePathFromDoctorReportPath(filePath);
+}
+
+export type DashboardEvidenceRefreshContext = {
+  workspacePath?: string;
+  reportPath?: string;
+};
+
 type TimerHandle = ReturnType<typeof setTimeout>;
 
 type CreateDoctorTelemetryRefreshControllerOptions = {
-  onRefresh: (explicitWorkspacePath?: string) => void | Promise<void>;
+  onRefresh: (context?: DashboardEvidenceRefreshContext) => void | Promise<void>;
   onError?: (error: unknown) => void;
   delayMs?: number;
   setTimer?: (callback: () => void, delay: number) => TimerHandle;
@@ -30,8 +51,11 @@ export function createDoctorTelemetryRefreshController(
 
   return {
     schedule(filePath?: string) {
-      const explicitWorkspacePath = filePath
-        ? extractWorkspacePathFromDoctorReportPath(filePath)
+      const context: DashboardEvidenceRefreshContext | undefined = filePath
+        ? {
+            reportPath: filePath,
+            workspacePath: extractWorkspacePathFromReportPath(filePath),
+          }
         : undefined;
 
       if (timer) {
@@ -40,7 +64,7 @@ export function createDoctorTelemetryRefreshController(
 
       timer = setTimer(() => {
         timer = undefined;
-        void Promise.resolve(options.onRefresh(explicitWorkspacePath)).catch((error) => {
+        void Promise.resolve(options.onRefresh(context)).catch((error) => {
           onError(error);
         });
       }, delayMs);

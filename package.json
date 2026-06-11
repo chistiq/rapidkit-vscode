@@ -251,6 +251,12 @@
         "icon": "$(search)"
       },
       {
+        "command": "workspai.workspaceReadiness",
+        "title": "Workspace Readiness",
+        "category": "Workspai",
+        "icon": "$(pass)"
+      },
+      {
         "command": "workspai.workspaceRunInit",
         "title": "Workspace Run: Init",
         "category": "Workspai",
@@ -1710,12 +1716,16 @@
           "group": "release@1"
         },
         {
-          "command": "workspai.workspaceAutopilotRelease",
+          "command": "workspai.workspaceReadiness",
           "group": "release@2"
         },
         {
-          "command": "workspai.exportVerifyPackContract",
+          "command": "workspai.workspaceAutopilotRelease",
           "group": "release@3"
+        },
+        {
+          "command": "workspai.exportVerifyPackContract",
+          "group": "release@4"
         }
       ],
       "workspai.workspace.recovery": [
@@ -2005,51 +2015,7 @@
         "workspai.preferredModel": {
           "type": "string",
           "default": "auto",
-          "enum": [
-            "auto",
-            "claude-opus-4-6",
-            "claude-opus-4-5",
-            "claude-sonnet-4-6",
-            "claude-sonnet-4-5",
-            "claude-sonnet-4",
-            "claude-haiku-4-5",
-            "gpt-5.4",
-            "gpt-5.4-mini",
-            "gpt-5.3-codex",
-            "gpt-5.2-codex",
-            "gpt-5.2",
-            "gpt-5-mini",
-            "gpt-4.1",
-            "gpt-4o",
-            "gemini-3.1-pro",
-            "gemini-3-flash",
-            "gemini-2.5-pro",
-            "grok-code-fast-1",
-            "raptor-mini"
-          ],
-          "enumDescriptions": [
-            "Automatically select the best available Copilot model",
-            "Claude Opus 4.6 — strongest reasoning, 192K context (3x cost)",
-            "Claude Opus 4.5 — deep reasoning, 160K context (3x cost)",
-            "Claude Sonnet 4.6 — fast and highly capable, 160K context",
-            "Claude Sonnet 4.5 — balanced quality and speed, 160K context",
-            "Claude Sonnet 4 — solid all-rounder, 144K context",
-            "Claude Haiku 4.5 — ultra-fast, 160K context (0.33x cost)",
-            "GPT-5.4 — latest OpenAI flagship, 400K context",
-            "GPT-5.4 Mini — fast GPT-5.4, 400K context (0.33x cost)",
-            "GPT-5.3 Codex — code-optimised, 400K context",
-            "GPT-5.2 Codex — code-optimised, 400K context",
-            "GPT-5.2 — strong general model, 192K context",
-            "GPT-5 Mini — fast and free, 192K context",
-            "GPT-4.1 — reliable, 128K context (free)",
-            "GPT-4o — proven quality, 68K context (free)",
-            "Gemini 3.1 Pro — Google flagship, 173K context",
-            "Gemini 3 Flash — ultra-fast Google model, 173K context (0.33x cost)",
-            "Gemini 2.5 Pro — strong reasoning, 173K context",
-            "Grok Code Fast 1 — xAI code model (0.25x cost)",
-            "Raptor Mini — experimental (free)"
-          ],
-          "description": "Preferred AI model for Workspai AI features. Requires GitHub Copilot.",
+          "markdownDescription": "Preferred AI model for Workspai AI features. Use `auto` to pick the best entitled VS Code language model, or set a specific model id/name from `Developer: Show Language Model Information`. Requires GitHub Copilot or another compatible language-model extension.",
           "scope": "window"
         }
       }

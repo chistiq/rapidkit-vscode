@@ -10,9 +10,13 @@ import {
     Stethoscope,
     Terminal,
     TestTube,
-    Globe
+    Globe,
+    ScanLine,
+    Wand2,
 } from 'lucide-react';
 import type { WorkspaceStatus } from '@/types';
+import { ActionTile, ActionTileGrid } from './ActionTile';
+import { ColumnHeader } from './SectionHeader';
 
 interface ProjectActionsProps {
     workspaceStatus: WorkspaceStatus;
@@ -29,6 +33,8 @@ interface ProjectActionsProps {
     onImpact: () => void;
     onBrowser: () => void;
     onBuild: () => void;
+    onLint?: () => void;
+    onFormat?: () => void;
 }
 
 export function ProjectActions({
@@ -45,7 +51,9 @@ export function ProjectActions({
     onRelease,
     onImpact,
     onBrowser,
-    onBuild
+    onBuild,
+    onLint,
+    onFormat,
 }: ProjectActionsProps) {
     if (!workspaceStatus.hasWorkspace) {
         return null;
@@ -55,122 +63,53 @@ export function ProjectActions({
     const projectScope = workspaceStatus.projectName || workspaceStatus.projectType || 'Selected project';
 
     return (
-        <div className="project-actions-section">
-            <div className="project-actions-header">
-                <Package className="w-4 h-4" />
-                <span>Project Actions</span>
-                <span className="project-actions-name">{projectScope}</span>
-            </div>
-            <div className="project-actions-grid">
-                <button
-                    className="project-action-btn"
-                    onClick={onTerminal}
-                    title="Open Terminal"
-                >
-                    <Terminal size={18} />
-                    <span>Terminal</span>
-                </button>
-                <button
-                    className="project-action-btn"
-                    onClick={onInit}
-                    title="Install Dependencies"
-                >
-                    <Package size={18} />
-                    <span>Init</span>
-                </button>
-                {!isRunning ? (
-                    <button
-                        className="project-action-btn project-action-btn--primary"
-                        onClick={onDev}
-                        title="Start Dev Server"
-                    >
-                        <Play size={18} />
-                        <span>Dev</span>
-                    </button>
-                ) : (
-                    <button
-                        className="project-action-btn project-action-btn--danger"
+        <div className="workspai-action-panel">
+            <ColumnHeader title="Project actions" subtitle={projectScope} scope="project" />
+            <ActionTileGrid layout="project">
+                <ActionTile icon={<Terminal size={15} />} label="Terminal" detail="Shell access" onClick={onTerminal} title="Open Terminal" />
+                <ActionTile icon={<Package size={15} />} label="Init" detail="Install deps" onClick={onInit} title="Install Dependencies" />
+                {isRunning ? (
+                    <ActionTile
+                        icon={<Square size={15} />}
+                        label="Stop"
+                        detail="Stop dev server"
+                        variant="danger"
                         onClick={onStop}
                         title="Stop Server"
-                    >
-                        <Square size={18} />
-                        <span>Stop</span>
-                    </button>
+                    />
+                ) : (
+                    <ActionTile
+                        icon={<Play size={15} />}
+                        label="Dev"
+                        detail="Start server"
+                        variant="primary"
+                        onClick={onDev}
+                        title="Start Dev Server"
+                    />
                 )}
-                <button
-                    className="project-action-btn"
-                    onClick={onTest}
-                    title="Run Tests"
-                >
-                    <TestTube size={18} />
-                    <span>Test</span>
-                </button>
-                <button
-                    className="project-action-btn"
-                    onClick={onDoctor}
-                    title="Check Project Health"
-                >
-                    <Stethoscope size={18} />
-                    <span>Doctor</span>
-                </button>
-                <button
-                    className="project-action-btn"
-                    onClick={onArchitecture}
-                    title="Open Architecture Map"
-                >
-                    <GitBranch size={18} />
-                    <span>Map</span>
-                </button>
-                <button
-                    className="project-action-btn"
-                    onClick={onIncident}
-                    title="Analyze in Incident Studio"
-                >
-                    <BrainCircuit size={18} />
-                    <span>Incident</span>
-                </button>
-                <button
-                    className="project-action-btn"
-                    onClick={onAI}
-                    title="AI Assistant for this project"
-                >
-                    <BrainCircuit size={18} />
-                    <span>AI</span>
-                </button>
-                <button
-                    className="project-action-btn"
-                    onClick={onImpact}
-                    title="Assess Change Impact"
-                >
-                    <Layers size={18} />
-                    <span>Impact</span>
-                </button>
-                <button
-                    className="project-action-btn"
-                    onClick={onRelease}
-                    title="Release Readiness Commander"
-                >
-                    <ShieldCheck size={18} />
-                    <span>Release</span>
-                </button>
-                <button
-                    className="project-action-btn"
+                <ActionTile icon={<TestTube size={15} />} label="Test" detail="Run tests" onClick={onTest} title="Run Tests" />
+                {onLint ? (
+                    <ActionTile icon={<ScanLine size={15} />} label="Lint" detail="Static checks" onClick={onLint} title="Run Lint" />
+                ) : null}
+                {onFormat ? (
+                    <ActionTile icon={<Wand2 size={15} />} label="Format" detail="Code style" onClick={onFormat} title="Run Format" />
+                ) : null}
+                <ActionTile icon={<Stethoscope size={15} />} label="Doctor" detail="Health scan" onClick={onDoctor} title="Check Project Health" />
+                <ActionTile icon={<GitBranch size={15} />} label="Map" detail="Architecture" onClick={onArchitecture} title="Open Architecture Map" />
+                <ActionTile icon={<BrainCircuit size={15} />} label="Incident" detail="Studio analyze" onClick={onIncident} title="Analyze in Incident Studio" />
+                <ActionTile icon={<BrainCircuit size={15} />} label="AI" detail="Ask assistant" onClick={onAI} title="AI Assistant for this project" />
+                <ActionTile icon={<Layers size={15} />} label="Impact" detail="Change blast" onClick={onImpact} title="Assess Change Impact" />
+                <ActionTile icon={<ShieldCheck size={15} />} label="Release" detail="Readiness gate" onClick={onRelease} title="Release Readiness Commander" />
+                <ActionTile
+                    icon={<Globe size={15} />}
+                    label="Browser"
+                    detail={isRunning ? `Port ${workspaceStatus.runningPort || 8000}` : 'Start dev first'}
                     onClick={onBrowser}
-                    title={isRunning ? `Open in Browser (port ${workspaceStatus.runningPort || 8000})` : "Start server first"}
                     disabled={!isRunning}
-                >
-                    <Globe size={18} />
-                    <span>Browser</span>
-                </button>
-                <button
-                    className="project-action-btn project-action-btn--build"
-                    onClick={onBuild}
-                    title="Build Project"
-                >
-                    <Hammer size={18} />
-                    <span>Build</span>
-                </button>
-            </div>
+                    title={isRunning ? `Open in Browser (port ${workspaceStatus.runningPort || 8000})` : 'Start server first'}
+                />
+                <ActionTile icon={<Hammer size={15} />} label="Build" detail="Compile project" variant="warn" onClick={onBuild} title="Build Project" />
+            </ActionTileGrid>
         </div>
     );
 }

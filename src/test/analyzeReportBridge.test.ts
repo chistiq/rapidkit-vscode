@@ -30,21 +30,21 @@ describe('analyzeReportBridge', () => {
     });
   });
 
-  it('detects pending analyze evidence state', () => {
+  it('keeps pending until report load finishes even when exists is known', () => {
     expect(
       isAnalyzeEvidencePending({
         isLoading: true,
         report: null,
         error: null,
-        exists: null,
+        exists: false,
       })
     ).toBe(true);
     expect(
       isAnalyzeEvidencePending({
-        isLoading: true,
-        report: null,
-        error: 'missing',
-        exists: false,
+        isLoading: false,
+        report: { schemaVersion: '1', summary: {} },
+        error: null,
+        exists: true,
       })
     ).toBe(false);
   });
