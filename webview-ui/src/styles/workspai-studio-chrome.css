@@ -1805,6 +1805,40 @@ button, input, textarea, select {
     border-style: dashed;
 }
 
+.studio-action-outcome.is-guided-essentials {
+    padding: 8px 12px;
+    gap: 6px;
+}
+
+.studio-action-outcome.is-guided-essentials .studio-action-outcome__block {
+    gap: 3px;
+    font-size: 11px;
+}
+
+.studio-action-outcome.is-guided-essentials .studio-banner {
+    padding: 8px 10px;
+}
+
+.studio-action-outcome__guided-paths {
+    margin: 0;
+    font-size: 11px;
+    color: var(--ws-text-subtle);
+    font-family: var(--ws-font-mono, ui-monospace, monospace);
+}
+
+.studio-phase-gate.is-guided {
+    padding: 6px 10px;
+    gap: 8px;
+}
+
+.studio-phase-gate.is-guided .studio-phase-gate__label {
+    font-size: 11px;
+}
+
+[data-studio-density="guided"] .studio-decision-deck-card {
+    display: none;
+}
+
 [data-studio-viewport="compact"] .studio-topbar {
     flex-wrap: wrap;
     row-gap: 4px;

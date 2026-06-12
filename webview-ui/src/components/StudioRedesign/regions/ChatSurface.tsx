@@ -242,12 +242,14 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                         onAddActionItem={onAddActionItem}
                     />
                 ) : (
+                    !guidedMode ? (
                     <DecisionDeckCard
                         deck={decisionDeck}
                         onExecute={(command) => onSendMessage(command)}
                         compactMode={compactMode}
                         guidedMode={guidedMode}
                     />
+                    ) : null
                 )}
 
                 {messages.length === 0 ? (
@@ -336,6 +338,7 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                     presentation={actionOutcome}
                     actionResult={actionResult}
                     callbacks={actionOutcomeCallbacks}
+                    guidedMode={guidedMode}
                 />
             ) : null}
 
@@ -350,6 +353,7 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                         <PhaseAdvancementGate
                             currentPhase={currentPhase}
                             nextPhase={nextPhase}
+                            guidedMode={guidedMode}
                             onAdvance={() => onPhaseAdvance(nextPhase)}
                         />
                     );
@@ -421,19 +425,33 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
 interface PhaseAdvancementGateProps {
     currentPhase: IncidentPhase;
     nextPhase: IncidentPhase;
+    guidedMode?: boolean;
     onAdvance: () => void;
 }
 
-const PhaseAdvancementGate: React.FC<PhaseAdvancementGateProps> = ({ currentPhase, nextPhase, onAdvance }) => {
+const PhaseAdvancementGate: React.FC<PhaseAdvancementGateProps> = ({
+    currentPhase,
+    nextPhase,
+    guidedMode = false,
+    onAdvance,
+}) => {
     const currentLabel = PHASE_LABELS[currentPhase];
     const nextLabel = PHASE_LABELS[nextPhase];
     return (
-        <div className={studioClass.phaseGate}>
+        <div className={`${studioClass.phaseGate}${guidedMode ? ' is-guided' : ''}`}>
             <span className="studio-phase-gate__label">
-                ✓ <strong>{currentLabel}</strong> context gathered
+                {guidedMode ? (
+                    <>
+                        <strong>{currentLabel}</strong> complete — ready for {nextLabel}?
+                    </>
+                ) : (
+                    <>
+                        ✓ <strong>{currentLabel}</strong> context gathered
+                    </>
+                )}
             </span>
             <button type="button" onClick={onAdvance} className={studioClass.btnSuccess}>
-                Advance to {nextLabel} →
+                {guidedMode ? `Continue to ${nextLabel}` : `Advance to ${nextLabel} →`}
             </button>
         </div>
     );

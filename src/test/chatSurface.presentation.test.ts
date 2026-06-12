@@ -51,6 +51,7 @@ describe('ChatSurface presentation', () => {
     expect(html).toContain('Guided route');
     expect(html).toContain('Patch failing contract test');
     expect(html).toContain('Proof this worked');
+    expect(html).not.toContain('Decision Layer');
   });
 
   it('renders guided empty state copy when guidedMode is enabled', () => {

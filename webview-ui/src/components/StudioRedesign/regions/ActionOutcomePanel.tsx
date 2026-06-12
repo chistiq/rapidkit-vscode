@@ -19,6 +19,7 @@ interface ActionOutcomePanelProps {
     presentation: ActionOutcomePresentation;
     actionResult?: NormalizedIncidentActionResultPayload | null;
     callbacks?: ActionOutcomeCallbacks;
+    guidedMode?: boolean;
 }
 
 function bannerClassForTone(tone: ActionOutcomePresentation['headline']['tone']): string {
@@ -35,6 +36,7 @@ export const ActionOutcomePanel: React.FC<ActionOutcomePanelProps> = ({
     presentation,
     actionResult,
     callbacks,
+    guidedMode = false,
 }) => {
     const { headline, releaseSignalLabel, decisionClarity, reproPack, memoryTimeline } = presentation;
     const reproPackEvidence = actionResult?.incidentReproPack;
@@ -92,7 +94,10 @@ export const ActionOutcomePanel: React.FC<ActionOutcomePanelProps> = ({
     const showPatchReview = pendingPatches.length > 0 && callbacks?.onApplyPatch;
 
     return (
-        <section className="studio-action-outcome" aria-label="Latest action outcome">
+        <section
+            className={`studio-action-outcome${guidedMode ? ' is-guided-essentials' : ''}`}
+            aria-label="Latest action outcome"
+        >
             <div className={bannerClassForTone(headline.tone)}>
                 <strong>{headline.title}</strong>
                 <p>{headline.description}</p>
@@ -101,22 +106,37 @@ export const ActionOutcomePanel: React.FC<ActionOutcomePanelProps> = ({
 
             {decisionClarity ? (
                 <div className="studio-action-outcome__block">
-                    <p className={studioClass.sectionLabel}>Decision clarity</p>
+                    <p className={studioClass.sectionLabel}>
+                        {guidedMode ? 'Next step' : 'Decision clarity'}
+                    </p>
                     <p>Next action: {decisionClarity.nextAction}</p>
                     {decisionClarity.verifyLine ? <p>{decisionClarity.verifyLine}</p> : null}
-                    {decisionClarity.evidenceLine ? <p>{decisionClarity.evidenceLine}</p> : null}
+                    {!guidedMode && decisionClarity.evidenceLine ? (
+                        <p>{decisionClarity.evidenceLine}</p>
+                    ) : null}
                 </div>
             ) : null}
 
             {reproPack ? (
                 <div className="studio-action-outcome__block">
-                    <p className={studioClass.sectionLabel}>Incident repro pack</p>
-                    <p>Pack ID: {reproPack.packId}</p>
-                    <p>Sensitivity: {reproPack.sensitivityLabel}</p>
-                    <p>{reproPack.verifyChecklistCount} verify checks captured</p>
+                    <p className={studioClass.sectionLabel}>
+                        {guidedMode ? 'Verify repro' : 'Incident repro pack'}
+                    </p>
+                    {guidedMode ? (
+                        <p>
+                            {reproPack.verifyChecklistCount} verify check
+                            {reproPack.verifyChecklistCount === 1 ? '' : 's'} · {reproPack.sensitivityLabel}
+                        </p>
+                    ) : (
+                        <>
+                            <p>Pack ID: {reproPack.packId}</p>
+                            <p>Sensitivity: {reproPack.sensitivityLabel}</p>
+                            <p>{reproPack.verifyChecklistCount} verify checks captured</p>
+                        </>
+                    )}
                     {showReproActions ? (
                         <div className={studioClass.bannerActions}>
-                            {callbacks?.onExportReproPack && reproPackEvidence ? (
+                            {!guidedMode && callbacks?.onExportReproPack && reproPackEvidence ? (
                                 <button
                                     type="button"
                                     className={studioClass.btnGhost}
@@ -125,7 +145,7 @@ export const ActionOutcomePanel: React.FC<ActionOutcomePanelProps> = ({
                                     Export
                                 </button>
                             ) : null}
-                            {callbacks?.onImportReproPack ? (
+                            {!guidedMode && callbacks?.onImportReproPack ? (
                                 <button
                                     type="button"
                                     className={studioClass.btnGhost}
@@ -144,7 +164,7 @@ export const ActionOutcomePanel: React.FC<ActionOutcomePanelProps> = ({
                                         )
                                     }
                                 >
-                                    Replay
+                                    {guidedMode ? 'Run verify replay' : 'Replay'}
                                 </button>
                             ) : null}
                         </div>
@@ -154,45 +174,57 @@ export const ActionOutcomePanel: React.FC<ActionOutcomePanelProps> = ({
 
             {showPatchReview && multiFilePatch ? (
                 <div className="studio-action-outcome__block">
-                    <p className={studioClass.sectionLabel}>Multi-file patch review</p>
+                    <p className={studioClass.sectionLabel}>
+                        {guidedMode ? 'Apply fix' : 'Multi-file patch review'}
+                    </p>
                     <p>
                         {pendingPatches.length} pending file
-                        {pendingPatches.length === 1 ? '' : 's'} · patch {multiFilePatch.patchId}
+                        {pendingPatches.length === 1 ? '' : 's'}
+                        {!guidedMode ? ` · patch ${multiFilePatch.patchId}` : null}
                     </p>
-                    <ul className="studio-action-outcome__patch-list">
-                        {pendingPatches.map((patch) => (
-                            <li key={patch.relativePath}>
-                                <label className="studio-action-outcome__patch-row">
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedPaths.has(patch.relativePath)}
-                                        onChange={() => togglePatchPath(patch.relativePath)}
-                                    />
-                                    <span>{patch.relativePath}</span>
-                                </label>
-                            </li>
-                        ))}
-                    </ul>
-                    <label className="studio-action-outcome__patch-row">
-                        <input
-                            type="checkbox"
-                            checked={branchSafeApply}
-                            onChange={(event) => setBranchSafeApply(event.target.checked)}
-                        />
-                        <span>Apply on safety branch</span>
-                    </label>
+                    {!guidedMode ? (
+                        <ul className="studio-action-outcome__patch-list">
+                            {pendingPatches.map((patch) => (
+                                <li key={patch.relativePath}>
+                                    <label className="studio-action-outcome__patch-row">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedPaths.has(patch.relativePath)}
+                                            onChange={() => togglePatchPath(patch.relativePath)}
+                                        />
+                                        <span>{patch.relativePath}</span>
+                                    </label>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="studio-action-outcome__guided-paths">
+                            {pendingPaths.slice(0, 3).join(', ')}
+                            {pendingPaths.length > 3 ? ` +${pendingPaths.length - 3} more` : ''}
+                        </p>
+                    )}
+                    {!guidedMode ? (
+                        <label className="studio-action-outcome__patch-row">
+                            <input
+                                type="checkbox"
+                                checked={branchSafeApply}
+                                onChange={(event) => setBranchSafeApply(event.target.checked)}
+                            />
+                            <span>Apply on safety branch</span>
+                        </label>
+                    ) : null}
                     <button
                         type="button"
                         className={studioClass.btnPrimary}
                         disabled={selectedPaths.size === 0}
                         onClick={handleApplyPatch}
                     >
-                        Apply selected patches
+                        {guidedMode ? 'Apply selected fix' : 'Apply selected patches'}
                     </button>
                 </div>
             ) : null}
 
-            {memoryTimeline ? (
+            {memoryTimeline && !guidedMode ? (
                 <div className="studio-action-outcome__block">
                     <p className={studioClass.sectionLabel}>{memoryTimeline.heading}</p>
                     <ul className="studio-action-outcome__list">

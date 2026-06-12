@@ -243,4 +243,105 @@ describe('ActionOutcomePanel presentation', () => {
     expect(html).toContain('src/a.ts');
     expect(html).toContain('Apply selected patches');
   });
+
+  it('renders guided essentials without memory timeline or export actions', () => {
+    const presentation = buildActionOutcomePresentation({
+      success: false,
+      outputSummary: 'Captured repro pack for auth regression.',
+      incidentReproPack: {
+        packId: 'repro-pack-guided',
+        status: 'captured',
+        capturedAt: '2026-05-11T04:00:00Z',
+        schemaVersion: 'v1',
+        workspacePath: '/workspace/acme',
+        conversationId: 'conv-1',
+        actionId: 'action-1',
+        redaction: { policy: 'strict', applied: true, redactedFields: ['token'] },
+        summary: {
+          historyTurns: 4,
+          hasDoctorEvidence: true,
+          hasRollbackEvidence: false,
+          hasSandboxEvidence: false,
+          hasPredictiveWarning: true,
+          verifySuccess: false,
+          affectedFilesCount: 2,
+          blockedReasonCount: 1,
+        },
+        replayPayload: {
+          workspacePath: '/workspace/acme',
+          conversationId: 'conv-1',
+          actionType: 'doctor-fix',
+          riskLevel: 'high',
+          verifyChecklist: ['npm run test:integration'],
+          blockedReasons: ['scope unknown'],
+          relatedFiles: ['src/orders/service.ts'],
+        },
+        sensitivityLabel: 'restricted',
+      },
+      memoryInfluenceAuditTimeline: [
+        {
+          memoryEventId: 'memory-action-1-decision',
+          timestamp: '2026-05-11T04:00:01Z',
+          source: 'workspace-memory',
+          influenceKind: 'decision',
+          summary: 'Workspace memory context informed verify-first next step.',
+          policyProfile: 'strict',
+          sensitivity: 'sensitive',
+          localProcessingMode: true,
+          decisionArtifacts: { actionId: 'action-1', reproPackId: 'repro-pack-guided' },
+        },
+      ],
+    });
+
+    expect(presentation).not.toBeNull();
+    const html = renderToStaticMarkup(
+      createElement(ActionOutcomePanel, {
+        presentation: presentation!,
+        guidedMode: true,
+        callbacks: {
+          onReplayReproPack: () => undefined,
+        },
+        actionResult: {
+          success: false,
+          outputSummary: 'Captured repro pack for auth regression.',
+          incidentReproPack: {
+            packId: 'repro-pack-guided',
+            status: 'captured',
+            capturedAt: '2026-05-11T04:00:00Z',
+            schemaVersion: 'v1',
+            workspacePath: '/workspace/acme',
+            conversationId: 'conv-1',
+            actionId: 'action-1',
+            redaction: { policy: 'strict', applied: true, redactedFields: ['token'] },
+            summary: {
+              historyTurns: 4,
+              hasDoctorEvidence: true,
+              hasRollbackEvidence: false,
+              hasSandboxEvidence: false,
+              hasPredictiveWarning: true,
+              verifySuccess: false,
+              affectedFilesCount: 2,
+              blockedReasonCount: 1,
+            },
+            replayPayload: {
+              workspacePath: '/workspace/acme',
+              conversationId: 'conv-1',
+              actionType: 'doctor-fix',
+              riskLevel: 'high',
+              verifyChecklist: ['npm run test:integration'],
+              blockedReasons: ['scope unknown'],
+              relatedFiles: ['src/orders/service.ts'],
+            },
+            sensitivityLabel: 'restricted',
+          },
+        },
+      })
+    );
+
+    expect(html).toContain('is-guided-essentials');
+    expect(html).toContain('Verify repro');
+    expect(html).toContain('Run verify replay');
+    expect(html).not.toContain('Export');
+    expect(html).not.toContain('Memory influence timeline');
+  });
 });
