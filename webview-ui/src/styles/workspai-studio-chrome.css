@@ -1747,6 +1747,32 @@ button, input, textarea, select {
     max-width: 420px;
 }
 
+.studio-empty-state__guided-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 4px;
+    max-width: 480px;
+}
+
+.studio-command-ribbon.is-lite-view .studio-command-ribbon__summary {
+    max-width: 200px;
+}
+
+.studio-command-ribbon.is-lite-view .studio-command-ribbon__metrics .studio-metric:nth-child(n + 3) {
+    display: none;
+}
+
+[data-studio-view-mode="lite"] .studio-topbar__group-label {
+    font-size: 8.5px;
+    letter-spacing: 0.05em;
+}
+
+[data-studio-view-mode="lite"] .studio-mission-control__ops {
+    border-top-color: color-mix(in srgb, var(--ws-border-subtle) 55%, transparent);
+}
+
 .studio-composer {
     border-top: 1px solid var(--ws-border-subtle);
     padding: 10px 14px;

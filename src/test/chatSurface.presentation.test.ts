@@ -63,10 +63,13 @@ describe('ChatSurface presentation', () => {
         onSendMessage: () => {},
         userMode: 'guided',
         guidedMode: true,
+        onRunGuidedCommand: () => {},
       })
     );
 
     expect(html).toContain('One safe route to resolution');
     expect(html).toContain('guided chips');
+    expect(html).toContain('Run workspace doctor');
+    expect(html).toContain('studio-empty-state__guided-actions');
   });
 });

@@ -514,6 +514,7 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
             className={embedded ? studioClass.shellEmbedded : studioClass.shell}
             data-studio-theme-kind={studioThemeKind}
             data-studio-density={studioDensity}
+            data-studio-view-mode={studioDisplayMode}
             data-studio-viewport={viewportTier}
         >
             <div className={studioClass.workspace}>

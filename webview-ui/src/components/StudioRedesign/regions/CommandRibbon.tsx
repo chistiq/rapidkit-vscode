@@ -78,6 +78,7 @@ export const CommandRibbon: React.FC<CommandRibbonProps> = ({
         studioClass.commandRibbon,
         merged ? 'studio-command-ribbon--merged' : 'studio-command-ribbon--standalone',
         compactMode ? 'is-compact' : undefined,
+        displayMode === 'lite' ? 'is-lite-view' : undefined,
     ].filter(Boolean).join(' ');
 
     return (

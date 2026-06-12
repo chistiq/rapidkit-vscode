@@ -263,23 +263,38 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                                 ? 'Evidence is ready. Use the guided chips below for the next deterministic step, then verify before claiming completion.'
                                 : 'Evidence is loaded. Ask Studio to explain findings, map blast radius, or validate release gates with explicit proof.'}
                         </div>
-                        <div className={studioClass.starterActions}>
-                            <ActionChip
-                                icon={<Zap size={14} />}
-                                label="Run Analyze"
-                                onClick={() => onSendMessage(STUDIO_ACTION_COMMANDS.runAnalyze)}
-                            />
-                            <ActionChip
-                                icon={<Lightbulb size={14} />}
-                                label="Impact Lens"
-                                onClick={() => onSendMessage(STUDIO_ACTION_COMMANDS.impactLens)}
-                            />
-                            <ActionChip
-                                icon={<Code size={14} />}
-                                label="Verify Gates"
-                                onClick={() => onSendMessage(STUDIO_ACTION_COMMANDS.verifyGates)}
-                            />
-                        </div>
+                        {guidedMode && guidedIntentChips.length > 0 && onRunGuidedCommand ? (
+                            <div
+                                className="studio-empty-state__guided-actions"
+                                aria-label="Guided intent chips"
+                            >
+                                {guidedIntentChips.map((chip) => (
+                                    <GuidedIntentChipButton
+                                        key={chip.id}
+                                        chip={chip}
+                                        onRun={onRunGuidedCommand}
+                                    />
+                                ))}
+                            </div>
+                        ) : (
+                            <div className={studioClass.starterActions}>
+                                <ActionChip
+                                    icon={<Zap size={14} />}
+                                    label="Run Analyze"
+                                    onClick={() => onSendMessage(STUDIO_ACTION_COMMANDS.runAnalyze)}
+                                />
+                                <ActionChip
+                                    icon={<Lightbulb size={14} />}
+                                    label="Impact Lens"
+                                    onClick={() => onSendMessage(STUDIO_ACTION_COMMANDS.impactLens)}
+                                />
+                                <ActionChip
+                                    icon={<Code size={14} />}
+                                    label="Verify Gates"
+                                    onClick={() => onSendMessage(STUDIO_ACTION_COMMANDS.verifyGates)}
+                                />
+                            </div>
+                        )}
                     </div>
                 ) : (
                     messages.map((msg) => (
