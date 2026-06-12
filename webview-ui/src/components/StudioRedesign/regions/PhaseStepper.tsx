@@ -1,5 +1,5 @@
 import React from 'react';
-import { IncidentPhase, PHASE_LABELS, PHASE_SEQUENCE, PHASE_SHORT } from '../state/studioState';
+import { IncidentPhase, PHASE_HINTS, PHASE_LABELS, PHASE_SEQUENCE, PHASE_SHORT } from '../state/studioState';
 import { studioClass } from '../styles/studioUi';
 
 interface PhaseStepperProps {
@@ -35,18 +35,31 @@ export const PhaseStepper: React.FC<PhaseStepperProps> = ({
                     .join(' ');
                 const label = guidedMode ? PHASE_SHORT[phase] : PHASE_LABELS[phase];
 
+                const phaseHint = PHASE_HINTS[phase];
+
                 return (
                     <button
                         key={phase}
                         type="button"
                         className={stepClass}
-                        aria-label={`Phase ${idx + 1}: ${PHASE_LABELS[phase]}`}
+                        aria-label={`Phase ${idx + 1}: ${PHASE_LABELS[phase]}. ${phaseHint}`}
                         aria-current={isActive ? 'step' : undefined}
+                        aria-describedby={isActive ? `studio-phase-hint-${phase}` : undefined}
                         onClick={() => onSelectPhase(phase)}
-                        title={PHASE_LABELS[phase]}
+                        title={phaseHint}
                     >
-                        <span className="studio-phase-step__index">{isDone ? '✓' : idx + 1}</span>
-                        {showLabels ? <span>{label}</span> : null}
+                        <span className="studio-phase-step__main">
+                            <span className="studio-phase-step__index">{isDone ? '✓' : idx + 1}</span>
+                            {showLabels ? <span className="studio-phase-step__label">{label}</span> : null}
+                        </span>
+                        {isActive && showLabels ? (
+                            <span
+                                id={`studio-phase-hint-${phase}`}
+                                className="studio-phase-step__hint"
+                            >
+                                {phaseHint}
+                            </span>
+                        ) : null}
                     </button>
                 );
             })}

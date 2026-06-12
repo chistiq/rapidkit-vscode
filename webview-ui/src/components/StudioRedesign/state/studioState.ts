@@ -233,6 +233,15 @@ export const PHASE_SHORT: Record<IncidentPhase, string> = {
   learn: 'Learn',
 };
 
+/** Enterprise workflow hints surfaced in phase stepper tooltips */
+export const PHASE_HINTS: Record<IncidentPhase, string> = {
+  detect: 'Capture signals, confirm scope, and establish blast radius before deeper analysis.',
+  diagnose: 'Correlate evidence to isolate root cause with traceable, reproducible proof.',
+  plan: 'Define remediation steps, ownership, and rollback posture before execution.',
+  verify: 'Run deterministic checks and release gates before claiming resolution.',
+  learn: 'Document outcomes, stabilization proof, and post-incident improvements.',
+};
+
 export const USER_MODE_LABELS: Record<UserMode, string> = {
   guided: 'Guided (1 safe route)',
   standard: 'Standard (balanced)',

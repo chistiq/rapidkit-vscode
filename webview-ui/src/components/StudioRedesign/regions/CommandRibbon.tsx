@@ -3,6 +3,7 @@ import { Activity, CheckCircle2, PlayCircle, ShieldAlert } from 'lucide-react';
 import {
     AIActionRegistryView,
     IncidentPhase,
+    PHASE_LABELS,
     PolicyGateState,
     ReleaseGatePosture,
     StudioActionStatus,
@@ -11,6 +12,7 @@ import {
 import { STUDIO_ACTION_COMMANDS, StudioActionCommand } from '../state/studioActions';
 import { buildStudioPosture } from '../state/studioPosture';
 import { studioClass, postureToneClass } from '../styles/studioUi';
+import type { StudioPostureTone } from '../state/studioPosture';
 import type { LiteReleaseState } from '../../../lib/incidentStudioLiteMode';
 import { mapLiteReleaseTone } from '../../../lib/incidentStudioLiteMode';
 import type { IncidentStudioDisplayMode } from '../../../lib/incidentStudioPreferences';
@@ -74,11 +76,14 @@ export const CommandRibbon: React.FC<CommandRibbonProps> = ({
                     ? `score ${actionResult.score}`
                     : status.proof;
 
+    const isLiteView = displayMode === 'lite';
+    const liteStatusLine = `${PHASE_LABELS[currentPhase]} · ${actionValue}${proofValue !== status.proof ? ` · ${proofValue}` : ''}`;
+
     const ribbonClass = [
         studioClass.commandRibbon,
         merged ? 'studio-command-ribbon--merged' : 'studio-command-ribbon--standalone',
         compactMode ? 'is-compact' : undefined,
-        displayMode === 'lite' ? 'is-lite-view' : undefined,
+        isLiteView ? 'is-lite-view' : undefined,
     ].filter(Boolean).join(' ');
 
     return (
@@ -97,24 +102,35 @@ export const CommandRibbon: React.FC<CommandRibbonProps> = ({
                 <span className="studio-command-ribbon__summary" title={status.summary}>
                     {status.summary}
                 </span>
+                {isLiteView ? (
+                    <span
+                        className="studio-command-ribbon__lite-line"
+                        title={liteStatusLine}
+                        aria-label={`Operational status: ${liteStatusLine}`}
+                    >
+                        {liteStatusLine}
+                    </span>
+                ) : null}
             </div>
 
-            <div className="studio-command-ribbon__metrics">
-                <RibbonMetric label="Phase" value={currentPhase} />
-                {!compactMode ? <RibbonMetric label="Evidence" value={status.evidence} /> : null}
-                <RibbonMetric
-                    label="Action"
-                    value={actionValue}
-                    tone={
-                        studioActionStatus?.status === 'failed'
-                            ? 'error'
-                            : studioActionStatus?.status === 'started'
-                                ? 'warning'
-                                : undefined
-                    }
-                />
-                {!compactMode ? <RibbonMetric label="Proof" value={proofValue} /> : null}
-            </div>
+            {!isLiteView ? (
+                <div className="studio-command-ribbon__metrics">
+                    <RibbonMetric label="Phase" value={currentPhase} />
+                    {!compactMode ? <RibbonMetric label="Evidence" value={status.evidence} /> : null}
+                    <RibbonMetric
+                        label="Action"
+                        value={actionValue}
+                        tone={
+                            studioActionStatus?.status === 'failed'
+                                ? 'error'
+                                : studioActionStatus?.status === 'started'
+                                    ? 'warning'
+                                    : undefined
+                        }
+                    />
+                    {!compactMode ? <RibbonMetric label="Proof" value={proofValue} /> : null}
+                </div>
+            ) : null}
 
             <div className="studio-command-ribbon__actions">
                 <RibbonButton

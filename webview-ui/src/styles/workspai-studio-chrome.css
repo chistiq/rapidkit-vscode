@@ -1121,6 +1121,32 @@ button, input, textarea, select {
     border-color: color-mix(in srgb, var(--ws-accent) 38%, transparent);
     background: color-mix(in srgb, var(--ws-accent) 10%, var(--ws-surface));
     font-weight: 750;
+    flex-direction: column;
+    align-items: flex-start;
+    white-space: normal;
+    min-width: 120px;
+    max-width: 240px;
+}
+
+.studio-phase-step__main {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.studio-phase-step__label {
+    line-height: 1.1;
+}
+
+.studio-phase-step__hint {
+    margin-top: 4px;
+    padding-left: 22px;
+    font-size: 9px;
+    font-weight: 500;
+    line-height: 1.35;
+    color: var(--ws-text-subtle);
+    text-align: left;
+    white-space: normal;
 }
 
 .studio-phase-step.is-done {
@@ -1757,11 +1783,58 @@ button, input, textarea, select {
 }
 
 .studio-command-ribbon.is-lite-view .studio-command-ribbon__summary {
-    max-width: 200px;
+    max-width: 180px;
 }
 
-.studio-command-ribbon.is-lite-view .studio-command-ribbon__metrics .studio-metric:nth-child(n + 3) {
+.studio-command-ribbon.is-lite-view .studio-command-ribbon__lite-line {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 10.5px;
+    font-weight: 650;
+    color: var(--ws-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.studio-context-panel.is-guided-essentials .studio-context-guided-release__card {
+    border-color: color-mix(in srgb, var(--ws-accent) 22%, var(--ws-border-subtle));
+}
+
+.studio-context-guided-empty {
+    border-style: dashed;
+}
+
+[data-studio-viewport="compact"] .studio-topbar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+}
+
+[data-studio-viewport="compact"] .studio-topbar__spacer {
     display: none;
+}
+
+[data-studio-viewport="compact"] .studio-topbar__ops-cluster {
+    width: 100%;
+    justify-content: flex-end;
+    gap: 8px;
+    padding-bottom: 2px;
+}
+
+[data-studio-viewport="compact"] .studio-topbar__group-label {
+    font-size: 8px;
+    letter-spacing: 0.04em;
+}
+
+[data-studio-viewport="compact"] .studio-topbar__group-body {
+    min-height: 22px;
+}
+
+[data-studio-viewport="compact"] .studio-topbar__title {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 [data-studio-view-mode="lite"] .studio-topbar__group-label {

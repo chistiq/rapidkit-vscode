@@ -91,6 +91,58 @@ function mapRelatedFilesToModules(relatedFiles: RelatedFile[], health: HealthMet
     }));
 }
 
+const GuidedReleaseGateSection: React.FC<{
+    policyGates: PolicyGateState;
+    releasePosture: ReleaseGatePosture;
+}> = ({ policyGates, releasePosture }) => {
+    const releaseTone = releasePostureToneClass(policyGates.releasePosture);
+    const flowLabel =
+        policyGates.flowState === 'passing'
+            ? 'Flow verified'
+            : policyGates.flowState === 'warning'
+              ? 'Flow degraded'
+              : 'Flow blocked';
+    const flowTone =
+        policyGates.flowState === 'passing'
+            ? studioClass.toneOk
+            : policyGates.flowState === 'warning'
+              ? studioClass.toneWarn
+              : studioClass.toneError;
+
+    return (
+        <section className={`${studioClass.contextSection} studio-context-guided-release`}>
+            <div className={studioClass.sectionLabel}>Release Gate</div>
+            <div className={`${studioClass.card} is-active studio-context-guided-release__card ${releaseTone}`}>
+                <div className={studioClass.between}>
+                    <div className={`${studioClass.rowSm} ${studioClass.minW0}`}>
+                        <span className={`studio-status-dot studio-status-dot--md ${releaseTone}`} />
+                        <span className={`${studioClass.h2} ${releaseTone}`}>
+                            {RELEASE_GATE_LABELS[policyGates.releasePosture]}
+                        </span>
+                    </div>
+                    <span className={`${studioClass.statusPill} ${flowTone}`}>{flowLabel}</span>
+                </div>
+                <p className={`${studioClass.bodySmall} studio-u-text-muted ${studioClass.mtSm}`}>
+                    Enterprise release decision from flow verification and stabilization posture. Complete verify
+                    before claiming resolution.
+                </p>
+                <div className={studioClass.traceGrid}>
+                    <div className={studioClass.metric}>
+                        <span className={studioClass.metricLabel}>Release posture</span>
+                        <span className={`${studioClass.metricValue} ${releaseTone}`}>
+                            {RELEASE_GATE_LABELS[releasePosture]}
+                        </span>
+                    </div>
+                    <div className={studioClass.metric}>
+                        <span className={studioClass.metricLabel}>Flow gate</span>
+                        <span className={`${studioClass.metricValue} ${flowTone}`}>{flowLabel}</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+    );
+};
+
 const OperationalPostureCard: React.FC<{ posture: StudioPosture; compactGuided?: boolean }> = ({
     posture,
     compactGuided = false,
@@ -294,7 +346,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
     };
 
     return (
-        <div className={`${studioClass.rail} ${studioClass.contextPanel}`}>
+        <div className={`${studioClass.rail} ${studioClass.contextPanel}${isGuided ? ' is-guided-essentials' : ''}`}>
             <div className={studioClass.panelHeader}>
                 <div className={studioClass.panelHeaderTitle}>
                     <span className={studioClass.kicker}>Operational Context</span>
@@ -304,8 +356,13 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                 </div>
             </div>
 
-            <OperationalPostureCard posture={operationalPosture} compactGuided={isGuided} />
+            {isGuided ? (
+                <GuidedReleaseGateSection policyGates={policyGates} releasePosture={releasePosture} />
+            ) : (
+                <OperationalPostureCard posture={operationalPosture} compactGuided={false} />
+            )}
 
+            {!isGuided ? (
             <section className={studioClass.contextSection}>
                 <div className={studioClass.sectionLabel}>System Health</div>
                 <div className={studioClass.card}>
@@ -337,14 +394,14 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                     ) : null}
                 </div>
             </section>
+            ) : null}
 
+            {!isGuided ? (
             <section className={studioClass.contextSection}>
                 <div className={studioClass.sectionLabel}>Policy Gates</div>
                 <div className={studioClass.stackSm}>
                     <PolicyGateBadge label="Flow State" state={policyGates.flowState} />
-                    {!isGuided ? (
-                        <PolicyGateBadge label="Telemetry" state={policyGates.telemetryState} />
-                    ) : null}
+                    <PolicyGateBadge label="Telemetry" state={policyGates.telemetryState} />
 
                     <div className={studioClass.card}>
                         <div className={`${studioClass.kicker} ${studioClass.mbSm}`}>Release Posture</div>
@@ -361,6 +418,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                     </div>
                 </div>
             </section>
+            ) : null}
 
             {stabilizationKpiStatus ? (
                 <section className={studioClass.contextSection}>
@@ -422,9 +480,19 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                         )}
                     </div>
                 </section>
+            ) : isGuided ? (
+                <section className={studioClass.contextSection}>
+                    <div className={studioClass.sectionLabel}>Stabilization KPI</div>
+                    <div className={`${studioClass.card} studio-context-guided-empty`}>
+                        <p className={`${studioClass.bodySmall} studio-u-text-muted`}>
+                            Stabilization telemetry is not loaded yet. Run verify to hydrate enterprise KPIs before
+                            claiming release readiness.
+                        </p>
+                    </div>
+                </section>
             ) : null}
 
-            {aiActionContract ? (
+            {!isGuided && aiActionContract ? (
                 <section className={studioClass.contextSection}>
                     <div className={studioClass.sectionLabel}>AI Action Gate</div>
                     <div
@@ -569,7 +637,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                 </section>
             ) : null}
 
-            {aiActionRegistry?.entries.length ? (
+            {!isGuided && aiActionRegistry?.entries.length ? (
                 <section className={studioClass.contextSection}>
                     <div className={studioClass.sectionLabel}>AI Action History</div>
                     <div className={studioClass.stackSm}>
@@ -771,7 +839,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                         </div>
                     </section>
                 </>
-            ) : (
+            ) : !isGuided ? (
                 <section className={studioClass.contextSection}>
                     <div className={studioClass.sectionLabel}>Quick Insight</div>
                     <div className={studioClass.traceGrid}>
@@ -779,8 +847,9 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                         <TraceabilityTile label="Release" value={RELEASE_GATE_LABELS[policyGates.releasePosture]} />
                     </div>
                 </section>
-            )}
+            ) : null}
 
+            {!isGuided ? (
             <section className={`${studioClass.contextSection} ${studioClass.scrollSection}`}>
                 <div className={studioClass.sectionLabel}>Related Files</div>
                 <div className={studioClass.stackSm}>
@@ -816,13 +885,9 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                             );
                         })
                     )}
-                    {isGuided && relatedFiles.length > visibleRelatedFiles.length ? (
-                        <div className="studio-context-empty">
-                            +{relatedFiles.length - visibleRelatedFiles.length} more in standard/expert mode
-                        </div>
-                    ) : null}
                 </div>
             </section>
+            ) : null}
         </div>
     );
 };
