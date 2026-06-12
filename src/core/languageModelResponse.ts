@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 
+const STREAM_DRAIN_TIMEOUT_MS = 250;
+
 function appendTextPart(rawText: string, part: unknown): string {
   if (part instanceof vscode.LanguageModelTextPart) {
     return rawText + part.value;
@@ -16,6 +18,12 @@ function appendTextPart(rawText: string, part: unknown): string {
   return rawText;
 }
 
+function timeoutAfter(ms: number): Promise<'timeout'> {
+  return new Promise((resolve) => {
+    setTimeout(() => resolve('timeout'), ms);
+  });
+}
+
 /**
  * Read all text from a Language Model response.
  * Some VS Code builds/providers populate `stream`, others are easier via `text`.
@@ -26,15 +34,42 @@ export async function readLanguageModelResponseText(
 ): Promise<string> {
   let rawText = '';
 
-  try {
-    for await (const part of response.stream) {
-      if (token?.isCancellationRequested) {
-        break;
+  const iterator = response.stream?.[Symbol.asyncIterator]?.();
+
+  if (iterator) {
+    try {
+      while (!token?.isCancellationRequested) {
+        const next = await Promise.race([iterator.next(), timeoutAfter(STREAM_DRAIN_TIMEOUT_MS)]);
+        if (next === 'timeout') {
+          break;
+        }
+        if (next.done) {
+          break;
+        }
+        rawText = appendTextPart(rawText, next.value);
       }
-      rawText = appendTextPart(rawText, part);
+    } catch {
+      // Fall through to response.text when stream fails or is already consumed.
+    } finally {
+      if (!rawText.trim() && typeof iterator.return === 'function') {
+        try {
+          await iterator.return();
+        } catch {
+          // Ignore cleanup failures from provider iterators.
+        }
+      }
     }
-  } catch {
-    // Fall through to response.text when stream fails or is already consumed.
+  } else {
+    try {
+      for await (const part of response.stream) {
+        if (token?.isCancellationRequested) {
+          break;
+        }
+        rawText = appendTextPart(rawText, part);
+      }
+    } catch {
+      // Fall through to response.text when stream fails or is already consumed.
+    }
   }
 
   if (rawText.trim()) {

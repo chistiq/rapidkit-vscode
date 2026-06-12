@@ -219,7 +219,7 @@ async function handleWorkspaiRequest(
         prepared.validation.clarificationReason ??
         'I need workspace evidence first to give a safe answer.'
       }\n\n` +
-        'Please select the workspace/project and run `npx --yes --package rapidkit rapidkit doctor workspace`, then retry your request.'
+        'Please select the workspace/project and run `npx rapidkit doctor workspace`, then retry your request.'
     );
     return {
       metadata: {

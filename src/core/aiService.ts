@@ -1451,7 +1451,11 @@ export async function parseCreationIntent(
   mode: 'workspace' | 'project',
   frameworkHint?: string,
   workspacePath?: string,
-  token?: vscode.CancellationToken
+  token?: vscode.CancellationToken,
+  textProvider?: (
+    messages: AIMessage[],
+    token?: vscode.CancellationToken
+  ) => Promise<{ text: string; modelId: string }>
 ): Promise<{ plan: AICreationPlan; modelId: string; planSource: 'llm' | 'heuristic' }> {
   const logger = Logger.getInstance();
   const liveModules = await getWorkspaceAwareLiveModules(workspacePath);
@@ -1521,15 +1525,28 @@ Rules:
   let planSource: 'llm' | 'heuristic' = 'heuristic';
 
   try {
-    const { model, modelId: selectedModelId } = await selectModelAuto();
-    modelId = selectedModelId;
-    const lmMessages = [
-      vscode.LanguageModelChatMessage.User(SYSTEM),
-      vscode.LanguageModelChatMessage.Assistant('I will respond with only the JSON object.'),
-      vscode.LanguageModelChatMessage.User(USER),
-    ];
-    const response = await model.sendRequest(lmMessages, {}, token);
-    rawText = await readLanguageModelResponseText(response, token);
+    if (textProvider) {
+      const response = await textProvider(
+        [
+          { role: 'user', content: SYSTEM },
+          { role: 'assistant', content: 'I will respond with only the JSON object.' },
+          { role: 'user', content: USER },
+        ],
+        token
+      );
+      modelId = response.modelId;
+      rawText = response.text;
+    } else {
+      const { model, modelId: selectedModelId } = await selectModelAuto();
+      modelId = selectedModelId;
+      const lmMessages = [
+        vscode.LanguageModelChatMessage.User(SYSTEM),
+        vscode.LanguageModelChatMessage.Assistant('I will respond with only the JSON object.'),
+        vscode.LanguageModelChatMessage.User(USER),
+      ];
+      const response = await model.sendRequest(lmMessages, {}, token);
+      rawText = await readLanguageModelResponseText(response, token);
+    }
     if (rawText.trim()) {
       planSource = 'llm';
     }

@@ -6,9 +6,11 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs-extra';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { WorkspaceManager } from '../../core/workspaceManager';
 import { ModulesCatalogService } from '../../core/modulesCatalogService';
 import { CoreVersionService } from '../../core/coreVersionService';
+import { resolveCatalogWorkspaceRoot } from '../../utils/coreRuntimeResolver';
 import { ExamplesService } from '../../core/examplesService';
 import { KitsService } from '../../core/kitsService';
 import { WorkspaceMemoryService } from '../../core/workspaceMemoryService';
@@ -17,8 +19,17 @@ import { readLanguageModelResponseText } from '../../core/languageModelResponse'
 import {
   openWorkspaiExtensionSettings,
   readWorkspaiSettings,
+  setWorkspaiAIProvider,
+  setWorkspaiCustomAIConfig,
   setWorkspaiPreferredModel,
 } from '../../core/workspaiSettingsBridge';
+import {
+  clearCustomAIAPIKey,
+  askConfiguredAIProvider,
+  getAIProviderStatus,
+  runConfiguredAIProviderHealthCheck,
+  setCustomAIAPIKey,
+} from '../../core/aiProviderService';
 import type { AIOutputScenario } from '../../core/aiOutputQuality';
 import { isWorkspacePathAncestor } from '../../core/aiContextResolver';
 import {
@@ -46,20 +57,21 @@ import {
 import { MODULES, ModuleData } from '../../data/modules';
 import { runningServers } from '../../extension';
 import { run } from '../../utils/exec';
-import { getWorkspaceVenvRapidkitCandidates } from '../../utils/platformCapabilities';
+import {
+  buildRapidkitDisplayCommand,
+  getWorkspaceVenvRapidkitCandidates,
+  toPinnedRapidkitExecutionCommand,
+} from '../../utils/platformCapabilities';
 import { isPoetryInstalledCached } from '../../utils/poetryHelper';
 import { checkPythonEnvironmentCached } from '../../utils/pythonChecker';
-import {
-  runCommandsInTerminal,
-  runRapidkitCommandsInTerminal,
-  runShellCommandInTerminal,
-} from '../../utils/terminalExecutor';
+import { runCommandsInTerminal, runShellCommandInTerminal } from '../../utils/terminalExecutor';
 import { WorkspaceUsageTracker } from '../../utils/workspaceUsageTracker';
 import type { WorkspaceExplorerProvider } from '../treeviews/workspaceExplorer';
 import {
   createDoctorTelemetryRefreshController,
   type DashboardEvidenceRefreshContext,
 } from './doctorTelemetryRefresh';
+import { SetupPanel } from './setupExperiencePanel.js';
 import {
   buildDashboardEvidenceBundle,
   resolveCardForReportKind,
@@ -71,6 +83,7 @@ import {
   getDashboardActivityLog,
   resolveDashboardCommandActivity,
 } from '../../core/dashboardActivityBridge';
+import { resolveDashboardCommandContract } from '../../core/dashboardCommandContracts';
 import {
   advanceDashboardOpsChain,
   getDashboardOpsChain,
@@ -96,9 +109,33 @@ import { buildSyncSystemGraphSnapshot } from './incidentStudioSyncGraph';
 import { buildIncidentLifecycleMetrics } from './incidentConversationMetrics';
 import {
   analyzeReportExists,
+  getAnalyzeReportPath,
   loadAnalyzeReport,
   runWorkspaceAnalyze,
+  type AnalyzeReport,
 } from './incidentStudioAnalyze';
+import {
+  getLatestRunnableAIAction,
+  readAIActionRegistry,
+  recordAIActionContract,
+  recordAIActionExecution,
+} from '../../core/aiActionRegistry';
+import {
+  AIActionContract,
+  AIActionOperation,
+  parseAIActionContractFromText,
+  validateAIActionContract,
+} from '../../core/aiActionContract';
+import { AIActionExecutionResult, runAIActionContractOperation } from '../../core/aiActionExecutor';
+import {
+  buildIncidentStudioEvidenceContext,
+  renderIncidentStudioEvidencePrompt,
+} from '../../core/incidentStudioEvidenceContext';
+import {
+  captureAIActionPreflightSnapshot,
+  compareAIActionPreflightSnapshots,
+} from '../../core/aiActionSafety';
+import { isStudioActionId } from '../../core/studioActionCommands';
 import { ProjectSelectionSequence } from './projectSelectionSequence';
 import { buildIncidentResumeSnapshot, type IncidentResumeSnapshot } from './incidentStudioResume';
 import {
@@ -205,6 +242,10 @@ export class WelcomePanel {
   private static _selectedProject: { name: string; path: string; type?: string } | null = null;
   private static _projectSelectionSequence = new ProjectSelectionSequence();
   private _modulesCatalog: ModuleData[] = MODULES;
+  private _runningStudioActionId: string | null = null;
+  private _runningDashboardAIActionOperation: AIActionOperation | null = null;
+  private _latestDashboardAIActionContract: AIActionContract | null = null;
+  private _latestDashboardAIActionId: string | null = null;
   private static _workspaceExplorer: WorkspaceExplorerProvider | undefined;
   /** Framework name queued to open as a modal after the webview becomes ready */
   private static _pendingModal: string | null = null;
@@ -244,6 +285,8 @@ export class WelcomePanel {
       };
     };
   } | null = null;
+  /** Setup tab switch queued until dashboard webview is ready */
+  private static _pendingSetupTabOpen = false;
   /** Cached extension context so static methods can open the panel */
   private static _extensionContext: vscode.ExtensionContext | undefined;
 
@@ -451,6 +494,35 @@ export class WelcomePanel {
       title: 'Workspai Dashboard',
       viewColumn: vscode.ViewColumn.Active,
     });
+  }
+
+  /**
+   * Focus dashboard tab and switch to embedded Setup Center.
+   */
+  public static openSetupTab(context: vscode.ExtensionContext): void {
+    if (WelcomePanel._dashboardPanel?._isReady) {
+      WelcomePanel.currentPanel = WelcomePanel._dashboardPanel;
+      WelcomePanel._dashboardPanel._panel.reveal();
+      WelcomePanel._dashboardPanel._panel.webview.postMessage({
+        command: 'setActiveView',
+        data: { view: 'setup' },
+      });
+      SetupPanel.bootstrapEmbedded(context, WelcomePanel._dashboardPanel._panel.webview);
+      return;
+    }
+
+    if (WelcomePanel._dashboardPanel) {
+      WelcomePanel.currentPanel = WelcomePanel._dashboardPanel;
+      WelcomePanel._dashboardPanel._panel.reveal();
+      WelcomePanel._pendingSetupTabOpen = true;
+      return;
+    }
+
+    WelcomePanel.createOrShow(context, {
+      title: 'Workspai Dashboard',
+      viewColumn: vscode.ViewColumn.Active,
+    });
+    WelcomePanel._pendingSetupTabOpen = true;
   }
 
   /**
@@ -665,19 +737,38 @@ export class WelcomePanel {
   }
 
   /**
-   * After a workspace is imported from disk or archive, kick off the governance ops chain
-   * on the dashboard and refresh recent workspace evidence.
+   * After a workspace is onboarded (import, create, add, clone, AI-create), kick off the
+   * governance ops chain on the dashboard and refresh recent workspace evidence.
+   */
+  public static async notifyWorkspaceGovernanceChain(
+    workspacePath: string,
+    workspaceName: string | undefined,
+    triggeredBy: 'clone' | 'ai-create' | 'import' | 'create' | 'add',
+    context?: vscode.ExtensionContext
+  ): Promise<void> {
+    WelcomePanel.refreshRecentWorkspaces();
+    if (!WelcomePanel._dashboardPanel && context) {
+      WelcomePanel.openDashboardTab(context);
+    }
+    const dashboardPanel = WelcomePanel._dashboardPanel;
+    if (!dashboardPanel) {
+      return;
+    }
+    await dashboardPanel._beginGovernanceChainForWorkspace(
+      workspacePath,
+      workspaceName,
+      triggeredBy
+    );
+  }
+
+  /**
+   * @deprecated Use notifyWorkspaceGovernanceChain
    */
   public static async notifyWorkspaceImported(
     workspacePath: string,
     workspaceName?: string
   ): Promise<void> {
-    WelcomePanel.refreshRecentWorkspaces();
-    const dashboardPanel = WelcomePanel._dashboardPanel;
-    if (!dashboardPanel) {
-      return;
-    }
-    await dashboardPanel._beginGovernanceChainForWorkspace(workspacePath, workspaceName, 'import');
+    await WelcomePanel.notifyWorkspaceGovernanceChain(workspacePath, workspaceName, 'import');
   }
 
   /**
@@ -749,6 +840,106 @@ export class WelcomePanel {
         workspacePath,
       },
     };
+  }
+
+  private _getDashboardWorkspacePayload(
+    command: string,
+    data?: Record<string, unknown>
+  ): ({ path: string; name?: string } & Record<string, unknown>) | null {
+    const contract = resolveDashboardCommandContract(command);
+    const explicitPath = typeof data?.path === 'string' && data.path.trim() ? data.path.trim() : '';
+    const selectedWorkspace = this._getSelectedWorkspaceInfo();
+    const workspacePath = explicitPath || selectedWorkspace?.path || '';
+    const workspaceName =
+      (typeof data?.name === 'string' && data.name.trim()) ||
+      selectedWorkspace?.name ||
+      (workspacePath ? path.basename(workspacePath) : undefined);
+
+    if (contract?.requiresWorkspace && !workspacePath) {
+      vscode.window.showWarningMessage('Select a workspace first.');
+      return null;
+    }
+
+    return workspacePath ? { ...data, path: workspacePath, name: workspaceName } : null;
+  }
+
+  private _getDashboardProjectPayload(command: string): { projectPath: string } | null {
+    const contract = resolveDashboardCommandContract(command);
+    const selectedProject = WelcomePanel._selectedProject;
+    if (contract?.requiresProject && !selectedProject?.path) {
+      vscode.window.showWarningMessage('Select a project in the sidebar first.');
+      return null;
+    }
+
+    return selectedProject?.path ? { projectPath: selectedProject.path } : null;
+  }
+
+  private async _executeDashboardContractCommand(
+    command: string,
+    data?: Record<string, unknown>
+  ): Promise<boolean> {
+    const contract = resolveDashboardCommandContract(command);
+    if (!contract?.vscodeCommand) {
+      return false;
+    }
+
+    if (contract.scope === 'module' || contract.payloadKind === 'module-maintenance') {
+      const projectPayload = this._getDashboardProjectPayload(command);
+      if (!projectPayload || !WelcomePanel._selectedProject) {
+        return true;
+      }
+      const moduleSlug = typeof data?.moduleSlug === 'string' ? data.moduleSlug : undefined;
+      await vscode.commands.executeCommand(contract.vscodeCommand, {
+        ...contract.payloadDefaults,
+        project: WelcomePanel._selectedProject,
+        ...projectPayload,
+        moduleSlug,
+        module: moduleSlug ? { slug: moduleSlug } : undefined,
+        preferNonInteractive: true,
+      });
+      await WelcomePanel.refreshWorkspaceStatus();
+      return true;
+    }
+
+    if (contract.payloadKind === 'project-context') {
+      const contextItem = this._getSelectedProjectCommandContext();
+      if (!contextItem) {
+        return true;
+      }
+      await vscode.commands.executeCommand(contract.vscodeCommand, {
+        ...contextItem,
+        ...contract.payloadDefaults,
+        ...data,
+      });
+      return true;
+    }
+
+    if (contract.payloadKind === 'project-path' || contract.requiresProject) {
+      const projectPayload = this._getDashboardProjectPayload(command);
+      if (!projectPayload) {
+        return true;
+      }
+      await vscode.commands.executeCommand(contract.vscodeCommand, {
+        ...contract.payloadDefaults,
+        ...projectPayload,
+      });
+      return true;
+    }
+
+    if (contract.payloadKind === 'workspace' || contract.requiresWorkspace) {
+      const workspacePayload = this._getDashboardWorkspacePayload(command, data);
+      if (!workspacePayload) {
+        return true;
+      }
+      await vscode.commands.executeCommand(contract.vscodeCommand, {
+        ...contract.payloadDefaults,
+        ...workspacePayload,
+      });
+      return true;
+    }
+
+    await vscode.commands.executeCommand(contract.vscodeCommand);
+    return true;
   }
 
   private async _buildWorkspaceProjectCandidatesBlock(
@@ -902,6 +1093,13 @@ export class WelcomePanel {
             : typeof message?.data?.requestId === 'string'
               ? message.data.requestId
               : undefined;
+        if (
+          this._panelRole === 'dashboard' &&
+          SetupPanel.isSetupCommand(message?.command) &&
+          (await SetupPanel.handleEmbeddedMessage(this._context, this._panel.webview, message))
+        ) {
+          return;
+        }
         switch (message.command) {
           case 'ready':
             // Mark this panel instance as ready so static callers can post directly.
@@ -970,6 +1168,14 @@ export class WelcomePanel {
                 data: shareData,
               });
             }
+            if (WelcomePanel._pendingSetupTabOpen) {
+              WelcomePanel._pendingSetupTabOpen = false;
+              this._panel.webview.postMessage({
+                command: 'setActiveView',
+                data: { view: 'setup' },
+              });
+              SetupPanel.bootstrapEmbedded(this._context, this._panel.webview);
+            }
             break;
           case 'createWorkspace':
             // Close the modal immediately — don't block on command execution
@@ -1032,7 +1238,7 @@ export class WelcomePanel {
             }
             break;
           case 'openSetup':
-            await vscode.commands.executeCommand('workspai.openSetup');
+            WelcomePanel.openSetupTab(this._context);
             break;
           case 'openDashboardTab':
             WelcomePanel.openDashboardTab(this._context);
@@ -1048,28 +1254,31 @@ export class WelcomePanel {
               break;
             }
 
-            WelcomePanel.openIncidentStudioInNewTab(this._context, {
-              workspacePath,
-              workspaceName:
-                (typeof message.data?.workspaceName === 'string' && message.data.workspaceName) ||
-                (typeof selectedWorkspace?.name === 'string' ? selectedWorkspace.name : undefined),
-              projectPath:
+            await vscode.commands.executeCommand('workspai.openIncidentStudio', {
+              workspace: {
+                path: workspacePath,
+                name:
+                  (typeof message.data?.workspaceName === 'string' && message.data.workspaceName) ||
+                  (typeof selectedWorkspace?.name === 'string'
+                    ? selectedWorkspace.name
+                    : undefined),
+              },
+              project:
                 typeof message.data?.projectPath === 'string'
-                  ? message.data.projectPath
+                  ? {
+                      path: message.data.projectPath,
+                      name:
+                        typeof message.data?.projectName === 'string'
+                          ? message.data.projectName
+                          : undefined,
+                      type:
+                        typeof message.data?.projectType === 'string'
+                          ? message.data.projectType
+                          : undefined,
+                      workspacePath,
+                    }
                   : undefined,
-              projectName:
-                typeof message.data?.projectName === 'string'
-                  ? message.data.projectName
-                  : undefined,
-              projectType:
-                typeof message.data?.projectType === 'string'
-                  ? message.data.projectType
-                  : undefined,
-              preferredDisplayMode:
-                message.data?.preferredDisplayMode === 'lite' ||
-                message.data?.preferredDisplayMode === 'full'
-                  ? message.data.preferredDisplayMode
-                  : 'full',
+              preferredDisplayMode: 'full',
               preferredArchitectureLensView:
                 message.data?.preferredArchitectureLensView === 'tree' ||
                 message.data?.preferredArchitectureLensView === 'dependency' ||
@@ -1154,6 +1363,33 @@ export class WelcomePanel {
             }
             break;
           }
+          case 'loadAIActionRegistry': {
+            const workspacePath =
+              typeof message.data?.workspacePath === 'string' ? message.data.workspacePath : '';
+            if (!workspacePath.trim()) {
+              this._panel.webview.postMessage({
+                command: 'aiActionRegistryLoaded',
+                data: { updatedAt: new Date().toISOString(), entries: [] },
+              });
+              break;
+            }
+            const registry = await readAIActionRegistry(workspacePath);
+            this._syncDashboardLatestAIAction(registry);
+            this._postDashboardAIActionRegistry(registry);
+            break;
+          }
+          case 'studioMessage': {
+            await this._handleDashboardStudioMessage(message.data);
+            break;
+          }
+          case 'runStudioAction': {
+            await this._handleDashboardStudioAction(message.data);
+            break;
+          }
+          case 'runAIActionContractCommand': {
+            await this._handleDashboardAIActionContractCommand(message.data);
+            break;
+          }
           case 'copyText': {
             const text = typeof message.data?.text === 'string' ? message.data.text : '';
             if (text.trim()) {
@@ -1195,6 +1431,41 @@ export class WelcomePanel {
               typeof message.data?.modelId === 'string' ? message.data.modelId : 'auto';
             const preferredModel = await setWorkspaiPreferredModel(modelId);
             await this._sendWorkspaiSettings(preferredModel);
+            break;
+          }
+          case 'setAIProvider': {
+            const provider =
+              typeof message.data?.provider === 'string' ? message.data.provider : 'vscode-lm';
+            await setWorkspaiAIProvider(provider);
+            await this._sendWorkspaiSettings();
+            break;
+          }
+          case 'setCustomAIConfig': {
+            await setWorkspaiCustomAIConfig({
+              baseUrl: typeof message.data?.baseUrl === 'string' ? message.data.baseUrl : undefined,
+              model: typeof message.data?.model === 'string' ? message.data.model : undefined,
+            });
+            await this._sendWorkspaiSettings();
+            break;
+          }
+          case 'setCustomAIAPIKey': {
+            const apiKey = typeof message.data?.apiKey === 'string' ? message.data.apiKey : '';
+            await setCustomAIAPIKey(this._context, apiKey);
+            await this._sendWorkspaiSettings();
+            break;
+          }
+          case 'clearCustomAIAPIKey': {
+            await clearCustomAIAPIKey(this._context);
+            await this._sendWorkspaiSettings();
+            break;
+          }
+          case 'testAIProvider': {
+            const result = await runConfiguredAIProviderHealthCheck(this._context);
+            this._panel.webview.postMessage({
+              command: 'aiProviderHealthCheck',
+              data: result,
+            });
+            await this._sendWorkspaiSettings();
             break;
           }
           case 'openWorkspaiExtensionSettings': {
@@ -1362,7 +1633,7 @@ export class WelcomePanel {
             }
             break;
           case 'refreshModules':
-            this._sendModulesCatalog();
+            await this._refreshModulesCatalog({ forceRefresh: true });
             break;
           case 'dashboardPerf':
             console.info('[WelcomePanel] dashboard performance', message.data);
@@ -1586,22 +1857,12 @@ export class WelcomePanel {
 
           case 'checkWorkspaceHealth':
             console.log('[WelcomePanel] Check Workspace Health requested for:', message.data?.path);
-            if (message.data?.path) {
-              vscode.commands.executeCommand('workspai.checkWorkspaceHealth', {
-                path: message.data.path,
-              });
-            } else {
-              await vscode.commands.executeCommand('workspai.checkWorkspaceHealth');
-            }
+            await this._executeDashboardContractCommand('checkWorkspaceHealth', message.data);
             break;
 
           case 'exportWorkspace':
             console.log('[WelcomePanel] Export Workspace requested for:', message.data?.path);
-            if (message.data?.path) {
-              vscode.commands.executeCommand('workspai.exportWorkspace', {
-                path: message.data.path,
-              });
-            }
+            await this._executeDashboardContractCommand('exportWorkspace', message.data);
             break;
           case 'importWorkspace':
             await vscode.commands.executeCommand('workspai.importWorkspace');
@@ -1610,80 +1871,31 @@ export class WelcomePanel {
             await vscode.commands.executeCommand('workspai.importProject');
             break;
           case 'quickSwitchWorkspace':
-            await vscode.commands.executeCommand('workspai.quickSwitchWorkspace');
+            await this._executeDashboardContractCommand('quickSwitchWorkspace', message.data);
             break;
           case 'workspaceTerminal':
             await vscode.commands.executeCommand('workspai.workspaceTerminal');
             break;
           case 'workspaceBootstrap':
-            if (message.data?.path) {
-              await vscode.commands.executeCommand('workspai.workspaceBootstrap', {
-                path: message.data.path,
-                name: message.data.name,
-              });
-            } else {
-              await vscode.commands.executeCommand('workspai.workspaceBootstrap');
-            }
+            await this._executeDashboardContractCommand('workspaceBootstrap', message.data);
             break;
           case 'workspaceSetup':
-            if (message.data?.path) {
-              await vscode.commands.executeCommand('workspai.workspaceSetup', {
-                path: message.data.path,
-                name: message.data.name,
-              });
-            } else {
-              await vscode.commands.executeCommand('workspai.workspaceSetup');
-            }
+            await this._executeDashboardContractCommand('workspaceSetup', message.data);
             break;
           case 'workspaceReadiness':
-            if (message.data?.path) {
-              await vscode.commands.executeCommand('workspai.workspaceReadiness', {
-                path: message.data.path,
-                name: message.data.name,
-              });
-            } else {
-              await vscode.commands.executeCommand('workspai.workspaceReadiness');
-            }
+            await this._executeDashboardContractCommand('workspaceReadiness', message.data);
             break;
           case 'mirrorStatus':
-            if (message.data?.path) {
-              await vscode.commands.executeCommand('workspai.mirrorStatus', {
-                path: message.data.path,
-                name: message.data.name,
-              });
-            } else {
-              await vscode.commands.executeCommand('workspai.mirrorStatus');
-            }
+            await this._executeDashboardContractCommand('mirrorStatus', message.data);
             break;
           case 'mirrorSync':
-            if (message.data?.path) {
-              await vscode.commands.executeCommand('workspai.mirrorSync', {
-                path: message.data.path,
-                name: message.data.name,
-              });
-            } else {
-              await vscode.commands.executeCommand('workspai.mirrorSync');
-            }
+            await this._executeDashboardContractCommand('mirrorSync', message.data);
             break;
           case 'cacheStatus':
-            if (message.data?.path) {
-              await vscode.commands.executeCommand('workspai.cacheStatus', {
-                path: message.data.path,
-                name: message.data.name,
-              });
-            } else {
-              await vscode.commands.executeCommand('workspai.cacheStatus');
-            }
+            await this._executeDashboardContractCommand('cacheStatus', message.data);
             break;
           case 'workspaceInfra':
-            if (message.data?.path) {
-              await vscode.commands.executeCommand('workspai.infra', {
-                path: message.data.path,
-                name: message.data.name,
-              });
-            } else {
-              await vscode.commands.executeCommand('workspai.infra');
-            }
+            await this._executeDashboardContractCommand('workspaceInfra', message.data);
             break;
           case 'workspaceRunInit':
             await vscode.commands.executeCommand('workspai.workspaceRunInit');
@@ -1698,16 +1910,16 @@ export class WelcomePanel {
             await vscode.commands.executeCommand('workspai.workspaceRunStart');
             break;
           case 'workspaceAnalyze':
-            await vscode.commands.executeCommand('workspai.workspaceAnalyze');
+            await this._executeDashboardContractCommand('workspaceAnalyze', message.data);
             break;
           case 'workspaceAutopilotRelease':
-            await vscode.commands.executeCommand('workspai.workspaceAutopilotRelease');
+            await this._executeDashboardContractCommand('workspaceAutopilotRelease', message.data);
             break;
           case 'workspaceSnapshot':
             await vscode.commands.executeCommand('workspai.workspaceSnapshot');
             break;
           case 'workspaceSnapshotCreate':
-            await vscode.commands.executeCommand('workspai.workspaceSnapshotCreate');
+            await this._executeDashboardContractCommand('workspaceSnapshotCreate', message.data);
             break;
           case 'workspaceSnapshotList':
             await vscode.commands.executeCommand('workspai.workspaceSnapshotList');
@@ -1746,13 +1958,13 @@ export class WelcomePanel {
             await vscode.commands.executeCommand('workspai.workspaceArchiveVerify');
             break;
           case 'workspaceShare':
-            await vscode.commands.executeCommand('workspai.exportWorkspaceShareBundle');
+            await this._executeDashboardContractCommand('workspaceShare', message.data);
             break;
           case 'workspaceImportShare':
             await vscode.commands.executeCommand('workspai.importWorkspaceShareBundle');
             break;
           case 'workspacePolicyShow':
-            await vscode.commands.executeCommand('workspai.workspacePolicyShow');
+            await this._executeDashboardContractCommand('workspacePolicyShow', message.data);
             break;
           case 'aiForWorkspace':
             WelcomePanel.showAIModal(WelcomePanel._extensionContext!, {
@@ -1890,8 +2102,9 @@ export class WelcomePanel {
               // Execute command and capture output for feedback loop
               (async () => {
                 try {
-                  let finalCommand = inlineCommand;
-                  const normalizedCommand = inlineCommand.replace(/\s+/g, ' ').trim();
+                  const executionInlineCommand = toPinnedRapidkitExecutionCommand(inlineCommand);
+                  let finalCommand = executionInlineCommand;
+                  const normalizedCommand = executionInlineCommand.replace(/\s+/g, ' ').trim();
                   const isWorkspaceScopedRapidkitCommand =
                     /^(?:(?:npx\s+(?:(?:--yes\s+--package\s+rapidkit\s+)?rapidkit))|rapidkit|poetry\s+run\s+rapidkit|\.\/\.venv\/bin\/rapidkit|\.\/rapidkit)\s+(?:create(?:\s+workspace|\s+project)?|bootstrap\b|setup\b|workspace\b|cache\b|mirror\b|readiness\b|analyze\b|import\b|snapshot\b|project\s+(?:archive|archives|restore|delete)\b|doctor(?:\s+(?:workspace|project))?\b|autopilot\s+release\b)/.test(
                       normalizedCommand
@@ -1904,7 +2117,7 @@ export class WelcomePanel {
                       : workspacePath;
 
                   // Resolve rapidkit → project launcher or workspace venv binary when available
-                  const isRapidkitCmd = /^rapidkit\b/.test(inlineCommand);
+                  const isRapidkitCmd = /^rapidkit\b/.test(executionInlineCommand);
                   if (isRapidkitCmd) {
                     const projectLauncher =
                       effectiveCwd && (await fs.pathExists(path.join(effectiveCwd, 'rapidkit')))
@@ -1913,15 +2126,15 @@ export class WelcomePanel {
                     const venvRapidkit = path.join(workspacePath, '.venv', 'bin', 'rapidkit');
                     const hasVenvBin = await fs.pathExists(venvRapidkit);
                     if (projectLauncher && effectiveCwd === selectedProjectPath) {
-                      finalCommand = './rapidkit' + inlineCommand.slice('rapidkit'.length);
+                      finalCommand = './rapidkit' + executionInlineCommand.slice('rapidkit'.length);
                     } else if (hasVenvBin) {
-                      finalCommand = venvRapidkit + inlineCommand.slice('rapidkit'.length);
+                      finalCommand = venvRapidkit + executionInlineCommand.slice('rapidkit'.length);
                     } else {
                       const poetryLock = effectiveCwd
                         ? await fs.pathExists(path.join(effectiveCwd, 'pyproject.toml'))
                         : false;
                       if (poetryLock) {
-                        finalCommand = 'poetry run ' + inlineCommand;
+                        finalCommand = 'poetry run ' + executionInlineCommand;
                       }
                     }
                   }
@@ -2023,158 +2236,55 @@ export class WelcomePanel {
             }
             break;
           case 'projectTerminal':
-            if (WelcomePanel._selectedProject) {
-              await vscode.commands.executeCommand('workspai.projectTerminal', {
-                projectPath: WelcomePanel._selectedProject.path,
-              });
-            }
+            await this._executeDashboardContractCommand('projectTerminal', message.data);
             break;
           case 'projectInit':
-            if (WelcomePanel._selectedProject) {
-              await vscode.commands.executeCommand('workspai.projectInit', {
-                projectPath: WelcomePanel._selectedProject.path,
-              });
-            }
+            await this._executeDashboardContractCommand('projectInit', message.data);
             break;
           case 'projectDev':
-            if (WelcomePanel._selectedProject) {
-              await vscode.commands.executeCommand('workspai.projectDev', {
-                projectPath: WelcomePanel._selectedProject.path,
-              });
-            }
+            await this._executeDashboardContractCommand('projectDev', message.data);
             break;
           case 'projectStop':
-            if (WelcomePanel._selectedProject) {
-              await vscode.commands.executeCommand('workspai.projectStop', {
-                projectPath: WelcomePanel._selectedProject.path,
-              });
-            }
+            await this._executeDashboardContractCommand('projectStop', message.data);
             break;
           case 'projectTest':
-            if (WelcomePanel._selectedProject) {
-              await vscode.commands.executeCommand('workspai.projectTest', {
-                projectPath: WelcomePanel._selectedProject.path,
-              });
-            }
+            await this._executeDashboardContractCommand('projectTest', message.data);
             break;
           case 'projectDoctor':
-            if (WelcomePanel._selectedProject) {
-              await vscode.commands.executeCommand('workspai.projectDoctor', {
-                projectPath: WelcomePanel._selectedProject.path,
-                preferredAction: 'check',
-              });
-            }
+            await this._executeDashboardContractCommand('projectDoctor', message.data);
             break;
-          case 'projectArchitecture': {
-            const contextItem = this._getSelectedProjectCommandContext();
-            if (contextItem) {
-              await vscode.commands.executeCommand('workspai.openArchitectureMap', contextItem);
-            }
+          case 'projectArchitecture':
+            await this._executeDashboardContractCommand('projectArchitecture', message.data);
             break;
-          }
-          case 'projectIncident': {
-            const contextItem = this._getSelectedProjectCommandContext();
-            if (contextItem) {
-              await vscode.commands.executeCommand('workspai.openIncidentStudio', contextItem);
-            }
+          case 'projectIncident':
+            await this._executeDashboardContractCommand('projectIncident', message.data);
             break;
-          }
-          case 'projectAI': {
-            const contextItem = this._getSelectedProjectCommandContext();
-            if (contextItem) {
-              await vscode.commands.executeCommand('workspai.aiForProject', contextItem);
-            }
+          case 'projectAI':
+            await this._executeDashboardContractCommand('projectAI', message.data);
             break;
-          }
-          case 'projectRelease': {
-            const contextItem = this._getSelectedProjectCommandContext();
-            if (contextItem) {
-              await vscode.commands.executeCommand('workspai.aiReleaseReadinessCommander', {
-                ...contextItem,
-                source: 'dashboard',
-                trigger: 'project_actions',
-              });
-            }
+          case 'projectRelease':
+            await this._executeDashboardContractCommand('projectRelease', message.data);
             break;
-          }
-          case 'projectImpact': {
-            const contextItem = this._getSelectedProjectCommandContext();
-            if (contextItem) {
-              await vscode.commands.executeCommand('workspai.aiChangeImpactLite', {
-                ...contextItem,
-                source: 'dashboard',
-                trigger: 'project_actions',
-              });
-            }
+          case 'projectImpact':
+            await this._executeDashboardContractCommand('projectImpact', message.data);
             break;
-          }
           case 'projectBrowser':
-            if (WelcomePanel._selectedProject) {
-              await vscode.commands.executeCommand('workspai.projectBrowser', {
-                projectPath: WelcomePanel._selectedProject.path,
-              });
-            }
+            await this._executeDashboardContractCommand('projectBrowser', message.data);
             break;
           case 'projectBuild':
-            if (WelcomePanel._selectedProject) {
-              runRapidkitCommandsInTerminal({
-                name: `Build ${WelcomePanel._selectedProject.name}`,
-                cwd: WelcomePanel._selectedProject.path,
-                commands: [['build']],
-              });
-              vscode.window.showInformationMessage(
-                `Building ${WelcomePanel._selectedProject.name}...`,
-                'OK'
-              );
-            }
+            await this._executeDashboardContractCommand('projectBuild', message.data);
             break;
           case 'projectLint':
-            if (WelcomePanel._selectedProject) {
-              await vscode.commands.executeCommand('workspai.projectLint', {
-                projectPath: WelcomePanel._selectedProject.path,
-              });
-            }
+            await this._executeDashboardContractCommand('projectLint', message.data);
             break;
           case 'projectFormat':
-            if (WelcomePanel._selectedProject) {
-              await vscode.commands.executeCommand('workspai.projectFormat', {
-                projectPath: WelcomePanel._selectedProject.path,
-              });
-            }
+            await this._executeDashboardContractCommand('projectFormat', message.data);
             break;
           case 'moduleDiff':
           case 'moduleRollback':
           case 'moduleUninstall':
           case 'moduleUpgrade': {
-            if (!WelcomePanel._selectedProject) {
-              vscode.window.showWarningMessage('Select a project in the sidebar first.');
-              break;
-            }
-            const moduleSlug =
-              typeof message.data?.moduleSlug === 'string' ? message.data.moduleSlug : undefined;
-            const maintenancePayload = {
-              project: WelcomePanel._selectedProject,
-              projectPath: WelcomePanel._selectedProject.path,
-              moduleSlug,
-              module: moduleSlug ? { slug: moduleSlug } : undefined,
-            };
-            switch (message.command) {
-              case 'moduleDiff':
-                await vscode.commands.executeCommand('workspai.moduleDiff', maintenancePayload);
-                break;
-              case 'moduleRollback':
-                await vscode.commands.executeCommand('workspai.moduleRollback', maintenancePayload);
-                break;
-              case 'moduleUninstall':
-                await vscode.commands.executeCommand(
-                  'workspai.moduleUninstall',
-                  maintenancePayload
-                );
-                break;
-              case 'moduleUpgrade':
-                await vscode.commands.executeCommand('workspai.moduleUpgrade', maintenancePayload);
-                break;
-            }
+            await this._executeDashboardContractCommand(message.command, message.data);
             break;
           }
         }
@@ -2198,6 +2308,638 @@ export class WelcomePanel {
       if (this._completedAIQueryRequestIds.length > 240) {
         this._completedAIQueryRequestIds.splice(0, this._completedAIQueryRequestIds.length - 240);
       }
+    }
+  }
+
+  private async _handleDashboardStudioAction(data: unknown): Promise<void> {
+    const actionId =
+      typeof data === 'object' && data !== null && 'actionId' in data
+        ? String((data as any).actionId)
+        : '';
+    const workspacePath =
+      typeof data === 'object' && data !== null && 'workspacePath' in data
+        ? String((data as any).workspacePath || '')
+        : '';
+    const workspaceName =
+      typeof data === 'object' && data !== null && 'workspaceName' in data
+        ? String((data as any).workspaceName || 'Current Workspace')
+        : 'Current Workspace';
+
+    if (!isStudioActionId(actionId)) {
+      vscode.window.showWarningMessage(
+        `Unknown Studio action blocked: ${actionId || 'missing action'}`
+      );
+      return;
+    }
+    if (!workspacePath.trim()) {
+      vscode.window.showWarningMessage('Workspace path is required to run Studio action.');
+      return;
+    }
+    if (this._runningStudioActionId) {
+      const detail = `Another Studio action is already running: ${this._runningStudioActionId}`;
+      this._postDashboardStudioActionStatus(actionId, 'failed', detail);
+      vscode.window.showWarningMessage(detail);
+      return;
+    }
+    if (this._runningDashboardAIActionOperation) {
+      const detail = `An AI action operation is already running: ${this._runningDashboardAIActionOperation}`;
+      this._postDashboardStudioActionStatus(actionId, 'failed', detail);
+      vscode.window.showWarningMessage(detail);
+      return;
+    }
+
+    const workspace = { workspacePath, workspaceName };
+    const seed = {
+      source: 'incident-studio-vnext-dashboard',
+      trigger: actionId,
+      workspace: { path: workspacePath, name: workspaceName },
+    };
+
+    try {
+      this._runningStudioActionId = actionId;
+      this._postDashboardStudioActionStatus(actionId, 'started');
+      switch (actionId) {
+        case 'run-analyze':
+        case 'verify-gates':
+          await runWorkspaceAnalyze(workspace);
+          break;
+        case 'terminal-bridge':
+          await vscode.commands.executeCommand('workspai.aiTerminalBridge', seed);
+          break;
+        case 'fix-lens':
+          await vscode.commands.executeCommand('workspai.aiFixPreviewLite', {
+            ...seed,
+            seed: 'Use the current workspace evidence and selected editor context to produce a fix lens. Do not apply changes.',
+          });
+          break;
+        case 'impact-lens':
+          await vscode.commands.executeCommand('workspai.aiChangeImpactLite', {
+            ...seed,
+            seed: 'Use the current workspace evidence and selected editor context to produce an impact lens. Do not apply changes.',
+          });
+          break;
+        default:
+          actionId satisfies never;
+      }
+
+      const { report, error } = loadAnalyzeReport(workspace);
+      this._panel.webview.postMessage({ command: 'reportLoaded', data: report, error });
+      this._panel.webview.postMessage({
+        command: 'reportExistsResult',
+        exists: Boolean(report),
+        workspacePath,
+      });
+      const registry = await readAIActionRegistry(workspacePath);
+      this._postDashboardAIActionRegistry(registry);
+      this._postDashboardStudioActionStatus(
+        actionId,
+        'completed',
+        undefined,
+        this._buildDashboardStudioActionResult({
+          actionId,
+          workspacePath,
+          report,
+          reportError: error,
+          registry,
+        })
+      );
+    } catch (error) {
+      const { report } = loadAnalyzeReport(workspace);
+      this._postDashboardStudioActionStatus(
+        actionId,
+        'failed',
+        error instanceof Error ? error.message : String(error),
+        this._buildDashboardStudioActionResult({
+          actionId,
+          workspacePath,
+          report,
+          fallbackSummary: error instanceof Error ? error.message : String(error),
+        })
+      );
+      vscode.window.showErrorMessage(
+        `Studio action failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      this._runningStudioActionId = null;
+    }
+  }
+
+  private _postDashboardAIActionRegistry(
+    registry: Awaited<ReturnType<typeof readAIActionRegistry>>
+  ): void {
+    this._panel.webview.postMessage({
+      command: 'aiActionRegistryLoaded',
+      data: {
+        updatedAt: registry.updatedAt,
+        entries: registry.entries.map((entry) => ({
+          id: entry.id,
+          createdAt: entry.createdAt,
+          provider: entry.provider,
+          summary: entry.contract.summary,
+          actionType: entry.contract.actionType,
+          riskLevel: entry.contract.riskLevel,
+          validationStatus: entry.validation.status,
+          lifecycleStatus: entry.lifecycleStatus,
+          executions: entry.executions,
+        })),
+      },
+    });
+  }
+
+  private _buildDashboardStudioActionResult(params: {
+    actionId: string;
+    workspacePath: string;
+    report?: AnalyzeReport | null;
+    reportError?: string | null;
+    registry?: Awaited<ReturnType<typeof readAIActionRegistry>> | null;
+    fallbackSummary?: string;
+  }): Record<string, unknown> {
+    const latestEntry = params.registry?.entries[0];
+    const latestExecution = latestEntry?.executions[0];
+    const report = params.report || null;
+    const summary =
+      params.fallbackSummary ||
+      latestExecution?.summary ||
+      (report
+        ? `Analyze ${report.summary.verdict} · score ${report.summary.score}`
+        : params.reportError || `Studio action ${params.actionId.replace(/-/g, ' ')}`);
+    const failedCommands = latestExecution?.failedCommands || [];
+    return {
+      summary,
+      verdict: report?.summary.verdict,
+      score: report?.summary.score,
+      generatedAt: report?.generatedAt,
+      evidencePath:
+        latestExecution?.evidencePath ||
+        report?.enterpriseControls?.evidencePath ||
+        (report ? getAnalyzeReportPath(params.workspacePath) : undefined),
+      evidenceSha256: latestExecution?.evidenceSha256,
+      evidenceSizeBytes: latestExecution?.evidenceSizeBytes,
+      commandCount: latestExecution?.commandCount,
+      failedCommandCount:
+        latestExecution?.failedCommandCount ??
+        (failedCommands.length > 0 ? failedCommands.length : undefined),
+      failedCommands,
+      findings: report?.summary.findings,
+      registryUpdatedAt: params.registry?.updatedAt,
+    };
+  }
+
+  private _postDashboardStudioActionStatus(
+    actionId: string,
+    status: 'started' | 'completed' | 'failed',
+    detail?: string,
+    result?: Record<string, unknown>
+  ): void {
+    const label = actionId.replace(/-/g, ' ');
+    const headline =
+      status === 'started'
+        ? `Studio action started: ${label}`
+        : status === 'completed'
+          ? `Studio action completed: ${label}`
+          : `Studio action failed: ${label}`;
+    this._panel.webview.postMessage({
+      command: 'studioAssistantMessage',
+      data: {
+        role: 'assistant',
+        content: [headline, detail].filter(Boolean).join('\n\n'),
+        provider: 'studio-action-bridge',
+      },
+    });
+    this._panel.webview.postMessage({
+      command: 'studioActionStatus',
+      data: {
+        actionId,
+        status,
+        detail,
+        result,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  private async _handleDashboardStudioMessage(data: unknown): Promise<void> {
+    const message =
+      typeof data === 'object' && data !== null && 'message' in data
+        ? String((data as any).message)
+        : '';
+    const workspacePath =
+      typeof data === 'object' && data !== null && 'workspacePath' in data
+        ? String((data as any).workspacePath || '')
+        : '';
+    const workspaceName =
+      typeof data === 'object' && data !== null && 'workspaceName' in data
+        ? String((data as any).workspaceName || 'Current Workspace')
+        : 'Current Workspace';
+
+    if (!message.trim()) {
+      return;
+    }
+    if (!workspacePath.trim()) {
+      vscode.window.showWarningMessage('Workspace path is required for Studio AI.');
+      return;
+    }
+
+    try {
+      const status = await getAIProviderStatus(this._context);
+      if (!status.ready) {
+        this._panel.webview.postMessage({
+          command: 'studioAssistantMessage',
+          data: {
+            role: 'assistant',
+            content: `AI provider is not ready: ${status.reason || 'provider setup required'}. Configure it from Workspai Settings, or run deterministic Studio actions first.`,
+            provider: status.provider,
+          },
+        });
+        return;
+      }
+
+      const { report } = loadAnalyzeReport({ workspacePath, workspaceName });
+      const evidenceContext = await buildIncidentStudioEvidenceContext({
+        workspacePath,
+        workspaceName,
+        analyzeReport: report,
+      });
+      const { text, provider } = await askConfiguredAIProvider(this._context, [
+        {
+          role: 'user',
+          content: [
+            'You are Workspai Incident Studio. Be concise, evidence-aware, and never claim changes were applied unless a tool result proves it.',
+            'When you propose a fix, impact review, or verification action, append one fenced JSON block matching schemaVersion "workspai.ai-action.v1". Keep paths workspace-relative. Set requiresApproval to true. Fix actions must include verificationCommands and rollbackPlan.',
+            `Workspace: ${workspaceName} (${workspacePath})`,
+            renderIncidentStudioEvidencePrompt(evidenceContext),
+            `User request:\n${message}`,
+          ].join('\n\n'),
+        },
+      ]);
+      const parsedAction = parseAIActionContractFromText(text);
+      const validation = validateAIActionContract(parsedAction.contract, {
+        workspacePath,
+        strict: true,
+      });
+      let actionId: string | null = null;
+      if (parsedAction.contract) {
+        const entry = await recordAIActionContract(workspacePath, {
+          contract: parsedAction.contract,
+          validation,
+          provider,
+          rawJson: parsedAction.rawJson,
+        });
+        actionId = entry.id;
+        const registry = await readAIActionRegistry(workspacePath);
+        this._syncDashboardLatestAIAction(registry);
+        this._postDashboardAIActionRegistry(registry);
+      }
+      this._latestDashboardAIActionContract =
+        parsedAction.contract && validation.status !== 'blocked' ? parsedAction.contract : null;
+      this._latestDashboardAIActionId =
+        parsedAction.contract && validation.status !== 'blocked' ? actionId : null;
+
+      this._panel.webview.postMessage({
+        command: 'studioAssistantMessage',
+        data: {
+          role: 'assistant',
+          content: text,
+          provider,
+        },
+      });
+
+      if (parsedAction.rawJson || parsedAction.contract) {
+        this._panel.webview.postMessage({
+          command: 'studioActionContract',
+          data: {
+            actionId,
+            contract: parsedAction.contract,
+            validation,
+            parseError: parsedAction.parseError,
+            rawJson: parsedAction.rawJson,
+            provider,
+          },
+        });
+      }
+    } catch (error) {
+      this._panel.webview.postMessage({
+        command: 'studioAssistantMessage',
+        data: {
+          role: 'assistant',
+          content: `AI provider failed: ${error instanceof Error ? error.message : String(error)}`,
+          provider: 'ai-provider',
+        },
+      });
+    }
+  }
+
+  private async _handleDashboardAIActionContractCommand(data: unknown): Promise<void> {
+    const operation =
+      typeof data === 'object' && data !== null && 'operation' in data
+        ? String((data as any).operation)
+        : '';
+    const workspacePath =
+      typeof data === 'object' && data !== null && 'workspacePath' in data
+        ? String((data as any).workspacePath || '')
+        : '';
+    const requestedActionId =
+      typeof data === 'object' && data !== null && 'actionId' in data
+        ? String((data as any).actionId || '')
+        : '';
+
+    if (operation !== 'apply' && operation !== 'verify' && operation !== 'rollback') {
+      vscode.window.showWarningMessage(`Unknown AI action operation: ${operation || 'missing'}`);
+      return;
+    }
+    if (!workspacePath.trim()) {
+      vscode.window.showWarningMessage('Workspace path is required to run AI action.');
+      return;
+    }
+    if (this._runningStudioActionId) {
+      const detail = `A Studio action is already running: ${this._runningStudioActionId}`;
+      this._postDashboardStudioActionStatus(`ai-action-${operation}`, 'failed', detail);
+      vscode.window.showWarningMessage(detail);
+      return;
+    }
+    if (this._runningDashboardAIActionOperation) {
+      const detail = `Another AI action operation is already running: ${this._runningDashboardAIActionOperation}`;
+      this._postDashboardStudioActionStatus(`ai-action-${operation}`, 'failed', detail);
+      vscode.window.showWarningMessage(detail);
+      return;
+    }
+
+    const aiOperation = operation as AIActionOperation;
+    this._runningDashboardAIActionOperation = aiOperation;
+    this._postDashboardStudioActionStatus(`ai-action-${operation}`, 'started');
+
+    try {
+      const registryBeforeRun = await readAIActionRegistry(workspacePath);
+      this._syncDashboardLatestAIAction(registryBeforeRun);
+      if (!this._latestDashboardAIActionContract || !this._latestDashboardAIActionId) {
+        vscode.window.showWarningMessage('No governed AI action contract is active yet.');
+        this._postDashboardStudioActionStatus(
+          `ai-action-${operation}`,
+          'failed',
+          'No governed AI action contract is active yet.'
+        );
+        return;
+      }
+      if (requestedActionId && requestedActionId !== this._latestDashboardAIActionId) {
+        vscode.window.showWarningMessage('The selected AI action is no longer the active action.');
+        this._postDashboardStudioActionStatus(
+          `ai-action-${operation}`,
+          'failed',
+          'The selected AI action is no longer the active action.'
+        );
+        return;
+      }
+
+      const activeEntry = registryBeforeRun.entries.find(
+        (entry) => entry.id === this._latestDashboardAIActionId
+      );
+      if (!activeEntry) {
+        vscode.window.showWarningMessage('The persisted AI action record could not be found.');
+        this._postDashboardStudioActionStatus(
+          `ai-action-${operation}`,
+          'failed',
+          'The persisted AI action record could not be found.'
+        );
+        return;
+      }
+
+      if (operation === 'apply' || operation === 'rollback') {
+        const currentPreflight = await captureAIActionPreflightSnapshot(
+          workspacePath,
+          this._latestDashboardAIActionContract
+        );
+        const preflight = compareAIActionPreflightSnapshots(
+          activeEntry.preflight,
+          currentPreflight
+        );
+        if (preflight.stale) {
+          const registry = await recordAIActionExecution(
+            workspacePath,
+            this._latestDashboardAIActionId,
+            {
+              operation: aiOperation,
+              ok: false,
+              summary: `Preflight blocked ${operation}: ${preflight.issues.join('; ')}`,
+              evidencePath: null,
+              commandCount: 0,
+              failedCommandCount: 0,
+              failedCommands: [],
+              preflight,
+            }
+          );
+          this._syncDashboardLatestAIAction(registry);
+          this._postDashboardAIActionRegistry(registry);
+          this._panel.webview.postMessage({
+            command: 'studioAssistantMessage',
+            data: {
+              role: 'assistant',
+              content: [
+                `AI action ${operation}: BLOCKED`,
+                'Preflight detected stale workspace state.',
+                ...preflight.issues.map((issue) => `- ${issue}`),
+              ].join('\n'),
+              provider: 'ai-action-preflight',
+            },
+          });
+          this._postDashboardStudioActionStatus(
+            `ai-action-${operation}`,
+            'failed',
+            `Preflight blocked ${operation}.`,
+            this._buildDashboardStudioActionResult({
+              actionId: `ai-action-${operation}`,
+              workspacePath,
+              registry,
+              fallbackSummary: `Preflight blocked ${operation}.`,
+            })
+          );
+          return;
+        }
+      }
+
+      if (operation === 'apply' || operation === 'rollback') {
+        const label = operation === 'apply' ? 'Apply AI Action' : 'Run Rollback';
+        const contract = this._latestDashboardAIActionContract;
+        const commandCount =
+          operation === 'apply'
+            ? contract.proposedCommands.length + contract.verificationCommands.length
+            : contract.rollbackPlan.length;
+        const approval = await vscode.window.showWarningMessage(
+          [
+            `${label}: ${contract.summary}`,
+            `Risk: ${contract.riskLevel}`,
+            `Confidence: ${Math.round(contract.confidence * 100)}%`,
+            `Commands: ${commandCount}`,
+            'Only validated, allowlisted commands from the latest persisted contract will run.',
+          ].join('\n'),
+          { modal: true },
+          label
+        );
+        if (approval !== label) {
+          this._postDashboardStudioActionStatus(
+            `ai-action-${operation}`,
+            'failed',
+            `${operation} was cancelled before execution.`
+          );
+          return;
+        }
+      }
+
+      try {
+        const result = await runAIActionContractOperation(this._latestDashboardAIActionContract, {
+          operation: aiOperation,
+          workspacePath,
+        });
+        const evidence = await this._writeDashboardAIActionEvidence(
+          workspacePath,
+          this._latestDashboardAIActionContract,
+          this._latestDashboardAIActionId,
+          result
+        );
+        const registry = await recordAIActionExecution(
+          workspacePath,
+          this._latestDashboardAIActionId,
+          {
+            operation: result.operation,
+            ok: result.ok,
+            summary: result.summary,
+            evidencePath: evidence?.path,
+            evidenceSha256: evidence?.sha256,
+            evidenceSizeBytes: evidence?.sizeBytes,
+            commandCount: result.commands.length,
+            failedCommandCount: result.commands.filter((command) => command.exitCode !== 0).length,
+            failedCommands: result.commands
+              .filter((command) => command.exitCode !== 0)
+              .map((command) => command.command)
+              .slice(0, 5),
+          }
+        );
+        const commandSummary = result.commands
+          .map((command) => `- ${command.exitCode === 0 ? 'PASS' : 'FAIL'} ${command.command}`)
+          .join('\n');
+        this._panel.webview.postMessage({
+          command: 'studioAssistantMessage',
+          data: {
+            role: 'assistant',
+            content: [
+              `AI action ${result.operation}: ${result.ok ? 'PASS' : 'FAIL'}`,
+              result.summary,
+              evidence
+                ? `Evidence: ${evidence.path}\nSHA256: ${evidence.sha256}`
+                : 'Evidence: unavailable',
+              commandSummary || 'No command execution was required.',
+            ].join('\n\n'),
+            provider: 'ai-action-executor',
+          },
+        });
+        this._syncDashboardLatestAIAction(registry);
+        this._postDashboardAIActionRegistry(registry);
+        const { report, error } = loadAnalyzeReport({
+          workspacePath,
+          workspaceName:
+            typeof data === 'object' && data !== null && 'workspaceName' in data
+              ? String((data as any).workspaceName || 'Current Workspace')
+              : 'Current Workspace',
+        });
+        this._panel.webview.postMessage({ command: 'reportLoaded', data: report, error });
+        this._postDashboardStudioActionStatus(
+          `ai-action-${operation}`,
+          'completed',
+          undefined,
+          this._buildDashboardStudioActionResult({
+            actionId: `ai-action-${operation}`,
+            workspacePath,
+            report,
+            reportError: error,
+            registry,
+            fallbackSummary: result.summary,
+          })
+        );
+      } catch (error) {
+        this._postDashboardStudioActionStatus(
+          `ai-action-${operation}`,
+          'failed',
+          error instanceof Error ? error.message : String(error),
+          this._buildDashboardStudioActionResult({
+            actionId: `ai-action-${operation}`,
+            workspacePath,
+            fallbackSummary: error instanceof Error ? error.message : String(error),
+          })
+        );
+        this._panel.webview.postMessage({
+          command: 'studioAssistantMessage',
+          data: {
+            role: 'assistant',
+            content: `AI action operation blocked: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            provider: 'ai-action-executor',
+          },
+        });
+      } finally {
+        this._runningDashboardAIActionOperation = null;
+      }
+    } finally {
+      this._runningDashboardAIActionOperation = null;
+    }
+  }
+
+  private async _writeDashboardAIActionEvidence(
+    workspacePath: string,
+    contract: AIActionContract,
+    actionId: string,
+    result: AIActionExecutionResult
+  ): Promise<{ path: string; sha256: string; sizeBytes: number } | null> {
+    try {
+      const evidenceDir = path.join(workspacePath, '.workspai', 'evidence', 'ai-actions');
+      await fs.mkdirp(evidenceDir);
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const evidencePath = path.join(evidenceDir, `${stamp}-${result.operation}.json`);
+      await fs.writeFile(
+        evidencePath,
+        JSON.stringify(
+          {
+            schemaVersion: 'workspai.ai-action-evidence.v1',
+            generatedAt: new Date().toISOString(),
+            workspace: { workspacePath },
+            actionId,
+            contract,
+            result,
+            redactionApplied: true,
+          },
+          null,
+          2
+        ),
+        'utf8'
+      );
+      const content = await fs.readFile(evidencePath);
+      return {
+        path: evidencePath,
+        sha256: crypto.createHash('sha256').update(content).digest('hex'),
+        sizeBytes: content.byteLength,
+      };
+    } catch (error) {
+      console.warn('[WelcomePanel] Unable to write dashboard AI action evidence', error);
+      return null;
+    }
+  }
+
+  private _syncDashboardLatestAIAction(
+    registry: Awaited<ReturnType<typeof readAIActionRegistry>>
+  ): void {
+    const latest = getLatestRunnableAIAction(registry);
+    this._latestDashboardAIActionContract = latest?.contract || null;
+    this._latestDashboardAIActionId = latest?.id || null;
+    if (latest) {
+      this._panel.webview.postMessage({
+        command: 'studioActionContract',
+        data: {
+          actionId: latest.id,
+          contract: latest.contract,
+          validation: latest.validation,
+          provider: latest.provider,
+          rawJson: latest.rawJson,
+        },
+      });
     }
   }
 
@@ -2389,7 +3131,15 @@ No markdown, no explanation outside the JSON.`;
         creationPrompt,
         creationMode,
         creationFw,
-        workspacePath
+        workspacePath,
+        undefined,
+        async (messages, token) => {
+          const response = await askConfiguredAIProvider(this._context, messages, token);
+          return {
+            text: response.text,
+            modelId: response.provider,
+          };
+        }
       );
       panel.webview.postMessage({ command: 'aiCreationPlan', data: { plan, modelId, planSource } });
     } catch (err) {
@@ -2529,7 +3279,7 @@ No markdown, no explanation outside the JSON.`;
       if (prepared.validation.clarificationNeeded) {
         const clarificationText =
           prepared.validation.clarificationReason ??
-          'Context evidence is missing. Please select a workspace and run npx --yes --package rapidkit rapidkit doctor workspace, then ask again.';
+          `Context evidence is missing. Please select a workspace and run ${buildRapidkitDisplayCommand(['doctor', 'workspace'])}, then ask again.`;
 
         if (canTrackTelemetry) {
           try {
@@ -2582,21 +3332,36 @@ No markdown, no explanation outside the JSON.`;
         flushBufferedChunks();
       }, 50);
 
-      const { modelId } = await streamAIResponse(
-        prepared.messages,
-        (chunk: { text: string; done: boolean }) => {
-          if (chunk.text) {
-            fullAIResponse += chunk.text;
-            chunkBuffer += chunk.text;
-          }
-          if (chunk.done) {
-            stopFlushTimer();
-            flushBufferedChunks();
-          }
-        },
-        tokenSource.token,
-        requestedModelId
-      );
+      let modelId = '';
+      if (readWorkspaiSettings().aiProvider === 'openai-compatible') {
+        const providerResponse = await askConfiguredAIProvider(
+          this._context,
+          prepared.messages,
+          tokenSource.token
+        );
+        modelId = providerResponse.provider;
+        fullAIResponse += providerResponse.text;
+        chunkBuffer += providerResponse.text;
+        stopFlushTimer();
+        flushBufferedChunks();
+      } else {
+        const streamResult = await streamAIResponse(
+          prepared.messages,
+          (chunk: { text: string; done: boolean }) => {
+            if (chunk.text) {
+              fullAIResponse += chunk.text;
+              chunkBuffer += chunk.text;
+            }
+            if (chunk.done) {
+              stopFlushTimer();
+              flushBufferedChunks();
+            }
+          },
+          tokenSource.token,
+          requestedModelId
+        );
+        modelId = streamResult.modelId;
+      }
 
       if (tokenSource.token.isCancellationRequested) {
         await trackAIModalOutcome('cancelled', { stage: 'after-stream' });
@@ -2997,31 +3762,19 @@ No markdown, no explanation outside the JSON.`;
       scope: resolved.scope,
     });
 
-    switch (command) {
-      case 'workspaceBootstrap':
-        await vscode.commands.executeCommand('workspai.workspaceBootstrap', payload);
-        return;
-      case 'checkWorkspaceHealth':
-        await vscode.commands.executeCommand('workspai.checkWorkspaceHealth', {
-          ...payload,
-          preferredAction: 'check',
-        });
-        return;
-      case 'workspaceAnalyze':
-        await vscode.commands.executeCommand('workspai.workspaceAnalyze', payload);
-        return;
-      case 'workspaceReadiness':
-        await vscode.commands.executeCommand('workspai.workspaceReadiness', payload);
-        return;
-      default:
-        return;
+    const handled = await this._executeDashboardContractCommand(
+      command,
+      command === 'checkWorkspaceHealth' ? { ...payload, preferredAction: 'check' } : payload
+    );
+    if (!handled) {
+      return;
     }
   }
 
   private async _beginGovernanceChainForWorkspace(
     workspacePath: string,
     workspaceName: string | undefined,
-    triggeredBy: 'clone' | 'ai-create' | 'import'
+    triggeredBy: 'clone' | 'ai-create' | 'import' | 'create' | 'add'
   ): Promise<void> {
     if (this._panelRole !== 'dashboard') {
       return;
@@ -6554,7 +7307,7 @@ No markdown, no explanation outside the JSON.`;
       if (prepared.validation.clarificationNeeded) {
         const clarificationText =
           prepared.validation.clarificationReason ??
-          'Context evidence is missing. Select a workspace/project and run npx --yes --package rapidkit rapidkit doctor workspace, then retry.';
+          `Context evidence is missing. Select a workspace/project and run ${buildRapidkitDisplayCommand(['doctor', 'workspace'])}, then retry.`;
 
         const nextConversation = this._chatBrainConversations.get(conversationId);
         if (nextConversation) {
@@ -8751,7 +9504,7 @@ No markdown, no explanation outside the JSON.`;
     incidentPrimaryCtaExperimentVariant: 'single' | 'multi';
     incidentRollbackApprovalMode: 'never' | 'high-risk-only' | 'mutating-only' | 'always';
     incidentRollbackProtectedPaths: string[];
-    dashboardSection: 'overview' | 'console' | 'catalog' | 'workspaces';
+    dashboardSection: 'overview' | 'evidence' | 'operate' | 'console' | 'catalog' | 'workspaces';
   } {
     const prefs = this._context.globalState.get<Record<string, unknown>>(
       WelcomePanel.UI_PREFS_KEY,
@@ -8773,6 +9526,8 @@ No markdown, no explanation outside the JSON.`;
         prefs?.incidentRollbackProtectedPaths
       ),
       dashboardSection:
+        prefs?.dashboardSection === 'evidence' ||
+        prefs?.dashboardSection === 'operate' ||
         prefs?.dashboardSection === 'console' ||
         prefs?.dashboardSection === 'catalog' ||
         prefs?.dashboardSection === 'workspaces'
@@ -8791,6 +9546,7 @@ No markdown, no explanation outside the JSON.`;
   private async _sendWorkspaiSettings(preferredModelOverride?: string) {
     const settings = readWorkspaiSettings();
     let models: Array<{ id: string; name: string; vendor: string }> = [];
+    const aiProviderStatus = await getAIProviderStatus(this._context);
 
     try {
       const { listAvailableModels } = await import('../../core/aiService.js');
@@ -8804,6 +9560,10 @@ No markdown, no explanation outside the JSON.`;
       data: {
         preferredModel: preferredModelOverride ?? settings.preferredModel,
         aiStreamTimeoutMs: settings.aiStreamTimeoutMs,
+        aiProvider: settings.aiProvider,
+        customAIBaseUrl: settings.customAIBaseUrl,
+        customAIModel: settings.customAIModel,
+        aiProviderStatus,
         models,
       },
     });
@@ -9533,38 +10293,55 @@ No markdown, no explanation outside the JSON.`;
     };
   }
 
-  private async _refreshModulesCatalog(): Promise<void> {
-    try {
-      const service = ModulesCatalogService.getInstance();
-      // Get workspace path - use selected project's workspace or VS Code workspace folders
-      let workspacePath: string | undefined;
-      if (WelcomePanel._selectedProject) {
-        // Extract workspace path from project path (project is inside workspace)
-        const projectPath = WelcomePanel._selectedProject.path;
-        // Workspace is parent of project (e.g., /path/to/my-wsps)
-        workspacePath = path.dirname(projectPath);
-      } else if (
-        vscode.workspace.workspaceFolders &&
-        vscode.workspace.workspaceFolders.length > 0
-      ) {
-        workspacePath = vscode.workspace.workspaceFolders[0].uri.fsPath;
-      }
-
-      const result = await service.getModulesCatalog(workspacePath);
-      if (result.modules.length) {
-        this._modulesCatalog = result.modules;
-      } else {
-        this._modulesCatalog = MODULES;
-      }
-
+  private async _refreshModulesCatalog(options?: { forceRefresh?: boolean }): Promise<void> {
+    const postCatalog = (modules: typeof this._modulesCatalog, meta: Record<string, unknown>) => {
       this._panel.webview.postMessage({
         command: 'updateModulesCatalog',
-        data: this._modulesCatalog,
+        data: { modules, meta },
       });
+    };
+
+    try {
+      const service = ModulesCatalogService.getInstance();
+      const rawWorkspacePath = this._resolveModulesCatalogWorkspacePath();
+      const workspacePath =
+        (await resolveCatalogWorkspaceRoot(rawWorkspacePath)) || rawWorkspacePath;
+
+      if (options?.forceRefresh && workspacePath) {
+        CoreVersionService.getInstance().clearCache(workspacePath);
+      }
+
+      const result = await service.getModulesCatalog(workspacePath, {
+        forceRefresh: options?.forceRefresh === true,
+      });
+
+      this._modulesCatalog = result.modules;
+      postCatalog(this._modulesCatalog, result.meta);
     } catch (error) {
       console.error('[WelcomePanel] Failed to load modules catalog:', error);
       this._modulesCatalog = MODULES;
+      postCatalog(this._modulesCatalog, {
+        source: 'fallback',
+        loadError: error instanceof Error ? error.message : String(error),
+      });
     }
+  }
+
+  private _resolveModulesCatalogWorkspacePath(): string | undefined {
+    const selectedWorkspace = this._getSelectedWorkspaceInfo();
+    if (selectedWorkspace?.path) {
+      return selectedWorkspace.path;
+    }
+
+    if (WelcomePanel._selectedProject?.path) {
+      return path.dirname(WelcomePanel._selectedProject.path);
+    }
+
+    if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+      return vscode.workspace.workspaceFolders[0].uri.fsPath;
+    }
+
+    return undefined;
   }
 
   private async _sendWorkspaceStatus() {

@@ -1,19 +1,52 @@
+import * as fs from 'fs';
 import * as path from 'path';
 
+const WORKSPACE_DOCTOR_SUFFIX = `${path.sep}.rapidkit${path.sep}reports${path.sep}doctor-last-run.json`;
+const PROJECT_DOCTOR_SUFFIX = `${path.sep}.rapidkit${path.sep}reports${path.sep}doctor-project-last-run.json`;
+
 export function extractWorkspacePathFromDoctorReportPath(filePath: string): string | undefined {
-  const suffix = `${path.sep}.rapidkit${path.sep}reports${path.sep}doctor-last-run.json`;
-  const idx = filePath.lastIndexOf(suffix);
-  if (idx <= 0) {
-    return undefined;
+  const workspaceIdx = filePath.lastIndexOf(WORKSPACE_DOCTOR_SUFFIX);
+  if (workspaceIdx > 0) {
+    return filePath.slice(0, workspaceIdx);
   }
-  return filePath.slice(0, idx);
+
+  const projectIdx = filePath.lastIndexOf(PROJECT_DOCTOR_SUFFIX);
+  if (projectIdx > 0) {
+    const projectRoot = filePath.slice(0, projectIdx);
+    return findWorkspaceRootSync(projectRoot) ?? projectRoot;
+  }
+
+  return undefined;
+}
+
+function findWorkspaceRootSync(startPath: string): string | undefined {
+  let current = startPath;
+  const root = path.parse(current).root;
+
+  while (current && current !== root) {
+    if (fs.existsSync(path.join(current, '.rapidkit-workspace'))) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+
+  return undefined;
 }
 
 export function extractWorkspacePathFromReportPath(filePath: string): string | undefined {
   const reportsMarker = `${path.sep}.rapidkit${path.sep}reports${path.sep}`;
   const reportsIdx = filePath.lastIndexOf(reportsMarker);
   if (reportsIdx > 0) {
-    return filePath.slice(0, reportsIdx);
+    const rootCandidate = filePath.slice(0, reportsIdx);
+    const fileName = path.basename(filePath);
+    if (fileName === 'doctor-project-last-run.json') {
+      return findWorkspaceRootSync(rootCandidate) ?? rootCandidate;
+    }
+    return rootCandidate;
   }
 
   const archiveSuffix = `${path.sep}.rapidkit${path.sep}archive-manifest.json`;

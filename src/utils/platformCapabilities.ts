@@ -63,6 +63,21 @@ export function buildRapidkitCommand(
   );
 }
 
+export function buildRapidkitDisplayCommand(
+  args: string[] = [],
+  platform: NodeJS.Platform = process.platform
+): string {
+  return buildShellCommand('npx', ['rapidkit', ...args], platform);
+}
+
+export function toDisplayRapidkitCommand(command: string): string {
+  return command.replace(/\bnpx\s+--yes\s+--package\s+rapidkit\s+rapidkit\b/g, 'npx rapidkit');
+}
+
+export function toPinnedRapidkitExecutionCommand(command: string): string {
+  return command.replace(/\bnpx\s+rapidkit\b/g, 'npx --yes --package rapidkit rapidkit');
+}
+
 export function buildNpxRapidkitArgs(args: string[] = []): string[] {
   return ['--yes', '--package', 'rapidkit', 'rapidkit', ...args];
 }

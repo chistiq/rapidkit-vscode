@@ -13,6 +13,7 @@ import {
     Wrench,
     Zap,
 } from 'lucide-react';
+import { brandMonogramStyle, wsBrand } from '@/lib/workspaiBrandTokens';
 import { vscode } from '@/vscode';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -265,7 +266,7 @@ function Monogram({ letters, iconSrc, color }: { letters: string; iconSrc?: stri
     return (
         <div
             className="spc-monogram"
-            style={{ background: color + '22', borderColor: color + '55', color }}
+            style={brandMonogramStyle(color)}
         >
             {iconSrc ? <img src={iconSrc} alt={letters} className="spc-monogram-icon" /> : letters}
         </div>
@@ -298,7 +299,7 @@ function ToolCard({ tool }: { tool: ToolDef }) {
                     <>
                         <span className="spc-dot ok" />
                         <span className="spc-version">{version ? 'v' + version : 'Detected'}</span>
-                        {detectionText && <span className="spc-chip">{detectionText}</span>}
+                        {detectionText && <span className="ws-chip ws-chip--muted">{detectionText}</span>}
                     </>
                 ) : (
                     <>
@@ -311,14 +312,14 @@ function ToolCard({ tool }: { tool: ToolDef }) {
             <div className="spc-card-actions">
                 {shouldShowPrimary && tool.primaryAction && (
                     <button
-                        className="spc-btn primary"
+                        className="ws-btn ws-btn--primary"
                         onClick={() => vscode.postMessage(tool.primaryAction!.command, tool.primaryAction!.data)}
                     >
                         {primaryLabel}
                     </button>
                 )}
                 {tool.secondaryActions?.map(a => (
-                    <button key={a.command} className="spc-btn" onClick={() => vscode.postMessage(a.command)}>
+                    <button key={a.command} className="ws-btn" onClick={() => vscode.postMessage(a.command)}>
                         {a.label}
                     </button>
                 ))}
@@ -382,7 +383,11 @@ function AllSetBanner() {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function SetupExperience() {
+export function SetupExperience({
+    embedded = false,
+}: {
+    embedded?: boolean;
+}) {
     const [status, setStatus] = useState<SetupStatus | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -475,7 +480,7 @@ export function SetupExperience() {
         const cliUpgradeable = hasNewerVersion(s?.npmVersion, s?.latestNpmVersion);
         return [
             {
-                key: 'python', monogram: 'PY', iconSrc: window.PYTHON_ICON_URI, color: '#3776ab',
+                key: 'python', monogram: 'PY', iconSrc: window.PYTHON_ICON_URI, color: wsBrand.python,
                 title: 'Python 3.10+', subtitle: 'Required for RapidKit Core',
                 required: true, installed: pythonOk, version: s?.pythonVersion,
                 detection: s?.detections?.python,
@@ -488,7 +493,7 @@ export function SetupExperience() {
                 secondaryActions: [{ label: 'Verify', command: 'verifyPython' }],
             },
             {
-                key: 'core', monogram: 'WS', iconSrc: window.RAPIDKIT_ICON_URI, color: '#6c5ce7',
+                key: 'core', monogram: 'WS', iconSrc: window.RAPIDKIT_ICON_URI, color: wsBrand.core,
                 title: 'RapidKit Core', subtitle: 'Python engine for scaffolding',
                 required: true, installed: Boolean(s?.coreInstalled), version: s?.coreVersion,
                 detection: s?.detections?.core,
@@ -500,7 +505,7 @@ export function SetupExperience() {
                 secondaryActions: [{ label: 'Verify', command: 'verifyCore' }],
             },
             {
-                key: 'cli', monogram: 'RK', iconSrc: window.NPM_ICON_URI, color: '#00cfc1',
+                key: 'cli', monogram: 'RK', iconSrc: window.NPM_ICON_URI, color: wsBrand.cli,
                 title: 'RapidKit CLI', subtitle: 'Node.js bridge for workspace commands',
                 required: true, installed: Boolean(s?.npmInstalled || s?.npmAvailableViaNpx), version: s?.npmVersion,
                 detection: s?.detections?.cli,
@@ -516,7 +521,7 @@ export function SetupExperience() {
         const s = status;
         return [
             {
-                key: 'pip', monogram: 'pip', iconSrc: window.PYPI_ICON_URI, color: '#4b8bbe',
+                key: 'pip', monogram: 'pip', iconSrc: window.PYPI_ICON_URI, color: wsBrand.pip,
                 title: 'pip', subtitle: 'Python package installer',
                 installed: Boolean(s?.pipInstalled), version: s?.pipVersion,
                 detection: s?.detections?.pip,
@@ -524,7 +529,7 @@ export function SetupExperience() {
                 secondaryActions: [{ label: 'Verify', command: 'verifyPip' }],
             },
             {
-                key: 'pipx', monogram: 'px', iconSrc: window.PYPI_ICON_URI, color: '#2d9bff',
+                key: 'pipx', monogram: 'px', iconSrc: window.PYPI_ICON_URI, color: wsBrand.pipx,
                 title: 'pipx', subtitle: 'Isolated global tool installs',
                 installed: Boolean(s?.pipxInstalled), version: s?.pipxVersion,
                 detection: s?.detections?.pipx,
@@ -533,7 +538,7 @@ export function SetupExperience() {
                 secondaryActions: [{ label: 'Verify', command: 'verifyPipx' }],
             },
             {
-                key: 'poetry', monogram: 'Po', iconSrc: window.POETRY_ICON_URI, color: '#0ea5b3',
+                key: 'poetry', monogram: 'Po', iconSrc: window.POETRY_ICON_URI, color: wsBrand.poetry,
                 title: 'Poetry', subtitle: 'Dependency manager for FastAPI projects',
                 installed: Boolean(s?.poetryInstalled), version: s?.poetryVersion,
                 detection: s?.detections?.poetry,
@@ -548,7 +553,7 @@ export function SetupExperience() {
         const s = status;
         return [
             {
-                key: 'go', monogram: 'Go', iconSrc: window.GO_ICON_URI, color: '#00add8',
+                key: 'go', monogram: 'Go', iconSrc: window.GO_ICON_URI, color: wsBrand.go,
                 title: 'Go', subtitle: 'Runtime for GoFiber and GoGin projects',
                 installed: Boolean(s?.goInstalled), version: s?.goVersion,
                 detection: s?.detections?.go,
@@ -576,7 +581,7 @@ export function SetupExperience() {
                 : 'Java runtime ready for Spring Boot projects';
         return [
             {
-                key: 'java', monogram: 'Jv', iconSrc: window.SPRING_ICON_URI, color: '#ed8b00',
+                key: 'java', monogram: 'Jv', iconSrc: window.SPRING_ICON_URI, color: wsBrand.java,
                 title: 'Java (JDK 17+)', subtitle: 'Spring Boot runtime',
                 installed: javaOk && javaVersionOk,
                 version: javaVersionStr,
@@ -589,7 +594,7 @@ export function SetupExperience() {
                 ],
             },
             {
-                key: 'maven', monogram: 'Mv', iconSrc: window.SPRING_ICON_URI, color: '#c71a36',
+                key: 'maven', monogram: 'Mv', iconSrc: window.SPRING_ICON_URI, color: wsBrand.maven,
                 title: 'Maven', subtitle: 'Spring Boot build tool',
                 installed: Boolean(s?.mavenInstalled), version: s?.mavenVersion,
                 detection: s?.detections?.maven,
@@ -598,7 +603,7 @@ export function SetupExperience() {
                 secondaryActions: [{ label: 'Verify', command: 'verifyMaven' }],
             },
             {
-                key: 'gradle', monogram: 'Gr', iconSrc: window.SPRING_ICON_URI, color: '#1ba8cb',
+                key: 'gradle', monogram: 'Gr', iconSrc: window.SPRING_ICON_URI, color: wsBrand.gradle,
                 title: 'Gradle', subtitle: 'Spring Boot build tool',
                 installed: Boolean(s?.gradleInstalled), version: s?.gradleVersion,
                 detection: s?.detections?.gradle,
@@ -613,7 +618,7 @@ export function SetupExperience() {
         const s = status;
         return [
             {
-                key: 'dotnet', monogram: '.NET', color: '#512bd4',
+                key: 'dotnet', monogram: '.NET', color: wsBrand.dotnet,
                 title: '.NET SDK 8+', subtitle: 'ASP.NET Core runtime',
                 installed: Boolean(s?.dotnetInstalled), version: s?.dotnetVersion,
                 detection: s?.detections?.dotnet,
@@ -737,39 +742,66 @@ export function SetupExperience() {
     }, []);
 
     return (
-        <main className="spc-shell">
+        <main className={`ws-setup-shell${embedded ? ' ws-setup-shell--embedded' : ''}`}>
 
+            {!embedded ? (
             <header className="spc-topbar">
-                <button className="spc-btn" onClick={() => vscode.postMessage('showWelcome')}>
+                <button className="ws-btn" onClick={() => vscode.postMessage('showWelcome')}>
                     <ArrowLeft size={14} />
                     Dashboard
                 </button>
                 <div className="spc-topbar-actions">
-                    <button className="spc-btn" onClick={refresh} disabled={refreshing}>
+                    <button className="ws-btn" onClick={refresh} disabled={refreshing}>
                         <RefreshCw size={13} className={refreshing ? 'spc-spinning' : ''} />
                         Refresh
                     </button>
-                    <button className="spc-btn primary" onClick={() => vscode.postMessage('doctor')}>
+                    <button className="ws-btn ws-btn--primary" onClick={() => vscode.postMessage('doctor')}>
                         <Wrench size={13} />
                         Run Doctor
                     </button>
                 </div>
             </header>
+            ) : (
+            <header className="ws-setup-topbar--embedded spc-topbar spc-topbar--embedded">
+                <div className="spc-topbar-copy">
+                    <div className="ws-kicker">Developer Environment</div>
+                    <h2 className="ws-setup-topbar-title">Setup Center</h2>
+                </div>
+                <div className="spc-topbar-actions">
+                    <button className="ws-btn" onClick={refresh} disabled={refreshing}>
+                        <RefreshCw size={13} className={refreshing ? 'spc-spinning' : ''} />
+                        Refresh
+                    </button>
+                    <button className="ws-btn ws-btn--primary" onClick={() => vscode.postMessage('doctor')}>
+                        <Wrench size={13} />
+                        Run Doctor
+                    </button>
+                </div>
+            </header>
+            )}
 
-            <div className="spc-hero">
+            <div className={`spc-hero${embedded ? ' ws-setup-hero--embedded spc-hero--embedded' : ''}`}>
                 <div className="spc-hero-copy">
-                    <div className="spc-hero-eyebrow">Developer Environment</div>
+                    {!embedded ? (
+                        <>
+                    <div className="ws-kicker">Developer Environment</div>
                     <h1 className="spc-hero-title">Setup Center</h1>
                     <p className="spc-hero-desc">
                         Your runtime toolchain at a glance — Python, Node, Go, and Spring Boot, all in one place.
                     </p>
+                        </>
+                    ) : (
+                    <p className="ws-setup-hero-desc--embedded spc-hero-desc--embedded">
+                        Your runtime toolchain at a glance — Python, Node, Go, and Spring Boot, all in one place.
+                    </p>
+                    )}
                     {allReady && !loading && <AllSetBanner />}
                 </div>
                 <ProgressRing value={coreReady} max={coreTools.length} />
             </div>
 
             <section className="spc-smart-grid">
-                <article className="spc-panel-card">
+                <article className="ws-card">
                     <div className="spc-panel-head">
                         <Gauge size={14} />
                         <span>Readiness Score</span>
@@ -785,7 +817,7 @@ export function SetupExperience() {
                     )}
                 </article>
 
-                <article className="spc-panel-card">
+                <article className="ws-card">
                     <button className="spc-panel-toggle" onClick={() => setInsightsOpen((prev) => !prev)}>
                         <span>AI Setup Copilot</span>
                         {insightsOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
@@ -807,7 +839,7 @@ export function SetupExperience() {
                                 <div className="spc-snippet-wrap">
                                     <div className="spc-snippet-head">
                                         <span>Exact command{copilotCommands.length > 1 ? 's' : ''}</span>
-                                        <button className="spc-btn" onClick={() => vscode.postMessage('copyText', { text: copilotCommands.join('\n') })}>
+                                        <button className="ws-btn" onClick={() => vscode.postMessage('copyText', { text: copilotCommands.join('\n') })}>
                                             <Clipboard size={13} />
                                             Copy
                                         </button>
@@ -826,7 +858,7 @@ export function SetupExperience() {
             <ToolGroup title=".NET / ASP.NET Core" tools={dotnetTools} loading={loading} />
             <ToolGroup title="Java / Spring Boot" tools={javaTools} loading={loading} />
 
-            <section className="spc-panel-card">
+            <section className="ws-card">
                 <div className="spc-panel-head">
                     <FolderSearch size={14} />
                     <span>Manual Binary Paths</span>
@@ -843,7 +875,7 @@ export function SetupExperience() {
                                 <label className="spc-path-label">
                                     <span>{tool.label}</span>
                                     {detectionLabel(detection?.source) && (
-                                        <span className="spc-chip">{detectionLabel(detection?.source)}</span>
+                                        <span className="ws-chip ws-chip--muted">{detectionLabel(detection?.source)}</span>
                                     )}
                                 </label>
                                 <input
@@ -853,10 +885,10 @@ export function SetupExperience() {
                                     onChange={(event) => setManualDraft(tool.key, event.target.value)}
                                 />
                                 <div className="spc-path-actions">
-                                    <button className="spc-btn" onClick={() => vscode.postMessage('pickManualPath', { tool: tool.key })}>Browse</button>
-                                    <button className="spc-btn" onClick={() => saveManualPath(tool.key)}>Save</button>
-                                    <button className="spc-btn" onClick={() => validateManualPath(tool.key)}>Validate</button>
-                                    <button className="spc-btn" onClick={() => clearManualPath(tool.key)}>Clear</button>
+                                    <button className="ws-btn" onClick={() => vscode.postMessage('pickManualPath', { tool: tool.key })}>Browse</button>
+                                    <button className="ws-btn" onClick={() => saveManualPath(tool.key)}>Save</button>
+                                    <button className="ws-btn" onClick={() => validateManualPath(tool.key)}>Validate</button>
+                                    <button className="ws-btn" onClick={() => clearManualPath(tool.key)}>Clear</button>
                                 </div>
                             </div>
                         );
@@ -874,7 +906,7 @@ export function SetupExperience() {
                 )}
             </section>
 
-            <section className="spc-panel-card">
+            <section className="ws-card">
                 <div className="spc-panel-head">
                     <span>Install Strategy</span>
                 </div>
@@ -903,7 +935,7 @@ export function SetupExperience() {
                 </div>
             </section>
 
-            <section className="spc-panel-card">
+            <section className="ws-card">
                 <div className="spc-panel-head">
                     <Wrench size={14} />
                     <span>PATH Doctor</span>
@@ -911,7 +943,7 @@ export function SetupExperience() {
                 <div className="spc-pathdoctor-meta">
                     <span>Shell: {pathDoctor?.shellName || pathDoctor?.shell || 'unknown'}</span>
                     {pathDoctor?.targetFile && <span>Profile: {pathDoctor.targetFile}</span>}
-                    <button className="spc-btn" onClick={() => vscode.postMessage('runPathDoctor')}>Run PATH Doctor</button>
+                    <button className="ws-btn" onClick={() => vscode.postMessage('runPathDoctor')}>Run PATH Doctor</button>
                 </div>
                 {pathDoctor?.missingCommonEntries?.length ? (
                     <ul className="spc-plain-list">
@@ -926,11 +958,11 @@ export function SetupExperience() {
                             <span>{suggestion.title}</span>
                             <div className="spc-inline-actions">
                                 {suggestion.targetFile && (
-                                    <button className="spc-btn" onClick={() => vscode.postMessage('applyPathDoctorSuggestion', { suggestionId: suggestion.id })}>
+                                    <button className="ws-btn" onClick={() => vscode.postMessage('applyPathDoctorSuggestion', { suggestionId: suggestion.id })}>
                                         Apply Snippet
                                     </button>
                                 )}
-                                <button className="spc-btn" onClick={() => vscode.postMessage('copyText', { text: suggestion.snippet })}>
+                                <button className="ws-btn" onClick={() => vscode.postMessage('copyText', { text: suggestion.snippet })}>
                                     <Clipboard size={13} />
                                     Copy
                                 </button>
@@ -949,13 +981,13 @@ export function SetupExperience() {
                 </button>
                 {advancedOpen && (
                     <div className="spc-advanced-body">
-                        <button className="spc-btn" onClick={() => vscode.postMessage('installPipCore')}>Install Core via pipx</button>
-                        <button className="spc-btn" onClick={() => vscode.postMessage('upgradePipCore')}>Upgrade Core</button>
-                        <button className="spc-btn" onClick={() => vscode.postMessage('installPipxThenCore')}>Install pipx then Core</button>
-                        <button className="spc-btn" onClick={() => vscode.postMessage('installCoreFallback')}>Core fallback (pip)</button>
-                        <button className="spc-btn" onClick={() => vscode.postMessage('upgradeNpmGlobal')}>Upgrade CLI</button>
-                        <button className="spc-btn" onClick={() => vscode.postMessage('clearRequirementCache')}>Clear Cache</button>
-                        <button className="spc-btn" onClick={() => vscode.postMessage('exportSetupReport')}>
+                        <button className="ws-btn" onClick={() => vscode.postMessage('installPipCore')}>Install Core via pipx</button>
+                        <button className="ws-btn" onClick={() => vscode.postMessage('upgradePipCore')}>Upgrade Core</button>
+                        <button className="ws-btn" onClick={() => vscode.postMessage('installPipxThenCore')}>Install pipx then Core</button>
+                        <button className="ws-btn" onClick={() => vscode.postMessage('installCoreFallback')}>Core fallback (pip)</button>
+                        <button className="ws-btn" onClick={() => vscode.postMessage('upgradeNpmGlobal')}>Upgrade CLI</button>
+                        <button className="ws-btn" onClick={() => vscode.postMessage('clearRequirementCache')}>Clear Cache</button>
+                        <button className="ws-btn" onClick={() => vscode.postMessage('exportSetupReport')}>
                             <Save size={13} />
                             Export Report
                         </button>

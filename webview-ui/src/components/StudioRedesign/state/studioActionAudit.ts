@@ -1,0 +1,221 @@
+import { AIActionRegistryView, StudioActionStatus } from './studioState';
+
+export type StudioActionAuditOutcome =
+  | 'running'
+  | 'approved'
+  | 'approval-revoked'
+  | 'requested'
+  | 'completed'
+  | 'failed'
+  | 'blocked'
+  | 'needs-review'
+  | 'proposed'
+  | 'verified'
+  | 'applied'
+  | 'rolled-back'
+  | 'stale';
+
+export type StudioActionAuditPhase = 'detect' | 'diagnose' | 'plan' | 'verify' | 'learn';
+
+export interface StudioActionAuditEvent {
+  id: string;
+  actionId: string;
+  title: string;
+  scope: string;
+  phase: StudioActionAuditPhase;
+  outcome: StudioActionAuditOutcome;
+  happenedAt: string;
+  timeAgo: string;
+  provider?: string;
+  detail?: string;
+  evidencePath?: string | null;
+  evidenceSha256?: string | null;
+  evidenceSizeBytes?: number | null;
+  commandCount?: number;
+  failedCommandCount?: number;
+  failedCommands?: string[];
+  canRevealEvidence: boolean;
+}
+
+export type StudioApprovalAuditOperation =
+  | 'approval-confirmed'
+  | 'approval-revoked'
+  | 'apply-requested'
+  | 'verify-requested'
+  | 'rollback-requested';
+
+export interface StudioApprovalAuditEvent {
+  id: string;
+  actionId: string;
+  operation: StudioApprovalAuditOperation;
+  title: string;
+  summary?: string;
+  riskLevel?: 'low' | 'medium' | 'high';
+  detail?: string;
+  provider?: string;
+  happenedAt: string;
+}
+
+export function formatAuditRelativeTime(value: string, nowMs = Date.now()): string {
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) {
+    return 'recently';
+  }
+  const minutes = Math.max(0, Math.round((nowMs - time) / 60000));
+  if (minutes < 1) {
+    return 'now';
+  }
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h`;
+  }
+  return `${Math.round(hours / 24)}d`;
+}
+
+export function buildStudioActionAuditTimeline(params: {
+  registry?: AIActionRegistryView | null;
+  status?: StudioActionStatus | null;
+  approvalEvents?: StudioApprovalAuditEvent[];
+  nowMs?: number;
+}): StudioActionAuditEvent[] {
+  const { registry, status, approvalEvents = [], nowMs = Date.now() } = params;
+  const events: StudioActionAuditEvent[] = [];
+
+  for (const event of approvalEvents) {
+    const requested = event.operation.endsWith('-requested');
+    events.push({
+      id: `approval-${event.id}`,
+      actionId: event.actionId,
+      title: event.title,
+      scope: event.riskLevel ? `approval · ${event.riskLevel} risk` : 'approval',
+      phase:
+        event.operation === 'verify-requested'
+          ? 'verify'
+          : event.operation === 'rollback-requested'
+            ? 'learn'
+            : 'plan',
+      outcome:
+        event.operation === 'approval-confirmed'
+          ? 'approved'
+          : event.operation === 'approval-revoked'
+            ? 'approval-revoked'
+            : 'requested',
+      happenedAt: event.happenedAt,
+      timeAgo: formatAuditRelativeTime(event.happenedAt, nowMs),
+      provider: event.provider,
+      detail: event.detail || event.summary,
+      canRevealEvidence: false,
+      commandCount: requested ? 1 : undefined,
+    });
+  }
+
+  if (status) {
+    const result = status.result;
+    events.push({
+      id: `live-${status.updatedAt}-${status.actionId}`,
+      actionId: status.actionId,
+      title:
+        result?.summary ||
+        status.detail ||
+        `Studio action ${status.status}: ${status.actionId.replace(/-/g, ' ')}`,
+      scope: result?.verdict ? `live status · ${result.verdict}` : 'live status',
+      phase:
+        status.status === 'failed' ? 'diagnose' : status.status === 'completed' ? 'verify' : 'plan',
+      outcome:
+        status.status === 'started'
+          ? 'running'
+          : status.status === 'completed'
+            ? 'completed'
+            : 'failed',
+      happenedAt: status.updatedAt,
+      timeAgo: formatAuditRelativeTime(status.updatedAt, nowMs),
+      detail:
+        status.detail || (typeof result?.score === 'number' ? `Score ${result.score}` : undefined),
+      evidencePath: result?.evidencePath,
+      evidenceSha256: result?.evidenceSha256,
+      evidenceSizeBytes: result?.evidenceSizeBytes,
+      commandCount: result?.commandCount,
+      failedCommandCount: result?.failedCommandCount,
+      failedCommands: result?.failedCommands,
+      canRevealEvidence: Boolean(result?.evidencePath),
+    });
+  }
+
+  for (const entry of registry?.entries ?? []) {
+    if (entry.executions.length === 0) {
+      events.push({
+        id: `registry-${entry.id}`,
+        actionId: entry.id,
+        title: entry.summary,
+        scope: `${entry.actionType} · ${entry.riskLevel}`,
+        phase: entry.validationStatus === 'blocked' ? 'diagnose' : 'plan',
+        outcome:
+          entry.validationStatus === 'blocked'
+            ? 'blocked'
+            : entry.validationStatus === 'needs-review'
+              ? 'needs-review'
+              : 'proposed',
+        happenedAt: entry.createdAt,
+        timeAgo: formatAuditRelativeTime(entry.createdAt, nowMs),
+        provider: entry.provider,
+        detail: entry.validationStatus,
+        canRevealEvidence: false,
+      });
+      continue;
+    }
+
+    for (const execution of entry.executions) {
+      const outcome: StudioActionAuditOutcome =
+        execution.ok === false
+          ? 'failed'
+          : entry.lifecycleStatus === 'applied-failed-verify'
+            ? 'failed'
+            : entry.lifecycleStatus === 'blocked'
+              ? 'blocked'
+              : entry.lifecycleStatus === 'stale'
+                ? 'stale'
+                : entry.lifecycleStatus === 'verified'
+                  ? 'verified'
+                  : entry.lifecycleStatus === 'applied'
+                    ? 'applied'
+                    : entry.lifecycleStatus === 'rolled-back'
+                      ? 'rolled-back'
+                      : entry.validationStatus === 'needs-review'
+                        ? 'needs-review'
+                        : 'completed';
+      events.push({
+        id: `execution-${entry.id}-${execution.operation}-${execution.completedAt}`,
+        actionId: entry.id,
+        title: execution.summary || entry.summary,
+        scope: `${entry.actionType} · ${execution.operation}`,
+        phase:
+          execution.operation === 'verify'
+            ? 'verify'
+            : execution.operation === 'rollback'
+              ? 'learn'
+              : outcome === 'failed'
+                ? 'diagnose'
+                : 'plan',
+        outcome,
+        happenedAt: execution.completedAt,
+        timeAgo: formatAuditRelativeTime(execution.completedAt, nowMs),
+        provider: entry.provider,
+        detail: entry.summary,
+        evidencePath: execution.evidencePath,
+        evidenceSha256: execution.evidenceSha256,
+        evidenceSizeBytes: execution.evidenceSizeBytes,
+        commandCount: execution.commandCount,
+        failedCommandCount: execution.failedCommandCount,
+        failedCommands: execution.failedCommands,
+        canRevealEvidence: Boolean(execution.evidencePath),
+      });
+    }
+  }
+
+  return events
+    .sort((a, b) => new Date(b.happenedAt).getTime() - new Date(a.happenedAt).getTime())
+    .slice(0, 8);
+}

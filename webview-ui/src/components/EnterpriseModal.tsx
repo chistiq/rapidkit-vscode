@@ -12,6 +12,7 @@ interface EnterpriseModalProps {
     icon?: ReactNode;
     size?: EnterpriseModalSize;
     lockClose?: boolean;
+    headerActions?: ReactNode;
     children: ReactNode;
     footer?: ReactNode;
     onClose: () => void;
@@ -26,6 +27,7 @@ export function EnterpriseModal({
     icon,
     size = 'md',
     lockClose = false,
+    headerActions,
     children,
     footer,
     onClose,
@@ -58,17 +60,18 @@ export function EnterpriseModal({
                     <div className="enterprise-modal__title-row">
                         {icon && <div className="enterprise-modal__icon">{icon}</div>}
                         <div className="enterprise-modal__copy">
-                            {kicker && <div className="enterprise-modal__kicker">{kicker}</div>}
+                            {kicker && <div className="ws-kicker enterprise-modal__kicker">{kicker}</div>}
                             <div className="enterprise-modal__title">{title}</div>
                             {subtitle && <div className="enterprise-modal__subtitle">{subtitle}</div>}
                         </div>
                     </div>
                     <div className="enterprise-modal__header-actions">
-                        {scope && <span className="enterprise-modal__scope">{scope}</span>}
+                        {scope && <span className="ws-chip ws-chip--muted enterprise-modal__scope">{scope}</span>}
+                        {headerActions}
                         {!lockClose && (
                             <button
                                 type="button"
-                                className="enterprise-modal__close"
+                                className="ws-btn ws-btn--ghost ws-btn--icon enterprise-modal__close"
                                 onClick={onClose}
                                 aria-label="Close"
                                 title="Close"

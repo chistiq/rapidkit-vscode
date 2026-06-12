@@ -2017,6 +2017,32 @@
           "default": "auto",
           "markdownDescription": "Preferred AI model for Workspai AI features. Use `auto` to pick the best entitled VS Code language model, or set a specific model id/name from `Developer: Show Language Model Information`. Requires GitHub Copilot or another compatible language-model extension.",
           "scope": "window"
+        },
+        "workspai.aiProvider": {
+          "type": "string",
+          "default": "vscode-lm",
+          "enum": [
+            "vscode-lm",
+            "openai-compatible"
+          ],
+          "enumDescriptions": [
+            "Use VS Code language models such as GitHub Copilot.",
+            "Use a custom OpenAI-compatible API endpoint with the key stored in VS Code Secret Storage."
+          ],
+          "markdownDescription": "AI provider used by Workspai Studio and AI workflows.",
+          "scope": "window"
+        },
+        "workspai.customAIBaseUrl": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Base URL for a custom OpenAI-compatible provider. Examples: `https://api.openai.com/v1`, `http://localhost:11434/v1`, or a full `/chat/completions` URL.",
+          "scope": "window"
+        },
+        "workspai.customAIModel": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model name for the custom OpenAI-compatible provider.",
+          "scope": "window"
         }
       }
     },
@@ -2104,7 +2130,8 @@
     "sync:parity-snapshot": "node scripts/sync-import-stack-parity-snapshot.mjs",
     "check:parity-snapshot": "node scripts/sync-import-stack-parity-snapshot.mjs --check",
     "test:parity-contract": "npm run sync:parity-snapshot && vitest run src/test/importStackParity.snapshot.test.ts",
-    "test:ai-reliability": "vitest run src/test/aiReliabilityGate.test.ts src/test/aiService.test.ts src/test/aiContextResolver.test.ts src/test/chatParticipant.test.ts src/test/driftGuard.test.ts src/test/incidentStudioPolicyGates.test.ts src/test/incidentStudioResponseValidator.test.ts src/test/incidentStudioTelemetry.test.ts",
+    "test:claim-parity": "node scripts/check-website-extension-parity.mjs",
+    "test:ai-reliability": "vitest run src/test/aiReliabilityGate.test.ts src/test/aiService.test.ts src/test/aiContextResolver.test.ts src/test/chatParticipant.test.ts src/test/driftGuard.test.ts src/test/incidentStudioPolicyGates.test.ts src/test/incidentStudioResponseValidator.test.ts src/test/incidentStudioTelemetry.test.ts src/test/studioRedesignContracts.test.ts",
     "stabilization:debt-budget": "node scripts/stabilization-debt-budget.mjs",
     "test:coverage": "vitest run --coverage",
     "test:stress:incident-studio": "vitest run src/test/incidentStudioLifecycle.test.ts src/test/incidentStudioStressGate.test.ts src/test/debounceWatchers.test.ts",

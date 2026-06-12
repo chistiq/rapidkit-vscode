@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { X, Sparkles, Wand2, ArrowLeft, Check, ChevronRight, Loader2, Minus } from 'lucide-react';
+import { Sparkles, Wand2, ArrowLeft, Check, ChevronRight, Loader2, Minus } from 'lucide-react';
+import { EnterpriseModal, EnterpriseModalNotice } from './EnterpriseModal';
 
 // ─── Plan type (mirrors aiService.ts AICreationPlan) ────────────────────────
 export type AICreateProfile =
@@ -394,37 +395,34 @@ function rankPresetCategories(
         .sort((a, b) => b.maxScore - a.maxScore);
 }
 
-const PROFILE_META: Record<AICreateProfile, { icon: string; iconUri?: string; label: string; color: string }> = {
-    minimal: { icon: '⚡', label: 'Minimal', color: '#6b7280' },
-    'python-only': { icon: '🐍', label: 'Python', color: '#3b82f6' },
-    'node-only': { icon: '🟩', label: 'Node.js', color: '#22c55e' },
-    'go-only': { icon: '🔵', label: 'Go', color: '#06b6d4' },
+const PROFILE_META: Record<AICreateProfile, { icon: string; iconUri?: string; label: string }> = {
+    minimal: { icon: '⚡', label: 'Minimal' },
+    'python-only': { icon: '🐍', label: 'Python' },
+    'node-only': { icon: '🟩', label: 'Node.js' },
+    'go-only': { icon: '🔵', label: 'Go' },
     'java-only': {
         icon: '☕',
         iconUri: (typeof window !== 'undefined' ? (window as any).SPRINGBOOT_ICON_URI : undefined),
         label: 'Java',
-        color: '#6db33f',
     },
-    'dotnet-only': { icon: '.NET', label: '.NET', color: '#512bd4' },
-    polyglot: { icon: '⊞', label: 'Polyglot', color: '#a855f7' },
-    enterprise: { icon: '🛡️', label: 'Enterprise', color: '#f59e0b' },
+    'dotnet-only': { icon: '.NET', label: '.NET' },
+    polyglot: { icon: '⊞', label: 'Polyglot' },
+    enterprise: { icon: '🛡️', label: 'Enterprise' },
 };
 
-const FRAMEWORK_META: Record<AICreateFramework, { icon: string; iconUri?: string; label: string; color: string }> = {
-    fastapi: { icon: '⚡', label: 'FastAPI', color: '#009688' },
-    nestjs: { icon: '🔴', label: 'NestJS', color: '#E0234E' },
-    go: { icon: '🔵', label: 'Go', color: '#00ADD8' },
+const FRAMEWORK_META: Record<AICreateFramework, { icon: string; iconUri?: string; label: string }> = {
+    fastapi: { icon: '⚡', label: 'FastAPI' },
+    nestjs: { icon: '🔴', label: 'NestJS' },
+    go: { icon: '🔵', label: 'Go' },
     springboot: {
         icon: '☕',
         iconUri: (typeof window !== 'undefined' ? (window as any).SPRINGBOOT_ICON_URI : undefined),
         label: 'Spring Boot',
-        color: '#6db33f',
     },
     dotnet: {
         icon: '.NET',
         iconUri: (typeof window !== 'undefined' ? (window as any).DOTNET_ICON_URI : undefined),
         label: '.NET',
-        color: '#512bd4',
     },
 };
 
@@ -487,7 +485,7 @@ export function AICreateModal({
     const copy = {
         modeWorkspace: 'Workspace',
         modeProject: 'Project',
-        title: 'Create with AI',
+        title: 'Creation plan',
         describe: 'Describe what you want to build',
         quickStart: 'Quick start',
         targetWorkspace: 'Target workspace:',
@@ -528,12 +526,8 @@ export function AICreateModal({
             setEditedProjectName('');
             setIsMinimized(false);
             setShowAllPresets(false);
-            document.body.style.overflow = 'hidden';
             setTimeout(() => textareaRef.current?.focus(), 150);
-        } else {
-            document.body.style.overflow = '';
         }
-        return () => { document.body.style.overflow = ''; };
     }, [isOpen]);
 
     const basePresetCategories = useMemo<PresetCategory[]>(() => {
@@ -562,18 +556,6 @@ export function AICreateModal({
     const hasExtraPresets = rankedPresetCategories.some((category) => category.options.length > 3);
 
     if (!isOpen) { return null; }
-
-    // ── Minimized pill ────────────────────────────────────────────────────────
-    if (isMinimized) {
-        const pillLabel = isCreating ? (creationStage ?? 'Creating…') : 'AI is thinking…';
-        return (
-            <div className="ai-create-pill" onClick={() => setIsMinimized(false)} role="button" aria-label="Restore AI creation panel">
-                <Loader2 size={13} className="ai-create-pill-spinner" />
-                <span className="ai-create-pill-label">{pillLabel}</span>
-                <span className="ai-create-pill-restore">▲ Restore</span>
-            </div>
-        );
-    }
 
     const handleSubmit = () => {
         if (!prompt.trim() || isThinking) { return; }
@@ -607,62 +589,41 @@ export function AICreateModal({
 
     const fwMeta = framework ? FRAMEWORK_META[framework] : null;
     const modeLabel = mode === 'workspace' ? copy.modeWorkspace : copy.modeProject;
+    const subtitle = fwMeta
+        ? `${fwMeta.label} · ${copy.describe}`
+        : copy.describe;
 
     return (
         <>
-            {/* Backdrop */}
-            <div
-                className="ai-create-backdrop"
-                onClick={!isThinking && !isCreating ? onClose : undefined}
-            />
+            {isMinimized ? (
+                <div className="ai-create-pill" onClick={() => setIsMinimized(false)} role="button" aria-label="Restore creation plan panel">
+                    <Loader2 size={13} className="ai-create-pill-spinner" />
+                    <span className="ai-create-pill-label">
+                        {isCreating ? (creationStage ?? 'Creating…') : 'Planning…'}
+                    </span>
+                    <span className="ai-create-pill-restore">▲ Restore</span>
+                </div>
+            ) : null}
 
-            {/* Modal */}
-            <div
-                className="ai-create-modal"
-                role="dialog"
-                aria-modal="true"
-                aria-label={`${copy.title} ${modeLabel}`}
-            >
-                {/* ── Header ── */}
-                <div className="ai-create-header">
-                    <div className="ai-create-header-left">
-                        <div className="ai-create-header-icon">
-                            <Sparkles size={15} />
-                        </div>
-                        <div>
-                            <div className="ai-create-header-title">
-                                {copy.title} {modeLabel}
-                            </div>
-                            <div className="ai-create-header-sub">
-                                {fwMeta ? (
-                                    <>
-                                        <span style={{ color: fwMeta.color, display: 'inline-flex', alignItems: 'center' }}>
-                                            {fwMeta.iconUri ? (
-                                                <img
-                                                    src={fwMeta.iconUri}
-                                                    alt={fwMeta.label}
-                                                    style={{ width: 14, height: 14, objectFit: 'contain' }}
-                                                />
-                                            ) : (
-                                                fwMeta.icon
-                                            )}
-                                        </span>
-                                        &nbsp;{fwMeta.label} &bull; {copy.describe}
-                                    </>
-                                ) : (
-                                    copy.describe
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                    <div className="ai-create-header-right">
-                        {modelId && step === 'preview' && (
-                            <span className="ai-create-model-badge">✦ {modelId}</span>
-                        )}
+            <EnterpriseModal
+                isOpen={isOpen && !isMinimized}
+                kicker="Assist"
+                title={`${copy.title} · ${modeLabel}`}
+                subtitle={subtitle}
+                scope={modeLabel}
+                icon={<Sparkles size={15} />}
+                size="lg"
+                lockClose={isThinking || isCreating}
+                onClose={onClose}
+                headerActions={
+                    <>
+                        {modelId && step === 'preview' ? (
+                            <span className="ws-chip ws-chip--muted ai-create-model-badge">{modelId}</span>
+                        ) : null}
                         {(step === 'thinking' || step === 'creating') && (
                             <button
                                 type="button"
-                                className="ai-create-minimize"
+                                className="ws-btn ws-btn--ghost ws-btn--icon ai-create-minimize"
                                 onClick={() => setIsMinimized(true)}
                                 aria-label="Minimize"
                                 title="Minimize — continue using the dashboard"
@@ -670,26 +631,15 @@ export function AICreateModal({
                                 <Minus size={14} />
                             </button>
                         )}
-                        {!isThinking && !isCreating && (
-                            <button
-                                type="button"
-                                className="ai-create-close"
-                                onClick={onClose}
-                                aria-label="Close"
-                            >
-                                <X size={15} />
-                            </button>
-                        )}
-                    </div>
-                </div>
-
-                {/* ── Step: Prompt ── */}
+                    </>
+                }
+            >
                 {step === 'prompt' && (
                     <div className="ai-create-body">
                         {planError && (
-                            <div className="ai-create-error">
-                                <span>⚠ {planError}</span>
-                            </div>
+                            <EnterpriseModalNotice tone="danger">
+                                {planError}
+                            </EnterpriseModalNotice>
                         )}
 
                         {mode === 'project' && (
@@ -703,7 +653,7 @@ export function AICreateModal({
                             </div>
                         )}
 
-                        <div className="ai-create-presets-label">{copy.quickStart}</div>
+                        <div className="ws-kicker ai-create-presets-label">{copy.quickStart}</div>
                         <div className="ai-create-presets">
                             {visiblePresetCategories.map((category) => (
                                 <div key={category.id} className="ai-create-preset-group">
@@ -713,7 +663,7 @@ export function AICreateModal({
                                             <button
                                                 key={option.id}
                                                 type="button"
-                                                className={`ai-create-preset ${prompt === option.text ? 'ai-create-preset--active' : ''}`}
+                                                className={`ws-chip ai-create-preset ${prompt === option.text ? 'is-active' : ''}`}
                                                 onClick={() => setPrompt(option.text)}
                                             >
                                                 {option.text}
@@ -726,7 +676,7 @@ export function AICreateModal({
                         {hasExtraPresets && (
                             <button
                                 type="button"
-                                className="ai-create-presets-toggle"
+                                className="ws-btn ws-btn--ghost ai-create-presets-toggle"
                                 onClick={() => setShowAllPresets((prev) => !prev)}
                             >
                                 {showAllPresets ? copy.showLess : copy.showAll}
@@ -734,10 +684,10 @@ export function AICreateModal({
                         )}
 
                         {/* Textarea */}
-                        <div className="ai-create-input-wrap">
+                        <div className="ws-field ai-create-input-wrap">
                             <textarea
                                 ref={textareaRef}
-                                className="ai-create-textarea"
+                                className="ws-field__control ai-create-textarea"
                                 placeholder={
                                     mode === 'workspace'
                                         ? 'e.g. "E-commerce SaaS with user management, Stripe payments, and PostgreSQL"'
@@ -748,14 +698,13 @@ export function AICreateModal({
                                 onKeyDown={handleKeyDown}
                                 rows={3}
                             />
-                            <div className="ai-create-input-hint">{copy.inputHint}</div>
+                            <div className="ws-kicker ai-create-input-hint">{copy.inputHint}</div>
                         </div>
 
-                        {/* Actions */}
                         <div className="ai-create-actions">
                             <button
                                 type="button"
-                                className="ai-create-submit"
+                                className="ws-btn ws-btn--primary ai-create-submit"
                                 onClick={handleSubmit}
                                 disabled={!prompt.trim()}
                             >
@@ -766,14 +715,13 @@ export function AICreateModal({
                         </div>
 
                         <div className="ai-create-manual-link">
-                            <button type="button" onClick={onManualFallback}>
+                            <button type="button" className="ws-btn ws-btn--ghost" onClick={onManualFallback}>
                                 {copy.manual}
                             </button>
                         </div>
                     </div>
                 )}
 
-                {/* ── Step: Thinking ── */}
                 {step === 'thinking' && (
                     <div className="ai-create-body ai-create-body--centered">
                         <div className="ai-create-thinking">
@@ -793,21 +741,18 @@ export function AICreateModal({
                     </div>
                 )}
 
-                {/* ── Step: Preview ── */}
                 {step === 'preview' && plan && (
                     <div className="ai-create-body">
                         {planError && (
-                            <div className="ai-create-error">
-                                <span>⚠ {planError}</span>
-                            </div>
+                            <EnterpriseModalNotice tone="danger">
+                                {planError}
+                            </EnterpriseModalNotice>
                         )}
 
                         {planSource === 'heuristic' && (
-                            <div className="ai-create-error ai-create-error--info">
-                                <span>
-                                    AI model output was unavailable or invalid. Plan was inferred locally from your description — review framework and modules before creating.
-                                </span>
-                            </div>
+                            <EnterpriseModalNotice tone="warning">
+                                AI model output was unavailable or invalid. Plan was inferred locally from your description — review framework and modules before creating.
+                            </EnterpriseModalNotice>
                         )}
 
                         {/* Description */}
@@ -818,10 +763,7 @@ export function AICreateModal({
 
                         {/* Badges row */}
                         <div className="ai-create-badges-row">
-                            <span
-                                className="ai-create-badge"
-                                style={{ '--badge-color': PROFILE_META[plan.profile]?.color ?? '#6b7280' } as React.CSSProperties}
-                            >
+                            <span className="ws-chip ws-chip--accent ai-create-badge">
                                 {PROFILE_META[plan.profile]?.iconUri ? (
                                     <img
                                         src={PROFILE_META[plan.profile]?.iconUri}
@@ -833,10 +775,7 @@ export function AICreateModal({
                                 )}
                                 {PROFILE_META[plan.profile]?.label ?? plan.profile}
                             </span>
-                            <span
-                                className="ai-create-badge"
-                                style={{ '--badge-color': FRAMEWORK_META[plan.framework]?.color ?? '#6b7280' } as React.CSSProperties}
-                            >
+                            <span className="ws-chip ws-chip--primary ai-create-badge">
                                 {FRAMEWORK_META[plan.framework]?.iconUri ? (
                                     <img
                                         src={FRAMEWORK_META[plan.framework]?.iconUri}
@@ -848,32 +787,31 @@ export function AICreateModal({
                                 )}
                                 {FRAMEWORK_META[plan.framework]?.label ?? plan.framework}
                             </span>
-                            <span className="ai-create-badge ai-create-badge--kit">
+                            <span className="ws-chip ws-chip--muted ai-create-badge ai-create-badge--kit">
                                 {plan.kit}
                             </span>
                         </div>
 
-                        {/* Editable names */}
                         <div className="ai-create-fields">
                             {mode === 'workspace' && (
-                                <div className="ai-create-field">
-                                    <label className="ai-create-field-label">Workspace name</label>
+                                <div className="ws-field ai-create-field">
+                                    <label className="ws-field__label ai-create-field-label">Workspace name</label>
                                     <input
                                         type="text"
-                                        className="ai-create-field-input"
+                                        className="ws-field__control ai-create-field-input"
                                         value={editedWorkspaceName}
                                         onChange={(e) => setEditedWorkspaceName(e.target.value)}
                                         spellCheck={false}
                                     />
                                 </div>
                             )}
-                            <div className="ai-create-field">
-                                <label className="ai-create-field-label">
+                            <div className="ws-field ai-create-field">
+                                <label className="ws-field__label ai-create-field-label">
                                     {mode === 'workspace' ? 'First project name' : 'Project name'}
                                 </label>
                                 <input
                                     type="text"
-                                    className="ai-create-field-input"
+                                    className="ws-field__control ai-create-field-input"
                                     value={editedProjectName}
                                     onChange={(e) => setEditedProjectName(e.target.value)}
                                     spellCheck={false}
@@ -900,7 +838,7 @@ export function AICreateModal({
                                 </div>
                                 <div className="ai-create-modules-list">
                                     {plan.suggestedModules.map((slug) => (
-                                        <span key={slug} className="ai-create-module-chip">
+                                        <span key={slug} className="ws-chip ws-chip--muted ai-create-module-chip">
                                             {MODULE_LABELS[slug] ?? slug.split('/').pop()}
                                         </span>
                                     ))}
@@ -908,11 +846,10 @@ export function AICreateModal({
                             </div>
                         )}
 
-                        {/* Confirm actions */}
                         <div className="ai-create-actions">
                             <button
                                 type="button"
-                                className="ai-create-confirm"
+                                className="ws-btn ws-btn--primary ai-create-confirm"
                                 onClick={handleConfirm}
                                 disabled={
                                     mode === 'workspace'
@@ -925,7 +862,7 @@ export function AICreateModal({
                             </button>
                             <button
                                 type="button"
-                                className="ai-create-back"
+                                className="ws-btn ai-create-back"
                                 onClick={handleStartOver}
                             >
                                 <ArrowLeft size={13} />
@@ -934,14 +871,13 @@ export function AICreateModal({
                         </div>
 
                         <div className="ai-create-manual-link">
-                            <button type="button" onClick={onManualFallback}>
+                            <button type="button" className="ws-btn ws-btn--ghost" onClick={onManualFallback}>
                                 Switch to manual form
                             </button>
                         </div>
                     </div>
                 )}
 
-                {/* ── Step: Creating ── */}
                 {step === 'creating' && (
                     <div className="ai-create-body ai-create-body--centered">
                         <div className="ai-create-thinking">
@@ -953,7 +889,7 @@ export function AICreateModal({
                             {creationStage === 'workspace_done' ? (
                                 <>
                                     <div className="ai-create-thinking-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <Check size={16} style={{ color: 'var(--vscode-testing-iconPassed, #4caf50)' }} />
+                                        <Check size={16} style={{ color: 'var(--ws-success)' }} />
                                         Workspace <strong>{plan?.workspaceName}</strong> created
                                     </div>
                                     <div className="ai-create-thinking-label" style={{ marginTop: '6px' }}>
@@ -973,7 +909,7 @@ export function AICreateModal({
                         </div>
                     </div>
                 )}
-            </div>
+            </EnterpriseModal>
         </>
     );
 }

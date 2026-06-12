@@ -9,7 +9,13 @@ const SCOPE_LABEL: Record<SectionScope, string> = {
 };
 
 function ScopeBadge({ scope }: { scope: SectionScope }) {
-  return <span className={`workspai-section-scope workspai-section-scope--${scope}`}>{SCOPE_LABEL[scope]}</span>;
+  const chipClass =
+    scope === 'workspace'
+      ? 'ws-chip ws-chip--accent'
+      : scope === 'project'
+        ? 'ws-chip ws-chip--primary'
+        : 'ws-chip ws-chip--muted';
+  return <span className={chipClass}>{SCOPE_LABEL[scope]}</span>;
 }
 
 interface SectionHeaderProps {

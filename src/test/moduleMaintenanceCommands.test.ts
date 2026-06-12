@@ -166,6 +166,25 @@ describe('module maintenance commands', () => {
     );
   });
 
+  it('runs dashboard module diff in the npm terminal without extra prompts', async () => {
+    const { getCommand } = setupHarness();
+
+    await getCommand('workspai.moduleDiff')({
+      ...PROJECT_ITEM,
+      moduleSlug: 'free/core/health',
+      preferNonInteractive: true,
+    });
+
+    expect(showInputBoxMock).not.toHaveBeenCalled();
+    expect(showQuickPickMock).not.toHaveBeenCalled();
+    expect(terminalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: '/tmp/team-ws/api',
+        commands: [['diff', 'module', 'free/core/health']],
+      })
+    );
+  });
+
   it('uses the module slug from the tree item without prompting', async () => {
     const { getCommand } = setupHarness();
 

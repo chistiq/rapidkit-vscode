@@ -62,7 +62,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           vscode.commands.executeCommand('workspai.showWelcome');
           break;
         case 'incidentStudioNext':
-          vscode.commands.executeCommand('workspai.incidentStudioNext');
+          vscode.commands.executeCommand('workspai.openIncidentStudio');
           break;
         case 'releaseReadinessCommander':
           vscode.commands.executeCommand('workspai.aiReleaseReadinessCommander', {

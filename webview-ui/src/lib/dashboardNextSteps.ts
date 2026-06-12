@@ -1,5 +1,6 @@
 import type { Workspace, WorkspaceStatus } from '../types';
 import type { DashboardSection } from './dashboardSections';
+import { dashboardSectionForOpsChainStep } from './dashboardSections';
 import { isModuleInstallSupported, isUnsupportedModuleProjectType } from './moduleSupport';
 import type {
   DashboardEvidencePayload,
@@ -7,6 +8,23 @@ import type {
   DashboardNextStepPriority,
 } from './dashboardEvidence';
 import { findEvidenceCard } from './dashboardEvidence';
+import { getDashboardCommandMeta } from './dashboardCommandRegistry';
+
+function enrichDashboardNextStep(step: DashboardNextStep): DashboardNextStep {
+  if (!step.command) {
+    return step;
+  }
+  const commandMeta = getDashboardCommandMeta(step.command);
+  if (!commandMeta) {
+    return step;
+  }
+  return {
+    ...step,
+    commandLabel: commandMeta.label,
+    commandScope: commandMeta.scope,
+    commandTrackActivity: commandMeta.trackActivity,
+  };
+}
 
 export function buildDashboardNextSteps(input: {
   workspaceStatus: WorkspaceStatus;
@@ -61,7 +79,7 @@ export function buildDashboardNextSteps(input: {
       title: 'Resolve doctor blockers',
       detail: doctorCard.blockers?.[0] ?? doctorCard.summary,
       priority: 'critical',
-      section: 'overview',
+      section: 'operate',
       command: 'checkWorkspaceHealth',
       incidentStudioTarget: 'doctor',
       commandData: activeWorkspace?.path
@@ -74,6 +92,7 @@ export function buildDashboardNextSteps(input: {
       title: 'Review doctor warnings',
       detail: doctorCard.blockers?.[0] ?? doctorCard.summary,
       priority: 'recommended',
+      section: 'operate',
       command: 'checkWorkspaceHealth',
       incidentStudioTarget: 'doctor',
       commandData: activeWorkspace?.path
@@ -102,7 +121,7 @@ export function buildDashboardNextSteps(input: {
       title: 'Fix analyze findings',
       detail: analyzeCard.blockers?.[0] ?? analyzeCard.summary,
       priority: 'critical',
-      section: 'overview',
+      section: 'evidence',
       command: 'workspaceAnalyze',
       incidentStudioTarget: 'analyze',
     });
@@ -112,6 +131,7 @@ export function buildDashboardNextSteps(input: {
       title: 'Generate analyze evidence',
       detail: 'Run workspace Analyze to populate the ops evidence loop.',
       priority: 'recommended',
+      section: 'evidence',
       command: 'workspaceAnalyze',
     });
   }
@@ -123,7 +143,7 @@ export function buildDashboardNextSteps(input: {
       title: 'Clear readiness blockers',
       detail: readinessCard.blockers?.[0] ?? readinessCard.summary,
       priority: 'critical',
-      section: 'overview',
+      section: 'evidence',
       command: 'workspaceReadiness',
       incidentStudioTarget: 'readiness',
     });
@@ -136,7 +156,7 @@ export function buildDashboardNextSteps(input: {
       title: 'Review autopilot release blockers',
       detail: autopilotCard.blockers?.[0] ?? autopilotCard.summary,
       priority: 'critical',
-      section: 'overview',
+      section: 'evidence',
       command: 'workspaceAutopilotRelease',
       incidentStudioTarget: 'release',
     });
@@ -149,7 +169,7 @@ export function buildDashboardNextSteps(input: {
       title: 'Review share bundle health',
       detail: shareCard.blockers?.[0] ?? shareCard.summary,
       priority: 'recommended',
-      section: 'overview',
+      section: 'evidence',
       command: 'workspaceShare',
     });
   }
@@ -161,7 +181,7 @@ export function buildDashboardNextSteps(input: {
       title: 'Review snapshot evidence',
       detail: snapshotCard.summary,
       priority: 'recommended',
-      section: 'overview',
+      section: 'evidence',
       command: 'workspaceSnapshotCreate',
     });
   }
@@ -172,7 +192,7 @@ export function buildDashboardNextSteps(input: {
       title: 'Unblock governance chain',
       detail: evidence.opsChain.lastDetail ?? 'Resolve the current chain step before continuing.',
       priority: 'critical',
-      section: 'overview',
+      section: dashboardSectionForOpsChainStep(evidence.opsChain.currentStep),
     });
   }
 
@@ -183,7 +203,7 @@ export function buildDashboardNextSteps(input: {
       title: 'Fix bootstrap compliance',
       detail: bootstrapCard?.summary ?? 'Re-run bootstrap to satisfy workspace policy checks.',
       priority: 'critical',
-      section: 'workspaces',
+      section: 'operate',
       command: 'workspaceBootstrap',
       commandData: activeWorkspace?.path
         ? { path: activeWorkspace.path, name: activeWorkspace.name }
@@ -197,7 +217,7 @@ export function buildDashboardNextSteps(input: {
       title: 'Sync workspace mirror',
       detail: 'Mirror artifacts are stale — sync before release or handoff.',
       priority: 'recommended',
-      section: 'workspaces',
+      section: 'operate',
       command: 'mirrorSync',
       commandData: activeWorkspace.path
         ? { path: activeWorkspace.path, name: activeWorkspace.name }
@@ -209,9 +229,9 @@ export function buildDashboardNextSteps(input: {
     steps.push({
       id: 'select-project',
       title: 'Select or create a project',
-      detail: 'Pick a project from PROJECTS or use Overview project starters.',
+      detail: 'Pick a project from PROJECTS or create one from the Operate tab.',
       priority: 'recommended',
-      section: 'console',
+      section: 'operate',
     });
   } else if (isUnsupportedModuleProjectType(projectType)) {
     steps.push({
@@ -264,7 +284,7 @@ export function buildDashboardNextSteps(input: {
       title: 'Run Autopilot Release',
       detail: 'Evidence is green enough to attempt the governed release gate.',
       priority: 'optional',
-      section: 'overview',
+      section: 'evidence',
       command: 'workspaceAutopilotRelease',
       incidentStudioTarget: 'release',
     });
@@ -274,7 +294,7 @@ export function buildDashboardNextSteps(input: {
       title: 'Check release readiness',
       detail: 'Generate readiness evidence before Autopilot Release.',
       priority: 'optional',
-      section: 'overview',
+      section: 'evidence',
       command: 'workspaceReadiness',
     });
   }
@@ -287,5 +307,6 @@ export function buildDashboardNextSteps(input: {
 
   return steps
     .sort((left, right) => priorityOrder[left.priority] - priorityOrder[right.priority])
+    .map(enrichDashboardNextStep)
     .slice(0, 6);
 }

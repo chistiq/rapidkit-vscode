@@ -1,6 +1,6 @@
 /**
- * Incident Studio (Next) Command
- * Opens the new fullscreen Incident Studio redesign in a separate webview panel
+ * Incident Studio (Next) Command — consolidated to canonical main studio path.
+ * The separate preview panel is deprecated; this command opens production Incident Studio.
  */
 
 import * as vscode from 'vscode';
@@ -13,26 +13,24 @@ interface WorkspaceExplorerLike {
 }
 
 export async function showIncidentStudioNextCommand(
-  extensionUri: vscode.Uri,
+  context: vscode.ExtensionContext,
   workspaceExplorer?: WorkspaceExplorerLike
 ) {
   const logger = Logger.getInstance();
-  logger.info('Incident Studio (Next) command initiated');
+  logger.info('Incident Studio command initiated (canonical main studio path)');
 
   try {
-    // Get workspace context from explorer or use defaults
     const selectedWorkspace = workspaceExplorer?.getSelectedWorkspace?.();
-    const workspaceContext = selectedWorkspace
-      ? {
-          workspacePath: selectedWorkspace.path,
-          workspaceName: selectedWorkspace.name || path.basename(selectedWorkspace.path),
-        }
-      : {
-          workspacePath: '',
-          workspaceName: 'Unknown Workspace',
-        };
+    const workspacePath = selectedWorkspace?.path;
+    if (!workspacePath) {
+      vscode.window.showWarningMessage('Select a workspace first.');
+      return;
+    }
 
-    IncidentStudioPanel.createOrShow(extensionUri, workspaceContext);
+    IncidentStudioPanel.createOrShow(context, {
+      workspacePath,
+      workspaceName: selectedWorkspace?.name || path.basename(workspacePath),
+    });
   } catch (error) {
     logger.error('Error in showIncidentStudioNextCommand', error);
     vscode.window.showErrorMessage(

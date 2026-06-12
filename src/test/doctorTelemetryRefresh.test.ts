@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'fs-extra';
+import os from 'os';
+import path from 'path';
 
 import {
   createDoctorTelemetryRefreshController,
@@ -28,6 +31,24 @@ describe('doctorTelemetryRefresh', () => {
     expect(extractWorkspacePathFromReportPath('/tmp/demo/.rapidkit/archive-manifest.json')).toBe(
       '/tmp/demo'
     );
+  });
+
+  it('walks up from project doctor reports to the workspace marker', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'rapidkit-doctor-ws-'));
+    const projectPath = path.join(workspacePath, 'api');
+    await fs.ensureDir(path.join(projectPath, '.rapidkit', 'reports'));
+    await fs.writeFile(path.join(workspacePath, '.rapidkit-workspace'), '{}');
+    const reportPath = path.join(
+      projectPath,
+      '.rapidkit',
+      'reports',
+      'doctor-project-last-run.json'
+    );
+
+    expect(extractWorkspacePathFromReportPath(reportPath)).toBe(workspacePath);
+    expect(extractWorkspacePathFromDoctorReportPath(reportPath)).toBe(workspacePath);
+
+    await fs.remove(workspacePath);
   });
 
   it('debounces doctor telemetry refresh and keeps the latest workspace path', async () => {

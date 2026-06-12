@@ -131,6 +131,19 @@ export interface Workspace {
   };
 }
 
+export interface ModulesCatalogMeta {
+  source?: 'live' | 'cache' | 'fallback';
+  rapidkitCoreVersion?: string;
+  rapidkitCoreLocation?: 'workspace' | 'global' | 'npx';
+  workspacePath?: string;
+  loadError?: string;
+}
+
+export interface ModulesCatalogUpdate {
+  modules: ModuleData[];
+  meta?: ModulesCatalogMeta;
+}
+
 export interface InstallStatus {
   npmInstalled: boolean;
   coreInstalled: boolean;

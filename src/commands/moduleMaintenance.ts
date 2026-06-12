@@ -14,6 +14,7 @@ type ModuleMaintenanceItem = {
   projectPath?: unknown;
   module?: { slug?: unknown };
   moduleSlug?: unknown;
+  preferNonInteractive?: boolean;
 };
 
 type MaintenanceActionQuickPickItem = vscode.QuickPickItem & { value: ModuleMaintenanceAction };
@@ -66,6 +67,10 @@ function resolveItemModuleSlug(item: unknown): string | undefined {
   const typed = asMaintenanceItem(item);
   const candidate = typed?.module?.slug ?? typed?.moduleSlug;
   return typeof candidate === 'string' && candidate.length > 0 ? candidate : undefined;
+}
+
+function isDashboardAction(item: unknown): boolean {
+  return asMaintenanceItem(item)?.preferNonInteractive === true;
 }
 
 export async function readInstalledModules(projectPath: string): Promise<InstalledModuleEntry[]> {
@@ -156,6 +161,22 @@ async function promptModuleSlug(input: {
   return manual?.trim() || undefined;
 }
 
+function runInNpmTerminal(input: {
+  name: string;
+  projectPath: string;
+  commands: string[][];
+}): void {
+  runRapidkitCommandsInTerminal({
+    name: input.name,
+    cwd: input.projectPath,
+    commands: input.commands,
+  });
+}
+
+function terminalName(projectName: string, action: ModuleMaintenanceAction): string {
+  return `Workspai: Module ${action[0].toUpperCase()}${action.slice(1)} — ${projectName}`;
+}
+
 export function registerModuleMaintenanceCommands(options: {
   logger: Logger;
   getProjectExplorer: () => ProjectExplorerLike | undefined;
@@ -177,7 +198,28 @@ export function registerModuleMaintenanceCommands(options: {
       return;
     }
 
+    const dashboard = isDashboardAction(item);
+
     if (action === 'upgrade') {
+      if (dashboard) {
+        const confirmed = await vscode.window.showWarningMessage(
+          `Upgrade module "${slug}" in project "${projectName}"?`,
+          { modal: true },
+          'Upgrade Module'
+        );
+        if (confirmed !== 'Upgrade Module') {
+          return;
+        }
+
+        runInNpmTerminal({
+          name: terminalName(projectName, action),
+          projectPath,
+          commands: [['upgrade', 'module', slug]],
+        });
+        logger.info(`Running module upgrade (${slug}) for project: ${projectPath}`);
+        return;
+      }
+
       const mode = await vscode.window.showQuickPick(
         [
           {
@@ -216,9 +258,9 @@ export function registerModuleMaintenanceCommands(options: {
         }
       }
 
-      runRapidkitCommandsInTerminal({
-        name: `Workspai: Module Upgrade — ${projectName}`,
-        cwd: projectPath,
+      runInNpmTerminal({
+        name: terminalName(projectName, action),
+        projectPath,
         commands: [command],
       });
       logger.info(`Running module upgrade (${slug}) for project: ${projectPath}`);
@@ -226,6 +268,16 @@ export function registerModuleMaintenanceCommands(options: {
     }
 
     if (action === 'diff') {
+      if (dashboard) {
+        runInNpmTerminal({
+          name: terminalName(projectName, action),
+          projectPath,
+          commands: [['diff', 'module', slug]],
+        });
+        logger.info(`Running module diff (${slug}) for project: ${projectPath}`);
+        return;
+      }
+
       const withPatch = await vscode.window.showQuickPick(
         [
           {
@@ -255,9 +307,9 @@ export function registerModuleMaintenanceCommands(options: {
         command.push('--patch');
       }
 
-      runRapidkitCommandsInTerminal({
-        name: `Workspai: Module Diff — ${projectName}`,
-        cwd: projectPath,
+      runInNpmTerminal({
+        name: terminalName(projectName, action),
+        projectPath,
         commands: [command],
       });
       logger.info(`Running module diff (${slug}) for project: ${projectPath}`);
@@ -265,6 +317,25 @@ export function registerModuleMaintenanceCommands(options: {
     }
 
     if (action === 'rollback') {
+      if (dashboard) {
+        const confirmed = await vscode.window.showWarningMessage(
+          `Roll back module "${slug}" in project "${projectName}" to the last checkpoint?`,
+          { modal: true },
+          'Rollback Module'
+        );
+        if (confirmed !== 'Rollback Module') {
+          return;
+        }
+
+        runInNpmTerminal({
+          name: terminalName(projectName, action),
+          projectPath,
+          commands: [['rollback', 'module', slug]],
+        });
+        logger.info(`Running module rollback (${slug}) for project: ${projectPath}`);
+        return;
+      }
+
       const mode = await vscode.window.showQuickPick(
         [
           {
@@ -303,9 +374,9 @@ export function registerModuleMaintenanceCommands(options: {
         }
       }
 
-      runRapidkitCommandsInTerminal({
-        name: `Workspai: Module Rollback — ${projectName}`,
-        cwd: projectPath,
+      runInNpmTerminal({
+        name: terminalName(projectName, action),
+        projectPath,
         commands: [command],
       });
       logger.info(`Running module rollback (${slug}) for project: ${projectPath}`);
@@ -313,6 +384,25 @@ export function registerModuleMaintenanceCommands(options: {
     }
 
     if (action === 'uninstall') {
+      if (dashboard) {
+        const confirmed = await vscode.window.showWarningMessage(
+          `Uninstall module "${slug}" from project "${projectName}"? Unmodified module files will be deleted.`,
+          { modal: true },
+          'Uninstall Module'
+        );
+        if (confirmed !== 'Uninstall Module') {
+          return;
+        }
+
+        runInNpmTerminal({
+          name: terminalName(projectName, action),
+          projectPath,
+          commands: [['uninstall', 'module', slug]],
+        });
+        logger.info(`Running module uninstall (${slug}) for project: ${projectPath}`);
+        return;
+      }
+
       const mode = await vscode.window.showQuickPick(
         [
           {
@@ -351,9 +441,9 @@ export function registerModuleMaintenanceCommands(options: {
         }
       }
 
-      runRapidkitCommandsInTerminal({
-        name: `Workspai: Module Uninstall — ${projectName}`,
-        cwd: projectPath,
+      runInNpmTerminal({
+        name: terminalName(projectName, action),
+        projectPath,
         commands: [command],
       });
       logger.info(`Running module uninstall (${slug}) for project: ${projectPath}`);
@@ -361,9 +451,9 @@ export function registerModuleMaintenanceCommands(options: {
     }
 
     // action === 'checkpoint'
-    runRapidkitCommandsInTerminal({
-      name: `Workspai: Module Checkpoint — ${projectName}`,
-      cwd: projectPath,
+    runInNpmTerminal({
+      name: terminalName(projectName, action),
+      projectPath,
       commands: [['checkpoint', 'module', slug]],
     });
     logger.info(`Running module checkpoint (${slug}) for project: ${projectPath}`);

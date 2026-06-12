@@ -1,15 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Sparkles } from 'lucide-react';
 import {
-    borderRadius,
-    colorTokens,
-    motionTokens,
-    shadows,
-    spacing,
-    transitions,
-    typography,
-} from '../styles/designTokens';
-import {
     IncidentPhase,
     PolicyGateState,
     ReleaseGatePosture,
@@ -17,6 +8,25 @@ import {
     UserMode,
 } from '../state/studioState';
 import { ThemeMode } from '../styles/themeSystem';
+import { studioClass, releasePostureToneClass } from '../styles/studioUi';
+import type { IncidentStudioDisplayMode } from '../../../lib/incidentStudioPreferences';
+
+function TopBarControlGroup(props: {
+    label: string;
+    children: React.ReactNode;
+    compact?: boolean;
+}) {
+    if (props.compact) {
+        return <>{props.children}</>;
+    }
+
+    return (
+        <div className={studioClass.topbarGroup}>
+            <span className={studioClass.topbarGroupLabel}>{props.label}</span>
+            <div className={studioClass.topbarGroupBody}>{props.children}</div>
+        </div>
+    );
+}
 
 interface TopBarProps {
     currentPhase: IncidentPhase;
@@ -27,6 +37,14 @@ interface TopBarProps {
     workspaceName?: string;
     releasePosture: ReleaseGatePosture;
     compactMode?: boolean;
+    embedded?: boolean;
+    /** Nested inside MissionControlHeader — suppress outer chrome */
+    merged?: boolean;
+    displayMode?: IncidentStudioDisplayMode;
+    onDisplayModeChange?: (mode: IncidentStudioDisplayMode) => void;
+    telemetryRefreshLabel?: string | null;
+    isTelemetryRefreshing?: boolean;
+    onTelemetryRefresh?: () => void;
     onUserModeChange: (mode: UserMode) => void;
     onThemeModeChange: (mode: ThemeMode) => void;
     onScopeChange: (scope: ScopeType) => void;
@@ -40,10 +58,20 @@ export const TopBar: React.FC<TopBarProps> = ({
     workspaceName,
     releasePosture,
     compactMode = false,
+    embedded = false,
+    merged = false,
+    displayMode = 'lite',
+    onDisplayModeChange,
+    telemetryRefreshLabel = null,
+    isTelemetryRefreshing = false,
+    onTelemetryRefresh,
     onUserModeChange,
     onThemeModeChange,
     onScopeChange,
 }) => {
+    void themeMode;
+    void onThemeModeChange;
+
     const [isScopeOpen, setIsScopeOpen] = useState(false);
     const scopeContainerRef = useRef<HTMLDivElement | null>(null);
     const scopeTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -122,12 +150,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         }
     };
 
-    const releaseColor =
-        releasePosture === 'go'
-            ? colorTokens.health.ok
-            : releasePosture === 'no-go'
-                ? colorTokens.error
-                : colorTokens.warning;
+    const releaseToneClass = releasePostureToneClass(releasePosture);
 
     const releaseLabel =
         releasePosture === 'go'
@@ -136,36 +159,31 @@ export const TopBar: React.FC<TopBarProps> = ({
                 ? 'Blocked'
                 : 'Evaluating';
 
+    const topbarClass = [
+        studioClass.topbar,
+        merged ? 'studio-topbar--merged' : embedded ? studioClass.missionStrip : 'studio-topbar--standalone',
+        !merged && !embedded ? studioClass.rail : undefined,
+    ].filter(Boolean).join(' ');
+
     return (
-        <header
-            style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: spacing.md,
-                padding: `${spacing.sm} ${spacing.xl}`,
-                borderBottom: `1px solid ${colorTokens.border.subtle}`,
-                backgroundColor: colorTokens.surface3,
-                backdropFilter: 'none',
-                position: 'sticky',
-                top: 0,
-                zIndex: 100,
-                minHeight: '44px',
-                flexWrap: 'nowrap',
-                animation: `studioEnterUp ${motionTokens.durations.headerEnter}ms ${motionTokens.easing.emphasized} both`,
-            }}
-        >
-            {/* Brand + workspace identity */}
-            <Sparkles size={13} color={colorTokens.primary} style={{ flexShrink: 0 }} />
-            <span style={{ ...typography.captionSmall, color: colorTokens.text.tertiary, flexShrink: 0, letterSpacing: '0.3px' }}>
-                Incident Studio
-            </span>
-            <span style={{ color: colorTokens.border.medium, fontSize: '14px', flexShrink: 0, userSelect: 'none' }}>·</span>
-            <span style={{ ...typography.label, color: colorTokens.text.primary, fontWeight: 600, flexShrink: 0 }}>
-                {workspaceName || 'rapidkit-core'}
+        <header className={topbarClass}>
+            {!embedded ? (
+                <>
+                    <Sparkles
+                        size={13}
+                        className={`${studioClass.flexShrink0} ${studioClass.toneAccent} ${studioClass.opacity90}`}
+                    />
+                    <span className={`${studioClass.kicker} ${studioClass.flexShrink0}`}>
+                        Incident Studio
+                    </span>
+                    <span className="studio-topbar__sep">·</span>
+                </>
+            ) : null}
+            <span className="studio-topbar__title">
+                {workspaceName || 'Current Workspace'}
             </span>
 
-            {/* Scope selector */}
-            <div ref={scopeContainerRef} style={{ position: 'relative', flexShrink: 0 }}>
+            <div ref={scopeContainerRef} className={studioClass.relative}>
                 <button
                     ref={scopeTriggerRef}
                     type="button"
@@ -174,30 +192,15 @@ export const TopBar: React.FC<TopBarProps> = ({
                     aria-controls="studio-scope-selector"
                     onClick={() => setIsScopeOpen((open) => !open)}
                     onKeyDown={handleScopeTriggerKeyDown}
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: spacing.xs,
-                        padding: `2px ${spacing.sm}`,
-                        borderRadius: borderRadius.md,
-                        border: `1px solid ${colorTokens.border.medium}`,
-                        background: colorTokens.surface3,
-                        color: colorTokens.text.secondary,
-                        cursor: 'pointer',
-                        transition: transitions.microInteraction,
-                    }}
+                    className={studioClass.scopeTrigger}
                 >
-                    <span style={{ ...typography.captionSmall, color: colorTokens.text.quaternary }}>Scope</span>
-                    <span style={{ ...typography.captionSmall, color: colorTokens.text.primary }}>
+                    <span className="studio-scope-trigger__label">Scope</span>
+                    <span className="studio-scope-trigger__value">
                         {scopeType === 'workspace' ? 'Workspace' : 'Project'}
                     </span>
                     <ChevronDown
                         size={11}
-                        color={colorTokens.text.quaternary}
-                        style={{
-                            transform: isScopeOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                            transition: transitions.microInteraction,
-                        }}
+                        className={`${studioClass.chevron}${isScopeOpen ? ' is-open' : ''} ${studioClass.scopeChevron}`}
                     />
                 </button>
 
@@ -206,18 +209,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                         id="studio-scope-selector"
                         role="listbox"
                         aria-label="Scope selector"
-                        style={{
-                            position: 'absolute',
-                            top: 'calc(100% + 6px)',
-                            left: 0,
-                            minWidth: '200px',
-                            overflow: 'hidden',
-                            borderRadius: borderRadius.md,
-                            border: `1px solid ${colorTokens.border.medium}`,
-                            backgroundColor: colorTokens.surface3,
-                            boxShadow: 'none',
-                            zIndex: 110,
-                        }}
+                        className="studio-scope-menu"
                     >
                         {scopeOptions.map((scope, index) => (
                             <button
@@ -234,25 +226,12 @@ export const TopBar: React.FC<TopBarProps> = ({
                                     scopeTriggerRef.current?.focus();
                                 }}
                                 onKeyDown={(event) => handleScopeOptionKeyDown(event, index, scope)}
-                                style={{
-                                    width: '100%',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'flex-start',
-                                    gap: spacing.xs,
-                                    padding: `${spacing.md} ${spacing.lg}`,
-                                    border: 'none',
-                                    borderBottom: scope === 'workspace' ? `1px solid ${colorTokens.border.subtle}` : 'none',
-                                    background: scopeType === scope ? colorTokens.primaryInverse : 'transparent',
-                                    color: colorTokens.text.primary,
-                                    cursor: 'pointer',
-                                    transition: transitions.microInteraction,
-                                }}
+                                className={`studio-scope-option${scopeType === scope ? ' is-selected' : ''}`}
                             >
-                                <span style={{ ...typography.label, color: scopeType === scope ? colorTokens.primary : colorTokens.text.primary }}>
+                                <span className="studio-scope-option__title">
                                     {scope === 'workspace' ? 'Workspace Aggregated' : 'Project Scoped'}
                                 </span>
-                                <span style={{ ...typography.caption, color: colorTokens.text.tertiary }}>
+                                <span className="studio-scope-option__desc">
                                     {scope === 'workspace'
                                         ? 'Cross-module signals and fleet-level traceability.'
                                         : 'Focused execution against the active module.'}
@@ -263,156 +242,141 @@ export const TopBar: React.FC<TopBarProps> = ({
                 )}
             </div>
 
-            {/* Spacer */}
-            <div style={{ flex: 1 }} />
+            <div className="studio-topbar__spacer" />
 
-            {/* Release posture — inline pill */}
-            <div
-                role="status"
-                aria-label={`Release posture: ${releaseLabel}`}
-                style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: spacing.sm,
-                    padding: `3px ${spacing.md}`,
-                    borderRadius: borderRadius.md,
-                    border: `1px solid ${releaseColor}33`,
-                    backgroundColor: `${releaseColor}0f`,
-                    flexShrink: 0,
-                }}
-            >
-                <span
-                    style={{
-                        width: '6px',
-                        height: '6px',
-                        borderRadius: '50%',
-                        backgroundColor: releaseColor,
-                        flexShrink: 0,
-                        animation: releasePosture === 'pending' ? `pulse ${motionTokens.durations.pulse}ms infinite` : undefined,
-                    }}
-                />
-                <span style={{ ...typography.captionSmall, color: releaseColor, fontWeight: 600 }}>{releaseLabel}</span>
-                <span style={{ color: colorTokens.border.medium, ...typography.captionSmall, userSelect: 'none' }}>·</span>
-                <span style={{ ...typography.captionSmall, color: colorTokens.text.tertiary }}>
-                    {policyGates.flowState === 'passing' ? 'Flow verified' : policyGates.flowState === 'warning' ? 'Flow degraded' : 'Flow blocked'}
-                </span>
-            </div>
+            <div className={studioClass.topbarOpsCluster}>
+                <TopBarControlGroup label="Release" compact={compactMode}>
+                    <div
+                        role="status"
+                        aria-label={`Release posture: ${releaseLabel}`}
+                        className={`${studioClass.releasePill} ${releaseToneClass}`}
+                    >
+                        <span
+                            className={`studio-release-pill__dot ${releaseToneClass}${releasePosture === 'pending' ? ' is-pulse' : ''}`}
+                        />
+                        <span>{releaseLabel}</span>
+                        {!compactMode ? (
+                            <>
+                                <span className="studio-release-pill__sep">·</span>
+                                <span className="studio-release-pill__flow">
+                                    {policyGates.flowState === 'passing'
+                                        ? 'Flow verified'
+                                        : policyGates.flowState === 'warning'
+                                          ? 'Flow degraded'
+                                          : 'Flow blocked'}
+                                </span>
+                            </>
+                        ) : null}
+                    </div>
+                </TopBarControlGroup>
 
-            {/* Theme mode toggle */}
-            <div
-                role="group"
-                aria-label="Theme mode"
-                style={{
-                    display: 'flex',
-                    gap: '2px',
-                    padding: '3px',
-                    borderRadius: borderRadius.md,
-                    border: `1px solid ${colorTokens.border.medium}`,
-                    background: colorTokens.surface2,
-                    flexShrink: 0,
-                }}
-            >
-                {(['auto', 'light', 'dark'] as ThemeMode[]).map((mode) => {
-                    const isActive = themeMode === mode;
-                    return (
+                {onTelemetryRefresh ? (
+                    <TopBarControlGroup label="Telemetry" compact={compactMode}>
                         <button
-                            key={mode}
                             type="button"
-                            onClick={() => onThemeModeChange(mode)}
-                            aria-pressed={isActive}
-                            title={mode === 'auto' ? 'Follow VS Code theme' : mode === 'light' ? 'Force light theme' : 'Force dark theme'}
-                            style={{
-                                padding: `3px ${spacing.md}`,
-                                borderRadius: borderRadius.sm,
-                                border: isActive ? `1px solid ${colorTokens.primary}66` : '1px solid transparent',
-                                background: isActive ? colorTokens.primaryInverse : 'transparent',
-                                color: isActive ? colorTokens.text.primary : colorTokens.text.quaternary,
-                                cursor: 'pointer',
-                                transition: transitions.microInteraction,
-                                ...typography.captionSmall,
-                                fontWeight: isActive ? 600 : 400,
-                                textTransform: 'capitalize',
-                            }}
+                            className={`studio-topbar__telemetry${isTelemetryRefreshing ? ' is-refreshing' : ''}`}
+                            onClick={onTelemetryRefresh}
+                            disabled={isTelemetryRefreshing}
+                            title="Refresh studio telemetry"
+                            aria-label={
+                                isTelemetryRefreshing
+                                    ? 'Refreshing studio telemetry'
+                                    : telemetryRefreshLabel
+                                      ? `Telemetry last refreshed at ${telemetryRefreshLabel}. Click to refresh.`
+                                      : 'Refresh studio telemetry'
+                            }
                         >
-                            {mode}
+                            {isTelemetryRefreshing
+                                ? 'Refreshing…'
+                                : compactMode
+                                  ? telemetryRefreshLabel ?? '—'
+                                  : `Updated · ${telemetryRefreshLabel ?? '—'}`}
                         </button>
-                    );
-                })}
-            </div>
+                    </TopBarControlGroup>
+                ) : null}
 
-            {/* User mode toggle */}
-            {!compactMode ? (
-                <div
-                    role="group"
-                    aria-label="User mode"
-                    style={{
-                        display: 'flex',
-                        gap: '2px',
-                        padding: '3px',
-                        borderRadius: borderRadius.md,
-                        border: `1px solid ${colorTokens.border.medium}`,
-                        background: colorTokens.surface2,
-                        flexShrink: 0,
-                    }}
-                >
-                    {(['guided', 'standard', 'expert'] as UserMode[]).map((mode) => {
-                        const isActive = userMode === mode;
-                        return (
-                            <button
-                                key={mode}
-                                type="button"
-                                onClick={() => onUserModeChange(mode)}
-                                aria-pressed={isActive}
-                                title={
-                                    mode === 'guided'
-                                        ? 'Safe step-by-step workflow'
-                                        : mode === 'standard'
-                                            ? 'Balanced control and automation'
-                                            : 'Advanced detail and operator control'
-                                }
-                                style={{
-                                    padding: `3px ${spacing.md}`,
-                                    borderRadius: borderRadius.sm,
-                                    border: isActive ? `1px solid ${colorTokens.primary}66` : '1px solid transparent',
-                                    background: isActive ? colorTokens.primaryInverse : 'transparent',
-                                    color: isActive ? colorTokens.text.primary : colorTokens.text.quaternary,
-                                    cursor: 'pointer',
-                                    transition: transitions.microInteraction,
-                                    ...typography.captionSmall,
-                                    fontWeight: isActive ? 600 : 400,
-                                }}
+                {onDisplayModeChange ? (
+                    <TopBarControlGroup label="View" compact={compactMode}>
+                        {!compactMode ? (
+                            <div
+                                role="group"
+                                aria-label="Studio view density"
+                                className={`${studioClass.segmented} ${studioClass.flexShrink0}`}
                             >
-                                {mode === 'guided' ? 'Guided' : mode === 'standard' ? 'Standard' : 'Expert'}
+                                {(['lite', 'full'] as IncidentStudioDisplayMode[]).map((mode) => (
+                                    <button
+                                        key={mode}
+                                        type="button"
+                                        onClick={() => onDisplayModeChange(mode)}
+                                        aria-pressed={displayMode === mode}
+                                        title={
+                                            mode === 'lite'
+                                                ? 'Compact release posture and essentials'
+                                                : 'Full operational detail'
+                                        }
+                                    >
+                                        {mode === 'lite' ? 'Lite' : 'Full'}
+                                    </button>
+                                ))}
+                            </div>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => onDisplayModeChange(displayMode === 'lite' ? 'full' : 'lite')}
+                                title="Toggle lite/full view"
+                                className={studioClass.btnGhost}
+                            >
+                                {displayMode}
                             </button>
-                        );
-                    })}
-                </div>
-            ) : (
-                <button
-                    type="button"
-                    onClick={() =>
-                        onUserModeChange(
-                            userMode === 'guided'
-                                ? 'standard'
-                                : userMode === 'standard'
-                                    ? 'expert'
-                                    : 'guided',
-                        )
-                    }
-                    title="Cycle user mode"
-                    style={{
-                        padding: `4px ${spacing.md}`,
-                        borderRadius: borderRadius.md,
-                        border: `1px solid ${colorTokens.border.medium}`,
-                        background: colorTokens.surface2,
-                        color: colorTokens.text.secondary,
-                        ...typography.captionSmall,
-                    }}
-                >
-                    Mode: {userMode}
-                </button>
-            )}
+                        )}
+                    </TopBarControlGroup>
+                ) : null}
+
+                <TopBarControlGroup label="Mode" compact={compactMode}>
+                    {!compactMode ? (
+                        <div
+                            role="group"
+                            aria-label="User mode"
+                            className={`${studioClass.segmented} ${studioClass.flexShrink0}`}
+                        >
+                            {(['guided', 'standard', 'expert'] as UserMode[]).map((mode) => (
+                                <button
+                                    key={mode}
+                                    type="button"
+                                    onClick={() => onUserModeChange(mode)}
+                                    aria-pressed={userMode === mode}
+                                    title={
+                                        mode === 'guided'
+                                            ? 'Safe step-by-step workflow'
+                                            : mode === 'standard'
+                                              ? 'Balanced control and automation'
+                                              : 'Advanced detail and operator control'
+                                    }
+                                >
+                                    {mode === 'guided' ? 'Guided' : mode === 'standard' ? 'Standard' : 'Expert'}
+                                </button>
+                            ))}
+                        </div>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() =>
+                                onUserModeChange(
+                                    userMode === 'guided'
+                                        ? 'standard'
+                                        : userMode === 'standard'
+                                          ? 'expert'
+                                          : 'guided',
+                                )
+                            }
+                            title="Cycle user mode"
+                            className={studioClass.btnGhost}
+                        >
+                            {userMode}
+                        </button>
+                    )}
+                </TopBarControlGroup>
+            </div>
         </header>
     );
 };
-

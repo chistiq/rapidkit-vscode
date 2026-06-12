@@ -1,9 +1,33 @@
 import { StrictMode, useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { IncidentStudioVNext } from '@/components/StudioRedesign';
-import AnalyzeReportViewer from '@/components/AnalyzeReportViewer';
+import { WorkspaiThemeProvider } from '@/components/WorkspaiThemeProvider';
+import type {
+    AIActionContractView,
+    AIActionRegistryView,
+    ChatMessage,
+    StudioActionStatus,
+} from '@/components/StudioRedesign/state/studioState';
+import type { IncidentStudioStabilizationKpiStatus } from '@/lib/incidentStudioPayload';
+import { parseStudioActionCommand } from '@/components/StudioRedesign/state/studioActions';
+import { mapAnalyzeReportToStudioState } from '@/lib/incidentStudioReportMapper';
+import { normalizeIncidentActionResultPayload } from '@/lib/incidentStudioPayload';
+import type { NormalizedIncidentActionResultPayload } from '@/lib/incidentStudioPayload';
+import { resolveVerifyGateBlockedReasonsFromTelemetry } from '@/lib/incidentStudioActionOutcomePresentation';
+import {
+    DEFAULT_INCIDENT_STUDIO_DISPLAY_MODE,
+    DEFAULT_INCIDENT_USER_MODE,
+    normalizeIncidentStudioDisplayMode,
+    normalizeIncidentUserMode,
+    type IncidentStudioDisplayMode,
+    type IncidentUserMode,
+} from '@/lib/incidentStudioPreferences';
 import { vscode } from '@/vscode';
+import '@/styles/workspai-tokens.css';
 import '@/styles-tailwind.css';
+import '@/styles/workspai-primitives.css';
+import '@/styles/workspai-studio.css';
+import '@/styles/workspai-studio-chrome.css';
 
 declare global {
     interface Window {
@@ -55,7 +79,24 @@ const IncidentStudioApp = () => {
     const [reportData, setReportData] = useState<AnalyzeReport | null>(null);
     const [reportError, setReportError] = useState<string | null>(null);
     const [reportLoading, setReportLoading] = useState(false);
-    const [showStudio, setShowStudio] = useState(false);
+    const [incomingMessage, setIncomingMessage] = useState<ChatMessage | null>(null);
+    const [incomingActionContract, setIncomingActionContract] = useState<AIActionContractView | null>(null);
+    const [incomingActionRegistry, setIncomingActionRegistry] = useState<AIActionRegistryView | null>(null);
+    const [incomingActionStatus, setIncomingActionStatus] = useState<StudioActionStatus | null>(null);
+    const [incomingActionResult, setIncomingActionResult] =
+        useState<NormalizedIncidentActionResultPayload | null>(null);
+    const [verifyGateBlockedReasons, setVerifyGateBlockedReasons] = useState<string[]>([]);
+    const [stabilizationKpiStatus, setStabilizationKpiStatus] =
+        useState<IncidentStudioStabilizationKpiStatus | null>(null);
+    const [preferredUserMode, setPreferredUserMode] = useState<IncidentUserMode>(DEFAULT_INCIDENT_USER_MODE);
+    const [studioDisplayMode, setStudioDisplayMode] = useState<IncidentStudioDisplayMode>(
+        DEFAULT_INCIDENT_STUDIO_DISPLAY_MODE,
+    );
+    const [telemetryRefreshLabel, setTelemetryRefreshLabel] = useState<string | null>(null);
+    const [isTelemetryRefreshing, setIsTelemetryRefreshing] = useState(false);
+    const reportBackedState = reportData
+        ? mapAnalyzeReportToStudioState(reportData, workspaceName)
+        : null;
 
     // Check if analyze report exists and load it on mount
     useEffect(() => {
@@ -67,6 +108,13 @@ const IncidentStudioApp = () => {
         // Then try to load it
         setReportLoading(true);
         vscode.postMessage('loadReport', { workspacePath });
+        vscode.postMessage('loadAIActionRegistry', { workspacePath });
+        vscode.postMessage('getUiPreferences', { workspacePath });
+        vscode.postMessage('requestIncidentStudioTelemetry', {
+            workspacePath,
+            forceRefresh: true,
+        });
+        setIsTelemetryRefreshing(true);
     }, [workspacePath]);
 
     // Listen for messages from extension
@@ -87,10 +135,100 @@ const IncidentStudioApp = () => {
                     } else {
                         setReportData(message.data);
                         setReportError(null);
-                        if (message.data) {
-                            setShowStudio(true);
-                        }
                     }
+                    break;
+                case 'studioAssistantMessage':
+                    setIncomingMessage({
+                        id: `host-${Date.now()}`,
+                        role: 'assistant',
+                        content:
+                            typeof message.data?.content === 'string'
+                                ? message.data.content
+                                : 'No response returned.',
+                        timestamp: new Date().toISOString(),
+                        phase: 'diagnose',
+                        sources: [
+                            {
+                                type: 'system',
+                                label:
+                                    typeof message.data?.provider === 'string'
+                                        ? message.data.provider
+                                        : 'ai-provider',
+                            },
+                        ],
+                    });
+                    break;
+                case 'studioActionContract':
+                    setIncomingActionContract({
+                        actionId: message.data?.actionId,
+                        contract: message.data?.contract ?? null,
+                        validation: message.data?.validation ?? {
+                            status: 'blocked',
+                            issues: [],
+                            canApply: false,
+                            canVerify: false,
+                            canRollback: false,
+                        },
+                        parseError: message.data?.parseError,
+                        rawJson: message.data?.rawJson,
+                        provider: message.data?.provider,
+                        receivedAt: new Date().toISOString(),
+                    });
+                    break;
+                case 'studioActionStatus':
+                    setIncomingActionStatus({
+                        actionId:
+                            typeof message.data?.actionId === 'string'
+                                ? message.data.actionId
+                                : 'unknown',
+                        status:
+                            message.data?.status === 'completed' || message.data?.status === 'failed'
+                                ? message.data.status
+                                : 'started',
+                        detail:
+                            typeof message.data?.detail === 'string'
+                                ? message.data.detail
+                                : undefined,
+                        result:
+                            message.data?.result && typeof message.data.result === 'object'
+                                ? message.data.result
+                                : undefined,
+                        updatedAt:
+                            typeof message.data?.updatedAt === 'string'
+                                ? message.data.updatedAt
+                                : new Date().toISOString(),
+                    });
+                    break;
+                case 'aiActionRegistryLoaded':
+                    setIncomingActionRegistry({
+                        updatedAt: message.data?.updatedAt ?? new Date().toISOString(),
+                        entries: Array.isArray(message.data?.entries) ? message.data.entries : [],
+                    });
+                    break;
+                case 'aiChatActionResult': {
+                    const actionResultPayload = normalizeIncidentActionResultPayload(message.data);
+                    setIncomingActionResult(actionResultPayload);
+                    break;
+                }
+                case 'incidentStudioTelemetry':
+                    setIsTelemetryRefreshing(false);
+                    setTelemetryRefreshLabel(
+                        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    );
+                    if (message.data?.studioHardGateStatus) {
+                        setVerifyGateBlockedReasons(
+                            resolveVerifyGateBlockedReasonsFromTelemetry(message.data.studioHardGateStatus),
+                        );
+                    }
+                    if (message.data?.studioStabilizationKpiStatus) {
+                        setStabilizationKpiStatus(message.data.studioStabilizationKpiStatus);
+                    }
+                    break;
+                case 'uiPreferences':
+                    setPreferredUserMode(normalizeIncidentUserMode(message.data?.incidentUserMode));
+                    setStudioDisplayMode(
+                        normalizeIncidentStudioDisplayMode(message.data?.incidentStudioDisplayMode),
+                    );
                     break;
             }
         };
@@ -100,12 +238,25 @@ const IncidentStudioApp = () => {
     }, []);
 
     const handleSendMessage = (message: string) => {
-        // Check if this is a special command
+        if (message.startsWith('studio-action:')) {
+            const actionId = parseStudioActionCommand(message);
+            if (!actionId) {
+                return `Unknown Studio action blocked: ${message}`;
+            }
+            vscode.postMessage('runStudioAction', {
+                workspacePath,
+                workspaceName,
+                actionId,
+            });
+            return `Running ${actionId.replace(/-/g, ' ')} from Studio.`;
+        }
+
         if (message.startsWith('/runAnalyze')) {
             vscode.postMessage('runAnalyze', { workspacePath });
+            return 'Running workspace analysis.';
         } else {
-            // Regular message handling
-            console.log('Message from Studio:', message);
+            vscode.postMessage('studioMessage', { workspacePath, message });
+            return undefined;
         }
     };
 
@@ -121,122 +272,125 @@ const IncidentStudioApp = () => {
         vscode.postMessage('revealEvidence', { path, workspacePath });
     };
 
-    const handleShowStudio = () => {
-        setShowStudio(true);
+    const handleAIActionCommand = (operation: 'apply' | 'verify' | 'rollback') => {
+        vscode.postMessage('runAIActionContractCommand', {
+            workspacePath,
+            workspaceName,
+            operation,
+            actionId: incomingActionContract?.actionId,
+            summary: incomingActionContract?.contract?.summary,
+            riskLevel: incomingActionContract?.contract?.riskLevel,
+            confidence: incomingActionContract?.contract?.confidence,
+        });
     };
 
-    // If report exists and we should show it, render the report viewer
-    if (reportExists && reportData) {
-        return (
-            <StrictMode>
-                <AnalyzeReportViewer 
-                    report={reportData} 
-                    isLoading={reportLoading}
-                    error={reportError}
-                    onRunAnalyze={handleRunAnalyzeClick}
-                    onCopyCommand={handleCopyCommand}
-                    onRevealEvidence={handleRevealEvidence}
-                />
-            </StrictMode>
-        );
-    }
+    const handleExportIncidentReproPack = (
+        reproPack: NonNullable<NormalizedIncidentActionResultPayload['incidentReproPack']>,
+    ) => {
+        vscode.postMessage('exportIncidentReproPack', {
+            incidentReproPack: reproPack,
+            memoryInfluenceAuditTimeline: incomingActionResult?.memoryInfluenceAuditTimeline,
+            workspacePath,
+        });
+    };
 
-    // Otherwise show the studio with banner
+    const handleImportIncidentReproPack = () => {
+        vscode.postMessage('importIncidentReproPack');
+    };
+
+    const handleReplayIncidentQuery = (query: string) => {
+        vscode.postMessage('studioMessage', { workspacePath, message: query });
+    };
+
+    const handleRunGuidedCommand = (command: string) => {
+        if (!command.trim() || !workspacePath) {
+            return;
+        }
+        vscode.postMessage('runIncidentInlineCommand', {
+            command,
+            workspacePath,
+            workspaceName,
+        });
+    };
+
+    const handleStudioDisplayModeChange = (mode: IncidentStudioDisplayMode) => {
+        const normalizedMode = normalizeIncidentStudioDisplayMode(mode);
+        setStudioDisplayMode(normalizedMode);
+        vscode.postMessage('setUiPreference', {
+            key: 'incidentStudioDisplayMode',
+            value: normalizedMode,
+            workspacePath,
+        });
+    };
+
+    const handleTelemetryRefresh = () => {
+        if (!workspacePath) {
+            return;
+        }
+        setIsTelemetryRefreshing(true);
+        vscode.postMessage('requestIncidentStudioTelemetry', {
+            workspacePath,
+            forceRefresh: true,
+        });
+    };
+
     return (
         <StrictMode>
             {/* Report Missing Banner */}
-            {!reportExists && workspacePath && (
-                <div style={{
-                    background: 'var(--vscode-inputValidation-warningBackground, #5f7e0f)',
-                    color: 'var(--vscode-inputValidation-warningForeground, #fff)',
-                    padding: '12px 16px',
-                    borderBottom: '1px solid var(--vscode-inputValidation-warningBorder, #444)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '12px',
-                    fontSize: '13px',
-                }}>
+            {!reportExists && workspacePath ? (
+                <div className="studio-banner studio-banner--warn">
                     <span>
-                        <strong>Workspace analysis not found.</strong> Run <code style={{ background: 'rgba(0,0,0,0.2)', padding: '2px 6px', borderRadius: '3px' }}>rapidkit analyze</code> to get started with full workspace health diagnostics.
+                        <strong>Workspace analysis not found.</strong> Run <code>rapidkit analyze</code> to get started with full workspace health diagnostics.
                     </span>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                            onClick={handleRunAnalyzeClick}
-                            style={{
-                                background: 'var(--vscode-button-background, #0078d4)',
-                                color: 'var(--vscode-button-foreground, #fff)',
-                                border: 'none',
-                                padding: '6px 12px',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                whiteSpace: 'nowrap',
-                            }}
-                        >
+                    <div className="studio-banner__actions">
+                        <button type="button" className="ws-btn ws-btn--primary" onClick={handleRunAnalyzeClick}>
                             Run Analyze
                         </button>
                     </div>
                 </div>
-            )}
+            ) : null}
 
-            {/* Report Error Banner */}
-            {reportError && !reportData && (
-                <div style={{
-                    background: 'rgba(241, 76, 76, 0.1)',
-                    color: 'var(--vscode-foreground)',
-                    padding: '12px 16px',
-                    borderBottom: '1px solid rgba(241, 76, 76, 0.3)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '12px',
-                    fontSize: '13px',
-                }}>
+            {reportError && !reportData ? (
+                <div className="studio-banner studio-banner--error">
                     <span>
-                        <strong>⚠️ Error:</strong> {reportError}
+                        <strong>Error:</strong> {reportError}
                     </span>
-                    <button
-                        onClick={handleRunAnalyzeClick}
-                        style={{
-                            background: 'var(--vscode-button-background, #0078d4)',
-                            color: 'var(--vscode-button-foreground, #fff)',
-                            border: 'none',
-                            padding: '6px 12px',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '12px',
-                            whiteSpace: 'nowrap',
-                        }}
-                    >
-                        Retry
-                    </button>
+                    <div className="studio-banner__actions">
+                        <button type="button" className="ws-btn ws-btn--primary" onClick={handleRunAnalyzeClick}>
+                            Retry
+                        </button>
+                    </div>
                 </div>
-            )}
+            ) : null}
 
             <IncidentStudioVNext
                 initialState={{
+                    ...(reportBackedState || {}),
                     workspaceName,
-                    userMode: 'expert',
-                    health: {
-                        modulesOk: 12,
-                        modulesWarning: 2,
-                        modulesError: 1,
-                        systemLastCheck: 'just now',
-                    },
-                    relatedFiles: [
-                        { path: 'src/core/doctor/evidence.ts', health: 'ok', freshness: '1m ago' },
-                        { path: 'src/core/release/gates.ts', health: 'warning', freshness: '2m ago' },
-                        { path: 'src/kits/incident/studio.ts', health: 'error', freshness: '5m ago' },
-                    ],
-                    policyGates: {
-                        flowState: 'warning',
-                        telemetryState: 'partial',
-                        releasePosture: 'pending',
-                        artifactId: 'artifact://incident-studio/preview',
-                    },
+                    userMode: preferredUserMode,
                 }}
+                preferredUserMode={preferredUserMode}
+                studioDisplayMode={studioDisplayMode}
+                onStudioDisplayModeChange={handleStudioDisplayModeChange}
+                telemetryRefreshLabel={telemetryRefreshLabel}
+                isTelemetryRefreshing={isTelemetryRefreshing}
+                onTelemetryRefresh={handleTelemetryRefresh}
                 onSendMessage={handleSendMessage}
+                incomingMessage={incomingMessage}
+                incomingActionContract={incomingActionContract}
+                incomingActionRegistry={incomingActionRegistry}
+                incomingActionStatus={incomingActionStatus}
+                onAIActionCommand={handleAIActionCommand}
+                onRevealEvidence={handleRevealEvidence}
+                onCopyText={handleCopyCommand}
+                showDemoScenario={false}
+                incomingActionResult={incomingActionResult}
+                verifyGateBlockedReasons={verifyGateBlockedReasons}
+                stabilizationKpiStatus={stabilizationKpiStatus}
+                onExportIncidentReproPack={handleExportIncidentReproPack}
+                onImportIncidentReproPack={handleImportIncidentReproPack}
+                onReplayIncidentQuery={handleReplayIncidentQuery}
+                onRunGuidedCommand={handleRunGuidedCommand}
             />
         </StrictMode>
     );
@@ -245,5 +399,9 @@ const IncidentStudioApp = () => {
 const root = document.getElementById('root');
 
 if (root) {
-    createRoot(root).render(<IncidentStudioApp />);
+    createRoot(root).render(
+        <WorkspaiThemeProvider>
+            <IncidentStudioApp />
+        </WorkspaiThemeProvider>,
+    );
 }

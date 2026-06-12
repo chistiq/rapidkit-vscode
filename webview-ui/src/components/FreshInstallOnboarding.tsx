@@ -14,10 +14,11 @@ export function FreshInstallOnboarding({
     onBrowseCatalog,
 }: FreshInstallOnboardingProps) {
     return (
-        <section className="fresh-install-onboarding" aria-label="Get started with Workspai">
+        <section className="ws-onboarding-shell fresh-install-onboarding" aria-label="Get started with Workspai">
             <div className="fresh-install-onboarding__hero">
                 <Sparkles size={18} aria-hidden="true" />
                 <div>
+                    <div className="ws-kicker">Get started</div>
                     <h2>Welcome to Workspai</h2>
                     <p>
                         You have not created a workspace yet. Start with AI-assisted setup, pick a
@@ -28,7 +29,7 @@ export function FreshInstallOnboarding({
             <div className="fresh-install-onboarding__cards">
                 <button
                     type="button"
-                    className="fresh-install-onboarding__card fresh-install-onboarding__card--primary"
+                    className="ws-onboarding-card ws-onboarding-card--primary fresh-install-onboarding__card fresh-install-onboarding__card--primary"
                     onClick={onCreateWorkspace}
                 >
                     <Rocket size={16} aria-hidden="true" />
@@ -40,7 +41,7 @@ export function FreshInstallOnboarding({
                 </button>
                 <button
                     type="button"
-                    className="fresh-install-onboarding__card"
+                    className="ws-onboarding-card fresh-install-onboarding__card"
                     onClick={onBrowseCatalog}
                 >
                     <FolderKanban size={16} aria-hidden="true" />
@@ -56,7 +57,7 @@ export function FreshInstallOnboarding({
                 </button>
                 <button
                     type="button"
-                    className="fresh-install-onboarding__card"
+                    className="ws-onboarding-card fresh-install-onboarding__card"
                     onClick={onImportWorkspace}
                 >
                     <Download size={16} aria-hidden="true" />

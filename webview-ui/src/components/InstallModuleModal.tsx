@@ -1,6 +1,7 @@
 import { AlertCircle, Download, Folder, Package } from 'lucide-react';
 import { EnterpriseModal, EnterpriseModalNotice, EnterpriseModalSection } from './EnterpriseModal';
 import type { ModuleData, WorkspaceStatus } from '@/types';
+import { buildRapidkitDisplayCommand } from '../lib/rapidkitCommandText';
 
 interface InstallModuleModalProps {
   isOpen: boolean;
@@ -22,11 +23,16 @@ export function InstallModuleModal({
   }
 
   const isInstalled = workspaceStatus.installedModules?.some((m) => m.slug === module.slug);
-  const installedVersion = workspaceStatus.installedModules?.find((m) => m.slug === module.slug)?.version;
+  const installedVersion = workspaceStatus.installedModules?.find(
+    (m) => m.slug === module.slug
+  )?.version;
   const moduleName = module.display_name || module.name;
   const moduleSlug = module.slug || module.id;
   const targetProjectName =
-    workspaceStatus.projectName || workspaceStatus.projectType || workspaceStatus.workspaceName || 'Selected project';
+    workspaceStatus.projectName ||
+    workspaceStatus.projectType ||
+    workspaceStatus.workspaceName ||
+    'Selected project';
   const targetContext = [
     workspaceStatus.workspaceName ? `Workspace: ${workspaceStatus.workspaceName}` : null,
     workspaceStatus.projectType ? `Framework: ${workspaceStatus.projectType}` : null,
@@ -46,10 +52,18 @@ export function InstallModuleModal({
       onClose={onClose}
       footer={
         <div className="enterprise-modal-actions">
-          <button type="button" className="enterprise-button enterprise-button--secondary" onClick={onClose}>
+          <button
+            type="button"
+            className="enterprise-button enterprise-button--secondary"
+            onClick={onClose}
+          >
             Cancel
           </button>
-          <button type="button" className="enterprise-button enterprise-button--primary" onClick={onConfirm}>
+          <button
+            type="button"
+            className="enterprise-button enterprise-button--primary"
+            onClick={onConfirm}
+          >
             <Download size={14} />
             {isInstalled ? 'Update Module' : 'Install Module'}
           </button>
@@ -80,7 +94,9 @@ export function InstallModuleModal({
           <Folder size={17} />
           <div>
             <div className="modal-target-row__name">{targetProjectName}</div>
-            <div className="modal-target-row__path">{targetContext || 'Selected Workspai scope'}</div>
+            <div className="modal-target-row__path">
+              {targetContext || 'Selected Workspai scope'}
+            </div>
           </div>
         </div>
       </EnterpriseModalSection>
@@ -107,7 +123,9 @@ export function InstallModuleModal({
           <span>
             Currently installed: <strong>v{installedVersion}</strong>
             {module.version && installedVersion && module.version !== installedVersion && (
-              <>. This action updates it to <strong>v{module.version}</strong>.</>
+              <>
+                . This action updates it to <strong>v{module.version}</strong>.
+              </>
             )}
           </span>
         </EnterpriseModalNotice>
@@ -115,7 +133,7 @@ export function InstallModuleModal({
 
       <EnterpriseModalSection title="Command Preview">
         <div className="modal-command-preview">
-          <code>npx --yes --package rapidkit rapidkit add module {moduleSlug}</code>
+          <code>{buildRapidkitDisplayCommand(['add', 'module', moduleSlug])}</code>
         </div>
       </EnterpriseModalSection>
     </EnterpriseModal>

@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   deriveLitePrimaryActionPlan,
   deriveLiteReleaseState,
-} from '../../webview-ui/src/components/AIIncidentStudio';
+  resolveLiteReleaseStateFromStudioContext,
+} from '../../webview-ui/src/lib/incidentStudioLiteMode';
+import type { IncidentStudioStabilizationKpiStatus } from '../../webview-ui/src/lib/incidentStudioPayload';
 
 /**
  * Regression tests for Lite mode blocker-priority action routing
@@ -183,5 +185,67 @@ describe('IncidentStudioLiteMode - Blocker Priority Routing', () => {
     expect(blockerNormalizer('Repeat verified resolution is below threshold')).toBe(
       'Resolution pattern reuse below target.'
     );
+  });
+
+  it('resolveLiteReleaseStateFromStudioContext counts hard and advisory blockers', () => {
+    const stabilizationKpiStatus: IncidentStudioStabilizationKpiStatus = {
+      workspacePath: '/workspace/acme',
+      timeWindow: 'last7d',
+      windowStartAt: '2026-05-01T00:00:00Z',
+      windowEndAt: '2026-05-08T00:00:00Z',
+      thresholds: {
+        routePrecisionMin: 80,
+        routeFallbackNonSuccessShareMax: 20,
+        verifyPathCompletionRateMin: 70,
+        verifyIncompleteWarningRateMax: 10,
+        topVerifyPathMissReasonShareMax: 30,
+        falseConfidenceRateMax: 15,
+        rollbackRecoverySuccessRateMin: 70,
+        repeatVerifiedResolutionRateMin: 70,
+      },
+      metrics: {
+        nextActionClicked: 24,
+        routeMatchedWithoutFallback: 21,
+        routeFallbackCount: 3,
+        routePrecision: 88,
+        routeFallbackNonSuccessShare: 33,
+        verifyRequired: 20,
+        verifyPathPresent: 17,
+        verifyPathCompletionRate: 85,
+        verifyIncompleteWarningCount: 3,
+        verifyIncompleteWarningRate: 15,
+        verifyFailed: 2,
+        rollbackAttempted: 2,
+        rollbackSucceeded: 2,
+        falseConfidenceRate: 5,
+        rollbackRecoverySuccessRate: 100,
+        repeatedIncidentDetected: 4,
+        repeatVerifiedResolved: 4,
+        repeatVerifiedResolutionRate: 100,
+        topVerifyPathMissReasonShare: 25,
+      },
+      gates: {
+        telemetryEvidencePass: true,
+        routePrecisionPass: true,
+        routeFallbackNonSuccessSharePass: false,
+        verifyPathCompletionRatePass: true,
+        verifyIncompleteWarningRatePass: false,
+        falseConfidenceRatePass: true,
+        rollbackRecoverySuccessRatePass: true,
+        repeatVerifiedResolutionRatePass: true,
+        topVerifyPathMissReasonSharePass: true,
+        overallPass: true,
+      },
+    };
+
+    const liteState = resolveLiteReleaseStateFromStudioContext({
+      releaseDecision: 'no-go',
+      stabilizationKpiStatus,
+      verifyGateBlockedReasons: ['Verify phase reach below minimum threshold'],
+      policyReleasePosture: 'go',
+    });
+
+    expect(liteState.label).toBe('NO-GO');
+    expect(liteState.blocksRelease).toBe(true);
   });
 });

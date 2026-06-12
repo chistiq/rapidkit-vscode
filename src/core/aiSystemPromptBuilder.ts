@@ -127,7 +127,7 @@ export async function buildWorkspaiSystemPrompt(
   const instructions = `INSTRUCTIONS:
 - Always generate code that fits exactly into the layer described above.
 - When adding a FastAPI endpoint, put the router in the correct layer (presentation/api/routes/ for DDD, routing/ for Standard).
-- When suggesting module installation: use npx --yes --package rapidkit rapidkit add module <name-or-slug> from the project root.
+- When suggesting module installation to the user: display npx rapidkit add module <name-or-slug> from the project root.
 - Inject points in FastAPI pyproject.toml: # <<<inject:poetry-dependencies>>>
 - Inject points in NestJS AppModule: // <<<inject:module-imports>>>
 - Never suggest raw HTTP exceptions inside domain or application layers — raise domain exceptions and map them in the presentation layer.
@@ -404,8 +404,8 @@ function buildModuleSection(ctx: AIModalContext, scanned?: ScannedProjectContext
   const installed = scanned?.installedModules ?? [];
 
   const ref = `WORKSPAI MODULE SYSTEM:
-- Install command:  npx --yes --package rapidkit rapidkit add module <name>   (e.g. npx --yes --package rapidkit rapidkit add module redis)
-                   npx --yes --package rapidkit rapidkit add module <slug>    (e.g. npx --yes --package rapidkit rapidkit add module free/cache/redis)
+- Install command:  npx rapidkit add module <name>   (e.g. npx rapidkit add module redis)
+                   npx rapidkit add module <slug>    (e.g. npx rapidkit add module free/cache/redis)
 - Remove command:   rapidkit uninstall <slug>
 - List installed:   registry.json at project root
 - Module path FastAPI: src/modules/free/{category}/{slug}/
@@ -580,7 +580,7 @@ Error handling:
 Testing:
   • Use xUnit/NUnit for unit tests
   • Use WebApplicationFactory for API integration tests
-  • Verify with npx --yes --package rapidkit rapidkit test and npx --yes --package rapidkit rapidkit doctor project before claiming completion`;
+  • Verify with npx rapidkit test and npx rapidkit doctor project before claiming completion`;
   }
 
   if (fw === 'go') {

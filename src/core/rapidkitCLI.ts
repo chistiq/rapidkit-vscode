@@ -270,9 +270,28 @@ export class WorkspaiCLI {
   /**
    * Run arbitrary rapidkit command
    */
-  async run(args: string[], cwd?: string, useNpx = true): Promise<ExecaReturnValue> {
+  async run(
+    args: string[],
+    cwd?: string,
+    useNpx = true,
+    preferredExecutable?: string
+  ): Promise<ExecaReturnValue> {
     this.logger.debug('Running rapidkit with args:', args);
     const workingDir = cwd || process.cwd();
+
+    if (preferredExecutable) {
+      try {
+        return await run(preferredExecutable, args, {
+          cwd: workingDir,
+          stdio: 'pipe',
+        });
+      } catch (error) {
+        this.logger.warn(
+          'Preferred workspace rapidkit executable failed; falling back to discovery chain.',
+          error
+        );
+      }
+    }
 
     // Priority 1: Try to find workspace .venv rapidkit runner (walk up from project to workspace root)
     let currentDir = workingDir;

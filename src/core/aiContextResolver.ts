@@ -110,19 +110,17 @@ export function buildRapidkitCommandScopeSection(ctx: AIModalContext): string {
   }
 
   lines.push(
-    '- Workspace-level commands belong in workspace root: `npx --yes --package rapidkit rapidkit create workspace`, `npx --yes --package rapidkit rapidkit bootstrap`, `npx --yes --package rapidkit rapidkit setup ...`, `npx --yes --package rapidkit rapidkit workspace ...`, `npx --yes --package rapidkit rapidkit cache ...`, `npx --yes --package rapidkit rapidkit mirror ...`, `npx --yes --package rapidkit rapidkit readiness`, `npx --yes --package rapidkit rapidkit doctor workspace`.'
+    '- Workspace-level commands belong in workspace root: `npx rapidkit create workspace`, `npx rapidkit bootstrap`, `npx rapidkit setup ...`, `npx rapidkit workspace ...`, `npx rapidkit cache ...`, `npx rapidkit mirror ...`, `npx rapidkit readiness`, `npx rapidkit doctor workspace`.'
+  );
+  lines.push('- `npx rapidkit create project <kit> <name>` belongs in workspace root.');
+  lines.push(
+    '- Project lifecycle commands belong in project root: `npx rapidkit init/dev/test/build/start`, project-local `rapidkit init/dev/test/build/start`, `./rapidkit ...`, `source .rapidkit/activate`, and kit scripts such as `./bootstrap.sh`.'
   );
   lines.push(
-    '- `npx --yes --package rapidkit rapidkit create project <kit> <name>` belongs in workspace root.'
+    '- `npx rapidkit doctor project` belongs in project root for selected-service diagnostics.'
   );
   lines.push(
-    '- Project lifecycle commands belong in project root: `npx --yes --package rapidkit rapidkit init/dev/test/build/start`, project-local `rapidkit init/dev/test/build/start`, `./rapidkit ...`, `source .rapidkit/activate`, and kit scripts such as `./bootstrap.sh`.'
-  );
-  lines.push(
-    '- `npx --yes --package rapidkit rapidkit doctor project` belongs in project root for selected-service diagnostics.'
-  );
-  lines.push(
-    '- `npx --yes --package rapidkit rapidkit doctor` is a host pre-flight check. It is not a substitute for `npx --yes --package rapidkit rapidkit doctor workspace`.'
+    '- `npx rapidkit doctor` is a host pre-flight check. It is not a substitute for `npx rapidkit doctor workspace`.'
   );
 
   if (ctx.projectRootPath) {

@@ -26,11 +26,13 @@ import {
   Trash2,
   GitCompare,
 } from 'lucide-react';
-import type { ModuleData, CategoryInfo, WorkspaceStatus } from '@/types';
+import type { ModuleData, CategoryInfo, WorkspaceStatus, ModulesCatalogMeta } from '@/types';
+import { catalogShowsFallbackBanner } from '@/lib/dashboardCatalogLoad';
 import { getProjectFrameworkLabel, isUnsupportedModuleProjectType } from '@/lib/moduleSupport';
 import { ProjectActions } from './ProjectActions';
 import { WorkspaiEmptyState } from './WorkspaiEmptyState';
 import { SectionHeader } from './SectionHeader';
+import { buildRapidkitDisplayCommand } from '../lib/rapidkitCommandText';
 
 // Icon mapping based on category
 const categoryIcons: Record<string, any> = {
@@ -50,6 +52,7 @@ const categoryIcons: Record<string, any> = {
 
 interface ModuleBrowserProps {
   modules: ModuleData[];
+  catalogMeta?: ModulesCatalogMeta | null;
   workspaceStatus: WorkspaceStatus;
   categoryInfo: CategoryInfo;
   onRefresh: () => void;
@@ -81,6 +84,7 @@ interface ModuleBrowserProps {
 
 export function ModuleBrowser({
   modules,
+  catalogMeta,
   workspaceStatus,
   categoryInfo: _categoryInfo,
   onRefresh,
@@ -228,7 +232,7 @@ export function ModuleBrowser({
     .join(' · ');
 
   const handleCopyCommand = (moduleId: string, slug: string) => {
-    const command = `npx --yes --package rapidkit rapidkit add module ${slug}`;
+    const command = buildRapidkitDisplayCommand(['add', 'module', slug]);
     navigator.clipboard.writeText(command);
     setCopiedModuleId(moduleId);
     setTimeout(() => setCopiedModuleId(null), 2000);
@@ -247,6 +251,15 @@ export function ModuleBrowser({
     setTimeout(() => setIsRefreshing(false), 1000);
   };
 
+  const coreSourceLabel =
+    catalogMeta?.rapidkitCoreLocation === 'workspace'
+      ? 'workspace .venv'
+      : catalogMeta?.rapidkitCoreLocation === 'global'
+        ? 'global install'
+        : catalogMeta?.rapidkitCoreLocation === 'npx'
+          ? 'npx fallback'
+          : null;
+
   return (
     <div className="section module-browser">
       <SectionHeader
@@ -262,11 +275,43 @@ export function ModuleBrowser({
           </>
         }
         actions={
-          <button className="refresh-btn" onClick={handleRefresh} title="Refresh modules" aria-label="Refresh modules">
+          <button
+            className="ws-btn ws-btn--ghost ws-btn--icon refresh-btn"
+            onClick={handleRefresh}
+            title="Refresh modules"
+            aria-label="Refresh modules"
+          >
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'spinning' : ''}`} />
           </button>
         }
       />
+
+      {catalogMeta?.rapidkitCoreVersion || catalogShowsFallbackBanner(catalogMeta?.source) ? (
+        <div
+          className={`module-catalog-runtime-banner${
+            catalogShowsFallbackBanner(catalogMeta?.source)
+              ? ' module-catalog-runtime-banner--warn'
+              : ''
+          }`}
+        >
+          <Sparkles size={13} aria-hidden="true" />
+          <span>
+            {catalogMeta?.rapidkitCoreVersion ? (
+              <>
+                Module catalog resolved from{' '}
+                <strong>RapidKit Core {catalogMeta.rapidkitCoreVersion}</strong>
+                {coreSourceLabel ? <> via {coreSourceLabel}</> : null}
+              </>
+            ) : (
+              <>Module catalog using {catalogMeta?.source ?? 'fallback'} source</>
+            )}
+            {catalogMeta?.source ? <> · {catalogMeta.source}</> : null}
+            {'loadError' in (catalogMeta ?? {}) && catalogMeta?.loadError ? (
+              <> — {catalogMeta.loadError}</>
+            ) : null}
+          </span>
+        </div>
+      ) : null}
 
       {isCatalogSurface ? (
         <div className="workspace-warning workspace-warning--info">
@@ -274,10 +319,9 @@ export function ModuleBrowser({
           <div className="warning-content">
             <div className="warning-title">FastAPI & NestJS modules</div>
             <div className="warning-desc">
-              The catalog below lists Workspai modules built for{' '}
-              <strong>FastAPI</strong> and <strong>NestJS</strong> projects. Browse freely here;
-              install or update from the <strong>Console</strong> tab with a supported project
-              selected.
+              The catalog below lists Workspai modules built for <strong>FastAPI</strong> and{' '}
+              <strong>NestJS</strong> projects. Browse freely here; install or update from the{' '}
+              <strong>Console</strong> tab with a supported project selected.
             </div>
           </div>
         </div>
@@ -362,6 +406,22 @@ export function ModuleBrowser({
           />
         )}
 
+      {modules.length === 0 ? (
+        <WorkspaiEmptyState
+          icon={<Package size={18} />}
+          title="Module catalog unavailable"
+          description={
+            catalogMeta?.loadError ??
+            'No modules were returned. Select a workspace with RapidKit Core and refresh the catalog.'
+          }
+          actions={
+            <button type="button" className="ws-btn" onClick={handleRefresh}>
+              Refresh catalog
+            </button>
+          }
+        />
+      ) : null}
+
       {/* Always show search and filters when modules exist */}
       {showModuleControls && (
         <div className="module-controls">
@@ -375,7 +435,7 @@ export function ModuleBrowser({
               <button
                 key={value}
                 type="button"
-                className={moduleView === value ? 'is-active' : ''}
+                className={`ws-chip ${moduleView === value ? 'is-active' : ''}`}
                 onClick={() => {
                   setModuleView(value as typeof moduleView);
                   setShowAllModules(false);
@@ -400,7 +460,7 @@ export function ModuleBrowser({
             {categories.map((cat) => (
               <button
                 key={cat}
-                className={`filter-btn ${selectedCategory === cat ? 'active' : ''}`}
+                className={`ws-chip filter-btn ${selectedCategory === cat ? 'is-active' : ''}`}
                 onClick={() => {
                   setSelectedCategory(cat);
                   setShowAllModules(false);
@@ -441,7 +501,9 @@ export function ModuleBrowser({
                       <div className="module-name">{module.display_name || module.name}</div>
                       <div className="module-version">v{module.version}</div>
                     </div>
-                    <span className={`module-badge ${module.category}`}>{module.category}</span>
+                    <span className={`ws-chip ws-chip--muted module-badge ${module.category}`}>
+                      {module.category}
+                    </span>
                   </div>
                   <div className="module-desc">{module.description}</div>
                   <div className="module-actions">
@@ -452,7 +514,7 @@ export function ModuleBrowser({
                       if (hasUpdate && installedInfo) {
                         return (
                           <button
-                            className="module-install-btn update"
+                            className="ws-btn ws-btn--warn module-install-btn update"
                             onClick={() => onInstall(module)}
                             disabled={!canInstall}
                             title={
@@ -466,14 +528,17 @@ export function ModuleBrowser({
                         );
                       } else if (installedInfo) {
                         return (
-                          <button className="module-install-btn installed" disabled>
+                          <button
+                            className="ws-btn ws-btn--primary is-installed module-install-btn installed"
+                            disabled
+                          >
                             <CheckCircle size={16} /> Installed v{installedInfo.version}
                           </button>
                         );
                       } else {
                         return (
                           <button
-                            className="module-install-btn"
+                            className="ws-btn ws-btn--primary module-install-btn"
                             onClick={() => onInstall(module)}
                             disabled={!canInstall}
                             title={canInstall ? 'Install module' : installBlockedReason}
@@ -484,7 +549,7 @@ export function ModuleBrowser({
                       }
                     })()}
                     <button
-                      className={`module-action-btn ${loadingModuleId === module.id ? 'loading' : ''}`}
+                      className={`ws-btn ws-btn--ghost ws-btn--icon module-action-btn ${loadingModuleId === module.id ? 'loading' : ''}`}
                       onClick={() => handleShowDetails(module)}
                       title="View Details"
                       disabled={loadingModuleId === module.id}
@@ -496,7 +561,7 @@ export function ModuleBrowser({
                       )}
                     </button>
                     <button
-                      className={`module-action-btn ${copiedModuleId === module.id ? 'copied' : ''}`}
+                      className={`ws-btn ws-btn--ghost ws-btn--icon module-action-btn ${copiedModuleId === module.id ? 'copied' : ''}`}
                       onClick={() => handleCopyCommand(module.id, module.slug)}
                       title={copiedModuleId === module.id ? 'Copied!' : 'Copy install command'}
                     >
@@ -508,7 +573,7 @@ export function ModuleBrowser({
                     </button>
                     {onAI && (
                       <button
-                        className="module-action-btn module-ai-btn"
+                        className="ws-btn ws-btn--ghost ws-btn--icon module-action-btn module-ai-btn"
                         onClick={() => onAI(module)}
                         title="Ask AI about this module"
                       >
@@ -517,7 +582,7 @@ export function ModuleBrowser({
                     )}
                     {!isCatalogSurface && row.installed && onModuleDiff ? (
                       <button
-                        className="module-action-btn"
+                        className="ws-btn ws-btn--ghost ws-btn--icon module-action-btn"
                         onClick={() => onModuleDiff(module)}
                         title="Diff installed module against catalog template"
                       >
@@ -526,7 +591,7 @@ export function ModuleBrowser({
                     ) : null}
                     {!isCatalogSurface && row.installed && onModuleRollback ? (
                       <button
-                        className="module-action-btn"
+                        className="ws-btn ws-btn--ghost ws-btn--icon module-action-btn"
                         onClick={() => onModuleRollback(module)}
                         title="Rollback module from last checkpoint"
                       >
@@ -535,7 +600,7 @@ export function ModuleBrowser({
                     ) : null}
                     {!isCatalogSurface && row.installed && onModuleUninstall ? (
                       <button
-                        className="module-action-btn module-action-btn--danger"
+                        className="ws-btn ws-btn--ghost ws-btn--icon ws-btn--danger module-action-btn module-action-btn--danger"
                         onClick={() => onModuleUninstall(module)}
                         title="Uninstall module from project"
                       >
@@ -552,7 +617,11 @@ export function ModuleBrowser({
               <span>
                 Showing {visibleRows.length} of {filteredRows.length} modules.
               </span>
-              <button type="button" onClick={() => setShowAllModules((value) => !value)}>
+              <button
+                type="button"
+                className="ws-btn ws-btn--ghost"
+                onClick={() => setShowAllModules((value) => !value)}
+              >
                 {showAllModules ? 'Show less' : `Show ${hiddenModuleCount} more`}
               </button>
             </div>

@@ -145,7 +145,7 @@ export function RecentWorkspaces({
         scope="workspace"
         actions={
           <button
-            className="refresh-btn"
+            className="ws-btn ws-btn--ghost ws-btn--icon refresh-btn"
             onClick={onRefresh}
             disabled={isRefreshing}
             title="Refresh workspaces"
@@ -376,7 +376,7 @@ export function RecentWorkspaces({
             {/* Show more / less toggle */}
             {sorted.length > PAGE_SIZE && (
               <button
-                className="ws-show-more-btn"
+                className="ws-btn ws-btn--ghost ws-show-more-btn"
                 onClick={() => setShowAll((v) => !v)}
                 aria-expanded={showAll}
               >

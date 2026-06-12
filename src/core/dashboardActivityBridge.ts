@@ -1,5 +1,9 @@
 import type * as vscode from 'vscode';
 
+import {
+  getDashboardCommandActivity,
+  type DashboardCommandScope,
+} from './dashboardCommandContracts';
 import type { DashboardEvidenceStatus } from './dashboardEvidenceBridge';
 import { activityStatusFromEvidenceStatus, resolveReportBinding } from './dashboardReportRegistry';
 
@@ -9,7 +13,7 @@ export type DashboardActivityEntry = {
   id: string;
   command: string;
   label: string;
-  scope: 'workspace' | 'project' | 'system';
+  scope: DashboardCommandScope;
   status: DashboardActivityStatus;
   timestamp: number;
   detail?: string;
@@ -20,44 +24,11 @@ const ACTIVITY_KEY = 'rapidkit.dashboard.activityLog';
 const MAX_ENTRIES = 12;
 const COALESCE_MS = 120_000;
 
-const DASHBOARD_COMMAND_LABELS: Record<
-  string,
-  { label: string; scope: DashboardActivityEntry['scope'] }
-> = {
-  checkWorkspaceHealth: { label: 'Workspace Doctor', scope: 'workspace' },
-  workspaceAnalyze: { label: 'Workspace Analyze', scope: 'workspace' },
-  workspaceReadiness: { label: 'Release Readiness', scope: 'workspace' },
-  workspaceAutopilotRelease: { label: 'Autopilot Release', scope: 'workspace' },
-  workspaceBootstrap: { label: 'Bootstrap', scope: 'workspace' },
-  workspaceSetup: { label: 'Setup', scope: 'workspace' },
-  mirrorSync: { label: 'Mirror Sync', scope: 'workspace' },
-  mirrorStatus: { label: 'Mirror Status', scope: 'workspace' },
-  cacheStatus: { label: 'Cache Status', scope: 'workspace' },
-  workspaceInfra: { label: 'Infra Plan', scope: 'workspace' },
-  workspaceSnapshotCreate: { label: 'Snapshot Create', scope: 'workspace' },
-  workspaceShare: { label: 'Share Export', scope: 'workspace' },
-  workspaceArchive: { label: 'Archive', scope: 'workspace' },
-  projectInit: { label: 'Project Init', scope: 'project' },
-  projectDev: { label: 'Project Dev', scope: 'project' },
-  projectDoctor: { label: 'Project Doctor', scope: 'project' },
-  projectLint: { label: 'Project Lint', scope: 'project' },
-  projectFormat: { label: 'Project Format', scope: 'project' },
-  importWorkspace: { label: 'Import Workspace', scope: 'system' },
-  openCreateWorkspace: { label: 'Create Workspace', scope: 'system' },
-};
-
 export function resolveDashboardCommandActivity(command: string): {
   label: string;
   scope: DashboardActivityEntry['scope'];
 } {
-  const resolved = DASHBOARD_COMMAND_LABELS[command];
-  if (resolved) {
-    return resolved;
-  }
-  return {
-    label: command.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()),
-    scope: 'system',
-  };
+  return getDashboardCommandActivity(command);
 }
 
 export function getDashboardActivityLog(

@@ -5,9 +5,40 @@ import { opsChainStepLabel } from '@/lib/dashboardEvidenceActions';
 interface OpsChainBannerProps {
     chain: DashboardOpsChainState;
     onDismiss: () => void;
+    onViewEvidence?: () => void;
 }
 
-export function OpsChainBanner({ chain, onDismiss }: OpsChainBannerProps) {
+function chainTriggerLabel(triggeredBy: DashboardOpsChainState['triggeredBy']): string {
+    switch (triggeredBy) {
+        case 'clone':
+            return 'Started after catalog clone';
+        case 'ai-create':
+            return 'Started after workspace creation';
+        case 'import':
+            return 'Started after workspace import';
+        case 'create':
+            return 'Started after workspace create';
+        case 'add':
+            return 'Started after workspace add';
+        default:
+            return 'Started after workspace onboarding';
+    }
+}
+
+function stepMetaChipClass(completed: boolean, current: boolean, blocked: boolean): string {
+    if (blocked) {
+        return 'ws-chip ws-chip--error';
+    }
+    if (current) {
+        return 'ws-chip ws-chip--accent';
+    }
+    if (completed) {
+        return 'ws-chip ws-chip--success';
+    }
+    return 'ws-chip ws-chip--muted';
+}
+
+export function OpsChainBanner({ chain, onDismiss, onViewEvidence }: OpsChainBannerProps) {
     return (
         <section
             className={`ops-chain-banner ops-chain-banner--${chain.status}`}
@@ -18,15 +49,16 @@ export function OpsChainBanner({ chain, onDismiss }: OpsChainBannerProps) {
                 <div className="ops-chain-banner__copy">
                     <strong>Governance chain</strong>
                     <small>
-                        {chain.triggeredBy === 'clone'
-                            ? 'Started after catalog clone'
-                            : chain.triggeredBy === 'ai-create'
-                              ? 'Started after workspace creation'
-                              : 'Started after workspace import'}
+                        {chainTriggerLabel(chain.triggeredBy)}
                         {chain.lastDetail ? ` · ${chain.lastDetail}` : ''}
                     </small>
                 </div>
-                <button type="button" className="ops-chain-banner__dismiss" onClick={onDismiss} aria-label="Dismiss chain">
+                <button
+                    type="button"
+                    className="ws-btn ws-btn--ghost ws-btn--icon ops-chain-banner__dismiss"
+                    onClick={onDismiss}
+                    aria-label="Dismiss chain"
+                >
                     <X size={12} />
                 </button>
             </div>
@@ -41,17 +73,54 @@ export function OpsChainBanner({ chain, onDismiss }: OpsChainBannerProps) {
                             className={`ops-chain-banner__step ${completed ? 'is-complete' : ''} ${current ? 'is-current' : ''} ${blocked ? 'is-blocked' : ''}`}
                         >
                             <span>{opsChainStepLabel(step)}</span>
-                            {completed ? <span className="ops-chain-banner__step-meta">done</span> : null}
-                            {current ? <span className="ops-chain-banner__step-meta">running</span> : null}
-                            {blocked ? <span className="ops-chain-banner__step-meta">blocked</span> : null}
+                            {completed ? (
+                                <span className={`${stepMetaChipClass(true, false, false)} ops-chain-banner__step-meta`}>
+                                    done
+                                </span>
+                            ) : null}
+                            {current ? (
+                                <span className={`${stepMetaChipClass(false, true, false)} ops-chain-banner__step-meta`}>
+                                    running
+                                </span>
+                            ) : null}
+                            {blocked ? (
+                                <span className={`${stepMetaChipClass(false, false, true)} ops-chain-banner__step-meta`}>
+                                    blocked
+                                </span>
+                            ) : null}
                         </li>
                     );
                 })}
             </ol>
             {chain.status === 'completed' ? (
                 <p className="ops-chain-banner__footer">
-                    Chain complete. Review Release hub and Next steps for handoff.
-                    <ArrowRight size={12} aria-hidden="true" />
+                    Chain complete.
+                    {onViewEvidence ? (
+                        <button
+                            type="button"
+                            className="ws-btn ws-btn--ghost ops-chain-banner__link"
+                            onClick={onViewEvidence}
+                        >
+                            Review Release hub
+                            <ArrowRight size={12} aria-hidden="true" />
+                        </button>
+                    ) : (
+                        <>
+                            Review Release hub and Next steps for handoff.
+                            <ArrowRight size={12} aria-hidden="true" />
+                        </>
+                    )}
+                </p>
+            ) : chain.status === 'blocked' && onViewEvidence ? (
+                <p className="ops-chain-banner__footer">
+                    <button
+                        type="button"
+                        className="ws-btn ws-btn--ghost ops-chain-banner__link"
+                        onClick={onViewEvidence}
+                    >
+                        Open Evidence tab
+                        <ArrowRight size={12} aria-hidden="true" />
+                    </button>
                 </p>
             ) : null}
         </section>

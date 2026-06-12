@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildNpxRapidkitArgs,
+  buildRapidkitDisplayCommand,
   buildRapidkitCommand,
   buildShellCommand,
   detectPlatformKind,
   quoteShellArg,
+  toDisplayRapidkitCommand,
+  toPinnedRapidkitExecutionCommand,
 } from '../utils/platformCapabilities';
 
 describe('platformCapabilities', () => {
@@ -55,6 +58,35 @@ describe('platformCapabilities', () => {
     expect(buildRapidkitCommand(['create', 'workspace', 'my folder'], 'linux')).toBe(
       "npx --yes --package rapidkit rapidkit create workspace 'my folder'"
     );
+  });
+
+  it('builds user-facing rapidkit display commands without pinned npm wrapper noise', () => {
+    expect(buildRapidkitDisplayCommand(['doctor', 'workspace'], 'linux')).toBe(
+      'npx rapidkit doctor workspace'
+    );
+    expect(buildRapidkitDisplayCommand(['add', 'module', 'free/ai/agent_runtime'], 'win32')).toBe(
+      'npx rapidkit add module free/ai/agent_runtime'
+    );
+    expect(buildRapidkitDisplayCommand(['create', 'workspace', 'my folder'], 'linux')).toBe(
+      "npx rapidkit create workspace 'my folder'"
+    );
+  });
+
+  it('normalizes pinned execution commands for display only', () => {
+    expect(
+      toDisplayRapidkitCommand(
+        'Run npx --yes --package rapidkit rapidkit add module free/ai/agent_runtime'
+      )
+    ).toBe('Run npx rapidkit add module free/ai/agent_runtime');
+  });
+
+  it('normalizes simple display commands back to the pinned execution wrapper', () => {
+    expect(toPinnedRapidkitExecutionCommand('npx rapidkit doctor workspace')).toBe(
+      'npx --yes --package rapidkit rapidkit doctor workspace'
+    );
+    expect(
+      toPinnedRapidkitExecutionCommand('Run npx rapidkit add module free/ai/agent_runtime')
+    ).toBe('Run npx --yes --package rapidkit rapidkit add module free/ai/agent_runtime');
   });
 
   it('builds the pinned npx rapidkit argument contract for extension host calls', () => {

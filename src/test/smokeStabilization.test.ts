@@ -51,8 +51,23 @@ describe('smoke: dashboard section navigation', () => {
 
     expect(normalizeDashboardSection('catalog')).toBe('catalog');
     expect(normalizeDashboardSection('invalid')).toBe('overview');
+    expect(normalizeDashboardSection('evidence')).toBe('evidence');
+    expect(normalizeDashboardSection('operate')).toBe('operate');
     expect(dashboardSectionNeedsCatalog('console')).toBe(true);
     expect(dashboardSectionNeedsCatalog('overview')).toBe(false);
+    expect(dashboardSectionNeedsCatalog('evidence')).toBe(false);
+
+    const {
+      dashboardSectionForOpsChainStep,
+      dashboardSectionForIncidentTarget,
+      dashboardSectionLabel,
+    } = await import('../../webview-ui/src/lib/dashboardSections');
+
+    expect(dashboardSectionForOpsChainStep('doctor')).toBe('operate');
+    expect(dashboardSectionForOpsChainStep('analyze')).toBe('evidence');
+    expect(dashboardSectionForIncidentTarget('doctor')).toBe('operate');
+    expect(dashboardSectionForIncidentTarget('release')).toBe('evidence');
+    expect(dashboardSectionLabel('operate')).toBe('Operate');
   });
 });
 
@@ -107,6 +122,7 @@ describe('smoke: dashboard next steps', () => {
     });
 
     expect(steps[0]?.id).toBe('bootstrap-fix');
+    expect(steps[0]?.section).toBe('operate');
   });
 
   it('defers fresh-install CTAs to Welcome onboarding (empty next steps)', async () => {
@@ -163,6 +179,149 @@ describe('smoke: dashboard next steps', () => {
     });
 
     expect(steps[0]?.id).toBe('doctor-errors');
+    expect(steps[0]?.section).toBe('operate');
+  });
+
+  it('routes analyze blockers to the evidence section', async () => {
+    const { buildDashboardNextSteps } = await import('../../webview-ui/src/lib/dashboardNextSteps');
+
+    const steps = buildDashboardNextSteps({
+      workspaceStatus: {
+        hasWorkspace: true,
+        workspacePath: '/tmp/ws',
+        hasProjectSelected: true,
+        projectType: 'fastapi',
+      },
+      installStatusChecked: true,
+      coreInstalled: true,
+      evidence: {
+        cards: [
+          {
+            id: 'analyze',
+            label: 'Analyze',
+            status: 'fail',
+            summary: 'Strict analyze failed',
+          },
+        ],
+        activity: [],
+        onboarding: {
+          isFreshInstall: false,
+          recentWorkspaceCount: 1,
+          hasActiveWorkspace: true,
+        },
+      },
+    });
+
+    expect(steps[0]?.id).toBe('analyze-blockers');
+    expect(steps[0]?.section).toBe('evidence');
+  });
+
+  it('counts actionable evidence attention from outcome cards', async () => {
+    const { countEvidenceAttention } = await import('../../webview-ui/src/lib/dashboardEvidence');
+
+    expect(
+      countEvidenceAttention({
+        cards: [
+          { id: 'doctor', label: 'Doctor', status: 'fail', summary: 'blocked' },
+          { id: 'analyze', label: 'Analyze', status: 'warn', summary: 'warnings' },
+          { id: 'readiness', label: 'Readiness', status: 'pass', summary: 'ok' },
+        ],
+        activity: [],
+        onboarding: {
+          isFreshInstall: false,
+          recentWorkspaceCount: 1,
+          hasActiveWorkspace: true,
+        },
+      })
+    ).toBe(2);
+  });
+
+  it('routes blocked ops chain to the current step tab', async () => {
+    const { buildDashboardNextSteps } = await import('../../webview-ui/src/lib/dashboardNextSteps');
+
+    const doctorBlocked = buildDashboardNextSteps({
+      workspaceStatus: { hasWorkspace: true, workspacePath: '/tmp/ws' },
+      installStatusChecked: true,
+      coreInstalled: true,
+      evidence: {
+        cards: [],
+        activity: [],
+        opsChain: {
+          id: 'chain-1',
+          workspacePath: '/tmp/ws',
+          triggeredBy: 'create',
+          steps: ['bootstrap', 'doctor', 'analyze', 'readiness'],
+          currentStep: 'doctor',
+          completedSteps: ['bootstrap'],
+          status: 'blocked',
+          startedAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+        onboarding: {
+          isFreshInstall: false,
+          recentWorkspaceCount: 1,
+          hasActiveWorkspace: true,
+        },
+      },
+    });
+
+    expect(doctorBlocked[0]?.section).toBe('operate');
+
+    const analyzeBlocked = buildDashboardNextSteps({
+      workspaceStatus: { hasWorkspace: true, workspacePath: '/tmp/ws' },
+      installStatusChecked: true,
+      coreInstalled: true,
+      evidence: {
+        cards: [],
+        activity: [],
+        opsChain: {
+          id: 'chain-2',
+          workspacePath: '/tmp/ws',
+          triggeredBy: 'add',
+          steps: ['bootstrap', 'doctor', 'analyze', 'readiness'],
+          currentStep: 'analyze',
+          completedSteps: ['bootstrap', 'doctor'],
+          status: 'blocked',
+          startedAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+        onboarding: {
+          isFreshInstall: false,
+          recentWorkspaceCount: 1,
+          hasActiveWorkspace: true,
+        },
+      },
+    });
+
+    expect(analyzeBlocked[0]?.section).toBe('evidence');
+  });
+
+  it('counts operate attention from governance cards and workspace hints', async () => {
+    const { countOperateAttention } = await import('../../webview-ui/src/lib/dashboardEvidence');
+
+    expect(
+      countOperateAttention({
+        evidence: {
+          cards: [
+            {
+              id: 'doctor',
+              label: 'Doctor',
+              status: 'fail',
+              summary: 'blocked',
+              scope: 'workspace',
+            },
+            { id: 'mirror', label: 'Mirror', status: 'pass', summary: 'ok', scope: 'workspace' },
+          ],
+          activity: [],
+          onboarding: {
+            isFreshInstall: false,
+            recentWorkspaceCount: 1,
+            hasActiveWorkspace: true,
+          },
+        },
+        mirrorStatus: 'stale',
+      })
+    ).toBe(2);
   });
 });
 
@@ -176,5 +335,76 @@ describe('smoke: project scope analyze reload key', () => {
     expect(buildAnalyzeLoadKey(workspace, projectA)).not.toBe(
       buildAnalyzeLoadKey(workspace, projectB)
     );
+  });
+});
+
+describe('smoke: dashboard catalog load truthfulness', () => {
+  it('marks catalog ready only from host ack, data, or timeout', async () => {
+    const {
+      resolveCatalogTemplatesReady,
+      resolveCatalogModulesReady,
+      catalogShowsFallbackBanner,
+      shouldRequestCatalogRefresh,
+    } = await import('../../webview-ui/src/lib/dashboardCatalogLoad');
+
+    expect(resolveCatalogTemplatesReady(false, 0, false)).toBe(false);
+    expect(resolveCatalogTemplatesReady(true, 0, false)).toBe(true);
+    expect(resolveCatalogTemplatesReady(false, 2, false)).toBe(true);
+    expect(resolveCatalogTemplatesReady(false, 0, true)).toBe(true);
+
+    expect(resolveCatalogModulesReady(false, false, false)).toBe(false);
+    expect(resolveCatalogModulesReady(true, false, false)).toBe(true);
+    expect(resolveCatalogModulesReady(false, true, false)).toBe(true);
+
+    expect(catalogShowsFallbackBanner('fallback')).toBe(true);
+    expect(catalogShowsFallbackBanner('cache')).toBe(true);
+    expect(catalogShowsFallbackBanner('live')).toBe(false);
+
+    expect(shouldRequestCatalogRefresh(true, 'dashboard')).toBe(true);
+    expect(shouldRequestCatalogRefresh(true, 'welcome')).toBe(false);
+  });
+});
+
+describe('smoke: dashboard command dispatch', () => {
+  it('tracks activity for operational dashboard commands only', async () => {
+    const { buildDashboardDispatchMessages } =
+      await import('../../webview-ui/src/lib/dashboardDispatch');
+
+    expect(buildDashboardDispatchMessages('openSetup')).toEqual([{ command: 'openSetup' }]);
+    expect(buildDashboardDispatchMessages('projectDoctor')).toEqual([
+      { command: 'trackDashboardCommand', data: { command: 'projectDoctor' } },
+      { command: 'projectDoctor', data: undefined },
+    ]);
+    expect(buildDashboardDispatchMessages('refreshModules', { path: '/tmp/ws' })).toEqual([
+      { command: 'refreshModules', data: { path: '/tmp/ws' } },
+    ]);
+  });
+});
+
+describe('smoke: evidence sparse empty state', () => {
+  it('detects sparse evidence for active workspaces', async () => {
+    const { evidenceIsSparse } = await import('../../webview-ui/src/lib/dashboardEvidence');
+
+    expect(evidenceIsSparse(null, true)).toBe(true);
+    expect(evidenceIsSparse({ cards: [], activity: [] }, true)).toBe(true);
+    expect(
+      evidenceIsSparse(
+        {
+          cards: [{ id: 'doctor', label: 'Doctor', status: 'missing', summary: 'not run' }],
+          activity: [],
+        },
+        true
+      )
+    ).toBe(true);
+    expect(
+      evidenceIsSparse(
+        {
+          cards: [{ id: 'doctor', label: 'Doctor', status: 'pass', summary: 'ok' }],
+          activity: [],
+        },
+        true
+      )
+    ).toBe(false);
+    expect(evidenceIsSparse(null, false)).toBe(false);
   });
 });

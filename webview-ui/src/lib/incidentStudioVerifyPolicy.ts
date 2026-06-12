@@ -225,3 +225,89 @@ export function getActionResultPresentation(
       'Action completed with failures. Review output and retry with a safer path.',
   };
 }
+
+export function getDecisionClarityNextActionGuidance(input: {
+  nextStep?: string;
+  primaryVerifyStep?: string;
+}): string {
+  const primaryVerifyStep = input.primaryVerifyStep?.trim();
+  const nextStep = input.nextStep?.trim();
+
+  if (nextStep && primaryVerifyStep && nextStep === primaryVerifyStep) {
+    return 'Run the primary verify step and inspect the result before claiming completion.';
+  }
+
+  return nextStep || 'unknown';
+}
+
+export function formatDecisionClarityEvidenceLine(evidenceLinks: string[]): string | null {
+  if (evidenceLinks.length === 0) {
+    return null;
+  }
+
+  return `Evidence: ${evidenceLinks.slice(0, 4).join(' | ')}`;
+}
+
+export type VerificationClaimGuard = {
+  blocked: boolean;
+  reason: string | null;
+  hasNoGoDecision: boolean;
+};
+
+export function resolveVerificationClaimGuard(input: {
+  releaseDecision?: 'go' | 'no-go';
+  verifyGateBlockedReasons: string[];
+  verifyPackBlockedReasons: string[];
+}): VerificationClaimGuard {
+  const hasNoGoDecision = input.releaseDecision === 'no-go';
+  const verifyGateBlockingReason = input.verifyGateBlockedReasons[0] ?? null;
+  const verifyPackBlockingReason = input.verifyPackBlockedReasons[0]?.trim() || null;
+
+  const reason = hasNoGoDecision
+    ? 'Release readiness evidence is currently NO-GO. Resolve blockers before claiming verification success.'
+    : verifyGateBlockingReason
+      ? `Verification gates are still blocking completion: ${verifyGateBlockingReason}`
+      : verifyPackBlockingReason
+        ? `Verify pack has unresolved blockers: ${verifyPackBlockingReason}`
+        : null;
+
+  return {
+    blocked: Boolean(reason),
+    reason,
+    hasNoGoDecision,
+  };
+}
+
+export function getReleaseSignalLabel(input: {
+  releaseDecision?: 'go' | 'no-go';
+  verificationClaimBlocked: boolean;
+}): string {
+  if (input.releaseDecision === 'no-go') {
+    return 'NO-GO (latest evidence)';
+  }
+
+  if (input.releaseDecision === 'go') {
+    return input.verificationClaimBlocked
+      ? 'GO evidence, HOLD by verify gates'
+      : 'GO (latest evidence)';
+  }
+
+  return 'No decision yet';
+}
+
+export function getGuardedActionResultPresentation(input: {
+  base: IncidentStudioActionResultPresentation;
+  guard: VerificationClaimGuard;
+}): IncidentStudioActionResultPresentation {
+  if (input.base.tone === 'success' && input.guard.reason) {
+    return {
+      tone: input.guard.hasNoGoDecision ? 'failure' : 'warning',
+      title: input.guard.hasNoGoDecision
+        ? 'Release blocked (NO-GO evidence)'
+        : 'Verification pending gate compliance',
+      description: input.guard.reason,
+    };
+  }
+
+  return input.base;
+}

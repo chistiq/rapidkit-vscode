@@ -20,7 +20,11 @@ export type DashboardEvidenceCardId =
   | 'autopilot'
   | 'snapshot'
   | 'share'
-  | 'archive';
+  | 'archive'
+  | 'mirror'
+  | 'cache'
+  | 'policy'
+  | 'infra';
 
 export type DashboardEvidenceCard = {
   id: DashboardEvidenceCardId;
@@ -118,15 +122,21 @@ async function readBootstrapComplianceSummary(
   }
 }
 
+const WORKSPACE_DOCTOR_REPORT = 'doctor-last-run.json';
+const PROJECT_DOCTOR_REPORT = 'doctor-project-last-run.json';
+
 function buildDoctorCard(
   reportsDir: string,
   raw: Record<string, unknown> | undefined,
   scope: DashboardEvidenceScope,
   id: DashboardEvidenceCardId,
   label: string,
-  options?: { projectPath?: string; projectName?: string }
+  options?: { projectPath?: string; projectName?: string; reportFileName?: string }
 ): DashboardEvidenceCard {
-  const artifactPath = path.join(reportsDir, 'doctor-last-run.json');
+  const reportFileName =
+    options?.reportFileName ??
+    (scope === 'project' ? PROJECT_DOCTOR_REPORT : WORKSPACE_DOCTOR_REPORT);
+  const artifactPath = path.join(reportsDir, reportFileName);
   if (!raw) {
     return missingCard(
       id,
@@ -236,6 +246,141 @@ async function buildHandoffCards(workspacePath: string): Promise<DashboardEviden
   return cards;
 }
 
+async function buildGovernanceOperationalCards(
+  workspacePath: string,
+  reportsDir: string
+): Promise<DashboardEvidenceCard[]> {
+  const cards: DashboardEvidenceCard[] = [];
+  const rapidkitDir = path.join(workspacePath, '.rapidkit');
+
+  const mirrorRaw = await readJsonIfExists(path.join(reportsDir, 'mirror-ops.latest.json'));
+  if (mirrorRaw) {
+    const mirrorMeta =
+      mirrorRaw.mirror && typeof mirrorRaw.mirror === 'object'
+        ? (mirrorRaw.mirror as Record<string, unknown>)
+        : {};
+    const configExists = mirrorMeta.configExists === true;
+    const artifactsCount = Number(mirrorMeta.artifactsCount ?? 0);
+    const result = normalizeEvidenceStatus(mirrorRaw.result ?? mirrorRaw.status);
+    const blockers = extractBlockersFromReport('mirror-ops', mirrorRaw);
+    const status: DashboardEvidenceStatus =
+      result === 'fail' ? 'fail' : configExists ? (artifactsCount > 0 ? 'pass' : 'warn') : 'warn';
+    cards.push({
+      id: 'mirror',
+      label: 'Mirror',
+      status,
+      summary: configExists
+        ? `${artifactsCount} artifact(s) · config present`
+        : 'Mirror config missing — run mirror status.',
+      scope: 'workspace',
+      generatedAt: typeof mirrorRaw.timestamp === 'string' ? mirrorRaw.timestamp : undefined,
+      artifactPath: path.join(reportsDir, 'mirror-ops.latest.json'),
+      blockers,
+    });
+  } else {
+    cards.push(
+      missingCard(
+        'mirror',
+        'Mirror',
+        'No mirror ops evidence yet. Run mirror status from Governance.',
+        'workspace'
+      )
+    );
+  }
+
+  const infraRaw = await readJsonIfExists(path.join(reportsDir, 'infra-plan.json'));
+  if (infraRaw) {
+    const services = Array.isArray(infraRaw.services) ? infraRaw.services : [];
+    const serviceCount = services.length;
+    const blockers = extractBlockersFromReport('infra-plan', infraRaw);
+    const status: DashboardEvidenceStatus =
+      serviceCount > 0 ? (blockers.length > 0 ? 'warn' : 'pass') : 'warn';
+    cards.push({
+      id: 'infra',
+      label: 'Infra',
+      status,
+      summary:
+        serviceCount > 0
+          ? `${serviceCount} sidecar service(s) planned`
+          : 'Infra plan has no services — run infra plan.',
+      scope: 'workspace',
+      generatedAt: typeof infraRaw.generatedAt === 'string' ? infraRaw.generatedAt : undefined,
+      artifactPath: path.join(reportsDir, 'infra-plan.json'),
+      metrics: { services: serviceCount },
+      blockers,
+    });
+  } else {
+    cards.push(
+      missingCard(
+        'infra',
+        'Infra',
+        'No infra plan evidence yet. Run infra plan from Governance.',
+        'workspace'
+      )
+    );
+  }
+
+  const policiesPath = path.join(rapidkitDir, 'policies.yml');
+  const governancePolicyPath = path.join(rapidkitDir, 'governance-policy.json');
+  const hasPolicies = await fs.pathExists(policiesPath);
+  const hasGovernancePolicy = await fs.pathExists(governancePolicyPath);
+  if (hasPolicies || hasGovernancePolicy) {
+    const artifactPath = hasPolicies ? policiesPath : governancePolicyPath;
+    cards.push({
+      id: 'policy',
+      label: 'Policy',
+      status: 'pass',
+      summary: hasPolicies
+        ? 'Workspace policies.yml is configured.'
+        : 'Governance policy JSON is configured.',
+      scope: 'workspace',
+      artifactPath,
+    });
+  } else {
+    cards.push(
+      missingCard(
+        'policy',
+        'Policy',
+        'No workspace policy file yet. Run workspace policy show or configure policies.yml.',
+        'workspace'
+      )
+    );
+  }
+
+  const cacheConfigPath = path.join(rapidkitDir, 'cache-config.yml');
+  if (await fs.pathExists(cacheConfigPath)) {
+    let strategy = 'shared';
+    try {
+      const cacheConfigRaw = await fs.readFile(cacheConfigPath, 'utf8');
+      const strategyMatch = cacheConfigRaw.match(/strategy:\s*(\S+)/i);
+      if (strategyMatch?.[1]) {
+        strategy = strategyMatch[1];
+      }
+    } catch {
+      /* use default strategy label */
+    }
+    cards.push({
+      id: 'cache',
+      label: 'Cache',
+      status: 'pass',
+      summary: `Cache config present · strategy ${strategy}`,
+      scope: 'workspace',
+      artifactPath: cacheConfigPath,
+    });
+  } else {
+    cards.push(
+      missingCard(
+        'cache',
+        'Cache',
+        'No cache-config.yml yet. Defaults apply — run cache status to inspect.',
+        'workspace'
+      )
+    );
+  }
+
+  return cards;
+}
+
 export async function buildDashboardEvidenceBundle(input?: {
   workspacePath?: string;
   projectPath?: string;
@@ -260,7 +405,7 @@ export async function buildDashboardEvidenceBundle(input?: {
   if (projectPath) {
     const projectReportsDir = path.join(projectPath, '.rapidkit', 'reports');
     const projectDoctorRaw = await readJsonIfExists(
-      path.join(projectReportsDir, 'doctor-last-run.json')
+      path.join(projectReportsDir, PROJECT_DOCTOR_REPORT)
     );
     cards.push(
       buildDoctorCard(
@@ -269,7 +414,7 @@ export async function buildDashboardEvidenceBundle(input?: {
         'project',
         'projectDoctor',
         'Project Doctor',
-        { projectPath, projectName }
+        { projectPath, projectName, reportFileName: PROJECT_DOCTOR_REPORT }
       )
     );
   }
@@ -376,6 +521,7 @@ export async function buildDashboardEvidenceBundle(input?: {
   }
 
   cards.push(...(await buildHandoffCards(workspacePath)));
+  cards.push(...(await buildGovernanceOperationalCards(workspacePath, reportsDir)));
 
   return {
     workspacePath,
@@ -395,13 +541,13 @@ export function findEvidenceCardById(
 export function resolveCardForReportKind(
   bundle: DashboardEvidenceBundle,
   kind: DashboardReportKind,
-  projectPath?: string
+  _projectPath?: string
 ): DashboardEvidenceCard | undefined {
   switch (kind) {
     case 'doctor-last-run':
-      return projectPath
-        ? findEvidenceCardById(bundle, 'projectDoctor')
-        : findEvidenceCardById(bundle, 'doctor');
+      return findEvidenceCardById(bundle, 'doctor');
+    case 'doctor-project-last-run':
+      return findEvidenceCardById(bundle, 'projectDoctor');
     case 'analyze-last-run':
       return findEvidenceCardById(bundle, 'analyze');
     case 'release-readiness-last-run':
@@ -416,6 +562,10 @@ export function resolveCardForReportKind(
       return findEvidenceCardById(bundle, 'snapshot');
     case 'archive-manifest':
       return findEvidenceCardById(bundle, 'archive');
+    case 'mirror-ops':
+      return findEvidenceCardById(bundle, 'mirror');
+    case 'infra-plan':
+      return findEvidenceCardById(bundle, 'infra');
     default:
       return undefined;
   }

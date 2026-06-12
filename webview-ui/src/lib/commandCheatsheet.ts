@@ -1,3 +1,5 @@
+import { buildRapidkitDisplayCommand } from './rapidkitCommandText';
+
 export type CommandCheatsheetEntry = {
   label: string;
   command: string;
@@ -52,7 +54,7 @@ export const COMMAND_CHEATSHEET_GROUPS: CommandCheatsheetGroup[] = [
     entries: [
       {
         label: 'Add module',
-        command: 'npx --yes --package rapidkit rapidkit add module <slug>',
+        command: buildRapidkitDisplayCommand(['add', 'module', '<slug>']),
         scope: 'module',
       },
       { label: 'Upgrade', command: 'rapidkit upgrade module <slug>', scope: 'module' },

@@ -1,128 +1,125 @@
 /**
- * Design Tokens - Signature Enterprise Dark System
- * Workspai Incident Studio vNext
+ * Design Tokens — Studio surfaces read the shared Workspai `--ws-*` spine.
+ *
+ * Bridge-only: consumed by `themeSystem.ts` for legacy theme resolution tests.
+ * Region components must use CSS `--ws-*` tokens via `studioUi.ts` / static CSS — not this module.
  */
 
 export const colorTokens = {
-  // Base canvas
-  root: '#091018',
-  surface1: 'rgba(10, 20, 29, 0.86)',
-  surface2: 'rgba(16, 28, 39, 0.92)',
-  surface3: 'rgba(24, 39, 53, 0.96)',
-  surface4: 'rgba(34, 52, 67, 0.98)',
-  canvas: '#0b1520',
+  root: 'var(--ws-surface)',
+  surface1: 'var(--ws-surface)',
+  surface2: 'var(--ws-surface-raised)',
+  surface3: 'color-mix(in srgb, var(--ws-surface-raised) 88%, transparent)',
+  surface4: 'var(--ws-surface-input)',
+  canvas: 'var(--ws-surface)',
   heroGlow: 'none',
 
-  // Borders & dividers
   border: {
-    subtle: 'rgba(163, 194, 219, 0.10)',
-    medium: 'rgba(163, 194, 219, 0.18)',
-    strong: 'rgba(185, 219, 240, 0.32)',
+    subtle: 'var(--ws-border-subtle)',
+    medium: 'var(--ws-border)',
+    strong: 'var(--ws-focus)',
   },
 
-  // Text
   text: {
-    primary: 'rgba(242, 248, 252, 0.95)',
-    secondary: 'rgba(208, 221, 231, 0.88)',
-    tertiary: 'rgba(173, 191, 204, 0.80)',
-    quaternary: 'rgba(138, 158, 172, 0.78)',
-    // Legacy aliases
-    high: 'rgba(242, 248, 252, 0.95)',
-    medium: 'rgba(200, 214, 224, 0.84)',
-    muted: 'rgba(155, 175, 189, 0.72)',
-    subtle: 'rgba(112, 134, 149, 0.76)',
+    primary: 'var(--ws-text)',
+    secondary: 'var(--ws-text)',
+    tertiary: 'var(--ws-text-muted)',
+    quaternary: 'var(--ws-text-subtle)',
+    high: 'var(--ws-text)',
+    medium: 'var(--ws-text)',
+    muted: 'var(--ws-text-muted)',
+    subtle: 'var(--ws-text-subtle)',
   },
 
-  // Brand & emphasis
-  primary: '#1CD2FF',
-  primaryHover: '#61DFFF',
-  primaryActive: '#0DB9EA',
-  primaryInverse: 'rgba(28, 210, 255, 0.16)',
-  accent: '#7E8CFF',
-  accentHover: '#A5AEFF',
-  teal: '#1CD2FF',
-  tealHover: '#61DFFF',
+  primary: 'var(--ws-accent)',
+  primaryHover: 'color-mix(in srgb, var(--ws-accent) 78%, var(--ws-text))',
+  primaryActive: 'color-mix(in srgb, var(--ws-accent) 62%, var(--ws-text))',
+  primaryInverse: 'color-mix(in srgb, var(--ws-accent) 11%, transparent)',
+  accent: 'var(--ws-primary)',
+  accentHover: 'color-mix(in srgb, var(--ws-primary) 78%, var(--ws-text))',
+  teal: 'var(--ws-accent)',
+  tealHover: 'color-mix(in srgb, var(--ws-accent) 78%, var(--ws-text))',
 
-  success: '#33E199',
-  successBg: 'rgba(51, 225, 153, 0.12)',
-  warning: '#FFC462',
-  warningBg: 'rgba(255, 196, 98, 0.13)',
-  error: '#FF7E7E',
-  errorBg: 'rgba(255, 126, 126, 0.13)',
+  success: 'var(--ws-success)',
+  successBg: 'color-mix(in srgb, var(--ws-success) 14%, transparent)',
+  warning: 'var(--ws-warn)',
+  warningBg: 'color-mix(in srgb, var(--ws-warn) 16%, transparent)',
+  error: 'var(--ws-error)',
+  errorBg: 'color-mix(in srgb, var(--ws-error) 14%, transparent)',
 
   health: {
-    ok: '#33E199',
-    warning: '#FFC462',
-    error: '#FF7E7E',
-    unknown: 'rgba(127, 149, 167, 0.60)',
+    ok: 'var(--ws-success)',
+    warning: 'var(--ws-warn)',
+    error: 'var(--ws-error)',
+    unknown: 'var(--ws-text-muted)',
   },
 };
 
 export const fontTokens = {
-  ui: 'var(--vscode-font-family, "Aptos", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif)',
+  ui: 'var(--ws-font-ui, var(--vscode-font-family, "Segoe UI", system-ui, sans-serif))',
   mono: 'var(--vscode-editor-font-family, "Consolas", "Courier New", monospace)',
 };
 
 export const spacing = {
-  xs: '4px',
-  sm: '8px',
-  md: '12px',
-  lg: '16px',
-  xl: '24px',
+  xs: 'var(--ws-space-xs, 4px)',
+  sm: 'var(--ws-space-sm, 8px)',
+  md: 'var(--ws-space-md, 12px)',
+  lg: 'var(--ws-space-lg, 16px)',
+  xl: 'var(--ws-space-xl, 24px)',
   xxl: '32px',
   xxxl: '40px',
 };
 
 export const typography = {
   display: {
-    fontSize: '30px',
-    fontWeight: 700,
-    lineHeight: '1.1',
-    letterSpacing: '-0.9px',
+    fontSize: '22px',
+    fontWeight: 850,
+    lineHeight: '1.15',
+    letterSpacing: '-0.4px',
   },
   h1: {
-    fontSize: '22px',
-    fontWeight: 700,
-    lineHeight: '1.2',
-    letterSpacing: '-0.6px',
+    fontSize: '18px',
+    fontWeight: 850,
+    lineHeight: '1.25',
+    letterSpacing: '-0.3px',
   },
   h2: {
-    fontSize: '17px',
-    fontWeight: 600,
+    fontSize: '14px',
+    fontWeight: 850,
     lineHeight: '1.35',
-    letterSpacing: '-0.2px',
+    letterSpacing: '-0.1px',
   },
   h3: {
-    fontSize: '15px',
-    fontWeight: 600,
+    fontSize: '13px',
+    fontWeight: 700,
     lineHeight: '1.4',
     letterSpacing: '0px',
   },
   labelSmall: {
-    fontSize: '11px',
-    fontWeight: 700,
-    letterSpacing: '0.8px',
+    fontSize: '10px',
+    fontWeight: 850,
+    letterSpacing: '0.08em',
     textTransform: 'uppercase' as const,
   },
   label: {
-    fontSize: '12px',
-    fontWeight: 700,
-    letterSpacing: '0.35px',
+    fontSize: '10.5px',
+    fontWeight: 750,
+    letterSpacing: '0.02em',
   },
   bodySmall: {
-    fontSize: '12px',
+    fontSize: '11px',
     fontWeight: 500,
-    lineHeight: '1.5',
+    lineHeight: '1.45',
   },
   body: {
     fontSize: '13px',
     fontWeight: 400,
-    lineHeight: '1.6',
+    lineHeight: '1.55',
   },
   bodyLarge: {
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: 400,
-    lineHeight: '1.65',
+    lineHeight: '1.6',
   },
   code: {
     fontSize: '12px',
@@ -131,38 +128,39 @@ export const typography = {
     fontFamily: fontTokens.mono,
   },
   caption: {
-    fontSize: '11px',
+    fontSize: '10.5px',
     fontWeight: 400,
-    lineHeight: '1.45',
+    lineHeight: '1.4',
   },
   captionSmall: {
-    fontSize: '11px',
-    fontWeight: 600,
-    lineHeight: '1.4',
-    letterSpacing: '0.2px',
+    fontSize: '10.5px',
+    fontWeight: 700,
+    lineHeight: '1.35',
+    letterSpacing: '0.02em',
   },
   headingSmall: {
-    fontSize: '12px',
-    fontWeight: 600,
+    fontSize: '11px',
+    fontWeight: 750,
     lineHeight: '1.4',
   },
   heading: {
-    fontSize: '14px',
-    fontWeight: 600,
-    lineHeight: '1.5',
+    fontSize: '12px',
+    fontWeight: 750,
+    lineHeight: '1.45',
   },
 };
 
 export const borderRadius = {
-  xs: '2px',
-  sm: '4px',
-  md: '8px',
-  lg: '12px',
+  xs: 'var(--ws-radius-sm, 2px)',
+  sm: 'var(--ws-radius-sm, 5px)',
+  md: 'var(--ws-radius-md, 7px)',
+  lg: 'var(--ws-radius-lg, 10px)',
+  xl: '12px',
   full: '999px',
 };
 
 export const layout = {
-  activityBar: '46px',
+  activityBar: '42px',
   contextPanel: '280px',
 };
 
@@ -186,9 +184,10 @@ export const shadows = {
 export const gridBaseline = 8;
 
 export const transitions = {
-  microInteraction: 'all 120ms cubic-bezier(0.4, 0, 0.2, 1)',
-  standard: 'all 220ms cubic-bezier(0.22, 1, 0.36, 1)',
-  emphasized: 'all 360ms cubic-bezier(0.22, 1, 0.36, 1)',
+  microInteraction:
+    'color 120ms cubic-bezier(0.4, 0, 0.2, 1), background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1)',
+  standard: 'all 180ms cubic-bezier(0.4, 0, 0.2, 1)',
+  emphasized: 'all 260ms cubic-bezier(0.22, 1, 0.36, 1)',
 };
 
 export const motionTokens = {
@@ -196,18 +195,25 @@ export const motionTokens = {
     emphasized: 'cubic-bezier(0.22, 1, 0.36, 1)',
   },
   durations: {
-    headerEnter: 380,
-    stepperEnter: 420,
-    surfaceEnter: 460,
-    deckEnter: 420,
-    chipFade: 360,
+    headerEnter: 280,
+    stepperEnter: 320,
+    surfaceEnter: 360,
+    deckEnter: 320,
+    chipFade: 260,
     pulse: 1500,
   },
   delays: {
-    stepperAfterHeader: 60,
-    surfaceAfterHeader: 110,
-    deckAfterSurface: 170,
-    chipsBase: 130,
-    chipsStep: 40,
+    stepperAfterHeader: 40,
+    surfaceAfterHeader: 80,
+    deckAfterSurface: 120,
+    chipsBase: 90,
+    chipsStep: 30,
   },
+};
+
+/** Shared panel chrome — reads live colorTokens (theme-aware via Object.assign) */
+export const panelChrome = {
+  divider: `1px solid ${colorTokens.border.subtle}`,
+  rail: `1px solid ${colorTokens.border.subtle}`,
+  inset: `1px solid ${colorTokens.border.subtle}`,
 };

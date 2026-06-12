@@ -284,7 +284,7 @@ describe('aiService', () => {
 
     expect(prepared.validation.clarificationNeeded).toBe(true);
     expect(prepared.validation.clarificationReason).toContain(
-      'run `npx --yes --package rapidkit rapidkit doctor workspace`'
+      'run `npx rapidkit doctor workspace`'
     );
     expect(prepared.contract.evidence_confidence).toBe('none');
   });
@@ -948,6 +948,45 @@ describe('aiService', () => {
       })),
     };
 
+    mockGetModulesCatalog.mockResolvedValue({
+      modules: [
+        {
+          id: 'settings',
+          name: 'Settings',
+          version: '1.0.0',
+          category: 'essentials',
+          icon: 'x',
+          description: 'Settings module',
+          status: 'stable',
+          tags: [],
+          slug: 'free/essentials/settings',
+        },
+        {
+          id: 'stripe_payment',
+          name: 'Stripe Payment',
+          version: '1.0.0',
+          category: 'billing',
+          icon: 'x',
+          description: 'Stripe billing module',
+          status: 'stable',
+          tags: [],
+          slug: 'free/billing/stripe_payment',
+        },
+        {
+          id: 'db_postgres',
+          name: 'Db Postgres',
+          version: '1.0.0',
+          category: 'database',
+          icon: 'x',
+          description: 'PostgreSQL module',
+          status: 'stable',
+          tags: [],
+          slug: 'free/database/db_postgres',
+        },
+      ],
+      source: 'live',
+      catalog: null,
+    });
     mockSelectChatModels.mockResolvedValue([model]);
 
     const { plan, planSource } = await parseCreationIntent(
@@ -966,5 +1005,55 @@ describe('aiService', () => {
         'free/database/db_postgres',
       ])
     );
+  });
+
+  it('parses AI creation plans through an injected provider', async () => {
+    mockGetModulesCatalog.mockResolvedValue({
+      modules: [
+        {
+          id: 'settings',
+          name: 'Settings',
+          version: '1.0.0',
+          category: 'essentials',
+          icon: 'x',
+          description: 'Settings module',
+          status: 'stable',
+          tags: [],
+          slug: 'free/essentials/settings',
+        },
+      ],
+      source: 'live',
+      catalog: null,
+    });
+
+    const provider = vi.fn(async () => ({
+      modelId: 'openai-compatible',
+      text: JSON.stringify({
+        workspaceName: 'custom-provider-saas',
+        profile: 'enterprise',
+        installMethod: 'auto',
+        framework: 'nestjs',
+        kit: 'nestjs.standard',
+        projectName: 'billing-api',
+        suggestedModules: ['free/essentials/settings'],
+        description: 'SaaS billing workspace from custom provider.',
+      }),
+    }));
+
+    const { plan, modelId, planSource } = await parseCreationIntent(
+      'Create an enterprise NestJS billing SaaS',
+      'workspace',
+      undefined,
+      tempProjectPath,
+      undefined,
+      provider
+    );
+
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(modelId).toBe('openai-compatible');
+    expect(planSource).toBe('llm');
+    expect(plan.framework).toBe('nestjs');
+    expect(plan.profile).toBe('enterprise');
+    expect(plan.projectName).toBe('billing-api');
   });
 });

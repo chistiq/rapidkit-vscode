@@ -31,6 +31,7 @@ interface EnterpriseDashboardFlowProps {
   onSelectFramework: (framework: Framework) => void;
   onOpenProjectBuilder: (framework: Framework) => void;
   onOpenManualProject: (framework: Framework) => void;
+  onRunWorkspaceCommand?: (command: string, data?: Record<string, unknown>) => void;
   onRunFixPreview?: () => void;
   onRunChangeImpact?: () => void;
   onRunTerminalBridge?: () => void;
@@ -57,6 +58,7 @@ export function EnterpriseDashboardFlow({
   onSelectFramework,
   onOpenProjectBuilder,
   onOpenManualProject,
+  onRunWorkspaceCommand,
   onRunFixPreview,
   onRunChangeImpact,
   onRunTerminalBridge,
@@ -69,6 +71,10 @@ export function EnterpriseDashboardFlow({
   const runWorkspaceAction = (command: string, data?: Record<string, unknown>) => {
     if (!hasWorkspace) {
       vscode.postMessage('quickSwitchWorkspace');
+      return;
+    }
+    if (onRunWorkspaceCommand) {
+      onRunWorkspaceCommand(command, data);
       return;
     }
     vscode.postMessage(command, data);
@@ -86,7 +92,7 @@ export function EnterpriseDashboardFlow({
     <section className="enterprise-flow">
       <div className="enterprise-flow-header">
         <div>
-          <div className="enterprise-flow-kicker">Enterprise flow</div>
+          <div className="ws-kicker enterprise-flow-kicker">Enterprise flow</div>
           <div className="enterprise-flow-title">{displayName}</div>
           <div className="enterprise-flow-subtitle">
             {profileLabel ? `${profileLabel} profile · ` : ''}
@@ -96,7 +102,7 @@ export function EnterpriseDashboardFlow({
         <div className="enterprise-flow-header-actions">
           <button
             type="button"
-            className="enterprise-flow-switch"
+            className="ws-btn ws-btn--ghost enterprise-flow-switch"
             onClick={() => vscode.postMessage('quickSwitchWorkspace')}
             title="Quick Switch Workspace"
           >

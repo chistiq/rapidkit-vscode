@@ -1,105 +1,64 @@
 /**
- * ActivityBar: Tool launcher strip — quick-access to studio tools
- * Provides fast access to Terminal Bridge, Context Scan, Memory, and Settings.
+ * ActivityBar: Tool launcher strip — quick-access to governed Studio actions.
  * NOT a phase navigator — PhaseStepper handles phases.
  */
 
-import React, { useState } from 'react';
-import { Terminal, ScanLine, Brain, Settings, HelpCircle, LucideIcon } from 'lucide-react';
-import {
-    colorTokens,
-    spacing,
-    borderRadius,
-    transitions,
-} from '../styles/designTokens';
+import React from 'react';
+import { Terminal, ScanLine, Lightbulb, Code, ShieldCheck, LucideIcon } from 'lucide-react';
+import { studioClass } from '../styles/studioUi';
+import { STUDIO_ACTION_COMMANDS, StudioActionCommand } from '../state/studioActions';
 
 interface Tool {
     id: string;
     icon: LucideIcon;
     label: string;
     shortcut: string;
+    command: StudioActionCommand;
 }
 
 const TOOLS: Tool[] = [
-    { id: 'terminal', icon: Terminal, label: 'Terminal Bridge', shortcut: '⌘T' },
-    { id: 'scan', icon: ScanLine, label: 'Context Scan', shortcut: '⌘S' },
-    { id: 'memory', icon: Brain, label: 'Memory', shortcut: '⌘M' },
-    { id: 'settings', icon: Settings, label: 'Settings', shortcut: '⌘,' },
+    { id: 'terminal', icon: Terminal, label: 'Terminal Bridge', shortcut: '⌘T', command: STUDIO_ACTION_COMMANDS.terminalBridge },
+    { id: 'scan', icon: ScanLine, label: 'Run Analyze', shortcut: '⌘S', command: STUDIO_ACTION_COMMANDS.runAnalyze },
+    { id: 'impact', icon: Lightbulb, label: 'Impact Lens', shortcut: '⌘I', command: STUDIO_ACTION_COMMANDS.impactLens },
+    { id: 'fix', icon: Code, label: 'Fix Lens', shortcut: '⌘F', command: STUDIO_ACTION_COMMANDS.fixLens },
+    { id: 'verify', icon: ShieldCheck, label: 'Verify Gates', shortcut: '⌘V', command: STUDIO_ACTION_COMMANDS.verifyGates },
 ];
 
 interface ActivityBarProps {
     activeTool?: string;
     onToolSelect?: (toolId: string) => void;
+    onExecuteAction?: (command: StudioActionCommand) => void;
 }
 
 export const ActivityBar: React.FC<ActivityBarProps> = ({
     activeTool,
     onToolSelect,
+    onExecuteAction,
 }) => {
-    const [hovered, setHovered] = useState<string | null>(null);
-
     return (
-        <nav
-            aria-label="Studio tools"
-            style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: spacing.sm,
-                padding: `${spacing.lg} ${spacing.sm}`,
-                backgroundColor: colorTokens.surface3,
-                border: `1px solid ${colorTokens.border.medium}`,
-                borderRadius: '0px',
-                height: '100%',
-                justifyContent: 'space-between',
-                boxShadow: 'none',
-                backdropFilter: 'none',
-            }}
-        >
-            {/* Main tools */}
-            <div
-                style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: spacing.xs,
-                }}
-            >
+        <nav aria-label="Studio tools" className={`${studioClass.rail} ${studioClass.activityBar}`}>
+            <div className="studio-activity-bar__group">
                 {TOOLS.slice(0, 3).map((tool) => (
                     <ToolButton
                         key={tool.id}
                         tool={tool}
                         isActive={activeTool === tool.id}
-                        isHovered={hovered === tool.id}
-                        onHover={setHovered}
                         onSelect={onToolSelect}
+                        onExecute={onExecuteAction}
                     />
                 ))}
             </div>
 
-            {/* Bottom tools — settings + help */}
-            <div
-                style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: spacing.xs,
-                }}
-            >
-                <ToolButton
-                    tool={TOOLS[3]}
-                    isActive={activeTool === TOOLS[3].id}
-                    isHovered={hovered === TOOLS[3].id}
-                    onHover={setHovered}
-                    onSelect={onToolSelect}
-                />
-                <ToolButton
-                    tool={{ id: 'help', icon: HelpCircle, label: 'Documentation', shortcut: '' }}
-                    isActive={activeTool === 'help'}
-                    isHovered={hovered === 'help'}
-                    onHover={setHovered}
-                    onSelect={onToolSelect}
-                />
+            <div className="studio-activity-bar__group">
+                {TOOLS.slice(3).map((tool) => (
+                    <ToolButton
+                        key={tool.id}
+                        tool={tool}
+                        isActive={activeTool === tool.id}
+                        onSelect={onToolSelect}
+                        onExecute={onExecuteAction}
+                    />
+                ))}
             </div>
         </nav>
     );
@@ -108,18 +67,11 @@ export const ActivityBar: React.FC<ActivityBarProps> = ({
 interface ToolButtonProps {
     tool: Tool;
     isActive: boolean;
-    isHovered: boolean;
-    onHover: (id: string | null) => void;
     onSelect?: (id: string) => void;
+    onExecute?: (command: StudioActionCommand) => void;
 }
 
-const ToolButton: React.FC<ToolButtonProps> = ({
-    tool,
-    isActive,
-    isHovered,
-    onHover,
-    onSelect,
-}) => {
+const ToolButton: React.FC<ToolButtonProps> = ({ tool, isActive, onSelect, onExecute }) => {
     const Icon = tool.icon;
     return (
         <button
@@ -127,52 +79,14 @@ const ToolButton: React.FC<ToolButtonProps> = ({
             aria-label={tool.label + (tool.shortcut ? ` (${tool.shortcut})` : '')}
             aria-pressed={isActive}
             title={tool.label + (tool.shortcut ? `  ${tool.shortcut}` : '')}
-            onClick={() => onSelect?.(tool.id)}
-            onMouseEnter={() => onHover(tool.id)}
-            onMouseLeave={() => onHover(null)}
-            style={{
-                width: '40px',
-                height: '40px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: isActive
-                    ? colorTokens.primary
-                    : isHovered
-                        ? colorTokens.surface2
-                        : 'transparent',
-                color: isActive
-                    ? colorTokens.root
-                    : isHovered
-                        ? colorTokens.text.secondary
-                        : colorTokens.text.tertiary,
-                border: isActive
-                    ? `1px solid ${colorTokens.primary}80`
-                    : '1px solid transparent',
-                borderRadius: borderRadius.md,
-                cursor: 'pointer',
-                transition: transitions.microInteraction,
-                boxShadow: 'none',
-                position: 'relative',
-                flexShrink: 0,
+            onClick={() => {
+                onSelect?.(tool.id);
+                onExecute?.(tool.command);
             }}
+            className={`studio-tool-btn${isActive ? ' is-active' : ''}`}
         >
             <Icon size={16} />
-            {/* Active indicator dot */}
-            {isActive && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        left: '-1px',
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        width: '3px',
-                        height: '16px',
-                        backgroundColor: colorTokens.primary,
-                        borderRadius: '0 2px 2px 0',
-                    }}
-                />
-            )}
+            {isActive ? <span className="studio-tool-btn__indicator" aria-hidden="true" /> : null}
         </button>
     );
 };

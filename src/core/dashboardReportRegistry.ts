@@ -4,13 +4,16 @@ import type { DashboardEvidenceStatus } from './dashboardEvidenceBridge';
 
 export type DashboardReportKind =
   | 'doctor-last-run'
+  | 'doctor-project-last-run'
   | 'analyze-last-run'
   | 'release-readiness-last-run'
   | 'bootstrap-compliance'
   | 'autopilot-release'
   | 'share-bundle'
   | 'snapshot-last-run'
-  | 'archive-manifest';
+  | 'archive-manifest'
+  | 'mirror-ops'
+  | 'infra-plan';
 
 export type DashboardReportBinding = {
   kind: DashboardReportKind;
@@ -30,6 +33,15 @@ const REPORT_BINDINGS: Array<{
       command: 'checkWorkspaceHealth',
       cardId: 'doctor',
       scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'doctor-project-last-run.json',
+    binding: {
+      kind: 'doctor-project-last-run',
+      command: 'checkProjectHealth',
+      cardId: 'projectDoctor',
+      scope: 'project',
     },
   },
   {
@@ -92,6 +104,24 @@ const REPORT_BINDINGS: Array<{
       kind: 'archive-manifest',
       command: 'workspaceArchive',
       cardId: 'archive',
+      scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'mirror-ops.latest.json' || name.startsWith('mirror-ops-'),
+    binding: {
+      kind: 'mirror-ops',
+      command: 'mirrorStatus',
+      cardId: 'mirror',
+      scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'infra-plan.json',
+    binding: {
+      kind: 'infra-plan',
+      command: 'workspaceInfra',
+      cardId: 'infra',
       scope: 'workspace',
     },
   },
@@ -180,7 +210,8 @@ export function extractBlockersFromReport(
       const fail = Number(findings.fail ?? 0);
       return fail > 0 ? [`${fail} analyze finding(s) require attention`] : [];
     }
-    case 'doctor-last-run': {
+    case 'doctor-last-run':
+    case 'doctor-project-last-run': {
       const projects = Array.isArray(raw.projects) ? raw.projects : [];
       const projectPath = options?.projectPath;
       const projectName = options?.projectName;
@@ -228,6 +259,16 @@ export function extractBlockersFromReport(
       return collectStringItems(raw.errors ?? raw.warnings, 6);
     case 'archive-manifest':
       return collectStringItems(raw.blockers ?? raw.issues, 6);
+    case 'mirror-ops': {
+      const mirror =
+        raw.mirror && typeof raw.mirror === 'object' ? (raw.mirror as Record<string, unknown>) : {};
+      if (mirror.configExists === false) {
+        return ['Mirror config is missing'];
+      }
+      return collectStringItems(raw.errors ?? raw.messages, 6);
+    }
+    case 'infra-plan':
+      return collectStringItems(raw.errors ?? raw.warnings ?? raw.blockers, 6);
     default:
       return [];
   }

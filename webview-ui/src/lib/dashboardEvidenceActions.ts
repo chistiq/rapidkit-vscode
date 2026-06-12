@@ -1,6 +1,18 @@
 import type { DashboardEvidenceCard, DashboardEvidenceCardId } from './dashboardEvidence';
+import {
+  getDashboardCommandMeta,
+  type DashboardCommand,
+  type DashboardCommandScope,
+} from './dashboardCommandRegistry';
 
-export const EVIDENCE_CARD_COMMANDS: Partial<Record<DashboardEvidenceCardId, string>> = {
+export type DashboardEvidenceCommandAction = {
+  command: DashboardCommand;
+  label: string;
+  scope: DashboardCommandScope;
+  trackActivity: boolean;
+};
+
+export const EVIDENCE_CARD_COMMANDS: Partial<Record<DashboardEvidenceCardId, DashboardCommand>> = {
   doctor: 'checkWorkspaceHealth',
   projectDoctor: 'projectDoctor',
   analyze: 'workspaceAnalyze',
@@ -12,8 +24,26 @@ export const EVIDENCE_CARD_COMMANDS: Partial<Record<DashboardEvidenceCardId, str
   archive: 'workspaceArchive',
 };
 
-export function resolveEvidenceCardCommand(card: DashboardEvidenceCard): string | undefined {
-  return EVIDENCE_CARD_COMMANDS[card.id];
+export function resolveEvidenceCardCommandAction(
+  card: DashboardEvidenceCard
+): DashboardEvidenceCommandAction | undefined {
+  const command = EVIDENCE_CARD_COMMANDS[card.id];
+  const meta = command ? getDashboardCommandMeta(command) : undefined;
+  if (!command || !meta) {
+    return undefined;
+  }
+  return {
+    command,
+    label: meta.label,
+    scope: meta.scope,
+    trackActivity: meta.trackActivity,
+  };
+}
+
+export function resolveEvidenceCardCommand(
+  card: DashboardEvidenceCard
+): DashboardCommand | undefined {
+  return resolveEvidenceCardCommandAction(card)?.command;
 }
 
 export function buildIncidentStudioEvidenceOpen(card: DashboardEvidenceCard): {

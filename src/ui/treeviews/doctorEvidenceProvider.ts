@@ -7,6 +7,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs-extra';
 import * as path from 'path';
+import { buildRapidkitDisplayCommand } from '../../utils/platformCapabilities';
 
 const EVIDENCE_RELOAD_DEBOUNCE_MS = 200;
 
@@ -266,7 +267,7 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
           command: 'workspai.doctorEvidence.rerun',
           title: 'Run Doctor',
         };
-        item.tooltip = 'Click to run: npx --yes --package rapidkit rapidkit doctor workspace';
+        item.tooltip = `Click to run: ${buildRapidkitDisplayCommand(['doctor', 'workspace'])}`;
         return [item];
       }
 

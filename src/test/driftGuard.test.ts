@@ -306,7 +306,7 @@ describe('contract drift guard', () => {
     const memoryServiceSource = read('src/core/workspaceMemoryService.ts');
     const aiFreeFeaturesSource = read('src/commands/aiFreeFeatures.ts');
     const payloadSource = read('webview-ui/src/lib/incidentStudioPayload.ts');
-    const incidentStudioUiSource = read('webview-ui/src/components/AIIncidentStudio.tsx');
+    const reproPackSource = read('webview-ui/src/lib/incidentStudioReproPack.ts');
 
     expect(memoryServiceSource).toContain('WorkspaceMemoryPolicyProfile');
     expect(memoryServiceSource).toContain('WorkspaceMemoryWriteAccessContract');
@@ -334,8 +334,8 @@ describe('contract drift guard', () => {
     expect(welcomePanelSource).toContain('memoryInfluenceAuditTimeline');
     expect(welcomePanelSource).toContain('memoryEventId');
 
-    expect(incidentStudioUiSource).toContain('Memory influence timeline');
-    expect(incidentStudioUiSource).toContain('decisionArtifacts');
+    expect(reproPackSource).toContain('MEMORY_INFLUENCE_TIMELINE_HEADING');
+    expect(payloadSource).toContain('decisionArtifacts');
   });
 
   it('keeps workspace memory writes restricted to approved contract-gated routes', () => {
@@ -470,37 +470,42 @@ describe('contract drift guard', () => {
     expect(combined).not.toContain("['--package', 'rapidkit', 'rapidkit'");
   });
 
-  it('keeps user-facing CLI snippets on the pinned npm wrapper and current doctor scope', () => {
-    const readmeSource = read('README.md');
-    const moduleBrowserSource = read('webview-ui/src/components/ModuleBrowser.tsx');
-    const moduleDetailsSource = read('webview-ui/src/components/ModuleDetailsModal.tsx');
-    const installModuleSource = read('webview-ui/src/components/InstallModuleModal.tsx');
-    const workspaceSidebarSource = read(
-      'webview-ui/src/components/StudioRedesign/regions/WorkspaceSidebar.tsx'
-    );
-    const chatSurfaceSource = read(
-      'webview-ui/src/components/StudioRedesign/regions/ChatSurface.tsx'
-    );
-    const combined = [
-      readmeSource,
-      moduleBrowserSource,
-      moduleDetailsSource,
-      installModuleSource,
-      workspaceSidebarSource,
-      chatSurfaceSource,
-    ].join('\n');
+  it('keeps user-facing CLI snippets simple while execution helpers stay pinned', () => {
+    const userFacingSources = [
+      'README.md',
+      'src/commands/chatParticipant.ts',
+      'src/commands/createWorkspace.ts',
+      'src/core/aiContextContract.ts',
+      'src/core/aiContextResolver.ts',
+      'src/core/aiSystemPromptBuilder.ts',
+      'src/ui/panels/setupExperiencePanel.ts',
+      'src/ui/panels/welcomePanel.ts',
+      'src/ui/treeviews/doctorEvidenceProvider.ts',
+      'src/utils/workspaceValidator.ts',
+      'webview-ui/src/components/InstallModuleModal.tsx',
+      'webview-ui/src/components/ModuleBrowser.tsx',
+      'webview-ui/src/components/ModuleDetailsModal.tsx',
+      'webview-ui/src/components/StudioRedesign/regions/ChatSurface.tsx',
+      'webview-ui/src/components/StudioRedesign/regions/WorkspaceSidebar.tsx',
+      'webview-ui/src/lib/commandCheatsheet.ts',
+      'webview-ui/src/lib/incidentCliActionMatrix.ts',
+    ];
+    const combined = userFacingSources.map((file) => read(file)).join('\n');
 
-    expect(combined).toContain('npx --yes --package rapidkit rapidkit doctor workspace');
-    expect(combined).toContain('npx --yes --package rapidkit rapidkit add module');
-    expect(combined).not.toContain('npx rapidkit doctor workspace');
-    expect(combined).not.toContain('npx rapidkit add module');
+    expect(combined).not.toContain('npx --yes --package rapidkit rapidkit');
+    expect(read('src/utils/platformCapabilities.ts')).toContain(
+      "['--yes', '--package', 'rapidkit', 'rapidkit', ...args]"
+    );
+    expect(read('src/ui/panels/welcomePanel.ts')).toContain(
+      'toPinnedRapidkitExecutionCommand(inlineCommand)'
+    );
     expect(combined).not.toContain('rapidkit doctor --scope=workspace');
     expect(combined).not.toContain('rapidkit doctor verify --scope=');
   });
 
-  it('keeps AI modal stop-generation contract aligned across webview and panel', () => {
+  it('keeps context assist stop-generation contract aligned across webview and panel', () => {
     const appSource = read('webview-ui/src/App.tsx');
-    const aiModalSource = read('webview-ui/src/components/AIModal.tsx');
+    const assistPanelSource = read('webview-ui/src/components/ContextAssistPanel.tsx');
     const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
 
     expect(appSource).toContain(
@@ -512,13 +517,14 @@ describe('contract drift guard', () => {
     expect(appSource).toContain('contextContract={aiContextContract}');
     expect(appSource).toContain('history: historyForRequest,');
     expect(appSource).toContain('onCancel={handleAICancelQuery}');
+    expect(appSource).toContain('<ContextAssistPanel');
 
-    expect(aiModalSource).toContain('AIContextContractSummary');
-    expect(aiModalSource).toContain('ai-modal-contract-strip');
-    expect(aiModalSource).toContain('Evidence: {contextContract.evidence_confidence}');
-    expect(aiModalSource).toContain('onCancel: () => void;');
-    expect(aiModalSource).toContain('onClick={isStreaming ? onCancel : handleSubmit}');
-    expect(aiModalSource).toContain("{isStreaming ? 'Stop' : 'Send'}");
+    expect(assistPanelSource).toContain('ContextAssistContractSummary');
+    expect(assistPanelSource).toContain('ws-assist-panel__contract');
+    expect(assistPanelSource).toContain('Evidence {contextContract.evidence_confidence}');
+    expect(assistPanelSource).toContain('onCancel: () => void;');
+    expect(assistPanelSource).toContain('onClick={isStreaming ? onCancel : handleSubmit}');
+    expect(assistPanelSource).toContain("{isStreaming ? 'Stop' : 'Send'}");
 
     expect(welcomePanelSource).toContain("case 'aiCancelQuery':");
     expect(welcomePanelSource).toContain('this._aiQueryTokenSource?.cancel();');

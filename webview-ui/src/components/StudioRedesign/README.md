@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory contains the new modular, minimal-premium Incident Studio UI as designed in the redesign specification. It replaces the monolithic `AIIncidentStudio.tsx` with a component-based architecture organized by UI regions.
+This directory contains the modular, minimal-premium Incident Studio UI. Production entry is `IncidentStudioVNext.tsx`. Legacy presentation contracts live in `webview-ui/src/lib/` and `incidentStudioPresentationContracts.test.ts`.
 
 ## Architecture
 
@@ -253,9 +253,9 @@ cd webview-ui && npm run watch
 - [ ] Gather user feedback
 
 ### Phase 4: Full Replacement (Future)
-- [ ] Migrate 100% of incident studio usage
-- [ ] Deprecate AIIncidentStudio.tsx
-- [ ] Archive legacy styling/logic
+- [x] Migrate 100% of incident studio usage (`IncidentStudioVNext` in production `App.tsx`)
+- [x] Archive legacy monolith (removed — contracts in lib tests)
+- [x] Delete archived monolith after contract tests migrate to lib/vNext
 
 ## Known Limitations (v1)
 

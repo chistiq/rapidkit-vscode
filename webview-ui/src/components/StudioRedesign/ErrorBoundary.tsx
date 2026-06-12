@@ -4,7 +4,7 @@
  */
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { colorTokens, spacing, typography, borderRadius, shadows } from './styles/designTokens';
+import { studioClass } from './styles/studioUi';
 
 interface Props {
     children: ReactNode;
@@ -31,7 +31,6 @@ export class ErrorBoundary extends Component<Props, State> {
     }
 
     componentDidCatch(error: Error, info: ErrorInfo): void {
-        // Surface to VS Code extension host if a logger is wired in the future
         console.error(`[IncidentStudio] ErrorBoundary caught in "${this.props.region}"`, error, info);
     }
 
@@ -45,62 +44,14 @@ export class ErrorBoundary extends Component<Props, State> {
         }
 
         return (
-            <div
-                role="alert"
-                style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: '100%',
-                    padding: spacing.xxl,
-                    gap: spacing.lg,
-                    backgroundColor: colorTokens.surface1,
-                    color: colorTokens.text.secondary,
-                    textAlign: 'center',
-                }}
-            >
-                <div
-                    style={{
-                        padding: `${spacing.sm} ${spacing.lg}`,
-                        backgroundColor: colorTokens.errorBg,
-                        border: `1px solid ${colorTokens.error}40`,
-                        borderRadius: borderRadius.md,
-                        ...typography.bodySmall,
-                        color: colorTokens.error,
-                    }}
-                >
+            <div role="alert" className={studioClass.errorBoundary}>
+                <div className={studioClass.errorBoundaryBadge}>
                     {this.props.region ? `${this.props.region} — ` : ''}Render error
                 </div>
-                <div
-                    style={{
-                        ...typography.caption,
-                        color: colorTokens.text.quaternary,
-                        maxWidth: '240px',
-                        wordBreak: 'break-word',
-                        padding: spacing.md,
-                        backgroundColor: colorTokens.surface2,
-                        borderRadius: borderRadius.md,
-                        border: `1px solid ${colorTokens.border.subtle}`,
-                        boxShadow: shadows.elevation1,
-                        fontFamily: 'var(--vscode-editor-font-family, monospace)',
-                    }}
-                >
+                <div className={studioClass.errorBoundaryMessage}>
                     {this.state.errorMessage}
                 </div>
-                <button
-                    type="button"
-                    onClick={this.handleReset}
-                    style={{
-                        padding: `${spacing.sm} ${spacing.lg}`,
-                        backgroundColor: colorTokens.surface2,
-                        border: `1px solid ${colorTokens.border.medium}`,
-                        borderRadius: borderRadius.md,
-                        color: colorTokens.text.secondary,
-                        ...typography.label,
-                        cursor: 'pointer',
-                    }}
-                >
+                <button type="button" onClick={this.handleReset} className={studioClass.errorBoundaryRetry}>
                     Retry
                 </button>
             </div>

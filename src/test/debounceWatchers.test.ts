@@ -73,6 +73,18 @@ vi.mock('vscode', () => {
   mockCreateFileSystemWatcher.mockImplementation(createWatcher);
 
   return {
+    window: {
+      createOutputChannel: vi.fn(() => ({
+        appendLine: vi.fn(),
+        show: vi.fn(),
+        hide: vi.fn(),
+        clear: vi.fn(),
+        dispose: vi.fn(),
+      })),
+      showWarningMessage: vi.fn(),
+      showErrorMessage: vi.fn(),
+      showInformationMessage: vi.fn(),
+    },
     workspace: {
       createFileSystemWatcher: mockCreateFileSystemWatcher,
     },
@@ -82,6 +94,10 @@ vi.mock('vscode', () => {
     EventEmitter,
     TreeItem,
     ThemeIcon,
+    CodeActionKind: {
+      QuickFix: 'quickfix',
+      Refactor: 'refactor',
+    },
     TreeItemCollapsibleState: {
       None: 0,
       Collapsed: 1,

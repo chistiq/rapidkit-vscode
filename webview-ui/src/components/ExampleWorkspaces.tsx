@@ -100,7 +100,20 @@ export function ExampleWorkspaces({
   const hiddenCount = filteredExamples.length - visibleExamples.length;
 
   if (examples.length === 0) {
-    return null;
+    return (
+      <div className="section">
+        <SectionHeader
+          icon={<GitBranch className="w-6 h-6" />}
+          title="Workspace Templates"
+          scope="catalog"
+          count="0"
+        />
+        <div className="template-empty-state">
+          No workspace templates are available yet. Refresh the dashboard or check your network
+          connection.
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -129,7 +142,7 @@ export function ExampleWorkspaces({
             <button
               key={item}
               type="button"
-              className={framework === item ? 'is-active' : ''}
+              className={`ws-chip ${framework === item ? 'is-active' : ''}`}
               onClick={() => {
                 setFramework(item);
                 setShowAll(false);
@@ -150,7 +163,7 @@ export function ExampleWorkspaces({
             <button
               key={value}
               type="button"
-              className={readiness === value ? 'is-active' : ''}
+              className={`ws-chip ${readiness === value ? 'is-active' : ''}`}
               onClick={() => {
                 setReadiness(value as typeof readiness);
                 setShowAll(false);
@@ -175,7 +188,7 @@ export function ExampleWorkspaces({
           const hasUpdate = cloneStatus === 'update-available';
 
           return (
-            <div key={example.name} className="example-card">
+            <div key={example.name} className="ws-card example-card">
               <div className="example-header">
                 <div className="example-info">
                   <div className="example-title">
@@ -183,7 +196,7 @@ export function ExampleWorkspaces({
                     {example.tags && example.tags.length > 0 && (
                       <div className="example-tags">
                         {example.tags.map((tag, idx) => (
-                          <span key={idx} className="example-tag">
+                          <span key={idx} className="ws-chip ws-chip--muted example-tag">
                             {tag}
                           </span>
                         ))}
@@ -194,7 +207,7 @@ export function ExampleWorkspaces({
                 </div>
                 <div className="example-actions">
                   <button
-                    className="example-btn example-btn--secondary"
+                    className="ws-btn ws-btn--ghost ws-btn--icon example-btn example-btn--secondary"
                     onClick={(e) => {
                       e.stopPropagation();
                       vscode.postMessage('openUrl', { url: example.repoUrl });
@@ -207,7 +220,7 @@ export function ExampleWorkspaces({
 
                   {hasUpdate && onUpdate ? (
                     <button
-                      className="example-btn example-btn--warning"
+                      className="ws-btn ws-btn--warn example-btn example-btn--warning"
                       onClick={(e) => {
                         e.stopPropagation();
                         onUpdate(example);
@@ -229,7 +242,7 @@ export function ExampleWorkspaces({
                     </button>
                   ) : (
                     <button
-                      className={`example-btn ${isCloned ? 'example-btn--success' : 'example-btn--primary'}`}
+                      className={`ws-btn example-btn ${isCloned ? 'is-installed example-btn--success' : 'ws-btn--primary example-btn--primary'}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (!isCloned) {
@@ -303,7 +316,7 @@ export function ExampleWorkspaces({
           Showing {visibleExamples.length} of {filteredExamples.length} matching templates.
         </span>
         {hiddenCount > 0 || showAll ? (
-          <button type="button" onClick={() => setShowAll((value) => !value)}>
+          <button type="button" className="ws-btn ws-btn--ghost" onClick={() => setShowAll((value) => !value)}>
             {showAll ? 'Show less' : `Show ${hiddenCount} more`}
           </button>
         ) : null}

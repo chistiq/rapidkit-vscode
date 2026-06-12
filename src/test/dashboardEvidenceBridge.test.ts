@@ -77,11 +77,14 @@ describe('dashboardEvidenceBridge', () => {
     });
     const projectPath = path.join(workspacePath, 'api');
     await fs.ensureDir(path.join(projectPath, '.rapidkit', 'reports'));
-    await fs.writeJSON(path.join(projectPath, '.rapidkit', 'reports', 'doctor-last-run.json'), {
-      generatedAt: '2026-06-10T10:15:00.000Z',
-      healthScore: { passed: 5, warnings: 0, errors: 1, total: 6 },
-      projects: [{ name: 'api', path: projectPath, issues: ['Missing dependency lockfile'] }],
-    });
+    await fs.writeJSON(
+      path.join(projectPath, '.rapidkit', 'reports', 'doctor-project-last-run.json'),
+      {
+        generatedAt: '2026-06-10T10:15:00.000Z',
+        healthScore: { passed: 5, warnings: 0, errors: 1, total: 6 },
+        projects: [{ name: 'api', path: projectPath, issues: ['Missing dependency lockfile'] }],
+      }
+    );
 
     const bundle = await buildDashboardEvidenceBundle({
       workspacePath,
@@ -92,6 +95,37 @@ describe('dashboardEvidenceBridge', () => {
     expect(findEvidenceCard(bundle, 'autopilot')?.status).toBe('pass');
     expect(findEvidenceCard(bundle, 'projectDoctor')?.status).toBe('fail');
     expect(findEvidenceCard(bundle, 'projectDoctor')?.blockers?.[0]).toContain('lockfile');
+  });
+
+  it('builds mirror, infra, policy, and cache governance cards', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'mirror-ops.latest.json': {
+        timestamp: '2026-06-11T10:00:00.000Z',
+        result: 'ok',
+        mirror: { configExists: true, artifactsCount: 2 },
+      },
+      'infra-plan.json': {
+        generatedAt: '2026-06-11T10:05:00.000Z',
+        services: [{ name: 'postgres' }, { name: 'redis' }],
+      },
+    });
+    await fs.writeFile(
+      path.join(workspacePath, '.rapidkit', 'policies.yml'),
+      'mode: warn\n',
+      'utf8'
+    );
+    await fs.writeFile(
+      path.join(workspacePath, '.rapidkit', 'cache-config.yml'),
+      'strategy: shared\n',
+      'utf8'
+    );
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+
+    expect(findEvidenceCard(bundle, 'mirror')?.status).toBe('pass');
+    expect(findEvidenceCard(bundle, 'infra')?.status).toBe('pass');
+    expect(findEvidenceCard(bundle, 'policy')?.status).toBe('pass');
+    expect(findEvidenceCard(bundle, 'cache')?.status).toBe('pass');
   });
 });
 

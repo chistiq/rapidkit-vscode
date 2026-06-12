@@ -45,12 +45,16 @@ export class ModulesCatalogService {
     await invalidateModulesCatalogCache(this.storagePath, workspacePath);
   }
 
-  async getModulesCatalog(workspacePath?: string): Promise<ModulesCatalogResult> {
+  async getModulesCatalog(
+    workspacePath?: string,
+    options?: { forceRefresh?: boolean }
+  ): Promise<ModulesCatalogResult> {
     return loadModulesCatalog({
       cli: this.cli,
       storagePath: this.storagePath,
       ttlMs: this.ttlMs,
       workspacePath,
+      forceRefresh: options?.forceRefresh === true,
     });
   }
 }

@@ -794,10 +794,17 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
             await vscode.env.openExternal(vscode.Uri.parse('https://www.workspai.com/docs'));
           }
 
-          // Refresh welcome page if it's open
+          // Refresh welcome page if it's open and start governance onboarding chain
           const context = (globalThis as { extensionContext?: vscode.ExtensionContext })
             .extensionContext;
           if (context) {
+            void WelcomePanel.notifyWorkspaceGovernanceChain(
+              config.path,
+              config.name,
+              'create',
+              context
+            );
+          } else {
             WelcomePanel.refreshRecentWorkspaces();
           }
         } catch (error) {
@@ -885,7 +892,7 @@ async function createBasicWorkspace(workspacePath: string, name: string, initGit
 #
 # To use RapidKit features:
 #   1. Install: npm install -g rapidkit
-#   2. Run: npx --yes --package rapidkit rapidkit <command>
+#   2. Run: npx rapidkit <command>
 #
 
 set -e
@@ -894,7 +901,7 @@ echo "⚠️  This is a fallback workspace created without RapidKit Core"
 echo ""
 echo "To create projects:"
 echo "  1. Install npm package: npm install -g rapidkit"
-echo "  2. Create project: npx --yes --package rapidkit rapidkit create project fastapi.standard my-api --yes --skip-install"
+echo "  2. Create project: npx rapidkit create project fastapi.standard my-api --yes --skip-install"
 echo ""
 echo "Or use VS Code Extension: 'Workspai: Create Project'"
 echo ""
@@ -909,7 +916,7 @@ echo ""
   echo.
   echo To create projects:
   echo   1. Install npm package: npm install -g rapidkit
-  echo   2. Create project: npx --yes --package rapidkit rapidkit create project fastapi.standard my-api --yes --skip-install
+  echo   2. Create project: npx rapidkit create project fastapi.standard my-api --yes --skip-install
   echo.
   echo Or use VS Code Extension: "Workspai: Create Project"
   echo.
@@ -963,19 +970,19 @@ ${name}/
 3. **Create projects:**
    \`\`\`bash
    # FastAPI project
-   npx --yes --package rapidkit rapidkit create project fastapi.standard my-api --yes --skip-install
+   npx rapidkit create project fastapi.standard my-api --yes --skip-install
    
    # NestJS project
-   npx --yes --package rapidkit rapidkit create project nestjs.standard my-app --yes --skip-install
+   npx rapidkit create project nestjs.standard my-app --yes --skip-install
 
   # Go Fiber project
-  npx --yes --package rapidkit rapidkit create project gofiber.standard my-go-api --yes --skip-install
+  npx rapidkit create project gofiber.standard my-go-api --yes --skip-install
 
   # Spring Boot project
-  npx --yes --package rapidkit rapidkit create project springboot.standard billing-api --yes --skip-install
+  npx rapidkit create project springboot.standard billing-api --yes --skip-install
 
   # .NET Web API project
-  npx --yes --package rapidkit rapidkit create project dotnet.webapi.clean dotnet-api --yes --skip-install
+  npx rapidkit create project dotnet.webapi.clean dotnet-api --yes --skip-install
    \`\`\`
 
 4. **Or use VS Code Extension:**
@@ -1049,16 +1056,16 @@ With npm package installed:
 
 \`\`\`bash
 # Create project in workspace
-npx --yes --package rapidkit rapidkit create project <template> <name> --yes --skip-install
+npx rapidkit create project <template> <name> --yes --skip-install
 
 # Examples
-npx --yes --package rapidkit rapidkit create project fastapi.standard my-api --yes --skip-install
-npx --yes --package rapidkit rapidkit create project fastapi.ddd my-api --yes --skip-install
-npx --yes --package rapidkit rapidkit create project nestjs.standard my-app --yes --skip-install
-npx --yes --package rapidkit rapidkit create project gofiber.standard my-go-api --yes --skip-install
-npx --yes --package rapidkit rapidkit create project gogin.standard my-gin-api --yes --skip-install
-npx --yes --package rapidkit rapidkit create project springboot.standard billing-api --yes --skip-install
-npx --yes --package rapidkit rapidkit create project dotnet.webapi.clean dotnet-api --yes --skip-install
+npx rapidkit create project fastapi.standard my-api --yes --skip-install
+npx rapidkit create project fastapi.ddd my-api --yes --skip-install
+npx rapidkit create project nestjs.standard my-app --yes --skip-install
+npx rapidkit create project gofiber.standard my-go-api --yes --skip-install
+npx rapidkit create project gogin.standard my-gin-api --yes --skip-install
+npx rapidkit create project springboot.standard billing-api --yes --skip-install
+npx rapidkit create project dotnet.webapi.clean dotnet-api --yes --skip-install
 \`\`\`
 
 ## 🆘 Need Help?

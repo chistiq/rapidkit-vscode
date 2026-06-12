@@ -9,6 +9,7 @@ import * as path from 'path';
 import * as fs from 'fs-extra';
 import { MODULES, CATEGORY_INFO, ModuleData } from '../../data/modules';
 import { ModulesCatalogService } from '../../core/modulesCatalogService';
+import { resolveCatalogWorkspaceRoot } from '../../utils/coreRuntimeResolver';
 import { WorkspaiModule } from '../../types';
 
 interface InstalledModule {
@@ -293,16 +294,16 @@ export class ModuleExplorerProvider implements vscode.TreeDataProvider<ModuleTre
     return false;
   }
 
-  private async _refreshModulesCatalog(): Promise<void> {
+  private async _refreshModulesCatalog(forceRefresh = false): Promise<void> {
     try {
       const service = ModulesCatalogService.getInstance();
-      // Pass workspace path to ensure correct version lookup for the selected project's workspace
       let workspacePath: string | undefined;
       if (this._currentProjectPath) {
-        // Workspace is the parent directory of the project
         workspacePath = path.dirname(this._currentProjectPath);
       }
-      const result = await service.getModulesCatalog(workspacePath);
+      workspacePath = (await resolveCatalogWorkspaceRoot(workspacePath)) || workspacePath;
+
+      const result = await service.getModulesCatalog(workspacePath, { forceRefresh });
       if (result.modules.length) {
         this._modulesCatalog = result.modules;
       } else {

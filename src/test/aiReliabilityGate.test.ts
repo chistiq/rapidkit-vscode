@@ -375,7 +375,7 @@ describe('AI reliability release gate', () => {
       'What happened: FastAPI startup failed after dependency refresh based on doctor evidence',
       'Why: Missing package import appears to block application boot from current evidence',
       'Next command: python -m pytest tests/test_health.py',
-      'Verify command: npx --yes --package rapidkit rapidkit doctor project',
+      'Verify command: npx rapidkit doctor project',
       'Risk and confidence: medium risk; confidence 80 based on doctor evidence',
       'Assumptions: Project path and doctor evidence are current',
     ].join('\n');

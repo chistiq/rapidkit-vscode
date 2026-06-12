@@ -1865,6 +1865,20 @@ export function buildIncidentChatApplyPatchPayload(input: {
   };
 }
 
+/** Resolve host apply args from user-selected patch paths (checked = accepted). */
+export function resolveMultiFilePatchApplyArgs(input: {
+  patchId: string;
+  allPaths: string[];
+  selectedPaths: ReadonlySet<string>;
+  branchSafeApply: boolean;
+}): { patchId: string; acceptedPaths: string[]; branchSafeApply: boolean } {
+  return {
+    patchId: input.patchId,
+    acceptedPaths: input.allPaths.filter((path) => input.selectedPaths.has(path)),
+    branchSafeApply: input.branchSafeApply,
+  };
+}
+
 export function buildIncidentChatExecuteActionPayload(input: {
   conversationId: string;
   actionId: string;

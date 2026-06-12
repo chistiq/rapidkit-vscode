@@ -4,7 +4,7 @@
 
 export { IncidentStudioVNext } from './IncidentStudioVNext';
 export * from './state/studioState';
-export * from './styles/designTokens';
+export { MissionControlHeader } from './regions/MissionControlHeader';
 export { TopBar } from './regions/TopBar';
 export { ActivityBar } from './regions/ActivityBar';
 export { PhaseStepper } from './regions/PhaseStepper';

@@ -9,7 +9,7 @@ export type DashboardOpsChainState = {
   id: string;
   workspacePath: string;
   workspaceName?: string;
-  triggeredBy: 'clone' | 'ai-create' | 'import';
+  triggeredBy: 'clone' | 'ai-create' | 'import' | 'create' | 'add';
   steps: DashboardOpsChainStep[];
   currentStep: DashboardOpsChainStep;
   completedSteps: DashboardOpsChainStep[];

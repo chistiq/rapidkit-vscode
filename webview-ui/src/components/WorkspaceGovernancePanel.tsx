@@ -8,12 +8,15 @@ import {
     Sparkles,
     Wrench,
 } from 'lucide-react';
+import type { DashboardEvidencePayload } from '@/lib/dashboardEvidence';
+import { findEvidenceCard } from '@/lib/dashboardEvidence';
 import type { WorkspaceStatus } from '@/types';
 import { ActionTile, ActionTileGrid } from './ActionTile';
 import { ColumnHeader } from './SectionHeader';
 
 interface WorkspaceGovernancePanelProps {
     workspaceStatus: WorkspaceStatus;
+    evidence?: DashboardEvidencePayload | null;
     onBootstrap: () => void;
     onSetup: () => void;
     onReadiness: () => void;
@@ -24,8 +27,21 @@ interface WorkspaceGovernancePanelProps {
     onInfra: () => void;
 }
 
+function governanceDetail(
+    evidence: DashboardEvidencePayload | null | undefined,
+    cardId: Parameters<typeof findEvidenceCard>[1],
+    fallback: string
+): string {
+    const card = findEvidenceCard(evidence, cardId);
+    if (!card || card.status === 'missing') {
+        return fallback;
+    }
+    return card.summary;
+}
+
 export function WorkspaceGovernancePanel({
     workspaceStatus,
+    evidence,
     onBootstrap,
     onSetup,
     onReadiness,
@@ -37,6 +53,13 @@ export function WorkspaceGovernancePanel({
 }: WorkspaceGovernancePanelProps) {
     const hasWorkspace = Boolean(workspaceStatus.hasWorkspace && workspaceStatus.workspacePath);
     const scopeLabel = workspaceStatus.workspaceName || 'Workspace governance';
+    const bootstrapCard = findEvidenceCard(evidence, 'bootstrap');
+    const doctorCard = findEvidenceCard(evidence, 'doctor');
+    const readinessCard = findEvidenceCard(evidence, 'readiness');
+    const mirrorCard = findEvidenceCard(evidence, 'mirror');
+    const cacheCard = findEvidenceCard(evidence, 'cache');
+    const policyCard = findEvidenceCard(evidence, 'policy');
+    const infraCard = findEvidenceCard(evidence, 'infra');
 
     return (
         <section className="workspace-governance-panel section">
@@ -45,11 +68,12 @@ export function WorkspaceGovernancePanel({
                 subtitle={hasWorkspace ? scopeLabel : 'Select a workspace to unlock'}
                 scope="workspace"
             />
-            <ActionTileGrid layout="operate">
+            <ActionTileGrid layout="governance">
                 <ActionTile
                     icon={<Sparkles size={15} />}
                     label="Bootstrap"
-                    detail="Profile compliance"
+                    detail={governanceDetail(evidence, 'bootstrap', 'Profile compliance')}
+                    evidenceStatus={bootstrapCard?.status}
                     onClick={onBootstrap}
                     disabled={!hasWorkspace}
                     title="rapidkit bootstrap"
@@ -57,7 +81,8 @@ export function WorkspaceGovernancePanel({
                 <ActionTile
                     icon={<Wrench size={15} />}
                     label="Setup"
-                    detail="Runtime toolchains"
+                    detail={governanceDetail(evidence, 'doctor', 'Runtime toolchains')}
+                    evidenceStatus={doctorCard?.status}
                     onClick={onSetup}
                     disabled={!hasWorkspace}
                     title="rapidkit setup"
@@ -65,7 +90,8 @@ export function WorkspaceGovernancePanel({
                 <ActionTile
                     icon={<ShieldCheck size={15} />}
                     label="Readiness"
-                    detail="Release evidence"
+                    detail={governanceDetail(evidence, 'readiness', 'Release evidence')}
+                    evidenceStatus={readinessCard?.status}
                     onClick={onReadiness}
                     disabled={!hasWorkspace}
                     title="rapidkit readiness"
@@ -73,7 +99,8 @@ export function WorkspaceGovernancePanel({
                 <ActionTile
                     icon={<Database size={15} />}
                     label="Mirror"
-                    detail="Replication status"
+                    detail={governanceDetail(evidence, 'mirror', 'Replication status')}
+                    evidenceStatus={mirrorCard?.status}
                     onClick={onMirrorStatus}
                     disabled={!hasWorkspace}
                     title="rapidkit mirror status"
@@ -89,7 +116,8 @@ export function WorkspaceGovernancePanel({
                 <ActionTile
                     icon={<HardDrive size={15} />}
                     label="Cache"
-                    detail="Package cache"
+                    detail={governanceDetail(evidence, 'cache', 'Package cache')}
+                    evidenceStatus={cacheCard?.status}
                     onClick={onCacheStatus}
                     disabled={!hasWorkspace}
                     title="rapidkit cache status"
@@ -97,7 +125,8 @@ export function WorkspaceGovernancePanel({
                 <ActionTile
                     icon={<Scale size={15} />}
                     label="Policy"
-                    detail="Governance rules"
+                    detail={governanceDetail(evidence, 'policy', 'Governance rules')}
+                    evidenceStatus={policyCard?.status}
                     onClick={onPolicy}
                     disabled={!hasWorkspace}
                     title="rapidkit workspace policy show"
@@ -105,7 +134,8 @@ export function WorkspaceGovernancePanel({
                 <ActionTile
                     icon={<Server size={15} />}
                     label="Infra"
-                    detail="Sidecar compose"
+                    detail={governanceDetail(evidence, 'infra', 'Sidecar compose')}
+                    evidenceStatus={infraCard?.status}
                     onClick={onInfra}
                     disabled={!hasWorkspace}
                     title="rapidkit infra"

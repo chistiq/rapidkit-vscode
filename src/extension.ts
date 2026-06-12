@@ -28,6 +28,7 @@ import { registerProjectContextAndLogCommands } from './commands/projectContextA
 import { registerProjectLifecycleCommands } from './commands/projectLifecycle';
 import { showWelcomeCommand } from './commands/showWelcome';
 import { showIncidentStudioNextCommand } from './commands/incidentStudioNext';
+import { IncidentStudioPanel } from './ui/panels/incidentStudioPanel';
 import { registerWorkspaceSelectionCommands } from './commands/workspaceSelection';
 import { registerWorkspaceOperationsCommands } from './commands/workspaceOperations';
 import { registerInfraOperationsCommands } from './commands/infraOperations';
@@ -504,38 +505,9 @@ export async function activate(context: vscode.ExtensionContext) {
           return;
         }
 
-        const initialQuery =
-          projectFromItem && typeof projectFromItem?.name === 'string'
-            ? `Analyze project ${projectFromItem.name} in this workspace. Treat this as a project-scoped launch/readiness task. First identify the current delivery stage, then the exact next command to reach a runnable service, then verification.`
-            : undefined;
-
-        WelcomePanel.openIncidentStudioInNewTab(context, {
+        IncidentStudioPanel.createOrShow(context, {
           workspacePath,
-          workspaceName,
-          projectPath:
-            projectFromItem && typeof projectFromItem?.path === 'string'
-              ? projectFromItem.path
-              : undefined,
-          projectName:
-            projectFromItem && typeof projectFromItem?.name === 'string'
-              ? projectFromItem.name
-              : undefined,
-          projectType:
-            projectFromItem && typeof projectFromItem?.type === 'string'
-              ? projectFromItem.type
-              : undefined,
-          initialQuery,
-          preferredDisplayMode:
-            contextItem?.preferredDisplayMode === 'full' ||
-            contextItem?.preferredDisplayMode === 'lite'
-              ? contextItem.preferredDisplayMode
-              : undefined,
-          preferredArchitectureLensView:
-            contextItem?.preferredArchitectureLensView === 'dependency' ||
-            contextItem?.preferredArchitectureLensView === 'runtime' ||
-            contextItem?.preferredArchitectureLensView === 'tree'
-              ? contextItem.preferredArchitectureLensView
-              : undefined,
+          workspaceName: workspaceName || path.basename(workspacePath),
         });
       }),
       vscode.commands.registerCommand('workspai.importWorkspaceShareBundle', async () => {
@@ -592,9 +564,9 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('workspai.showAIFeatureOnboarding', async () => {
         await showAIFeatureOnboarding(context, { force: true });
       }),
-      // Open Incident Studio (Next) — new fullscreen redesign
+      // Canonical Incident Studio — legacy Next command aliases here for compatibility
       vscode.commands.registerCommand('workspai.incidentStudioNext', async () => {
-        await showIncidentStudioNextCommand(context.extensionUri, workspaceExplorer);
+        await showIncidentStudioNextCommand(context, workspaceExplorer);
       })
     );
 

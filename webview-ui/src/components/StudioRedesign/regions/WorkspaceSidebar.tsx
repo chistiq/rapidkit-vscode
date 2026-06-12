@@ -4,100 +4,79 @@
  */
 
 import React, { useState } from 'react';
-import { Folder, Package, Lock, CheckCircle2, ChevronDown, Circle } from 'lucide-react';
-import {
-    colorTokens,
-    spacing,
-    typography,
-    borderRadius,
-    transitions,
-} from '../styles/designTokens';
-import { ActionItem } from '../state/studioState';
+import { Folder, Package, CheckCircle2, ChevronDown, Circle, PlayCircle, ShieldAlert, Lock } from 'lucide-react';
+import { studioClass, auditOutcomeToneClass, actionStabilityClass, actionRuntimeToneClass } from '../styles/studioUi';
+import { ActionItem, AIActionRegistryView, StudioActionStatus } from '../state/studioState';
+import { STUDIO_ACTION_COMMANDS, StudioActionCommand } from '../state/studioActions';
+import { buildStudioActionAuditTimeline, StudioActionAuditEvent, StudioApprovalAuditEvent } from '../state/studioActionAudit';
 
 interface WorkspaceItem {
     id: string;
     name: string;
     type: 'module' | 'project' | 'workspace';
+    command?: StudioActionCommand;
+    description?: string;
 }
-
-// ─── Incident History ───────────────────────────────────────────────────────
-interface IncidentRecord {
-    id: string;
-    title: string;
-    scope: string;
-    resolvedAtPhase: 'detect' | 'diagnose' | 'plan' | 'verify' | 'learn';
-    outcome: 'resolved' | 'escalated' | 'in-progress';
-    timeAgo: string;
-}
-
-const DEMO_INCIDENTS: IncidentRecord[] = [
-    {
-        id: 'inc-001',
-        title: 'Coverage regression',
-        scope: 'core/policy',
-        resolvedAtPhase: 'plan',
-        outcome: 'resolved',
-        timeAgo: '2h ago',
-    },
-    {
-        id: 'inc-002',
-        title: 'Release gate blocked',
-        scope: 'rapidkit-core',
-        resolvedAtPhase: 'verify',
-        outcome: 'resolved',
-        timeAgo: 'Yesterday',
-    },
-    {
-        id: 'inc-003',
-        title: 'Build timeout on CI',
-        scope: 'frontend',
-        resolvedAtPhase: 'diagnose',
-        outcome: 'resolved',
-        timeAgo: '3 days ago',
-    },
-];
 
 interface ActionMatrixEntry {
     id: string;
     title: string;
     command: string;
+    studioCommand: StudioActionCommand;
     scope: 'workspace' | 'project';
-    stability: 'stable' | 'preview' | 'planned';
+    stability: 'stable' | 'governed' | 'analysis';
     description: string;
+    actionType?: 'fix' | 'impact' | 'verify';
 }
 
 const ACTION_MATRIX: ActionMatrixEntry[] = [
     {
-        id: 'action-doctor',
-        title: 'Run Doctor',
-        command: 'npx --yes --package rapidkit rapidkit doctor workspace',
+        id: 'action-analyze',
+        title: 'Analyze Workspace',
+        command: 'Hydrate evidence, health, gates, and related files.',
+        studioCommand: STUDIO_ACTION_COMMANDS.runAnalyze,
         scope: 'workspace',
         stability: 'stable',
         description: 'Baseline health and structure evidence.',
     },
     {
-        id: 'action-graph',
-        title: 'Open Module Graph',
-        command: 'rapidkit incident graph',
+        id: 'action-impact',
+        title: 'Impact Lens',
+        command: 'Generate a blast-radius contract before changes.',
+        studioCommand: STUDIO_ACTION_COMMANDS.impactLens,
         scope: 'workspace',
-        stability: 'stable',
+        stability: 'analysis',
         description: 'Inspect framework clusters and severity bands.',
+        actionType: 'impact',
+    },
+    {
+        id: 'action-fix',
+        title: 'Governed Fix',
+        command: 'Draft apply, verify, and rollback contract.',
+        studioCommand: STUDIO_ACTION_COMMANDS.fixLens,
+        scope: 'project',
+        stability: 'governed',
+        description: 'Prepare a user-approved fix contract with rollback proof.',
+        actionType: 'fix',
     },
     {
         id: 'action-verify',
         title: 'Verify Gates',
-        command: 'rapidkit verify gates',
+        command: 'Run deterministic verification against current evidence.',
+        studioCommand: STUDIO_ACTION_COMMANDS.verifyGates,
         scope: 'project',
         stability: 'stable',
         description: 'Lock the current change to a deterministic verify path.',
+        actionType: 'verify',
     },
     {
-        id: 'action-export',
-        title: 'Export Evidence Pack',
-        command: 'rapidkit export evidence',
+        id: 'action-terminal',
+        title: 'Terminal Bridge',
+        command: 'Route workspace commands through the guarded bridge.',
+        studioCommand: STUDIO_ACTION_COMMANDS.terminalBridge,
         scope: 'workspace',
-        stability: 'preview',
-        description: 'Produce an audit-ready summary for sharing.',
+        stability: 'stable',
+        description: 'Execute supported workspace commands with visible output.',
     },
 ];
 
@@ -106,7 +85,12 @@ interface WorkspaceSidebarProps {
     selectedItemId?: string;
     onItemSelect: (itemId: string) => void;
     actionItems?: ActionItem[];
+    aiActionRegistry?: AIActionRegistryView | null;
+    studioActionStatus?: StudioActionStatus | null;
+    approvalAuditEvents?: StudioApprovalAuditEvent[];
     onToggleActionItem?: (id: string) => void;
+    onExecuteAction?: (command: StudioActionCommand) => void;
+    onRevealEvidence?: (path: string) => void;
 }
 
 export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
@@ -114,9 +98,22 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
     selectedItemId,
     onItemSelect,
     actionItems = [],
+    aiActionRegistry,
+    studioActionStatus,
+    approvalAuditEvents = [],
     onToggleActionItem,
+    onExecuteAction,
+    onRevealEvidence,
 }) => {
-    const currentItems = items.filter((item) => !item.name.includes('[Soon]'));
+    const auditEvents = buildStudioActionAuditTimeline({
+        registry: aiActionRegistry,
+        status: studioActionStatus,
+        approvalEvents: approvalAuditEvents,
+    });
+    const [selectedAuditEventId, setSelectedAuditEventId] = useState<string | null>(null);
+    const selectedAuditEvent =
+        auditEvents.find((event) => event.id === selectedAuditEventId) || auditEvents[0] || null;
+    const actionRunning = studioActionStatus?.status === 'started';
 
     const getIcon = (type: string) => {
         switch (type) {
@@ -130,83 +127,30 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
     };
 
     return (
-        <div
-            style={{
-                display: 'flex',
-                flexDirection: 'column',
-                backgroundColor: colorTokens.surface3,
-                border: `1px solid ${colorTokens.border.medium}`,
-                borderRadius: '0px',
-                height: '100%',
-                overflow: 'hidden',
-                boxShadow: 'none',
-            }}
-        >
-            {/* Header */}
-            <div
-                style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: spacing.md,
-                    padding: `${spacing.lg} ${spacing.md}`,
-                    borderBottom: `1px solid ${colorTokens.border.subtle}`,
-                    backgroundColor: colorTokens.surface3,
-                }}
-            >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs, minWidth: 0, flex: 1 }}>
-                    <span
-                        style={{
-                            ...typography.captionSmall,
-                            color: colorTokens.text.tertiary,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.3px',
-                        }}
-                    >
-                        Capability Map
-                    </span>
-                    <span
-                        style={{
-                            ...typography.bodySmall,
-                            color: colorTokens.text.primary,
-                            fontWeight: 500,
-                        }}
-                    >
-                        Incident Studio
-                    </span>
+        <div className={`${studioClass.rail} ${studioClass.sidebar}`}>
+            <div className={studioClass.panelHeader}>
+                <div className={studioClass.panelHeaderTitle}>
+                    <span className={studioClass.kicker}>Capability Map</span>
+                    <span className={studioClass.panelHeaderMeta}>Incident Studio</span>
                 </div>
-                {/* Open actions badge */}
                 {actionItems.filter((a) => !a.done).length > 0 && (
-                    <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        minWidth: 20,
-                        height: 20,
-                        padding: `0 ${spacing.xs}`,
-                        background: colorTokens.health.warning,
-                        borderRadius: borderRadius.full ?? '999px',
-                        ...typography.captionSmall,
-                        fontWeight: 700,
-                        color: colorTokens.root,
-                        flexShrink: 0,
-                    }}>
+                    <span className={`${studioClass.badge} ${studioClass.badgeWarn}`}>
                         {actionItems.filter((a) => !a.done).length}
-                    </div>
+                    </span>
                 )}
             </div>
 
-            {/* Scrollable list */}
-            <div
-                style={{
-                    flex: 1,
-                    overflowY: 'auto',
-                    overflowX: 'hidden',
-                    paddingTop: spacing.md,
-                    paddingBottom: spacing.md,
-                }}
-            >
+            <div className={studioClass.sidebarScroll}>
                 {/* Recent Incidents — the retention hook */}
-                <IncidentHistorySection />
+                <ActionAuditSection
+                    events={auditEvents}
+                    selectedEventId={selectedAuditEvent?.id}
+                    onSelectEvent={setSelectedAuditEventId}
+                />
+
+                {selectedAuditEvent ? (
+                    <ActionAuditInspector event={selectedAuditEvent} onRevealEvidence={onRevealEvidence} />
+                ) : null}
 
                 {/* Open Action Items — cross-session retention */}
                 {actionItems.length > 0 && (
@@ -218,20 +162,23 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
 
                 {/* Action Matrix */}
                 <SectionLabel label="Action Matrix" />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm, padding: spacing.md }}>
+                <div className={studioClass.sidebarSection}>
                     {ACTION_MATRIX.map((action) => (
                         <ActionMatrixRow
                             key={action.id}
                             action={action}
                             selectedItemId={selectedItemId}
                             onItemSelect={onItemSelect}
+                            aiActionRegistry={aiActionRegistry}
+                            actionRunning={actionRunning}
+                            onExecuteAction={onExecuteAction}
                         />
                     ))}
                 </div>
 
                 {/* Current Features Section */}
                 <SectionLabel label="Current Features (LIVE)" />
-                {currentItems.map((item) => (
+                {items.map((item) => (
                     <SidebarItemRow
                         key={item.id}
                         item={item}
@@ -239,26 +186,15 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
                         onItemSelect={onItemSelect}
                         getIcon={getIcon}
                         tone="current"
+                        actionRunning={actionRunning}
+                        onExecuteAction={onExecuteAction}
                     />
                 ))}
 
             </div>
 
-            {/* Footer */}
-            <div
-                style={{
-                    borderTop: `1px solid ${colorTokens.border.subtle}`,
-                    padding: spacing.md,
-                    backgroundColor: colorTokens.surface3,
-                }}
-            >
-                <div
-                    style={{
-                        ...typography.caption,
-                        color: colorTokens.text.quaternary,
-                        lineHeight: 1.4,
-                    }}
-                >
+            <div className={studioClass.sidebarFooter}>
+                <div className="studio-sidebar__footer-note">
                     Focused view. Advanced modules are hidden until needed.
                 </div>
             </div>
@@ -267,13 +203,7 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
 };
 
 
-const OUTCOME_DOT: Record<IncidentRecord['outcome'], string> = {
-    resolved: colorTokens.health.ok,
-    escalated: colorTokens.health.error,
-    'in-progress': colorTokens.health.warning,
-};
-
-const PHASE_SHORT: Record<IncidentRecord['resolvedAtPhase'], string> = {
+const PHASE_SHORT: Record<StudioActionAuditEvent['phase'], string> = {
     detect: 'Detect',
     diagnose: 'Diagnose',
     plan: 'Plan',
@@ -281,114 +211,156 @@ const PHASE_SHORT: Record<IncidentRecord['resolvedAtPhase'], string> = {
     learn: 'Learn',
 };
 
-const IncidentHistorySection: React.FC = () => {
+const ActionAuditSection: React.FC<{
+    events: StudioActionAuditEvent[];
+    selectedEventId?: string | null;
+    onSelectEvent: (id: string) => void;
+}> = ({ events, selectedEventId, onSelectEvent }) => {
     const [open, setOpen] = useState(true);
 
     return (
-        <div style={{ marginBottom: spacing.sm }}>
-            {/* Collapsible header */}
+        <div className={studioClass.sidebarCollapse}>
             <button
                 type="button"
                 onClick={() => setOpen((v) => !v)}
-                style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: spacing.sm,
-                    padding: `${spacing.sm} ${spacing.md}`,
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                }}
+                className={`${studioClass.collapseTrigger}${open ? ' is-open' : ''}`}
             >
-                <span
-                    style={{
-                        ...typography.captionSmall,
-                        color: colorTokens.text.quaternary,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                        fontWeight: 600,
-                    }}
-                >
-                    Recent Incidents
-                </span>
-                <ChevronDown
-                    size={11}
-                    color={colorTokens.text.quaternary}
-                    style={{
-                        transition: 'transform 200ms ease',
-                        transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
-                    }}
-                />
+                <span>Action Audit</span>
+                <ChevronDown size={11} className={`${studioClass.chevron}${open ? ' is-open' : ''} ${studioClass.collapseChevron}`} />
             </button>
 
             {open && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: `0 ${spacing.sm}` }}>
-                    {DEMO_INCIDENTS.map((inc) => (
-                        <HistoryRow key={inc.id} incident={inc} />
-                    ))}
+                <div className={studioClass.sidebarCollapseBody}>
+                    {events.length > 0 ? (
+                        events.map((event) => (
+                            <AuditRow
+                                key={event.id}
+                                event={event}
+                                selected={selectedEventId === event.id}
+                                onSelectEvent={onSelectEvent}
+                            />
+                        ))
+                    ) : (
+                        <div className="studio-sidebar__empty">
+                            No action audit yet. Run Analyze or ask Studio for a governed fix/impact plan.
+                        </div>
+                    )}
                 </div>
             )}
         </div>
     );
 };
 
-const HistoryRow: React.FC<{ incident: IncidentRecord }> = ({ incident }) => {
+const AuditRow: React.FC<{
+    event: StudioActionAuditEvent;
+    selected?: boolean;
+    onSelectEvent: (id: string) => void;
+}> = ({ event, selected = false, onSelectEvent }) => {
+    const toneClass = auditOutcomeToneClass(event.outcome);
+    const proof = event.evidenceSha256
+        ? `sha256:${event.evidenceSha256.slice(0, 12)}`
+        : event.evidencePath
+            ? 'evidence file'
+            : event.commandCount
+                ? `${event.commandCount} cmd`
+                : event.outcome;
+
     return (
         <button
             type="button"
-            style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: spacing.sm,
-                width: '100%',
-                padding: `${spacing.sm} ${spacing.sm}`,
-                background: 'none',
-                border: 'none',
-                borderRadius: borderRadius.md,
-                cursor: 'pointer',
-                textAlign: 'left',
-                transition: transitions.microInteraction,
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = colorTokens.primaryInverse; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+            onClick={() => onSelectEvent(event.id)}
+            title={event.evidencePath || event.detail || event.title}
+            className={`${studioClass.auditRow}${selected ? ' is-selected' : ''}`}
         >
-            {/* Outcome dot */}
-            <span
-                style={{
-                    width: '6px',
-                    height: '6px',
-                    borderRadius: '50%',
-                    backgroundColor: OUTCOME_DOT[incident.outcome],
-                    flexShrink: 0,
-                }}
-            />
-            {/* Content */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                    style={{
-                        ...typography.captionSmall,
-                        color: colorTokens.text.secondary,
-                        fontWeight: 500,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                    }}
-                >
-                    {incident.title}
-                </div>
-                <div style={{ ...typography.captionSmall, color: colorTokens.text.quaternary }}>
-                    {incident.scope} · → {PHASE_SHORT[incident.resolvedAtPhase]}
+            <span className={`studio-status-dot ${toneClass}`} />
+            <div className={studioClass.flex1}>
+                <div className="studio-audit-row__title">{event.title}</div>
+                <div className="studio-audit-row__meta">
+                    {event.scope} · {PHASE_SHORT[event.phase]} · {proof}
                 </div>
             </div>
-            {/* Time */}
-            <span style={{ ...typography.captionSmall, color: colorTokens.text.quaternary, flexShrink: 0 }}>
-                {incident.timeAgo}
-            </span>
+            <span className="studio-audit-row__time">{event.timeAgo}</span>
         </button>
     );
 };
+
+const ActionAuditInspector: React.FC<{
+    event: StudioActionAuditEvent;
+    onRevealEvidence?: (path: string) => void;
+}> = ({ event, onRevealEvidence }) => {
+    const toneClass = auditOutcomeToneClass(event.outcome);
+    const proof = event.evidenceSha256
+        ? `sha256:${event.evidenceSha256}`
+        : event.evidencePath
+            ? event.evidencePath
+            : 'No external evidence file recorded.';
+    const failedCommands = event.failedCommands || [];
+
+    return (
+        <div className={studioClass.sidebarInspectorWrap}>
+            <div className={studioClass.inspector}>
+                <div className={studioClass.inspectorHead}>
+                    <span className={`studio-status-dot studio-status-dot--md ${toneClass}`} />
+                    <div className={studioClass.inspectorHeadContent}>
+                        <div className="studio-inspector__kicker">Action Inspector</div>
+                        <div className="studio-inspector__title" title={event.title}>{event.title}</div>
+                    </div>
+                </div>
+
+                <InspectorGrid items={[
+                        ['Outcome', event.outcome],
+                        ['Phase', PHASE_SHORT[event.phase]],
+                        ['Scope', event.scope],
+                        ['When', event.happenedAt],
+                        ['Provider', event.provider || 'local bridge'],
+                        ['Commands', String(event.commandCount ?? 0)],
+                        ['Failed', String(event.failedCommandCount ?? 0)],
+                        ['Bytes', event.evidenceSizeBytes ? `${event.evidenceSizeBytes}` : 'n/a'],
+                    ]}
+                />
+
+                <div className="studio-inspector__proof" title={proof}>
+                    Proof: {proof}
+                </div>
+
+                {failedCommands.length > 0 ? (
+                    <div className={studioClass.failedCommands}>
+                        <div className={`${studioClass.captionSmall} ${studioClass.toneError}`}>
+                            Failed commands
+                        </div>
+                        {failedCommands.slice(0, 3).map((command) => (
+                            <code key={command} className="studio-code-snippet" title={command}>
+                                {command}
+                            </code>
+                        ))}
+                    </div>
+                ) : null}
+
+                {event.evidencePath ? (
+                    <button
+                        type="button"
+                        onClick={() => onRevealEvidence?.(event.evidencePath || '')}
+                        disabled={!onRevealEvidence}
+                        className={studioClass.btnPrimary}
+                    >
+                        Reveal evidence
+                    </button>
+                ) : null}
+            </div>
+        </div>
+    );
+};
+
+const InspectorGrid: React.FC<{ items: Array<[string, string]> }> = ({ items }) => (
+    <div className={studioClass.traceGrid}>
+        {items.map(([label, value]) => (
+            <div key={label} className="studio-trace-tile">
+                <div className="studio-trace-tile__label">{label}</div>
+                <div className="studio-trace-tile__value" title={value}>{value}</div>
+            </div>
+        ))}
+    </div>
+);
 
 // ─── Open Action Items ────────────────────────────────────────────────────────
 
@@ -402,97 +374,35 @@ const OpenActionsSection: React.FC<OpenActionsSectionProps> = ({ items, onToggle
     const openCount = items.filter((a) => !a.done).length;
 
     return (
-        <div style={{ paddingBottom: spacing.sm }}>
+        <div className={studioClass.sidebarCollapse}>
             <button
                 type="button"
                 onClick={() => setOpen((v) => !v)}
-                style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: spacing.sm,
-                    width: '100%',
-                    padding: `${spacing.sm} ${spacing.md}`,
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                }}
+                className={`${studioClass.collapseTrigger}${open ? ' is-open' : ''}`}
             >
-                <span style={{
-                    ...typography.captionSmall,
-                    color: colorTokens.text.quaternary,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                    fontWeight: 600,
-                    flex: 1,
-                    textAlign: 'left',
-                }}>
-                    Open Actions
-                </span>
+                <span className={studioClass.collapseTitle}>Open Actions</span>
                 {openCount > 0 && (
-                    <span style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        minWidth: 16,
-                        height: 16,
-                        padding: `0 4px`,
-                        background: colorTokens.health.warning,
-                        borderRadius: '999px',
-                        ...typography.captionSmall,
-                        fontWeight: 700,
-                        color: colorTokens.root,
-                    }}>
-                        {openCount}
-                    </span>
+                    <span className={`${studioClass.badge} ${studioClass.badgeWarn}`}>{openCount}</span>
                 )}
-                <ChevronDown
-                    size={11}
-                    color={colorTokens.text.quaternary}
-                    style={{ transition: 'transform 200ms ease', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)' }}
-                />
+                <ChevronDown size={11} className={`${studioClass.chevron}${open ? ' is-open' : ''} ${studioClass.collapseChevron}`} />
             </button>
 
             {open && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: `0 ${spacing.sm}` }}>
+                <div className={studioClass.sidebarCollapseBody}>
                     {items.map((item) => (
                         <button
                             key={item.id}
                             type="button"
                             onClick={() => onToggle?.(item.id)}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: spacing.sm,
-                                width: '100%',
-                                padding: `${spacing.sm} ${spacing.sm}`,
-                                background: 'none',
-                                border: 'none',
-                                borderRadius: borderRadius.md,
-                                cursor: 'pointer',
-                                textAlign: 'left',
-                                transition: transitions.microInteraction,
-                                opacity: item.done ? 0.45 : 1,
-                            }}
-                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = colorTokens.primaryInverse; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                            disabled={!onToggle}
+                            className={`studio-action-item${item.done ? ' is-done' : ''}`}
                         >
                             {item.done ? (
-                                <CheckCircle2 size={13} color={colorTokens.health.ok} style={{ flexShrink: 0 }} />
+                                <CheckCircle2 size={13} className={`${studioClass.flexShrink0} studio-action-item__icon is-done`} />
                             ) : (
-                                <Circle size={13} color={colorTokens.text.quaternary} style={{ flexShrink: 0 }} />
+                                <Circle size={13} className={`${studioClass.flexShrink0} studio-action-item__icon is-open`} />
                             )}
-                            <span style={{
-                                ...typography.captionSmall,
-                                color: item.done ? colorTokens.text.quaternary : colorTokens.text.secondary,
-                                textDecoration: item.done ? 'line-through' : 'none',
-                                flex: 1,
-                                minWidth: 0,
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                            }}>
-                                {item.text}
-                            </span>
+                            <span className="studio-action-item__text">{item.text}</span>
                         </button>
                     ))}
                 </div>
@@ -505,95 +415,96 @@ const ActionMatrixRow: React.FC<{
     action: ActionMatrixEntry;
     selectedItemId?: string;
     onItemSelect: (itemId: string) => void;
-}> = ({ action, selectedItemId, onItemSelect }) => {
+    aiActionRegistry?: AIActionRegistryView | null;
+    actionRunning?: boolean;
+    onExecuteAction?: (command: StudioActionCommand) => void;
+}> = ({ action, selectedItemId, onItemSelect, aiActionRegistry, actionRunning = false, onExecuteAction }) => {
     const active = selectedItemId === action.id;
+    const runtime = buildActionRuntime(action, aiActionRegistry);
+    const runDisabled = actionRunning || !onExecuteAction;
+    const stabilityClass = actionStabilityClass(action.stability);
 
     return (
-        <button
-            type="button"
-            onClick={() => onItemSelect(action.id)}
-            style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'stretch',
-                gap: spacing.xs,
-                width: '100%',
-                padding: spacing.md,
-                background: active
-                    ? colorTokens.surface3
-                    : colorTokens.surface2,
-                border: `1px solid ${active ? colorTokens.primary : colorTokens.border.subtle}`,
-                borderRadius: borderRadius.md,
-                cursor: 'pointer',
-                transition: transitions.standard,
-                boxShadow: 'none',
-                textAlign: 'left',
-            }}
-            onMouseEnter={(e) => {
-                if (!active) {
-                    e.currentTarget.style.background = colorTokens.surface3;
-                    e.currentTarget.style.borderColor = colorTokens.border.medium;
-                }
-            }}
-            onMouseLeave={(e) => {
-                if (!active) {
-                    e.currentTarget.style.background = colorTokens.surface2;
-                    e.currentTarget.style.borderColor = colorTokens.border.subtle;
-                }
-            }}
-        >
-            <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
-                <span style={{ ...typography.bodySmall, color: colorTokens.text.primary, fontWeight: 600, flex: 1 }}>
-                    {action.title}
-                </span>
-                <span
-                    style={{
-                        ...typography.captionSmall,
-                        color:
-                            action.stability === 'stable'
-                                ? colorTokens.health.ok
-                                : action.stability === 'preview'
-                                    ? colorTokens.health.warning
-                                    : colorTokens.text.quaternary,
-                        textTransform: 'uppercase',
-                    }}
-                >
+        <div className={`${studioClass.card}${active ? ' is-active' : ''} ${studioClass.cardFull}`}>
+            <button type="button" onClick={() => onItemSelect(action.id)} className="studio-card__select">
+                <span className="studio-card__title">{action.title}</span>
+                {runtime.needsAttention ? (
+                    <ShieldAlert size={13} className={`${studioClass.flexShrink0} ${studioClass.toneError}`} />
+                ) : null}
+                <span className={`studio-matrix-tag studio-matrix-tag--runtime ${stabilityClass}`}>
                     {action.stability}
                 </span>
-            </div>
-            <div style={{ ...typography.caption, color: colorTokens.text.secondary }}>
-                {action.command}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' }}>
+            </button>
+            <div className="studio-card__body">{action.description}</div>
+            <div className="studio-card__hint">{action.command}</div>
+            <div className="studio-card__footer">
+                <span className="studio-matrix-tag studio-matrix-tag--neutral">{action.scope}</span>
                 <span
-                    style={{
-                        padding: `${spacing.xs} ${spacing.sm}`,
-                        borderRadius: borderRadius.sm,
-                        backgroundColor: colorTokens.surface2,
-                        color: colorTokens.text.quaternary,
-                        ...typography.captionSmall,
-                    }}
+                    className={`studio-matrix-tag studio-matrix-tag--runtime ${runtime.toneClass}`}
+                    title={runtime.proof}
                 >
-                    {action.scope}
+                    {runtime.label}
                 </span>
+                <button
+                    type="button"
+                    onClick={() => {
+                        if (!runDisabled) {
+                            onExecuteAction?.(action.studioCommand);
+                        }
+                    }}
+                    disabled={runDisabled}
+                    className={`${studioClass.btnPrimary} ${studioClass.cardFooterEnd}`}
+                >
+                    <PlayCircle size={12} />
+                    {actionRunning ? 'Running' : 'Run'}
+                </button>
             </div>
-        </button>
+        </div>
     );
 };
+
+function buildActionRuntime(
+    action: ActionMatrixEntry,
+    registry?: AIActionRegistryView | null,
+): { label: string; toneClass: string; proof: string; needsAttention: boolean } {
+    const latest = action.actionType
+        ? registry?.entries.find((entry) => entry.actionType === action.actionType)
+        : registry?.entries[0];
+    const latestExecution = latest?.executions[0];
+
+    if (!latest) {
+        return {
+            label: action.stability === 'stable' ? 'ready' : 'available',
+            toneClass: actionRuntimeToneClass({
+                blocked: false,
+                proposed: false,
+                readyFallback: action.stability === 'stable' ? 'ok' : 'warn',
+            }),
+            proof: 'No governed execution recorded yet.',
+            needsAttention: false,
+        };
+    }
+
+    const blocked =
+        latest.lifecycleStatus === 'blocked' ||
+        latest.lifecycleStatus === 'stale' ||
+        latest.lifecycleStatus === 'applied-failed-verify' ||
+        latest.validationStatus === 'blocked' ||
+        latestExecution?.ok === false;
+    const proposed = latest.lifecycleStatus === 'proposed' || latest.validationStatus === 'needs-review';
+
+    return {
+        label: blocked ? latest.lifecycleStatus : proposed ? 'needs review' : latest.lifecycleStatus,
+        toneClass: actionRuntimeToneClass({ blocked, proposed }),
+        proof: latestExecution?.evidenceSha256
+            ? `sha256:${latestExecution.evidenceSha256.slice(0, 12)}`
+            : latest.summary,
+        needsAttention: blocked,
+    };
+}
+
 const SectionLabel: React.FC<{ label: string }> = ({ label }) => (
-    <div
-        style={{
-            padding: `${spacing.md} ${spacing.md}`,
-            ...typography.captionSmall,
-            color: colorTokens.text.quaternary,
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.4px',
-            borderBottom: `1px solid ${colorTokens.border.subtle}`,
-        }}
-    >
-        {label}
-    </div>
+    <div className={studioClass.sectionLabel}>{label}</div>
 );
 
 interface SidebarItemRowProps {
@@ -602,6 +513,8 @@ interface SidebarItemRowProps {
     onItemSelect: (itemId: string) => void;
     getIcon: (type: string) => React.ReactNode;
     tone: 'current' | 'future';
+    actionRunning?: boolean;
+    onExecuteAction?: (command: StudioActionCommand) => void;
 }
 
 const SidebarItemRow: React.FC<SidebarItemRowProps> = ({
@@ -610,72 +523,40 @@ const SidebarItemRow: React.FC<SidebarItemRowProps> = ({
     onItemSelect,
     getIcon,
     tone,
+    actionRunning = false,
+    onExecuteAction,
 }) => {
     const active = selectedItemId === item.id;
+    const runDisabled = tone === 'future' || actionRunning || !item.command || !onExecuteAction;
+    const title = item.description || (item.command ? `Run ${item.name}` : item.name);
 
     return (
         <button
             type="button"
-            onClick={() => onItemSelect(item.id)}
-            style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: spacing.md,
-                width: '100%',
-                padding: `${spacing.md} ${spacing.md}`,
-                background: active
-                    ? colorTokens.surface3
-                    : 'transparent',
-                border: 'none',
-                color: active ? colorTokens.primary : colorTokens.text.secondary,
-                cursor: tone === 'future' ? 'not-allowed' : 'pointer',
-                transition: transitions.standard,
-                borderLeft: `3px solid ${active ? colorTokens.primary : 'transparent'}`,
-                opacity: tone === 'future' ? 0.7 : 1,
-                margin: `0 ${spacing.sm}`,
-                borderRadius: borderRadius.md,
-            }}
-            onMouseEnter={(e) => {
-                if (tone !== 'future' && !active) {
-                    e.currentTarget.style.backgroundColor = colorTokens.surface2;
-                    e.currentTarget.style.color = colorTokens.text.primary;
+            onClick={() => {
+                onItemSelect(item.id);
+                if (!runDisabled && item.command) {
+                    onExecuteAction?.(item.command);
                 }
             }}
-            onMouseLeave={(e) => {
-                if (tone !== 'future' && !active) {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                    e.currentTarget.style.color = colorTokens.text.secondary;
-                }
-            }}
+            className={`${studioClass.navItem}${active ? ' is-active' : ''}${tone === 'future' ? ' is-future' : ''}`}
+            disabled={tone === 'future'}
+            title={title}
         >
-            <span
-                style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    opacity: active ? 1 : 0.6,
-                }}
-            >
+            <span className={studioClass.navItemIcon}>
                 {getIcon(item.type)}
             </span>
-            <span
-                style={{
-                    ...typography.body,
-                    textAlign: 'left',
-                    flex: 1,
-                    fontWeight: active ? 500 : 400,
-                }}
-            >
+            <span className={studioClass.navItemLabel}>
                 {item.name}
             </span>
-            <span
-                style={{
-                    color: tone === 'future' ? colorTokens.warning : colorTokens.accent,
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                }}
-            >
-                {tone === 'future' ? <Lock size={10} /> : <CheckCircle2 size={10} />}
+            <span className={`${studioClass.navItemAction}${runDisabled ? ' is-muted' : ''}`}>
+                {tone === 'future' ? (
+                    <Lock size={10} />
+                ) : runDisabled ? (
+                    <CheckCircle2 size={10} />
+                ) : (
+                    <PlayCircle size={11} />
+                )}
             </span>
         </button>
     );

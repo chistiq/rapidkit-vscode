@@ -1,0 +1,84 @@
+:root {
+    /* Brand identity. These stay stable; surfaces still come from VS Code. */
+    --ws-accent: var(--workspai-accent, #00cfc1);
+    --ws-primary: var(--workspai-primary, #6c5ce7);
+
+    /* Semantic color spine: VS Code first, Workspai fallback second. */
+    --ws-surface: var(--vscode-editor-background, #1e1e1e);
+    --ws-surface-raised: var(--vscode-sideBar-background, var(--vscode-editorWidget-background, #252526));
+    --ws-surface-input: var(--vscode-input-background, var(--vscode-editorWidget-background, #252526));
+    --ws-surface-hover: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--ws-accent) 10%, transparent));
+    --ws-text: var(--vscode-foreground, var(--vscode-editor-foreground, #cccccc));
+    --ws-text-muted: var(--vscode-descriptionForeground, #858585);
+    --ws-text-subtle: color-mix(in srgb, var(--ws-text-muted) 74%, transparent);
+    --ws-border: var(--vscode-panel-border, #3c3c3c);
+    --ws-border-subtle: color-mix(in srgb, var(--ws-border) 55%, transparent);
+    --ws-focus: var(--vscode-focusBorder, var(--ws-accent));
+
+    /* Status colors use VS Code where available. */
+    --ws-success: var(--workspai-status-pass, var(--vscode-testing-iconPassed, #13c659));
+    --ws-warn: var(--workspai-status-warn, var(--vscode-editorWarning-foreground, #dba617));
+    --ws-error: var(--workspai-status-error, var(--vscode-errorForeground, #f14c4c));
+    --ws-muted: var(--workspai-status-muted, var(--vscode-descriptionForeground, #858585));
+
+    /* Stack brand accents — toolchain identity, not theme surfaces. */
+    --ws-brand-muted: #6b7280;
+    --ws-brand-python: #3776ab;
+    --ws-brand-node: #22c55e;
+    --ws-brand-core: var(--ws-primary);
+    --ws-brand-cli: var(--ws-accent);
+    --ws-brand-pip: #4b8bbe;
+    --ws-brand-pipx: #2d9bff;
+    --ws-brand-poetry: #0ea5b3;
+    --ws-brand-go: #00add8;
+    --ws-brand-java: #ed8b00;
+    --ws-brand-maven: #c71a36;
+    --ws-brand-gradle: #1ba8cb;
+    --ws-brand-dotnet: #512bd4;
+    --ws-brand-spring: #6db33f;
+    --ws-brand-fastapi: #009688;
+    --ws-brand-nestjs: #e0234e;
+    --ws-brand-polyglot: #a855f7;
+    --ws-brand-enterprise: var(--ws-warn);
+
+    /* Workspai shape and rhythm. */
+    --ws-radius-sm: var(--workspai-radius-sm, 5px);
+    --ws-radius-md: var(--workspai-radius-md, 7px);
+    --ws-radius-lg: var(--workspai-radius-lg, 10px);
+    --ws-radius-xl: var(--workspai-radius-xl, 12px);
+    --ws-space-xs: 4px;
+    --ws-space-sm: 8px;
+    --ws-space-md: 12px;
+    --ws-space-lg: 16px;
+    --ws-space-xl: 24px;
+    --ws-font-ui: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+    --ws-font-size: var(--vscode-font-size, 13px);
+
+    /* Compatibility aliases for gradual migration. */
+    --workspai-accent: var(--rapidkit-accent, #00cfc1);
+    --workspai-primary: var(--rapidkit-primary, #6c5ce7);
+    --background: var(--ws-surface);
+    --foreground: var(--ws-text);
+    --card: var(--ws-surface-raised);
+    --card-foreground: var(--ws-text);
+    --border: var(--ws-border);
+    --input: var(--ws-surface-input);
+    --muted-foreground: var(--ws-text-muted);
+}
+
+[data-workspai-theme-kind="light"] {
+    color-scheme: light;
+}
+
+[data-workspai-theme-kind="dark"] {
+    color-scheme: dark;
+}
+
+.workspai-theme-root {
+    min-height: 100vh;
+    width: 100%;
+    background: var(--ws-surface);
+    color: var(--ws-text);
+    font-family: var(--ws-font-ui);
+    font-size: var(--ws-font-size);
+}

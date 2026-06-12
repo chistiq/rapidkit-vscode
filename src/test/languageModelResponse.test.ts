@@ -39,4 +39,20 @@ describe('readLanguageModelResponseText', () => {
 
     await expect(readLanguageModelResponseText(response)).resolves.toBe('{"framework":"fastapi"}');
   });
+
+  it('falls back to response.text when stream never yields', async () => {
+    const response = {
+      stream: {
+        [Symbol.asyncIterator]: () => ({
+          next: () => new Promise(() => undefined),
+          return: async () => ({ done: true, value: undefined }),
+        }),
+      },
+      text: (async function* () {
+        yield '{"framework":"nestjs"}';
+      })(),
+    } as unknown as vscode.LanguageModelChatResponse;
+
+    await expect(readLanguageModelResponseText(response)).resolves.toBe('{"framework":"nestjs"}');
+  });
 });

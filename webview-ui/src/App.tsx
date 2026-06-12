@@ -10,6 +10,8 @@ import type {
     ExampleWorkspace,
     Kit,
     WorkspaceToolStatus,
+    ModulesCatalogMeta,
+    ModulesCatalogUpdate,
 } from '@/types';
 import { Header } from '@/components/Header';
 import { RecentWorkspaces } from '@/components/RecentWorkspaces';
@@ -18,18 +20,24 @@ import { ModuleBrowser } from '@/components/ModuleBrowser';
 import { DashboardSubNav } from '@/components/DashboardSubNav';
 import { DashboardNextStepRail } from '@/components/DashboardNextStepRail';
 import { FreshInstallOnboarding } from '@/components/FreshInstallOnboarding';
-import { CommandActivityPanel } from '@/components/CommandActivityPanel';
-import { EvidenceOutcomePanel } from '@/components/EvidenceOutcomePanel';
+import { DashboardEvidenceSection } from '@/components/DashboardEvidenceSection';
+import { DashboardOperateSection } from '@/components/DashboardOperateSection';
+import { DashboardOverviewQuickNav } from '@/components/DashboardOverviewQuickNav';
 import { OpsChainBanner } from '@/components/OpsChainBanner';
-import { ReleaseHub } from '@/components/ReleaseHub';
-import { WorkspaceGovernancePanel } from '@/components/WorkspaceGovernancePanel';
-import { CommandCheatsheet } from '@/components/CommandCheatsheet';
 import { ProjectActions } from '@/components/ProjectActions';
 import { WorkspaiEmptyState } from '@/components/WorkspaiEmptyState';
 import { Footer } from '@/components/Footer';
-import { EnterpriseDashboardFlow } from '@/components/EnterpriseDashboardFlow';
 import { WorkspaceOverview } from '@/components/WorkspaceOverview';
-import { AIIncidentStudio } from '@/components/AIIncidentStudio';
+import { IncidentStudioVNext } from '@/components/StudioRedesign';
+import { SetupExperience } from '@/components/SetupExperience';
+import type {
+    AIActionContractView,
+    AIActionRegistryView,
+    ChatMessage,
+    StudioActionStatus,
+} from '@/components/StudioRedesign/state/studioState';
+import { parseStudioActionCommand } from '@/components/StudioRedesign/state/studioActions';
+import { mapAnalyzeReportToStudioState } from '@/lib/incidentStudioReportMapper';
 import {
     DEFAULT_INCIDENT_STUDIO_DISPLAY_MODE,
     DEFAULT_INCIDENT_USER_MODE,
@@ -70,14 +78,17 @@ import {
     type NormalizedIncidentReleaseGateEvidencePayload,
     type NormalizedIncidentSystemGraphSnapshotPayload,
     type IncidentProjectSelection,
+    type IncidentStudioStabilizationKpiStatus,
 } from '@/lib/incidentStudioPayload';
+import { resolveVerifyGateBlockedReasonsFromTelemetry } from '@/lib/incidentStudioActionOutcomePresentation';
 import { logChatBrain } from '@/lib/chatBrainDebug';
 import {
     isAnalyzeEvidencePending,
     parseReportExistsResult,
     parseReportLoadedMessage,
 } from '@/lib/analyzeReportBridge';
-import { AIModal, AIModalContext, AIContextContractSummary } from '@/components/AIModal';
+import type { ContextAssistContext, ContextAssistContractSummary } from '@/lib/contextAssist';
+import { ContextAssistPanel } from '@/components/ContextAssistPanel';
 import { AICreateModal, AICreationPlan, AICreateFramework } from '@/components/AICreateModal';
 import { CreateWorkspaceModal, WorkspaceCreationConfig } from '@/components/CreateWorkspaceModal';
 import { CreateProjectModal } from '@/components/CreateProjectModal';
@@ -87,13 +98,23 @@ import { WorkspaiSettingsPanel } from '@/components/WorkspaiSettingsPanel';
 import { WorkspaiBanner } from '@/components/WorkspaiBanner';
 import { buildAnalyzeLoadKey } from '@/lib/analyzeScopeKey';
 import {
+    dashboardSectionForIncidentTarget,
+    dashboardSectionForOpsChainStep,
     dashboardSectionNeedsCatalog,
     normalizeDashboardSection,
     type DashboardSection,
 } from '@/lib/dashboardSections';
+import {
+    catalogShowsFallbackBanner,
+    resolveCatalogModulesReady,
+    resolveCatalogTemplatesReady,
+    shouldRequestCatalogRefresh,
+} from '@/lib/dashboardCatalogLoad';
+import { buildDashboardDispatchMessages } from '@/lib/dashboardDispatch';
 import { isUnsupportedModuleProjectType } from '@/lib/moduleSupport';
 import { buildDashboardNextSteps } from '@/lib/dashboardNextSteps';
 import type { DashboardEvidenceCard, DashboardEvidencePayload } from '@/lib/dashboardEvidence';
+import { countEvidenceAttention, countOperateAttention } from '@/lib/dashboardEvidence';
 
 function normalizeSelectedModelId(raw: unknown): string | null {
     if (typeof raw !== 'string') {
@@ -128,6 +149,22 @@ function normalizeAvailableModels(raw: unknown): Array<{ id: string; name: strin
                     : model.id,
             vendor: typeof model.vendor === 'string' ? model.vendor : '',
         }));
+}
+
+declare global {
+    interface Window {
+        /** @deprecated Legacy standalone setup webview; App resolves setup tab when present. */
+        WORKSPAI_VIEW?: 'welcome' | 'setup';
+    }
+}
+
+type WorkspaiActiveView = 'dashboard' | 'incident-studio' | 'settings' | 'setup';
+
+function resolveInitialActiveView(): WorkspaiActiveView {
+    if (typeof window !== 'undefined' && window.WORKSPAI_VIEW === 'setup') {
+        return 'setup';
+    }
+    return 'dashboard';
 }
 
 export function App() {
@@ -195,6 +232,7 @@ export function App() {
                 overallPass: boolean;
             };
         } | null;
+        studioStabilizationKpiStatus?: IncidentStudioStabilizationKpiStatus | null;
         studioRollbackKpiStatus?: {
             workspacePath: string;
             timeWindow: 'all' | 'last24h' | 'last7d';
@@ -346,17 +384,35 @@ export function App() {
     const [showProjectModal, setShowProjectModal] = useState(false);
     const [showInstallModal, setShowInstallModal] = useState(false);
     const [showModuleDetailsModal, setShowModuleDetailsModal] = useState(false);
-    const [showAIModal, setShowAIModal] = useState(false);
-    const [aiModalContext, setAIModalContext] = useState<AIModalContext | null>(null);
+    const [contextAssistOpen, setContextAssistOpen] = useState(false);
+    const [contextAssistContext, setContextAssistContext] = useState<ContextAssistContext | null>(null);
     const [aiStreamContent, setAIStreamContent] = useState('');
     const [aiIsStreaming, setAIIsStreaming] = useState(false);
     const [aiStreamError, setAIStreamError] = useState<string | null>(null);
     const [aiModelId, setAIModelId] = useState<string | null>(null);
     const [aiAvailableModels, setAIAvailableModels] = useState<{ id: string; name: string; vendor: string }[]>([]);
     const [preferredModelId, setPreferredModelId] = useState<string>('auto');
+    const [aiProvider, setAIProvider] = useState<'vscode-lm' | 'openai-compatible'>('vscode-lm');
+    const [customAIBaseUrl, setCustomAIBaseUrl] = useState('');
+    const [customAIModel, setCustomAIModel] = useState('');
+    const [aiProviderStatus, setAIProviderStatus] = useState<{
+        provider: 'vscode-lm' | 'openai-compatible';
+        ready: boolean;
+        label: string;
+        reason?: string;
+        hasApiKey?: boolean;
+    } | null>(null);
+    const [aiProviderHealthCheck, setAIProviderHealthCheck] = useState<{
+        ok: boolean;
+        label: string;
+        latencyMs?: number;
+        model?: string;
+        reason?: string;
+    } | null>(null);
+    const [providerHealthChecking, setProviderHealthChecking] = useState(false);
     const [aiModelsLoading, setAiModelsLoading] = useState(false);
     const [aiSelectedModelId, setAISelectedModelId] = useState<string | null>(null);
-    const [aiContextContract, setAIContextContract] = useState<AIContextContractSummary | null>(null);
+    const [aiContextContract, setAIContextContract] = useState<ContextAssistContractSummary | null>(null);
     const [incidentSelectedModelId, setIncidentSelectedModelId] = useState<string | null>(null);
     const [incidentModelId, setIncidentModelId] = useState<string | null>(null);
     const [aiConversationHistory, setAIConversationHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
@@ -382,6 +438,7 @@ export function App() {
     const [cloningExample, setCloningExample] = useState<string | null>(null);
     const [updatingExample, setUpdatingExample] = useState<string | null>(null);
     const [modulesCatalog, setModulesCatalog] = useState<ModuleData[]>([]);
+    const [modulesCatalogMeta, setModulesCatalogMeta] = useState<ModulesCatalogMeta | null>(null);
     const [categoryInfo] = useState<CategoryInfo>({});
     const [workspaceStatus, setWorkspaceStatus] = useState<WorkspaceStatus>({ hasWorkspace: false });
     const [installStatus, setInstallStatus] = useState<InstallStatus>({
@@ -425,10 +482,14 @@ export function App() {
     /** true once extension has sent at least one installStatusUpdate — before that, initial false values must not be trusted */
     const [installStatusChecked, setInstallStatusChecked] = useState(false);
     const [isRefreshingWorkspaces, setIsRefreshingWorkspaces] = useState(false);
-    const [activeView, setActiveView] = useState<'dashboard' | 'incident-studio' | 'settings'>('dashboard');
+    const [activeView, setActiveView] = useState<WorkspaiActiveView>(resolveInitialActiveView);
     const [dashboardTemplatesReady, setDashboardTemplatesReady] = useState(false);
     const [dashboardModulesReady, setDashboardModulesReady] = useState(false);
+    const [dashboardCatalogTimedOut, setDashboardCatalogTimedOut] = useState(false);
+    const catalogTemplatesAckRef = useRef(false);
+    const catalogModulesAckRef = useRef(false);
     const [dashboardSection, setDashboardSection] = useState<DashboardSection>('overview');
+    const incidentDashboardReturnSectionRef = useRef<DashboardSection>('evidence');
     const [dashboardEvidence, setDashboardEvidence] = useState<DashboardEvidencePayload | null>(null);
     const [importedWorkspaceShare, setImportedWorkspaceShare] =
         useState<ImportedWorkspaceShareSummary | null>(null);
@@ -447,6 +508,10 @@ export function App() {
     const [analyzeReport, setAnalyzeReport] = useState<any | null>(null);
     const [analyzeReportError, setAnalyzeReportError] = useState<string | null>(null);
     const [analyzeReportExists, setAnalyzeReportExists] = useState<boolean | null>(null);
+    const [incidentStudioMessage, setIncidentStudioMessage] = useState<ChatMessage | null>(null);
+    const [incidentActionContract, setIncidentActionContract] = useState<AIActionContractView | null>(null);
+    const [incidentActionRegistry, setIncidentActionRegistry] = useState<AIActionRegistryView | null>(null);
+    const [incidentActionStatus, setIncidentActionStatus] = useState<StudioActionStatus | null>(null);
     const [isAnalyzeLoading, setIsAnalyzeLoading] = useState(false);
     const aiRequestIdRef = useRef(0);
     const chatBrainMessageIdRef = useRef<string | null>(null);
@@ -484,7 +549,7 @@ export function App() {
 
     incidentSelectedModelIdRef.current = incidentSelectedModelId;
 
-    const handleAIModalNewQuery = () => {
+    const handleContextAssistNewQuery = () => {
         aiRequestIdRef.current += 1;
         setAIStreamContent('');
         setAIStreamError(null);
@@ -514,14 +579,22 @@ export function App() {
             activeWorkspaceName ||
             workspacePath;
 
+        incidentDashboardReturnSectionRef.current = 'evidence';
         setActiveView('incident-studio');
-        bootstrapIncidentStudioForWorkspace(
-            workspacePath,
-            workspaceName,
-            true,
-            initialQuery,
-            selectedProjectForAnalysis
-        );
+        setSelectedWorkspaceForAnalysis(workspacePath);
+        if (initialQuery) {
+            setIncidentStudioMessage({
+                id: `initial-query-${Date.now()}`,
+                role: 'user',
+                content: initialQuery,
+                timestamp: new Date().toISOString(),
+                phase: 'detect',
+            });
+        }
+        vscode.postMessage('checkReportExists', { workspacePath });
+        vscode.postMessage('loadReport', { workspacePath, workspaceName });
+        vscode.postMessage('loadAIActionRegistry', { workspacePath });
+        requestIncidentStudioTelemetryRefresh({ forceRefresh: true });
     };
 
     const openIncidentStudioForEvidence = (card: DashboardEvidenceCard) => {
@@ -546,14 +619,26 @@ export function App() {
                   }
                 : selectedProjectForAnalysis;
 
-        setActiveView('incident-studio');
-        bootstrapIncidentStudioForWorkspace(
+        incidentDashboardReturnSectionRef.current = dashboardSectionForIncidentTarget(
+            card.incidentStudioTarget ??
+                (card.id === 'doctor'
+                    ? 'doctor'
+                    : card.id === 'analyze'
+                      ? 'analyze'
+                      : card.id === 'readiness'
+                        ? 'readiness'
+                        : card.id === 'autopilot'
+                        ? 'release'
+                        : undefined)
+        );
+        vscode.postMessage('openIncidentStudioTab', {
             workspacePath,
             workspaceName,
-            false,
-            undefined,
-            projectSelection
-        );
+            projectPath: projectSelection?.path,
+            projectName: projectSelection?.name,
+            projectType: projectSelection?.type,
+            preferredDisplayMode: 'full',
+        });
         vscode.postMessage('requestIncidentStudioTelemetry', {
             workspacePath,
             projectPath: projectSelection?.path,
@@ -564,6 +649,7 @@ export function App() {
     const openIncidentStudioTarget = (
         target: NonNullable<DashboardEvidenceCard['incidentStudioTarget']>
     ) => {
+        incidentDashboardReturnSectionRef.current = dashboardSectionForIncidentTarget(target);
         const card =
             dashboardEvidence?.cards.find((entry) => entry.incidentStudioTarget === target) ??
             dashboardEvidence?.cards.find((entry) => entry.id === target);
@@ -585,18 +671,26 @@ export function App() {
         path: workspaceStatus.workspacePath,
         name: activeWorkspaceName,
     });
-    const handleDashboardCommand = (command: string, data?: Record<string, unknown>) => {
+    const openSetupInDashboard = () => {
+        setActiveView('setup');
+    };
+    const dispatchDashboardCommand = (command: string, data?: Record<string, unknown>) => {
         if (command === 'openSetup') {
-            vscode.postMessage('openSetup');
+            openSetupInDashboard();
             return;
         }
         if (command === 'openCreateWorkspace') {
             handleOpenAICreateWorkspace();
             return;
         }
-        vscode.postMessage('trackDashboardCommand', { command });
-        vscode.postMessage(command, data ?? workspaceCommandPayload());
+        const payload =
+            data ??
+            (command.startsWith('project') || command.startsWith('module') ? undefined : workspaceCommandPayload());
+        for (const message of buildDashboardDispatchMessages(command, payload)) {
+            vscode.postMessage(message.command, message.data);
+        }
     };
+    const handleDashboardCommand = dispatchDashboardCommand;
     const isFreshInstall =
         dashboardEvidence?.onboarding?.isFreshInstall ??
         (recentWorkspaces.length === 0 && !hasActiveWorkspace);
@@ -618,6 +712,19 @@ export function App() {
             exampleWorkspaces.length,
         ]
     );
+    const evidenceAttentionCount = useMemo(
+        () => countEvidenceAttention(dashboardEvidence),
+        [dashboardEvidence]
+    );
+    const operateAttentionCount = useMemo(
+        () =>
+            countOperateAttention({
+                evidence: dashboardEvidence,
+                complianceStatus: activeWorkspace?.complianceStatus,
+                mirrorStatus: activeWorkspace?.mirrorStatus,
+            }),
+        [dashboardEvidence, activeWorkspace?.complianceStatus, activeWorkspace?.mirrorStatus]
+    );
     const analysisScopeType: 'workspace' | 'project' = selectedProjectForAnalysis?.path
         ? 'project'
         : 'workspace';
@@ -637,6 +744,9 @@ export function App() {
             : selectedWorkspaceForAnalysis || workspaceStatus.workspacePath) || null;
     const analysisWorkspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath || null;
     const analysisProjectPath = selectedProjectForAnalysis?.path || null;
+    const incidentStudioInitialState = analyzeReport
+        ? mapAnalyzeReportToStudioState(analyzeReport, activeWorkspaceName || 'Current Workspace')
+        : null;
     const incidentPrimaryCtaMode = resolveIncidentPrimaryCtaMode(
         incidentUserMode,
         incidentPrimaryCtaExperimentVariant
@@ -651,6 +761,20 @@ export function App() {
         vscode.postMessage('setUiPreference', {
             key: 'incidentUserMode',
             value: normalizedMode,
+        });
+    };
+
+    const requestIncidentStudioTelemetryRefresh = (options?: { forceRefresh?: boolean }) => {
+        const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
+        if (!workspacePath) {
+            return;
+        }
+
+        setIsIncidentRefreshing(true);
+        vscode.postMessage('requestIncidentStudioTelemetry', {
+            workspacePath,
+            projectPath: selectedProjectForAnalysis?.path,
+            forceRefresh: options?.forceRefresh ?? false,
         });
     };
 
@@ -685,6 +809,15 @@ export function App() {
         });
     };
 
+    const handleReturnToDashboard = () => {
+        setActiveView('dashboard');
+        updateDashboardSection(incidentDashboardReturnSectionRef.current);
+        vscode.postMessage('openDashboardTab');
+        vscode.postMessage('requestDashboardEvidence', {
+            workspacePath: workspaceStatus.workspacePath || undefined,
+        });
+    };
+
     const modulesDisabledForProject =
         Boolean(workspaceStatus.hasProjectSelected) &&
         isUnsupportedModuleProjectType(workspaceStatus.projectType);
@@ -692,34 +825,41 @@ export function App() {
     const renderDashboardModuleBrowser = (surface: 'console' | 'catalog') => (
         <ModuleBrowser
             modules={modulesCatalog}
+            catalogMeta={modulesCatalogMeta}
             workspaceStatus={workspaceStatus}
             categoryInfo={categoryInfo}
             surface={surface}
             includeProjectActions={false}
-            onRefresh={() => vscode.postMessage('refreshModules')}
+            onRefresh={() => dispatchDashboardCommand('refreshModules')}
             onInstall={handleOpenInstallModal}
             onShowDetails={(module) => vscode.postMessage('showModuleDetails', module)}
             onModuleDiff={
                 surface === 'console'
                     ? (module) =>
-                          vscode.postMessage('moduleDiff', {
+                          dispatchDashboardCommand('moduleDiff', {
                               moduleSlug: module.slug,
+                              preferNonInteractive: true,
+                              ...workspaceCommandPayload(),
                           })
                     : undefined
             }
             onModuleRollback={
                 surface === 'console'
                     ? (module) =>
-                          vscode.postMessage('moduleRollback', {
+                          dispatchDashboardCommand('moduleRollback', {
                               moduleSlug: module.slug,
+                              preferNonInteractive: true,
+                              ...workspaceCommandPayload(),
                           })
                     : undefined
             }
             onModuleUninstall={
                 surface === 'console'
                     ? (module) =>
-                          vscode.postMessage('moduleUninstall', {
+                          dispatchDashboardCommand('moduleUninstall', {
                               moduleSlug: module.slug,
+                              preferNonInteractive: true,
+                              ...workspaceCommandPayload(),
                           })
                     : undefined
             }
@@ -730,19 +870,19 @@ export function App() {
                     moduleSlug: module.slug,
                 })
             }
-            onProjectTerminal={() => vscode.postMessage('projectTerminal')}
-            onProjectInit={() => vscode.postMessage('projectInit')}
-            onProjectDev={() => vscode.postMessage('projectDev')}
-            onProjectStop={() => vscode.postMessage('projectStop')}
-            onProjectTest={() => vscode.postMessage('projectTest')}
-            onProjectDoctor={() => vscode.postMessage('projectDoctor')}
-            onProjectArchitecture={() => vscode.postMessage('projectArchitecture')}
-            onProjectIncident={() => vscode.postMessage('projectIncident')}
-            onProjectAI={() => vscode.postMessage('projectAI')}
-            onProjectRelease={() => vscode.postMessage('projectRelease')}
-            onProjectImpact={() => vscode.postMessage('projectImpact')}
-            onProjectBrowser={() => vscode.postMessage('projectBrowser')}
-            onProjectBuild={() => vscode.postMessage('projectBuild')}
+            onProjectTerminal={() => dispatchDashboardCommand('projectTerminal')}
+            onProjectInit={() => dispatchDashboardCommand('projectInit')}
+            onProjectDev={() => dispatchDashboardCommand('projectDev')}
+            onProjectStop={() => dispatchDashboardCommand('projectStop')}
+            onProjectTest={() => dispatchDashboardCommand('projectTest')}
+            onProjectDoctor={() => dispatchDashboardCommand('projectDoctor')}
+            onProjectArchitecture={() => dispatchDashboardCommand('projectArchitecture')}
+            onProjectIncident={() => dispatchDashboardCommand('projectIncident')}
+            onProjectAI={() => dispatchDashboardCommand('projectAI')}
+            onProjectRelease={() => dispatchDashboardCommand('projectRelease')}
+            onProjectImpact={() => dispatchDashboardCommand('projectImpact')}
+            onProjectBrowser={() => dispatchDashboardCommand('projectBrowser')}
+            onProjectBuild={() => dispatchDashboardCommand('projectBuild')}
             modulesDisabled={modulesDisabledForProject}
         />
     );
@@ -841,6 +981,74 @@ export function App() {
                     setAnalyzeReportExists(parsedReport.report != null);
                     break;
                 }
+                case 'studioAssistantMessage':
+                    setIncidentStudioMessage({
+                        id: `host-${Date.now()}`,
+                        role: 'assistant',
+                        content:
+                            typeof message.data?.content === 'string'
+                                ? message.data.content
+                                : 'No response returned.',
+                        timestamp: new Date().toISOString(),
+                        phase: 'diagnose',
+                        sources: [
+                            {
+                                type: 'system',
+                                label:
+                                    typeof message.data?.provider === 'string'
+                                        ? message.data.provider
+                                        : 'ai-provider',
+                            },
+                        ],
+                    });
+                    break;
+                case 'studioActionContract':
+                    setIncidentActionContract({
+                        actionId: message.data?.actionId,
+                        contract: message.data?.contract ?? null,
+                        validation: message.data?.validation ?? {
+                            status: 'blocked',
+                            issues: [],
+                            canApply: false,
+                            canVerify: false,
+                            canRollback: false,
+                        },
+                        parseError: message.data?.parseError,
+                        rawJson: message.data?.rawJson,
+                        provider: message.data?.provider,
+                        receivedAt: new Date().toISOString(),
+                    });
+                    break;
+                case 'studioActionStatus':
+                    setIncidentActionStatus({
+                        actionId:
+                            typeof message.data?.actionId === 'string'
+                                ? message.data.actionId
+                                : 'unknown',
+                        status:
+                            message.data?.status === 'completed' || message.data?.status === 'failed'
+                                ? message.data.status
+                                : 'started',
+                        detail:
+                            typeof message.data?.detail === 'string'
+                                ? message.data.detail
+                                : undefined,
+                        result:
+                            message.data?.result && typeof message.data.result === 'object'
+                                ? message.data.result
+                                : undefined,
+                        updatedAt:
+                            typeof message.data?.updatedAt === 'string'
+                                ? message.data.updatedAt
+                                : new Date().toISOString(),
+                    });
+                    break;
+                case 'aiActionRegistryLoaded':
+                    setIncidentActionRegistry({
+                        updatedAt: message.data?.updatedAt ?? new Date().toISOString(),
+                        entries: Array.isArray(message.data?.entries) ? message.data.entries : [],
+                    });
+                    break;
                 case 'updateRecentWorkspaces':
                     console.log('[React Webview] Updating workspaces:', message.data);
                     setRecentWorkspaces(message.data);
@@ -852,6 +1060,9 @@ export function App() {
                 case 'updateExampleWorkspaces':
                     console.log('[React Webview] Updating examples:', message.data);
                     setExampleWorkspaces(message.data);
+                    catalogTemplatesAckRef.current = true;
+                    setDashboardCatalogTimedOut(false);
+                    setDashboardTemplatesReady(true);
                     break;
                 case 'updateAvailableKits':
                     console.log('[React Webview] Updating available kits:', message.data);
@@ -865,10 +1076,27 @@ export function App() {
                     console.log('[React Webview] Setting updating state:', message.data);
                     setUpdatingExample(message.data.exampleName);
                     break;
-                case 'updateModulesCatalog':
-                    console.log('[React Webview] Updating modules catalog:', message.data?.length || 0, 'modules');
-                    setModulesCatalog(message.data);
+                case 'updateModulesCatalog': {
+                    const payload = message.data as ModulesCatalogUpdate | ModuleData[] | undefined;
+                    const modules = Array.isArray(payload)
+                        ? payload
+                        : Array.isArray(payload?.modules)
+                          ? payload.modules
+                          : [];
+                    const meta = Array.isArray(payload) ? null : payload?.meta ?? null;
+                    console.log(
+                        '[React Webview] Updating modules catalog:',
+                        modules.length,
+                        'modules',
+                        meta?.rapidkitCoreVersion ? `(core ${meta.rapidkitCoreVersion})` : ''
+                    );
+                    setModulesCatalog(modules);
+                    setModulesCatalogMeta(meta);
+                    catalogModulesAckRef.current = true;
+                    setDashboardCatalogTimedOut(false);
+                    setDashboardModulesReady(true);
                     break;
+                }
                 case 'installStatusUpdate':
                     setInstallStatus(message.data);
                     setInstallStatusChecked(true);
@@ -933,14 +1161,15 @@ export function App() {
                     // Triggered from tree view AI inline button
                     console.log('[React Webview] openAIModal:', message.data);
                     aiRequestIdRef.current = 0;
-                    setAIModalContext(message.data);
+                    setContextAssistContext(message.data);
                     setAIStreamContent('');
                     setAIStreamError(null);
                     setAIIsStreaming(false);
                     setAIModelId(null);
                     setAIContextContract(null);
                     setAIConversationHistory([]);
-                    setShowAIModal(true);
+                    setActiveView('dashboard');
+                    setContextAssistOpen(true);
                     refreshWorkspaiSettings();
                     break;
                 case 'aiChunkUpdate':
@@ -1042,10 +1271,37 @@ export function App() {
                     const normalizedModels = normalizeAvailableModels(message.data?.models);
                     const sessionModelId = preferredModel === 'auto' ? null : preferredModel;
                     setPreferredModelId(preferredModel);
+                    setAIProvider(
+                        message.data?.aiProvider === 'openai-compatible'
+                            ? 'openai-compatible'
+                            : 'vscode-lm'
+                    );
+                    setCustomAIBaseUrl(
+                        typeof message.data?.customAIBaseUrl === 'string'
+                            ? message.data.customAIBaseUrl
+                            : ''
+                    );
+                    setCustomAIModel(
+                        typeof message.data?.customAIModel === 'string'
+                            ? message.data.customAIModel
+                            : ''
+                    );
+                    setAIProviderStatus(
+                        message.data?.aiProviderStatus && typeof message.data.aiProviderStatus === 'object'
+                            ? message.data.aiProviderStatus
+                            : null
+                    );
                     setAIAvailableModels(normalizedModels);
                     setAiModelsLoading(false);
                     setAISelectedModelId((current) => current ?? sessionModelId);
                     setIncidentSelectedModelId((current) => current ?? sessionModelId);
+                    break;
+                }
+                case 'aiProviderHealthCheck': {
+                    setProviderHealthChecking(false);
+                    setAIProviderHealthCheck(
+                        message.data && typeof message.data === 'object' ? message.data : null
+                    );
                     break;
                 }
                 // ── AI Create events ────────────────────────────────────────
@@ -1110,7 +1366,8 @@ export function App() {
                     if (
                         message.data?.view === 'dashboard' ||
                         message.data?.view === 'incident-studio' ||
-                        message.data?.view === 'settings'
+                        message.data?.view === 'settings' ||
+                        message.data?.view === 'setup'
                     ) {
                         setActiveView(message.data.view);
                     }
@@ -1582,7 +1839,7 @@ export function App() {
 
     const handleOpenProjectModal = (framework: AICreateFramework, _kitName?: string) => {
         if (installStatusChecked && !installStatus.coreInstalled) {
-            vscode.postMessage('openSetup');
+            openSetupInDashboard();
             return;
         }
         // Open AI create modal in project mode with pre-selected framework
@@ -1601,7 +1858,7 @@ export function App() {
 
     const handleOpenManualProjectModal = (framework: AICreateFramework) => {
         if (installStatusChecked && !installStatus.coreInstalled) {
-            vscode.postMessage('openSetup');
+            openSetupInDashboard();
             return;
         }
         setSelectedFramework(framework);
@@ -1645,7 +1902,7 @@ export function App() {
         setShowInstallModal(true);
     };
 
-    const handleAIQuery = (mode: 'debug' | 'ask', question: string, ctx: AIModalContext) => {
+    const handleAIQuery = (mode: 'debug' | 'ask', question: string, ctx: ContextAssistContext) => {
         const requestId = aiRequestIdRef.current + 1;
         aiRequestIdRef.current = requestId;
         const historyForRequest = [
@@ -1866,6 +2123,7 @@ export function App() {
 
         vscode.postMessage('checkReportExists', { workspacePath });
         vscode.postMessage('loadReport', { workspacePath, workspaceName });
+        vscode.postMessage('loadAIActionRegistry', { workspacePath });
     };
 
     const handleRunAnalyze = () => {
@@ -1895,6 +2153,60 @@ export function App() {
         vscode.postMessage('runAnalyze', { workspacePath, workspaceName });
     };
 
+    const handleStudioVNextMessage = (message: string) => {
+        const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
+        const workspaceName = activeWorkspaceName || undefined;
+
+        if (!workspacePath) {
+            return 'Select or open a workspace before using Incident Studio.';
+        }
+
+        if (message.startsWith('studio-action:')) {
+            const actionId = parseStudioActionCommand(message);
+            if (!actionId) {
+                return `Unknown Studio action blocked: ${message}`;
+            }
+            vscode.postMessage('runStudioAction', {
+                workspacePath,
+                workspaceName,
+                actionId,
+            });
+            return `Running ${actionId.replace(/-/g, ' ')} from Studio.`;
+        }
+
+        if (message.startsWith('/runAnalyze')) {
+            vscode.postMessage('runAnalyze', { workspacePath, workspaceName });
+            return 'Running workspace analysis.';
+        }
+
+        vscode.postMessage('studioMessage', { workspacePath, workspaceName, message });
+        return undefined;
+    };
+
+    const handleStudioVNextAIActionCommand = (operation: 'apply' | 'verify' | 'rollback') => {
+        const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
+        const workspaceName = activeWorkspaceName || undefined;
+
+        if (!workspacePath) {
+            return;
+        }
+
+        vscode.postMessage('runAIActionContractCommand', {
+            workspacePath,
+            workspaceName,
+            operation,
+            actionId: incidentActionContract?.actionId,
+            summary: incidentActionContract?.contract?.summary,
+            riskLevel: incidentActionContract?.contract?.riskLevel,
+            confidence: incidentActionContract?.contract?.confidence,
+        });
+    };
+
+    const handleStudioVNextRevealEvidence = (evidencePath: string) => {
+        const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
+        vscode.postMessage('revealEvidence', { path: evidencePath, workspacePath });
+    };
+
     useEffect(() => {
         return () => {
             if (analyzeLoadTimeoutRef.current != null) {
@@ -1915,17 +2227,15 @@ export function App() {
             return;
         }
 
-        if (lastIncidentBootstrapWorkspaceRef.current === workspacePath) {
-            return;
-        }
-
         const workspaceName =
             recentWorkspaces.find((workspace) => workspace.path === workspacePath)?.name ||
             workspaceStatus.workspaceName ||
             workspacePath;
 
         lastIncidentBootstrapWorkspaceRef.current = workspacePath;
-        bootstrapIncidentStudioForWorkspace(workspacePath, workspaceName, true);
+        setSelectedWorkspaceForAnalysis(workspacePath);
+        requestAnalyzeEvidence(workspacePath, workspaceName);
+        requestIncidentStudioTelemetryRefresh({ forceRefresh: true });
     }, [activeView, recentWorkspaces, workspaceStatus.workspaceName, workspaceStatus.workspacePath]);
 
     useEffect(() => {
@@ -2184,26 +2494,40 @@ export function App() {
     }, [activeView, chatBrainConversationId]);
 
     useEffect(() => {
-        if (activeView !== 'dashboard' || !dashboardSectionNeedsCatalog(dashboardSection)) {
-            setDashboardTemplatesReady(false);
-            setDashboardModulesReady(false);
+        if (!shouldRequestCatalogRefresh(dashboardSectionNeedsCatalog(dashboardSection), activeView)) {
             return;
         }
 
         dashboardMountedAtRef.current =
             typeof performance !== 'undefined' ? performance.now() : Date.now();
-        setDashboardTemplatesReady(false);
-        setDashboardModulesReady(false);
-        const scheduleIdle = window.requestIdleCallback ?? ((callback) => window.setTimeout(callback, 80));
-        const cancelIdle = window.cancelIdleCallback ?? window.clearTimeout;
-        const templatesHandle = scheduleIdle(() => setDashboardTemplatesReady(true));
-        const modulesHandle = window.setTimeout(() => {
-            scheduleIdle(() => setDashboardModulesReady(true));
-        }, 140);
+
+        setDashboardCatalogTimedOut(false);
+
+        setDashboardTemplatesReady(
+            resolveCatalogTemplatesReady(
+                catalogTemplatesAckRef.current,
+                exampleWorkspaces.length,
+                dashboardCatalogTimedOut
+            )
+        );
+        setDashboardModulesReady(
+            resolveCatalogModulesReady(
+                catalogModulesAckRef.current,
+                modulesCatalogMeta != null,
+                dashboardCatalogTimedOut
+            )
+        );
+
+        vscode.postMessage('refreshModules');
+
+        const timeoutHandle = window.setTimeout(() => {
+            setDashboardCatalogTimedOut(true);
+            setDashboardTemplatesReady(true);
+            setDashboardModulesReady(true);
+        }, 12000);
 
         return () => {
-            cancelIdle(templatesHandle);
-            window.clearTimeout(modulesHandle);
+            window.clearTimeout(timeoutHandle);
         };
     }, [activeView, dashboardSection]);
 
@@ -2303,8 +2627,10 @@ export function App() {
                         </button>
                         <button
                             type="button"
-                            className="workspai-view-tab"
-                            onClick={() => vscode.postMessage('openSetup')}
+                            role="tab"
+                            aria-selected={activeView === 'setup'}
+                            className={`workspai-view-tab ${activeView === 'setup' ? 'is-active' : ''}`}
+                            onClick={openSetupInDashboard}
                         >
                             <span className="workspai-view-tab-content">
                                 <Wrench size={13} aria-hidden="true" />
@@ -2318,12 +2644,17 @@ export function App() {
             </div>
 
             {activeView === 'dashboard' ? (
-                <>
+                <div
+                    className={`ws-dashboard-shell${contextAssistOpen ? ' ws-dashboard-shell--assist-open' : ''}`}
+                >
+                    <div className="ws-dashboard-shell__main">
                     <DashboardSubNav
                         activeSection={dashboardSection}
                         onSectionChange={updateDashboardSection}
                         hasProjectSelected={Boolean(workspaceStatus.hasProjectSelected)}
                         recentWorkspaceCount={recentWorkspaces.length}
+                        evidenceAttentionCount={evidenceAttentionCount}
+                        operateAttentionCount={operateAttentionCount}
                     />
 
                     {isFreshInstall ? (
@@ -2348,6 +2679,15 @@ export function App() {
                         <OpsChainBanner
                             chain={dashboardEvidence.opsChain}
                             onDismiss={() => vscode.postMessage('dismissDashboardOpsChain')}
+                            onViewEvidence={() =>
+                                updateDashboardSection(
+                                    dashboardEvidence.opsChain?.status === 'blocked'
+                                        ? dashboardSectionForOpsChainStep(
+                                              dashboardEvidence.opsChain.currentStep
+                                          )
+                                        : 'evidence'
+                                )
+                            }
                         />
                     ) : null}
 
@@ -2356,6 +2696,7 @@ export function App() {
                             id="dashboard-panel-overview"
                             role="tabpanel"
                             aria-labelledby="dashboard-tab-overview"
+                            className="dashboard-panel dashboard-panel--overview"
                         >
                             {importedWorkspaceShare ? (
                                 <WorkspaiBanner
@@ -2386,44 +2727,6 @@ export function App() {
                                 </WorkspaiBanner>
                             ) : null}
 
-                            <CommandActivityPanel
-                                evidence={dashboardEvidence}
-                                onRunCommand={(command) => handleDashboardCommand(command)}
-                                onClearActivity={() => vscode.postMessage('clearDashboardActivity')}
-                                onRevealArtifact={(artifactPath) =>
-                                    vscode.postMessage('revealEvidence', {
-                                        path: artifactPath,
-                                        workspacePath:
-                                            dashboardEvidence?.workspacePath ||
-                                            workspaceStatus.workspacePath,
-                                    })
-                                }
-                            />
-
-                            <EvidenceOutcomePanel
-                                evidence={dashboardEvidence}
-                                onRunCommand={(command) => handleDashboardCommand(command)}
-                                onOpenIncidentStudio={openIncidentStudioForEvidence}
-                                onRevealArtifact={(artifactPath) =>
-                                    vscode.postMessage('revealEvidence', {
-                                        path: artifactPath,
-                                        workspacePath:
-                                            dashboardEvidence?.workspacePath ||
-                                            workspaceStatus.workspacePath,
-                                    })
-                                }
-                            />
-
-                            <ReleaseHub
-                                evidence={dashboardEvidence}
-                                hasWorkspace={hasActiveWorkspace}
-                                onReadiness={() => handleDashboardCommand('workspaceReadiness')}
-                                onAnalyze={() => handleDashboardCommand('workspaceAnalyze')}
-                                onAutopilotRelease={() =>
-                                    handleDashboardCommand('workspaceAutopilotRelease')
-                                }
-                            />
-
                             <WorkspaceOverview
                                 workspaceName={activeWorkspaceName}
                                 workspaceProfile={activeWorkspaceProfile}
@@ -2437,33 +2740,78 @@ export function App() {
                                 onImportWorkspace={() => vscode.postMessage('importWorkspace')}
                             />
 
-                            <EnterpriseDashboardFlow
+                            <DashboardOverviewQuickNav
+                                evidenceAttentionCount={evidenceAttentionCount}
+                                operateAttentionCount={operateAttentionCount}
+                                onNavigate={updateDashboardSection}
+                            />
+                        </div>
+                    ) : null}
+
+                    {dashboardSection === 'evidence' ? (
+                        <div
+                            id="dashboard-panel-evidence"
+                            role="tabpanel"
+                            aria-labelledby="dashboard-tab-evidence"
+                            className="dashboard-panel dashboard-panel--evidence"
+                        >
+                            <DashboardEvidenceSection
+                                evidence={dashboardEvidence}
+                                hasWorkspace={hasActiveWorkspace}
+                                onRunCommand={(command) => handleDashboardCommand(command)}
+                                onClearActivity={() => vscode.postMessage('clearDashboardActivity')}
+                                onRevealArtifact={(artifactPath) =>
+                                    vscode.postMessage('revealEvidence', {
+                                        path: artifactPath,
+                                        workspacePath:
+                                            dashboardEvidence?.workspacePath ||
+                                            workspaceStatus.workspacePath,
+                                    })
+                                }
+                                onOpenIncidentStudio={openIncidentStudioForEvidence}
+                                onReadiness={() => handleDashboardCommand('workspaceReadiness')}
+                                onAnalyze={() => handleDashboardCommand('workspaceAnalyze')}
+                                onAutopilotRelease={() =>
+                                    handleDashboardCommand('workspaceAutopilotRelease')
+                                }
+                                onNavigateSection={updateDashboardSection}
+                            />
+                        </div>
+                    ) : null}
+
+                    {dashboardSection === 'operate' ? (
+                        <div
+                            id="dashboard-panel-operate"
+                            role="tabpanel"
+                            aria-labelledby="dashboard-tab-operate"
+                            className="dashboard-panel dashboard-panel--operate"
+                        >
+                            <DashboardOperateSection
+                                hasWorkspace={hasActiveWorkspace}
                                 workspaceName={activeWorkspaceName}
                                 workspaceProfile={activeWorkspaceProfile}
                                 workspaceStatus={workspaceStatus}
+                                evidence={dashboardEvidence}
                                 selectedFramework={selectedFramework}
                                 onSelectFramework={setSelectedFramework}
                                 onOpenProjectBuilder={handleOpenProjectModal}
                                 onOpenManualProject={handleOpenManualProjectModal}
+                                onRunWorkspaceCommand={dispatchDashboardCommand}
                                 onRunFixPreview={() => runIncidentAction('aiFixPreviewLite')}
                                 onRunChangeImpact={() => runIncidentAction('aiChangeImpactLite')}
                                 onRunTerminalBridge={() => runIncidentAction('aiTerminalBridge')}
                                 onOpenIncidentStudio={() => openIncidentStudioInPanel()}
-                            />
-
-                            <WorkspaceGovernancePanel
-                                workspaceStatus={workspaceStatus}
+                                onNavigateSection={updateDashboardSection}
+                                onCreateWorkspace={handleOpenAICreateWorkspace}
                                 onBootstrap={() => handleDashboardCommand('workspaceBootstrap')}
                                 onSetup={() => handleDashboardCommand('workspaceSetup')}
                                 onReadiness={() => handleDashboardCommand('workspaceReadiness')}
                                 onMirrorStatus={() => handleDashboardCommand('mirrorStatus')}
                                 onMirrorSync={() => handleDashboardCommand('mirrorSync')}
                                 onCacheStatus={() => handleDashboardCommand('cacheStatus')}
-                                onPolicy={() => vscode.postMessage('workspacePolicyShow')}
+                                onPolicy={() => handleDashboardCommand('workspacePolicyShow')}
                                 onInfra={() => handleDashboardCommand('workspaceInfra')}
                             />
-
-                            <CommandCheatsheet />
                         </div>
                     ) : null}
 
@@ -2480,7 +2828,25 @@ export function App() {
                                     description={
                                         <>
                                             Select a project from the <strong>PROJECTS</strong> panel in the
-                                            sidebar, or create one from the <strong>Overview</strong> tab.
+                                            sidebar, or create one from the <strong>Operate</strong> tab.
+                                        </>
+                                    }
+                                    actions={
+                                        <>
+                                            <button
+                                                type="button"
+                                                className="ws-btn ws-btn--primary"
+                                                onClick={() => updateDashboardSection('operate')}
+                                            >
+                                                Open Operate
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="ws-btn"
+                                                onClick={() => updateDashboardSection('workspaces')}
+                                            >
+                                                Open Workspaces
+                                            </button>
                                         </>
                                     }
                                 />
@@ -2488,21 +2854,21 @@ export function App() {
                                 <>
                                     <ProjectActions
                                         workspaceStatus={workspaceStatus}
-                                        onTerminal={() => vscode.postMessage('projectTerminal')}
-                                        onInit={() => vscode.postMessage('projectInit')}
-                                        onDev={() => vscode.postMessage('projectDev')}
-                                        onStop={() => vscode.postMessage('projectStop')}
-                                        onTest={() => vscode.postMessage('projectTest')}
-                                        onDoctor={() => vscode.postMessage('projectDoctor')}
-                                        onArchitecture={() => vscode.postMessage('projectArchitecture')}
-                                        onIncident={() => vscode.postMessage('projectIncident')}
-                                        onAI={() => vscode.postMessage('projectAI')}
-                                        onRelease={() => vscode.postMessage('projectRelease')}
-                                        onImpact={() => vscode.postMessage('projectImpact')}
-                                        onBrowser={() => vscode.postMessage('projectBrowser')}
-                                        onBuild={() => vscode.postMessage('projectBuild')}
-                                        onLint={() => vscode.postMessage('projectLint')}
-                                        onFormat={() => vscode.postMessage('projectFormat')}
+                                        onTerminal={() => dispatchDashboardCommand('projectTerminal')}
+                                        onInit={() => dispatchDashboardCommand('projectInit')}
+                                        onDev={() => dispatchDashboardCommand('projectDev')}
+                                        onStop={() => dispatchDashboardCommand('projectStop')}
+                                        onTest={() => dispatchDashboardCommand('projectTest')}
+                                        onDoctor={() => dispatchDashboardCommand('projectDoctor')}
+                                        onArchitecture={() => dispatchDashboardCommand('projectArchitecture')}
+                                        onIncident={() => dispatchDashboardCommand('projectIncident')}
+                                        onAI={() => dispatchDashboardCommand('projectAI')}
+                                        onRelease={() => dispatchDashboardCommand('projectRelease')}
+                                        onImpact={() => dispatchDashboardCommand('projectImpact')}
+                                        onBrowser={() => dispatchDashboardCommand('projectBrowser')}
+                                        onBuild={() => dispatchDashboardCommand('projectBuild')}
+                                        onLint={() => dispatchDashboardCommand('projectLint')}
+                                        onFormat={() => dispatchDashboardCommand('projectFormat')}
                                     />
                                     {renderDashboardModuleBrowser('console')}
                                 </>
@@ -2518,6 +2884,14 @@ export function App() {
                             role="tabpanel"
                             aria-labelledby="dashboard-tab-catalog"
                         >
+                            {dashboardCatalogTimedOut ? (
+                                <WorkspaiBanner title="Catalog load delayed">
+                                    <p className="workspai-banner__body">
+                                        Module catalog did not confirm within 12 seconds. Showing last known data — use
+                                        Refresh on the module catalog if entries look stale.
+                                    </p>
+                                </WorkspaiBanner>
+                            ) : null}
                             {dashboardTemplatesReady ? (
                                 <>
                                     <ExampleWorkspaces
@@ -2564,10 +2938,12 @@ export function App() {
                                     })
                                 }
                                 onCheckHealth={(workspace) =>
-                                    vscode.postMessage('checkWorkspaceHealth', { path: workspace.path })
+                                    dispatchDashboardCommand('checkWorkspaceHealth', {
+                                        path: workspace.path,
+                                    })
                                 }
                                 onExport={(workspace) =>
-                                    vscode.postMessage('exportWorkspace', { path: workspace.path })
+                                    dispatchDashboardCommand('exportWorkspace', { path: workspace.path })
                                 }
                                 onAI={(workspace) =>
                                     vscode.postMessage('aiForWorkspace', {
@@ -2577,13 +2953,13 @@ export function App() {
                                 }
                                 onAnalyze={handleAnalyzeWorkspace}
                                 onBootstrap={(workspace) =>
-                                    vscode.postMessage('workspaceBootstrap', {
+                                    dispatchDashboardCommand('workspaceBootstrap', {
                                         path: workspace.path,
                                         name: workspace.name,
                                     })
                                 }
                                 onMirrorSync={(workspace) =>
-                                    vscode.postMessage('mirrorSync', {
+                                    dispatchDashboardCommand('mirrorSync', {
                                         path: workspace.path,
                                         name: workspace.name,
                                     })
@@ -2591,109 +2967,120 @@ export function App() {
                             />
                         </div>
                     ) : null}
-                </>
+                    </div>
+
+                    <ContextAssistPanel
+                        isOpen={contextAssistOpen}
+                        context={contextAssistContext}
+                        isStreaming={aiIsStreaming}
+                        streamContent={aiStreamContent}
+                        streamError={aiStreamError}
+                        availableModels={aiAvailableModels}
+                        selectedModelId={aiSelectedModelId}
+                        contextContract={aiContextContract}
+                        onModelChange={(modelId) =>
+                            setAISelectedModelId(normalizeSelectedModelId(modelId))
+                        }
+                        onClose={() => {
+                            if (!aiIsStreaming) {
+                                aiRequestIdRef.current = 0;
+                                setContextAssistOpen(false);
+                                setAIStreamContent('');
+                                setAIStreamError(null);
+                                setAIModelId(null);
+                                setAIContextContract(null);
+                                setAIConversationHistory([]);
+                            }
+                        }}
+                        onCancel={handleAICancelQuery}
+                        onQuery={handleAIQuery}
+                        onStartNewQuery={handleContextAssistNewQuery}
+                        onOpenIncidentStudio={(initialQuery) => {
+                            setContextAssistOpen(false);
+                            openIncidentStudioInPanel(initialQuery);
+                        }}
+                    />
+                </div>
             ) : activeView === 'settings' ? (
-                <WorkspaiSettingsPanel
+                <div className="ws-embedded-host">
+                    <WorkspaiSettingsPanel
                     availableModels={aiAvailableModels}
                     preferredModelId={preferredModelId}
+                    aiProvider={aiProvider}
+                    customAIBaseUrl={customAIBaseUrl}
+                    customAIModel={customAIModel}
+                    aiProviderStatus={aiProviderStatus}
+                    aiProviderHealthCheck={aiProviderHealthCheck}
+                    providerHealthChecking={providerHealthChecking}
                     modelsLoading={aiModelsLoading}
                     onPreferredModelChange={handlePreferredModelChange}
+                    onProviderChange={(provider) => vscode.postMessage('setAIProvider', { provider })}
+                    onCustomAIConfigSave={(input) => vscode.postMessage('setCustomAIConfig', input)}
+                    onCustomAIAPIKeySave={(apiKey) =>
+                        vscode.postMessage('setCustomAIAPIKey', { apiKey })
+                    }
+                    onCustomAIAPIKeyClear={() => vscode.postMessage('clearCustomAIAPIKey')}
+                    onTestAIProvider={() => {
+                        setProviderHealthChecking(true);
+                        setAIProviderHealthCheck(null);
+                        vscode.postMessage('testAIProvider');
+                    }}
                     onRefreshModels={refreshWorkspaiSettings}
-                />
-            ) : (
-                <>
-                    <AIIncidentStudio
-                        workspaceName={activeWorkspaceName}
-                        analysisScopeType={analysisScopeType}
-                        analysisScopeLabel={analysisScopeLabel}
-                        analysisScopePath={analysisScopePath}
-                        analysisWorkspacePath={analysisWorkspacePath}
-                        analysisProjectPath={analysisProjectPath}
-                        modelId={incidentModelId || incidentSelectedModelId}
-                        availableModels={aiAvailableModels}
-                        selectedModelId={incidentSelectedModelId}
-                        onModelChange={(modelId) =>
-                            setIncidentSelectedModelId(normalizeSelectedModelId(modelId))
-                        }
-                        autoLearningEnabled={incidentAutoLearningPrompt}
-                        onToggleAutoLearning={updateIncidentAutoLearningPrompt}
-                        isRefreshing={isIncidentRefreshing}
-                        onRefreshData={refreshIncidentStudio}
-                        refreshLabel={incidentRefreshLabel}
-                        isAnalyzing={aiIsStreaming || chatBrainIsStreaming}
-                        lastError={chatBrainError || aiStreamError}
-                        conversationTurns={chatBrainHistory.length}
-                        telemetry={incidentTelemetry}
-                        chatBrainStreamText={chatBrainStreamText}
-                        chatBrainHistory={chatBrainHistory}
-                        chatBrainSuggestedQuestions={chatBrainSuggestedQuestions}
-                        chatBrainBoard={chatBrainBoard}
-                        chatBrainActionProgress={chatBrainActionProgress}
-                        chatBrainActionResult={chatBrainActionResult}
-                        chatBrainSystemGraphSnapshot={chatBrainSystemGraphSnapshot}
-                        chatBrainImpactAssessment={chatBrainImpactAssessment}
-                        chatBrainPredictiveWarning={chatBrainPredictiveWarning}
-                        chatBrainReleaseGateEvidence={chatBrainReleaseGateEvidence}
-                        chatBrainError={chatBrainError}
-                        chatBrainErrorRetryable={chatBrainErrorRetryable}
-                        incidentResume={incidentResume}
-                        onChatBrainQuery={handleChatBrainQuery}
-                        onChatBrainExecuteAction={handleChatBrainExecuteAction}
-                        onRunTerminalBridge={() => runIncidentAction('aiTerminalBridge')}
-                        onRunFixPreview={() => runIncidentAction('aiFixPreviewLite')}
-                        onRunChangeImpact={() => runIncidentAction('aiChangeImpactLite')}
-                        onRunMemoryWizard={() => runIncidentAction('aiWorkspaceMemoryWizard')}
-                        onRunDoctorChecks={() => runIncidentAction('runDoctorChecks', {
-                            workspacePath: selectedWorkspaceForAnalysis || workspaceStatus.workspacePath,
-                            workspaceName: activeWorkspaceName,
-                            projectPath: selectedProjectForAnalysis?.path,
-                            projectName: selectedProjectForAnalysis?.name,
-                        })}
-                        onRunDoctorFix={() => runIncidentAction('runDoctorFix', {
-                            workspacePath: selectedWorkspaceForAnalysis || workspaceStatus.workspacePath,
-                            workspaceName: activeWorkspaceName,
-                            projectPath: selectedProjectForAnalysis?.path,
-                            projectName: selectedProjectForAnalysis?.name,
-                        })}
-                        onViewComplianceReport={() => runIncidentAction('viewComplianceReport', {
-                            workspacePath: selectedWorkspaceForAnalysis || workspaceStatus.workspacePath,
-                            workspaceName: activeWorkspaceName,
-                        })}
-                        onViewProjectDoctorReport={() => runIncidentAction('viewProjectDoctorReport', {
-                            workspacePath: selectedWorkspaceForAnalysis || workspaceStatus.workspacePath,
-                            workspaceName: activeWorkspaceName,
-                            projectPath: selectedProjectForAnalysis?.path,
-                            projectName: selectedProjectForAnalysis?.name,
-                        })}
-                        onRunAnalyze={handleRunAnalyze}
-                        analyzeReport={analyzeReport}
-                        analyzeReportError={analyzeReportError}
-                        analyzeReportExists={analyzeReportExists}
-                        isAnalyzeLoading={analyzeEvidencePending}
-                        onRunInlineCommand={runIncidentInlineCommand}
-                        onRevealArchitectureTarget={revealArchitectureTarget}
-                        onPredictiveWarningAccepted={handlePredictiveWarningAccepted}
-                        onExportIncidentReproPack={handleExportIncidentReproPack}
-                        onExportSandboxSimulationEvidence={handleExportSandboxSimulationEvidence}
-                        onExportReleaseReadinessCommander={handleExportReleaseReadinessCommander}
-                        onImportIncidentReproPack={handleImportIncidentReproPack}
-                        onApplyPatch={handleChatBrainApplyPatch}
-                        onChatBrainFeedback={handleChatBrainFeedback}
-                        appliedPatchSummary={appliedPatchSummary}
-                        lastInlineCommandResult={lastInlineCommandResult}
-                        onInlineCommandResultAcknowledged={() => setLastInlineCommandResult(null)}
-                        executingCommand={chatBrainExecutingCommand}
-                        primaryCtaMode={incidentPrimaryCtaMode}
-                        studioDisplayMode={incidentStudioDisplayMode}
-                        preferredArchitectureLensView={incidentArchitectureLensViewOverride}
-                        userMode={incidentUserMode}
-                        onUserModeChange={updateIncidentUserMode}
-                        onStudioDisplayModeChange={updateIncidentStudioDisplayMode}
-                        hasProjectSelected={Boolean(
-                            selectedProjectForAnalysis?.path || workspaceStatus.hasProjectSelected
-                        )}
                     />
-                </>
+                </div>
+            ) : activeView === 'setup' ? (
+                <div className="ws-embedded-host">
+                    <SetupExperience embedded />
+                </div>
+            ) : (
+                <div className="ws-embedded-host">
+                <IncidentStudioVNext
+                    embedded
+                    initialState={{
+                        ...(incidentStudioInitialState || {}),
+                        workspaceName: activeWorkspaceName || 'Current Workspace',
+                        userMode: incidentUserMode,
+                        scopeType: analysisScopeType,
+                    }}
+                    preferredUserMode={incidentUserMode}
+                    onUserModeChange={updateIncidentUserMode}
+                    studioDisplayMode={incidentStudioDisplayMode}
+                    onStudioDisplayModeChange={updateIncidentStudioDisplayMode}
+                    telemetryRefreshLabel={incidentRefreshLabel}
+                    isTelemetryRefreshing={isIncidentRefreshing}
+                    onTelemetryRefresh={() => requestIncidentStudioTelemetryRefresh({ forceRefresh: true })}
+                    onSendMessage={handleStudioVNextMessage}
+                    incomingMessage={incidentStudioMessage}
+                    incomingActionContract={incidentActionContract}
+                    incomingActionRegistry={incidentActionRegistry}
+                    incomingActionStatus={incidentActionStatus}
+                    onAIActionCommand={handleStudioVNextAIActionCommand}
+                    onRevealEvidence={handleStudioVNextRevealEvidence}
+                    onCopyText={(text) => vscode.postMessage('copyText', { text })}
+                    showDemoScenario={false}
+                    incomingActionResult={chatBrainActionResult}
+                    verifyGateBlockedReasons={resolveVerifyGateBlockedReasonsFromTelemetry(
+                        incidentTelemetry?.studioHardGateStatus,
+                    )}
+                    stabilizationKpiStatus={incidentTelemetry?.studioStabilizationKpiStatus ?? null}
+                    onExportIncidentReproPack={handleExportIncidentReproPack}
+                    onImportIncidentReproPack={handleImportIncidentReproPack}
+                    onReplayIncidentQuery={handleChatBrainQuery}
+                    onApplyMultiFilePatch={handleChatBrainApplyPatch}
+                    guidedPrimaryBoardAction={
+                        chatBrainBoard?.actions?.[0]
+                            ? {
+                                  label: chatBrainBoard.actions[0].label,
+                                  command:
+                                      typeof chatBrainBoard.data?.command === 'string'
+                                          ? chatBrainBoard.data.command
+                                          : undefined,
+                              }
+                            : null
+                    }
+                    onRunGuidedCommand={runIncidentInlineCommand}
+                />
+                </div>
             )}
 
             <CreateWorkspaceModal
@@ -2781,34 +3168,6 @@ export function App() {
                     }}
                 />
             )}
-            <AIModal
-                isOpen={showAIModal}
-                context={aiModalContext}
-                isStreaming={aiIsStreaming}
-                streamContent={aiStreamContent}
-                streamError={aiStreamError}
-                modelId={aiModelId}
-                availableModels={aiAvailableModels}
-                selectedModelId={aiSelectedModelId}
-                contextContract={aiContextContract}
-                onModelChange={(modelId) =>
-                    setAISelectedModelId(normalizeSelectedModelId(modelId))
-                }
-                onClose={() => {
-                    if (!aiIsStreaming) {
-                        aiRequestIdRef.current = 0;
-                        setShowAIModal(false);
-                        setAIStreamContent('');
-                        setAIStreamError(null);
-                        setAIModelId(null);
-                        setAIContextContract(null);
-                        setAIConversationHistory([]);
-                    }
-                }}
-                onCancel={handleAICancelQuery}
-                onQuery={handleAIQuery}
-                onStartNewQuery={handleAIModalNewQuery}
-            />
             <Footer />
         </div>
     );

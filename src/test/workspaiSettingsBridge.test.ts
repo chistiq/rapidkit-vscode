@@ -31,6 +31,8 @@ vi.mock('../core/aiModelSelection.js', () => ({
 import {
   openWorkspaiExtensionSettings,
   readWorkspaiSettings,
+  setWorkspaiAIProvider,
+  setWorkspaiCustomAIConfig,
   setWorkspaiPreferredModel,
 } from '../core/workspaiSettingsBridge.js';
 
@@ -46,6 +48,12 @@ describe('workspaiSettingsBridge', () => {
       }
       if (key === 'aiStreamTimeoutMs') {
         return 45_000;
+      }
+      if (key === 'aiProvider') {
+        return 'vscode-lm';
+      }
+      if (key === 'customAIBaseUrl' || key === 'customAIModel') {
+        return '';
       }
       return defaultValue;
     });
@@ -65,12 +73,24 @@ describe('workspaiSettingsBridge', () => {
       if (key === 'aiStreamTimeoutMs') {
         return 60_000;
       }
+      if (key === 'aiProvider') {
+        return 'openai-compatible';
+      }
+      if (key === 'customAIBaseUrl') {
+        return 'https://api.example.test/v1';
+      }
+      if (key === 'customAIModel') {
+        return 'enterprise-model';
+      }
       return defaultValue;
     });
 
     expect(readWorkspaiSettings()).toEqual({
       preferredModel: 'gpt-5.2',
       aiStreamTimeoutMs: 60_000,
+      aiProvider: 'openai-compatible',
+      customAIBaseUrl: 'https://api.example.test/v1',
+      customAIModel: 'enterprise-model',
     });
   });
 
@@ -79,6 +99,18 @@ describe('workspaiSettingsBridge', () => {
 
     expect(mockUpdate).toHaveBeenCalledWith('preferredModel', 'claude-sonnet-4-6', 1);
     expect(mockResetModelSelectionCache).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists custom AI provider settings', async () => {
+    await setWorkspaiAIProvider('openai-compatible');
+    await setWorkspaiCustomAIConfig({
+      baseUrl: ' https://api.example.test/v1 ',
+      model: ' enterprise-model ',
+    });
+
+    expect(mockUpdate).toHaveBeenCalledWith('aiProvider', 'openai-compatible', 1);
+    expect(mockUpdate).toHaveBeenCalledWith('customAIBaseUrl', 'https://api.example.test/v1', 1);
+    expect(mockUpdate).toHaveBeenCalledWith('customAIModel', 'enterprise-model', 1);
   });
 
   it('opens filtered Workspai extension settings', async () => {

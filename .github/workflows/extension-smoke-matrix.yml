@@ -53,6 +53,18 @@ jobs:
       - name: Shared parity contract snapshot
         run: npm run test:parity-contract
 
+      - name: Checkout workspai-front for claim parity
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/workspai-front
+          path: workspai-front
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Website ↔ extension claim parity
+        env:
+          WORKSPAI_FRONT_PATH: ${{ github.workspace }}/workspai-front
+        run: npm run test:claim-parity
+
       - name: Stabilization debt budget
         run: npm run stabilization:debt-budget
 

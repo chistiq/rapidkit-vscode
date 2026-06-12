@@ -20,6 +20,7 @@ import {
   verifyWorkspaceArchive,
   WORKSPACE_ARCHIVE_MANIFEST_PATH,
 } from '../../utils/workspaceArchive';
+import { WelcomePanel } from '../panels/welcomePanel';
 
 const WATCHER_REFRESH_DEBOUNCE_MS = 250;
 
@@ -290,6 +291,16 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
       const workspace = await this.workspaceManager.addWorkspace(result[0].fsPath);
       if (workspace) {
         await this.refresh();
+        const context = (globalThis as { extensionContext?: vscode.ExtensionContext })
+          .extensionContext;
+        if (context) {
+          void WelcomePanel.notifyWorkspaceGovernanceChain(
+            workspace.path,
+            workspace.name,
+            'add',
+            context
+          );
+        }
         vscode.window.showInformationMessage(
           `Workspace "${workspace.name}" added successfully!`,
           'OK'

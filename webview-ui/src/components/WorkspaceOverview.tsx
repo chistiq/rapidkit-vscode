@@ -9,6 +9,7 @@ import {
   Package,
   Rocket,
   Shield,
+  Sparkles,
 } from 'lucide-react';
 import type { ModuleData, WorkspaceStatus } from '@/types';
 
@@ -88,7 +89,7 @@ export function WorkspaceOverview({
   ];
 
   return (
-    <section className="workspace-overview" aria-label="Workspace overview">
+    <section className="ws-overview-shell workspace-overview" aria-label="Workspace overview">
       <div className="workspace-overview-title">
         <div className="workspace-overview-heading">
           <CheckCircle2 size={14} />
@@ -100,15 +101,25 @@ export function WorkspaceOverview({
         <div className="workspace-overview-actions">
           <button
             type="button"
+            className="ws-btn ws-btn--primary workspace-overview-actions__create-ai"
             onClick={isCreatingWorkspace ? undefined : onCreateWorkspace}
             aria-busy={isCreatingWorkspace}
-            title="Create a workspace with AI"
+            title="Plan and create a new workspace with AI guidance"
           >
-            {isCreatingWorkspace ? <Loader2 className="spinning" size={13} /> : <Rocket size={13} />}
+            {isCreatingWorkspace ? (
+              <Loader2 className="spinning" size={14} aria-hidden="true" />
+            ) : (
+              <Sparkles size={14} aria-hidden="true" />
+            )}
             Create with AI
           </button>
-          <button type="button" onClick={onImportWorkspace} title="Import an existing workspace">
-            <Download size={13} />
+          <button
+            type="button"
+            className="ws-btn ws-btn--ghost workspace-overview-actions__import"
+            onClick={onImportWorkspace}
+            title="Import an existing workspace"
+          >
+            <Download size={14} aria-hidden="true" />
             Import
           </button>
         </div>
@@ -119,7 +130,7 @@ export function WorkspaceOverview({
           return (
             <div
               key={metric.label}
-              className={`workspace-metric workspace-metric--${metric.state}`}
+              className={`ws-metric workspace-metric workspace-metric--${metric.state}`}
             >
               <Icon size={15} />
               <span>

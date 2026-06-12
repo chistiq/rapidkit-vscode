@@ -1,0 +1,1372 @@
+/**
+ * Workspai component primitives — canonical ws-* vocabulary.
+ * Legacy classes (spc-*, modal-*, workspai-empty-state) alias here for gradual migration.
+ * Load after workspai-tokens.css and styles-tailwind.css so token-aligned rules win.
+ */
+
+/* ─── Kicker / section label ─────────────────────────────────────────────── */
+
+.ws-kicker,
+.enterprise-modal__kicker,
+.spc-hero-eyebrow {
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--ws-text-muted);
+}
+
+/* ─── Button ─────────────────────────────────────────────────────────────── */
+
+.ws-btn,
+.spc-btn,
+.workspai-empty-state__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ws-space-xs);
+  min-height: 28px;
+  padding: 7px 11px;
+  border: 1px solid var(--ws-border-subtle);
+  border-radius: var(--ws-radius-md);
+  background: transparent;
+  color: var(--ws-text);
+  font-family: var(--ws-font-ui);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.ws-btn:hover:not(:disabled),
+.spc-btn:hover:not(:disabled),
+.workspai-empty-state__action:hover {
+  border-color: color-mix(in srgb, var(--ws-accent) 38%, var(--ws-border-subtle));
+  background: color-mix(in srgb, var(--ws-accent) 8%, transparent);
+  color: var(--ws-text);
+  transform: none;
+  filter: none;
+}
+
+.ws-btn:focus-visible,
+.spc-btn:focus-visible,
+.workspai-empty-state__action:focus-visible {
+  outline: none;
+  border-color: var(--ws-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ws-focus) 28%, transparent);
+}
+
+.ws-btn:disabled,
+.spc-btn:disabled,
+.workspai-empty-state__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ws-btn--primary,
+.spc-btn.primary,
+.workspai-empty-state__action--primary {
+  border-color: color-mix(in srgb, var(--ws-accent) 42%, transparent);
+  background: color-mix(in srgb, var(--ws-accent) 14%, transparent);
+  color: var(--ws-accent);
+}
+
+.ws-btn--primary:hover:not(:disabled),
+.spc-btn.primary:hover:not(:disabled),
+.workspai-empty-state__action--primary:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ws-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--ws-accent) 22%, transparent);
+  color: var(--ws-accent);
+  filter: none;
+  transform: none;
+}
+
+.ws-btn--ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+.ws-btn--ghost:hover:not(:disabled) {
+  border-color: var(--ws-border-subtle);
+  background: var(--ws-surface-hover);
+}
+
+.ws-btn--danger {
+  border-color: color-mix(in srgb, var(--ws-error) 35%, transparent);
+  color: var(--ws-error);
+}
+
+.ws-btn--danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ws-error) 50%, transparent);
+  background: color-mix(in srgb, var(--ws-error) 12%, transparent);
+}
+
+.ws-btn--warn {
+  border-color: color-mix(in srgb, var(--ws-warn) 42%, transparent);
+  background: color-mix(in srgb, var(--ws-warn) 14%, transparent);
+  color: var(--ws-warn);
+}
+
+.ws-btn--warn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ws-warn) 55%, transparent);
+  background: color-mix(in srgb, var(--ws-warn) 22%, transparent);
+  color: var(--ws-warn);
+}
+
+.ws-btn--icon {
+  min-height: 26px;
+  min-width: 26px;
+  padding: 4px 6px;
+}
+
+.ws-btn.is-installed:disabled {
+  border-color: color-mix(in srgb, var(--ws-success) 40%, transparent);
+  background: color-mix(in srgb, var(--ws-success) 12%, transparent);
+  color: var(--ws-success);
+  opacity: 1;
+  cursor: default;
+}
+
+.refresh-btn.ws-btn--ghost {
+  min-height: 26px;
+  min-width: 26px;
+  margin-left: auto;
+  padding: 6px;
+}
+
+.ws-chip.is-active,
+.ws-chip--active {
+  border-color: color-mix(in srgb, var(--ws-accent) 42%, var(--ws-border-subtle));
+  background: color-mix(in srgb, var(--ws-accent) 12%, transparent);
+  color: var(--ws-accent);
+}
+
+.ws-tag {
+  border: 1px solid var(--ws-border-subtle);
+  border-radius: var(--ws-radius-sm);
+  background: color-mix(in srgb, var(--ws-surface-raised) 70%, transparent);
+  color: var(--ws-text-muted);
+}
+
+.ws-tag--version {
+  background: color-mix(in srgb, var(--ws-surface-raised) 85%, transparent);
+  color: var(--ws-text-muted);
+}
+
+.ws-tag--projects {
+  color: var(--ws-text-muted);
+}
+
+.ws-tag--danger {
+  border-color: color-mix(in srgb, var(--ws-error) 35%, transparent);
+  background: color-mix(in srgb, var(--ws-error) 10%, transparent);
+  color: var(--ws-error);
+}
+
+.ws-tag--profile {
+  border-color: color-mix(in srgb, var(--ws-accent) 30%, transparent);
+  color: var(--ws-accent);
+}
+
+.ws-show-more-btn.ws-btn {
+  width: 100%;
+  margin-top: 4px;
+}
+
+/* ─── Card ───────────────────────────────────────────────────────────────── */
+
+.ws-card,
+.spc-panel-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ws-space-sm);
+  padding: var(--ws-space-md);
+  border: 1px solid var(--ws-border-subtle);
+  border-radius: var(--ws-radius-lg);
+  background: color-mix(in srgb, var(--ws-surface-raised) 88%, transparent);
+  color: var(--ws-text);
+}
+
+.ws-card--raised {
+  background: var(--ws-surface-raised);
+  border-color: var(--ws-border);
+}
+
+.ws-card:hover {
+  border-color: color-mix(in srgb, var(--ws-accent) 22%, var(--ws-border-subtle));
+}
+
+/* ─── Chip / badge ───────────────────────────────────────────────────────── */
+
+.ws-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 20px;
+  padding: 2px 8px;
+  border: 1px solid var(--ws-border-subtle);
+  border-radius: var(--ws-radius-sm);
+  background: color-mix(in srgb, var(--ws-surface-raised) 70%, transparent);
+  color: var(--ws-text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.ws-chip--success {
+  border-color: color-mix(in srgb, var(--ws-success) 35%, transparent);
+  background: color-mix(in srgb, var(--ws-success) 12%, transparent);
+  color: var(--ws-success);
+}
+
+.ws-chip--warn {
+  border-color: color-mix(in srgb, var(--ws-warn) 35%, transparent);
+  background: color-mix(in srgb, var(--ws-warn) 12%, transparent);
+  color: var(--ws-warn);
+}
+
+.ws-chip--error {
+  border-color: color-mix(in srgb, var(--ws-error) 35%, transparent);
+  background: color-mix(in srgb, var(--ws-error) 12%, transparent);
+  color: var(--ws-error);
+}
+
+.ws-chip--muted {
+  color: var(--ws-text-subtle);
+}
+
+.ws-chip--accent {
+  border-color: color-mix(in srgb, var(--ws-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--ws-accent) 10%, transparent);
+  color: var(--ws-accent);
+}
+
+.ws-chip--primary {
+  border-color: color-mix(in srgb, var(--ws-primary) 35%, transparent);
+  background: color-mix(in srgb, var(--ws-primary) 10%, transparent);
+  color: var(--ws-primary);
+}
+
+/* ─── Form field ─────────────────────────────────────────────────────────── */
+
+.ws-field,
+.modal-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.ws-field--wide,
+.modal-field--wide {
+  grid-column: 1 / -1;
+}
+
+.ws-field__label,
+.modal-field > span:first-child {
+  color: var(--ws-text-muted);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.ws-field__control,
+.modal-field input,
+.modal-field select,
+.modal-field textarea {
+  width: 100%;
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-radius-sm);
+  background: var(--ws-surface-input);
+  color: var(--ws-text);
+  font-family: var(--ws-font-ui);
+  font-size: var(--ws-font-size);
+  line-height: 1.4;
+  outline: none;
+  padding: 9px 10px;
+}
+
+.ws-field__control:focus,
+.modal-field input:focus,
+.modal-field select:focus,
+.modal-field textarea:focus {
+  border-color: var(--ws-focus);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ws-focus) 34%, transparent);
+}
+
+.ws-field__hint,
+.modal-field__hint {
+  color: var(--ws-text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.ws-field__error,
+.modal-field__error {
+  color: var(--ws-error);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+/* ─── Empty state ────────────────────────────────────────────────────────── */
+
+.ws-empty,
+.workspai-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ws-space-sm);
+  padding: var(--ws-space-xl) var(--ws-space-lg);
+  border: 1px dashed var(--ws-border-subtle);
+  border-radius: var(--ws-radius-lg);
+  background: color-mix(in srgb, var(--ws-surface-raised) 40%, transparent);
+  text-align: center;
+}
+
+.ws-empty__icon,
+.workspai-empty-state__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ws-text-muted);
+}
+
+.ws-empty__title,
+.workspai-empty-state__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 750;
+  color: var(--ws-text);
+}
+
+.ws-empty__desc,
+.workspai-empty-state__desc {
+  max-width: 36ch;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ws-text-muted);
+}
+
+.ws-empty__actions,
+.workspai-empty-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--ws-space-sm);
+  margin-top: var(--ws-space-xs);
+}
+
+.ws-empty--muted,
+.workspai-empty-state--muted {
+  opacity: 0.88;
+}
+
+/* ─── Focus utility ──────────────────────────────────────────────────────── */
+
+.ws-focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ws-focus) 32%, transparent);
+}
+
+/* ─── Embedded tab shell ─────────────────────────────────────────────────── */
+
+.ws-embedded-host,
+.setup-embedded-host,
+.studio-embedded-host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: calc(100vh - 52px);
+  overflow: auto;
+  margin: 0 -4px;
+}
+
+/* ─── Setup surface shell (Epic 5 migration) ─────────────────────────────── */
+
+.ws-setup-shell,
+.spc-shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ws-space-lg);
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: var(--ws-space-xl);
+  color: var(--ws-text);
+}
+
+.ws-setup-shell--embedded,
+.spc-shell--embedded {
+  gap: var(--ws-space-md);
+  width: 100%;
+  max-width: none;
+  padding: var(--ws-space-md) var(--ws-space-lg) var(--ws-space-xl);
+}
+
+.ws-setup-hero--embedded,
+.spc-hero--embedded {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--ws-space-lg);
+  padding: var(--ws-space-md) var(--ws-space-lg);
+  border: 1px solid var(--ws-border-subtle);
+  border-radius: var(--ws-radius-xl);
+  background: color-mix(in srgb, var(--ws-surface-raised) 42%, transparent);
+}
+
+.ws-setup-hero-desc--embedded,
+.spc-hero-desc--embedded {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ws-text-muted);
+}
+
+.ws-setup-topbar--embedded,
+.spc-topbar--embedded {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ws-space-sm);
+  padding: 0 2px var(--ws-space-xs);
+  border-bottom: 1px solid var(--ws-border-subtle);
+}
+
+.ws-setup-topbar-title,
+.spc-topbar-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--ws-text);
+}
+
+.workspai-settings-kicker {
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--ws-text-muted);
+}
+
+.spc-score-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--ws-accent);
+}
+
+.spc-input,
+.spc-select {
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-radius-sm);
+  background: var(--ws-surface-input);
+  color: var(--ws-text);
+  font-family: var(--ws-font-ui);
+  font-size: var(--ws-font-size);
+}
+
+.spc-input:focus,
+.spc-select:focus {
+  outline: none;
+  border-color: var(--ws-focus);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ws-focus) 34%, transparent);
+}
+
+/* ─── Settings surface (Epic 5.2) ────────────────────────────────────────── */
+
+.ws-settings-shell,
+.workspai-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ws-space-md);
+  max-width: 920px;
+  padding: var(--ws-space-md) var(--ws-space-lg) var(--ws-space-xl);
+  color: var(--ws-text);
+}
+
+.ws-settings-header,
+.workspai-settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ws-space-md);
+}
+
+.ws-settings-title,
+.workspai-settings-title {
+  margin: 4px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ws-text);
+}
+
+.ws-settings-subtitle,
+.workspai-settings-subtitle {
+  margin: 6px 0 0;
+  max-width: 56ch;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ws-text-muted);
+}
+
+.ws-settings-grid,
+.workspai-settings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--ws-space-md);
+}
+
+.ws-settings-card,
+.workspai-settings-card {
+  gap: var(--ws-space-md);
+}
+
+.ws-settings-card--muted,
+.workspai-settings-card--muted {
+  background: color-mix(in srgb, var(--ws-surface-raised) 72%, transparent);
+}
+
+.ws-settings-card-head,
+.workspai-settings-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--ws-text);
+}
+
+.ws-settings-card-head h3,
+.workspai-settings-card-head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ws-settings-card-head p,
+.workspai-settings-card-head p {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ws-text-muted);
+}
+
+.workspai-settings-field > span:first-child,
+.ws-field > .ws-field__label,
+.ws-field > span:first-child {
+  color: var(--ws-text-muted);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.workspai-settings-field select,
+.workspai-settings-field input,
+.ws-field__control,
+.ws-field select,
+.ws-field input {
+  width: 100%;
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-radius-sm);
+  background: var(--ws-surface-input);
+  color: var(--ws-text);
+  font-family: var(--ws-font-ui);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 8px 10px;
+}
+
+.workspai-settings-field select:focus,
+.workspai-settings-field input:focus,
+.ws-field select:focus,
+.ws-field input:focus {
+  outline: none;
+  border-color: var(--ws-focus);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ws-focus) 34%, transparent);
+}
+
+.workspai-settings-field small,
+.ws-field__hint {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--ws-text-muted);
+}
+
+.ws-settings-row,
+.workspai-settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ws-settings-meta,
+.workspai-settings-meta {
+  font-size: 10px;
+  color: var(--ws-text-muted);
+}
+
+.ws-settings-model-list,
+.workspai-settings-model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.ws-settings-model-row,
+.workspai-settings-model-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1.4fr);
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--ws-border-subtle);
+  border-radius: var(--ws-radius-md);
+  font-size: 11px;
+}
+
+.ws-settings-model-row strong,
+.workspai-settings-model-row strong {
+  color: var(--ws-text);
+}
+
+.ws-settings-model-row span,
+.workspai-settings-model-row span,
+.ws-settings-model-row code,
+.workspai-settings-model-row code {
+  color: var(--ws-text-muted);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── Dashboard chrome (Epic 5.3 start) ──────────────────────────────────── */
+
+.dashboard-next-step-rail {
+  border-color: var(--ws-border-subtle);
+  border-radius: var(--ws-radius-lg);
+  background: color-mix(in srgb, var(--ws-accent) 6%, transparent);
+}
+
+.dashboard-next-step-rail__title {
+  color: var(--ws-text);
+}
+
+.dashboard-next-step-rail__meta {
+  color: var(--ws-text-muted);
+}
+
+.dashboard-next-step-rail__item {
+  border-color: var(--ws-border-subtle);
+  border-radius: var(--ws-radius-md);
+  background: var(--ws-surface);
+  color: var(--ws-text);
+}
+
+.dashboard-next-step-rail__item:hover {
+  border-color: var(--ws-focus);
+  background: var(--ws-surface-hover);
+}
+
+.dashboard-next-step-rail__item--critical {
+  border-color: color-mix(in srgb, var(--ws-warn) 45%, var(--ws-border-subtle));
+}
+
+.dashboard-next-step-rail__item-copy small {
+  color: var(--ws-text-muted);
+}
+
+.dashboard-next-step-rail__action-hint {
+  color: color-mix(in srgb, var(--ws-accent) 70%, var(--ws-text-muted));
+}
+
+.workspai-section-scope--workspace {
+  border-color: color-mix(in srgb, var(--ws-accent) 35%, transparent);
+  color: var(--ws-accent);
+}
+
+.workspai-section-scope--project {
+  border-color: color-mix(in srgb, var(--ws-primary) 35%, transparent);
+  color: var(--ws-primary);
+}
+
+.workspai-section-scope--catalog {
+  border-color: color-mix(in srgb, var(--ws-border) 80%, transparent);
+  color: var(--ws-text-muted);
+}
+
+/* ─── Onboarding + Overview (Epic 5.4–5.5) ─────────────────────────────────── */
+
+.ws-onboarding-shell,
+.fresh-install-onboarding {
+  border-color: var(--ws-border-subtle);
+  border-radius: var(--ws-radius-lg);
+  background: color-mix(in srgb, var(--ws-accent) 8%, transparent);
+}
+
+.fresh-install-onboarding__hero h2 {
+  color: var(--ws-text);
+}
+
+.fresh-install-onboarding__hero p {
+  color: var(--ws-text-muted);
+}
+
+.ws-onboarding-card,
+.fresh-install-onboarding__card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--ws-space-sm);
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--ws-border-subtle);
+  border-radius: var(--ws-radius-md);
+  background: var(--ws-surface);
+  color: var(--ws-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-onboarding-card:hover,
+.fresh-install-onboarding__card:hover {
+  border-color: var(--ws-focus);
+  background: var(--ws-surface-hover);
+}
+
+.ws-onboarding-card--primary,
+.fresh-install-onboarding__card--primary {
+  border-color: color-mix(in srgb, var(--ws-accent) 42%, var(--ws-border-subtle));
+  background: color-mix(in srgb, var(--ws-accent) 8%, var(--ws-surface));
+}
+
+.fresh-install-onboarding__card-copy small {
+  color: var(--ws-text-muted);
+}
+
+.ws-overview-shell,
+.workspace-overview {
+  border-color: var(--ws-border-subtle);
+  border-radius: var(--ws-radius-md);
+  background: color-mix(in srgb, var(--ws-surface-raised) 40%, transparent);
+  color: var(--ws-text);
+}
+
+.workspace-overview-title,
+.workspace-overview-heading {
+  color: var(--ws-text);
+}
+
+.workspace-overview-title small {
+  color: var(--ws-text-muted);
+}
+
+.workspace-overview-actions__create-ai {
+  border-color: color-mix(in srgb, var(--ws-accent) 42%, transparent) !important;
+  background: color-mix(in srgb, var(--ws-accent) 14%, transparent) !important;
+  color: var(--ws-accent) !important;
+  box-shadow: none !important;
+}
+
+.workspace-overview-actions__create-ai:hover {
+  border-color: color-mix(in srgb, var(--ws-accent) 55%, transparent) !important;
+  background: color-mix(in srgb, var(--ws-accent) 22%, transparent) !important;
+}
+
+.ws-metric,
+.workspace-metric {
+  border-color: var(--ws-border-subtle);
+  border-radius: var(--ws-radius-sm);
+  background: color-mix(in srgb, var(--ws-surface-raised) 50%, transparent);
+}
+
+.workspace-metric--ready {
+  border-color: color-mix(in srgb, var(--ws-accent) 30%, var(--ws-border-subtle));
+}
+
+.workspace-metric svg {
+  color: var(--ws-text-muted);
+}
+
+.workspace-metric small {
+  color: var(--ws-text-muted);
+}
+
+.workspace-metric strong {
+  color: var(--ws-text);
+}
+
+.workspace-metric em {
+  color: var(--ws-text-muted);
+}
+
+.workspace-overview-note {
+  border-top-color: var(--ws-border-subtle);
+  color: var(--ws-text-muted);
+}
+
+/* ─── Evidence surfaces ──────────────────────────────────────────────────── */
+
+.command-activity-panel,
+.evidence-outcome-panel,
+.dashboard-evidence-layout .release-hub {
+  border-color: var(--ws-border-subtle);
+  border-radius: var(--ws-radius-lg);
+  background: color-mix(in srgb, var(--ws-surface-raised) 55%, transparent);
+}
+
+.command-activity-panel__title,
+.evidence-outcome-panel__title {
+  color: var(--ws-text);
+}
+
+.command-activity-panel__meta,
+.evidence-outcome-panel__meta {
+  color: var(--ws-text-muted);
+}
+
+.command-activity-panel__card,
+.evidence-outcome-panel__item {
+  border-color: var(--ws-border-subtle);
+  border-radius: var(--ws-radius-md);
+  background: var(--ws-surface);
+  color: var(--ws-text);
+}
+
+.command-activity-panel__card--pass {
+  border-color: color-mix(in srgb, var(--ws-success) 40%, var(--ws-border-subtle));
+}
+
+.command-activity-panel__card--warn,
+.evidence-outcome-panel__item--warn {
+  border-color: color-mix(in srgb, var(--ws-warn) 40%, var(--ws-border-subtle));
+}
+
+.command-activity-panel__card--fail,
+.evidence-outcome-panel__item--fail {
+  border-color: color-mix(in srgb, var(--ws-error) 40%, var(--ws-border-subtle));
+}
+
+.command-activity-panel__card-copy small,
+.evidence-outcome-panel__summary,
+.evidence-outcome-panel__blockers {
+  color: var(--ws-text-muted);
+}
+
+.command-activity-panel__activity-chip {
+  border-color: var(--ws-border-subtle);
+  background: color-mix(in srgb, var(--ws-surface-raised) 70%, transparent);
+  color: var(--ws-text);
+}
+
+.command-activity-panel__activity-meta,
+.command-activity-panel__activity-repeat {
+  color: var(--ws-text-muted);
+}
+
+/* ─── Operate + Catalog + Console (Epic 5.6–5.9) ─────────────────────────── */
+
+.ops-chain-banner {
+  border-color: var(--ws-border-subtle);
+  border-radius: var(--ws-radius-lg);
+  background: color-mix(in srgb, var(--ws-accent) 8%, transparent);
+}
+
+.ops-chain-banner--blocked {
+  border-color: color-mix(in srgb, var(--ws-error) 40%, var(--ws-border-subtle));
+}
+
+.ops-chain-banner__copy strong {
+  color: var(--ws-text);
+}
+
+.ops-chain-banner__copy small {
+  color: var(--ws-text-muted);
+}
+
+.ops-chain-banner__step {
+  border-color: var(--ws-border-subtle);
+  background: color-mix(in srgb, var(--ws-surface-raised) 55%, transparent);
+  color: var(--ws-text);
+}
+
+.ops-chain-banner__step.is-complete {
+  border-color: color-mix(in srgb, var(--ws-success) 40%, var(--ws-border-subtle));
+}
+
+.ops-chain-banner__step.is-current {
+  border-color: color-mix(in srgb, var(--ws-accent) 42%, var(--ws-border-subtle));
+}
+
+.ops-chain-banner__step.is-blocked {
+  border-color: color-mix(in srgb, var(--ws-error) 40%, var(--ws-border-subtle));
+}
+
+.ops-chain-banner__footer {
+  color: var(--ws-text-muted);
+}
+
+.ops-chain-banner__link.ws-btn {
+  display: inline-flex;
+  min-height: 22px;
+  padding: 2px 6px;
+  font-size: 10px;
+}
+
+.enterprise-flow {
+  border-color: var(--ws-border-subtle);
+}
+
+.enterprise-flow-title {
+  color: var(--ws-text);
+}
+
+.enterprise-flow-subtitle {
+  color: var(--ws-text-muted);
+}
+
+.enterprise-flow-status {
+  border-color: var(--ws-border-subtle);
+  color: var(--ws-text-muted);
+}
+
+.workspai-action-tile,
+.ws-action-tile {
+  border-color: var(--ws-border-subtle);
+  border-radius: var(--ws-radius-md);
+  background: var(--ws-surface);
+  color: var(--ws-text);
+}
+
+.workspai-action-tile:hover:not(:disabled),
+.ws-action-tile:hover:not(:disabled) {
+  border-color: var(--ws-focus);
+  background: var(--ws-surface-hover);
+}
+
+.workspai-action-tile__copy small {
+  color: var(--ws-text-muted);
+}
+
+.workspai-action-tile--primary,
+.workspai-action-tile--builder {
+  border-color: color-mix(in srgb, var(--ws-accent) 38%, var(--ws-border-subtle));
+  background: color-mix(in srgb, var(--ws-accent) 8%, var(--ws-surface));
+}
+
+.workspai-action-tile--danger {
+  border-color: color-mix(in srgb, var(--ws-error) 35%, var(--ws-border-subtle));
+}
+
+.workspai-action-tile--warn {
+  border-color: color-mix(in srgb, var(--ws-warn) 35%, var(--ws-border-subtle));
+}
+
+.module-browser .module-card,
+.example-card.ws-card {
+  border-color: var(--ws-border-subtle);
+  border-radius: var(--ws-radius-md);
+  background: var(--ws-surface);
+}
+
+.module-browser .module-card:hover {
+  border-color: color-mix(in srgb, var(--ws-accent) 28%, var(--ws-border-subtle));
+  background: var(--ws-surface-hover);
+}
+
+.module-browser .module-card.installed {
+  border-color: color-mix(in srgb, var(--ws-success) 30%, var(--ws-border-subtle));
+}
+
+.module-browser .module-install-btn.ws-btn {
+  flex: 1;
+  min-width: 0;
+  background: color-mix(in srgb, var(--ws-accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--ws-accent) 42%, transparent);
+  color: var(--ws-accent);
+  box-shadow: none;
+  transform: none;
+}
+
+.module-browser .module-install-btn.ws-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ws-accent) 22%, transparent);
+  transform: none;
+}
+
+.module-browser .module-action-btn.ws-btn {
+  flex-shrink: 0;
+}
+
+.module-search {
+  border-color: var(--ws-border);
+  border-radius: var(--ws-radius-sm);
+  background: var(--ws-surface-input);
+  color: var(--ws-text);
+}
+
+.workspace-warning {
+  border-color: color-mix(in srgb, var(--ws-warn) 35%, var(--ws-border-subtle));
+  border-radius: var(--ws-radius-md);
+  background: color-mix(in srgb, var(--ws-warn) 8%, transparent);
+}
+
+.workspace-warning--info {
+  border-color: color-mix(in srgb, var(--ws-accent) 30%, var(--ws-border-subtle));
+  background: color-mix(in srgb, var(--ws-accent) 8%, transparent);
+}
+
+.workspace-warning .warning-title {
+  color: var(--ws-text);
+}
+
+.workspace-warning .warning-desc {
+  color: var(--ws-text-muted);
+}
+
+.module-catalog-runtime-banner {
+  border-color: var(--ws-border-subtle);
+  border-radius: var(--ws-radius-md);
+  background: color-mix(in srgb, var(--ws-accent) 8%, transparent);
+  color: var(--ws-text-muted);
+}
+
+.module-catalog-runtime-banner--warn {
+  border-color: color-mix(in srgb, var(--ws-warn) 35%, var(--ws-border-subtle));
+  background: color-mix(in srgb, var(--ws-warn) 8%, transparent);
+}
+
+.workspace-info-box {
+  border-color: var(--ws-border-subtle);
+  border-radius: var(--ws-radius-md);
+  background: color-mix(in srgb, var(--ws-surface-raised) 50%, transparent);
+}
+
+.workspace-name-info {
+  color: var(--ws-text);
+}
+
+.workspace-path-info {
+  color: var(--ws-text-muted);
+}
+
+.template-empty-state {
+  border-color: var(--ws-border-subtle);
+  border-radius: var(--ws-radius-md);
+  color: var(--ws-text-muted);
+}
+
+.example-card.ws-card:hover {
+  border-color: color-mix(in srgb, var(--ws-accent) 28%, var(--ws-border-subtle));
+}
+
+.example-description,
+.example-project-desc {
+  color: var(--ws-text-muted);
+}
+
+.catalog-loading-shell {
+  border-color: var(--ws-border-subtle);
+  border-radius: var(--ws-radius-md);
+  color: var(--ws-text-muted);
+}
+
+.catalog-skeleton-card {
+  border-color: var(--ws-border-subtle);
+  background: color-mix(in srgb, var(--ws-surface-raised) 60%, transparent);
+}
+
+.workspace-governance-panel {
+  border-color: var(--ws-border-subtle);
+}
+
+.dashboard-operate-layout {
+  gap: var(--ws-space-md);
+}
+
+.module-browser-footer button.ws-btn {
+  min-height: 24px;
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.example-footer button.ws-btn {
+  min-height: 24px;
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+/* ─── Enterprise modal + AI assist (Epic 6) ────────────────────────────────── */
+
+.enterprise-modal {
+  border-color: var(--ws-border-subtle);
+  border-radius: var(--ws-radius-lg);
+  background: var(--ws-surface);
+  color: var(--ws-text);
+}
+
+.enterprise-modal-backdrop {
+  background: color-mix(in srgb, var(--ws-surface) 20%, transparent);
+}
+
+.enterprise-modal__title {
+  color: var(--ws-text);
+}
+
+.enterprise-modal__subtitle {
+  color: var(--ws-text-muted);
+}
+
+.enterprise-modal__body {
+  border-top-color: var(--ws-border-subtle);
+}
+
+.enterprise-modal__footer {
+  border-top-color: var(--ws-border-subtle);
+  background: color-mix(in srgb, var(--ws-surface-raised) 40%, transparent);
+}
+
+.enterprise-modal-notice {
+  border-radius: var(--ws-radius-md);
+}
+
+.enterprise-modal-notice--info {
+  border-color: color-mix(in srgb, var(--ws-accent) 30%, var(--ws-border-subtle));
+  background: color-mix(in srgb, var(--ws-accent) 8%, transparent);
+  color: var(--ws-text);
+}
+
+.enterprise-modal-notice--warning {
+  border-color: color-mix(in srgb, var(--ws-warn) 35%, var(--ws-border-subtle));
+  background: color-mix(in srgb, var(--ws-warn) 8%, transparent);
+  color: var(--ws-text);
+}
+
+.enterprise-modal-notice--danger {
+  border-color: color-mix(in srgb, var(--ws-error) 35%, var(--ws-border-subtle));
+  background: color-mix(in srgb, var(--ws-error) 8%, transparent);
+  color: var(--ws-text);
+}
+
+.ai-modal-body,
+.ai-create-body {
+  display: grid;
+  gap: var(--ws-space-sm);
+}
+
+.ai-modal-tabs,
+.ai-modal-contract-strip,
+.ai-modal-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-modal-response {
+  border: 1px solid var(--ws-border-subtle);
+  border-radius: var(--ws-radius-md);
+  background: color-mix(in srgb, var(--ws-surface-raised) 55%, transparent);
+  color: var(--ws-text);
+}
+
+.ai-modal-input-area {
+  display: grid;
+  gap: var(--ws-space-xs);
+  width: 100%;
+}
+
+.ai-modal-input-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ws-space-sm);
+}
+
+.ai-create-pill {
+  border-color: color-mix(in srgb, var(--ws-accent) 40%, var(--ws-border-subtle));
+  background: var(--ws-surface);
+  color: var(--ws-text);
+}
+
+/* ─── Context assist side panel (Wave H) ───────────────────────────────────── */
+
+.ws-dashboard-shell {
+  display: block;
+}
+
+.ws-dashboard-shell--assist-open {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) min(380px, 38vw);
+  gap: var(--ws-space-md);
+  align-items: start;
+}
+
+.ws-dashboard-shell__main {
+  min-width: 0;
+}
+
+.ws-assist-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 0;
+  min-height: min(72vh, 720px);
+  max-height: calc(100vh - 120px);
+  position: sticky;
+  top: 8px;
+  border: 1px solid var(--ws-border-subtle);
+  border-radius: var(--ws-radius-lg);
+  background: var(--ws-surface);
+  color: var(--ws-text);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ws-surface) 30%, transparent);
+}
+
+.ws-assist-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ws-space-sm);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ws-border-subtle);
+  background: color-mix(in srgb, var(--ws-surface-raised) 45%, transparent);
+}
+
+.ws-assist-panel__title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ws-text);
+  line-height: 1.25;
+}
+
+.ws-assist-panel__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.ws-assist-panel__header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.ws-assist-panel__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ws-border-subtle);
+}
+
+.ws-assist-panel__tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ws-assist-panel__studio-link {
+  min-height: 24px;
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.ws-assist-panel__body {
+  display: grid;
+  gap: var(--ws-space-sm);
+  align-content: start;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px;
+}
+
+.ws-assist-panel__contract,
+.ws-assist-panel__prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ws-assist-panel__prompt {
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.35;
+}
+
+.ws-assist-panel__notice {
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--ws-accent) 28%, var(--ws-border-subtle));
+  border-radius: var(--ws-radius-md);
+  background: color-mix(in srgb, var(--ws-accent) 8%, transparent);
+  color: var(--ws-text-muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.ws-assist-panel__response {
+  border: 1px solid var(--ws-border-subtle);
+  border-radius: var(--ws-radius-md);
+  background: color-mix(in srgb, var(--ws-surface-raised) 55%, transparent);
+  padding: 8px 10px;
+  max-height: min(42vh, 420px);
+  overflow: auto;
+}
+
+.ws-assist-panel__error {
+  color: var(--ws-error);
+  font-size: 11px;
+}
+
+.ws-assist-panel__footer {
+  display: grid;
+  gap: var(--ws-space-xs);
+  padding: 10px 12px;
+  border-top: 1px solid var(--ws-border-subtle);
+  background: color-mix(in srgb, var(--ws-surface-raised) 40%, transparent);
+}
+
+.ws-assist-panel__input {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.ws-assist-panel__footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ws-space-sm);
+}
+
+@media (max-width: 960px) {
+  .ws-dashboard-shell--assist-open {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ws-assist-panel {
+    position: static;
+    max-height: none;
+    min-height: 420px;
+  }
+}
+

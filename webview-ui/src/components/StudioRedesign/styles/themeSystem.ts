@@ -10,114 +10,104 @@ type ThemeKind = 'light' | 'dark';
 // ─── Dark Theme (default, current system) ──────────────────────────────────
 
 export const darkTheme = {
-  // Base canvas
-  root: '#0B1118',
-  surface1: 'rgba(12, 20, 29, 0.88)',
-  surface2: 'rgba(17, 27, 38, 0.93)',
-  surface3: 'rgba(23, 35, 47, 0.97)',
-  surface4: 'rgba(30, 45, 58, 0.98)',
-  canvas: '#0D141D',
+  root: '#1e1e1e',
+  surface1: 'color-mix(in srgb, #1e1e1e 98%, transparent)',
+  surface2: 'color-mix(in srgb, #252526 92%, transparent)',
+  surface3: 'color-mix(in srgb, #252526 88%, transparent)',
+  surface4: 'color-mix(in srgb, #3c3c3c 82%, transparent)',
+  canvas: '#1e1e1e',
   heroGlow: 'none',
 
-  // Borders & dividers
   border: {
-    subtle: 'rgba(163, 194, 219, 0.12)',
-    medium: 'rgba(163, 194, 219, 0.20)',
-    strong: 'rgba(185, 219, 240, 0.34)',
+    subtle: 'color-mix(in srgb, #3c3c3c 55%, transparent)',
+    medium: 'color-mix(in srgb, #3c3c3c 78%, transparent)',
+    strong: '#3c3c3c',
   },
 
-  // Text
   text: {
-    primary: 'rgba(242, 248, 252, 0.95)',
-    secondary: 'rgba(200, 214, 224, 0.84)',
-    tertiary: 'rgba(155, 175, 189, 0.72)',
-    quaternary: 'rgba(112, 134, 149, 0.76)',
-    // Legacy aliases
-    high: 'rgba(242, 248, 252, 0.95)',
-    medium: 'rgba(200, 214, 224, 0.84)',
-    muted: 'rgba(155, 175, 189, 0.72)',
-    subtle: 'rgba(112, 134, 149, 0.76)',
+    primary: 'rgba(204, 204, 204, 0.96)',
+    secondary: 'rgba(204, 204, 204, 0.82)',
+    tertiary: 'rgba(133, 133, 133, 0.92)',
+    quaternary: 'rgba(133, 133, 133, 0.78)',
+    high: 'rgba(204, 204, 204, 0.96)',
+    medium: 'rgba(204, 204, 204, 0.82)',
+    muted: 'rgba(133, 133, 133, 0.92)',
+    subtle: 'rgba(133, 133, 133, 0.78)',
   },
 
-  // Brand & emphasis
-  primary: '#18B8F2',
-  primaryHover: '#47CBFC',
-  primaryActive: '#0E9ECE',
-  primaryInverse: 'rgba(24, 184, 242, 0.16)',
-  accent: '#6F86F7',
-  accentHover: '#94A4FF',
-  teal: '#11C2DC',
-  tealHover: '#50D2E8',
+  primary: '#00cfc1',
+  primaryHover: '#68e3d7',
+  primaryActive: '#00b3a8',
+  primaryInverse: 'color-mix(in srgb, #00cfc1 11%, transparent)',
+  accent: '#6c5ce7',
+  accentHover: '#8b7cf8',
+  teal: '#00cfc1',
+  tealHover: '#68e3d7',
 
-  success: '#33E199',
-  successBg: 'rgba(51, 225, 153, 0.12)',
-  warning: '#FFC462',
-  warningBg: 'rgba(255, 196, 98, 0.13)',
-  error: '#FF7E7E',
-  errorBg: 'rgba(255, 126, 126, 0.13)',
+  success: '#13c659',
+  successBg: 'color-mix(in srgb, #13c659 14%, transparent)',
+  warning: '#dba617',
+  warningBg: 'color-mix(in srgb, #dba617 16%, transparent)',
+  error: '#f14c4c',
+  errorBg: 'color-mix(in srgb, #f14c4c 14%, transparent)',
 
   health: {
-    ok: '#33E199',
-    warning: '#FFC462',
-    error: '#FF7E7E',
-    unknown: 'rgba(127, 149, 167, 0.60)',
+    ok: '#13c659',
+    warning: '#dba617',
+    error: '#f14c4c',
+    unknown: 'rgba(133, 133, 133, 0.65)',
   },
 };
 
 // ─── Light Theme ───────────────────────────────────────────────────────────
 
 export const lightTheme = {
-  // Base canvas
-  root: '#F7F9FC',
-  surface1: 'rgba(255, 255, 255, 0.98)',
-  surface2: 'rgba(247, 250, 253, 0.98)',
-  surface3: 'rgba(241, 246, 251, 0.97)',
-  surface4: 'rgba(234, 240, 247, 0.95)',
-  canvas: '#F5F8FC',
+  root: '#ffffff',
+  surface1: 'color-mix(in srgb, #ffffff 98%, transparent)',
+  surface2: 'color-mix(in srgb, #f3f3f3 94%, transparent)',
+  surface3: 'color-mix(in srgb, #ececec 90%, transparent)',
+  surface4: 'color-mix(in srgb, #e0e0e0 86%, transparent)',
+  canvas: '#ffffff',
   heroGlow: 'none',
 
-  // Borders & dividers
   border: {
-    subtle: 'rgba(15, 23, 42, 0.09)',
-    medium: 'rgba(15, 23, 42, 0.14)',
-    strong: 'rgba(15, 23, 42, 0.20)',
+    subtle: 'color-mix(in srgb, #cccccc 45%, transparent)',
+    medium: 'color-mix(in srgb, #cccccc 68%, transparent)',
+    strong: '#cccccc',
   },
 
-  // Text
   text: {
-    primary: 'rgba(15, 23, 42, 0.96)',
-    secondary: 'rgba(51, 65, 85, 0.88)',
-    tertiary: 'rgba(100, 116, 139, 0.80)',
-    quaternary: 'rgba(148, 163, 184, 0.76)',
-    // Legacy aliases
-    high: 'rgba(15, 23, 42, 0.96)',
-    medium: 'rgba(51, 65, 85, 0.88)',
-    muted: 'rgba(100, 116, 139, 0.80)',
-    subtle: 'rgba(148, 163, 184, 0.76)',
+    primary: 'rgba(51, 51, 51, 0.96)',
+    secondary: 'rgba(51, 51, 51, 0.82)',
+    tertiary: 'rgba(106, 106, 106, 0.88)',
+    quaternary: 'rgba(106, 106, 106, 0.72)',
+    high: 'rgba(51, 51, 51, 0.96)',
+    medium: 'rgba(51, 51, 51, 0.82)',
+    muted: 'rgba(106, 106, 106, 0.88)',
+    subtle: 'rgba(106, 106, 106, 0.72)',
   },
 
-  // Brand & emphasis
-  primary: '#0A69D1',
-  primaryHover: '#0957AE',
-  primaryActive: '#07498F',
-  primaryInverse: 'rgba(10, 105, 209, 0.10)',
-  accent: '#5158D4',
-  accentHover: '#4147B7',
-  teal: '#0D8AA8',
-  tealHover: '#0FB4D8',
+  primary: '#00a89d',
+  primaryHover: '#008f86',
+  primaryActive: '#007870',
+  primaryInverse: 'color-mix(in srgb, #00a89d 10%, transparent)',
+  accent: '#6c5ce7',
+  accentHover: '#4a3dc4',
+  teal: '#00a89d',
+  tealHover: '#008f86',
 
-  success: '#10B981',
-  successBg: 'rgba(16, 185, 129, 0.10)',
-  warning: '#F59E0B',
-  warningBg: 'rgba(245, 158, 11, 0.10)',
-  error: '#EF4444',
-  errorBg: 'rgba(239, 68, 68, 0.10)',
+  success: '#107c10',
+  successBg: 'color-mix(in srgb, #107c10 12%, transparent)',
+  warning: '#9d5d00',
+  warningBg: 'color-mix(in srgb, #9d5d00 12%, transparent)',
+  error: '#a1260d',
+  errorBg: 'color-mix(in srgb, #a1260d 12%, transparent)',
 
   health: {
-    ok: '#10B981',
-    warning: '#F59E0B',
-    error: '#EF4444',
-    unknown: 'rgba(148, 163, 184, 0.60)',
+    ok: '#107c10',
+    warning: '#9d5d00',
+    error: '#a1260d',
+    unknown: 'rgba(106, 106, 106, 0.60)',
   },
 };
 
@@ -199,24 +189,18 @@ function buildAutoThemeFromVSCode(kind: ThemeKind): ColorTokens {
   );
   const border = readVSCodeHexVar(
     '--vscode-panel-border',
-    kind === 'light' ? '#CBD5E1' : '#2A3A4A'
+    kind === 'light' ? '#cccccc' : '#3c3c3c'
   );
-  const buttonBg = readVSCodeHexVar(
-    '--vscode-button-background',
-    kind === 'light' ? '#0A69D1' : '#1C8EE8'
+  const brandAccent = readVSCodeHexVar(
+    '--workspai-accent',
+    readVSCodeHexVar('--rapidkit-accent', kind === 'light' ? '#00a89d' : '#00cfc1')
   );
-  const buttonHover = readVSCodeHexVar(
-    '--vscode-button-hoverBackground',
-    kind === 'light' ? '#0957AE' : '#3FA6F0'
+  const brandPrimary = readVSCodeHexVar(
+    '--rapidkit-primary',
+    kind === 'light' ? '#6c5ce7' : '#6c5ce7'
   );
-  const focusBorder = readVSCodeHexVar(
-    '--vscode-focusBorder',
-    kind === 'light' ? '#0A69D1' : '#47CBFC'
-  );
-  const link = readVSCodeHexVar(
-    '--vscode-textLink-foreground',
-    kind === 'light' ? '#0A69D1' : '#53C6FF'
-  );
+  const focusBorder = readVSCodeHexVar('--vscode-focusBorder', brandAccent);
+  const link = readVSCodeHexVar('--vscode-textLink-foreground', brandAccent);
   const error = readVSCodeHexVar(
     '--vscode-errorForeground',
     kind === 'light' ? '#D13438' : '#F48771'
@@ -253,13 +237,13 @@ function buildAutoThemeFromVSCode(kind: ThemeKind): ColorTokens {
       muted: withAlpha(description, kind === 'light' ? 86 : 82),
       subtle: withAlpha(description, kind === 'light' ? 72 : 70),
     },
-    primary: buttonBg,
-    primaryHover: buttonHover,
-    primaryActive: buttonBg,
-    primaryInverse: withAlpha(buttonBg, kind === 'light' ? 14 : 20),
-    accent: link,
+    primary: brandAccent,
+    primaryHover: focusBorder,
+    primaryActive: brandAccent,
+    primaryInverse: withAlpha(brandAccent, kind === 'light' ? 10 : 12),
+    accent: brandPrimary,
     accentHover: focusBorder,
-    teal: link,
+    teal: brandAccent,
     tealHover: focusBorder,
     success,
     successBg: withAlpha(success, kind === 'light' ? 14 : 18),
@@ -318,6 +302,16 @@ export function detectVSCodeThemeKind(): ThemeKind {
   }
 
   return 'dark';
+}
+
+export function resolveThemeKind(userMode: ThemeMode): ThemeKind {
+  if (userMode === 'light') {
+    return 'light';
+  }
+  if (userMode === 'dark') {
+    return 'dark';
+  }
+  return detectVSCodeThemeKind();
 }
 
 /**

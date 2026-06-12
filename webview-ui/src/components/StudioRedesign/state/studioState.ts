@@ -24,8 +24,8 @@ export interface RelatedFile {
 }
 
 export interface PolicyGateState {
-  flowState: 'passing' | 'warning' | 'blocking';
-  telemetryState: 'complete' | 'partial' | 'stale';
+  flowState: 'passing' | 'warning' | 'blocking' | 'pending';
+  telemetryState: 'complete' | 'partial' | 'stale' | 'pending';
   releasePosture: ReleaseGatePosture;
   artifactId?: string;
   freshness?: string;
@@ -46,6 +46,7 @@ export interface IncidentStudioState {
   relatedFiles: RelatedFile[];
   policyGates: PolicyGateState;
   releasePosture: ReleaseGatePosture;
+  studioEvidence?: StudioEvidenceSummary;
 
   // Chat state
   messages: ChatMessage[];
@@ -58,6 +59,11 @@ export interface IncidentStudioState {
 
   // Cross-session retention
   actionItems: ActionItem[];
+
+  // AI action governance
+  aiActionContract?: AIActionContractView | null;
+  aiActionRegistry?: AIActionRegistryView | null;
+  studioActionStatus?: StudioActionStatus | null;
 }
 
 export interface ChatMessage {
@@ -84,6 +90,130 @@ export interface ActionItem {
   createdAt: string;
 }
 
+export interface StudioActionStatus {
+  actionId: string;
+  status: 'started' | 'completed' | 'failed';
+  detail?: string;
+  result?: StudioActionResult;
+  updatedAt: string;
+}
+
+export interface StudioActionResult {
+  summary: string;
+  verdict?: 'ready' | 'needs-attention' | 'blocked';
+  score?: number;
+  generatedAt?: string;
+  evidencePath?: string | null;
+  evidenceSha256?: string | null;
+  evidenceSizeBytes?: number | null;
+  commandCount?: number;
+  failedCommandCount?: number;
+  failedCommands?: string[];
+  findings?: {
+    fail: number;
+    warn: number;
+    info: number;
+  };
+  registryUpdatedAt?: string;
+}
+
+export interface StudioEvidenceFinding {
+  severity: 'fail' | 'warn' | 'info';
+  target: string;
+  title: string;
+  remediation?: string;
+}
+
+export interface StudioEvidenceSummary {
+  generatedAt?: string;
+  score?: number;
+  verdict?: 'ready' | 'needs-attention' | 'blocked';
+  projectCount?: number;
+  runtimeCount?: number;
+  findings: {
+    fail: number;
+    warn: number;
+    info: number;
+  };
+  topFindings: StudioEvidenceFinding[];
+  ciGateCommand?: string;
+  releaseGateCommand?: string;
+  evidencePath?: string;
+}
+
+export interface AIActionContractView {
+  actionId?: string | null;
+  contract: {
+    schemaVersion: 'workspai.ai-action.v1';
+    actionType: 'fix' | 'impact' | 'verify';
+    summary: string;
+    riskLevel: 'low' | 'medium' | 'high';
+    affectedFiles: string[];
+    proposedCommands: string[];
+    proposedPatches: Array<{
+      relativePath: string;
+      summary?: string;
+      diff?: string;
+    }>;
+    verificationCommands: string[];
+    rollbackPlan: string[];
+    confidence: number;
+    requiresApproval: true;
+  } | null;
+  validation: {
+    status: 'valid' | 'blocked' | 'needs-review';
+    issues: Array<{
+      code: string;
+      severity: 'error' | 'warning';
+      detail: string;
+    }>;
+    canApply: boolean;
+    canVerify: boolean;
+    canRollback: boolean;
+  };
+  parseError?: string;
+  rawJson?: string | null;
+  provider?: string;
+  receivedAt: string;
+}
+
+export interface AIActionRegistryView {
+  updatedAt: string;
+  entries: Array<{
+    id: string;
+    createdAt: string;
+    provider?: string;
+    summary: string;
+    actionType: 'fix' | 'impact' | 'verify';
+    riskLevel: 'low' | 'medium' | 'high';
+    validationStatus: 'valid' | 'blocked' | 'needs-review';
+    lifecycleStatus:
+      | 'proposed'
+      | 'verified'
+      | 'applied'
+      | 'applied-failed-verify'
+      | 'rolled-back'
+      | 'blocked'
+      | 'stale';
+    executions: Array<{
+      operation: 'apply' | 'verify' | 'rollback';
+      ok: boolean;
+      summary: string;
+      evidencePath?: string | null;
+      evidenceSha256?: string | null;
+      evidenceSizeBytes?: number | null;
+      commandCount?: number;
+      failedCommandCount?: number;
+      failedCommands?: string[];
+      preflight?: {
+        stale: boolean;
+        issues: string[];
+      };
+      completedAt: string;
+    }>;
+  }>;
+}
+
 export const PHASE_SEQUENCE: IncidentPhase[] = ['detect', 'diagnose', 'plan', 'verify', 'learn'];
 
 export const PHASE_LABELS: Record<IncidentPhase, string> = {
@@ -91,6 +221,15 @@ export const PHASE_LABELS: Record<IncidentPhase, string> = {
   diagnose: 'Diagnose',
   plan: 'Plan',
   verify: 'Verify',
+  learn: 'Learn',
+};
+
+/** Compact labels for guided density / narrow stepper */
+export const PHASE_SHORT: Record<IncidentPhase, string> = {
+  detect: 'Det',
+  diagnose: 'Diag',
+  plan: 'Plan',
+  verify: 'Ver',
   learn: 'Learn',
 };
 
@@ -127,11 +266,15 @@ export function createInitialState(overrides?: Partial<IncidentStudioState>): In
       releasePosture: 'pending',
     },
     releasePosture: 'pending',
+    studioEvidence: undefined,
     messages: [],
     isStreaming: false,
     expandedSources: {},
     expertModeExpanded: false,
     actionItems: [],
+    aiActionContract: null,
+    aiActionRegistry: null,
+    studioActionStatus: null,
     ...overrides,
   };
 }

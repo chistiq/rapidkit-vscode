@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { buildRapidkitCommand, buildShellCommand } from './platformCapabilities';
+import { buildRapidkitCommand, buildShellCommand, quoteShellArg } from './platformCapabilities';
+import { resolveCoreRuntime } from './coreRuntimeResolver';
 
 export type TerminalExecutionOptions = {
   name: string;
@@ -49,6 +50,31 @@ export function runRapidkitCommandsInTerminal(options: {
   commands: string[][];
 }): vscode.Terminal {
   const builtCommands = options.commands.map((args) => buildRapidkitCommand(args));
+  return runCommandsInTerminal({
+    name: options.name,
+    cwd: options.cwd,
+    env: options.env,
+    commands: builtCommands,
+  });
+}
+
+export function buildCoreRapidkitShellCommand(executable: string, args: string[]): string {
+  return [quoteShellArg(executable), ...args.map((arg) => quoteShellArg(arg))].join(' ');
+}
+
+export async function runCoreRapidkitCommandsInTerminal(options: {
+  name: string;
+  cwd: string;
+  env?: Record<string, string>;
+  commands: string[][];
+}): Promise<vscode.Terminal> {
+  const runtime = await resolveCoreRuntime(options.cwd);
+  const builtCommands = options.commands.map((args) =>
+    runtime.executable
+      ? buildCoreRapidkitShellCommand(runtime.executable, args)
+      : buildRapidkitCommand(args)
+  );
+
   return runCommandsInTerminal({
     name: options.name,
     cwd: options.cwd,

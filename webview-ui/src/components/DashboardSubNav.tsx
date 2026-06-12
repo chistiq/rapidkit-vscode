@@ -1,4 +1,4 @@
-import { FolderKanban, LayoutGrid, Package, TerminalSquare } from 'lucide-react';
+import { ClipboardCheck, FolderKanban, LayoutGrid, Package, Settings2, TerminalSquare } from 'lucide-react';
 import {
     DASHBOARD_SECTIONS,
     type DashboardSection,
@@ -6,6 +6,8 @@ import {
 
 const SECTION_ICONS: Record<DashboardSection, typeof LayoutGrid> = {
     overview: LayoutGrid,
+    evidence: ClipboardCheck,
+    operate: Settings2,
     console: TerminalSquare,
     catalog: Package,
     workspaces: FolderKanban,
@@ -16,6 +18,8 @@ interface DashboardSubNavProps {
     onSectionChange: (section: DashboardSection) => void;
     hasProjectSelected: boolean;
     recentWorkspaceCount: number;
+    evidenceAttentionCount?: number;
+    operateAttentionCount?: number;
 }
 
 export function DashboardSubNav({
@@ -23,6 +27,8 @@ export function DashboardSubNav({
     onSectionChange,
     hasProjectSelected,
     recentWorkspaceCount,
+    evidenceAttentionCount = 0,
+    operateAttentionCount = 0,
 }: DashboardSubNavProps) {
     return (
         <nav
@@ -36,6 +42,10 @@ export function DashboardSubNav({
                 const showProjectBadge = section.id === 'console' && hasProjectSelected;
                 const showWorkspaceBadge =
                     section.id === 'workspaces' && recentWorkspaceCount > 0;
+                const showEvidenceBadge =
+                    section.id === 'evidence' && evidenceAttentionCount > 0;
+                const showOperateBadge =
+                    section.id === 'operate' && operateAttentionCount > 0;
 
                 return (
                     <button
@@ -52,6 +62,22 @@ export function DashboardSubNav({
                         <span className="dashboard-sub-nav__tab-content">
                             <Icon size={12} aria-hidden="true" />
                             <span>{section.label}</span>
+                            {showEvidenceBadge ? (
+                                <span
+                                    className="dashboard-sub-nav__count dashboard-sub-nav__count--alert"
+                                    aria-label={`${evidenceAttentionCount} evidence items need attention`}
+                                >
+                                    {evidenceAttentionCount}
+                                </span>
+                            ) : null}
+                            {showOperateBadge ? (
+                                <span
+                                    className="dashboard-sub-nav__count dashboard-sub-nav__count--alert"
+                                    aria-label={`${operateAttentionCount} governance items need attention`}
+                                >
+                                    {operateAttentionCount}
+                                </span>
+                            ) : null}
                             {showProjectBadge ? (
                                 <span
                                     className="dashboard-sub-nav__badge"

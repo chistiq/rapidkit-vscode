@@ -3,6 +3,12 @@ import * as fs from 'fs-extra';
 import { WorkspaiCLI } from './rapidkitCLI';
 import { Logger } from '../utils/logger';
 import { CATEGORY_INFO, MODULES, ModuleData } from '../data/modules';
+import {
+  coreRuntimeCacheKey,
+  resolveCoreRuntime,
+  type CoreRuntimeResolution,
+} from '../utils/coreRuntimeResolver';
+import { isModulesCatalogCacheValid } from './modulesCatalogCache';
 
 export type ModulesCatalogSource = 'live' | 'cache' | 'fallback';
 
@@ -28,21 +34,35 @@ export type ModulesCatalogPayload = {
   errors?: string[];
   source?: string;
   fetched_at?: number;
+  rapidkit_core_version?: string;
+  rapidkit_core_location?: CoreRuntimeResolution['location'];
+  rapidkit_core_cache_key?: string;
+};
+
+export type ModulesCatalogMeta = {
+  source: ModulesCatalogSource;
+  rapidkitCoreVersion?: string;
+  rapidkitCoreLocation?: CoreRuntimeResolution['location'];
+  workspacePath?: string;
+  loadError?: string;
 };
 
 export type ModulesCatalogResult = {
   modules: ModuleData[];
   source: ModulesCatalogSource;
   catalog: ModulesCatalogPayload | null;
+  meta: ModulesCatalogMeta;
 };
 
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 
-function cachePath(storagePath: string, workspaceHash?: string): string {
-  // Create workspace-specific cache file using hash of workspace path
-  const cacheFile = workspaceHash
-    ? `modules-catalog-${workspaceHash}.json`
-    : 'modules-catalog.json';
+function cachePath(storagePath: string, workspaceHash?: string, coreCacheKey?: string): string {
+  const cacheFile =
+    workspaceHash && coreCacheKey
+      ? `modules-catalog-${workspaceHash}-${coreCacheKey.replace(/[:]/g, '-')}.json`
+      : workspaceHash
+        ? `modules-catalog-${workspaceHash}.json`
+        : 'modules-catalog.json';
   return path.join(storagePath, cacheFile);
 }
 
@@ -64,11 +84,20 @@ export async function invalidateModulesCatalogCache(
   storagePath: string,
   workspacePath?: string
 ): Promise<void> {
-  const p = cachePath(storagePath, getWorkspaceHash(workspacePath));
+  const workspaceHash = getWorkspaceHash(workspacePath);
+  const cacheDir = storagePath;
+  if (!(await fs.pathExists(cacheDir))) {
+    return;
+  }
+
+  const prefix = workspaceHash ? `modules-catalog-${workspaceHash}` : 'modules-catalog';
   try {
-    if (await fs.pathExists(p)) {
-      await fs.remove(p);
-    }
+    const entries = await fs.readdir(cacheDir);
+    await Promise.all(
+      entries
+        .filter((entry) => entry === `${prefix}.json` || entry.startsWith(`${prefix}-`))
+        .map((entry) => fs.remove(path.join(cacheDir, entry)).catch(() => undefined))
+    );
   } catch {
     // ignore removal errors
   }
@@ -123,16 +152,27 @@ function normalizeModules(records: Array<Record<string, unknown>>): ModuleData[]
 
 async function readCache(
   storagePath: string,
-  workspacePath?: string
+  workspacePath?: string,
+  runtime?: CoreRuntimeResolution
 ): Promise<ModulesCatalogPayload | null> {
   const workspaceHash = getWorkspaceHash(workspacePath);
-  const p = cachePath(storagePath, workspaceHash);
+  const coreCacheKey = runtime ? coreRuntimeCacheKey(runtime) : undefined;
+  const p = cachePath(storagePath, workspaceHash, coreCacheKey);
   if (!(await fs.pathExists(p))) {
+    if (coreCacheKey) {
+      const legacyPath = cachePath(storagePath, workspaceHash);
+      if (legacyPath !== p && (await fs.pathExists(legacyPath))) {
+        return null;
+      }
+    }
     return null;
   }
   try {
     const data = (await fs.readJson(p)) as ModulesCatalogPayload;
     if (data && data.schema_version === 1 && Array.isArray(data.modules)) {
+      if (runtime && !isModulesCatalogCacheValid(data, runtime)) {
+        return null;
+      }
       return data;
     }
   } catch {
@@ -144,10 +184,12 @@ async function readCache(
 async function writeCache(
   storagePath: string,
   payload: ModulesCatalogPayload,
-  workspacePath?: string
+  workspacePath?: string,
+  runtime?: CoreRuntimeResolution
 ): Promise<void> {
   const workspaceHash = getWorkspaceHash(workspacePath);
-  const p = cachePath(storagePath, workspaceHash);
+  const coreCacheKey = runtime ? coreRuntimeCacheKey(runtime) : undefined;
+  const p = cachePath(storagePath, workspaceHash, coreCacheKey);
   await fs.ensureDir(path.dirname(p));
   await fs.writeJson(p, payload, { spaces: 2 });
 }
@@ -165,39 +207,67 @@ export async function loadModulesCatalog(opts: {
   storagePath: string;
   ttlMs?: number;
   workspacePath?: string;
+  forceRefresh?: boolean;
 }): Promise<ModulesCatalogResult> {
   const logger = Logger.getInstance();
   const ttlMs = typeof opts.ttlMs === 'number' ? opts.ttlMs : DEFAULT_TTL_MS;
   const now = Date.now();
+  const runtime = await resolveCoreRuntime(opts.workspacePath);
+  const catalogWorkspacePath = runtime.workspacePath || opts.workspacePath;
 
-  const cached = await readCache(opts.storagePath, opts.workspacePath);
-  if (cached?.fetched_at && now - cached.fetched_at < ttlMs) {
+  if (opts.forceRefresh) {
+    await invalidateModulesCatalogCache(opts.storagePath, catalogWorkspacePath);
+  }
+
+  const buildMeta = (source: ModulesCatalogSource): ModulesCatalogMeta => ({
+    source,
+    rapidkitCoreVersion: runtime.version,
+    rapidkitCoreLocation: runtime.location,
+    workspacePath: catalogWorkspacePath,
+  });
+
+  const cached = await readCache(opts.storagePath, catalogWorkspacePath, runtime);
+  if (!opts.forceRefresh && cached?.fetched_at && now - cached.fetched_at < ttlMs) {
     return {
       modules: normalizeModules(cached.modules),
       source: 'cache',
       catalog: cached,
+      meta: buildMeta('cache'),
     };
   }
 
   const live = await opts.cli.run(
     ['modules', 'list', '--json-schema', '1'],
-    opts.workspacePath,
-    true
+    catalogWorkspacePath,
+    true,
+    runtime.executable ?? undefined
   );
   if (live.exitCode === 0) {
     const payload = safeParseJson(live.stdout) as ModulesCatalogPayload | null;
     if (payload && payload.schema_version === 1 && Array.isArray(payload.modules)) {
-      const enriched: ModulesCatalogPayload = { ...payload, fetched_at: now };
-      await writeCache(opts.storagePath, enriched, opts.workspacePath);
+      const enriched: ModulesCatalogPayload = {
+        ...payload,
+        fetched_at: now,
+        rapidkit_core_version: runtime.version,
+        rapidkit_core_location: runtime.location,
+        rapidkit_core_cache_key: coreRuntimeCacheKey(runtime),
+      };
+      await writeCache(opts.storagePath, enriched, catalogWorkspacePath, runtime);
       return {
         modules: normalizeModules(enriched.modules),
         source: 'live',
         catalog: enriched,
+        meta: buildMeta('live'),
       };
     }
   }
 
-  const legacy = await opts.cli.run(['modules', 'list', '--json'], opts.workspacePath, true);
+  const legacy = await opts.cli.run(
+    ['modules', 'list', '--json'],
+    catalogWorkspacePath,
+    true,
+    runtime.executable ?? undefined
+  );
   if (legacy.exitCode === 0) {
     const data = safeParseJson(legacy.stdout);
     if (Array.isArray(data)) {
@@ -217,21 +287,29 @@ export async function loadModulesCatalog(opts: {
         modules: data as Array<Record<string, unknown>>,
         source: 'legacy-json',
         fetched_at: now,
+        rapidkit_core_version: runtime.version,
+        rapidkit_core_location: runtime.location,
+        rapidkit_core_cache_key: coreRuntimeCacheKey(runtime),
       };
-      await writeCache(opts.storagePath, legacyPayload, opts.workspacePath);
+      await writeCache(opts.storagePath, legacyPayload, catalogWorkspacePath, runtime);
       return {
         modules: normalizeModules(legacyPayload.modules),
         source: 'live',
         catalog: legacyPayload,
+        meta: buildMeta('live'),
       };
     }
   }
 
   if (cached) {
+    logger.warn(
+      '[ModulesCatalog] Live fetch failed; using last known cache for current core runtime.'
+    );
     return {
       modules: normalizeModules(cached.modules),
       source: 'cache',
       catalog: cached,
+      meta: buildMeta('cache'),
     };
   }
 
@@ -240,5 +318,6 @@ export async function loadModulesCatalog(opts: {
     modules: MODULES,
     source: 'fallback',
     catalog: null,
+    meta: buildMeta('fallback'),
   };
 }

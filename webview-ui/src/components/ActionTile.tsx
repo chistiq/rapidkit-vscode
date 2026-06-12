@@ -1,5 +1,8 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
+import type { DashboardEvidenceStatus } from '@/lib/dashboardEvidence';
+import { evidenceStatusLabel } from '@/lib/dashboardEvidence';
+
 export type ActionTileVariant = 'default' | 'primary' | 'danger' | 'warn' | 'builder';
 
 export interface ActionTileProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -8,14 +11,21 @@ export interface ActionTileProps extends ButtonHTMLAttributes<HTMLButtonElement>
   detail?: string;
   variant?: ActionTileVariant;
   fullWidth?: boolean;
+  evidenceStatus?: DashboardEvidenceStatus;
 }
 
 function variantClass(variant: ActionTileVariant): string {
   if (variant === 'default') {
     return '';
   }
-  return ` workspai-action-tile--${variant}`;
+  return ` ws-action-tile--${variant} workspai-action-tile--${variant}`;
 }
+
+const evidenceChipClass: Record<Exclude<DashboardEvidenceStatus, 'missing'>, string> = {
+  pass: 'ws-chip ws-chip--success',
+  warn: 'ws-chip ws-chip--warn',
+  fail: 'ws-chip ws-chip--error',
+};
 
 export function ActionTile({
   icon,
@@ -23,6 +33,7 @@ export function ActionTile({
   detail,
   variant = 'default',
   fullWidth = false,
+  evidenceStatus,
   className = '',
   type = 'button',
   ...rest
@@ -30,7 +41,7 @@ export function ActionTile({
   return (
     <button
       type={type}
-      className={`workspai-action-tile${variantClass(variant)}${fullWidth ? ' workspai-action-tile--full' : ''}${className ? ` ${className}` : ''}`}
+      className={`ws-action-tile workspai-action-tile${variantClass(variant)}${fullWidth ? ' ws-action-tile--full workspai-action-tile--full' : ''}${className ? ` ${className}` : ''}`}
       {...rest}
     >
       <span className="workspai-action-tile__icon" aria-hidden="true">
@@ -40,11 +51,19 @@ export function ActionTile({
         <strong>{label}</strong>
         {detail ? <small>{detail}</small> : null}
       </span>
+      {evidenceStatus && evidenceStatus !== 'missing' ? (
+        <span
+          className={`${evidenceChipClass[evidenceStatus]} workspai-action-tile__evidence workspai-action-tile__evidence--${evidenceStatus}`}
+          aria-label={`Evidence: ${evidenceStatusLabel(evidenceStatus)}`}
+        >
+          {evidenceStatusLabel(evidenceStatus)}
+        </span>
+      ) : null}
     </button>
   );
 }
 
-export type ActionTileGridLayout = '2col' | 'operate' | 'project' | 'auto';
+export type ActionTileGridLayout = '2col' | 'operate' | 'governance' | 'project' | 'auto';
 
 interface ActionTileGridProps {
   layout?: ActionTileGridLayout;
