@@ -307,8 +307,17 @@ export function canTransitionToPhase(
   to: IncidentPhase,
   gates: PolicyGateState
 ): boolean {
+  if (gates.flowState === 'blocking' && to === 'learn') {
+    return false;
+  }
+  if (gates.telemetryState === 'stale' && (to === 'verify' || to === 'learn')) {
+    return false;
+  }
   // In 'verify' phase, can only move forward if gates are passing
   if (from === 'verify' && gates.flowState === 'blocking') {
+    return false;
+  }
+  if (to === 'verify' && gates.flowState === 'blocking') {
     return false;
   }
   // Can only move to next phase or previous phase

@@ -53,7 +53,7 @@ export function ContextAssistPanel({
         const el = textareaRef.current;
         if (!el) { return; }
         el.style.height = 'auto';
-        el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+        el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
     }, []);
 
     useEffect(() => {
@@ -295,7 +295,7 @@ export function ContextAssistPanel({
                             : `Governance, structure, or next steps for "${context.name}"…`
                     }
                     disabled={isStreaming}
-                    rows={3}
+                    rows={2}
                 />
                 <div className="ws-assist-panel__footer-actions">
                     <span className="ws-kicker">⌘ Enter to send</span>

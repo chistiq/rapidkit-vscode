@@ -1213,13 +1213,84 @@
 
 .ws-dashboard-shell--assist-open {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) min(380px, 38vw);
+  grid-template-columns: minmax(0, 1fr) min(360px, 34vw);
+  grid-template-rows: minmax(0, 1fr);
   gap: var(--ws-space-md);
-  align-items: start;
+  align-items: stretch;
 }
 
 .ws-dashboard-shell__main {
   min-width: 0;
+}
+
+/* Dashboard scroll vs Incident Studio fullscreen (embedded tab shell) */
+.container--dashboard,
+.container--embedded-full,
+.container--embedded-scroll {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.container--dashboard .workspai-top-bar,
+.container--embedded-full .workspai-top-bar,
+.container--embedded-scroll .workspai-top-bar {
+  flex-shrink: 0;
+}
+
+.container--dashboard .ws-dashboard-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.container--dashboard .ws-dashboard-shell--assist-open {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) min(360px, 34vw);
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  align-items: stretch;
+  gap: var(--ws-space-md);
+}
+
+.container--dashboard .ws-dashboard-shell--assist-open .ws-assist-panel {
+  min-height: 0;
+  max-height: none;
+  height: 100%;
+  position: relative;
+  top: auto;
+}
+
+.container--dashboard .ws-dashboard-shell__main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-bottom: var(--ws-space-md);
+}
+
+.container--embedded-full .ws-embedded-host {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  max-height: none;
+  overflow: hidden;
+}
+
+.container--embedded-scroll .ws-embedded-host {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .ws-assist-panel {
@@ -1235,6 +1306,7 @@
   background: var(--ws-surface);
   color: var(--ws-text);
   box-shadow: 0 8px 24px color-mix(in srgb, var(--ws-surface) 30%, transparent);
+  min-width: 0;
 }
 
 .ws-assist-panel__header {
@@ -1347,7 +1419,8 @@
 }
 
 .ws-assist-panel__input {
-  min-height: 72px;
+  min-height: 56px;
+  max-height: 120px;
   resize: vertical;
 }
 

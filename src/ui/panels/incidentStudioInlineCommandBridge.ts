@@ -1,0 +1,313 @@
+import * as vscode from 'vscode';
+import fs from 'fs-extra';
+import path from 'path';
+
+import { WorkspaceUsageTracker } from '../../utils/workspaceUsageTracker';
+import { toPinnedRapidkitExecutionCommand } from '../../utils/platformCapabilities';
+import { resolveStudioMutationBlockReason } from './incidentStudioMutationGate';
+import type { IncidentStudioTelemetryGateSlice } from './incidentStudioPolicyGateMapper';
+
+export type RunIncidentInlineCommandOptions = {
+  command: string;
+  workspacePath: string;
+  projectPath?: string;
+  requestId?: string;
+  actionId?: string;
+  cliActionId?: string;
+  telemetryMetadata?: Record<string, unknown>;
+};
+
+export type RunIncidentInlineCommandResult = {
+  command: string;
+  success: boolean;
+  output?: string;
+  error?: string;
+};
+
+const WORKSPACE_SCOPED_RAPIDKIT_COMMAND =
+  /^(?:(?:npx\s+(?:(?:--yes\s+--package\s+rapidkit\s+)?rapidkit))|rapidkit|poetry\s+run\s+rapidkit|\.\/\.venv\/bin\/rapidkit|\.\/rapidkit)\s+(?:create(?:\s+workspace|\s+project)?|bootstrap\b|setup\b|workspace\b|cache\b|mirror\b|readiness\b|analyze\b|import\b|snapshot\b|project\s+(?:archive|archives|restore|delete)\b|doctor(?:\s+(?:workspace|project))?\b|autopilot\s+release\b)/;
+
+const MUTATING_RAPIDKIT_CLI_COMMAND =
+  /(?:\bdoctor\b[^\n]*--fix\b|\bworkspace\s+sync\b|\bworkspace\s+run\s+init\b|\bworkspace\s+archive\b|\bautopilot\s+release\b|\binit\b|\bbuild\b|\bdev\b)/i;
+
+export type ParsedIncidentInlineCommandPayload = {
+  command: string;
+  workspacePath?: string;
+  projectPath?: string;
+  cliActionId?: string;
+};
+
+export function parseIncidentInlineCommandPayload(
+  payload: unknown
+): ParsedIncidentInlineCommandPayload {
+  const record =
+    typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {};
+  return {
+    command: typeof record.command === 'string' ? record.command.trim() : '',
+    workspacePath:
+      typeof record.workspacePath === 'string' && record.workspacePath.trim()
+        ? record.workspacePath.trim()
+        : undefined,
+    projectPath:
+      typeof record.projectPath === 'string' && record.projectPath.trim()
+        ? record.projectPath.trim()
+        : undefined,
+    cliActionId:
+      typeof record.cliActionId === 'string' && record.cliActionId.trim()
+        ? record.cliActionId.trim()
+        : undefined,
+  };
+}
+
+export function isMutatingRapidkitCliCommand(command: string): boolean {
+  const normalized = toPinnedRapidkitExecutionCommand(command).replace(/\s+/g, ' ').trim();
+  if (!/(?:^|\s)rapidkit\b/.test(normalized)) {
+    return false;
+  }
+  return MUTATING_RAPIDKIT_CLI_COMMAND.test(normalized);
+}
+
+export type DispatchIncidentStudioInlineCommandInput = {
+  payload: unknown;
+  webview: vscode.Webview;
+  requestId?: string;
+  resolveWorkspacePath: () => string | undefined;
+  resolveProjectPath: () => string | undefined;
+  resolveTelemetry?: (
+    workspacePath: string
+  ) => Promise<IncidentStudioTelemetryGateSlice | null | undefined>;
+  enrichTelemetry?: (workspacePath: string) => Record<string, unknown>;
+  onMissingCommand?: () => void;
+  refreshStabilizationLoop?: () => Promise<void>;
+};
+
+export async function dispatchIncidentStudioInlineCommand(
+  input: DispatchIncidentStudioInlineCommandInput
+): Promise<void> {
+  const parsed = parseIncidentInlineCommandPayload(input.payload);
+  const workspacePath = parsed.workspacePath || input.resolveWorkspacePath()?.trim();
+  const projectPath = parsed.projectPath || input.resolveProjectPath()?.trim();
+  const inlineActionId =
+    input.requestId && input.requestId.trim().length > 0
+      ? `inline-${input.requestId.trim()}`
+      : `inline-${Date.now().toString(36)}`;
+
+  if (!parsed.command) {
+    input.onMissingCommand?.();
+    return;
+  }
+
+  if (!workspacePath) {
+    await postIncidentInlineCommandResult(
+      input.webview,
+      {
+        command: parsed.command,
+        success: false,
+        error: 'No workspace selected. Open a workspace first.',
+      },
+      input.requestId
+    );
+    return;
+  }
+
+  if (isMutatingRapidkitCliCommand(parsed.command) && input.resolveTelemetry) {
+    const telemetry = await input.resolveTelemetry(workspacePath);
+    const mutationBlockReason = resolveStudioMutationBlockReason(telemetry);
+    if (mutationBlockReason) {
+      await postIncidentInlineCommandResult(
+        input.webview,
+        {
+          command: parsed.command,
+          success: false,
+          error: mutationBlockReason,
+        },
+        input.requestId
+      );
+      return;
+    }
+  }
+
+  const result = await runIncidentInlineCommand({
+    command: parsed.command,
+    workspacePath,
+    projectPath,
+    requestId: input.requestId,
+    actionId: inlineActionId,
+    cliActionId: parsed.cliActionId,
+    telemetryMetadata: input.enrichTelemetry?.(workspacePath),
+  });
+  await postIncidentInlineCommandResult(input.webview, result, input.requestId);
+  if (input.refreshStabilizationLoop) {
+    await input.refreshStabilizationLoop();
+  }
+}
+
+function isWorkspacePathAncestor(workspacePath: string | undefined, childPath?: string): boolean {
+  if (!workspacePath || !childPath) {
+    return false;
+  }
+  const normalizedWorkspace = path.resolve(workspacePath);
+  const normalizedChild = path.resolve(childPath);
+  return (
+    normalizedChild === normalizedWorkspace ||
+    normalizedChild.startsWith(`${normalizedWorkspace}${path.sep}`)
+  );
+}
+
+export async function runIncidentInlineCommand(
+  options: RunIncidentInlineCommandOptions
+): Promise<RunIncidentInlineCommandResult> {
+  const inlineCommand = options.command.trim();
+  if (!inlineCommand) {
+    return {
+      command: inlineCommand,
+      success: false,
+      error: 'No command provided to run.',
+    };
+  }
+  if (!options.workspacePath.trim()) {
+    return {
+      command: inlineCommand,
+      success: false,
+      error: 'No workspace selected. Open a workspace first.',
+    };
+  }
+
+  const workspacePath = options.workspacePath.trim();
+  const projectPath = options.projectPath?.trim();
+  const projectBelongsToWorkspace = isWorkspacePathAncestor(workspacePath, projectPath);
+  const inlineActionId = options.actionId || `inline-${Date.now().toString(36)}`;
+  const inlineScopeProps = projectPath && projectBelongsToWorkspace ? { projectPath } : {};
+
+  try {
+    const executionInlineCommand = toPinnedRapidkitExecutionCommand(inlineCommand);
+    let finalCommand = executionInlineCommand;
+    const normalizedCommand = executionInlineCommand.replace(/\s+/g, ' ').trim();
+    const isWorkspaceScopedRapidkitCommand =
+      WORKSPACE_SCOPED_RAPIDKIT_COMMAND.test(normalizedCommand);
+    const effectiveCwd =
+      !isWorkspaceScopedRapidkitCommand && projectPath && projectBelongsToWorkspace
+        ? projectPath
+        : workspacePath;
+
+    const isRapidkitCmd = /^rapidkit\b/.test(executionInlineCommand);
+    if (isRapidkitCmd) {
+      const projectLauncher =
+        effectiveCwd && (await fs.pathExists(path.join(effectiveCwd, 'rapidkit')))
+          ? path.join(effectiveCwd, 'rapidkit')
+          : undefined;
+      const venvRapidkit = path.join(workspacePath, '.venv', 'bin', 'rapidkit');
+      const hasVenvBin = await fs.pathExists(venvRapidkit);
+      if (projectLauncher && effectiveCwd === projectPath) {
+        finalCommand = './rapidkit' + executionInlineCommand.slice('rapidkit'.length);
+      } else if (hasVenvBin) {
+        finalCommand = venvRapidkit + executionInlineCommand.slice('rapidkit'.length);
+      } else {
+        const poetryLock = effectiveCwd
+          ? await fs.pathExists(path.join(effectiveCwd, 'pyproject.toml'))
+          : false;
+        if (poetryLock) {
+          finalCommand = 'poetry run ' + executionInlineCommand;
+        }
+      }
+    }
+
+    const shellCommand =
+      process.platform === 'win32'
+        ? { cmd: 'cmd', args: ['/d', '/s', '/c', finalCommand] }
+        : { cmd: 'sh', args: ['-c', finalCommand] };
+
+    const { execa } = await import('execa');
+    const result = await execa(shellCommand.cmd, shellCommand.args, {
+      cwd: effectiveCwd,
+      shell: false,
+      timeout: 60_000,
+      reject: false,
+    });
+
+    const combinedOutput = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+    const output = combinedOutput || 'Command completed with no output.';
+    const truncatedOutput = output.split('\n').slice(0, 30).join('\n');
+    const success = result.exitCode === 0;
+    const tracker = WorkspaceUsageTracker.getInstance();
+    const telemetryBase = {
+      actionId: inlineActionId,
+      actionType: 'inline-command',
+      command: inlineCommand.slice(0, 180),
+      ...(options.cliActionId ? { cliActionId: options.cliActionId } : {}),
+      ...(options.telemetryMetadata || {}),
+    };
+
+    await tracker.trackCommandEvent('workspai.studio.action_executed', workspacePath, {
+      ...telemetryBase,
+      projectScoped: !!projectPath && projectBelongsToWorkspace && effectiveCwd === projectPath,
+      success,
+      exitCode: result.exitCode,
+      ...inlineScopeProps,
+    });
+
+    await tracker.trackCommandEvent(
+      success ? 'workspai.studio.verify_passed' : 'workspai.studio.verify_failed',
+      workspacePath,
+      {
+        ...telemetryBase,
+        exitCode: result.exitCode,
+        verifyReady: success,
+        verifyRequired: true,
+        verifyPathPresent: success,
+        verifyPathReason: success ? 'command_success' : 'command_failed',
+        ...inlineScopeProps,
+      }
+    );
+
+    return {
+      command: inlineCommand,
+      success,
+      output: success ? truncatedOutput : undefined,
+      error: !success ? `Exit ${result.exitCode}: ${truncatedOutput}` : undefined,
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const tracker = WorkspaceUsageTracker.getInstance();
+    const telemetryBase = {
+      actionId: inlineActionId,
+      actionType: 'inline-command',
+      command: inlineCommand.slice(0, 180),
+      ...(options.cliActionId ? { cliActionId: options.cliActionId } : {}),
+      ...(options.telemetryMetadata || {}),
+    };
+
+    await tracker.trackCommandEvent('workspai.studio.action_executed', workspacePath, {
+      ...telemetryBase,
+      success: false,
+      error: String(errorMsg).slice(0, 180),
+      ...inlineScopeProps,
+    });
+    await tracker.trackCommandEvent('workspai.studio.verify_failed', workspacePath, {
+      ...telemetryBase,
+      error: String(errorMsg).slice(0, 180),
+      verifyReady: false,
+      verifyRequired: true,
+      verifyPathPresent: false,
+      verifyPathReason: 'command_exception',
+      ...inlineScopeProps,
+    });
+    return {
+      command: inlineCommand,
+      success: false,
+      error: errorMsg,
+    };
+  }
+}
+
+export async function postIncidentInlineCommandResult(
+  webview: vscode.Webview,
+  result: RunIncidentInlineCommandResult,
+  requestId?: string
+): Promise<void> {
+  webview.postMessage({
+    command: 'runIncidentInlineCommandDone',
+    data: result,
+    meta: { requestId, version: 'v1' },
+  });
+}

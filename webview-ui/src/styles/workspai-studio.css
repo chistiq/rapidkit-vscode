@@ -34,11 +34,13 @@
 }
 
 .studio-workspace-grid {
+  --studio-chat-column: 50%;
   display: flex;
   flex: 1;
   overflow: hidden;
   gap: 0;
   padding: 0;
+  min-height: 0;
 }
 
 .studio-pane-activity {
@@ -48,45 +50,147 @@
 }
 
 .studio-pane-sidebar {
-  width: 224px;
+  width: 268px;
   flex-shrink: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
   margin-left: -1px;
 }
 
 .studio-pane-context {
-  width: 244px;
+  width: 288px;
   flex-shrink: 0;
   overflow: hidden;
   display: flex;
+  flex-direction: column;
   margin-left: -1px;
 }
 
+.studio-pane-sidebar > *,
+.studio-pane-context > * {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
 .studio-pane-chat {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  height: 100%;
 }
 
 .studio-pane-chat--adjacent {
   margin-left: -1px;
 }
 
-.studio-shell[data-studio-viewport='normal'] .studio-pane-sidebar {
-  width: 252px;
+/* Layout contract — see data-studio-layout on .studio-workspace-grid */
+.studio-workspace-grid[data-studio-layout] {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
 }
 
-.studio-shell[data-studio-viewport='normal'] .studio-pane-context {
-  width: 292px;
+.studio-workspace-grid[data-studio-layout] > * {
+  min-width: 0;
+  min-height: 0;
 }
 
-.studio-shell[data-studio-viewport='wide'] .studio-pane-sidebar {
-  width: 272px;
+.studio-workspace-grid[data-studio-layout='full'] {
+  grid-template-columns:
+    42px
+    minmax(0, 1fr)
+    minmax(0, 1fr)
+    var(--studio-chat-column);
 }
 
-.studio-shell[data-studio-viewport='wide'] .studio-pane-context {
-  width: 320px;
+.studio-workspace-grid[data-studio-layout='sidebar-chat'] {
+  grid-template-columns:
+    42px
+    minmax(200px, 0.95fr)
+    minmax(280px, 1.05fr);
+}
+
+.studio-workspace-grid[data-studio-layout='context-chat'] {
+  grid-template-columns:
+    42px
+    minmax(200px, 0.95fr)
+    minmax(280px, 1.05fr);
+}
+
+.studio-workspace-grid[data-studio-layout='chat-focus'] {
+  grid-template-columns: 42px minmax(0, 1fr);
+}
+
+.studio-workspace-grid[data-studio-layout='chat-full'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.studio-workspace-grid[data-studio-layout] .studio-pane-sidebar,
+.studio-workspace-grid[data-studio-layout] .studio-pane-context,
+.studio-workspace-grid[data-studio-layout] .studio-pane-chat {
+  width: auto;
+  flex: unset;
+  max-width: none;
+  margin-left: 0;
+  height: 100%;
+}
+
+/* Legacy class hooks — grid driven by data-studio-layout */
+.studio-workspace-grid.has-sidebar.has-context,
+.studio-workspace-grid.has-sidebar:not(.has-context),
+.studio-workspace-grid:not(.has-sidebar).has-context,
+.studio-workspace-grid:not(.has-sidebar):not(.has-context) {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.studio-workspace-grid.has-sidebar.has-context > *,
+.studio-workspace-grid.has-sidebar:not(.has-context) > *,
+.studio-workspace-grid:not(.has-sidebar).has-context > *,
+.studio-workspace-grid:not(.has-sidebar):not(.has-context) > * {
+  min-width: 0;
+  min-height: 0;
+}
+
+.studio-workspace-grid.has-sidebar.has-context .studio-pane-sidebar,
+.studio-workspace-grid.has-sidebar.has-context .studio-pane-context,
+.studio-workspace-grid.has-sidebar.has-context .studio-pane-chat,
+.studio-workspace-grid.has-sidebar:not(.has-context) .studio-pane-sidebar,
+.studio-workspace-grid.has-sidebar:not(.has-context) .studio-pane-chat,
+.studio-workspace-grid:not(.has-sidebar).has-context .studio-pane-context,
+.studio-workspace-grid:not(.has-sidebar):not(.has-context) .studio-pane-chat {
+  width: auto;
+  flex: unset;
+  max-width: none;
+  margin-left: 0;
+  height: 100%;
+}
+
+/* Below standard width: protect rails + readable chat over strict 50% lock */
+.studio-shell[data-studio-viewport='compact'] .studio-workspace-grid {
+  --studio-chat-column: minmax(260px, 1.15fr);
+}
+
+.studio-shell[data-studio-viewport='compact'] .studio-workspace-grid[data-studio-layout='full'] {
+  grid-template-columns:
+    42px
+    minmax(180px, 1fr)
+    minmax(160px, 1fr)
+    var(--studio-chat-column);
+}
+
+.studio-shell[data-studio-viewport='compact'] .studio-workspace-grid[data-studio-layout='sidebar-chat'],
+.studio-shell[data-studio-viewport='compact'] .studio-workspace-grid[data-studio-layout='context-chat'] {
+  grid-template-columns:
+    42px
+    minmax(180px, 0.9fr)
+    minmax(260px, 1.1fr);
 }
 
 .studio-u-flex-shrink-0 {
@@ -234,6 +338,7 @@
   padding: var(--ws-space-md);
   border-top: 1px solid var(--ws-border-subtle);
   background: color-mix(in srgb, var(--ws-surface-raised) 72%, transparent);
+  flex-shrink: 0;
 }
 
 .studio-action-outcome .studio-banner {
@@ -406,6 +511,7 @@
   overflow: hidden;
   position: relative;
   animation: studioEnterUp 360ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both;
+  min-width: 0;
 }
 
 .studio-chevron {

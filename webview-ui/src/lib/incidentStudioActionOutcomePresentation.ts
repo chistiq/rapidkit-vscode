@@ -11,6 +11,7 @@ import {
   formatReproPackSensitivityLabel,
   MEMORY_INFLUENCE_TIMELINE_HEADING,
 } from './incidentStudioReproPack';
+import { resolvePolicyGateBlockedReasonsFromTelemetry as resolvePolicyGateBlockedReasons } from './incidentStudioPolicyGateMapper';
 
 export type ActionOutcomePresentation = {
   headline: { title: string; description: string; tone: 'success' | 'warning' | 'failure' };
@@ -126,16 +127,7 @@ export function resolveVerifyGateBlockedReasonsFromTelemetry(
     };
   } | null
 ): string[] {
-  if (!gateStatus?.gates) {
-    return [];
-  }
-
-  const reasons: string[] = [];
-  if (gateStatus.gates.verifyPhaseReachPass === false) {
-    reasons.push('Verify phase reach < minimum threshold');
-  }
-  if (gateStatus.gates.bridgeRouteCompletionPass === false) {
-    reasons.push('Deterministic execution path incomplete; cannot finalize decision');
-  }
-  return reasons;
+  return resolvePolicyGateBlockedReasons({
+    studioHardGateStatus: gateStatus ?? null,
+  });
 }

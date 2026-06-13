@@ -9,6 +9,9 @@ import { studioClass, auditOutcomeToneClass, actionStabilityClass, actionRuntime
 import { ActionItem, AIActionRegistryView, StudioActionStatus } from '../state/studioState';
 import { STUDIO_ACTION_COMMANDS, StudioActionCommand } from '../state/studioActions';
 import { buildStudioActionAuditTimeline, StudioActionAuditEvent, StudioApprovalAuditEvent } from '../state/studioActionAudit';
+import { CliSurfaceSection } from './CliSurfaceSection';
+import { CollapsibleSection } from './CollapsibleSection';
+import type { IncidentCliActionEntry } from '../../../lib/incidentCliActionMatrix';
 
 interface WorkspaceItem {
     id: string;
@@ -91,6 +94,10 @@ interface WorkspaceSidebarProps {
     onToggleActionItem?: (id: string) => void;
     onExecuteAction?: (command: StudioActionCommand) => void;
     onRevealEvidence?: (path: string) => void;
+    onRunCliSurfaceAction?: (entry: { command: string; cliActionId: string }) => void;
+    executingCliCommand?: string | null;
+    hasProjectSelected?: boolean;
+    userMode?: 'guided' | 'expert';
 }
 
 export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
@@ -104,6 +111,10 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
     onToggleActionItem,
     onExecuteAction,
     onRevealEvidence,
+    onRunCliSurfaceAction,
+    executingCliCommand = null,
+    hasProjectSelected = false,
+    userMode = 'guided',
 }) => {
     const auditEvents = buildStudioActionAuditTimeline({
         registry: aiActionRegistry,
@@ -141,6 +152,11 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
             </div>
 
             <div className={studioClass.sidebarScroll}>
+                <div className="studio-sidebar-start-hint">
+                    <strong>Start here</strong>
+                    Run Analyze, then Verify gates. Expand other toolboxes when you need CLI, audit, or module details.
+                </div>
+
                 {/* Recent Incidents — the retention hook */}
                 <ActionAuditSection
                     events={auditEvents}
@@ -160,42 +176,69 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
                     />
                 )}
 
-                {/* Action Matrix */}
-                <SectionLabel label="Action Matrix" />
-                <div className={studioClass.sidebarSection}>
-                    {ACTION_MATRIX.map((action) => (
-                        <ActionMatrixRow
-                            key={action.id}
-                            action={action}
+                <CollapsibleSection
+                    title="Action matrix"
+                    hint="Analyze · Verify · Fix"
+                    defaultOpen
+                    variant="sidebar"
+                >
+                    <div className={`${studioClass.sidebarSection} studio-sidebar__section--matrix`}>
+                        {ACTION_MATRIX.map((action) => (
+                            <ActionMatrixRow
+                                key={action.id}
+                                action={action}
+                                selectedItemId={selectedItemId}
+                                onItemSelect={onItemSelect}
+                                aiActionRegistry={aiActionRegistry}
+                                actionRunning={actionRunning}
+                                onExecuteAction={onExecuteAction}
+                            />
+                        ))}
+                    </div>
+                </CollapsibleSection>
+
+                {onRunCliSurfaceAction ? (
+                    <CollapsibleSection
+                        title="RapidKit CLI"
+                        hint="npm commands"
+                        variant="sidebar"
+                    >
+                        <CliSurfaceSection
+                            hasProjectSelected={hasProjectSelected}
+                            userMode={userMode}
+                            executingCommand={executingCliCommand}
+                            onRunCliAction={(entry: IncidentCliActionEntry) =>
+                                onRunCliSurfaceAction({ command: entry.command, cliActionId: entry.id })
+                            }
+                            embedded
+                        />
+                    </CollapsibleSection>
+                ) : null}
+
+                <CollapsibleSection
+                    title="Capability map"
+                    hint={`${items.length} live modules`}
+                    variant="sidebar"
+                >
+                    {items.map((item) => (
+                        <SidebarItemRow
+                            key={item.id}
+                            item={item}
                             selectedItemId={selectedItemId}
                             onItemSelect={onItemSelect}
-                            aiActionRegistry={aiActionRegistry}
+                            getIcon={getIcon}
+                            tone="current"
                             actionRunning={actionRunning}
                             onExecuteAction={onExecuteAction}
                         />
                     ))}
-                </div>
-
-                {/* Current Features Section */}
-                <SectionLabel label="Current Features (LIVE)" />
-                {items.map((item) => (
-                    <SidebarItemRow
-                        key={item.id}
-                        item={item}
-                        selectedItemId={selectedItemId}
-                        onItemSelect={onItemSelect}
-                        getIcon={getIcon}
-                        tone="current"
-                        actionRunning={actionRunning}
-                        onExecuteAction={onExecuteAction}
-                    />
-                ))}
+                </CollapsibleSection>
 
             </div>
 
             <div className={studioClass.sidebarFooter}>
                 <div className="studio-sidebar__footer-note">
-                    Focused view. Advanced modules are hidden until needed.
+                    Toolboxes stay collapsed until you open them. Action matrix is your default entry point.
                 </div>
             </div>
         </div>
@@ -216,7 +259,7 @@ const ActionAuditSection: React.FC<{
     selectedEventId?: string | null;
     onSelectEvent: (id: string) => void;
 }> = ({ events, selectedEventId, onSelectEvent }) => {
-    const [open, setOpen] = useState(true);
+    const [open, setOpen] = useState(false);
 
     return (
         <div className={studioClass.sidebarCollapse}>
@@ -293,74 +336,86 @@ const ActionAuditInspector: React.FC<{
         ? `sha256:${event.evidenceSha256}`
         : event.evidencePath
             ? event.evidencePath
-            : 'No external evidence file recorded.';
+            : null;
+    const proofShort = event.evidenceSha256
+        ? `sha256:${event.evidenceSha256.slice(0, 12)}`
+        : event.evidencePath
+            ? shortenPath(event.evidencePath)
+            : null;
     const failedCommands = event.failedCommands || [];
+    const contextLine = `${PHASE_SHORT[event.phase]} · ${event.scope} · ${event.timeAgo}`;
+    const opsLine = [
+        `Cmd ${event.commandCount ?? 0}`,
+        `Fail ${event.failedCommandCount ?? 0}`,
+        event.evidenceSizeBytes ? formatEvidenceBytes(event.evidenceSizeBytes) : '—',
+        event.provider || 'local bridge',
+    ].join(' · ');
 
     return (
-        <div className={studioClass.sidebarInspectorWrap}>
-            <div className={studioClass.inspector}>
-                <div className={studioClass.inspectorHead}>
-                    <span className={`studio-status-dot studio-status-dot--md ${toneClass}`} />
-                    <div className={studioClass.inspectorHeadContent}>
-                        <div className="studio-inspector__kicker">Action Inspector</div>
-                        <div className="studio-inspector__title" title={event.title}>{event.title}</div>
-                    </div>
+        <div className={`${studioClass.sidebarInspectorWrap} studio-sidebar-inspector-wrap--compact`}>
+            <div className={`${studioClass.inspector} studio-inspector--compact`}>
+                <div className="studio-inspector__headline">
+                    <span className={`studio-status-dot ${toneClass}`} />
+                    <span className="studio-inspector__title" title={event.title}>{event.title}</span>
+                    <span className={`studio-matrix-tag studio-matrix-tag--runtime ${toneClass}`}>
+                        {event.outcome}
+                    </span>
                 </div>
 
-                <InspectorGrid items={[
-                        ['Outcome', event.outcome],
-                        ['Phase', PHASE_SHORT[event.phase]],
-                        ['Scope', event.scope],
-                        ['When', event.happenedAt],
-                        ['Provider', event.provider || 'local bridge'],
-                        ['Commands', String(event.commandCount ?? 0)],
-                        ['Failed', String(event.failedCommandCount ?? 0)],
-                        ['Bytes', event.evidenceSizeBytes ? `${event.evidenceSizeBytes}` : 'n/a'],
-                    ]}
-                />
+                <div className="studio-inspector__meta" title={contextLine}>{contextLine}</div>
+                <div className="studio-inspector__meta studio-inspector__meta--muted" title={opsLine}>{opsLine}</div>
 
-                <div className="studio-inspector__proof" title={proof}>
-                    Proof: {proof}
-                </div>
-
-                {failedCommands.length > 0 ? (
-                    <div className={studioClass.failedCommands}>
-                        <div className={`${studioClass.captionSmall} ${studioClass.toneError}`}>
-                            Failed commands
-                        </div>
-                        {failedCommands.slice(0, 3).map((command) => (
-                            <code key={command} className="studio-code-snippet" title={command}>
-                                {command}
-                            </code>
-                        ))}
+                {proofShort ? (
+                    <div className="studio-inspector__proof-row">
+                        <span className="studio-inspector__proof-label">Proof</span>
+                        <span className="studio-inspector__proof-value" title={proof || proofShort}>{proofShort}</span>
+                        {event.evidencePath && onRevealEvidence ? (
+                            <button
+                                type="button"
+                                onClick={() => onRevealEvidence(event.evidencePath || '')}
+                                className="studio-inspector__link-btn"
+                            >
+                                Open
+                            </button>
+                        ) : null}
                     </div>
                 ) : null}
 
-                {event.evidencePath ? (
-                    <button
-                        type="button"
-                        onClick={() => onRevealEvidence?.(event.evidencePath || '')}
-                        disabled={!onRevealEvidence}
-                        className={studioClass.btnPrimary}
-                    >
-                        Reveal evidence
-                    </button>
+                {failedCommands.length > 0 ? (
+                    <div className="studio-inspector__failures">
+                        {failedCommands.slice(0, 2).map((command) => (
+                            <code key={command} className="studio-code-snippet" title={command}>
+                                {shortenPath(command)}
+                            </code>
+                        ))}
+                        {failedCommands.length > 2 ? (
+                            <span className="studio-inspector__fail-more">+{failedCommands.length - 2}</span>
+                        ) : null}
+                    </div>
                 ) : null}
             </div>
         </div>
     );
 };
 
-const InspectorGrid: React.FC<{ items: Array<[string, string]> }> = ({ items }) => (
-    <div className={studioClass.traceGrid}>
-        {items.map(([label, value]) => (
-            <div key={label} className="studio-trace-tile">
-                <div className="studio-trace-tile__label">{label}</div>
-                <div className="studio-trace-tile__value" title={value}>{value}</div>
-            </div>
-        ))}
-    </div>
-);
+function shortenPath(value: string): string {
+    const normalized = value.replace(/\\/g, '/');
+    const parts = normalized.split('/').filter(Boolean);
+    if (parts.length <= 2) {
+        return normalized;
+    }
+    return `…/${parts.slice(-2).join('/')}`;
+}
+
+function formatEvidenceBytes(bytes: number): string {
+    if (bytes >= 1024 * 1024) {
+        return `${(bytes / (1024 * 1024)).toFixed(1)}mb`;
+    }
+    if (bytes >= 1024) {
+        return `${Math.round(bytes / 1024)}kb`;
+    }
+    return `${bytes}b`;
+};
 
 // ─── Open Action Items ────────────────────────────────────────────────────────
 
@@ -370,44 +425,37 @@ interface OpenActionsSectionProps {
 }
 
 const OpenActionsSection: React.FC<OpenActionsSectionProps> = ({ items, onToggle }) => {
-    const [open, setOpen] = useState(true);
     const openCount = items.filter((a) => !a.done).length;
 
     return (
-        <div className={studioClass.sidebarCollapse}>
-            <button
-                type="button"
-                onClick={() => setOpen((v) => !v)}
-                className={`${studioClass.collapseTrigger}${open ? ' is-open' : ''}`}
-            >
-                <span className={studioClass.collapseTitle}>Open Actions</span>
-                {openCount > 0 && (
+        <CollapsibleSection
+            title="Open actions"
+            hint={openCount > 0 ? `${openCount} pending` : undefined}
+            badge={
+                openCount > 0 ? (
                     <span className={`${studioClass.badge} ${studioClass.badgeWarn}`}>{openCount}</span>
-                )}
-                <ChevronDown size={11} className={`${studioClass.chevron}${open ? ' is-open' : ''} ${studioClass.collapseChevron}`} />
-            </button>
-
-            {open && (
-                <div className={studioClass.sidebarCollapseBody}>
-                    {items.map((item) => (
-                        <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => onToggle?.(item.id)}
-                            disabled={!onToggle}
-                            className={`studio-action-item${item.done ? ' is-done' : ''}`}
-                        >
-                            {item.done ? (
-                                <CheckCircle2 size={13} className={`${studioClass.flexShrink0} studio-action-item__icon is-done`} />
-                            ) : (
-                                <Circle size={13} className={`${studioClass.flexShrink0} studio-action-item__icon is-open`} />
-                            )}
-                            <span className="studio-action-item__text">{item.text}</span>
-                        </button>
-                    ))}
-                </div>
-            )}
-        </div>
+                ) : undefined
+            }
+            defaultOpen={openCount > 0}
+            variant="sidebar"
+        >
+            {items.map((item) => (
+                <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onToggle?.(item.id)}
+                    disabled={!onToggle}
+                    className={`studio-action-item${item.done ? ' is-done' : ''}`}
+                >
+                    {item.done ? (
+                        <CheckCircle2 size={13} className={`${studioClass.flexShrink0} studio-action-item__icon is-done`} />
+                    ) : (
+                        <Circle size={13} className={`${studioClass.flexShrink0} studio-action-item__icon is-open`} />
+                    )}
+                    <span className="studio-action-item__text">{item.text}</span>
+                </button>
+            ))}
+        </CollapsibleSection>
     );
 };
 
@@ -425,26 +473,20 @@ const ActionMatrixRow: React.FC<{
     const stabilityClass = actionStabilityClass(action.stability);
 
     return (
-        <div className={`${studioClass.card}${active ? ' is-active' : ''} ${studioClass.cardFull}`}>
-            <button type="button" onClick={() => onItemSelect(action.id)} className="studio-card__select">
-                <span className="studio-card__title">{action.title}</span>
-                {runtime.needsAttention ? (
-                    <ShieldAlert size={13} className={`${studioClass.flexShrink0} ${studioClass.toneError}`} />
-                ) : null}
-                <span className={`studio-matrix-tag studio-matrix-tag--runtime ${stabilityClass}`}>
-                    {action.stability}
-                </span>
-            </button>
-            <div className="studio-card__body">{action.description}</div>
-            <div className="studio-card__hint">{action.command}</div>
-            <div className="studio-card__footer">
-                <span className="studio-matrix-tag studio-matrix-tag--neutral">{action.scope}</span>
-                <span
-                    className={`studio-matrix-tag studio-matrix-tag--runtime ${runtime.toneClass}`}
-                    title={runtime.proof}
-                >
-                    {runtime.label}
-                </span>
+        <div
+            className={`${studioClass.card} studio-card--matrix${active ? ' is-active' : ''}`}
+            title={`${action.command} · ${action.description}`}
+        >
+            <div className="studio-matrix-row__top">
+                <button type="button" onClick={() => onItemSelect(action.id)} className="studio-matrix-row__select">
+                    <span className="studio-card__title">{action.title}</span>
+                    {runtime.needsAttention ? (
+                        <ShieldAlert size={12} className={`${studioClass.flexShrink0} ${studioClass.toneError}`} />
+                    ) : null}
+                    <span className={`studio-matrix-tag studio-matrix-tag--runtime ${stabilityClass}`}>
+                        {action.stability}
+                    </span>
+                </button>
                 <button
                     type="button"
                     onClick={() => {
@@ -453,11 +495,21 @@ const ActionMatrixRow: React.FC<{
                         }
                     }}
                     disabled={runDisabled}
-                    className={`${studioClass.btnPrimary} ${studioClass.cardFooterEnd}`}
+                    className={`${studioClass.btnPrimary} studio-matrix-row__run`}
                 >
-                    <PlayCircle size={12} />
-                    {actionRunning ? 'Running' : 'Run'}
+                    <PlayCircle size={11} />
+                    {actionRunning ? '…' : 'Run'}
                 </button>
+            </div>
+            <div className="studio-matrix-row__meta">
+                <span className="studio-matrix-row__desc">{action.description}</span>
+                <span className="studio-matrix-tag studio-matrix-tag--neutral">{action.scope}</span>
+                <span
+                    className={`studio-matrix-tag studio-matrix-tag--runtime ${runtime.toneClass}`}
+                    title={runtime.proof}
+                >
+                    {runtime.label}
+                </span>
             </div>
         </div>
     );
@@ -502,10 +554,6 @@ function buildActionRuntime(
         needsAttention: blocked,
     };
 }
-
-const SectionLabel: React.FC<{ label: string }> = ({ label }) => (
-    <div className={studioClass.sectionLabel}>{label}</div>
-);
 
 interface SidebarItemRowProps {
     item: WorkspaceItem;

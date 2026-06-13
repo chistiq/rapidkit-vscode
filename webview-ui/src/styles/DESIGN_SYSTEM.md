@@ -102,6 +102,16 @@ Legacy monolith removed in Wave S — presentation contracts live in `webview-ui
 
 Wave T wires action-outcome presentation into production Studio: `buildActionOutcomePresentation` → `ActionOutcomePanel` in `ChatSurface`, fed by `incomingActionResult` from `App.tsx`.
 
+## Integration Waves (post design migration)
+
+| Wave | Status | Focus |
+|------|--------|-------|
+| J–Y | Complete | Design system, vNext regions, guided/lite UX |
+| Z1 | In progress | Workspace path navigation — source files open in editor; `.rapidkit/reports/*` reveal in OS |
+| Z2 | Complete | Persistent chat history + approval audit per workspace (`incidentStudioSessionPersistenceBridge`) |
+| Z3 | Complete | Live policy gates from telemetry — shared host/webview policy core + parity tests |
+| Z4 | In progress | Confidence UI + observability surfaces (release readiness KPI, command telemetry, repro pack) |
+
 ## Migration Rule
 
 Each surface migration should:

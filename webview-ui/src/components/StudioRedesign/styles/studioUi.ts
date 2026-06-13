@@ -73,6 +73,7 @@ export const studioClass = {
   topbarOpsCluster: 'studio-topbar__ops-cluster',
   contextSection: 'studio-context-section',
   chatHeader: 'studio-chat-header',
+  chatContext: 'studio-chat-context',
   chatTimeline: 'studio-chat-timeline',
   phaseStepper: 'studio-phase-stepper',
   phaseStep: 'studio-phase-step',

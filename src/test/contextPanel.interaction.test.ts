@@ -80,6 +80,22 @@ function findCheckboxByLabel(container: HTMLElement, text: string): HTMLInputEle
   return checkbox;
 }
 
+function expandSection(container: HTMLElement, title: string): void {
+  const trigger = Array.from(container.querySelectorAll('button[aria-expanded]')).find((entry) =>
+    entry.textContent?.includes(title)
+  );
+
+  if (!(trigger instanceof HTMLButtonElement)) {
+    throw new Error(`Collapsible section not found: ${title}`);
+  }
+
+  if (trigger.getAttribute('aria-expanded') !== 'true') {
+    act(() => {
+      trigger.click();
+    });
+  }
+}
+
 describe('ContextPanel interactions', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -106,6 +122,8 @@ describe('ContextPanel interactions', () => {
       root.render(createElement(ContextPanel, buildBaseProps()));
     });
 
+    expandSection(container, 'AI action gate');
+
     const applyButton = findButton(container, 'Apply');
     const approvalCheckbox = findCheckboxByLabel(
       container,
@@ -129,6 +147,8 @@ describe('ContextPanel interactions', () => {
     act(() => {
       root.render(createElement(ContextPanel, buildBaseProps({ onAIActionCommand })));
     });
+
+    expandSection(container, 'AI action gate');
 
     act(() => {
       findCheckboxByLabel(
@@ -199,6 +219,8 @@ describe('ContextPanel interactions', () => {
     act(() => {
       root.render(createElement(ContextPanel, buildBaseProps({ stabilizationKpiStatus })));
     });
+
+    expandSection(container, 'Stabilization KPI');
 
     expect(container.textContent).toContain('Stabilization KPI');
     expect(container.textContent).toContain('HOLD');

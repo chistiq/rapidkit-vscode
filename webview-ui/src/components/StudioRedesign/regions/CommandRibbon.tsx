@@ -16,6 +16,7 @@ import type { StudioPostureTone } from '../state/studioPosture';
 import type { LiteReleaseState } from '../../../lib/incidentStudioLiteMode';
 import { mapLiteReleaseTone } from '../../../lib/incidentStudioLiteMode';
 import type { IncidentStudioDisplayMode } from '../../../lib/incidentStudioPreferences';
+import { isVerifyActionBlockedByPolicyGates } from '../../../lib/incidentStudioPolicyGateMapper';
 
 interface CommandRibbonProps {
     currentPhase: IncidentPhase;
@@ -29,6 +30,7 @@ interface CommandRibbonProps {
     displayMode?: IncidentStudioDisplayMode;
     liteReleaseState?: LiteReleaseState | null;
     onExecuteAction: (command: StudioActionCommand) => void;
+    verifyGateBlockedReasons?: string[];
 }
 
 export const CommandRibbon: React.FC<CommandRibbonProps> = ({
@@ -43,6 +45,7 @@ export const CommandRibbon: React.FC<CommandRibbonProps> = ({
     displayMode = 'full',
     liteReleaseState = null,
     onExecuteAction,
+    verifyGateBlockedReasons = [],
 }) => {
     const fullStatus = buildStudioPosture({
         releasePosture,
@@ -63,6 +66,10 @@ export const CommandRibbon: React.FC<CommandRibbonProps> = ({
         : fullStatus;
     const toneClass = postureToneClass(status.tone);
     const actionRunning = studioActionStatus?.status === 'started';
+    const verifyBlocked = isVerifyActionBlockedByPolicyGates({
+        policyGates,
+        verifyGateBlockedReasons,
+    });
     const actionResult = studioActionStatus?.result;
     const actionValue = studioActionStatus
         ? actionResult?.summary || `${studioActionStatus.actionId}/${studioActionStatus.status}`
@@ -151,7 +158,7 @@ export const CommandRibbon: React.FC<CommandRibbonProps> = ({
                 <RibbonButton
                     label="Verify"
                     command={STUDIO_ACTION_COMMANDS.verifyGates}
-                    disabled={actionRunning}
+                    disabled={actionRunning || verifyBlocked}
                     onExecute={onExecuteAction}
                 />
             </div>

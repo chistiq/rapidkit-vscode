@@ -16,7 +16,11 @@ import {
 } from 'lucide-react';
 import { studioClass, riskToneClass, chipFadeClass } from '../styles/studioUi';
 import { buildActionOutcomePresentation } from '../../../lib/incidentStudioActionOutcomePresentation';
-import type { NormalizedIncidentActionResultPayload } from '../../../lib/incidentStudioPayload';
+import type {
+    NormalizedIncidentActionResultPayload,
+    IncidentReproPackEvidence,
+    IncidentReleaseReadinessCommanderArtifact,
+} from '../../../lib/incidentStudioPayload';
 import {
     resolveGuidedIntentChipsFromStudioContext,
     type GuidedIntentChip,
@@ -52,6 +56,12 @@ interface ChatSurfaceProps {
     actionResult?: NormalizedIncidentActionResultPayload | null;
     verifyGateBlockedReasons?: string[];
     actionOutcomeCallbacks?: ActionOutcomeCallbacks;
+    onLearnExportArchive?: {
+        onExportReproPack?: (reproPack: IncidentReproPackEvidence) => void;
+        onExportReleaseReadiness?: (
+            releaseReadiness: IncidentReleaseReadinessCommanderArtifact,
+        ) => void;
+    };
     guidedPrimaryBoardAction?: { label: string; command?: string } | null;
     onRunGuidedCommand?: (command: string) => void;
 }
@@ -74,6 +84,7 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
     actionResult,
     verifyGateBlockedReasons = [],
     actionOutcomeCallbacks,
+    onLearnExportArchive,
     guidedPrimaryBoardAction = null,
     onRunGuidedCommand,
 }) => {
@@ -156,8 +167,10 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
         }
     };
 
+    const isSparseChat = messages.length === 0;
+
     return (
-        <div className={studioClass.chatSurface}>
+        <div className={`${studioClass.chatSurface}${isSparseChat ? ' is-sparse' : ''}`}>
             {/* Conversation header */}
             <div className={studioClass.chatHeader}>
                 <div className={`${studioClass.rowSm} ${studioClass.minW0}`}>
@@ -226,6 +239,27 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                 </div>
             )}
 
+            {currentPhase === 'learn' ? (
+                <div className={studioClass.chatContext}>
+                    <PostmortemCard
+                        deck={decisionDeck}
+                        onExecute={(command) => onSendMessage(command)}
+                        onAddActionItem={onAddActionItem}
+                        onLearnExportArchive={onLearnExportArchive}
+                        actionResult={actionResult}
+                    />
+                </div>
+            ) : !guidedMode ? (
+                <div className={studioClass.chatContext}>
+                    <DecisionDeckCard
+                        deck={decisionDeck}
+                        onExecute={(command) => onSendMessage(command)}
+                        compactMode={compactMode}
+                        guidedMode={guidedMode}
+                    />
+                </div>
+            ) : null}
+
             {/* Messages Timeline */}
             <div
                 role="log"
@@ -233,25 +267,8 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                 aria-busy={isStreaming}
                 ref={timelineRef}
                 onScroll={handleTimelineScroll}
-                className={`${studioClass.chatTimeline}${compactMode ? ' is-compact' : ''}`}
+                className={`${studioClass.chatTimeline}${compactMode ? ' is-compact' : ''}${isSparseChat ? ' is-sparse' : ''}`}
             >
-                {currentPhase === 'learn' ? (
-                    <PostmortemCard
-                        deck={decisionDeck}
-                        onExecute={(command) => onSendMessage(command)}
-                        onAddActionItem={onAddActionItem}
-                    />
-                ) : (
-                    !guidedMode ? (
-                    <DecisionDeckCard
-                        deck={decisionDeck}
-                        onExecute={(command) => onSendMessage(command)}
-                        compactMode={compactMode}
-                        guidedMode={guidedMode}
-                    />
-                    ) : null
-                )}
-
                 {messages.length === 0 ? (
                     <div className={studioClass.emptyState}>
                         <div className="studio-empty-state__icon" aria-hidden="true">
@@ -383,11 +400,13 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                 )}
 
                 {/* Status line — slim bar replacing the metadata card */}
-                <div className={studioClass.composerMeta}>
-                    <MetadataItem label="Scope" value={scopeType === 'workspace' ? 'Workspace' : 'Project'} />
-                    <MetadataItem label="Phase" value={PHASE_LABELS[currentPhase]} />
-                    {userMode === 'expert' && <MetadataItem label="Model" value="WorkspAI" />}
-                </div>
+                {userMode === 'expert' ? (
+                    <div className={studioClass.composerMeta}>
+                        <MetadataItem label="Scope" value={scopeType === 'workspace' ? 'Workspace' : 'Project'} />
+                        <MetadataItem label="Phase" value={PHASE_LABELS[currentPhase]} />
+                        <MetadataItem label="Model" value="WorkspAI" />
+                    </div>
+                ) : null}
 
                 {/* Input */}
                 <div className={studioClass.composerField}>
@@ -463,9 +482,22 @@ interface PostmortemCardProps {
     deck: DecisionDeckContent;
     onExecute: (command: string) => void;
     onAddActionItem?: (text: string) => void;
+    onLearnExportArchive?: {
+        onExportReproPack?: (reproPack: IncidentReproPackEvidence) => void;
+        onExportReleaseReadiness?: (
+            releaseReadiness: IncidentReleaseReadinessCommanderArtifact,
+        ) => void;
+    };
+    actionResult?: NormalizedIncidentActionResultPayload | null;
 }
 
-const PostmortemCard: React.FC<PostmortemCardProps> = ({ deck, onExecute, onAddActionItem }) => {
+const PostmortemCard: React.FC<PostmortemCardProps> = ({
+    deck,
+    onExecute,
+    onAddActionItem,
+    onLearnExportArchive,
+    actionResult = null,
+}) => {
     const [actionInput, setActionInput] = useState('');
 
     const submitAction = () => {
@@ -523,6 +555,31 @@ const PostmortemCard: React.FC<PostmortemCardProps> = ({ deck, onExecute, onAddA
                 >
                     Verify Evidence
                 </button>
+                {onLearnExportArchive?.onExportReproPack && actionResult?.incidentReproPack ? (
+                    <button
+                        type="button"
+                        onClick={() =>
+                            onLearnExportArchive.onExportReproPack!(actionResult.incidentReproPack!)
+                        }
+                        className={studioClass.btnOutlineSuccess}
+                    >
+                        Export repro pack
+                    </button>
+                ) : null}
+                {onLearnExportArchive?.onExportReleaseReadiness &&
+                actionResult?.releaseReadinessCommander ? (
+                    <button
+                        type="button"
+                        onClick={() =>
+                            onLearnExportArchive.onExportReleaseReadiness!(
+                                actionResult.releaseReadinessCommander!,
+                            )
+                        }
+                        className={studioClass.btnOutlineSuccess}
+                    >
+                        Export release readiness
+                    </button>
+                ) : null}
             </div>
         </div>
     );
@@ -864,7 +921,7 @@ const DecisionDeckCard: React.FC<DecisionDeckCardProps> = ({
     compactMode = false,
     guidedMode = false,
 }) => {
-    const [isExpanded, setIsExpanded] = useState(!guidedMode);
+    const [isExpanded, setIsExpanded] = useState(false);
 
     useEffect(() => {
         if (guidedMode) {

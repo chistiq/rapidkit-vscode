@@ -5,10 +5,8 @@
  */
 
 import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs/promises';
-import * as crypto from 'crypto';
 import { Logger } from '../../utils/logger';
+import { openWorkspacePath } from '../../utils/workspacePathNavigation';
 import {
   WorkspaceContext,
   type AnalyzeReport,
@@ -18,34 +16,58 @@ import {
   runWorkspaceAnalyze,
 } from './incidentStudioAnalyze';
 import {
-  AIActionContract,
-  AIActionOperation,
-  parseAIActionContractFromText,
-  validateAIActionContract,
-} from '../../core/aiActionContract';
-import { AIActionExecutionResult, runAIActionContractOperation } from '../../core/aiActionExecutor';
-import {
-  getLatestRunnableAIAction,
-  readAIActionRegistry,
-  recordAIActionContract,
-  recordAIActionExecution,
-} from '../../core/aiActionRegistry';
+  buildStudioAIActionResult,
+  executeGovernedAIActionOperation,
+  formatAIActionRegistryWebviewPayload,
+  publishStudioAIActionContractFromText,
+} from './incidentStudioAIActionBridge';
+import { AIActionContract, AIActionOperation } from '../../core/aiActionContract';
+import { getLatestRunnableAIAction, readAIActionRegistry } from '../../core/aiActionRegistry';
 import {
   buildIncidentStudioEvidenceContext,
   renderIncidentStudioEvidencePrompt,
 } from '../../core/incidentStudioEvidenceContext';
-import {
-  captureAIActionPreflightSnapshot,
-  compareAIActionPreflightSnapshots,
-} from '../../core/aiActionSafety';
 import { askConfiguredAIProvider, getAIProviderStatus } from '../../core/aiProviderService';
-import { isStudioActionId } from '../../core/studioActionCommands';
-
-interface AIActionEvidenceMetadata {
-  path: string;
-  sha256: string;
-  sizeBytes: number;
-}
+import { isStudioActionId, type StudioActionId } from '../../core/studioActionCommands';
+import { executeStudioActionById } from './incidentStudioActionBridge';
+import { exportIncidentReproPack, importIncidentReproPack } from './incidentStudioReproPackBridge';
+import { dispatchIncidentStudioInlineCommand } from './incidentStudioInlineCommandBridge';
+import {
+  shouldRefreshStabilizationLoopAfterAIAction,
+  shouldRefreshStabilizationLoopAfterInlineCommand,
+  shouldRefreshStabilizationLoopAfterStudioAction,
+} from './incidentStudioStabilizationLoopBridge';
+import {
+  exportReleaseReadinessCommanderFromPayload,
+  exportSandboxSimulationEvidenceFromPayload,
+} from './incidentStudioEnterpriseExportBridge';
+import {
+  appendApprovalAuditEvent,
+  postSessionToWebview,
+  readIncidentStudioSession,
+  replaceChatMessages,
+  writeIncidentStudioSession,
+  type IncidentStudioApprovalAuditEvent,
+  type IncidentStudioChatMessage,
+  type IncidentStudioSessionPhase,
+} from './incidentStudioSessionPersistenceBridge';
+import { WelcomePanel } from './welcomePanel';
+import {
+  dispatchIncidentStudioShipLoopStepMessage,
+  dispatchIncidentStudioInlineCommandWithShipLoopRefresh,
+  refreshIncidentStudioShipLoopSurfaces,
+} from './incidentStudioShipLoopBridge';
+import { postIncidentStudioShipEvidence } from './incidentStudioShipEvidenceBridge';
+import {
+  handleIncidentStudioSetUiPreference,
+  postIncidentStudioTelemetry,
+  postIncidentStudioUiPreferences,
+  resolveIncidentStudioTelemetry,
+} from './incidentStudioTelemetryBridge';
+import {
+  dispatchIncidentStudioChatBrainMessage,
+  isIncidentStudioChatBrainCommand,
+} from './incidentStudioChatBrainBridge';
 
 export class IncidentStudioPanel {
   public static readonly viewType = 'incidentStudioNextPanel';
@@ -59,12 +81,15 @@ export class IncidentStudioPanel {
   private _latestAIActionContract: AIActionContract | null = null;
   private _latestAIActionId: string | null = null;
   private _runningStudioActionId: string | null = null;
+  private _runningAIActionOperation: AIActionOperation | null = null;
   private readonly _logger = Logger.getInstance();
 
   public static createOrShow(
     extensionContext: vscode.ExtensionContext,
     workspaceContext?: WorkspaceContext
   ) {
+    WelcomePanel.ensureDashboardPanel(extensionContext);
+
     const column = vscode.ViewColumn.One;
     const extensionUri = extensionContext.extensionUri;
 
@@ -118,7 +143,25 @@ export class IncidentStudioPanel {
 
     // Handle messages from webview
     this._panel.webview.onDidReceiveMessage(
-      (message) => {
+      async (message) => {
+        const protocolRequestId =
+          typeof message?.meta?.requestId === 'string'
+            ? message.meta.requestId
+            : typeof message?.data?.requestId === 'string'
+              ? message.data.requestId
+              : undefined;
+
+        if (isIncidentStudioChatBrainCommand(message.command)) {
+          await dispatchIncidentStudioChatBrainMessage(
+            this._context,
+            message.command,
+            message.data,
+            protocolRequestId,
+            this._panel.webview
+          );
+          return;
+        }
+
         switch (message.command) {
           case 'alert':
             vscode.window.showInformationMessage(message.text);
@@ -149,6 +192,106 @@ export class IncidentStudioPanel {
             return;
           case 'loadAIActionRegistry':
             this._handleLoadAIActionRegistry();
+            return;
+          case 'requestIncidentStudioTelemetry':
+            void postIncidentStudioTelemetry(this._panel.webview, {
+              context: this._context,
+              workspacePath:
+                typeof message.data?.workspacePath === 'string'
+                  ? message.data.workspacePath
+                  : this._workspaceContext.workspacePath,
+              projectPath:
+                typeof message.data?.projectPath === 'string'
+                  ? message.data.projectPath
+                  : undefined,
+              forceRefresh: message.data?.forceRefresh === true,
+            });
+            return;
+          case 'getUiPreferences':
+            postIncidentStudioUiPreferences(
+              this._panel.webview,
+              this._context,
+              typeof message.data?.workspacePath === 'string'
+                ? message.data.workspacePath
+                : this._workspaceContext.workspacePath
+            );
+            return;
+          case 'setUiPreference':
+            if (message.data?.key) {
+              void handleIncidentStudioSetUiPreference(
+                this._panel.webview,
+                this._context,
+                String(message.data.key),
+                message.data.value,
+                {
+                  workspacePath:
+                    typeof message.data.workspacePath === 'string'
+                      ? message.data.workspacePath
+                      : this._workspaceContext.workspacePath,
+                }
+              );
+            }
+            return;
+          case 'exportIncidentReproPack':
+            void this._handleExportIncidentReproPack(message.data);
+            return;
+          case 'importIncidentReproPack':
+            void this._handleImportIncidentReproPack();
+            return;
+          case 'runIncidentInlineCommand':
+            void this._handleRunIncidentInlineCommand(message.data, protocolRequestId);
+            return;
+          case 'requestIncidentStudioShipEvidence':
+            void postIncidentStudioShipEvidence(this._panel.webview, {
+              workspacePath:
+                typeof message.data?.workspacePath === 'string'
+                  ? message.data.workspacePath
+                  : this._workspaceContext.workspacePath,
+              projectPath:
+                typeof message.data?.projectPath === 'string'
+                  ? message.data.projectPath
+                  : undefined,
+              requestId: protocolRequestId,
+            });
+            return;
+          case 'runShipLoopStep':
+            void dispatchIncidentStudioShipLoopStepMessage({
+              payload: message.data,
+              webview: this._panel.webview,
+              context: this._context,
+              workspace: this._workspaceContext,
+              requestId: protocolRequestId,
+            });
+            return;
+          case 'exportSandboxSimulationEvidence':
+            void exportSandboxSimulationEvidenceFromPayload(
+              this._context,
+              typeof message.data === 'object' && message.data !== null
+                ? (message.data as Record<string, unknown>)
+                : {},
+              protocolRequestId,
+              this._panel.webview
+            );
+            return;
+          case 'exportReleaseReadinessCommander':
+            void exportReleaseReadinessCommanderFromPayload(
+              this._context,
+              typeof message.data === 'object' && message.data !== null
+                ? (message.data as Record<string, unknown>)
+                : {},
+              protocolRequestId,
+              this._panel.webview
+            );
+            return;
+          case 'loadIncidentStudioSession':
+            void postSessionToWebview(
+              this._panel.webview,
+              this._resolveSessionWorkspacePath(message.data),
+              this._context
+            );
+            return;
+          case 'saveIncidentStudioSession':
+            void this._handleSaveIncidentStudioSession(message.data);
             return;
         }
       },
@@ -192,16 +335,11 @@ export class IncidentStudioPanel {
       return;
     }
 
-    const resolvedEvidence = path.isAbsolute(evidencePath)
-      ? evidencePath
-      : path.join(workspacePath, evidencePath);
-
     try {
-      const fileUri = vscode.Uri.file(resolvedEvidence);
-      await vscode.commands.executeCommand('revealFileInOS', fileUri);
+      await openWorkspacePath({ workspacePath, path: evidencePath });
     } catch (error) {
       vscode.window.showErrorMessage(
-        `Unable to reveal evidence path: ${error instanceof Error ? error.message : String(error)}`
+        `Unable to open workspace path: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
@@ -276,73 +414,43 @@ export class IncidentStudioPanel {
     try {
       this._runningStudioActionId = actionId;
       this._postStudioActionStatus(actionId, 'started');
-      switch (actionId) {
-        case 'run-analyze':
-        case 'verify-gates':
-          await runWorkspaceAnalyze(this._workspaceContext);
-          await this._refreshStudioState(actionId);
-          {
-            const { report } = loadAnalyzeReport(this._workspaceContext);
-            const registry = await readAIActionRegistry(this._workspaceContext.workspacePath);
-            this._postStudioActionStatus(
-              actionId,
-              'completed',
-              undefined,
-              this._buildStudioActionResult({ actionId, report, registry })
-            );
-          }
-          return;
-        case 'terminal-bridge':
-          await vscode.commands.executeCommand('workspai.aiTerminalBridge', seed);
-          await this._refreshStudioState(actionId);
-          {
-            const { report } = loadAnalyzeReport(this._workspaceContext);
-            const registry = await readAIActionRegistry(this._workspaceContext.workspacePath);
-            this._postStudioActionStatus(
-              actionId,
-              'completed',
-              undefined,
-              this._buildStudioActionResult({ actionId, report, registry })
-            );
-          }
-          return;
-        case 'fix-lens':
-          await vscode.commands.executeCommand('workspai.aiFixPreviewLite', {
-            ...seed,
-            seed: 'Use the current workspace evidence and selected editor context to produce a fix lens. Do not apply changes.',
-          });
-          await this._refreshStudioState(actionId);
-          {
-            const { report } = loadAnalyzeReport(this._workspaceContext);
-            const registry = await readAIActionRegistry(this._workspaceContext.workspacePath);
-            this._postStudioActionStatus(
-              actionId,
-              'completed',
-              undefined,
-              this._buildStudioActionResult({ actionId, report, registry })
-            );
-          }
-          return;
-        case 'impact-lens':
-          await vscode.commands.executeCommand('workspai.aiChangeImpactLite', {
-            ...seed,
-            seed: 'Use the current workspace evidence and selected editor context to produce an impact lens. Do not apply changes.',
-          });
-          await this._refreshStudioState(actionId);
-          {
-            const { report } = loadAnalyzeReport(this._workspaceContext);
-            const registry = await readAIActionRegistry(this._workspaceContext.workspacePath);
-            this._postStudioActionStatus(
-              actionId,
-              'completed',
-              undefined,
-              this._buildStudioActionResult({ actionId, report, registry })
-            );
-          }
-          return;
-        default:
-          actionId satisfies never;
+      const lensSeed =
+        actionId === 'fix-lens' || actionId === 'impact-lens'
+          ? {
+              ...seed,
+              seed:
+                actionId === 'fix-lens'
+                  ? 'Use the current workspace evidence and selected editor context to produce a fix lens. Do not apply changes.'
+                  : 'Use the current workspace evidence and selected editor context to produce an impact lens. Do not apply changes.',
+            }
+          : seed;
+      const { refreshedReport, actionResult } = await executeStudioActionById(
+        this._context,
+        this._workspaceContext,
+        actionId as StudioActionId,
+        lensSeed
+      );
+      await this._refreshStudioState(actionId);
+      if (shouldRefreshStabilizationLoopAfterStudioAction(actionId)) {
+        await refreshIncidentStudioShipLoopSurfaces({
+          webview: this._panel.webview,
+          context: this._context,
+          workspacePath: this._workspaceContext.workspacePath,
+        });
       }
+      const registry = await readAIActionRegistry(this._workspaceContext.workspacePath);
+      this._postStudioActionStatus(
+        actionId,
+        actionResult?.gatePassed === false ? 'failed' : 'completed',
+        actionResult?.summary,
+        this._buildStudioActionResult({
+          actionId,
+          report: refreshedReport,
+          registry,
+          fallbackSummary: actionResult?.summary,
+        })
+      );
+      return;
     } catch (error) {
       this._postStudioActionStatus(
         actionId,
@@ -401,35 +509,13 @@ export class IncidentStudioPanel {
     registry?: Awaited<ReturnType<typeof readAIActionRegistry>> | null;
     fallbackSummary?: string;
   }): Record<string, unknown> {
-    const latestEntry = params.registry?.entries[0];
-    const latestExecution = latestEntry?.executions[0];
-    const report = params.report || null;
-    const summary =
-      params.fallbackSummary ||
-      latestExecution?.summary ||
-      (report
-        ? `Analyze ${report.summary.verdict} · score ${report.summary.score}`
-        : `Studio action ${params.actionId.replace(/-/g, ' ')}`);
-    const failedCommands = latestExecution?.failedCommands || [];
-    return {
-      summary,
-      verdict: report?.summary.verdict,
-      score: report?.summary.score,
-      generatedAt: report?.generatedAt,
-      evidencePath:
-        latestExecution?.evidencePath ||
-        report?.enterpriseControls?.evidencePath ||
-        (report ? getAnalyzeReportPath(this._workspaceContext.workspacePath) : undefined),
-      evidenceSha256: latestExecution?.evidenceSha256,
-      evidenceSizeBytes: latestExecution?.evidenceSizeBytes,
-      commandCount: latestExecution?.commandCount,
-      failedCommandCount:
-        latestExecution?.failedCommandCount ??
-        (failedCommands.length > 0 ? failedCommands.length : undefined),
-      failedCommands,
-      findings: report?.summary.findings,
-      registryUpdatedAt: params.registry?.updatedAt,
-    };
+    return buildStudioAIActionResult({
+      actionId: params.actionId,
+      workspacePath: this._workspaceContext.workspacePath,
+      report: params.report,
+      registry: params.registry,
+      fallbackSummary: params.fallbackSummary,
+    });
   }
 
   private async _refreshStudioState(reason: string) {
@@ -444,265 +530,73 @@ export class IncidentStudioPanel {
       typeof data === 'object' && data !== null && 'operation' in data
         ? String((data as any).operation)
         : '';
-    const requestedActionId =
-      typeof data === 'object' && data !== null && 'actionId' in data
-        ? String((data as any).actionId || '')
-        : '';
-    const summary =
-      typeof data === 'object' && data !== null && 'summary' in data
-        ? String((data as any).summary || this._latestAIActionContract?.summary || 'AI action')
-        : this._latestAIActionContract?.summary || 'AI action';
-    const riskLevel =
-      typeof data === 'object' && data !== null && 'riskLevel' in data
-        ? String((data as any).riskLevel || this._latestAIActionContract?.riskLevel || 'unknown')
-        : this._latestAIActionContract?.riskLevel || 'unknown';
-    const confidence =
-      typeof data === 'object' && data !== null && 'confidence' in data
-        ? Number((data as any).confidence)
-        : this._latestAIActionContract?.confidence;
 
     if (operation !== 'apply' && operation !== 'verify' && operation !== 'rollback') {
       vscode.window.showWarningMessage(`Unknown AI action operation: ${operation || 'missing'}`);
       return;
     }
-    if (!this._latestAIActionContract) {
-      vscode.window.showWarningMessage('No AI action contract is available yet.');
-      return;
-    }
-    if (!this._latestAIActionId) {
-      vscode.window.showWarningMessage('No persisted AI action record is available yet.');
-      return;
-    }
-    if (requestedActionId && requestedActionId !== this._latestAIActionId) {
-      vscode.window.showWarningMessage('The selected AI action is no longer the active action.');
-      return;
-    }
 
-    this._postStudioActionStatus(`ai-action-${operation}`, 'started');
+    const requestedActionId =
+      typeof data === 'object' && data !== null && 'actionId' in data
+        ? String((data as any).actionId || '')
+        : '';
 
-    const registryBeforeRun = await readAIActionRegistry(this._workspaceContext.workspacePath);
-    const activeEntry = registryBeforeRun.entries.find(
-      (entry) => entry.id === this._latestAIActionId
-    );
-    if (!activeEntry) {
-      this._postStudioActionStatus(
-        `ai-action-${operation}`,
-        'failed',
-        'The persisted AI action record could not be found.'
-      );
-      vscode.window.showWarningMessage('The persisted AI action record could not be found.');
-      return;
-    }
-
-    if (operation === 'apply' || operation === 'rollback') {
-      const currentPreflight = await captureAIActionPreflightSnapshot(
-        this._workspaceContext.workspacePath,
-        this._latestAIActionContract
-      );
-      const preflight = compareAIActionPreflightSnapshots(activeEntry.preflight, currentPreflight);
-      if (preflight.stale) {
-        const registry = await recordAIActionExecution(
-          this._workspaceContext.workspacePath,
-          this._latestAIActionId,
-          {
-            operation: operation as AIActionOperation,
-            ok: false,
-            summary: `Preflight blocked ${operation}: ${preflight.issues.join('; ')}`,
-            evidencePath: null,
-            commandCount: 0,
-            failedCommandCount: 0,
-            failedCommands: [],
-            preflight,
-          }
-        );
-        this._postAIActionRegistry(registry);
-        this._postStudioActionStatus(
-          `ai-action-${operation}`,
-          'failed',
-          `Preflight blocked ${operation}.`,
-          this._buildStudioActionResult({
-            actionId: `ai-action-${operation}`,
-            registry,
-            fallbackSummary: `Preflight blocked ${operation}.`,
-          })
-        );
-        this._panel.webview.postMessage({
-          command: 'studioAssistantMessage',
-          data: {
-            role: 'assistant',
-            content: [
-              `AI action ${operation}: BLOCKED`,
-              'Preflight detected stale workspace state.',
-              ...preflight.issues.map((issue) => `- ${issue}`),
-            ].join('\n'),
-            provider: 'ai-action-preflight',
-          },
-        });
-        return;
-      }
-    }
-
-    if (operation === 'apply' || operation === 'rollback') {
-      const label = operation === 'apply' ? 'Apply AI Action' : 'Run Rollback';
-      const commandCount =
-        operation === 'apply'
-          ? this._latestAIActionContract.proposedCommands.length +
-            this._latestAIActionContract.verificationCommands.length
-          : this._latestAIActionContract.rollbackPlan.length;
-      const approval = await vscode.window.showWarningMessage(
-        [
-          `${label}: ${summary}`,
-          `Risk: ${riskLevel}`,
-          Number.isFinite(confidence) ? `Confidence: ${Math.round(Number(confidence) * 100)}%` : '',
-          `Commands: ${commandCount}`,
-          'Only validated, allowlisted commands from the latest persisted contract will run.',
-        ]
-          .filter(Boolean)
-          .join('\n'),
-        { modal: true },
-        label
-      );
-      if (approval !== label) {
-        this._postStudioActionStatus(
-          `ai-action-${operation}`,
-          'failed',
-          `${operation} was cancelled before execution.`
-        );
-        return;
-      }
-    }
-
-    try {
-      const result = await runAIActionContractOperation(this._latestAIActionContract, {
+    await executeGovernedAIActionOperation(
+      this._context,
+      {
         operation: operation as AIActionOperation,
+        requestedActionId,
         workspacePath: this._workspaceContext.workspacePath,
-      });
-      const evidence = await this._writeAIActionEvidence(
-        this._latestAIActionContract,
-        this._latestAIActionId,
-        result
-      );
-      const registry = await recordAIActionExecution(
-        this._workspaceContext.workspacePath,
-        this._latestAIActionId,
-        {
-          operation: result.operation,
-          ok: result.ok,
-          summary: result.summary,
-          evidencePath: evidence?.path,
-          evidenceSha256: evidence?.sha256,
-          evidenceSizeBytes: evidence?.sizeBytes,
-          commandCount: result.commands.length,
-          failedCommandCount: result.commands.filter((command) => command.exitCode !== 0).length,
-          failedCommands: result.commands
-            .filter((command) => command.exitCode !== 0)
-            .map((command) => command.command)
-            .slice(0, 5),
-        }
-      );
-      const commandSummary = result.commands
-        .map((command) => `- ${command.exitCode === 0 ? 'PASS' : 'FAIL'} ${command.command}`)
-        .join('\n');
-
-      this._panel.webview.postMessage({
-        command: 'studioAssistantMessage',
-        data: {
-          role: 'assistant',
-          content: [
-            `AI action ${result.operation}: ${result.ok ? 'PASS' : 'FAIL'}`,
-            result.summary,
-            evidence
-              ? `Evidence: ${evidence.path}\nSHA256: ${evidence.sha256}`
-              : 'Evidence: unavailable',
-            commandSummary || 'No command execution was required.',
-          ].join('\n\n'),
-          provider: 'ai-action-executor',
+        workspaceName: this._workspaceContext.workspaceName,
+        activeContract: this._latestAIActionContract,
+        activeActionId: this._latestAIActionId,
+      },
+      {
+        postActionStatus: (actionId, status, detail, result) =>
+          this._postStudioActionStatus(actionId, status, detail, result),
+        postAssistantMessage: (content, provider) => {
+          this._panel.webview.postMessage({
+            command: 'studioAssistantMessage',
+            data: { role: 'assistant', content, provider },
+          });
         },
-      });
-      this._postAIActionRegistry(registry);
-      this._handleCheckReportExists();
-      this._handleLoadReport();
-      this._postStudioActionStatus(
-        `ai-action-${operation}`,
-        'completed',
-        undefined,
-        this._buildStudioActionResult({
-          actionId: `ai-action-${operation}`,
-          report: loadAnalyzeReport(this._workspaceContext).report,
-          registry,
-          fallbackSummary: result.summary,
-        })
-      );
-    } catch (error) {
-      this._postStudioActionStatus(
-        `ai-action-${operation}`,
-        'failed',
-        error instanceof Error ? error.message : String(error),
-        this._buildStudioActionResult({
-          actionId: `ai-action-${operation}`,
-          report: loadAnalyzeReport(this._workspaceContext).report,
-          fallbackSummary: error instanceof Error ? error.message : String(error),
-        })
-      );
-      this._panel.webview.postMessage({
-        command: 'studioAssistantMessage',
-        data: {
-          role: 'assistant',
-          content: `AI action operation blocked: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-          provider: 'ai-action-executor',
+        postRegistry: (registry) => {
+          this._postAIActionRegistry(registry);
+          const latest = getLatestRunnableAIAction(registry);
+          this._latestAIActionContract = latest?.contract || null;
+          this._latestAIActionId = latest?.id || null;
         },
-      });
-    }
-  }
-
-  private async _writeAIActionEvidence(
-    contract: AIActionContract,
-    actionId: string,
-    result: AIActionExecutionResult
-  ): Promise<AIActionEvidenceMetadata | null> {
-    if (!this._workspaceContext.workspacePath) {
-      return null;
-    }
-
-    try {
-      const evidenceDir = path.join(
-        this._workspaceContext.workspacePath,
-        '.workspai',
-        'evidence',
-        'ai-actions'
-      );
-      await fs.mkdir(evidenceDir, { recursive: true });
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const evidencePath = path.join(evidenceDir, `${stamp}-${result.operation}.json`);
-      await fs.writeFile(
-        evidencePath,
-        JSON.stringify(
-          {
-            schemaVersion: 'workspai.ai-action-evidence.v1',
-            generatedAt: new Date().toISOString(),
-            workspace: this._workspaceContext,
-            actionId,
-            contract,
-            result,
-            redactionApplied: true,
-          },
-          null,
-          2
-        ),
-        'utf8'
-      );
-      const content = await fs.readFile(evidencePath);
-      return {
-        path: evidencePath,
-        sha256: crypto.createHash('sha256').update(content).digest('hex'),
-        sizeBytes: content.byteLength,
-      };
-    } catch (error) {
-      this._logger.warn('Unable to write AI action evidence', error);
-      return null;
-    }
+        refreshReports: () => {
+          this._handleCheckReportExists();
+          this._handleLoadReport();
+        },
+        assertNotRunning: () =>
+          this._runningAIActionOperation
+            ? {
+                ok: false,
+                reason: `Another AI action operation is already running: ${this._runningAIActionOperation}`,
+              }
+            : this._runningStudioActionId
+              ? {
+                  ok: false,
+                  reason: `A Studio action is already running: ${this._runningStudioActionId}`,
+                }
+              : { ok: true },
+        setRunning: (nextOperation) => {
+          this._runningAIActionOperation = nextOperation;
+        },
+        refreshStabilizationLoop: async () => {
+          if (!shouldRefreshStabilizationLoopAfterAIAction()) {
+            return;
+          }
+          await refreshIncidentStudioShipLoopSurfaces({
+            webview: this._panel.webview,
+            context: this._context,
+            workspacePath: this._workspaceContext.workspacePath,
+          });
+        },
+      }
+    );
   }
 
   private async _handleLoadAIActionRegistry() {
@@ -736,20 +630,7 @@ export class IncidentStudioPanel {
   private _postAIActionRegistry(registry: Awaited<ReturnType<typeof readAIActionRegistry>>) {
     this._panel.webview.postMessage({
       command: 'aiActionRegistryLoaded',
-      data: {
-        updatedAt: registry.updatedAt,
-        entries: registry.entries.map((entry) => ({
-          id: entry.id,
-          createdAt: entry.createdAt,
-          provider: entry.provider,
-          summary: entry.contract.summary,
-          actionType: entry.contract.actionType,
-          riskLevel: entry.contract.riskLevel,
-          validationStatus: entry.validation.status,
-          lifecycleStatus: entry.lifecycleStatus,
-          executions: entry.executions,
-        })),
-      },
+      data: formatAIActionRegistryWebviewPayload(registry),
     });
   }
 
@@ -796,28 +677,16 @@ export class IncidentStudioPanel {
           ].join('\n\n'),
         },
       ]);
-      const parsedAction = parseAIActionContractFromText(text);
-      const validation = validateAIActionContract(parsedAction.contract, {
-        workspacePath: this._workspaceContext.workspacePath || process.cwd(),
-        strict: true,
+      const persisted = await publishStudioAIActionContractFromText({
+        workspacePath: this._workspaceContext.workspacePath,
+        text,
+        provider,
+        postMessage: (command, payload) => {
+          this._panel.webview.postMessage({ command, data: payload });
+        },
       });
-      let actionId: string | null = null;
-      if (parsedAction.contract && this._workspaceContext.workspacePath) {
-        const entry = await recordAIActionContract(this._workspaceContext.workspacePath, {
-          contract: parsedAction.contract,
-          validation,
-          provider,
-          rawJson: parsedAction.rawJson,
-        });
-        actionId = entry.id;
-        this._postAIActionRegistry(
-          await readAIActionRegistry(this._workspaceContext.workspacePath)
-        );
-      }
-      this._latestAIActionContract =
-        parsedAction.contract && validation.status !== 'blocked' ? parsedAction.contract : null;
-      this._latestAIActionId =
-        parsedAction.contract && validation.status !== 'blocked' ? actionId : null;
+      this._latestAIActionContract = persisted.activeContract;
+      this._latestAIActionId = persisted.activeActionId;
 
       this._panel.webview.postMessage({
         command: 'studioAssistantMessage',
@@ -827,20 +696,6 @@ export class IncidentStudioPanel {
           provider,
         },
       });
-
-      if (parsedAction.rawJson || parsedAction.contract) {
-        this._panel.webview.postMessage({
-          command: 'studioActionContract',
-          data: {
-            actionId,
-            contract: parsedAction.contract,
-            validation,
-            parseError: parsedAction.parseError,
-            rawJson: parsedAction.rawJson,
-            provider,
-          },
-        });
-      }
     } catch (error) {
       this._panel.webview.postMessage({
         command: 'studioAssistantMessage',
@@ -849,6 +704,132 @@ export class IncidentStudioPanel {
           content: `AI provider failed: ${error instanceof Error ? error.message : String(error)}`,
         },
       });
+    }
+  }
+
+  private async _handleExportIncidentReproPack(data: unknown) {
+    await exportIncidentReproPack(
+      typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : undefined,
+      { fallbackWorkspacePath: this._workspaceContext.workspacePath }
+    );
+  }
+
+  private async _handleImportIncidentReproPack() {
+    try {
+      const imported = await importIncidentReproPack({
+        fallbackWorkspacePath: this._workspaceContext.workspacePath,
+      });
+      if (imported.initialQuery) {
+        await this._handleStudioMessage({
+          message: imported.initialQuery,
+        });
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        `Unable to import incident repro pack: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  private async _handleRunIncidentInlineCommand(data: unknown, requestId?: string) {
+    const resolveWorkspacePath = () => {
+      const explicit =
+        typeof data === 'object' && data !== null && 'workspacePath' in data
+          ? String((data as { workspacePath?: unknown }).workspacePath || '')
+          : '';
+      return explicit.trim() || this._workspaceContext.workspacePath;
+    };
+    const resolveProjectPath = () => {
+      if (typeof data !== 'object' || data === null || !('projectPath' in data)) {
+        return undefined;
+      }
+      const projectPath = String((data as { projectPath?: unknown }).projectPath || '').trim();
+      return projectPath || undefined;
+    };
+    const workspacePath = resolveWorkspacePath();
+    const projectPath = resolveProjectPath();
+
+    const inlineInput = {
+      payload: data,
+      webview: this._panel.webview,
+      requestId,
+      resolveWorkspacePath,
+      resolveProjectPath,
+      resolveTelemetry: (wsPath: string) =>
+        resolveIncidentStudioTelemetry({
+          context: this._context,
+          workspacePath: wsPath,
+        }),
+      enrichTelemetry: () => ({ source: 'incident_studio_panel' }),
+    };
+
+    if (shouldRefreshStabilizationLoopAfterInlineCommand()) {
+      await dispatchIncidentStudioInlineCommandWithShipLoopRefresh({
+        ...inlineInput,
+        context: this._context,
+        workspacePath,
+        projectPath,
+      });
+      return;
+    }
+
+    await dispatchIncidentStudioInlineCommand(inlineInput);
+  }
+
+  private _resolveSessionWorkspacePath(data: unknown): string {
+    const explicit =
+      typeof data === 'object' && data !== null && 'workspacePath' in data
+        ? String((data as { workspacePath?: unknown }).workspacePath || '').trim()
+        : '';
+    return explicit || this._workspaceContext.workspacePath;
+  }
+
+  private _normalizeSessionPhase(value: unknown): IncidentStudioSessionPhase {
+    if (
+      value === 'detect' ||
+      value === 'diagnose' ||
+      value === 'plan' ||
+      value === 'verify' ||
+      value === 'learn'
+    ) {
+      return value;
+    }
+    return 'detect';
+  }
+
+  private async _handleSaveIncidentStudioSession(data: unknown) {
+    const workspacePath = this._resolveSessionWorkspacePath(data);
+    if (!workspacePath.trim()) {
+      return;
+    }
+
+    const payload =
+      typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : {};
+
+    if (typeof payload.phase === 'string') {
+      const session = readIncidentStudioSession(this._context, workspacePath);
+      await writeIncidentStudioSession(this._context, workspacePath, {
+        ...session,
+        phase: this._normalizeSessionPhase(payload.phase),
+      });
+    }
+
+    if (Array.isArray(payload.chatMessages)) {
+      await replaceChatMessages(
+        this._context,
+        workspacePath,
+        payload.chatMessages as IncidentStudioChatMessage[]
+      );
+    }
+
+    if (payload.approvalAuditEvent && typeof payload.approvalAuditEvent === 'object') {
+      await appendApprovalAuditEvent(
+        this._context,
+        workspacePath,
+        payload.approvalAuditEvent as Omit<IncidentStudioApprovalAuditEvent, 'id' | 'happenedAt'>
+      );
     }
   }
 
@@ -881,17 +862,27 @@ export class IncidentStudioPanel {
   }
 
   private _getHtmlForWebview(): string {
-    // Get the path to dist assets
-    const baseUri = this._panel.webview.asWebviewUri(
-      vscode.Uri.joinPath(this._extensionUri, 'dist')
+    const scriptUri = this._panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'dist', 'incident-studio-next.js')
     );
+    const cssUri = this._panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'dist', 'incident-studio-next.css')
+    );
+    const cspSource = this._panel.webview.cspSource;
+    let nonce = '';
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    for (let i = 0; i < 32; i++) {
+      nonce += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'none'; frame-src 'none'; media-src 'none'; object-src 'none'; style-src ${cspSource} 'unsafe-inline'; font-src ${cspSource}; img-src ${cspSource} https:; script-src 'nonce-${nonce}';">
     <title>Incident Studio (Next)</title>
+    <link rel="stylesheet" type="text/css" href="${cssUri}">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { 
@@ -909,11 +900,11 @@ export class IncidentStudioPanel {
 </head>
 <body>
     <div id="root"></div>
-    <script>
+    <script nonce="${nonce}">
         window.INCIDENT_STUDIO_WORKSPACE_PATH = '${this._escapeHtml(this._workspaceContext.workspacePath)}';
         window.INCIDENT_STUDIO_WORKSPACE_NAME = '${this._escapeHtml(this._workspaceContext.workspaceName)}';
     </script>
-    <script type="module" src="${baseUri}/incident-studio-next.js"></script>
+    <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
   }

@@ -25,6 +25,6 @@ describe('IncidentStudioVNext presentation', () => {
     expect(html).toContain('studio-shell--embedded');
     expect(html).toContain('Conversation');
     expect(html).toContain('Operational Posture');
-    expect(html).toContain('System Health');
+    expect(html).toContain('System health');
   });
 });

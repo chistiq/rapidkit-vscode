@@ -68,21 +68,15 @@ describe('StudioRedesign contracts', () => {
     expect(welcomeSource).toContain('_handleDashboardAIActionContractCommand');
     expect(welcomeSource).toContain('_postDashboardStudioActionStatus');
     expect(welcomeSource).toContain('_buildDashboardStudioActionResult');
-    expect(welcomeSource).toContain('result?: Record<string, unknown>');
-    expect(welcomeSource).toContain('getAnalyzeReportPath(params.workspacePath)');
+    expect(welcomeSource).toContain('buildStudioAIActionResult');
     expect(welcomeSource).toContain('_postDashboardAIActionRegistry');
     expect(welcomeSource).toContain('_runningDashboardAIActionOperation');
     expect(welcomeSource).toContain('Another AI action operation is already running');
     expect(welcomeSource).toContain('A Studio action is already running');
-    expect(welcomeSource).toContain(
-      "this._postDashboardStudioActionStatus(`ai-action-${operation}`, 'started')"
-    );
-    expect(welcomeSource).toContain('`ai-action-${operation}`');
+    expect(welcomeSource).toContain('executeGovernedAIActionOperation');
+    expect(welcomeSource).toContain('publishStudioAIActionContractFromText');
     expect(welcomeSource).toContain("'completed'");
-    expect(welcomeSource).toContain('this._runningDashboardAIActionOperation = null;');
-    expect(welcomeSource).toContain('recordAIActionContract');
-    expect(welcomeSource).toContain('runAIActionContractOperation');
-    expect(welcomeSource).toContain('_writeDashboardAIActionEvidence');
+    expect(welcomeSource).toContain('setRunning: (nextOperation) =>');
     expect(welcomeSource).toContain('_syncDashboardLatestAIAction');
   });
 
@@ -91,7 +85,13 @@ describe('StudioRedesign contracts', () => {
       path.join(repoRoot, 'src/ui/panels/incidentStudioPanel.ts'),
       'utf8'
     );
+    const aiActionBridgeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioAIActionBridge.ts'),
+      'utf8'
+    );
 
+    expect(panelSource).toContain('incident-studio-next.css');
+    expect(panelSource).toContain('rel="stylesheet"');
     expect(panelSource).toContain('isStudioActionId(actionId)');
     expect(panelSource).toContain('Unknown Studio action blocked');
     expect(panelSource).toContain('_runningStudioActionId');
@@ -103,13 +103,19 @@ describe('StudioRedesign contracts', () => {
     expect(panelSource).toContain('_buildStudioActionResult');
     expect(panelSource).toContain('result?: Record<string, unknown>');
     expect(panelSource).toContain('getAnalyzeReportPath(this._workspaceContext.workspacePath)');
-    expect(panelSource).toContain(
-      "this._postStudioActionStatus(`ai-action-${operation}`, 'started')"
-    );
-    expect(panelSource).toContain('`ai-action-${operation}`');
+    expect(panelSource).toContain('executeGovernedAIActionOperation');
+    expect(panelSource).toContain('_runningAIActionOperation');
+    expect(aiActionBridgeSource).toContain('`ai-action-${operation}`');
     expect(panelSource).toContain('studio-action-bridge');
     expect(panelSource).toContain("command: 'studioActionStatus'");
-    expect(panelSource).toContain("await this._refreshStudioState('analyze')");
+    expect(panelSource).toContain('executeStudioActionById');
+    expect(panelSource).toContain("case 'requestIncidentStudioTelemetry':");
+    expect(panelSource).toContain("case 'getUiPreferences':");
+    expect(panelSource).toContain("case 'setUiPreference':");
+    expect(panelSource).toContain("case 'exportIncidentReproPack':");
+    expect(panelSource).toContain("case 'importIncidentReproPack':");
+    expect(panelSource).toContain("case 'runIncidentInlineCommand':");
+    expect(panelSource).not.toContain("case 'verify-gates':\n          await runWorkspaceAnalyze");
     for (const actionId of [
       'run-analyze',
       'verify-gates',
@@ -118,8 +124,354 @@ describe('StudioRedesign contracts', () => {
       'impact-lens',
     ]) {
       expect(panelSource).toContain(`await this._refreshStudioState(actionId);`);
-      expect(panelSource).toContain(`case '${actionId}':`);
     }
+  });
+
+  it('keeps shared Incident Studio host bridge contracts centralized', () => {
+    const bridgeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioMessageBridge.ts'),
+      'utf8'
+    );
+    const chatBrainBridgeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioChatBrainBridge.ts'),
+      'utf8'
+    );
+    const telemetryBridgeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioTelemetryBridge.ts'),
+      'utf8'
+    );
+    const actionBridgeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioActionBridge.ts'),
+      'utf8'
+    );
+    const welcomeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/welcomePanel.ts'),
+      'utf8'
+    );
+    const panelSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioPanel.ts'),
+      'utf8'
+    );
+    const appSource = fs.readFileSync(path.join(repoRoot, 'webview-ui/src/App.tsx'), 'utf8');
+    const standaloneSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/incidentStudioNext.tsx'),
+      'utf8'
+    );
+    const vnextSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/IncidentStudioVNext.tsx'),
+      'utf8'
+    );
+    const sessionSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/lib/incidentStudioChatBrainSession.ts'),
+      'utf8'
+    );
+
+    expect(bridgeSource).toContain("'requestIncidentStudioTelemetry'");
+    expect(bridgeSource).toContain("'runIncidentInlineCommand'");
+    expect(bridgeSource).toContain("'aiChatStart'");
+    expect(bridgeSource).toContain("'aiChatQuery'");
+    expect(chatBrainBridgeSource).toContain('dispatchIncidentStudioChatBrainMessage');
+    expect(chatBrainBridgeSource).toContain('ensureIncidentStudioChatBrainHost');
+    expect(telemetryBridgeSource).toContain('resolveIncidentStudioTelemetry');
+    expect(telemetryBridgeSource).toContain('postIncidentStudioTelemetry');
+    expect(actionBridgeSource).toContain('executeVerifyGatesAction');
+    expect(actionBridgeSource).toContain('executeStudioActionById');
+    expect(actionBridgeSource).toContain('releaseGateCommand');
+    expect(welcomeSource).toContain('executeStudioActionById');
+    expect(welcomeSource).toContain('postIncidentStudioTelemetry');
+    expect(welcomeSource).toContain('dispatchExternalChatBrainMessage');
+    expect(welcomeSource).toContain('_postChatBrainWebviewMessage');
+    expect(welcomeSource).not.toContain(
+      "case 'verify-gates':\n          await runWorkspaceAnalyze"
+    );
+    expect(panelSource).toContain('dispatchIncidentStudioChatBrainMessage');
+    expect(panelSource).toContain('isIncidentStudioChatBrainCommand');
+    expect(appSource).toContain('submitIncidentStudioChatBrainQuery');
+    expect(appSource).not.toContain(
+      "vscode.postMessage('studioMessage', { workspacePath, workspaceName, message })"
+    );
+    expect(standaloneSource).toContain('useIncidentStudioChatBrain');
+    expect(standaloneSource).toContain('chatBrain.submitQuery');
+    expect(standaloneSource).not.toContain(
+      "vscode.postMessage('studioMessage', { workspacePath, message"
+    );
+    expect(vnextSource).toContain('chatBrainStreamingEnabled');
+    expect(vnextSource).toContain('streamAssistantText');
+    expect(sessionSource).toContain('buildIncidentChatQueryPayload');
+    expect(sessionSource).toContain('aiChatChunk');
+  });
+
+  it('keeps governed AI action contract flows centralized and hardened', () => {
+    const bridgeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioAIActionBridge.ts'),
+      'utf8'
+    );
+    const panelSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioPanel.ts'),
+      'utf8'
+    );
+    const welcomeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/welcomePanel.ts'),
+      'utf8'
+    );
+    const appSource = fs.readFileSync(path.join(repoRoot, 'webview-ui/src/App.tsx'), 'utf8');
+    const standaloneSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/incidentStudioNext.tsx'),
+      'utf8'
+    );
+    const gateSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/lib/incidentStudioAIActionGate.ts'),
+      'utf8'
+    );
+
+    expect(bridgeSource).toContain('executeGovernedAIActionOperation');
+    expect(bridgeSource).toContain('publishStudioAIActionContractFromText');
+    expect(bridgeSource).toContain('Contract validation blocked apply');
+    expect(panelSource).toContain('executeGovernedAIActionOperation');
+    expect(panelSource).toContain('publishStudioAIActionContractFromText');
+    expect(panelSource).toContain('_runningAIActionOperation');
+    expect(welcomeSource).toContain('publishStudioAIActionContractFromText');
+    expect(welcomeSource).toContain("provider: 'chat-brain'");
+    expect(appSource).toContain('resolveStudioAIActionOperationBlockReason');
+    expect(standaloneSource).toContain('resolveStudioAIActionOperationBlockReason');
+    expect(gateSource).toContain('canDispatchStudioAIActionOperation');
+  });
+
+  it('keeps rapidkit-npm CLI surface centralized with host and webview parity', () => {
+    const inlineBridgeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioInlineCommandBridge.ts'),
+      'utf8'
+    );
+    const panelSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioPanel.ts'),
+      'utf8'
+    );
+    const welcomeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/welcomePanel.ts'),
+      'utf8'
+    );
+    const matrixSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/lib/incidentCliActionMatrix.ts'),
+      'utf8'
+    );
+    const gateSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/lib/incidentStudioCliSurfaceGate.ts'),
+      'utf8'
+    );
+    const sessionSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/lib/incidentStudioCliSurfaceSession.ts'),
+      'utf8'
+    );
+    const appSource = fs.readFileSync(path.join(repoRoot, 'webview-ui/src/App.tsx'), 'utf8');
+    const standaloneSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/incidentStudioNext.tsx'),
+      'utf8'
+    );
+    const sidebarSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/regions/WorkspaceSidebar.tsx'),
+      'utf8'
+    );
+    const cliSectionSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/regions/CliSurfaceSection.tsx'),
+      'utf8'
+    );
+
+    expect(inlineBridgeSource).toContain('dispatchIncidentStudioInlineCommand');
+    expect(inlineBridgeSource).toContain('resolveStudioMutationBlockReason');
+    expect(panelSource).toContain('dispatchIncidentStudioInlineCommand');
+    expect(welcomeSource).toContain('dispatchIncidentStudioInlineCommand');
+    expect(matrixSource).toContain('buildIncidentCliActionMatrix');
+    expect(gateSource).toContain('resolveIncidentCliSurfaceBlockReason');
+    expect(sessionSource).toContain('useIncidentStudioCliSurface');
+    expect(appSource).toContain('useIncidentStudioCliSurface');
+    expect(appSource).toContain('onRunCliSurfaceAction');
+    expect(standaloneSource).toContain('useIncidentStudioCliSurface');
+    expect(sidebarSource).toContain('CliSurfaceSection');
+    expect(cliSectionSource).toContain('buildIncidentCliActionMatrix');
+  });
+
+  it('keeps enterprise stabilization loop centralized with post-action telemetry refresh', () => {
+    const loopBridgeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioStabilizationLoopBridge.ts'),
+      'utf8'
+    );
+    const panelSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioPanel.ts'),
+      'utf8'
+    );
+    const welcomeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/welcomePanel.ts'),
+      'utf8'
+    );
+    const aiActionBridgeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioAIActionBridge.ts'),
+      'utf8'
+    );
+    const inlineBridgeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioInlineCommandBridge.ts'),
+      'utf8'
+    );
+    const loopMapperSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/lib/incidentStudioStabilizationLoop.ts'),
+      'utf8'
+    );
+    const vnextSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/IncidentStudioVNext.tsx'),
+      'utf8'
+    );
+    const contextSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/regions/ContextPanel.tsx'),
+      'utf8'
+    );
+
+    expect(loopBridgeSource).toContain('refreshIncidentStudioStabilizationLoop');
+    expect(loopBridgeSource).toContain('forceRefresh: true');
+    expect(loopBridgeSource).toContain('shouldRefreshStabilizationLoopAfterStudioAction');
+    expect(panelSource).toContain('refreshIncidentStudioShipLoopSurfaces');
+    expect(welcomeSource).toContain('refreshIncidentStudioShipLoopSurfaces');
+    expect(aiActionBridgeSource).toContain('refreshStabilizationLoop');
+    expect(inlineBridgeSource).toContain('refreshStabilizationLoop');
+    expect(loopMapperSource).toContain('deriveEnterpriseStabilizationLoopView');
+    expect(vnextSource).toContain('deriveEnterpriseStabilizationLoopView');
+    expect(contextSource).toContain('enterpriseStabilizationLoop');
+    expect(contextSource).toContain('Expansion frozen');
+  });
+
+  it('keeps enterprise ship loop centralized with evidence refresh and post-patch reverify', () => {
+    const shipLoopBridgeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioShipLoopBridge.ts'),
+      'utf8'
+    );
+    const shipEvidenceBridgeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioShipEvidenceBridge.ts'),
+      'utf8'
+    );
+    const patchReverifyBridgeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioPatchReverifyBridge.ts'),
+      'utf8'
+    );
+    const mutationGateHostSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioMutationGate.ts'),
+      'utf8'
+    );
+    const messageBridgeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioMessageBridge.ts'),
+      'utf8'
+    );
+    const panelSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioPanel.ts'),
+      'utf8'
+    );
+    const welcomeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/welcomePanel.ts'),
+      'utf8'
+    );
+    const loopMapperSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/lib/incidentStudioShipLoop.ts'),
+      'utf8'
+    );
+    const loopGateSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/lib/incidentStudioShipLoopGate.ts'),
+      'utf8'
+    );
+    const loopSessionSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/lib/incidentStudioShipLoopSession.ts'),
+      'utf8'
+    );
+    const mutationGateWebviewSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/lib/incidentStudioMutationGate.ts'),
+      'utf8'
+    );
+    const appSource = fs.readFileSync(path.join(repoRoot, 'webview-ui/src/App.tsx'), 'utf8');
+    const standaloneSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/incidentStudioNext.tsx'),
+      'utf8'
+    );
+    const vnextSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/IncidentStudioVNext.tsx'),
+      'utf8'
+    );
+    const contextSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/regions/ContextPanel.tsx'),
+      'utf8'
+    );
+    const shipLoopSectionSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/regions/ShipLoopSection.tsx'),
+      'utf8'
+    );
+
+    expect(shipLoopBridgeSource).toContain('dispatchIncidentStudioShipLoopStep');
+    expect(shipLoopBridgeSource).toContain('refreshIncidentStudioShipLoopSurfaces');
+    expect(shipLoopBridgeSource).toContain('resolveStudioMutationBlockReason');
+    expect(shipEvidenceBridgeSource).toContain('buildDashboardEvidenceBundle');
+    expect(shipEvidenceBridgeSource).toContain('incidentStudioShipEvidence');
+    expect(patchReverifyBridgeSource).toContain('runPostPatchShipLoopRefresh');
+    expect(patchReverifyBridgeSource).toContain('shipLoopPatchReverifyHint');
+    expect(mutationGateHostSource).toContain('resolveStudioMutationBlockReason');
+    expect(messageBridgeSource).toContain('requestIncidentStudioShipEvidence');
+    expect(messageBridgeSource).toContain('runShipLoopStep');
+    expect(messageBridgeSource).toContain('exportSandboxSimulationEvidence');
+    expect(messageBridgeSource).toContain('exportReleaseReadinessCommander');
+    expect(messageBridgeSource).toContain('loadIncidentStudioSession');
+    expect(messageBridgeSource).toContain('saveIncidentStudioSession');
+    expect(panelSource).toContain("case 'requestIncidentStudioShipEvidence':");
+    expect(panelSource).toContain("case 'runShipLoopStep':");
+    expect(panelSource).toContain("case 'exportSandboxSimulationEvidence':");
+    expect(panelSource).toContain("case 'loadIncidentStudioSession':");
+    expect(welcomeSource).toContain("case 'requestIncidentStudioShipEvidence':");
+    expect(welcomeSource).toContain("case 'runShipLoopStep':");
+    expect(loopMapperSource).toContain('deriveEnterpriseShipLoopView');
+    expect(loopGateSource).toContain('resolveStudioMutationBlockReason');
+    expect(loopSessionSource).toContain('useIncidentStudioShipLoop');
+    expect(mutationGateWebviewSource).toContain('resolveStabilizationLoopBlockReason');
+    expect(appSource).toContain('useIncidentStudioShipLoop');
+    expect(appSource).toContain('requestShipEvidence');
+    expect(standaloneSource).toContain('useIncidentStudioShipLoop');
+    expect(standaloneSource).toContain('onApplyMultiFilePatch');
+    expect(standaloneSource).toContain('isIncidentStudioSessionHostCommand');
+    expect(standaloneSource).toContain('sessionPostMessage');
+    expect(standaloneSource).toContain('INCIDENT_STUDIO_PROJECT_PATH');
+    expect(vnextSource).toContain('deriveEnterpriseShipLoopView');
+    expect(contextSource).toContain('ShipLoopSection');
+    expect(contextSource).toContain('Release readiness validation');
+    expect(contextSource).toContain('phaseShipGuidance');
+  });
+
+  it('enforces telemetry-backed policy gates in host and webview surfaces', () => {
+    const mapperSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioPolicyGateMapper.ts'),
+      'utf8'
+    );
+    const actionBridgeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioActionBridge.ts'),
+      'utf8'
+    );
+    const aiActionBridgeSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/incidentStudioAIActionBridge.ts'),
+      'utf8'
+    );
+    const webviewMapperSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/lib/incidentStudioPolicyGateMapper.ts'),
+      'utf8'
+    );
+    const vnextSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/IncidentStudioVNext.tsx'),
+      'utf8'
+    );
+    const ribbonSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/regions/CommandRibbon.tsx'),
+      'utf8'
+    );
+
+    expect(mapperSource).toContain('evaluatePolicyGateEnforcementFromTelemetry');
+    expect(mapperSource).toContain('canApplyStudioMutationFromTelemetry');
+    expect(actionBridgeSource).toContain('evaluatePolicyGateEnforcementFromTelemetry');
+    expect(aiActionBridgeSource).toContain('resolveStudioMutationBlockReason');
+    expect(webviewMapperSource).toContain('mergePolicyGatesFromTelemetry');
+    expect(webviewMapperSource).toContain('incidentStudioTelemetryPolicyCore');
+    expect(vnextSource).toContain('incomingTelemetry');
+    expect(vnextSource).toContain('mergePolicyGatesFromTelemetry');
+    expect(ribbonSource).toContain('isVerifyActionBlockedByPolicyGates');
   });
 
   it('keeps vNext structured action status wired from host to ribbon', () => {
@@ -161,11 +513,13 @@ describe('StudioRedesign contracts', () => {
     expect(sidebarSource).toContain('disabled={runDisabled}');
     expect(sidebarSource).toContain('buildStudioActionAuditTimeline');
     expect(sidebarSource).toContain('Action Audit');
-    expect(sidebarSource).toContain("onRevealEvidence?.(event.evidencePath || '')");
+    expect(sidebarSource).toContain("onRevealEvidence(event.evidencePath || '')");
     expect(sidebarSource).toContain('selectedAuditEventId');
     expect(sidebarSource).toContain('ActionAuditInspector');
-    expect(sidebarSource).toContain('Reveal evidence');
-    expect(sidebarSource).toContain('Failed commands');
+    expect(sidebarSource).toContain('studio-inspector--compact');
+    expect(sidebarSource).toContain('studio-inspector__link-btn');
+    expect(sidebarSource).toContain('Open');
+    expect(sidebarSource).toContain('studio-inspector__failures');
     expect(sidebarSource).toContain('approvalAuditEvents?: StudioApprovalAuditEvent[];');
   });
 

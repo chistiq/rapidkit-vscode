@@ -496,9 +496,10 @@ describe('contract drift guard', () => {
     expect(read('src/utils/platformCapabilities.ts')).toContain(
       "['--yes', '--package', 'rapidkit', 'rapidkit', ...args]"
     );
-    expect(read('src/ui/panels/welcomePanel.ts')).toContain(
+    expect(read('src/ui/panels/incidentStudioInlineCommandBridge.ts')).toContain(
       'toPinnedRapidkitExecutionCommand(inlineCommand)'
     );
+    expect(read('src/ui/panels/welcomePanel.ts')).toContain('dispatchIncidentStudioInlineCommand');
     expect(combined).not.toContain('rapidkit doctor --scope=workspace');
     expect(combined).not.toContain('rapidkit doctor verify --scope=');
   });
@@ -562,21 +563,14 @@ describe('contract drift guard', () => {
 
   it('keeps incident telemetry request fail-safe fallback to null payload', () => {
     const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
+    const telemetryBridgeSource = read('src/ui/panels/incidentStudioTelemetryBridge.ts');
 
     expect(welcomePanelSource).toContain("case 'requestIncidentStudioTelemetry':");
-    expect(welcomePanelSource).toContain('await this._sendIncidentStudioTelemetry(');
-    expect(welcomePanelSource).toContain(
-      "console.warn('[WelcomePanel] incident telemetry refresh failed:'"
+    expect(welcomePanelSource).toContain('postIncidentStudioTelemetry');
+    expect(telemetryBridgeSource).toContain(
+      "console.warn('[IncidentStudio] telemetry refresh failed:'"
     );
-    expect(welcomePanelSource).toContain("command: 'incidentStudioTelemetry'");
-    expect(welcomePanelSource).toContain('data: null');
-
-    const caseIdx = welcomePanelSource.indexOf("case 'requestIncidentStudioTelemetry':");
-    const catchIdx = welcomePanelSource.indexOf('} catch (error) {', caseIdx);
-    const fallbackIdx = welcomePanelSource.indexOf("command: 'incidentStudioTelemetry'", caseIdx);
-
-    expect(caseIdx).toBeGreaterThan(-1);
-    expect(catchIdx).toBeGreaterThan(caseIdx);
-    expect(fallbackIdx).toBeGreaterThan(catchIdx);
+    expect(telemetryBridgeSource).toContain("command: 'incidentStudioTelemetry'");
+    expect(telemetryBridgeSource).toContain('data: null');
   });
 });

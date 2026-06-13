@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LayoutDashboard, Wrench, Sparkles, Settings2 } from 'lucide-react';
 import { vscode } from '@/vscode';
 import type {
@@ -80,7 +80,11 @@ import {
     type IncidentProjectSelection,
     type IncidentStudioStabilizationKpiStatus,
 } from '@/lib/incidentStudioPayload';
-import { resolveVerifyGateBlockedReasonsFromTelemetry } from '@/lib/incidentStudioActionOutcomePresentation';
+import { resolveVerifyGateBlockedReasonsFromTelemetry } from '@/lib/incidentStudioPolicyGateMapper';
+import { resolveStudioAIActionOperationBlockReason } from '@/lib/incidentStudioAIActionGate';
+import { useIncidentStudioCliSurface } from '@/lib/incidentStudioCliSurfaceSession';
+import { useIncidentStudioShipLoop } from '@/lib/incidentStudioShipLoopSession';
+import { isIncidentStudioSessionHostCommand } from '@/lib/incidentStudioSessionPersistence';
 import { logChatBrain } from '@/lib/chatBrainDebug';
 import {
     isAnalyzeEvidencePending,
@@ -471,7 +475,6 @@ export function App() {
     const [chatBrainError, setChatBrainError] = useState<string | null>(null);
     const [chatBrainErrorRetryable, setChatBrainErrorRetryable] = useState<boolean>(true);
     const [chatBrainIsStreaming, setChatBrainIsStreaming] = useState(false);
-    const [chatBrainExecutingCommand, setChatBrainExecutingCommand] = useState<string | null>(null);
     const [lastInlineCommandResult, setLastInlineCommandResult] = useState<{
         command: string;
         success: boolean;
@@ -488,6 +491,9 @@ export function App() {
     const [dashboardCatalogTimedOut, setDashboardCatalogTimedOut] = useState(false);
     const catalogTemplatesAckRef = useRef(false);
     const catalogModulesAckRef = useRef(false);
+    const sessionHostMessageHandlerRef = useRef<
+        ((command: string, data?: unknown) => boolean) | null
+    >(null);
     const [dashboardSection, setDashboardSection] = useState<DashboardSection>('overview');
     const incidentDashboardReturnSectionRef = useRef<DashboardSection>('evidence');
     const [dashboardEvidence, setDashboardEvidence] = useState<DashboardEvidencePayload | null>(null);
@@ -744,9 +750,71 @@ export function App() {
             : selectedWorkspaceForAnalysis || workspaceStatus.workspacePath) || null;
     const analysisWorkspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath || null;
     const analysisProjectPath = selectedProjectForAnalysis?.path || null;
+
+    const handleCliSurfaceResult = useCallback(
+        (result: {
+            command: string;
+            success: boolean;
+            output?: string;
+            error?: string;
+        }) => {
+            setLastInlineCommandResult(result);
+            if (result.success && result.output) {
+                const outputMessage = `✓ Command completed:\n\`\`\`\n${result.output}\n\`\`\``;
+                setChatBrainHistory((prev) =>
+                    [
+                        ...prev,
+                        {
+                            id: `command-result-${Date.now()}`,
+                            role: 'assistant' as const,
+                            text: outputMessage,
+                            timestamp: Date.now(),
+                        },
+                    ].slice(-24)
+                );
+            } else if (!result.success && result.error) {
+                const errorMessage = `✗ Command failed: ${result.error}`;
+                setChatBrainHistory((prev) =>
+                    [
+                        ...prev,
+                        {
+                            id: `command-error-${Date.now()}`,
+                            role: 'assistant' as const,
+                            text: errorMessage,
+                            timestamp: Date.now(),
+                        },
+                    ].slice(-24)
+                );
+            }
+            logChatBrain('InlineCommand completed', result);
+        },
+        []
+    );
+
+    const cliSurface = useIncidentStudioCliSurface({
+        workspacePath: analysisWorkspacePath || '',
+        workspaceName: activeWorkspaceName,
+        projectSelection: selectedProjectForAnalysis,
+        userMode: incidentUserMode,
+        telemetry: incidentTelemetry,
+        postMessage: (command, data) => vscode.postMessage(command, data),
+        onResult: handleCliSurfaceResult,
+    });
+
     const incidentStudioInitialState = analyzeReport
         ? mapAnalyzeReportToStudioState(analyzeReport, activeWorkspaceName || 'Current Workspace')
         : null;
+
+    const shipLoop = useIncidentStudioShipLoop({
+        workspacePath: analysisWorkspacePath || '',
+        projectPath: selectedProjectForAnalysis?.path,
+        studioEvidence: incidentStudioInitialState?.studioEvidence ?? null,
+        telemetry: incidentTelemetry,
+        policyGates: incidentStudioInitialState?.policyGates,
+        releasePosture: incidentStudioInitialState?.releasePosture,
+        verifyGateBlockedReasons: resolveVerifyGateBlockedReasonsFromTelemetry(incidentTelemetry),
+        postMessage: (command, data) => vscode.postMessage(command, data),
+    });
     const incidentPrimaryCtaMode = resolveIncidentPrimaryCtaMode(
         incidentUserMode,
         incidentPrimaryCtaExperimentVariant
@@ -1634,6 +1702,14 @@ export function App() {
                                     timestamp: Date.now(),
                                 },
                             ].slice(-24));
+                            setIncidentStudioMessage({
+                                id: chatBrainMessageIdRef.current || `assistant-${Date.now()}`,
+                                role: 'assistant',
+                                content: finalText,
+                                timestamp: new Date().toISOString(),
+                                phase: 'diagnose',
+                                sources: [{ type: 'system', label: 'chat-brain' }],
+                            });
                         }
                     }
                     chatBrainStreamTextRef.current = '';
@@ -1658,15 +1734,24 @@ export function App() {
                     const partialFailure = normalizeIncidentPartialFailurePayload(message.data);
                     setChatBrainIsStreaming(false);
                     if (chatBrainStreamTextRef.current.trim()) {
+                        const partialText = `${chatBrainStreamTextRef.current}\n\nResponse interrupted before completion.`;
                         setChatBrainHistory((prev) => [
                             ...prev,
                             {
                                 id: chatBrainMessageIdRef.current || `assistant-partial-${Date.now()}`,
                                 role: 'assistant' as const,
-                                text: `${chatBrainStreamTextRef.current}\n\nResponse interrupted before completion.`,
+                                text: partialText,
                                 timestamp: Date.now(),
                             },
                         ].slice(-24));
+                        setIncidentStudioMessage({
+                            id: chatBrainMessageIdRef.current || `assistant-partial-${Date.now()}`,
+                            role: 'assistant',
+                            content: partialText,
+                            timestamp: new Date().toISOString(),
+                            phase: 'diagnose',
+                            sources: [{ type: 'system', label: 'chat-brain' }],
+                        });
                     }
                     chatBrainStreamTextRef.current = '';
                     setChatBrainStreamText('');
@@ -1694,15 +1779,24 @@ export function App() {
                     }
                     setChatBrainIsStreaming(false);
                     if (chatBrainStreamTextRef.current.trim()) {
+                        const partialText = `${chatBrainStreamTextRef.current}\n\nResponse interrupted before completion.`;
                         setChatBrainHistory((prev) => [
                             ...prev,
                             {
                                 id: chatBrainMessageIdRef.current || `assistant-partial-${Date.now()}`,
                                 role: 'assistant' as const,
-                                text: `${chatBrainStreamTextRef.current}\n\nResponse interrupted before completion.`,
+                                text: partialText,
                                 timestamp: Date.now(),
                             },
                         ].slice(-24));
+                        setIncidentStudioMessage({
+                            id: chatBrainMessageIdRef.current || `assistant-partial-${Date.now()}`,
+                            role: 'assistant',
+                            content: partialText,
+                            timestamp: new Date().toISOString(),
+                            phase: 'diagnose',
+                            sources: [{ type: 'system', label: 'chat-brain' }],
+                        });
                     }
                     chatBrainStreamTextRef.current = '';
                     setChatBrainStreamText('');
@@ -1712,48 +1806,21 @@ export function App() {
                             : 'Chat Brain request failed.'
                     );
                     setChatBrainErrorRetryable(message.data?.retryable !== false);
+                    if (typeof message.data?.message === 'string' && message.data.message.trim()) {
+                        setIncidentStudioMessage({
+                            id: `assistant-error-${Date.now()}`,
+                            role: 'assistant',
+                            content: message.data.message,
+                            timestamp: new Date().toISOString(),
+                            phase: 'diagnose',
+                            sources: [{ type: 'system', label: 'chat-brain' }],
+                        });
+                    }
                     logChatBrain(message.command, message.data);
                     break;
                 case 'runIncidentInlineCommandDone':
-                    setChatBrainExecutingCommand(null);
-                    if (message.data?.command) {
-                        setLastInlineCommandResult({
-                            command: String(message.data.command),
-                            success: message.data?.success === true,
-                            output:
-                                typeof message.data?.output === 'string'
-                                    ? message.data.output
-                                    : undefined,
-                            error:
-                                typeof message.data?.error === 'string'
-                                    ? message.data.error
-                                    : undefined,
-                        });
-                    }
-                    if (message.data?.success && message.data?.output) {
-                        const outputMessage = `✓ Command completed:\n\`\`\`\n${message.data.output}\n\`\`\``;
-                        setChatBrainHistory((prev) => [
-                            ...prev,
-                            {
-                                id: `command-result-${Date.now()}`,
-                                role: 'assistant' as const,
-                                text: outputMessage,
-                                timestamp: Date.now(),
-                            },
-                        ].slice(-24));
-                    } else if (!message.data?.success && message.data?.error) {
-                        const errorMessage = `✗ Command failed: ${message.data.error}`;
-                        setChatBrainHistory((prev) => [
-                            ...prev,
-                            {
-                                id: `command-error-${Date.now()}`,
-                                role: 'assistant' as const,
-                                text: errorMessage,
-                                timestamp: Date.now(),
-                            },
-                        ].slice(-24));
-                    }
-                    logChatBrain('InlineCommand completed', message.data);
+                    cliSurface.handleHostMessage(message);
+                    shipLoop.handleHostMessage(message.command, message.data, message.meta);
                     break;
                 case 'aiChatPatchApplied': {
                     const patchResult = message.data?.result;
@@ -1785,6 +1852,16 @@ export function App() {
                     logChatBrain('aiChatPatchApplied', message.data);
                     break;
                 }
+                case 'incidentStudioShipEvidence':
+                case 'runShipLoopStepDone':
+                case 'shipLoopPatchReverifyHint':
+                    shipLoop.handleHostMessage(message.command, message.data, message.meta);
+                    break;
+                case 'incidentStudioSessionLoaded':
+                    if (isIncidentStudioSessionHostCommand(message.command)) {
+                        sessionHostMessageHandlerRef.current?.(message.command, message.data);
+                    }
+                    break;
                 case 'uiPreferences':
                     setIncidentUserMode(normalizeIncidentUserMode(message.data?.incidentUserMode));
                     if (!incidentStudioDisplayModeOverrideRef.current) {
@@ -1978,16 +2055,11 @@ export function App() {
     };
 
     const runIncidentInlineCommand = (command: string) => {
-        const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
-        if (!command.trim() || !workspacePath) {
-            return;
-        }
-        setChatBrainExecutingCommand(command);
-        vscode.postMessage('runIncidentInlineCommand', {
-            command,
-            workspacePath,
-            workspaceName: activeWorkspaceName,
-        });
+        cliSurface.submitInlineCommand(command);
+    };
+
+    const handleRunCliSurfaceAction = (entry: { command: string; cliActionId: string }) => {
+        cliSurface.submitInlineCommand(entry.command, { cliActionId: entry.cliActionId });
     };
 
     const revealArchitectureTarget = (target: {
@@ -2153,6 +2225,73 @@ export function App() {
         vscode.postMessage('runAnalyze', { workspacePath, workspaceName });
     };
 
+    const submitIncidentStudioChatBrainQuery = (
+        query: string,
+        options?: { appendHistory?: boolean },
+    ) => {
+        const trimmedQuery = query.trim();
+        if (!trimmedQuery) {
+            return;
+        }
+
+        const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
+        if (!workspacePath) {
+            setChatBrainError('Select or open a workspace before sending an Incident Studio query.');
+            setChatBrainErrorRetryable(false);
+            return;
+        }
+
+        if (!selectedWorkspaceForAnalysis) {
+            setSelectedWorkspaceForAnalysis(workspacePath);
+        }
+
+        const conversationId = chatBrainConversationId || `conv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        if (!chatBrainConversationId) {
+            setChatBrainConversationId(conversationId);
+            vscode.postMessage(
+                'aiChatStart',
+                buildIncidentChatStartPayload({
+                    workspacePath,
+                    projectSelection: selectedProjectForAnalysis,
+                    resumeConversationId: conversationId,
+                    requestId: `cb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                })
+            );
+        }
+        setChatBrainIsStreaming(true);
+        setChatBrainError(null);
+        setChatBrainErrorRetryable(true);
+        setChatBrainActionProgress(null);
+        setChatBrainActionResult(null);
+        setChatBrainImpactAssessment(null);
+        setChatBrainPredictiveWarning(null);
+        setChatBrainReleaseGateEvidence(null);
+        setChatBrainBoard(null);
+        setChatBrainSuggestedQuestions([]);
+        if (options?.appendHistory !== false) {
+            setChatBrainHistory((prev) => [
+                ...prev,
+                {
+                    id: `user-${Date.now()}`,
+                    role: 'user' as const,
+                    text: trimmedQuery,
+                    timestamp: Date.now(),
+                },
+            ].slice(-24));
+        }
+        vscode.postMessage(
+            'aiChatQuery',
+            buildIncidentChatQueryPayload({
+                conversationId,
+                workspacePath,
+                projectSelection: selectedProjectForAnalysis,
+                requestId: `cbq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                modelId: normalizeSelectedModelId(incidentSelectedModelId) ?? undefined,
+                message: trimmedQuery,
+            })
+        );
+    };
+
     const handleStudioVNextMessage = (message: string) => {
         const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
         const workspaceName = activeWorkspaceName || undefined;
@@ -2179,7 +2318,7 @@ export function App() {
             return 'Running workspace analysis.';
         }
 
-        vscode.postMessage('studioMessage', { workspacePath, workspaceName, message });
+        submitIncidentStudioChatBrainQuery(message, { appendHistory: false });
         return undefined;
     };
 
@@ -2188,6 +2327,29 @@ export function App() {
         const workspaceName = activeWorkspaceName || undefined;
 
         if (!workspacePath) {
+            return;
+        }
+
+        const policyBlockedReasons = resolveVerifyGateBlockedReasonsFromTelemetry(incidentTelemetry);
+        const blockReason = resolveStudioAIActionOperationBlockReason(
+            operation,
+            incidentActionContract,
+            {
+                policyMutationBlocked:
+                    policyBlockedReasons.length > 0 &&
+                    (operation === 'apply' || operation === 'rollback'),
+                policyReason: policyBlockedReasons[0],
+            },
+        );
+        if (blockReason) {
+            setIncidentStudioMessage({
+                id: `ai-action-blocked-${Date.now()}`,
+                role: 'assistant',
+                content: `AI action ${operation} blocked: ${blockReason}`,
+                timestamp: new Date().toISOString(),
+                phase: 'plan',
+                sources: [{ type: 'system', label: 'ai-action-gate' }],
+            });
             return;
         }
 
@@ -2236,6 +2398,7 @@ export function App() {
         setSelectedWorkspaceForAnalysis(workspacePath);
         requestAnalyzeEvidence(workspacePath, workspaceName);
         requestIncidentStudioTelemetryRefresh({ forceRefresh: true });
+        shipLoop.requestShipEvidence();
     }, [activeView, recentWorkspaces, workspaceStatus.workspaceName, workspaceStatus.workspacePath]);
 
     useEffect(() => {
@@ -2273,65 +2436,7 @@ export function App() {
     });
 
     const handleChatBrainQuery = (query: string) => {
-        const trimmedQuery = query.trim();
-        if (!trimmedQuery) {
-            return;
-        }
-
-        const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
-        if (!workspacePath) {
-            setChatBrainError('Select or open a workspace before sending an Incident Studio query.');
-            setChatBrainErrorRetryable(false);
-            return;
-        }
-
-        if (!selectedWorkspaceForAnalysis) {
-            setSelectedWorkspaceForAnalysis(workspacePath);
-        }
-
-        const conversationId = chatBrainConversationId || `conv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        if (!chatBrainConversationId) {
-            setChatBrainConversationId(conversationId);
-            vscode.postMessage(
-                'aiChatStart',
-                buildIncidentChatStartPayload({
-                    workspacePath,
-                    projectSelection: selectedProjectForAnalysis,
-                    resumeConversationId: conversationId,
-                    requestId: `cb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-                })
-            );
-        }
-        setChatBrainIsStreaming(true);
-        setChatBrainError(null);
-        setChatBrainErrorRetryable(true);
-        setChatBrainActionProgress(null);
-        setChatBrainActionResult(null);
-        setChatBrainImpactAssessment(null);
-        setChatBrainPredictiveWarning(null);
-        setChatBrainReleaseGateEvidence(null);
-        setChatBrainBoard(null);
-        setChatBrainSuggestedQuestions([]);
-        setChatBrainHistory((prev) => [
-            ...prev,
-            {
-                id: `user-${Date.now()}`,
-                role: 'user' as const,
-                text: trimmedQuery,
-                timestamp: Date.now(),
-            },
-        ].slice(-24));
-        vscode.postMessage(
-            'aiChatQuery',
-            buildIncidentChatQueryPayload({
-                conversationId,
-                workspacePath,
-                projectSelection: selectedProjectForAnalysis,
-                requestId: `cbq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-                modelId: normalizeSelectedModelId(incidentSelectedModelId) ?? undefined,
-                message: trimmedQuery,
-            })
-        );
+        submitIncidentStudioChatBrainQuery(query, { appendHistory: true });
     };
 
     const handleChatBrainExecuteAction = (actionType: string, actionId?: string) => {
@@ -2571,7 +2676,21 @@ export function App() {
     ]);
 
     return (
-        <div className={`container`}>
+        <div
+            className={[
+                'container',
+                activeView === 'dashboard'
+                    ? 'container--dashboard'
+                    : activeView === 'incident-studio'
+                      ? 'container--embedded-full'
+                      : activeView === 'settings' || activeView === 'setup'
+                        ? 'container--embedded-scroll'
+                        : '',
+            ]
+                .filter(Boolean)
+                .join(' ')}
+            data-active-view={activeView}
+        >
             <div className="workspai-top-bar">
                 <Header version={version} variant="topbar" />
 
@@ -3042,6 +3161,9 @@ export function App() {
                         userMode: incidentUserMode,
                         scopeType: analysisScopeType,
                     }}
+                    workspacePath={analysisWorkspacePath || ''}
+                    sessionPostMessage={(command, data) => vscode.postMessage(command, data)}
+                    sessionHostMessageHandlerRef={sessionHostMessageHandlerRef}
                     preferredUserMode={incidentUserMode}
                     onUserModeChange={updateIncidentUserMode}
                     studioDisplayMode={incidentStudioDisplayMode}
@@ -3051,6 +3173,9 @@ export function App() {
                     onTelemetryRefresh={() => requestIncidentStudioTelemetryRefresh({ forceRefresh: true })}
                     onSendMessage={handleStudioVNextMessage}
                     incomingMessage={incidentStudioMessage}
+                    streamAssistantText={chatBrainStreamText}
+                    externalIsStreaming={chatBrainIsStreaming}
+                    chatBrainStreamingEnabled
                     incomingActionContract={incidentActionContract}
                     incomingActionRegistry={incidentActionRegistry}
                     incomingActionStatus={incidentActionStatus}
@@ -3060,10 +3185,12 @@ export function App() {
                     showDemoScenario={false}
                     incomingActionResult={chatBrainActionResult}
                     verifyGateBlockedReasons={resolveVerifyGateBlockedReasonsFromTelemetry(
-                        incidentTelemetry?.studioHardGateStatus,
+                        incidentTelemetry,
                     )}
                     stabilizationKpiStatus={incidentTelemetry?.studioStabilizationKpiStatus ?? null}
+                    incomingTelemetry={incidentTelemetry}
                     onExportIncidentReproPack={handleExportIncidentReproPack}
+                    onExportReleaseReadiness={handleExportReleaseReadinessCommander}
                     onImportIncidentReproPack={handleImportIncidentReproPack}
                     onReplayIncidentQuery={handleChatBrainQuery}
                     onApplyMultiFilePatch={handleChatBrainApplyPatch}
@@ -3079,6 +3206,13 @@ export function App() {
                             : null
                     }
                     onRunGuidedCommand={runIncidentInlineCommand}
+                    onRunCliSurfaceAction={handleRunCliSurfaceAction}
+                    executingCliCommand={cliSurface.executingCommand}
+                    shipEvidence={shipLoop.shipEvidence}
+                    executingShipLoopStepId={shipLoop.executingStepId}
+                    onRunShipLoopStep={shipLoop.runShipLoopStep}
+                    canRunShipLoopStep={shipLoop.canRunStep}
+                    hasProjectSelected={Boolean(selectedProjectForAnalysis?.path)}
                 />
                 </div>
             )}

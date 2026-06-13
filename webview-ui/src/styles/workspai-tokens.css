@@ -76,9 +76,19 @@
 
 .workspai-theme-root {
     min-height: 100vh;
+    min-height: 100dvh;
+    height: 100%;
     width: 100%;
+    display: flex;
+    flex-direction: column;
     background: var(--ws-surface);
     color: var(--ws-text);
     font-family: var(--ws-font-ui);
     font-size: var(--ws-font-size);
+}
+
+html,
+body,
+#root {
+    height: 100%;
 }

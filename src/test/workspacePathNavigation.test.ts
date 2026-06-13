@@ -1,0 +1,25 @@
+import * as path from 'path';
+import { describe, expect, it } from 'vitest';
+import {
+  inferWorkspacePathOpenMode,
+  resolveWorkspaceAbsolutePath,
+} from '../utils/workspacePathNavigationPolicy';
+
+describe('workspacePathNavigation', () => {
+  it('resolves relative paths against workspace root', () => {
+    expect(resolveWorkspaceAbsolutePath('/ws', 'src/app.ts')).toBe(path.join('/ws', 'src/app.ts'));
+  });
+
+  it('preserves absolute paths', () => {
+    expect(resolveWorkspaceAbsolutePath('/ws', '/abs/file.ts')).toBe('/abs/file.ts');
+  });
+
+  it('opens source files in editor mode', () => {
+    expect(inferWorkspacePathOpenMode('/ws/src/auth/service.ts')).toBe('editor');
+  });
+
+  it('reveals rapidkit report artifacts in reveal mode', () => {
+    expect(inferWorkspacePathOpenMode('/ws/.rapidkit/reports/doctor.json')).toBe('reveal');
+    expect(inferWorkspacePathOpenMode('/ws\\.rapidkit\\reports\\readiness.json')).toBe('reveal');
+  });
+});

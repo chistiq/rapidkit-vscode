@@ -45,6 +45,7 @@ export interface MissionControlHeaderProps {
     onThemeModeChange: (mode: ThemeMode) => void;
     onScopeChange: (scope: ScopeType) => void;
     onExecuteAction: (command: StudioActionCommand) => void;
+    verifyGateBlockedReasons?: string[];
 }
 
 export const MissionControlHeader: React.FC<MissionControlHeaderProps> = ({
@@ -70,6 +71,7 @@ export const MissionControlHeader: React.FC<MissionControlHeaderProps> = ({
     onThemeModeChange,
     onScopeChange,
     onExecuteAction,
+    verifyGateBlockedReasons = [],
 }) => (
     <div
         className={`${studioClass.missionControl}${embedded ? ' is-embedded' : ''}`}
@@ -110,6 +112,7 @@ export const MissionControlHeader: React.FC<MissionControlHeaderProps> = ({
                 displayMode={displayMode}
                 liteReleaseState={liteReleaseState}
                 onExecuteAction={onExecuteAction}
+                verifyGateBlockedReasons={verifyGateBlockedReasons}
             />
         </div>
     </div>

@@ -21,6 +21,13 @@ import { buildStudioActionApprovalGate } from '../state/studioActionApproval';
 import { StudioApprovalAuditEvent, StudioApprovalAuditOperation } from '../state/studioActionAudit';
 import type { IncidentStudioStabilizationKpiStatus } from '../../../lib/incidentStudioPayload';
 import { deriveStabilizationEnterpriseClaim } from '../../../lib/incidentStudioStabilizationClaim';
+import type { EnterpriseStabilizationLoopView } from '../../../lib/incidentStudioStabilizationLoop';
+import type { EnterpriseShipLoopView, ShipLoopStepId } from '../../../lib/incidentStudioShipLoop';
+import type { EnterpriseObservabilityView } from '../../../lib/incidentStudioObservabilityView';
+import { formatObservabilityPercent } from '../../../lib/incidentStudioObservabilityView';
+import type { PhaseShipGuidance } from '../../../lib/incidentStudioPhaseShipGuidance';
+import { ShipLoopSection } from './ShipLoopSection';
+import { CollapsibleSection } from './CollapsibleSection';
 
 interface ContextPanelProps {
     health: HealthMetrics;
@@ -35,6 +42,13 @@ interface ContextPanelProps {
     onApprovalAuditEvent?: (event: Omit<StudioApprovalAuditEvent, 'id' | 'happenedAt'>) => void;
     onRevealEvidence?: (path: string) => void;
     stabilizationKpiStatus?: IncidentStudioStabilizationKpiStatus | null;
+    enterpriseStabilizationLoop?: EnterpriseStabilizationLoopView | null;
+    enterpriseShipLoop?: EnterpriseShipLoopView | null;
+    executingShipLoopStepId?: ShipLoopStepId | null;
+    onRunShipLoopStep?: (stepId: ShipLoopStepId) => void;
+    canRunShipLoopStep?: (stepId: ShipLoopStepId) => boolean;
+    observabilityView?: EnterpriseObservabilityView | null;
+    phaseShipGuidance?: PhaseShipGuidance | null;
 }
 
 interface ModuleGraphItem {
@@ -94,7 +108,8 @@ function mapRelatedFilesToModules(relatedFiles: RelatedFile[], health: HealthMet
 const GuidedReleaseGateSection: React.FC<{
     policyGates: PolicyGateState;
     releasePosture: ReleaseGatePosture;
-}> = ({ policyGates, releasePosture }) => {
+    phaseShipHint?: string | null;
+}> = ({ policyGates, releasePosture, phaseShipHint = null }) => {
     const releaseTone = releasePostureToneClass(policyGates.releasePosture);
     const flowLabel =
         policyGates.flowState === 'passing'
@@ -126,6 +141,11 @@ const GuidedReleaseGateSection: React.FC<{
                     Enterprise release decision from flow verification and stabilization posture. Complete verify
                     before claiming resolution.
                 </p>
+                {phaseShipHint ? (
+                    <p className={`${studioClass.caption} ${studioClass.toneWarn} ${studioClass.mtSm}`}>
+                        {phaseShipHint}
+                    </p>
+                ) : null}
                 <div className={studioClass.traceGrid}>
                     <div className={studioClass.metric}>
                         <span className={studioClass.metricLabel}>Release posture</span>
@@ -143,9 +163,14 @@ const GuidedReleaseGateSection: React.FC<{
     );
 };
 
-const OperationalPostureCard: React.FC<{ posture: StudioPosture; compactGuided?: boolean }> = ({
+const OperationalPostureCard: React.FC<{
+    posture: StudioPosture;
+    compactGuided?: boolean;
+    phaseShipHint?: string | null;
+}> = ({
     posture,
     compactGuided = false,
+    phaseShipHint = null,
 }) => {
     const toneClass = postureToneClass(posture.tone);
     const metrics = compactGuided ? posture.metrics.slice(0, 2) : posture.metrics;
@@ -167,6 +192,12 @@ const OperationalPostureCard: React.FC<{ posture: StudioPosture; compactGuided?:
                 <div className={`${studioClass.bodySmall} studio-u-text-muted`}>
                     {posture.summary}
                 </div>
+
+                {phaseShipHint ? (
+                    <p className={`${studioClass.caption} ${studioClass.toneWarn} ${studioClass.mtSm}`}>
+                        {phaseShipHint}
+                    </p>
+                ) : null}
 
                 <div className={studioClass.traceGrid}>
                     {metrics.map((metric) => (
@@ -202,6 +233,13 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
     onApprovalAuditEvent,
     onRevealEvidence,
     stabilizationKpiStatus = null,
+    enterpriseStabilizationLoop = null,
+    enterpriseShipLoop = null,
+    executingShipLoopStepId = null,
+    onRunShipLoopStep,
+    canRunShipLoopStep,
+    observabilityView = null,
+    phaseShipGuidance = null,
 }) => {
     const [frameworkFilter, setFrameworkFilter] = useState<'all' | ModuleGraphItem['framework']>('all');
     const [severityFilter, setSeverityFilter] = useState<'all' | ModuleGraphItem['severity']>('all');
@@ -269,7 +307,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
             ? `${latestActionEntry.validationStatus}/${latestActionEntry.lifecycleStatus}`
             : 'No contract yet';
     const drillDownLabel = onRevealEvidence
-        ? 'Reveal enabled'
+        ? 'Open in editor'
         : 'Read-only';
     const proofReadinessLabel = latestActionExecution?.evidenceSha256
         ? `sha256:${latestActionExecution.evidenceSha256.slice(0, 12)}`
@@ -357,14 +395,24 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
             </div>
 
             {isGuided ? (
-                <GuidedReleaseGateSection policyGates={policyGates} releasePosture={releasePosture} />
+                <GuidedReleaseGateSection
+                    policyGates={policyGates}
+                    releasePosture={releasePosture}
+                    phaseShipHint={phaseShipGuidance?.hint ?? null}
+                />
             ) : (
-                <OperationalPostureCard posture={operationalPosture} compactGuided={false} />
+                <OperationalPostureCard
+                    posture={operationalPosture}
+                    compactGuided={false}
+                    phaseShipHint={phaseShipGuidance?.hint ?? null}
+                />
             )}
 
             {!isGuided ? (
-            <section className={studioClass.contextSection}>
-                <div className={studioClass.sectionLabel}>System Health</div>
+            <CollapsibleSection
+                title="System health"
+                hint={`${healthPercent}% healthy`}
+            >
                 <div className={studioClass.card}>
                     <div className={studioClass.healthSummary}>
                         <div className="studio-health-ring">{healthPercent}%</div>
@@ -393,12 +441,14 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                         </div>
                     ) : null}
                 </div>
-            </section>
+            </CollapsibleSection>
             ) : null}
 
             {!isGuided ? (
-            <section className={studioClass.contextSection}>
-                <div className={studioClass.sectionLabel}>Policy Gates</div>
+            <CollapsibleSection
+                title="Policy gates"
+                hint={RELEASE_GATE_LABELS[policyGates.releasePosture]}
+            >
                 <div className={studioClass.stackSm}>
                     <PolicyGateBadge label="Flow State" state={policyGates.flowState} />
                     <PolicyGateBadge label="Telemetry" state={policyGates.telemetryState} />
@@ -417,12 +467,14 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                         )}
                     </div>
                 </div>
-            </section>
+            </CollapsibleSection>
             ) : null}
 
             {stabilizationKpiStatus ? (
-                <section className={studioClass.contextSection}>
-                    <div className={studioClass.sectionLabel}>Stabilization KPI</div>
+                <CollapsibleSection
+                    title="Stabilization KPI"
+                    hint={stabilizationClaim.summaryState}
+                >
                     <div className={studioClass.card}>
                         <div className={studioClass.rowSm}>
                             <span
@@ -478,23 +530,205 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                                 No stabilization blockers in the current window.
                             </p>
                         )}
+                        {enterpriseStabilizationLoop ? (
+                            <div className={`${studioClass.stackSm} ${studioClass.mtSm}`}>
+                                <div className={studioClass.rowSm}>
+                                    <span className={`${studioClass.captionSmall} ${studioClass.uppercase}`}>
+                                        Loop · {enterpriseStabilizationLoop.state}
+                                    </span>
+                                    {enterpriseStabilizationLoop.expansionFrozen ? (
+                                        <span className={`${studioClass.caption} ${studioClass.toneError}`}>
+                                            Expansion frozen
+                                        </span>
+                                    ) : (
+                                        <span className={`${studioClass.caption} ${studioClass.toneOk}`}>
+                                            Expansion allowed
+                                        </span>
+                                    )}
+                                </div>
+                                <div className={`${studioClass.traceGrid}`}>
+                                    <TraceabilityTile
+                                        label="7d window"
+                                        value={
+                                            enterpriseStabilizationLoop.last7dPass === null
+                                                ? 'N/A'
+                                                : enterpriseStabilizationLoop.last7dPass
+                                                  ? 'PASS'
+                                                  : 'FAIL'
+                                        }
+                                    />
+                                    <TraceabilityTile
+                                        label="30d window"
+                                        value={
+                                            enterpriseStabilizationLoop.last30dPass === null
+                                                ? 'N/A'
+                                                : enterpriseStabilizationLoop.last30dPass
+                                                  ? 'PASS'
+                                                  : 'FAIL'
+                                        }
+                                    />
+                                </div>
+                                {enterpriseStabilizationLoop.recoveryHint ? (
+                                    <p className={`${studioClass.caption} studio-u-text-subtle`}>
+                                        {enterpriseStabilizationLoop.recoveryHint}
+                                    </p>
+                                ) : null}
+                            </div>
+                        ) : null}
                     </div>
-                </section>
+                </CollapsibleSection>
             ) : isGuided ? (
-                <section className={studioClass.contextSection}>
-                    <div className={studioClass.sectionLabel}>Stabilization KPI</div>
+                <CollapsibleSection title="Stabilization KPI" hint="Not loaded">
                     <div className={`${studioClass.card} studio-context-guided-empty`}>
                         <p className={`${studioClass.bodySmall} studio-u-text-muted`}>
                             Stabilization telemetry is not loaded yet. Run verify to hydrate enterprise KPIs before
                             claiming release readiness.
                         </p>
                     </div>
-                </section>
+                </CollapsibleSection>
+            ) : null}
+
+            {observabilityView?.releaseReadiness ? (
+                <CollapsibleSection
+                    title="Release readiness validation"
+                    hint={observabilityView.releaseReadiness.summaryLabel}
+                >
+                    <div className={studioClass.card}>
+                        <div className={studioClass.rowSm}>
+                            <span
+                                className={`${studioClass.captionSmall} ${studioClass.uppercase} ${postureToneClass(
+                                    observabilityView.releaseReadiness.overallPass ? 'ok' : 'warning',
+                                )}`}
+                            >
+                                {observabilityView.releaseReadiness.summaryLabel}
+                            </span>
+                            <span className={`${studioClass.caption} studio-u-text-subtle`}>
+                                Window · {observabilityView.releaseReadiness.timeWindow}
+                            </span>
+                        </div>
+                        <div className={`${studioClass.traceGrid} ${studioClass.mtSm}`}>
+                            <TraceabilityTile
+                                label="Artifacts exported"
+                                value={String(observabilityView.releaseReadiness.artifactsExported)}
+                            />
+                            <TraceabilityTile
+                                label="Decision accuracy"
+                                value={formatObservabilityPercent(
+                                    observabilityView.releaseReadiness.decisionAccuracy,
+                                )}
+                            />
+                            <TraceabilityTile
+                                label="No-go prevented"
+                                value={formatObservabilityPercent(
+                                    observabilityView.releaseReadiness.noGoPreventedRate,
+                                )}
+                            />
+                        </div>
+                    </div>
+                </CollapsibleSection>
+            ) : null}
+
+            {observabilityView?.commandTelemetry ? (
+                <CollapsibleSection
+                    title="Command telemetry"
+                    hint={observabilityView.commandTelemetry.summaryLabel}
+                >
+                    <div className={studioClass.card}>
+                        <div className={`${studioClass.traceGrid} ${studioClass.mtSm}`}>
+                            <TraceabilityTile
+                                label="Total events"
+                                value={String(observabilityView.commandTelemetry.totalEvents)}
+                            />
+                            <TraceabilityTile
+                                label="Action vs ask"
+                                value={formatObservabilityPercent(
+                                    observabilityView.commandTelemetry.actionVsAskShare,
+                                )}
+                            />
+                            <TraceabilityTile
+                                label="Last command"
+                                value={
+                                    observabilityView.commandTelemetry.lastCommand || 'None recorded'
+                                }
+                            />
+                        </div>
+                        {observabilityView.commandTelemetry.topCommands.length > 0 ? (
+                            <ul className={`studio-action-outcome__list ${studioClass.mtSm}`}>
+                                {observabilityView.commandTelemetry.topCommands.map((entry) => (
+                                    <li key={entry.command}>
+                                        {entry.command} · {entry.count}
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : null}
+                    </div>
+                </CollapsibleSection>
+            ) : null}
+
+            {observabilityView?.reproPack ? (
+                <CollapsibleSection
+                    title="Repro pack KPI"
+                    hint={observabilityView.reproPack.summaryLabel}
+                >
+                    <div className={studioClass.card}>
+                        <div className={studioClass.rowSm}>
+                            <span
+                                className={`${studioClass.captionSmall} ${studioClass.uppercase} ${postureToneClass(
+                                    observabilityView.reproPack.overallPass ? 'ok' : 'warning',
+                                )}`}
+                            >
+                                {observabilityView.reproPack.summaryLabel}
+                            </span>
+                            <span className={`${studioClass.caption} studio-u-text-subtle`}>
+                                Window · {observabilityView.reproPack.timeWindow}
+                            </span>
+                        </div>
+                        <div className={`${studioClass.traceGrid} ${studioClass.mtSm}`}>
+                            <TraceabilityTile
+                                label="Exported"
+                                value={String(observabilityView.reproPack.reproPackExported)}
+                            />
+                            <TraceabilityTile
+                                label="Share rate"
+                                value={formatObservabilityPercent(observabilityView.reproPack.shareRate)}
+                            />
+                            <TraceabilityTile
+                                label="Replay resolution"
+                                value={formatObservabilityPercent(
+                                    observabilityView.reproPack.replayToResolutionRate,
+                                )}
+                            />
+                        </div>
+                    </div>
+                </CollapsibleSection>
+            ) : null}
+
+            {enterpriseShipLoop && onRunShipLoopStep && canRunShipLoopStep ? (
+                <CollapsibleSection
+                    title="Ship loop"
+                    hint={
+                        enterpriseShipLoop.nextStepId
+                            ? enterpriseShipLoop.steps.find((step) => step.id === enterpriseShipLoop.nextStepId)?.label
+                            : enterpriseShipLoop.releaseReady
+                              ? 'Release ready'
+                              : 'Analyze first'
+                    }
+                >
+                    <ShipLoopSection
+                        shipLoop={enterpriseShipLoop}
+                        executingStepId={executingShipLoopStepId}
+                        onRunStep={onRunShipLoopStep}
+                        canRunStep={canRunShipLoopStep}
+                        embedded
+                    />
+                </CollapsibleSection>
             ) : null}
 
             {!isGuided && aiActionContract ? (
-                <section className={studioClass.contextSection}>
-                    <div className={studioClass.sectionLabel}>AI Action Gate</div>
+                <CollapsibleSection
+                    title="AI action gate"
+                    hint={aiActionContract.validation.status}
+                >
                     <div
                         className={`${studioClass.card} ${studioClass.actionGateCard} ${contractValidationClass(aiActionContract.validation.status)}`}
                     >
@@ -634,12 +868,14 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                             </div>
                         )}
                     </div>
-                </section>
+                </CollapsibleSection>
             ) : null}
 
             {!isGuided && aiActionRegistry?.entries.length ? (
-                <section className={studioClass.contextSection}>
-                    <div className={studioClass.sectionLabel}>AI Action History</div>
+                <CollapsibleSection
+                    title="AI action history"
+                    hint={`${aiActionRegistry.entries.length} entries`}
+                >
                     <div className={studioClass.stackSm}>
                         {aiActionRegistry.entries.slice(0, isGuided ? 2 : 4).map((entry) => {
                             const latestExecution = entry.executions[0];
@@ -709,13 +945,12 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                             );
                         })}
                     </div>
-                </section>
+                </CollapsibleSection>
             ) : null}
 
             {userMode === 'expert' ? (
                 <>
-                    <section className={studioClass.contextSection}>
-                        <div className={studioClass.sectionLabel}>Active Signals</div>
+                    <CollapsibleSection title="Active signals" hint={`${health.modulesError} errors`}>
                         <div className={studioClass.stackSm}>
                             <SignalRow
                                 icon={<TrendingDown size={13} />}
@@ -748,21 +983,18 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                                 tone="neutral"
                             />
                         </div>
-                    </section>
+                    </CollapsibleSection>
 
-                    <section className={studioClass.contextSection}>
-                        <div className={studioClass.sectionLabel}>Traceability</div>
+                    <CollapsibleSection title="Traceability" hint={proofReadinessLabel}>
                         <div className={studioClass.traceGrid}>
                             <TraceabilityTile label="Evidence coverage" value={evidenceCoverageLabel} />
                             <TraceabilityTile label="Confidence band" value={confidenceLabel} />
                             <TraceabilityTile label="Drill-down" value={drillDownLabel} />
                             <TraceabilityTile label="Proof readiness" value={proofReadinessLabel} />
                         </div>
-                    </section>
+                    </CollapsibleSection>
 
-                    <section className={studioClass.contextSection}>
-                        <div className={studioClass.sectionLabel}>Module Graph</div>
-
+                    <CollapsibleSection title="Module graph" hint={`${filteredModules.length} modules`}>
                         <div className={studioClass.moduleGraphFilters}>
                             <div className={studioClass.moduleGraphFiltersRow}>
                                 <select
@@ -837,21 +1069,25 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                                 ))
                             )}
                         </div>
-                    </section>
+                    </CollapsibleSection>
                 </>
             ) : !isGuided ? (
-                <section className={studioClass.contextSection}>
-                    <div className={studioClass.sectionLabel}>Quick Insight</div>
+                <CollapsibleSection
+                    title="Quick insight"
+                    hint={RELEASE_GATE_LABELS[policyGates.releasePosture]}
+                >
                     <div className={studioClass.traceGrid}>
                         <TraceabilityTile label="Coverage" value={evidenceCoverageLabel} />
                         <TraceabilityTile label="Release" value={RELEASE_GATE_LABELS[policyGates.releasePosture]} />
                     </div>
-                </section>
+                </CollapsibleSection>
             ) : null}
 
             {!isGuided ? (
-            <section className={`${studioClass.contextSection} ${studioClass.scrollSection}`}>
-                <div className={studioClass.sectionLabel}>Related Files</div>
+            <CollapsibleSection
+                title="Related files"
+                hint={evidenceCoverageLabel}
+            >
                 <div className={studioClass.stackSm}>
                     {visibleRelatedFiles.length === 0 ? (
                         <div className="studio-context-empty">No related files</div>
@@ -886,7 +1122,7 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                         })
                     )}
                 </div>
-            </section>
+            </CollapsibleSection>
             ) : null}
         </div>
     );

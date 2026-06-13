@@ -4,7 +4,7 @@
  * Input is fixed at bottom of chat, messages scroll independently.
  */
 
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef, type MutableRefObject } from 'react';
 import {
     createInitialState,
     IncidentStudioState,
@@ -34,6 +34,22 @@ import type {
 import type { IncidentStudioDisplayMode } from '../../lib/incidentStudioPreferences';
 import { resolveLiteReleaseStateFromStudioContext } from '../../lib/incidentStudioLiteMode';
 import { StudioApprovalAuditEvent } from './state/studioActionAudit';
+import {
+  mergePolicyGatesFromTelemetry,
+  type IncidentStudioTelemetryGateSlice,
+} from '../../lib/incidentStudioPolicyGateMapper';
+import { deriveEnterpriseStabilizationLoopView } from '../../lib/incidentStudioStabilizationLoop';
+import {
+  deriveEnterpriseShipLoopView,
+  type ShipLoopEvidenceCard,
+  type ShipLoopStepId,
+} from '../../lib/incidentStudioShipLoop';
+import { resolvePhaseShipGuidance } from '../../lib/incidentStudioPhaseShipGuidance';
+import { deriveEnterpriseObservabilityView } from '../../lib/incidentStudioObservabilityView';
+import {
+  useIncidentStudioSessionPersistence,
+} from '../../lib/incidentStudioSessionPersistence';
+import type { IncidentReleaseReadinessCommanderArtifact } from '../../lib/incidentStudioPayload';
 
 interface IncidentStudioVNextProps {
     onSendMessage?: (message: string) => string | void | Promise<string | void>;
@@ -50,6 +66,7 @@ interface IncidentStudioVNextProps {
     verifyGateBlockedReasons?: string[];
     stabilizationKpiStatus?: IncidentStudioStabilizationKpiStatus | null;
     onExportIncidentReproPack?: (reproPack: IncidentReproPackEvidence) => void;
+    onExportReleaseReadiness?: (releaseReadiness: IncidentReleaseReadinessCommanderArtifact) => void;
     onImportIncidentReproPack?: () => void;
     onReplayIncidentQuery?: (query: string) => void;
     onApplyMultiFilePatch?: (
@@ -59,6 +76,9 @@ interface IncidentStudioVNextProps {
     ) => void;
     guidedPrimaryBoardAction?: { label: string; command?: string } | null;
     onRunGuidedCommand?: (command: string) => void;
+    onRunCliSurfaceAction?: (entry: { command: string; cliActionId: string }) => void;
+    executingCliCommand?: string | null;
+    hasProjectSelected?: boolean;
     preferredUserMode?: UserMode;
     onUserModeChange?: (mode: UserMode) => void;
     studioDisplayMode?: IncidentStudioDisplayMode;
@@ -68,6 +88,22 @@ interface IncidentStudioVNextProps {
     onTelemetryRefresh?: () => void;
     /** When rendered inside Dashboard tab — fills host, hides duplicate chrome */
     embedded?: boolean;
+    incomingTelemetry?: IncidentStudioTelemetryGateSlice | null;
+    /** Unified chat brain streaming — partial assistant text while host streams */
+    streamAssistantText?: string;
+    /** Host-managed streaming flag for chat brain parity */
+    externalIsStreaming?: boolean;
+    /** When true, AI chat uses fire-and-forget chat brain instead of blocking studioMessage */
+    chatBrainStreamingEnabled?: boolean;
+    shipEvidence?: { cards?: ShipLoopEvidenceCard[] } | null;
+    executingShipLoopStepId?: ShipLoopStepId | null;
+    onRunShipLoopStep?: (stepId: ShipLoopStepId) => void;
+    canRunShipLoopStep?: (stepId: ShipLoopStepId) => boolean;
+    workspacePath?: string;
+    sessionPostMessage?: (command: string, data?: unknown) => void;
+    sessionHostMessageHandlerRef?: MutableRefObject<
+        ((command: string, data?: unknown) => boolean) | null
+    >;
 }
 
 export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
@@ -85,11 +121,15 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
     verifyGateBlockedReasons = [],
     stabilizationKpiStatus = null,
     onExportIncidentReproPack,
+    onExportReleaseReadiness,
     onImportIncidentReproPack,
     onReplayIncidentQuery,
     onApplyMultiFilePatch,
     guidedPrimaryBoardAction = null,
     onRunGuidedCommand,
+    onRunCliSurfaceAction,
+    executingCliCommand = null,
+    hasProjectSelected = false,
     preferredUserMode,
     onUserModeChange,
     studioDisplayMode = 'full',
@@ -98,6 +138,17 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
     isTelemetryRefreshing = false,
     onTelemetryRefresh,
     embedded = false,
+    incomingTelemetry = null,
+    streamAssistantText = '',
+    externalIsStreaming = false,
+    chatBrainStreamingEnabled = false,
+    shipEvidence = null,
+    executingShipLoopStepId = null,
+    onRunShipLoopStep,
+    canRunShipLoopStep,
+    workspacePath = '',
+    sessionPostMessage,
+    sessionHostMessageHandlerRef,
 }) => {
     const actionOutcomeCallbacks = useMemo(
         () =>
@@ -120,9 +171,56 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
         ],
     );
 
+    const learnExportArchive = useMemo(
+        () =>
+            onExportIncidentReproPack || onExportReleaseReadiness
+                ? {
+                      onExportReproPack: onExportIncidentReproPack,
+                      onExportReleaseReadiness: onExportReleaseReadiness,
+                  }
+                : undefined,
+        [onExportIncidentReproPack, onExportReleaseReadiness],
+    );
+
     const [state, setState] = useState<IncidentStudioState>(
         createInitialState(initialState),
     );
+    const [approvalAuditEvents, setApprovalAuditEvents] = useState<StudioApprovalAuditEvent[]>([]);
+    const sessionLoadedRef = useRef(false);
+    const sessionPersistence = useIncidentStudioSessionPersistence({
+        workspacePath,
+        postMessage: sessionPostMessage ?? (() => undefined),
+        messages: state.messages,
+        approvalAuditEvents,
+    });
+
+    useEffect(() => {
+        if (!sessionPersistence.loadedSession || sessionLoadedRef.current) {
+            return;
+        }
+        sessionLoadedRef.current = true;
+        setState((prev) => ({
+            ...prev,
+            messages:
+                sessionPersistence.loadedSession!.messages.length > 0
+                    ? sessionPersistence.loadedSession!.messages
+                    : prev.messages,
+        }));
+        if (sessionPersistence.loadedSession.approvalAuditEvents.length > 0) {
+            setApprovalAuditEvents(sessionPersistence.loadedSession.approvalAuditEvents);
+        }
+    }, [sessionPersistence.loadedSession]);
+
+    useEffect(() => {
+        if (!sessionHostMessageHandlerRef) {
+            return;
+        }
+        sessionHostMessageHandlerRef.current = sessionPersistence.handleHostMessage;
+        return () => {
+            sessionHostMessageHandlerRef.current = null;
+        };
+    }, [sessionHostMessageHandlerRef, sessionPersistence.handleHostMessage]);
+
     const [viewportWidth, setViewportWidth] = useState<number>(
         typeof window !== 'undefined' ? window.innerWidth : 1366,
     );
@@ -185,15 +283,76 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
     }, [incomingActionRegistry]);
 
     useEffect(() => {
+        if (!incomingTelemetry) {
+            return;
+        }
+        setState((prev) => {
+            const nextPolicyGates = mergePolicyGatesFromTelemetry(
+                prev.policyGates,
+                incomingTelemetry,
+                prev.studioEvidence?.verdict,
+            );
+            const nextReleasePosture =
+                nextPolicyGates.releasePosture === 'pending'
+                    ? prev.releasePosture
+                    : nextPolicyGates.releasePosture;
+            if (
+                nextPolicyGates.flowState === prev.policyGates.flowState &&
+                nextPolicyGates.telemetryState === prev.policyGates.telemetryState &&
+                nextPolicyGates.releasePosture === prev.policyGates.releasePosture &&
+                nextReleasePosture === prev.releasePosture
+            ) {
+                return prev;
+            }
+            return {
+                ...prev,
+                policyGates: nextPolicyGates,
+                releasePosture: nextReleasePosture,
+            };
+        });
+    }, [incomingTelemetry]);
+
+    useEffect(() => {
         if (!incomingActionStatus) {
             return;
         }
         setState((prev) => ({
             ...prev,
             studioActionStatus: incomingActionStatus,
-            isStreaming: incomingActionStatus.status === 'started',
+            isStreaming:
+                chatBrainStreamingEnabled && externalIsStreaming
+                    ? externalIsStreaming
+                    : incomingActionStatus.status === 'started',
         }));
-    }, [incomingActionStatus]);
+    }, [chatBrainStreamingEnabled, externalIsStreaming, incomingActionStatus]);
+
+    useEffect(() => {
+        if (!chatBrainStreamingEnabled) {
+            return;
+        }
+        setState((prev) => ({
+            ...prev,
+            isStreaming: externalIsStreaming,
+        }));
+    }, [chatBrainStreamingEnabled, externalIsStreaming]);
+
+    const chatMessages = useMemo(() => {
+        if (!chatBrainStreamingEnabled || !streamAssistantText.trim()) {
+            return state.messages;
+        }
+
+        return [
+            ...state.messages,
+            {
+                id: 'chat-brain-streaming-assistant',
+                role: 'assistant' as const,
+                content: streamAssistantText,
+                timestamp: new Date().toISOString(),
+                phase: state.currentPhase,
+                sources: [{ type: 'system' as const, label: 'chat-brain' }],
+            },
+        ];
+    }, [chatBrainStreamingEnabled, state.currentPhase, state.messages, streamAssistantText]);
 
     useEffect(() => {
         const syncThemeKind = () => {
@@ -302,11 +461,22 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
     );
     const [selectedSidebarItem, setSelectedSidebarItem] = useState<string>('decision-layer');
     const [activeTool, setActiveTool] = useState<string | undefined>(undefined);
-    const [approvalAuditEvents, setApprovalAuditEvents] = useState<StudioApprovalAuditEvent[]>([]);
 
-    // Keep side regions available in common VS Code tab widths.
-    const showSidebar = viewportWidth >= 1180;
-    const showContextPanel = viewportWidth >= 980;
+    // Responsive rails: full split at wide widths; one actionable rail mid-narrow; chat owns narrow viewports.
+    const showFullLayout = viewportWidth >= 1180;
+    const showSidebar = viewportWidth >= 880;
+    const showContextPanel = showFullLayout;
+    const showActivityBar = viewportWidth >= 760;
+    const studioLayout =
+        showFullLayout && showSidebar && showContextPanel
+            ? 'full'
+            : showSidebar && !showContextPanel
+              ? 'sidebar-chat'
+              : !showSidebar && showContextPanel
+                ? 'context-chat'
+                : showActivityBar
+                  ? 'chat-focus'
+                  : 'chat-full';
     const compactTopBar = viewportWidth < 1380;
     const compactStudio = viewportWidth < 1320;
     const isGuided = state.userMode === 'guided';
@@ -326,6 +496,37 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
             state.policyGates.releasePosture,
             verifyGateBlockedReasons,
         ],
+    );
+    const enterpriseStabilizationLoop = useMemo(
+        () => deriveEnterpriseStabilizationLoopView(incomingTelemetry),
+        [incomingTelemetry],
+    );
+    const enterpriseShipLoop = useMemo(
+        () =>
+            deriveEnterpriseShipLoopView({
+                shipEvidence,
+                studioEvidence: state.studioEvidence,
+                telemetry: incomingTelemetry,
+                policyGates: state.policyGates,
+                releasePosture: state.releasePosture,
+                verifyGateBlockedReasons,
+            }),
+        [
+            incomingTelemetry,
+            shipEvidence,
+            state.policyGates,
+            state.releasePosture,
+            state.studioEvidence,
+            verifyGateBlockedReasons,
+        ],
+    );
+    const phaseShipGuidance = useMemo(
+        () => resolvePhaseShipGuidance(state.currentPhase, enterpriseShipLoop),
+        [enterpriseShipLoop, state.currentPhase],
+    );
+    const observabilityView = useMemo(
+        () => deriveEnterpriseObservabilityView(incomingTelemetry),
+        [incomingTelemetry],
     );
 
     useEffect(() => {
@@ -449,6 +650,26 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
             }));
 
             if (onSendMessage) {
+                if (chatBrainStreamingEnabled) {
+                    Promise.resolve(onSendMessage(content)).catch((error) => {
+                        setState((prev) => ({
+                            ...prev,
+                            messages: [
+                                ...prev.messages,
+                                {
+                                    id: `${Date.now()}-assistant-error`,
+                                    role: 'assistant',
+                                    content: `Studio action failed: ${error instanceof Error ? error.message : String(error)}`,
+                                    timestamp: new Date().toISOString(),
+                                    phase: prev.currentPhase,
+                                },
+                            ],
+                            isStreaming: false,
+                        }));
+                    });
+                    return;
+                }
+
                 Promise.resolve(onSendMessage(content))
                     .then((response) => {
                         if (typeof response === 'string' && response.trim()) {
@@ -506,7 +727,7 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
                 isStreaming: false,
             }));
         },
-        [onSendMessage],
+        [chatBrainStreamingEnabled, onSendMessage],
     );
 
     return (
@@ -542,6 +763,7 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
                     onThemeModeChange={handleThemeModeChange}
                     onScopeChange={handleScopeChange}
                     onExecuteAction={handleSendMessage}
+                    verifyGateBlockedReasons={verifyGateBlockedReasons}
                 />
 
                 <PhaseStepper
@@ -552,7 +774,17 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
                 />
 
                 {/* Main Layout: 4-region shell */}
-                <div className={studioClass.workspaceGrid}>
+                <div
+                    className={[
+                        studioClass.workspaceGrid,
+                        showSidebar ? 'has-sidebar' : '',
+                        showContextPanel ? 'has-context' : '',
+                    ]
+                        .filter(Boolean)
+                        .join(' ')}
+                    data-studio-layout={studioLayout}
+                >
+                    {showActivityBar ? (
                     <div className={studioClass.paneActivity}>
                         <ErrorBoundary region="Activity Bar">
                             <ActivityBar
@@ -562,6 +794,7 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
                             />
                         </ErrorBoundary>
                     </div>
+                    ) : null}
 
                     {showSidebar ? (
                         <div className={studioClass.paneSidebar}>
@@ -577,6 +810,10 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
                                     onToggleActionItem={handleToggleActionItem}
                                     onExecuteAction={handleSendMessage}
                                     onRevealEvidence={onRevealEvidence}
+                                    onRunCliSurfaceAction={onRunCliSurfaceAction}
+                                    executingCliCommand={executingCliCommand}
+                                    hasProjectSelected={hasProjectSelected}
+                                    userMode={state.userMode}
                                 />
                             </ErrorBoundary>
                         </div>
@@ -598,6 +835,13 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
                                     onApprovalAuditEvent={handleApprovalAuditEvent}
                                     onRevealEvidence={onRevealEvidence}
                                     stabilizationKpiStatus={stabilizationKpiStatus}
+                                    enterpriseStabilizationLoop={enterpriseStabilizationLoop}
+                                    enterpriseShipLoop={enterpriseShipLoop}
+                                    executingShipLoopStepId={executingShipLoopStepId}
+                                    onRunShipLoopStep={onRunShipLoopStep}
+                                    canRunShipLoopStep={canRunShipLoopStep}
+                                    observabilityView={observabilityView}
+                                    phaseShipGuidance={phaseShipGuidance}
                                 />
                             </ErrorBoundary>
                         </div>
@@ -612,7 +856,7 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
                     >
                         <ErrorBoundary region="Chat Surface">
                             <ChatSurface
-                                messages={state.messages}
+                                messages={chatMessages}
                                 isStreaming={state.isStreaming}
                                 currentPhase={state.currentPhase}
                                 scopeType={state.scopeType}
@@ -629,6 +873,7 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
                                 actionResult={incomingActionResult}
                                 verifyGateBlockedReasons={verifyGateBlockedReasons}
                                 actionOutcomeCallbacks={actionOutcomeCallbacks}
+                                onLearnExportArchive={learnExportArchive}
                                 guidedPrimaryBoardAction={guidedPrimaryBoardAction}
                                 onRunGuidedCommand={onRunGuidedCommand}
                             />

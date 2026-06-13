@@ -28,7 +28,8 @@ describe('Studio enterprise UX presentation', () => {
     expect(html).toContain('Essentials only');
     expect(html).not.toContain('System Health');
     expect(html).not.toContain('Related Files');
-    expect(html).toContain('Stabilization telemetry is not loaded yet');
+    expect(html).toContain('Stabilization KPI');
+    expect(html).toContain('Not loaded');
   });
 
   it('renders lite command ribbon with one-line status and no metric grid', () => {

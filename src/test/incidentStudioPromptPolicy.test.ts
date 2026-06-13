@@ -213,11 +213,15 @@ describe('incidentStudioPromptPolicy', () => {
   });
 
   it('inline-command verify telemetry includes action identity and verify readiness fields', () => {
-    const source = readWelcomePanelSource();
+    const currentDir = path.dirname(fileURLToPath(import.meta.url));
+    const bridgeSource = readFileSync(
+      path.join(currentDir, '../ui/panels/incidentStudioInlineCommandBridge.ts'),
+      'utf8'
+    );
 
-    expect(source).toContain('actionId: inlineActionId');
-    expect(source).toContain('verifyReady: success');
-    expect(source).toContain('verifyReady: false');
+    expect(bridgeSource).toContain('actionId: inlineActionId');
+    expect(bridgeSource).toContain('verifyReady: success');
+    expect(bridgeSource).toContain('verifyReady: false');
   });
 
   describe('labelDiagnosisConfidence', () => {
