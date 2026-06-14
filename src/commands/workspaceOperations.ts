@@ -1241,6 +1241,24 @@ export function registerWorkspaceOperationsCommands(options: {
       });
     }),
 
+    vscode.commands.registerCommand('workspai.workspacePipeline', async (item?: unknown) => {
+      const workspaceExplorer = getWorkspaceExplorer();
+      const { workspacePath, workspaceName } = resolveWorkspaceTarget(item, workspaceExplorer);
+      if (!workspacePath) {
+        vscode.window.showErrorMessage(
+          'No workspace selected. Select a workspace in the sidebar first.'
+        );
+        return;
+      }
+
+      const wsName = workspaceName || path.basename(workspacePath);
+      runRapidkitCommandsInTerminal({
+        name: `Workspai: Governance Pipeline — ${wsName}`,
+        cwd: workspacePath,
+        commands: [['pipeline', '--json', '--strict']],
+      });
+    }),
+
     vscode.commands.registerCommand('workspai.workspaceRunStage', async (item?: unknown) => {
       const typedItem = asWorkspaceCommandItem(item);
       const requestedStage = parseWorkspaceRunStage(typedItem?.stage);

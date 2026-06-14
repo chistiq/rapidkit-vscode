@@ -419,6 +419,8 @@ describe('contract drift guard', () => {
 
     expect(operationsSource).toContain("commands: [['doctor', 'workspace']]");
     expect(operationsSource).toContain("commands: [['doctor', 'workspace', '--fix']]");
+    expect(operationsSource).toContain("commands: [['pipeline', '--json', '--strict']]");
+    expect(operationsSource).toContain("commands: [['readiness', '--json']]");
 
     expect(operationsSource).not.toContain('npx rapidkit cache status');
     expect(operationsSource).not.toContain('npx rapidkit mirror status');

@@ -31,6 +31,20 @@ describe('dashboardEvidenceBridge', () => {
         generatedAt: '2026-06-10T10:00:00.000Z',
         healthScore: { passed: 8, warnings: 1, errors: 0, total: 9 },
       },
+      'pipeline-last-run.json': {
+        generatedAt: '2026-06-10T10:02:00.000Z',
+        schemaVersion: 'rapidkit-pipeline-v1',
+        summary: {
+          verdict: 'ready',
+          exitCode: 0,
+          stagesPassed: 5,
+          stagesWarn: 0,
+          stagesFailed: 0,
+        },
+        stages: [],
+        blockingReasons: [],
+        artifacts: { reportPath: '.rapidkit/reports/pipeline-last-run.json' },
+      },
       'analyze-last-run.json': {
         generatedAt: '2026-06-10T10:05:00.000Z',
         summary: {
@@ -48,12 +62,37 @@ describe('dashboardEvidenceBridge', () => {
 
     const bundle = await buildDashboardEvidenceBundle({ workspacePath });
     const doctor = bundle.cards.find((card) => card.id === 'doctor');
+    const pipeline = bundle.cards.find((card) => card.id === 'pipeline');
     const analyze = bundle.cards.find((card) => card.id === 'analyze');
     const readiness = bundle.cards.find((card) => card.id === 'readiness');
 
     expect(doctor?.status).toBe('warn');
+    expect(pipeline?.status).toBe('pass');
     expect(analyze?.status).toBe('pass');
     expect(readiness?.status).toBe('pass');
+  });
+
+  it('maps blocked pipeline verdicts to fail evidence status', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'pipeline-last-run.json': {
+        generatedAt: '2026-06-10T10:02:00.000Z',
+        summary: {
+          verdict: 'blocked',
+          stagesPassed: 2,
+          stagesWarn: 0,
+          stagesFailed: 2,
+        },
+        blockingReasons: ['readiness gate failed'],
+        stages: [],
+        artifacts: { reportPath: '.rapidkit/reports/pipeline-last-run.json' },
+      },
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+    const pipeline = findEvidenceCard(bundle, 'pipeline');
+
+    expect(pipeline?.status).toBe('fail');
+    expect(pipeline?.blockers?.[0]).toContain('readiness gate failed');
   });
 
   it('returns missing cards when workspace has no reports', async () => {

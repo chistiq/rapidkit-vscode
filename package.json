@@ -2,7 +2,7 @@
   "name": "rapidkit-vscode",
   "displayName": "Workspai",
   "description": "The AI workspace for backend teams. Build backend systems with AI that knows your workspace, generate projects and modules from intent, debug with full context, and ship faster — all inside VS Code. FastAPI, NestJS, Spring Boot, Go/Fiber, Go/Gin, and .NET Web API.",
-  "version": "0.34.0",
+  "version": "0.35.0",
   "publisher": "rapidkit",
   "icon": "media/icons/icon.png",
   "galleryBanner": {
@@ -255,6 +255,12 @@
         "title": "Workspace Readiness",
         "category": "Workspai",
         "icon": "$(pass)"
+      },
+      {
+        "command": "workspai.workspacePipeline",
+        "title": "Governance Pipeline",
+        "category": "Workspai",
+        "icon": "$(server-process)"
       },
       {
         "command": "workspai.workspaceRunInit",
@@ -1099,6 +1105,9 @@
           "command": "workspai.workspaceAutopilotRelease"
         },
         {
+          "command": "workspai.workspacePipeline"
+        },
+        {
           "command": "workspai.workspaceSnapshot"
         },
         {
@@ -1716,6 +1725,10 @@
           "group": "release@1"
         },
         {
+          "command": "workspai.workspacePipeline",
+          "group": "release@0"
+        },
+        {
           "command": "workspai.workspaceReadiness",
           "group": "release@2"
         },
@@ -1797,6 +1810,10 @@
         }
       ],
       "workspai.workspace.governance": [
+        {
+          "command": "workspai.workspacePipeline",
+          "group": "pipeline@1"
+        },
         {
           "command": "workspai.workspacePolicyShow",
           "group": "policy@1"

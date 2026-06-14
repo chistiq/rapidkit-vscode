@@ -3146,6 +3146,7 @@ export function App() {
                     })
                   }
                   onOpenIncidentStudio={openIncidentStudioForEvidence}
+                  onPipeline={() => handleDashboardCommand('workspacePipeline')}
                   onReadiness={() => handleDashboardCommand('workspaceReadiness')}
                   onAnalyze={() => handleDashboardCommand('workspaceAnalyze')}
                   onAutopilotRelease={() => handleDashboardCommand('workspaceAutopilotRelease')}
@@ -3185,6 +3186,7 @@ export function App() {
                   onFoundationEnsure={() => handleDashboardCommand('workspaceFoundationEnsure')}
                   onContractInspect={() => handleDashboardCommand('workspaceContractInspect')}
                   onContractVerify={() => handleDashboardCommand('workspaceContractVerify')}
+                  onPipeline={() => handleDashboardCommand('workspacePipeline')}
                   onReadiness={() => handleDashboardCommand('workspaceReadiness')}
                   onMirrorStatus={() => handleDashboardCommand('mirrorStatus')}
                   onMirrorSync={() => handleDashboardCommand('mirrorSync')}

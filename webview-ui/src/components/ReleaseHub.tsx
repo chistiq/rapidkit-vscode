@@ -1,11 +1,16 @@
-import { ArrowRight, Rocket, ScanSearch, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Rocket, ScanSearch, Server, ShieldCheck } from 'lucide-react';
 import type { DashboardEvidenceCardId } from '@/lib/dashboardCommandRegistry';
 import type { DashboardEvidencePayload, DashboardEvidenceStatus } from '@/lib/dashboardEvidence';
-import { evidenceStatusLabel, releaseHubStageStatus } from '@/lib/dashboardEvidence';
+import {
+  evidenceStatusLabel,
+  findEvidenceCard,
+  releaseHubStageStatus,
+} from '@/lib/dashboardEvidence';
 
 interface ReleaseHubProps {
   evidence: DashboardEvidencePayload | null;
   hasWorkspace: boolean;
+  onPipeline: () => void;
   onReadiness: () => void;
   onAnalyze: () => void;
   onAutopilotRelease: () => void;
@@ -29,6 +34,7 @@ const statusClass = (status: DashboardEvidenceStatus) =>
 export function ReleaseHub({
   evidence,
   hasWorkspace,
+  onPipeline,
   onReadiness,
   onAnalyze,
   onAutopilotRelease,
@@ -37,6 +43,10 @@ export function ReleaseHub({
   if (!hasWorkspace) {
     return null;
   }
+
+  const pipelineCard = findEvidenceCard(evidence, 'pipeline');
+  const pipelineStatus = pipelineCard?.status ?? 'missing';
+  const pipelinePending = pendingCardIds.includes('pipeline');
 
   const readinessStatus = releaseHubStageStatus(evidence, 'readiness');
   const analyzeStatus = releaseHubStageStatus(evidence, 'analyze');
@@ -85,9 +95,33 @@ export function ReleaseHub({
 
   return (
     <section className="release-hub" aria-label="Release pipeline">
+      <div
+        className={`release-hub__orchestrator ${statusClass(pipelineStatus)}${pipelinePending ? ' release-hub__orchestrator--pending' : ''}`}
+        aria-busy={pipelinePending || undefined}
+      >
+        <Server size={16} aria-hidden="true" />
+        <div className="release-hub__orchestrator-copy">
+          <strong>Governance pipeline</strong>
+          <small>
+            {pipelineCard?.status === 'missing'
+              ? 'Sync → doctor → analyze → readiness → autopilot'
+              : pipelineCard?.summary}
+          </small>
+        </div>
+        <span className="release-hub__badge">{evidenceStatusLabel(pipelineStatus)}</span>
+        <button
+          type="button"
+          className="release-hub__action release-hub__action--primary"
+          onClick={onPipeline}
+          disabled={pipelinePending}
+        >
+          {pipelinePending ? 'Running' : pipelineStatus === 'missing' ? 'Run pipeline' : 'Refresh'}
+        </button>
+      </div>
+
       <div className="release-hub__head">
         <span className="release-hub__title">Release hub</span>
-        <span className="release-hub__meta">Readiness → Analyze → Autopilot</span>
+        <span className="release-hub__meta">Stage-by-stage · or use pipeline above</span>
       </div>
       <div className="release-hub__pipeline">
         {stages.map((stage, index) => {

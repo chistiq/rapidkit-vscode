@@ -35,6 +35,7 @@ function isMutatingCliEntry(entry: IncidentCliActionEntry): boolean {
     normalized.includes(' workspace run init') ||
     normalized.includes(' workspace archive') ||
     normalized.includes(' autopilot release') ||
+    normalized.includes(' pipeline ') ||
     /\brapidkit init\b/.test(normalized) ||
     /\brapidkit build\b/.test(normalized) ||
     /\brapidkit dev\b/.test(normalized)

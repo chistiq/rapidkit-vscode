@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Terminal,
   Upload,
+  Workflow,
 } from 'lucide-react';
 import type { DashboardEvidenceCardId } from '@/lib/dashboardCommandRegistry';
 import type { WorkspaceStatus } from '@/types';
@@ -177,12 +178,21 @@ export function EnterpriseDashboardFlow({
               onClick={() => runWorkspaceAction('workspaceTerminal')}
             />
             <ActionTile
+              variant="primary"
+              fullWidth
+              icon={<Workflow size={15} />}
+              label="Governance Pipeline"
+              detail="Sync → doctor → analyze → readiness → autopilot"
+              pending={isPending('pipeline')}
+              onClick={() => runWorkspaceAction('workspacePipeline')}
+              title="rapidkit pipeline --json --strict"
+            />
+            <ActionTile
               icon={<ShieldCheck size={15} />}
               label="Release"
               detail="Autopilot gate"
               pending={isPending('autopilot') || isPending('readiness')}
               onClick={() => runWorkspaceAction('workspaceAutopilotRelease')}
-              fullWidth
             />
           </ActionTileGrid>
         </div>
@@ -338,12 +348,14 @@ export function EnterpriseDashboardFlow({
       </div>
 
       <div className="enterprise-flow-rail" aria-label="Recommended workflow">
-        {['Doctor', 'Analyze', 'Graph', 'Build', 'Archive', 'Release'].map((step, index) => (
-          <span key={step}>
-            <em>{index + 1}</em>
-            {step}
-          </span>
-        ))}
+        {['Pipeline', 'Doctor', 'Analyze', 'Graph', 'Build', 'Archive', 'Release'].map(
+          (step, index) => (
+            <span key={step}>
+              <em>{index + 1}</em>
+              {step}
+            </span>
+          )
+        )}
       </div>
     </section>
   );

@@ -41,6 +41,16 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     actionTypes: ['release-readiness-commander'],
   },
   {
+    id: 'workspace-pipeline-json',
+    scope: 'workspace',
+    label: 'Run governance pipeline',
+    detail:
+      'Orchestrates sync, doctor, analyze, readiness, and autopilot with pipeline-last-run.json evidence.',
+    command: 'npx rapidkit pipeline --json --strict',
+    stability: 'stable',
+    actionTypes: ['release-readiness-commander', 'governance-pipeline'],
+  },
+  {
     id: 'workspace-archive',
     scope: 'workspace',
     label: 'Build customer archive',

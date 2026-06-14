@@ -20,6 +20,7 @@ interface DashboardEvidenceSectionProps {
   onClearActivity: () => void;
   onRevealArtifact: (artifactPath: string) => void;
   onOpenIncidentStudio: (card: DashboardEvidenceCard) => void;
+  onPipeline: () => void;
   onReadiness: () => void;
   onAnalyze: () => void;
   onAutopilotRelease: () => void;
@@ -35,6 +36,7 @@ export function DashboardEvidenceSection({
   onClearActivity,
   onRevealArtifact,
   onOpenIncidentStudio,
+  onPipeline,
   onReadiness,
   onAnalyze,
   onAutopilotRelease,
@@ -146,6 +148,7 @@ export function DashboardEvidenceSection({
           evidence={evidence}
           hasWorkspace={hasWorkspace}
           pendingCardIds={pendingCardIds}
+          onPipeline={onPipeline}
           onReadiness={onReadiness}
           onAnalyze={onAnalyze}
           onAutopilotRelease={onAutopilotRelease}

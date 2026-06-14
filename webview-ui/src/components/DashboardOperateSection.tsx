@@ -34,6 +34,7 @@ interface DashboardOperateSectionProps {
   onFoundationEnsure: () => void;
   onContractInspect: () => void;
   onContractVerify: () => void;
+  onPipeline: () => void;
   onReadiness: () => void;
   onMirrorStatus: () => void;
   onMirrorSync: () => void;
@@ -66,6 +67,7 @@ export function DashboardOperateSection({
   onFoundationEnsure,
   onContractInspect,
   onContractVerify,
+  onPipeline,
   onReadiness,
   onMirrorStatus,
   onMirrorSync,
@@ -128,6 +130,7 @@ export function DashboardOperateSection({
             onFoundationEnsure={onFoundationEnsure}
             onContractInspect={onContractInspect}
             onContractVerify={onContractVerify}
+            onPipeline={onPipeline}
             onReadiness={onReadiness}
             onMirrorStatus={onMirrorStatus}
             onMirrorSync={onMirrorSync}

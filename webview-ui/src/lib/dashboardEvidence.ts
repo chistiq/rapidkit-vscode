@@ -8,6 +8,7 @@ export type DashboardEvidenceScope = 'workspace' | 'project';
 export type DashboardEvidenceCardId =
   | 'doctor'
   | 'projectDoctor'
+  | 'pipeline'
   | 'analyze'
   | 'readiness'
   | 'bootstrap'

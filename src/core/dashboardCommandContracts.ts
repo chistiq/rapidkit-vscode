@@ -244,6 +244,16 @@ export const DASHBOARD_COMMAND_CONTRACTS = {
     cliArgs: ['readiness'],
     vscodeCommand: 'workspai.workspaceReadiness',
   },
+  workspacePipeline: {
+    id: 'workspacePipeline',
+    label: 'Governance Pipeline',
+    scope: 'workspace',
+    executionMode: 'terminal-rapidkit',
+    trackActivity: true,
+    requiresWorkspace: true,
+    cliArgs: ['pipeline', '--json', '--strict'],
+    vscodeCommand: 'workspai.workspacePipeline',
+  },
   workspaceAutopilotRelease: {
     id: 'workspaceAutopilotRelease',
     label: 'Autopilot Release',

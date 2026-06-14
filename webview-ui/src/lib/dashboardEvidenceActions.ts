@@ -15,6 +15,7 @@ export type DashboardEvidenceCommandAction = {
 export const EVIDENCE_CARD_COMMANDS: Partial<Record<DashboardEvidenceCardId, DashboardCommand>> = {
   doctor: 'checkWorkspaceHealth',
   projectDoctor: 'projectDoctor',
+  pipeline: 'workspacePipeline',
   analyze: 'workspaceAnalyze',
   readiness: 'workspaceReadiness',
   bootstrap: 'workspaceBootstrap',

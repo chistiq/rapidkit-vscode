@@ -14,6 +14,7 @@ export type DashboardEvidenceScope = 'workspace' | 'project';
 export type DashboardEvidenceCardId =
   | 'doctor'
   | 'projectDoctor'
+  | 'pipeline'
   | 'analyze'
   | 'readiness'
   | 'bootstrap'
@@ -620,6 +621,49 @@ export async function buildDashboardEvidenceBundle(input?: {
     buildDoctorCard(reportsDir, workspaceDoctorRaw, 'workspace', 'doctor', 'Workspace Doctor')
   );
 
+  const pipelineRaw = await readJsonIfExists(path.join(reportsDir, 'pipeline-last-run.json'));
+  if (pipelineRaw) {
+    const summary =
+      pipelineRaw.summary && typeof pipelineRaw.summary === 'object'
+        ? (pipelineRaw.summary as Record<string, unknown>)
+        : {};
+    const verdict = normalizeEvidenceStatus(summary.verdict);
+    const blockers = extractBlockersFromReport('pipeline-last-run', pipelineRaw);
+    const stagesPassed = Number(summary.stagesPassed ?? 0);
+    const stagesWarn = Number(summary.stagesWarn ?? 0);
+    const stagesFailed = Number(summary.stagesFailed ?? 0);
+    cards.push({
+      id: 'pipeline',
+      label: 'Governance Pipeline',
+      status:
+        verdict === 'missing'
+          ? stagesFailed > 0
+            ? 'fail'
+            : stagesWarn > 0
+              ? 'warn'
+              : 'pass'
+          : verdict,
+      summary: `${stagesPassed} passed · ${stagesWarn} warn · ${stagesFailed} failed`,
+      scope: 'workspace',
+      generatedAt:
+        typeof pipelineRaw.generatedAt === 'string' ? pipelineRaw.generatedAt : undefined,
+      artifactPath: path.join(reportsDir, 'pipeline-last-run.json'),
+      metrics: { stagesPassed, stagesWarn, stagesFailed },
+      blockers,
+      incidentStudioTarget: 'readiness',
+    });
+  } else {
+    cards.push(
+      missingCard(
+        'pipeline',
+        'Governance Pipeline',
+        'Run sync → doctor → analyze → readiness → autopilot from Operate or Evidence.',
+        'workspace',
+        'readiness'
+      )
+    );
+  }
+
   if (projectPath) {
     const projectDoctor = await readProjectDoctorReport({
       workspaceReportsDir: reportsDir,
@@ -777,6 +821,8 @@ export function resolveCardForReportKind(
       return findEvidenceCardById(bundle, 'projectDoctor');
     case 'analyze-last-run':
       return findEvidenceCardById(bundle, 'analyze');
+    case 'pipeline-last-run':
+      return findEvidenceCardById(bundle, 'pipeline');
     case 'release-readiness-last-run':
       return findEvidenceCardById(bundle, 'readiness');
     case 'bootstrap-compliance':

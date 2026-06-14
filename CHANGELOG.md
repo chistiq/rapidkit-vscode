@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Planned as extension **0.35.0** (after marketplace **0.34.0**). Aligns with RapidKit **npm** `0.34.0` governance CLI where noted; extension and npm version lines are independent.
+
+### Added
+
+* **Enterprise dashboard evidence loop**: Command → Evidence → Next Step with activity trail, outcome review, next-step rail, and contract-aware command dispatch (`dashboardCommandContracts`, `dashboardCommandRegistry`).
+* **Dashboard sections**: Overview, Operate, Evidence, Workspaces, and Console with sub-navigation, pending-command reconciliation, and project-scoped payload guards.
+* **Evidence surfaces**: `CommandActivityPanel`, `EvidenceOutcomePanel`, `ReleaseHub`, `DashboardEvidenceSection`, governance/sparse empty states, and Incident Studio handoff from evidence cards.
+* **Governance onboarding**: fresh-install onboarding, ops-chain banner, and automatic `bootstrap → doctor → analyze` chain after workspace create, clone, import, or add.
+* **Operate & governance UI**: `EnterpriseDashboardFlow`, `WorkspaceGovernancePanel`, `ActionTile`, `SectionHeader`, `FrameworkIcon`, and `CommandCheatsheet`.
+* **Settings bridge**: embedded `WorkspaiSettingsPanel` aligned with dashboard design tokens via `workspaiSettingsBridge`.
+* **Incident Studio VNext**: primary studio surface replacing the legacy monolith, with `ChatSurface`, `ContextPanel`, `WorkspaceSidebar`, `CommandRibbon`, `CliSurfaceSection`, `ShipLoopSection`, `ActionOutcomePanel`, and `MissionControlHeader`.
+* **Ship loop**: analyze → verify-gates → readiness → archive → autopilot-release with host bridges, ship evidence refresh, and stabilization loop.
+* **Studio session persistence**: reload-safe state for ship loop, CLI surface, and chat brain sessions.
+* **AI action framework** (host): action contract, registry, executor, safety/redaction layers, command policy, and `aiProviderService` for LLM routing.
+* **Studio policy gates**: telemetry policy core, policy gate mapper parity (host + webview), guided-mode blocks for advanced CLI, and mutation gate before fix/archive/autopilot paths.
+* **Studio CLI surface**: `incidentCliActionMatrix`, inline command bridge (pinned npm wrapper), doctor evidence bridge, repro pack and enterprise export bridges.
+* **Studio action registry**: analyze, impact lens, governed fix, verify-gates, and terminal-bridge actions with audit trail.
+* **Workspai design system**: token layers (`workspai-tokens`, `workspai-primitives`, studio chrome, analyze report CSS), `WorkspaiThemeProvider`, `WorkspaiEmptyState`, `WorkspaiBanner`, and contributor `DESIGN_SYSTEM.md`.
+* **Design-system CI**: drift guard tests, studio chrome CSS extract/verify scripts, and website/extension parity check script.
+* **AI creation intent**: `aiCreationHeuristic` and structured `languageModelResponse` parsing for safer create flows and module suggestions.
+* **Analyze scoping**: `analyzeReportBridge` so dashboard and studio analyze viewers respect workspace vs project context.
+* **Setup command-center**: embedded Setup & Settings with full-width host, theme-safe loading skeletons, `ToolRow` matrix, and collapsible optional/advanced sections.
+* **npm governance pipeline parity** (npm `0.34.0` CLI): `workspai.workspacePipeline` (`pipeline --json --strict`), `pipeline` evidence card from `pipeline-last-run.json`, Release hub orchestrator banner, and sidebar Run & Release / Governance menu entries.
+* **Vitest expansion**: dashboard bridges, studio redesign contracts, design-system drift, ship-loop integration, AI action framework, presentation contracts, and smoke stabilization suites.
+
+### Changed
+
+* Retired legacy **`AIIncidentStudio.tsx`** (~7.5k lines) in favor of **`IncidentStudioVNext`** and modular studio regions.
+* Replaced **`CommandReference`** with **`CommandCheatsheet`**; removed **`QuickLinks`**, **`HeroAction`**, and **`AIActions`** from the dashboard shell.
+* Reworked **`welcomePanel`** and **`App.tsx`** for dashboard dispatch, evidence refresh, and studio integration at scale.
+* Expanded workspace and project treeviews to notify governance ops chain and honor dashboard workspace payloads.
+* **npm CLI verify**: Setup version probe uses developer-style `npx rapidkit --version` so terminal output matches the card; orchestration commands remain pinned.
+* Guided/lite/responsive studio polish (Wave Y): denser guided conversation, action outcome essentials, collapsible sections, and responsive studio chrome.
+
+### Fixed
+
+* Incident Studio stable wiring gaps (doctor scope payloads, sync graph, telemetry refresh).
+* AI creation intent planning and module suggestion boundaries for supported project types.
+* `UserMode` typing (`standard`) and shell-view lifecycle guards for Settings/Setup tabs.
+* Doctor telemetry refresh alignment with scoped workspace/project evidence.
+
+### Removed
+
+* Legacy `AIIncidentStudio` component and interaction tests (superseded by `studioRedesignContracts` and presentation contract suites).
+* Dashboard **`CommandReference.tsx`**, **`QuickLinks.tsx`**, **`HeroAction.tsx`**, **`AIActions.tsx`**.
+
+### Verification
+
+* `npm run compile`
+* `npm run lint`
+* `vitest run`
+
+See also: [`releases/RELEASE_NOTES_v0.35.0.md`](releases/RELEASE_NOTES_v0.35.0.md)
+
 ## [0.34.0] - 2026-06-10
 
 ### Added

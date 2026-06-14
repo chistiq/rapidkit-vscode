@@ -3936,6 +3936,42 @@
     background: color-mix(in srgb, var(--workspai-accent) 4%, transparent);
   }
 
+  .release-hub__orchestrator {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--workspai-accent) 8%, var(--vscode-editor-background));
+  }
+
+  .release-hub__orchestrator-copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .release-hub__orchestrator-copy strong {
+    font-size: 11px;
+  }
+
+  .release-hub__orchestrator-copy small {
+    font-size: 9.5px;
+    color: var(--vscode-descriptionForeground);
+  }
+
+  .release-hub__orchestrator--pending {
+    opacity: 0.85;
+  }
+
+  .release-hub__action--primary {
+    border-color: color-mix(in srgb, var(--workspai-accent) 40%, var(--vscode-panel-border));
+    background: color-mix(in srgb, var(--workspai-accent) 12%, transparent);
+    font-weight: 700;
+  }
+
   .release-hub__head {
     display: flex;
     align-items: baseline;

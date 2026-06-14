@@ -2,6 +2,7 @@ export type DashboardCommandScope = 'workspace' | 'project' | 'module' | 'system
 export type DashboardEvidenceCardId =
   | 'doctor'
   | 'projectDoctor'
+  | 'pipeline'
   | 'analyze'
   | 'readiness'
   | 'bootstrap'
@@ -215,6 +216,15 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     handler: 'extension-host',
     trackActivity: true,
     affectedEvidenceCardIds: ['readiness'],
+    refreshEvidence: true,
+  },
+  workspacePipeline: {
+    id: 'workspacePipeline',
+    label: 'Governance Pipeline',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    affectedEvidenceCardIds: ['pipeline', 'doctor', 'analyze', 'readiness', 'autopilot'],
     refreshEvidence: true,
   },
   workspaceAutopilotRelease: {

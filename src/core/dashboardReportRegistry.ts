@@ -5,6 +5,7 @@ import type { DashboardEvidenceStatus } from './dashboardEvidenceBridge';
 export type DashboardReportKind =
   | 'doctor-last-run'
   | 'doctor-project-last-run'
+  | 'pipeline-last-run'
   | 'analyze-last-run'
   | 'release-readiness-last-run'
   | 'bootstrap-compliance'
@@ -50,6 +51,15 @@ const REPORT_BINDINGS: Array<{
       kind: 'analyze-last-run',
       command: 'workspaceAnalyze',
       cardId: 'analyze',
+      scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'pipeline-last-run.json',
+    binding: {
+      kind: 'pipeline-last-run',
+      command: 'workspacePipeline',
+      cardId: 'pipeline',
       scope: 'workspace',
     },
   },
@@ -180,6 +190,8 @@ export function extractBlockersFromReport(
 ): string[] {
   switch (kind) {
     case 'release-readiness-last-run':
+      return collectStringItems(raw.blockingReasons, 8);
+    case 'pipeline-last-run':
       return collectStringItems(raw.blockingReasons, 8);
     case 'bootstrap-compliance':
       return collectStringItems(raw.violations ?? raw.blockers ?? raw.issues, 8);

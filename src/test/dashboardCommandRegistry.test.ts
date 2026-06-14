@@ -322,6 +322,7 @@ describe('dashboardCommandRegistry', () => {
     for (const cardId of [
       'bootstrap',
       'doctor',
+      'pipeline',
       'readiness',
       'workspaceSync',
       'foundation',
@@ -334,7 +335,15 @@ describe('dashboardCommandRegistry', () => {
       expect(governanceSource, cardId).toContain(`isPending('${cardId}')`);
     }
 
-    for (const cardId of ['doctor', 'analyze', 'autopilot', 'archive', 'share', 'snapshot']) {
+    for (const cardId of [
+      'doctor',
+      'analyze',
+      'autopilot',
+      'archive',
+      'share',
+      'snapshot',
+      'pipeline',
+    ]) {
       expect(enterpriseFlowSource, cardId).toContain(`isPending('${cardId}')`);
     }
 

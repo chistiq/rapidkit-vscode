@@ -28,6 +28,7 @@ interface WorkspaceGovernancePanelProps {
   onFoundationEnsure: () => void;
   onContractInspect: () => void;
   onContractVerify: () => void;
+  onPipeline: () => void;
   onReadiness: () => void;
   onMirrorStatus: () => void;
   onMirrorSync: () => void;
@@ -58,6 +59,7 @@ export function WorkspaceGovernancePanel({
   onFoundationEnsure,
   onContractInspect,
   onContractVerify,
+  onPipeline,
   onReadiness,
   onMirrorStatus,
   onMirrorSync,
@@ -73,6 +75,7 @@ export function WorkspaceGovernancePanel({
   const workspaceSyncCard = findEvidenceCard(evidence, 'workspaceSync');
   const foundationCard = findEvidenceCard(evidence, 'foundation');
   const contractCard = findEvidenceCard(evidence, 'contract');
+  const pipelineCard = findEvidenceCard(evidence, 'pipeline');
   const readinessCard = findEvidenceCard(evidence, 'readiness');
   const mirrorCard = findEvidenceCard(evidence, 'mirror');
   const cacheCard = findEvidenceCard(evidence, 'cache');
@@ -87,6 +90,23 @@ export function WorkspaceGovernancePanel({
         scope="workspace"
       />
       <ActionTileGrid layout="governance">
+        <ActionTile
+          variant="primary"
+          fullWidth
+          icon={<Server size={15} />}
+          label="Governance Pipeline"
+          detail={governanceDetail(
+            evidence,
+            'pipeline',
+            'Sync → doctor → analyze → readiness → autopilot'
+          )}
+          evidenceStatus={pipelineCard?.status}
+          pending={isPending('pipeline')}
+          stateLabel={isPending('pipeline') ? 'Running pipeline' : undefined}
+          onClick={onPipeline}
+          disabled={!hasWorkspace}
+          title="rapidkit pipeline --json --strict"
+        />
         <ActionTile
           icon={<Sparkles size={15} />}
           label="Bootstrap"

@@ -136,6 +136,19 @@ export function buildDashboardNextSteps(input: {
     });
   }
 
+  const pipelineCard = findEvidenceCard(evidence, 'pipeline');
+  if (pipelineCard?.status === 'fail') {
+    steps.push({
+      id: 'pipeline-blockers',
+      title: 'Clear governance pipeline blockers',
+      detail: pipelineCard.blockers?.[0] ?? pipelineCard.summary,
+      priority: 'critical',
+      section: 'evidence',
+      command: 'workspacePipeline',
+      incidentStudioTarget: 'readiness',
+    });
+  }
+
   const readinessCard = findEvidenceCard(evidence, 'readiness');
   if (readinessCard?.status === 'fail') {
     steps.push({
@@ -296,6 +309,20 @@ export function buildDashboardNextSteps(input: {
       priority: 'optional',
       section: 'evidence',
       command: 'workspaceReadiness',
+    });
+  } else if (
+    hasWorkspace &&
+    pipelineCard?.status === 'missing' &&
+    (analyzeCard?.status === 'missing' || readinessCard?.status === 'missing')
+  ) {
+    steps.push({
+      id: 'run-pipeline',
+      title: 'Run governance pipeline',
+      detail: 'Execute sync → doctor → analyze → readiness → autopilot in one governed CLI loop.',
+      priority: 'recommended',
+      section: 'evidence',
+      command: 'workspacePipeline',
+      incidentStudioTarget: 'readiness',
     });
   }
 

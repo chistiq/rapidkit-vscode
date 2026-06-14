@@ -1998,6 +1998,9 @@ export class WelcomePanel {
           case 'workspaceReadiness':
             await this._executeDashboardContractCommand('workspaceReadiness', message.data);
             break;
+          case 'workspacePipeline':
+            await this._executeDashboardContractCommand('workspacePipeline', message.data);
+            break;
           case 'mirrorStatus':
             await this._executeDashboardContractCommand('mirrorStatus', message.data);
             break;

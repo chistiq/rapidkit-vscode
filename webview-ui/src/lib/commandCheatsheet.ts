@@ -26,6 +26,12 @@ export const COMMAND_CHEATSHEET_GROUPS: CommandCheatsheetGroup[] = [
       },
       { label: 'Doctor', command: 'rapidkit doctor workspace', scope: 'workspace' },
       { label: 'Analyze', command: 'rapidkit analyze --json --strict', scope: 'workspace' },
+      {
+        label: 'Governance pipeline',
+        command: 'rapidkit pipeline --json --strict',
+        scope: 'workspace',
+        note: 'Sync → doctor → analyze → readiness → autopilot',
+      },
       { label: 'Readiness', command: 'rapidkit readiness --json', scope: 'workspace' },
       { label: 'Autopilot release', command: 'rapidkit autopilot release', scope: 'workspace' },
       { label: 'Snapshot', command: 'rapidkit snapshot create', scope: 'workspace' },

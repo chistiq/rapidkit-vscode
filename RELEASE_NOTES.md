@@ -1,5 +1,39 @@
 # Release Notes
 
+## v0.35.0 (unreleased)
+
+### ✦ Enterprise Dashboard, Incident Studio Redesign, and npm Governance Pipeline
+
+Summary:
+- Ship the next extension release after marketplace **`0.34.0`**, covering nine local commits of deep dashboard, studio, design-system, and AI wiring work — plus npm **`0.34.0`** governance pipeline parity (`rapidkit pipeline`). Extension and npm version lines remain independent.
+
+Highlights:
+
+**Enterprise dashboard**
+- Close **Command → Evidence → Next Step** with host bridges, activity trail, ops chain after workspace create/clone/import, fresh-install onboarding, and Incident Studio handoff from evidence cards.
+- New surfaces: Operate/Evidence sections, `ReleaseHub`, `WorkspaceGovernancePanel`, `CommandCheatsheet`, pending-command UX across governance tiles.
+
+**Incident Studio**
+- Retire legacy `AIIncidentStudio` monolith; **`IncidentStudioVNext`** with ship loop, CLI surface, session persistence, AI action framework, policy/mutation gates, guided/lite/responsive Wave Y polish.
+
+**Design system**
+- Workspai token layers (`workspai-primitives`, studio chrome, analyze report CSS), theme provider, drift-guard tests, and studio CSS extraction/verify scripts.
+
+**AI & Setup**
+- Creation intent heuristic, analyze report scoping, stable doctor/telemetry wiring; embedded Setup command-center with theme-safe loading; unpinned npx for npm CLI version verify.
+
+**npm governance pipeline** (npm `0.34.0` CLI → extension `0.35.0`)
+- `workspai.workspacePipeline`, `pipeline-last-run.json` evidence card, sidebar/dashboard/studio surfaces.
+
+Full detail: [`releases/RELEASE_NOTES_v0.35.0.md`](releases/RELEASE_NOTES_v0.35.0.md) (includes per-commit table).
+
+Validation:
+- `npm run compile`
+- `npm run lint`
+- `vitest run`
+
+Release posture: `enterprise-dashboard-studio-and-npm-governance-pipeline`
+
 ## v0.34.0 (June 10, 2026)
 
 ### ✦ CLI Parity: Infra, Foundation, Project Lifecycle, and Module Maintenance
