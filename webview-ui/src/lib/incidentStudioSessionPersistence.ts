@@ -1,15 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ChatMessage } from '../components/StudioRedesign/state/studioState';
+import type {
+  ChatMessage,
+  StudioExecutionTranscript,
+  StudioProofEvent,
+} from '../components/StudioRedesign/state/studioState';
 import type { StudioApprovalAuditEvent } from '../components/StudioRedesign/state/studioActionAudit';
 
 export type IncidentStudioSessionPayload = {
   workspacePath: string;
   messages: ChatMessage[];
   approvalAuditEvents: StudioApprovalAuditEvent[];
+  proofEvents: StudioProofEvent[];
+  executionTranscripts: StudioExecutionTranscript[];
   savedAt?: string;
 };
 
-export type IncidentStudioSessionSavePayload = Omit<IncidentStudioSessionPayload, 'savedAt'> & {
+export type IncidentStudioSessionSavePayload = IncidentStudioSessionPayload & {
+  chatMessages: ChatMessage[];
   savedAt?: string;
 };
 
@@ -20,11 +27,22 @@ function normalizeSessionPayload(
   workspacePath: string
 ): IncidentStudioSessionPayload {
   const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+  const messages = Array.isArray(record.messages)
+    ? (record.messages as ChatMessage[])
+    : Array.isArray(record.chatMessages)
+      ? (record.chatMessages as ChatMessage[])
+      : [];
   return {
     workspacePath: typeof record.workspacePath === 'string' ? record.workspacePath : workspacePath,
-    messages: Array.isArray(record.messages) ? (record.messages as ChatMessage[]) : [],
+    messages,
     approvalAuditEvents: Array.isArray(record.approvalAuditEvents)
       ? (record.approvalAuditEvents as StudioApprovalAuditEvent[])
+      : [],
+    proofEvents: Array.isArray(record.proofEvents)
+      ? (record.proofEvents as StudioProofEvent[])
+      : [],
+    executionTranscripts: Array.isArray(record.executionTranscripts)
+      ? (record.executionTranscripts as StudioExecutionTranscript[])
       : [],
     savedAt: typeof record.savedAt === 'string' ? record.savedAt : undefined,
   };
@@ -39,6 +57,8 @@ type UseIncidentStudioSessionPersistenceOptions = {
   postMessage: (command: string, data?: unknown) => void;
   messages: ChatMessage[];
   approvalAuditEvents: StudioApprovalAuditEvent[];
+  proofEvents: StudioProofEvent[];
+  executionTranscripts: StudioExecutionTranscript[];
 };
 
 export function useIncidentStudioSessionPersistence({
@@ -46,6 +66,8 @@ export function useIncidentStudioSessionPersistence({
   postMessage,
   messages,
   approvalAuditEvents,
+  proofEvents,
+  executionTranscripts,
 }: UseIncidentStudioSessionPersistenceOptions) {
   const [loadedSession, setLoadedSession] = useState<IncidentStudioSessionPayload | null>(null);
   const hasLoadedRef = useRef(false);
@@ -94,7 +116,10 @@ export function useIncidentStudioSessionPersistence({
       const payload: IncidentStudioSessionSavePayload = {
         workspacePath,
         messages,
+        chatMessages: messages,
         approvalAuditEvents,
+        proofEvents,
+        executionTranscripts,
         savedAt: new Date().toISOString(),
       };
       postMessage('saveIncidentStudioSession', payload);
@@ -105,7 +130,14 @@ export function useIncidentStudioSessionPersistence({
         clearTimeout(saveTimerRef.current);
       }
     };
-  }, [approvalAuditEvents, messages, postMessage, workspacePath]);
+  }, [
+    approvalAuditEvents,
+    executionTranscripts,
+    messages,
+    postMessage,
+    proofEvents,
+    workspacePath,
+  ]);
 
   return {
     loadedSession,

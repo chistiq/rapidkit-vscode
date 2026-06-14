@@ -13,18 +13,22 @@
  * @returns The resolved workspace path, or undefined if none found
  */
 export function resolveTelemetryWorkspacePath(
-  selectedProject: { path: string } | null | undefined,
+  selectedProject: { path: string; workspacePath?: string } | null | undefined,
   selectedWorkspacePath: string | undefined,
   workspaceFolders: readonly { uri: { fsPath: string } }[] | undefined
 ): string | undefined {
+  if (selectedWorkspacePath) {
+    return selectedWorkspacePath;
+  }
+
   if (selectedProject) {
+    if (selectedProject.workspacePath) {
+      return selectedProject.workspacePath;
+    }
+
     // Import path module inline to avoid top-level dependency
     const path = require('path');
     return path.dirname(selectedProject.path);
-  }
-
-  if (selectedWorkspacePath) {
-    return selectedWorkspacePath;
   }
 
   if (workspaceFolders && workspaceFolders.length > 0) {

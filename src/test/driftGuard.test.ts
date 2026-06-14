@@ -437,7 +437,7 @@ describe('contract drift guard', () => {
     expect(setupPanelSource).toContain("'python --version'");
     expect(setupPanelSource).toContain("'python -m pip --version'");
     expect(setupPanelSource).toContain("'python3 -m pip --version'");
-    expect(setupPanelSource).toContain("commands: [['--version']]");
+    expect(setupPanelSource).toContain('buildNpmCliVersionVerifyCommands');
     expect(setupPanelSource).toContain("'go version'");
 
     expect(setupPanelSource).toContain("'python -m pipx install --force rapidkit-core'");
@@ -460,7 +460,11 @@ describe('contract drift guard', () => {
     for (const file of sourceFiles) {
       const source = read(file);
       if (source.includes("'npx'") || source.includes('"npx"')) {
-        expect(source, file).toContain('buildNpxRapidkitArgs');
+        const usesPinnedNpxWrapper =
+          source.includes('buildNpxRapidkitArgs') ||
+          source.includes('buildNpxRapidkitVersionProbeArgs') ||
+          source.includes('buildNpmCliVersionVerifyCommands');
+        expect(usesPinnedNpxWrapper, file).toBe(true);
       }
     }
 

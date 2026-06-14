@@ -7,12 +7,14 @@ import {
   type WorkspaceContext,
 } from './incidentStudioAnalyze';
 import { readAIActionRegistry } from '../../core/aiActionRegistry';
+import type { StudioActionId } from '../../core/studioActionCommands';
 import { resolveIncidentStudioTelemetry } from './incidentStudioTelemetryBridge';
 import { runIncidentInlineCommand } from './incidentStudioInlineCommandBridge';
 import {
   evaluatePolicyGateEnforcementFromTelemetry,
   resolvePolicyGateBlockedReasonsFromTelemetry,
 } from './incidentStudioPolicyGateMapper';
+import type { IncidentStudioExecutionTranscript } from './incidentStudioSessionPersistenceBridge';
 
 export type StudioActionExecutionResult = {
   summary: string;
@@ -24,6 +26,7 @@ export type StudioActionExecutionResult = {
   gatePassed?: boolean;
   telemetryGatePassed?: boolean;
   findings?: AnalyzeReport['summary']['findings'];
+  executionTranscript?: IncidentStudioExecutionTranscript;
 };
 
 export async function executeVerifyGatesAction(
@@ -45,6 +48,7 @@ export async function executeVerifyGatesAction(
     | {
         success: boolean;
         error?: string;
+        executionTranscript?: IncidentStudioExecutionTranscript;
       }
     | undefined;
 
@@ -88,13 +92,22 @@ export async function executeVerifyGatesAction(
     gatePassed,
     telemetryGatePassed,
     findings: report.summary.findings,
+    executionTranscript: gateResult?.executionTranscript
+      ? {
+          ...gateResult.executionTranscript,
+          actionId: 'verify-gates',
+          title: 'Verify gates',
+          source: 'studio-action',
+          evidencePath: report.enterpriseControls?.evidencePath,
+        }
+      : undefined,
   };
 }
 
 export async function executeStudioActionById(
   context: vscode.ExtensionContext,
   workspace: WorkspaceContext,
-  actionId: 'run-analyze' | 'verify-gates' | 'terminal-bridge' | 'fix-lens' | 'impact-lens',
+  actionId: StudioActionId,
   seed: Record<string, unknown>
 ): Promise<{ refreshedReport: AnalyzeReport | null; actionResult?: StudioActionExecutionResult }> {
   switch (actionId) {

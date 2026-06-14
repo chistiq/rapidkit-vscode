@@ -18,10 +18,13 @@ export const EVIDENCE_CARD_COMMANDS: Partial<Record<DashboardEvidenceCardId, Das
   analyze: 'workspaceAnalyze',
   readiness: 'workspaceReadiness',
   bootstrap: 'workspaceBootstrap',
+  workspaceSync: 'workspaceSync',
+  foundation: 'workspaceFoundationEnsure',
+  contract: 'workspaceContractVerify',
   autopilot: 'workspaceAutopilotRelease',
   snapshot: 'workspaceSnapshotCreate',
   share: 'workspaceShare',
-  archive: 'workspaceArchive',
+  archive: 'exportWorkspace',
 };
 
 export function resolveEvidenceCardCommandAction(

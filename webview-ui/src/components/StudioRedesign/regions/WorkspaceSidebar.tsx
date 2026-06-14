@@ -4,11 +4,37 @@
  */
 
 import React, { useState } from 'react';
-import { Folder, Package, CheckCircle2, ChevronDown, Circle, PlayCircle, ShieldAlert, Lock } from 'lucide-react';
-import { studioClass, auditOutcomeToneClass, actionStabilityClass, actionRuntimeToneClass } from '../styles/studioUi';
-import { ActionItem, AIActionRegistryView, StudioActionStatus } from '../state/studioState';
-import { STUDIO_ACTION_COMMANDS, StudioActionCommand } from '../state/studioActions';
-import { buildStudioActionAuditTimeline, StudioActionAuditEvent, StudioApprovalAuditEvent } from '../state/studioActionAudit';
+import {
+    Folder,
+    Package,
+    CheckCircle2,
+    ChevronDown,
+    Circle,
+    PlayCircle,
+    ShieldAlert,
+    Lock,
+} from 'lucide-react';
+import {
+    studioClass,
+    auditOutcomeToneClass,
+    actionStabilityClass,
+    actionRuntimeToneClass,
+} from '../styles/studioUi';
+import {
+    ActionItem,
+    AIActionRegistryView,
+    StudioExecutionTranscript,
+    StudioActionStatus,
+    StudioProofEvent,
+    UserMode,
+} from '../state/studioState';
+import { STUDIO_ACTION_REGISTRY } from '../state/studioActions';
+import type { StudioActionCommand, StudioActionRegistryEntry } from '../state/studioActions';
+import {
+    buildStudioActionAuditTimeline,
+    StudioActionAuditEvent,
+    StudioApprovalAuditEvent,
+} from '../state/studioActionAudit';
 import { CliSurfaceSection } from './CliSurfaceSection';
 import { CollapsibleSection } from './CollapsibleSection';
 import type { IncidentCliActionEntry } from '../../../lib/incidentCliActionMatrix';
@@ -21,68 +47,6 @@ interface WorkspaceItem {
     description?: string;
 }
 
-interface ActionMatrixEntry {
-    id: string;
-    title: string;
-    command: string;
-    studioCommand: StudioActionCommand;
-    scope: 'workspace' | 'project';
-    stability: 'stable' | 'governed' | 'analysis';
-    description: string;
-    actionType?: 'fix' | 'impact' | 'verify';
-}
-
-const ACTION_MATRIX: ActionMatrixEntry[] = [
-    {
-        id: 'action-analyze',
-        title: 'Analyze Workspace',
-        command: 'Hydrate evidence, health, gates, and related files.',
-        studioCommand: STUDIO_ACTION_COMMANDS.runAnalyze,
-        scope: 'workspace',
-        stability: 'stable',
-        description: 'Baseline health and structure evidence.',
-    },
-    {
-        id: 'action-impact',
-        title: 'Impact Lens',
-        command: 'Generate a blast-radius contract before changes.',
-        studioCommand: STUDIO_ACTION_COMMANDS.impactLens,
-        scope: 'workspace',
-        stability: 'analysis',
-        description: 'Inspect framework clusters and severity bands.',
-        actionType: 'impact',
-    },
-    {
-        id: 'action-fix',
-        title: 'Governed Fix',
-        command: 'Draft apply, verify, and rollback contract.',
-        studioCommand: STUDIO_ACTION_COMMANDS.fixLens,
-        scope: 'project',
-        stability: 'governed',
-        description: 'Prepare a user-approved fix contract with rollback proof.',
-        actionType: 'fix',
-    },
-    {
-        id: 'action-verify',
-        title: 'Verify Gates',
-        command: 'Run deterministic verification against current evidence.',
-        studioCommand: STUDIO_ACTION_COMMANDS.verifyGates,
-        scope: 'project',
-        stability: 'stable',
-        description: 'Lock the current change to a deterministic verify path.',
-        actionType: 'verify',
-    },
-    {
-        id: 'action-terminal',
-        title: 'Terminal Bridge',
-        command: 'Route workspace commands through the guarded bridge.',
-        studioCommand: STUDIO_ACTION_COMMANDS.terminalBridge,
-        scope: 'workspace',
-        stability: 'stable',
-        description: 'Execute supported workspace commands with visible output.',
-    },
-];
-
 interface WorkspaceSidebarProps {
     items: WorkspaceItem[];
     selectedItemId?: string;
@@ -91,13 +55,15 @@ interface WorkspaceSidebarProps {
     aiActionRegistry?: AIActionRegistryView | null;
     studioActionStatus?: StudioActionStatus | null;
     approvalAuditEvents?: StudioApprovalAuditEvent[];
+    proofEvents?: StudioProofEvent[];
+    executionTranscripts?: StudioExecutionTranscript[];
     onToggleActionItem?: (id: string) => void;
     onExecuteAction?: (command: StudioActionCommand) => void;
     onRevealEvidence?: (path: string) => void;
     onRunCliSurfaceAction?: (entry: { command: string; cliActionId: string }) => void;
     executingCliCommand?: string | null;
     hasProjectSelected?: boolean;
-    userMode?: 'guided' | 'expert';
+    userMode?: UserMode;
 }
 
 export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
@@ -108,6 +74,8 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
     aiActionRegistry,
     studioActionStatus,
     approvalAuditEvents = [],
+    proofEvents = [],
+    executionTranscripts = [],
     onToggleActionItem,
     onExecuteAction,
     onRevealEvidence,
@@ -120,10 +88,14 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
         registry: aiActionRegistry,
         status: studioActionStatus,
         approvalEvents: approvalAuditEvents,
+        proofEvents,
     });
     const [selectedAuditEventId, setSelectedAuditEventId] = useState<string | null>(null);
     const selectedAuditEvent =
         auditEvents.find((event) => event.id === selectedAuditEventId) || auditEvents[0] || null;
+    const selectedTranscript = selectedAuditEvent?.transcriptId
+        ? executionTranscripts.find((transcript) => transcript.id === selectedAuditEvent.transcriptId) || null
+        : null;
     const actionRunning = studioActionStatus?.status === 'started';
 
     const getIcon = (type: string) => {
@@ -165,7 +137,11 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
                 />
 
                 {selectedAuditEvent ? (
-                    <ActionAuditInspector event={selectedAuditEvent} onRevealEvidence={onRevealEvidence} />
+                    <ActionAuditInspector
+                        event={selectedAuditEvent}
+                        executionTranscript={selectedTranscript}
+                        onRevealEvidence={onRevealEvidence}
+                    />
                 ) : null}
 
                 {/* Open Action Items — cross-session retention */}
@@ -183,7 +159,7 @@ export const WorkspaceSidebar: React.FC<WorkspaceSidebarProps> = ({
                     variant="sidebar"
                 >
                     <div className={`${studioClass.sidebarSection} studio-sidebar__section--matrix`}>
-                        {ACTION_MATRIX.map((action) => (
+                        {STUDIO_ACTION_REGISTRY.map((action) => (
                             <ActionMatrixRow
                                 key={action.id}
                                 action={action}
@@ -329,8 +305,9 @@ const AuditRow: React.FC<{
 
 const ActionAuditInspector: React.FC<{
     event: StudioActionAuditEvent;
+    executionTranscript?: StudioExecutionTranscript | null;
     onRevealEvidence?: (path: string) => void;
-}> = ({ event, onRevealEvidence }) => {
+}> = ({ event, executionTranscript = null, onRevealEvidence }) => {
     const toneClass = auditOutcomeToneClass(event.outcome);
     const proof = event.evidenceSha256
         ? `sha256:${event.evidenceSha256}`
@@ -347,9 +324,12 @@ const ActionAuditInspector: React.FC<{
     const opsLine = [
         `Cmd ${event.commandCount ?? 0}`,
         `Fail ${event.failedCommandCount ?? 0}`,
+        event.durationMs ? formatDuration(event.durationMs) : null,
         event.evidenceSizeBytes ? formatEvidenceBytes(event.evidenceSizeBytes) : '—',
         event.provider || 'local bridge',
-    ].join(' · ');
+    ]
+        .filter(Boolean)
+        .join(' · ');
 
     return (
         <div className={`${studioClass.sidebarInspectorWrap} studio-sidebar-inspector-wrap--compact`}>
@@ -393,10 +373,31 @@ const ActionAuditInspector: React.FC<{
                         ) : null}
                     </div>
                 ) : null}
+
+                {executionTranscript ? (
+                    <div className="studio-inspector__failures" title={executionTranscript.title}>
+                        {executionTranscript.steps.slice(0, 2).map((step) => (
+                            <code key={step.id} className="studio-code-snippet" title={step.command}>
+                                {step.status.toUpperCase()} · {shortenCommand(step.command)}
+                                {step.durationMs ? ` · ${formatDuration(step.durationMs)}` : ''}
+                            </code>
+                        ))}
+                        {executionTranscript.steps.length > 2 ? (
+                            <span className="studio-inspector__fail-more">
+                                +{executionTranscript.steps.length - 2}
+                            </span>
+                        ) : null}
+                    </div>
+                ) : null}
             </div>
         </div>
     );
 };
+
+function shortenCommand(value: string): string {
+    const normalized = value.replace(/\s+/g, ' ').trim();
+    return normalized.length > 54 ? `${normalized.slice(0, 51)}…` : normalized;
+}
 
 function shortenPath(value: string): string {
     const normalized = value.replace(/\\/g, '/');
@@ -405,6 +406,16 @@ function shortenPath(value: string): string {
         return normalized;
     }
     return `…/${parts.slice(-2).join('/')}`;
+}
+
+function formatDuration(ms: number): string {
+    if (ms < 1000) {
+        return `${Math.max(0, Math.round(ms))}ms`;
+    }
+    if (ms < 60_000) {
+        return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
+    }
+    return `${Math.round(ms / 60_000)}m`;
 }
 
 function formatEvidenceBytes(bytes: number): string {
@@ -460,7 +471,7 @@ const OpenActionsSection: React.FC<OpenActionsSectionProps> = ({ items, onToggle
 };
 
 const ActionMatrixRow: React.FC<{
-    action: ActionMatrixEntry;
+    action: StudioActionRegistryEntry;
     selectedItemId?: string;
     onItemSelect: (itemId: string) => void;
     aiActionRegistry?: AIActionRegistryView | null;
@@ -470,12 +481,17 @@ const ActionMatrixRow: React.FC<{
     const active = selectedItemId === action.id;
     const runtime = buildActionRuntime(action, aiActionRegistry);
     const runDisabled = actionRunning || !onExecuteAction;
+    const runDisabledReason = actionRunning
+        ? 'Another Studio action is running.'
+        : !onExecuteAction
+          ? 'Studio action bridge is not available.'
+          : undefined;
     const stabilityClass = actionStabilityClass(action.stability);
 
     return (
         <div
             className={`${studioClass.card} studio-card--matrix${active ? ' is-active' : ''}`}
-            title={`${action.command} · ${action.description}`}
+            title={`${action.summary} · ${action.description}`}
         >
             <div className="studio-matrix-row__top">
                 <button type="button" onClick={() => onItemSelect(action.id)} className="studio-matrix-row__select">
@@ -491,10 +507,11 @@ const ActionMatrixRow: React.FC<{
                     type="button"
                     onClick={() => {
                         if (!runDisabled) {
-                            onExecuteAction?.(action.studioCommand);
+                            onExecuteAction?.(action.command);
                         }
                     }}
                     disabled={runDisabled}
+                    title={runDisabledReason || `Run ${action.title}`}
                     className={`${studioClass.btnPrimary} studio-matrix-row__run`}
                 >
                     <PlayCircle size={11} />
@@ -516,7 +533,7 @@ const ActionMatrixRow: React.FC<{
 };
 
 function buildActionRuntime(
-    action: ActionMatrixEntry,
+    action: StudioActionRegistryEntry,
     registry?: AIActionRegistryView | null,
 ): { label: string; toneClass: string; proof: string; needsAttention: boolean } {
     const latest = action.actionType
@@ -576,7 +593,17 @@ const SidebarItemRow: React.FC<SidebarItemRowProps> = ({
 }) => {
     const active = selectedItemId === item.id;
     const runDisabled = tone === 'future' || actionRunning || !item.command || !onExecuteAction;
-    const title = item.description || (item.command ? `Run ${item.name}` : item.name);
+    const rowDisabled = tone === 'future';
+    const runDisabledReason = tone === 'future'
+        ? 'This capability is planned.'
+        : actionRunning
+          ? 'Another Studio action is running.'
+          : !item.command
+            ? 'No executable action is attached to this capability yet.'
+            : !onExecuteAction
+              ? 'Studio action bridge is not available.'
+              : undefined;
+    const title = runDisabledReason || item.description || (item.command ? `Run ${item.name}` : item.name);
 
     return (
         <button
@@ -588,7 +615,7 @@ const SidebarItemRow: React.FC<SidebarItemRowProps> = ({
                 }
             }}
             className={`${studioClass.navItem}${active ? ' is-active' : ''}${tone === 'future' ? ' is-future' : ''}`}
-            disabled={tone === 'future'}
+            disabled={rowDisabled}
             title={title}
         >
             <span className={studioClass.navItemIcon}>

@@ -60,6 +60,8 @@ export function extractWorkspacePathFromReportPath(filePath: string): string | u
 
 export type DashboardEvidenceRefreshContext = {
   workspacePath?: string;
+  projectPath?: string;
+  projectName?: string;
   reportPath?: string;
 };
 

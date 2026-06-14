@@ -6,7 +6,11 @@
 import React from 'react';
 import { Terminal, ScanLine, Lightbulb, Code, ShieldCheck, LucideIcon } from 'lucide-react';
 import { studioClass } from '../styles/studioUi';
-import { STUDIO_ACTION_COMMANDS, StudioActionCommand } from '../state/studioActions';
+import {
+    getStudioActionRegistryEntry,
+    STUDIO_ACTION_COMMANDS,
+} from '../state/studioActions';
+import type { StudioActionCommand } from '../state/studioActions';
 
 interface Tool {
     id: string;
@@ -16,13 +20,18 @@ interface Tool {
     command: StudioActionCommand;
 }
 
-const TOOLS: Tool[] = [
-    { id: 'terminal', icon: Terminal, label: 'Terminal Bridge', shortcut: '⌘T', command: STUDIO_ACTION_COMMANDS.terminalBridge },
-    { id: 'scan', icon: ScanLine, label: 'Run Analyze', shortcut: '⌘S', command: STUDIO_ACTION_COMMANDS.runAnalyze },
-    { id: 'impact', icon: Lightbulb, label: 'Impact Lens', shortcut: '⌘I', command: STUDIO_ACTION_COMMANDS.impactLens },
-    { id: 'fix', icon: Code, label: 'Fix Lens', shortcut: '⌘F', command: STUDIO_ACTION_COMMANDS.fixLens },
-    { id: 'verify', icon: ShieldCheck, label: 'Verify Gates', shortcut: '⌘V', command: STUDIO_ACTION_COMMANDS.verifyGates },
+const TOOL_DEFINITIONS: Array<Omit<Tool, 'label'>> = [
+    { id: 'terminal', icon: Terminal, shortcut: '⌘T', command: STUDIO_ACTION_COMMANDS.terminalBridge },
+    { id: 'scan', icon: ScanLine, shortcut: '⌘S', command: STUDIO_ACTION_COMMANDS.runAnalyze },
+    { id: 'impact', icon: Lightbulb, shortcut: '⌘I', command: STUDIO_ACTION_COMMANDS.impactLens },
+    { id: 'fix', icon: Code, shortcut: '⌘F', command: STUDIO_ACTION_COMMANDS.fixLens },
+    { id: 'verify', icon: ShieldCheck, shortcut: '⌘V', command: STUDIO_ACTION_COMMANDS.verifyGates },
 ];
+
+const TOOLS: Tool[] = TOOL_DEFINITIONS.map((tool) => ({
+    ...tool,
+    label: getStudioActionRegistryEntry(tool.command).title,
+}));
 
 interface ActivityBarProps {
     activeTool?: string;

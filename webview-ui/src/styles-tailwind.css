@@ -746,18 +746,30 @@
     gap: 9px;
     margin-bottom: 12px;
     padding: 10px;
-    border: 1px solid var(--vscode-panel-border);
-    border-radius: 7px;
-    background: color-mix(in srgb, var(--vscode-editor-background) 96%, transparent);
+    min-width: 0;
+    border: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
+    border-radius: var(--ws-radius-md, 7px);
+    background: color-mix(
+      in srgb,
+      var(--ws-surface, var(--vscode-editor-background)) 96%,
+      transparent
+    );
   }
 
   .enterprise-flow-header {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     justify-content: space-between;
     gap: 14px;
+    min-width: 0;
     padding-bottom: 8px;
     border-bottom: 1px solid var(--vscode-panel-border);
+  }
+
+  .enterprise-flow-header > div:first-child {
+    flex: 1 1 220px;
+    min-width: 0;
   }
 
   .enterprise-flow-kicker,
@@ -771,6 +783,9 @@
 
   .enterprise-flow-title {
     margin-top: 2px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     color: var(--vscode-foreground);
     font-size: 14px;
     font-weight: 850;
@@ -816,9 +831,10 @@
 
   .enterprise-flow-grid {
     display: grid;
-    grid-template-columns: minmax(300px, 1fr) minmax(420px, 1.25fr) minmax(320px, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
     align-items: stretch;
+    min-width: 0;
   }
 
   .enterprise-flow-column {
@@ -1009,32 +1025,6 @@
 
   @media (max-width: 1180px) {
     .start-panel-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .enterprise-flow-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  @media (max-width: 680px) {
-    .enterprise-flow-header,
-    .enterprise-flow-column-head {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-
-    .enterprise-flow-header-actions {
-      width: 100%;
-      justify-content: space-between;
-    }
-
-    .enterprise-flow-column-head small {
-      text-align: left;
-    }
-
-    .enterprise-action-grid,
-    .enterprise-framework-grid {
       grid-template-columns: 1fr;
     }
   }
@@ -2197,7 +2187,11 @@
     margin-bottom: 12px;
     padding: 12px;
     border-radius: var(--workspai-radius-lg);
-    background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 55%, transparent);
+    background: color-mix(
+      in srgb,
+      var(--vscode-editor-inactiveSelectionBackground) 55%,
+      transparent
+    );
     border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 84%, transparent);
   }
 
@@ -3219,7 +3213,11 @@
   }
 
   .dashboard-next-step-rail__item--critical {
-    border-color: color-mix(in srgb, var(--workspai-status-warning-bg) 55%, var(--vscode-panel-border));
+    border-color: color-mix(
+      in srgb,
+      var(--workspai-status-warning-bg) 55%,
+      var(--vscode-panel-border)
+    );
   }
 
   .dashboard-next-step-rail__item-copy {
@@ -3360,6 +3358,62 @@
   .dashboard-panel {
     display: grid;
     gap: 10px;
+    min-width: 0;
+  }
+
+  /* Layout responds to panel width (VS Code sidebar / editor), not viewport — colors stay on VS Code tokens. */
+  .ws-dashboard-shell__main,
+  .dashboard-panel--console,
+  .dashboard-panel--operate {
+    container-type: inline-size;
+    container-name: ws-dashboard;
+  }
+
+  @container ws-dashboard (min-width: 420px) and (max-width: 960px) {
+    .workspai-action-grid--governance,
+    .enterprise-action-grid--governance {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  /* Project actions: 3 → 2 → 1 columns (rules live after base grid block below) */
+
+  @container ws-dashboard (min-width: 960px) {
+    .enterprise-flow-grid {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr);
+    }
+  }
+
+  @container ws-dashboard (max-width: 680px) {
+    .enterprise-flow-header,
+    .enterprise-flow-column-head {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .enterprise-flow-header-actions {
+      width: 100%;
+      justify-content: space-between;
+    }
+
+    .enterprise-flow-column-head small {
+      text-align: left;
+    }
+
+    .enterprise-action-grid,
+    .enterprise-action-grid--operate,
+    .enterprise-framework-grid,
+    .workspai-action-grid,
+    .workspai-action-grid--operate,
+    .workspai-action-grid--2col,
+    .workspai-action-grid--governance,
+    .enterprise-action-grid--governance {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .workspai-action-grid--operate .workspai-action-tile:last-child {
+      grid-column: auto;
+    }
   }
 
   .dashboard-overview-quick-nav {
@@ -3424,6 +3478,24 @@
     gap: 10px;
   }
 
+  .dashboard-evidence-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 10px;
+    border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 72%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--vscode-editorWidget-background) 54%, transparent);
+  }
+
+  .dashboard-evidence-toolbar p {
+    margin: 2px 0 0;
+    color: var(--vscode-descriptionForeground);
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
   .dashboard-evidence-layout__split {
     display: grid;
     gap: 10px;
@@ -3443,6 +3515,7 @@
   .dashboard-operate-layout {
     display: grid;
     gap: 10px;
+    min-width: 0;
   }
 
   .command-activity-panel {
@@ -3493,15 +3566,27 @@
   }
 
   .command-activity-panel__card--pass {
-    border-color: color-mix(in srgb, var(--workspai-status-success-bg) 50%, var(--vscode-panel-border));
+    border-color: color-mix(
+      in srgb,
+      var(--workspai-status-success-bg) 50%,
+      var(--vscode-panel-border)
+    );
   }
 
   .command-activity-panel__card--warn {
-    border-color: color-mix(in srgb, var(--workspai-status-warning-bg) 50%, var(--vscode-panel-border));
+    border-color: color-mix(
+      in srgb,
+      var(--workspai-status-warning-bg) 50%,
+      var(--vscode-panel-border)
+    );
   }
 
   .command-activity-panel__card--fail {
-    border-color: color-mix(in srgb, var(--workspai-status-error-bg) 50%, var(--vscode-panel-border));
+    border-color: color-mix(
+      in srgb,
+      var(--workspai-status-error-bg) 50%,
+      var(--vscode-panel-border)
+    );
   }
 
   .command-activity-panel__card-copy {
@@ -3733,7 +3818,11 @@
   }
 
   .ops-chain-banner--blocked {
-    border-color: color-mix(in srgb, var(--workspai-status-error-bg) 45%, var(--vscode-panel-border));
+    border-color: color-mix(
+      in srgb,
+      var(--workspai-status-error-bg) 45%,
+      var(--vscode-panel-border)
+    );
   }
 
   .ops-chain-banner__head {
@@ -3786,7 +3875,11 @@
   }
 
   .ops-chain-banner__step.is-complete {
-    border-color: color-mix(in srgb, var(--workspai-status-success-bg) 45%, var(--vscode-panel-border));
+    border-color: color-mix(
+      in srgb,
+      var(--workspai-status-success-bg) 45%,
+      var(--vscode-panel-border)
+    );
   }
 
   .ops-chain-banner__step.is-current {
@@ -3794,7 +3887,11 @@
   }
 
   .ops-chain-banner__step.is-blocked {
-    border-color: color-mix(in srgb, var(--workspai-status-error-bg) 45%, var(--vscode-panel-border));
+    border-color: color-mix(
+      in srgb,
+      var(--workspai-status-error-bg) 45%,
+      var(--vscode-panel-border)
+    );
   }
 
   .ops-chain-banner__step-meta {
@@ -3934,21 +4031,42 @@
     cursor: not-allowed;
   }
 
+  .release-hub__stage--pending {
+    border-color: color-mix(in srgb, var(--workspai-accent) 40%, var(--vscode-panel-border));
+    background: color-mix(in srgb, var(--workspai-accent) 7%, var(--vscode-editor-background));
+  }
+
+  .release-hub__stage--pending .release-hub__action:disabled {
+    opacity: 0.9;
+  }
+
   .release-hub__connector {
     flex-shrink: 0;
     color: var(--vscode-descriptionForeground);
   }
 
   .release-hub__stage--pass {
-    border-color: color-mix(in srgb, var(--workspai-status-success-bg) 45%, var(--vscode-panel-border));
+    border-color: color-mix(
+      in srgb,
+      var(--workspai-status-success-bg) 45%,
+      var(--vscode-panel-border)
+    );
   }
 
   .release-hub__stage--warn {
-    border-color: color-mix(in srgb, var(--workspai-status-warning-bg) 45%, var(--vscode-panel-border));
+    border-color: color-mix(
+      in srgb,
+      var(--workspai-status-warning-bg) 45%,
+      var(--vscode-panel-border)
+    );
   }
 
   .release-hub__stage--fail {
-    border-color: color-mix(in srgb, var(--workspai-status-error-bg) 45%, var(--vscode-panel-border));
+    border-color: color-mix(
+      in srgb,
+      var(--workspai-status-error-bg) 45%,
+      var(--vscode-panel-border)
+    );
   }
 
   .command-cheatsheet__head {
@@ -4120,7 +4238,11 @@
   }
 
   .workspace-overview-actions__create-ai {
-    border-color: color-mix(in srgb, var(--workspai-accent) 55%, var(--vscode-panel-border)) !important;
+    border-color: color-mix(
+      in srgb,
+      var(--workspai-accent) 55%,
+      var(--vscode-panel-border)
+    ) !important;
     background: linear-gradient(
       135deg,
       color-mix(in srgb, var(--workspai-accent) 18%, var(--vscode-editor-background)),
@@ -4130,7 +4252,11 @@
   }
 
   .workspace-overview-actions__create-ai:hover {
-    border-color: color-mix(in srgb, var(--workspai-accent) 70%, var(--vscode-focusBorder)) !important;
+    border-color: color-mix(
+      in srgb,
+      var(--workspai-accent) 70%,
+      var(--vscode-focusBorder)
+    ) !important;
     background: linear-gradient(
       135deg,
       color-mix(in srgb, var(--workspai-accent) 24%, var(--vscode-editor-background)),
@@ -4160,7 +4286,11 @@
   }
 
   .module-catalog-runtime-banner--warn {
-    border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground) 45%, var(--vscode-panel-border));
+    border-color: color-mix(
+      in srgb,
+      var(--vscode-editorWarning-foreground) 45%,
+      var(--vscode-panel-border)
+    );
     background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 10%, transparent);
   }
 
@@ -4283,7 +4413,11 @@
     overflow: hidden;
     border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 82%, transparent);
     border-radius: 5px;
-    background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 60%, transparent);
+    background: color-mix(
+      in srgb,
+      var(--vscode-editor-inactiveSelectionBackground) 60%,
+      transparent
+    );
   }
 
   .catalog-skeleton-card::before {
@@ -4317,7 +4451,11 @@
     padding: 20px;
     border: 1px solid color-mix(in srgb, var(--vscode-errorForeground) 55%, transparent);
     border-radius: 8px;
-    background: color-mix(in srgb, var(--vscode-errorForeground) 8%, var(--vscode-editor-background));
+    background: color-mix(
+      in srgb,
+      var(--vscode-errorForeground) 8%,
+      var(--vscode-editor-background)
+    );
     color: var(--vscode-foreground);
   }
 
@@ -4447,7 +4585,11 @@
     border-radius: var(--workspai-radius-lg);
     padding: 12px 14px;
     margin-bottom: 12px;
-    background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 70%, transparent);
+    background: color-mix(
+      in srgb,
+      var(--vscode-editor-inactiveSelectionBackground) 70%,
+      transparent
+    );
   }
 
   .workspai-banner__head {
@@ -4623,8 +4765,14 @@
   .workspai-action-grid,
   .enterprise-action-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
+  }
+
+  .workspai-action-grid:not(.workspai-action-grid--project):not(
+      .workspai-action-grid--governance
+    ):not(.workspai-action-grid--auto),
+  .enterprise-action-grid:not(.enterprise-action-grid--governance) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .workspai-action-grid--operate,
@@ -4634,7 +4782,7 @@
 
   .workspai-action-grid--governance,
   .enterprise-action-grid--governance {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .workspai-action-grid--operate .workspai-action-tile:last-child,
@@ -4642,9 +4790,27 @@
     grid-column: 1 / -1;
   }
 
-  .workspai-action-grid--project,
+  .workspai-action-grid.workspai-action-grid--project,
+  .workspai-action-panel .workspai-action-grid--project,
   .project-actions-grid {
-    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  /* Project actions responsive — after base 3-col so container rules win when narrow */
+  @container ws-dashboard (max-width: 580px) {
+    .workspai-action-grid.workspai-action-grid--project,
+    .workspai-action-panel .workspai-action-grid--project,
+    .project-actions-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @container ws-dashboard (max-width: 360px) {
+    .workspai-action-grid.workspai-action-grid--project,
+    .workspai-action-panel .workspai-action-grid--project,
+    .project-actions-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
   .workspai-action-grid--auto {
@@ -4687,6 +4853,10 @@
   .workspai-action-tile:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+  }
+
+  .workspai-action-tile--pending:disabled {
+    opacity: 0.86;
   }
 
   .workspai-action-tile__icon {
@@ -4734,7 +4904,8 @@
     font-size: 10px;
   }
 
-  .workspai-action-tile__evidence {
+  .workspai-action-tile__evidence,
+  .workspai-action-tile__state {
     margin-left: auto;
     padding: 2px 7px;
     border-radius: 999px;
@@ -4743,6 +4914,15 @@
     letter-spacing: 0.04em;
     text-transform: uppercase;
     white-space: nowrap;
+  }
+
+  .workspai-action-tile__state {
+    color: var(--vscode-progressBar-background, var(--workspai-accent));
+    background: color-mix(
+      in srgb,
+      var(--vscode-progressBar-background, var(--workspai-accent)) 14%,
+      transparent
+    );
   }
 
   .workspai-action-tile__evidence--pass {
@@ -4803,9 +4983,19 @@
   .workspai-action-panel {
     margin-bottom: 12px;
     padding: 12px;
-    border-radius: var(--workspai-radius-lg);
-    background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 55%, transparent);
-    border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 84%, transparent);
+    min-width: 0;
+    border-radius: var(--ws-radius-lg, var(--workspai-radius-lg));
+    background: color-mix(
+      in srgb,
+      var(--ws-surface-hover, var(--vscode-list-hoverBackground)) 85%,
+      transparent
+    );
+    border: 1px solid
+      var(--ws-border-subtle, color-mix(in srgb, var(--vscode-panel-border) 84%, transparent));
+  }
+
+  .workspace-governance-panel {
+    min-width: 0;
   }
 
   .workspai-settings {
@@ -4861,7 +5051,11 @@
   }
 
   .workspai-settings-card--muted {
-    background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 55%, transparent);
+    background: color-mix(
+      in srgb,
+      var(--vscode-editor-inactiveSelectionBackground) 55%,
+      transparent
+    );
   }
 
   .workspai-settings-card-head {

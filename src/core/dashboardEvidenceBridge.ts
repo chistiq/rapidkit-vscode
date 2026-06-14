@@ -17,6 +17,9 @@ export type DashboardEvidenceCardId =
   | 'analyze'
   | 'readiness'
   | 'bootstrap'
+  | 'workspaceSync'
+  | 'foundation'
+  | 'contract'
   | 'autopilot'
   | 'snapshot'
   | 'share'
@@ -124,6 +127,54 @@ async function readBootstrapComplianceSummary(
 
 const WORKSPACE_DOCTOR_REPORT = 'doctor-last-run.json';
 const PROJECT_DOCTOR_REPORT = 'doctor-project-last-run.json';
+const LEGACY_PROJECT_DOCTOR_REPORT = 'doctor-last-run.json';
+
+async function listRecentDoctorReports(
+  reportsDir: string,
+  options?: { workspaceLevel?: boolean; projectName?: string }
+): Promise<string[]> {
+  try {
+    if (!(await fs.pathExists(reportsDir))) {
+      return [];
+    }
+    const projectName = options?.projectName?.toLowerCase();
+    const entries = await Promise.all(
+      (await fs.readdir(reportsDir))
+        .filter((name) => {
+          const lower = name.toLowerCase();
+          if (!lower.endsWith('.json') || !lower.includes('doctor')) {
+            return false;
+          }
+          if (!options?.workspaceLevel) {
+            return true;
+          }
+          return lower.includes('project') || (projectName ? lower.includes(projectName) : false);
+        })
+        .map(async (name) => {
+          const artifactPath = path.join(reportsDir, name);
+          const stat = await fs.stat(artifactPath);
+          return { artifactPath, mtimeMs: stat.mtimeMs };
+        })
+    );
+    return entries.sort((a, b) => b.mtimeMs - a.mtimeMs).map((entry) => entry.artifactPath);
+  } catch {
+    return [];
+  }
+}
+
+function uniquePaths(paths: string[]): string[] {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const candidate of paths) {
+    const normalized = path.resolve(candidate);
+    if (seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    output.push(candidate);
+  }
+  return output;
+}
 
 function buildDoctorCard(
   reportsDir: string,
@@ -131,12 +182,17 @@ function buildDoctorCard(
   scope: DashboardEvidenceScope,
   id: DashboardEvidenceCardId,
   label: string,
-  options?: { projectPath?: string; projectName?: string; reportFileName?: string }
+  options?: {
+    projectPath?: string;
+    projectName?: string;
+    reportFileName?: string;
+    artifactPath?: string;
+  }
 ): DashboardEvidenceCard {
   const reportFileName =
     options?.reportFileName ??
     (scope === 'project' ? PROJECT_DOCTOR_REPORT : WORKSPACE_DOCTOR_REPORT);
-  const artifactPath = path.join(reportsDir, reportFileName);
+  const artifactPath = options?.artifactPath ?? path.join(reportsDir, reportFileName);
   if (!raw) {
     return missingCard(
       id,
@@ -173,6 +229,68 @@ function buildDoctorCard(
     blockers,
     incidentStudioTarget: 'doctor',
   };
+}
+
+function projectDoctorReportMatchesScope(
+  raw: Record<string, unknown>,
+  projectPath?: string,
+  projectName?: string
+): boolean {
+  const nestedProject =
+    raw.project && typeof raw.project === 'object' ? (raw.project as Record<string, unknown>) : {};
+  const reportProjectPath =
+    typeof raw.projectPath === 'string'
+      ? raw.projectPath
+      : typeof nestedProject.path === 'string'
+        ? nestedProject.path
+        : undefined;
+  const reportProjectName =
+    typeof raw.projectName === 'string'
+      ? raw.projectName
+      : typeof nestedProject.name === 'string'
+        ? nestedProject.name
+        : undefined;
+
+  if (projectPath && reportProjectPath) {
+    return path.resolve(reportProjectPath) === path.resolve(projectPath);
+  }
+  if (projectName && reportProjectName) {
+    return reportProjectName === projectName;
+  }
+  return true;
+}
+
+async function readProjectDoctorReport(input: {
+  workspaceReportsDir: string;
+  projectPath: string;
+  projectName?: string;
+}): Promise<
+  { raw: Record<string, unknown>; artifactPath: string; reportsDir: string } | undefined
+> {
+  const projectReportsDir = path.join(input.projectPath, '.rapidkit', 'reports');
+  const candidates = uniquePaths([
+    path.join(projectReportsDir, PROJECT_DOCTOR_REPORT),
+    path.join(projectReportsDir, LEGACY_PROJECT_DOCTOR_REPORT),
+    path.join(input.workspaceReportsDir, PROJECT_DOCTOR_REPORT),
+    ...(await listRecentDoctorReports(projectReportsDir)),
+    ...(await listRecentDoctorReports(input.workspaceReportsDir, {
+      workspaceLevel: true,
+      projectName: input.projectName,
+    })),
+  ]);
+
+  for (const artifactPath of candidates) {
+    const raw = await readJsonIfExists(artifactPath);
+    if (!raw) {
+      continue;
+    }
+    if (!projectDoctorReportMatchesScope(raw, input.projectPath, input.projectName)) {
+      continue;
+    }
+    return { raw, artifactPath, reportsDir: path.dirname(artifactPath) };
+  }
+
+  return undefined;
 }
 
 async function buildHandoffCards(workspacePath: string): Promise<DashboardEvidenceCard[]> {
@@ -240,6 +358,106 @@ async function buildHandoffCards(workspacePath: string): Promise<DashboardEviden
       generatedAt: typeof archiveRaw.generatedAt === 'string' ? archiveRaw.generatedAt : undefined,
       artifactPath: path.join(workspacePath, '.rapidkit', 'archive-manifest.json'),
       blockers,
+    });
+  }
+
+  return cards;
+}
+
+async function buildWorkspaceStateCards(workspacePath: string): Promise<DashboardEvidenceCard[]> {
+  const rapidkitDir = path.join(workspacePath, '.rapidkit');
+  const markerPath = path.join(workspacePath, '.rapidkit-workspace');
+  const workspaceJsonPath = path.join(rapidkitDir, 'workspace.json');
+  const policiesPath = path.join(rapidkitDir, 'policies.yml');
+  const toolchainPath = path.join(rapidkitDir, 'toolchain.lock');
+  const contractPath = path.join(rapidkitDir, 'workspace.contract.json');
+
+  const [hasMarker, workspaceRaw, hasPolicies, hasToolchain, contractRaw] = await Promise.all([
+    fs.pathExists(markerPath),
+    readJsonIfExists(workspaceJsonPath),
+    fs.pathExists(policiesPath),
+    fs.pathExists(toolchainPath),
+    readJsonIfExists(contractPath),
+  ]);
+  const hasWorkspaceJson = Boolean(workspaceRaw);
+  const projects = Array.isArray(workspaceRaw?.projects) ? workspaceRaw.projects : [];
+  const missingFoundationFiles = [
+    hasMarker ? undefined : '.rapidkit-workspace',
+    hasWorkspaceJson ? undefined : '.rapidkit/workspace.json',
+    hasPolicies ? undefined : '.rapidkit/policies.yml',
+    hasToolchain ? undefined : '.rapidkit/toolchain.lock',
+  ].filter((item): item is string => Boolean(item));
+
+  const cards: DashboardEvidenceCard[] = [];
+
+  if (hasWorkspaceJson) {
+    cards.push({
+      id: 'workspaceSync',
+      label: 'Workspace Sync',
+      status: projects.length > 0 ? 'pass' : 'warn',
+      summary:
+        projects.length > 0
+          ? `${projects.length} project(s) indexed in workspace state.`
+          : 'Workspace state exists, but no projects are indexed yet.',
+      scope: 'workspace',
+      artifactPath: workspaceJsonPath,
+      metrics: { projects: projects.length },
+    });
+  } else {
+    cards.push(
+      missingCard(
+        'workspaceSync',
+        'Workspace Sync',
+        'No workspace state yet. Run workspace sync from Governance.',
+        'workspace'
+      )
+    );
+  }
+
+  if (missingFoundationFiles.length === 0) {
+    cards.push({
+      id: 'foundation',
+      label: 'Foundation',
+      status: 'pass',
+      summary: 'Foundation files present: marker, workspace, policies, and toolchain.',
+      scope: 'workspace',
+      artifactPath: workspaceJsonPath,
+      metrics: { files: 4 },
+    });
+  } else {
+    cards.push({
+      id: 'foundation',
+      label: 'Foundation',
+      status: hasMarker || hasWorkspaceJson ? 'warn' : 'missing',
+      summary: `Missing ${missingFoundationFiles.length} foundation file(s).`,
+      scope: 'workspace',
+      artifactPath: hasWorkspaceJson ? workspaceJsonPath : undefined,
+      metrics: { missing: missingFoundationFiles.length },
+      blockers: missingFoundationFiles,
+    });
+  }
+
+  if (contractRaw) {
+    const contractProjects = Array.isArray(contractRaw.projects) ? contractRaw.projects : projects;
+    cards.push({
+      id: 'contract',
+      label: 'Workspace Contract',
+      status: 'pass',
+      summary: `${contractProjects.length} project(s) covered by the workspace contract.`,
+      scope: 'workspace',
+      artifactPath: contractPath,
+      metrics: { projects: contractProjects.length },
+    });
+  } else {
+    cards.push({
+      id: 'contract',
+      label: 'Workspace Contract',
+      status: hasWorkspaceJson ? 'warn' : 'missing',
+      summary: hasWorkspaceJson
+        ? 'Workspace state exists; contract evidence has not been generated yet.'
+        : 'No workspace contract evidence yet. Run contract inspect or verify.',
+      scope: 'workspace',
+      blockers: hasWorkspaceJson ? ['Run workspace contract inspect or verify.'] : undefined,
     });
   }
 
@@ -403,18 +621,26 @@ export async function buildDashboardEvidenceBundle(input?: {
   );
 
   if (projectPath) {
-    const projectReportsDir = path.join(projectPath, '.rapidkit', 'reports');
-    const projectDoctorRaw = await readJsonIfExists(
-      path.join(projectReportsDir, PROJECT_DOCTOR_REPORT)
-    );
+    const projectDoctor = await readProjectDoctorReport({
+      workspaceReportsDir: reportsDir,
+      projectPath,
+      projectName,
+    });
+    const projectReportsDir =
+      projectDoctor?.reportsDir ?? path.join(projectPath, '.rapidkit', 'reports');
     cards.push(
       buildDoctorCard(
         projectReportsDir,
-        projectDoctorRaw,
+        projectDoctor?.raw,
         'project',
         'projectDoctor',
         'Project Doctor',
-        { projectPath, projectName, reportFileName: PROJECT_DOCTOR_REPORT }
+        {
+          projectPath,
+          projectName,
+          reportFileName: PROJECT_DOCTOR_REPORT,
+          artifactPath: projectDoctor?.artifactPath,
+        }
       )
     );
   }
@@ -520,6 +746,7 @@ export async function buildDashboardEvidenceBundle(input?: {
     });
   }
 
+  cards.push(...(await buildWorkspaceStateCards(workspacePath)));
   cards.push(...(await buildHandoffCards(workspacePath)));
   cards.push(...(await buildGovernanceOperationalCards(workspacePath, reportsDir)));
 

@@ -15,6 +15,7 @@ import {
   Terminal,
   Upload,
 } from 'lucide-react';
+import type { DashboardEvidenceCardId } from '@/lib/dashboardCommandRegistry';
 import type { WorkspaceStatus } from '@/types';
 import { vscode } from '@/vscode';
 import { FrameworkIcon } from './FrameworkIcon';
@@ -36,6 +37,7 @@ interface EnterpriseDashboardFlowProps {
   onRunChangeImpact?: () => void;
   onRunTerminalBridge?: () => void;
   onOpenIncidentStudio?: () => void;
+  pendingCardIds?: DashboardEvidenceCardId[];
 }
 
 const frameworks: Array<{
@@ -63,14 +65,16 @@ export function EnterpriseDashboardFlow({
   onRunChangeImpact,
   onRunTerminalBridge,
   onOpenIncidentStudio,
+  pendingCardIds = [],
 }: EnterpriseDashboardFlowProps) {
   const hasWorkspace = Boolean(workspaceStatus.hasWorkspace && workspaceStatus.workspacePath);
   const displayName = workspaceName || workspaceStatus.workspaceName || 'No workspace selected';
   const profileLabel = workspaceProfile || workspaceStatus.workspaceProfile;
+  const isPending = (cardId: DashboardEvidenceCardId) => pendingCardIds.includes(cardId);
 
   const runWorkspaceAction = (command: string, data?: Record<string, unknown>) => {
     if (!hasWorkspace) {
-      vscode.postMessage('quickSwitchWorkspace');
+      requestWorkspaceSwitch();
       return;
     }
     if (onRunWorkspaceCommand) {
@@ -82,10 +86,18 @@ export function EnterpriseDashboardFlow({
 
   const runWorkspaceCallback = (callback?: () => void) => {
     if (!hasWorkspace) {
-      vscode.postMessage('quickSwitchWorkspace');
+      requestWorkspaceSwitch();
       return;
     }
     callback?.();
+  };
+
+  const requestWorkspaceSwitch = () => {
+    if (onRunWorkspaceCommand) {
+      onRunWorkspaceCommand('quickSwitchWorkspace');
+      return;
+    }
+    vscode.postMessage('quickSwitchWorkspace');
   };
 
   return (
@@ -96,14 +108,16 @@ export function EnterpriseDashboardFlow({
           <div className="enterprise-flow-title">{displayName}</div>
           <div className="enterprise-flow-subtitle">
             {profileLabel ? `${profileLabel} profile · ` : ''}
-            {hasWorkspace ? 'Governed workspace operations' : 'Select a workspace to unlock actions'}
+            {hasWorkspace
+              ? 'Governed workspace operations'
+              : 'Select a workspace to unlock actions'}
           </div>
         </div>
         <div className="enterprise-flow-header-actions">
           <button
             type="button"
             className="ws-btn ws-btn--ghost enterprise-flow-switch"
-            onClick={() => vscode.postMessage('quickSwitchWorkspace')}
+            onClick={requestWorkspaceSwitch}
             title="Quick Switch Workspace"
           >
             <ArrowLeftRight size={13} />
@@ -128,6 +142,7 @@ export function EnterpriseDashboardFlow({
               icon={<HeartPulse size={15} />}
               label="Doctor"
               detail="Readiness scan"
+              pending={isPending('doctor')}
               onClick={() => runWorkspaceAction('checkWorkspaceHealth')}
             />
             <ActionTile
@@ -152,6 +167,7 @@ export function EnterpriseDashboardFlow({
               icon={<Layers size={15} />}
               label="Analyze"
               detail="Evidence scan"
+              pending={isPending('analyze')}
               onClick={() => runWorkspaceAction('workspaceAnalyze')}
             />
             <ActionTile
@@ -164,6 +180,7 @@ export function EnterpriseDashboardFlow({
               icon={<ShieldCheck size={15} />}
               label="Release"
               detail="Autopilot gate"
+              pending={isPending('autopilot') || isPending('readiness')}
               onClick={() => runWorkspaceAction('workspaceAutopilotRelease')}
               fullWidth
             />
@@ -171,7 +188,11 @@ export function EnterpriseDashboardFlow({
         </div>
 
         <div className="enterprise-flow-column enterprise-flow-column--build">
-          <ColumnHeader title="Build" subtitle="Project starters, import, modules" scope="workspace" />
+          <ColumnHeader
+            title="Build"
+            subtitle="Project starters, import, modules"
+            scope="workspace"
+          />
 
           <ActionTile
             variant="builder"
@@ -181,7 +202,7 @@ export function EnterpriseDashboardFlow({
             detail="Plan and scaffold a project inside this workspace"
             onClick={() => {
               if (!hasWorkspace) {
-                vscode.postMessage('quickSwitchWorkspace');
+                requestWorkspaceSwitch();
                 return;
               }
               onOpenProjectBuilder(selectedFramework);
@@ -197,7 +218,7 @@ export function EnterpriseDashboardFlow({
                 className={selectedFramework === item.framework ? 'is-active' : ''}
                 onClick={() => {
                   if (!hasWorkspace) {
-                    vscode.postMessage('quickSwitchWorkspace');
+                    requestWorkspaceSwitch();
                     return;
                   }
                   onSelectFramework(item.framework);
@@ -238,18 +259,24 @@ export function EnterpriseDashboardFlow({
         </div>
 
         <div className="enterprise-flow-column enterprise-flow-column--share">
-          <ColumnHeader title="Share" subtitle="Archive, handoff, AI operations" scope="workspace" />
+          <ColumnHeader
+            title="Share"
+            subtitle="Archive, handoff, AI operations"
+            scope="workspace"
+          />
           <ActionTileGrid layout="2col">
             <ActionTile
               icon={<Archive size={15} />}
-              label="Archive"
-              detail="Share safely"
+              label="Archive Tools"
+              detail="Inspect / verify"
+              pending={isPending('archive')}
               onClick={() => runWorkspaceAction('workspaceArchive')}
             />
             <ActionTile
               icon={<Upload size={15} />}
               label="Share Bundle"
               detail="Source-safe metadata"
+              pending={isPending('share')}
               onClick={() => runWorkspaceAction('workspaceShare')}
             />
             <ActionTile
@@ -257,9 +284,7 @@ export function EnterpriseDashboardFlow({
               label="Export"
               detail="Workspace bundle"
               onClick={() =>
-                hasWorkspace
-                  ? vscode.postMessage('exportWorkspace', { path: workspaceStatus.workspacePath })
-                  : vscode.postMessage('quickSwitchWorkspace')
+                runWorkspaceAction('exportWorkspace', { path: workspaceStatus.workspacePath })
               }
               title={hasWorkspace ? 'Export Workspace' : 'Select a workspace first'}
             />
@@ -291,19 +316,22 @@ export function EnterpriseDashboardFlow({
               icon={<CheckCircle2 size={15} />}
               label="Verify Archive"
               detail="Archive integrity"
+              pending={isPending('archive')}
               onClick={() => runWorkspaceAction('workspaceArchiveVerify')}
             />
             <ActionTile
               icon={<HeartPulse size={15} />}
               label="Doctor Archive"
               detail="Import readiness"
+              pending={isPending('archive')}
               onClick={() => runWorkspaceAction('workspaceArchiveDoctor')}
             />
             <ActionTile
               icon={<Archive size={15} />}
               label="Snapshot"
               detail="Recovery point"
-              onClick={() => runWorkspaceAction('workspaceSnapshot')}
+              pending={isPending('snapshot')}
+              onClick={() => runWorkspaceAction('workspaceSnapshotCreate')}
             />
           </ActionTileGrid>
         </div>

@@ -16,6 +16,8 @@ import {
     AIActionRegistryView,
     StudioActionStatus,
     canTransitionToPhase,
+    StudioExecutionTranscript,
+    StudioProofEvent,
 } from './state/studioState';
 import { studioClass } from './styles/studioUi';
 import { detectVSCodeThemeKind, resolveThemeKind, saveThemePreference, ThemeMode } from './styles/themeSystem';
@@ -26,6 +28,7 @@ import { ActivityBar } from './regions/ActivityBar';
 import { WorkspaceSidebar } from './regions/WorkspaceSidebar';
 import { ContextPanel } from './regions/ContextPanel';
 import { ChatSurface } from './regions/ChatSurface';
+import { STUDIO_ACTION_COMMANDS } from './state/studioActions';
 import type {
     IncidentReproPackEvidence,
     IncidentStudioStabilizationKpiStatus,
@@ -186,12 +189,16 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
         createInitialState(initialState),
     );
     const [approvalAuditEvents, setApprovalAuditEvents] = useState<StudioApprovalAuditEvent[]>([]);
+    const [proofEvents, setProofEvents] = useState<StudioProofEvent[]>([]);
+    const [executionTranscripts, setExecutionTranscripts] = useState<StudioExecutionTranscript[]>([]);
     const sessionLoadedRef = useRef(false);
     const sessionPersistence = useIncidentStudioSessionPersistence({
         workspacePath,
         postMessage: sessionPostMessage ?? (() => undefined),
         messages: state.messages,
         approvalAuditEvents,
+        proofEvents,
+        executionTranscripts,
     });
 
     useEffect(() => {
@@ -208,6 +215,12 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
         }));
         if (sessionPersistence.loadedSession.approvalAuditEvents.length > 0) {
             setApprovalAuditEvents(sessionPersistence.loadedSession.approvalAuditEvents);
+        }
+        if (sessionPersistence.loadedSession.proofEvents.length > 0) {
+            setProofEvents(sessionPersistence.loadedSession.proofEvents);
+        }
+        if (sessionPersistence.loadedSession.executionTranscripts.length > 0) {
+            setExecutionTranscripts(sessionPersistence.loadedSession.executionTranscripts);
         }
     }, [sessionPersistence.loadedSession]);
 
@@ -324,6 +337,29 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
                     ? externalIsStreaming
                     : incomingActionStatus.status === 'started',
         }));
+        const proofEvent = incomingActionStatus.result?.proofEvent;
+        if (proofEvent) {
+            setProofEvents((prev) => {
+                const duplicate = prev.some(
+                    (event) =>
+                        event.actionId === proofEvent.actionId &&
+                        event.generatedAt === proofEvent.generatedAt,
+                );
+                if (duplicate) {
+                    return prev;
+                }
+                return [proofEvent, ...prev].slice(0, 50);
+            });
+        }
+        const executionTranscript = incomingActionStatus.result?.executionTranscript;
+        if (executionTranscript) {
+            setExecutionTranscripts((prev) => {
+                if (prev.some((transcript) => transcript.id === executionTranscript.id)) {
+                    return prev;
+                }
+                return [executionTranscript, ...prev].slice(0, 50);
+            });
+        }
     }, [chatBrainStreamingEnabled, externalIsStreaming, incomingActionStatus]);
 
     useEffect(() => {
@@ -418,42 +454,42 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
                 id: 'decision-layer',
                 name: 'Decision Layer',
                 type: 'workspace' as const,
-                command: 'studio-action:run-analyze' as const,
+                command: STUDIO_ACTION_COMMANDS.runAnalyze,
                 description: 'Refresh the decision layer with current workspace evidence.',
             },
             {
                 id: 'action-matrix',
                 name: 'Action Matrix',
                 type: 'workspace' as const,
-                command: 'studio-action:impact-lens' as const,
+                command: STUDIO_ACTION_COMMANDS.impactLens,
                 description: 'Map the safest next action and blast radius.',
             },
             {
                 id: 'doctor-evidence',
                 name: 'Doctor Evidence',
                 type: 'module' as const,
-                command: 'studio-action:run-analyze' as const,
+                command: STUDIO_ACTION_COMMANDS.runAnalyze,
                 description: 'Hydrate health and doctor evidence.',
             },
             {
                 id: 'module-graph',
                 name: 'Module Graph',
                 type: 'module' as const,
-                command: 'studio-action:impact-lens' as const,
+                command: STUDIO_ACTION_COMMANDS.impactLens,
                 description: 'Inspect module-level impact signals.',
             },
             {
                 id: 'release-gates',
                 name: 'Release Gates',
                 type: 'module' as const,
-                command: 'studio-action:verify-gates' as const,
+                command: STUDIO_ACTION_COMMANDS.verifyGates,
                 description: 'Run deterministic gate verification.',
             },
             {
                 id: 'evidence-proof',
                 name: 'Evidence Proof',
                 type: 'project' as const,
-                command: 'studio-action:verify-gates' as const,
+                command: STUDIO_ACTION_COMMANDS.verifyGates,
                 description: 'Generate or refresh proof-backed verification evidence.',
             },
         ],
@@ -807,6 +843,8 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
                                     aiActionRegistry={state.aiActionRegistry}
                                     studioActionStatus={state.studioActionStatus}
                                     approvalAuditEvents={approvalAuditEvents}
+                                    proofEvents={proofEvents}
+                                    executionTranscripts={executionTranscripts}
                                     onToggleActionItem={handleToggleActionItem}
                                     onExecuteAction={handleSendMessage}
                                     onRevealEvidence={onRevealEvidence}

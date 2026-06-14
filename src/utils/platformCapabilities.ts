@@ -82,6 +82,44 @@ export function buildNpxRapidkitArgs(args: string[] = []): string[] {
   return ['--yes', '--package', 'rapidkit', 'rapidkit', ...args];
 }
 
+/** Non-pinned npx args for npm CLI version probes (Setup verify / status). */
+export function buildNpxRapidkitVersionProbeArgs(): string[] {
+  return ['--yes', 'rapidkit', '--version'];
+}
+
+/**
+ * Setup "Verify CLI" terminal commands — match what developers run manually.
+ * Pinned `npx --yes --package rapidkit rapidkit --version` can print the Python
+ * core banner (`RapidKit Version v…`) when cwd shadows resolution; that is not
+ * the npm bridge version shown on the Setup card.
+ */
+export function buildNpmCliVersionVerifyCommands(
+  platform: NodeJS.Platform = process.platform
+): string[] {
+  return [
+    buildRapidkitDisplayCommand(['--version'], platform),
+    buildShellCommand('npm', ['list', '-g', 'rapidkit', '--depth=0'], platform),
+  ];
+}
+
+export function parseNpmCliVersionOutput(stdout: string): string | null {
+  const trimmed = stdout.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (/^[\d]+\.[\d]+\.[\d]+(?:-[\w.]+)?$/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (/RapidKit Version/i.test(trimmed)) {
+    return null;
+  }
+
+  const match = trimmed.match(/\b(\d+\.\d+\.\d+(?:-[\w.]+)?)\b/);
+  return match?.[1] ?? null;
+}
+
 export function getWorkspaceVenvRapidkitCandidates(workspacePath: string): string[] {
   return [
     path.join(workspacePath, '.venv', 'bin', 'rapidkit'),

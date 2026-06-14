@@ -36,7 +36,11 @@ import {
     PHASE_LABELS,
     PHASE_SEQUENCE,
 } from '../state/studioState';
-import { STUDIO_ACTION_COMMANDS, StudioActionCommand } from '../state/studioActions';
+import {
+    getStudioActionRegistryEntry,
+    STUDIO_ACTION_COMMANDS,
+} from '../state/studioActions';
+import type { StudioActionCommand } from '../state/studioActions';
 
 interface ChatSurfaceProps {
     messages: ChatMessage[];
@@ -102,7 +106,17 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
           })
         : [];
     const decisionDeck = buildDecisionDeck(currentPhase, scopeType, userMode, studioEvidence, aiActionRegistry);
+    const analyzeAction = getStudioActionRegistryEntry(STUDIO_ACTION_COMMANDS.runAnalyze);
+    const terminalAction = getStudioActionRegistryEntry(STUDIO_ACTION_COMMANDS.terminalBridge);
+    const fixAction = getStudioActionRegistryEntry(STUDIO_ACTION_COMMANDS.fixLens);
+    const impactAction = getStudioActionRegistryEntry(STUDIO_ACTION_COMMANDS.impactLens);
+    const verifyAction = getStudioActionRegistryEntry(STUDIO_ACTION_COMMANDS.verifyGates);
     const sendDisabled = !input.trim() || isStreaming;
+    const sendDisabledReason = isStreaming
+        ? 'Studio is still processing the previous request.'
+        : !input.trim()
+            ? 'Enter a message before sending.'
+            : undefined;
     const timelineRef = useRef<HTMLDivElement | null>(null);
     const bottomAnchorRef = useRef<HTMLDivElement | null>(null);
     const shouldAutoFollowRef = useRef(true);
@@ -218,19 +232,22 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                         <div className="studio-quick-bar__actions">
                             <ActionChip
                                 icon={<Zap size={16} />}
-                                label="Terminal Bridge"
+                                label={terminalAction.title}
+                                title={terminalAction.summary}
                                 onClick={() => onSendMessage(STUDIO_ACTION_COMMANDS.terminalBridge)}
                                 staggerIndex={0}
                             />
                             <ActionChip
                                 icon={<Code size={16} />}
-                                label="Fix Lens"
+                                label={fixAction.title}
+                                title={fixAction.summary}
                                 onClick={() => onSendMessage(STUDIO_ACTION_COMMANDS.fixLens)}
                                 staggerIndex={1}
                             />
                             <ActionChip
                                 icon={<Lightbulb size={16} />}
-                                label="Impact Lens"
+                                label={impactAction.title}
+                                title={impactAction.summary}
                                 onClick={() => onSendMessage(STUDIO_ACTION_COMMANDS.impactLens)}
                                 staggerIndex={2}
                             />
@@ -300,16 +317,19 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                                 <ActionChip
                                     icon={<Zap size={14} />}
                                     label="Run Analyze"
+                                    title={analyzeAction.summary}
                                     onClick={() => onSendMessage(STUDIO_ACTION_COMMANDS.runAnalyze)}
                                 />
                                 <ActionChip
                                     icon={<Lightbulb size={14} />}
-                                    label="Impact Lens"
+                                    label={impactAction.title}
+                                    title={impactAction.summary}
                                     onClick={() => onSendMessage(STUDIO_ACTION_COMMANDS.impactLens)}
                                 />
                                 <ActionChip
                                     icon={<Code size={14} />}
-                                    label="Verify Gates"
+                                    label={verifyAction.title}
+                                    title={verifyAction.summary}
                                     onClick={() => onSendMessage(STUDIO_ACTION_COMMANDS.verifyGates)}
                                 />
                             </div>
@@ -429,6 +449,7 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                         disabled={sendDisabled}
                         aria-disabled={sendDisabled}
                         aria-label="Send message"
+                        title={sendDisabledReason || 'Send message'}
                         className={`${studioClass.btnAccent}${sendDisabled ? ' studio-composer__send is-disabled' : ''}`}
                     >
                         <Send size={18} />
@@ -533,6 +554,7 @@ const PostmortemCard: React.FC<PostmortemCardProps> = ({
                         type="button"
                         onClick={submitAction}
                         disabled={!actionInput.trim()}
+                        title={!actionInput.trim() ? 'Enter a follow-up action first.' : 'Add follow-up action'}
                         className={studioClass.btnSuccess}
                     >
                         + Add
@@ -544,6 +566,7 @@ const PostmortemCard: React.FC<PostmortemCardProps> = ({
                     type="button"
                     onClick={() => onAddActionItem?.('Draft postmortem from current Studio audit trail, evidence, and approval events.')}
                     disabled={!onAddActionItem}
+                    title={onAddActionItem ? 'Add postmortem follow-up task' : 'Action item bridge is not available.'}
                     className={studioClass.btnSuccess}
                 >
                     Add Postmortem Task
@@ -551,6 +574,7 @@ const PostmortemCard: React.FC<PostmortemCardProps> = ({
                 <button
                     type="button"
                     onClick={() => onExecute(STUDIO_ACTION_COMMANDS.verifyGates)}
+                    title="Verify evidence before closing the incident"
                     className={studioClass.btnOutlineSuccess}
                 >
                     Verify Evidence
@@ -561,6 +585,7 @@ const PostmortemCard: React.FC<PostmortemCardProps> = ({
                         onClick={() =>
                             onLearnExportArchive.onExportReproPack!(actionResult.incidentReproPack!)
                         }
+                        title="Export incident repro pack evidence"
                         className={studioClass.btnOutlineSuccess}
                     >
                         Export repro pack
@@ -575,6 +600,7 @@ const PostmortemCard: React.FC<PostmortemCardProps> = ({
                                 actionResult.releaseReadinessCommander!,
                             )
                         }
+                        title="Export release readiness evidence"
                         className={studioClass.btnOutlineSuccess}
                     >
                         Export release readiness
@@ -624,6 +650,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     type="button"
                                     onClick={() => onCopyText?.(message.content)}
                                     disabled={!onCopyText}
+                                    title={onCopyText ? 'Copy Studio message' : 'Copy bridge is not available.'}
                                     className={studioClass.btnGhost}
                                 >
                                     <Copy size={14} /> Copy
@@ -632,6 +659,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     type="button"
                                     onClick={() => onAddActionItem?.(actionText)}
                                     disabled={!onAddActionItem}
+                                    title={onAddActionItem ? 'Add recommendation to action items' : 'Action item bridge is not available.'}
                                     className={studioClass.btnPrimary}
                                 >
                                     <Play size={14} /> Add to actions
@@ -678,17 +706,19 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 interface ActionChipProps {
     icon: React.ReactNode;
     label: string;
+    title?: string;
     onClick: () => void;
     staggerIndex?: number;
 }
 
-const ActionChip: React.FC<ActionChipProps> = ({ icon, label, onClick, staggerIndex }) => {
+const ActionChip: React.FC<ActionChipProps> = ({ icon, label, title, onClick, staggerIndex }) => {
     const fadeClass = chipFadeClass(staggerIndex);
 
     return (
         <button
             type="button"
             onClick={onClick}
+            title={title || label}
             className={`${studioClass.chip}${fadeClass ? ` ${fadeClass}` : ''}`}
         >
             {icon}
@@ -704,7 +734,7 @@ interface SuggestionChipProps {
 }
 
 const SuggestionChip: React.FC<SuggestionChipProps> = ({ label, command, onSelect }) => (
-    <button type="button" className={studioClass.chip} onClick={() => onSelect(command)}>
+    <button type="button" className={studioClass.chip} title={`Run ${label}`} onClick={() => onSelect(command)}>
         {label}
     </button>
 );
@@ -970,6 +1000,7 @@ const DecisionDeckCard: React.FC<DecisionDeckCardProps> = ({
                     <button
                         type="button"
                         onClick={() => onExecute(deck.nextCommand)}
+                        title={`Run ${deck.nextActionLabel}`}
                         className={studioClass.btnPrimary}
                     >
                         Run next step
@@ -995,6 +1026,7 @@ const DecisionDeckCard: React.FC<DecisionDeckCardProps> = ({
                         <button
                             type="button"
                             onClick={() => onExecute(deck.verifyCommand)}
+                            title={`Run verification command: ${deck.verifyCommand}`}
                             className={studioClass.btnGhost}
                         >
                             Verify: {deck.verifyCommand}

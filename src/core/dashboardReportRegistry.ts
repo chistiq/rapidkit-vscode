@@ -215,6 +215,7 @@ export function extractBlockersFromReport(
       const projects = Array.isArray(raw.projects) ? raw.projects : [];
       const projectPath = options?.projectPath;
       const projectName = options?.projectName;
+      const singletonProject = raw.project && typeof raw.project === 'object' ? [raw.project] : [];
       const scopedProjects = projects.filter((entry) => {
         if (!entry || typeof entry !== 'object') {
           return false;
@@ -228,6 +229,16 @@ export function extractBlockersFromReport(
         }
         return true;
       });
+      for (const entry of singletonProject) {
+        const record = entry as Record<string, unknown>;
+        const matchesPath =
+          projectPath && typeof record.path === 'string' ? record.path === projectPath : undefined;
+        const matchesName =
+          projectName && typeof record.name === 'string' ? record.name === projectName : undefined;
+        if (matchesPath === true || matchesName === true || (!projectPath && !projectName)) {
+          scopedProjects.push(entry);
+        }
+      }
       const issues: string[] = [];
       for (const entry of scopedProjects) {
         const record = entry as Record<string, unknown>;

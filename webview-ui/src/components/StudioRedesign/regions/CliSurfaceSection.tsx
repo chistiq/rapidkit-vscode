@@ -5,6 +5,7 @@ import {
   buildIncidentCliActionMatrix,
   type IncidentCliActionEntry,
 } from '../../../lib/incidentCliActionMatrix';
+import type { UserMode } from '../state/studioState';
 import { studioClass } from '../styles/studioUi';
 
 function cliStabilityClass(stability: 'stable' | 'advanced'): string {
@@ -13,7 +14,7 @@ function cliStabilityClass(stability: 'stable' | 'advanced'): string {
 
 type CliSurfaceSectionProps = {
   hasProjectSelected: boolean;
-  userMode?: 'guided' | 'expert';
+  userMode?: UserMode;
   executingCommand?: string | null;
   onRunCliAction: (entry: IncidentCliActionEntry) => void;
   embedded?: boolean;
@@ -21,7 +22,7 @@ type CliSurfaceSectionProps = {
 
 function filterEntries(
   entries: IncidentCliActionEntry[],
-  userMode?: 'guided' | 'expert'
+  userMode?: UserMode
 ): IncidentCliActionEntry[] {
   if (userMode === 'guided') {
     return entries.filter((entry) => entry.stability === 'stable');

@@ -14,8 +14,10 @@ export function getConversationIdToCloseOnBootstrap(
   return currentConversationId;
 }
 
+export type WorkspaiShellView = 'dashboard' | 'incident-studio' | 'settings' | 'setup';
+
 export function getConversationIdToCloseOnViewExit(
-  activeView: 'dashboard' | 'incident-studio',
+  activeView: WorkspaiShellView,
   conversationId: string | null
 ): string | null {
   if (activeView === 'incident-studio' || !conversationId) {

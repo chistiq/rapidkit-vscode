@@ -1,4 +1,21 @@
 export type DashboardCommandScope = 'workspace' | 'project' | 'module' | 'system';
+export type DashboardEvidenceCardId =
+  | 'doctor'
+  | 'projectDoctor'
+  | 'analyze'
+  | 'readiness'
+  | 'bootstrap'
+  | 'workspaceSync'
+  | 'foundation'
+  | 'contract'
+  | 'autopilot'
+  | 'snapshot'
+  | 'share'
+  | 'archive'
+  | 'mirror'
+  | 'cache'
+  | 'policy'
+  | 'infra';
 
 export type DashboardCommandHandler = 'webview-local' | 'extension-host';
 
@@ -8,6 +25,8 @@ export type DashboardCommandMeta = {
   scope: DashboardCommandScope;
   handler: DashboardCommandHandler;
   trackActivity: boolean;
+  affectedEvidenceCardIds?: DashboardEvidenceCardId[];
+  refreshEvidence?: boolean;
 };
 
 export const DASHBOARD_COMMAND_REGISTRY = {
@@ -32,6 +51,20 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     handler: 'extension-host',
     trackActivity: false,
   },
+  importWorkspace: {
+    id: 'importWorkspace',
+    label: 'Import Workspace',
+    scope: 'system',
+    handler: 'extension-host',
+    trackActivity: true,
+  },
+  importProject: {
+    id: 'importProject',
+    label: 'Import Project',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+  },
   quickSwitchWorkspace: {
     id: 'quickSwitchWorkspace',
     label: 'Switch Workspace',
@@ -45,6 +78,8 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     scope: 'workspace',
     handler: 'extension-host',
     trackActivity: true,
+    affectedEvidenceCardIds: ['doctor'],
+    refreshEvidence: true,
   },
   exportWorkspace: {
     id: 'exportWorkspace',
@@ -52,10 +87,114 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     scope: 'workspace',
     handler: 'extension-host',
     trackActivity: true,
+    affectedEvidenceCardIds: ['archive'],
+    refreshEvidence: true,
   },
   workspaceBootstrap: {
     id: 'workspaceBootstrap',
     label: 'Workspace Bootstrap',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    affectedEvidenceCardIds: ['bootstrap', 'doctor'],
+    refreshEvidence: true,
+  },
+  workspaceSetup: {
+    id: 'workspaceSetup',
+    label: 'Setup',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    affectedEvidenceCardIds: ['doctor'],
+    refreshEvidence: true,
+  },
+  workspaceSync: {
+    id: 'workspaceSync',
+    label: 'Workspace Sync',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    affectedEvidenceCardIds: ['workspaceSync', 'contract'],
+    refreshEvidence: true,
+  },
+  workspaceFoundationEnsure: {
+    id: 'workspaceFoundationEnsure',
+    label: 'Foundation Ensure',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    affectedEvidenceCardIds: ['foundation'],
+    refreshEvidence: true,
+  },
+  workspaceContractInspect: {
+    id: 'workspaceContractInspect',
+    label: 'Contract Inspect',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    affectedEvidenceCardIds: ['contract'],
+    refreshEvidence: true,
+  },
+  workspaceContractVerify: {
+    id: 'workspaceContractVerify',
+    label: 'Contract Verify',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    affectedEvidenceCardIds: ['contract'],
+    refreshEvidence: true,
+  },
+  workspaceContractInit: {
+    id: 'workspaceContractInit',
+    label: 'Contract Init',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    affectedEvidenceCardIds: ['contract'],
+    refreshEvidence: true,
+  },
+  workspaceContractGraph: {
+    id: 'workspaceContractGraph',
+    label: 'Workspace Graph',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+  },
+  workspaceRunTest: {
+    id: 'workspaceRunTest',
+    label: 'Workspace Test',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    refreshEvidence: true,
+  },
+  workspaceRunInit: {
+    id: 'workspaceRunInit',
+    label: 'Workspace Init',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    refreshEvidence: true,
+  },
+  workspaceRunBuild: {
+    id: 'workspaceRunBuild',
+    label: 'Workspace Build',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    refreshEvidence: true,
+  },
+  workspaceRunStart: {
+    id: 'workspaceRunStart',
+    label: 'Workspace Start',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    refreshEvidence: true,
+  },
+  workspaceTerminal: {
+    id: 'workspaceTerminal',
+    label: 'Workspace Terminal',
     scope: 'workspace',
     handler: 'extension-host',
     trackActivity: true,
@@ -66,6 +205,8 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     scope: 'workspace',
     handler: 'extension-host',
     trackActivity: true,
+    affectedEvidenceCardIds: ['analyze'],
+    refreshEvidence: true,
   },
   workspaceReadiness: {
     id: 'workspaceReadiness',
@@ -73,6 +214,8 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     scope: 'workspace',
     handler: 'extension-host',
     trackActivity: true,
+    affectedEvidenceCardIds: ['readiness'],
+    refreshEvidence: true,
   },
   workspaceAutopilotRelease: {
     id: 'workspaceAutopilotRelease',
@@ -80,6 +223,8 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     scope: 'workspace',
     handler: 'extension-host',
     trackActivity: true,
+    affectedEvidenceCardIds: ['autopilot', 'readiness'],
+    refreshEvidence: true,
   },
   workspaceShare: {
     id: 'workspaceShare',
@@ -87,6 +232,8 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     scope: 'workspace',
     handler: 'extension-host',
     trackActivity: true,
+    affectedEvidenceCardIds: ['share'],
+    refreshEvidence: true,
   },
   workspaceSnapshotCreate: {
     id: 'workspaceSnapshotCreate',
@@ -94,6 +241,44 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     scope: 'workspace',
     handler: 'extension-host',
     trackActivity: true,
+    affectedEvidenceCardIds: ['snapshot'],
+    refreshEvidence: true,
+  },
+  workspaceSnapshot: {
+    id: 'workspaceSnapshot',
+    label: 'Snapshot Tools',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    affectedEvidenceCardIds: ['snapshot'],
+    refreshEvidence: true,
+  },
+  workspaceSnapshotList: {
+    id: 'workspaceSnapshotList',
+    label: 'List Snapshots',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    affectedEvidenceCardIds: ['snapshot'],
+    refreshEvidence: true,
+  },
+  workspaceSnapshotInspect: {
+    id: 'workspaceSnapshotInspect',
+    label: 'Inspect Snapshot',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    affectedEvidenceCardIds: ['snapshot'],
+    refreshEvidence: true,
+  },
+  workspaceSnapshotRestore: {
+    id: 'workspaceSnapshotRestore',
+    label: 'Restore Snapshot',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    affectedEvidenceCardIds: ['snapshot'],
+    refreshEvidence: true,
   },
   workspacePolicyShow: {
     id: 'workspacePolicyShow',
@@ -101,6 +286,8 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     scope: 'workspace',
     handler: 'extension-host',
     trackActivity: true,
+    affectedEvidenceCardIds: ['policy'],
+    refreshEvidence: true,
   },
   mirrorSync: {
     id: 'mirrorSync',
@@ -108,6 +295,8 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     scope: 'workspace',
     handler: 'extension-host',
     trackActivity: true,
+    affectedEvidenceCardIds: ['mirror'],
+    refreshEvidence: true,
   },
   mirrorStatus: {
     id: 'mirrorStatus',
@@ -115,6 +304,8 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     scope: 'workspace',
     handler: 'extension-host',
     trackActivity: true,
+    affectedEvidenceCardIds: ['mirror'],
+    refreshEvidence: true,
   },
   cacheStatus: {
     id: 'cacheStatus',
@@ -122,6 +313,8 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     scope: 'workspace',
     handler: 'extension-host',
     trackActivity: true,
+    affectedEvidenceCardIds: ['cache'],
+    refreshEvidence: true,
   },
   workspaceInfra: {
     id: 'workspaceInfra',
@@ -129,13 +322,44 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     scope: 'workspace',
     handler: 'extension-host',
     trackActivity: true,
+    affectedEvidenceCardIds: ['infra'],
+    refreshEvidence: true,
   },
   workspaceArchive: {
     id: 'workspaceArchive',
-    label: 'Archive',
+    label: 'Archive Tools',
     scope: 'workspace',
     handler: 'extension-host',
     trackActivity: true,
+    affectedEvidenceCardIds: ['archive'],
+    refreshEvidence: true,
+  },
+  workspaceArchiveVerify: {
+    id: 'workspaceArchiveVerify',
+    label: 'Verify Archive',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    affectedEvidenceCardIds: ['archive'],
+    refreshEvidence: true,
+  },
+  workspaceArchiveInspect: {
+    id: 'workspaceArchiveInspect',
+    label: 'Inspect Archive',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    affectedEvidenceCardIds: ['archive'],
+    refreshEvidence: true,
+  },
+  workspaceArchiveDoctor: {
+    id: 'workspaceArchiveDoctor',
+    label: 'Doctor Archive',
+    scope: 'workspace',
+    handler: 'extension-host',
+    trackActivity: true,
+    affectedEvidenceCardIds: ['archive'],
+    refreshEvidence: true,
   },
   projectTerminal: {
     id: 'projectTerminal',
@@ -171,6 +395,7 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     scope: 'project',
     handler: 'extension-host',
     trackActivity: true,
+    refreshEvidence: true,
   },
   projectDoctor: {
     id: 'projectDoctor',
@@ -178,6 +403,8 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     scope: 'project',
     handler: 'extension-host',
     trackActivity: true,
+    affectedEvidenceCardIds: ['projectDoctor'],
+    refreshEvidence: true,
   },
   projectArchitecture: {
     id: 'projectArchitecture',
@@ -270,6 +497,13 @@ export const DASHBOARD_COMMAND_REGISTRY = {
     handler: 'extension-host',
     trackActivity: true,
   },
+  moduleCheckpoint: {
+    id: 'moduleCheckpoint',
+    label: 'Module Checkpoint',
+    scope: 'module',
+    handler: 'extension-host',
+    trackActivity: true,
+  },
 } as const satisfies Record<string, DashboardCommandMeta>;
 
 export type DashboardCommand = keyof typeof DASHBOARD_COMMAND_REGISTRY;
@@ -284,4 +518,14 @@ export function getDashboardCommandMeta(command: string): DashboardCommandMeta |
 
 export function shouldTrackDashboardCommand(command: string): boolean {
   return getDashboardCommandMeta(command)?.trackActivity ?? true;
+}
+
+export function getDashboardCommandAffectedEvidenceCards(
+  command: string
+): DashboardEvidenceCardId[] {
+  return getDashboardCommandMeta(command)?.affectedEvidenceCardIds ?? [];
+}
+
+export function shouldRefreshDashboardEvidenceAfterCommand(command: string): boolean {
+  return getDashboardCommandMeta(command)?.refreshEvidence ?? shouldTrackDashboardCommand(command);
 }

@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import { AIActionContract, AIActionOperation, validateAIActionContract } from './aiActionContract';
 import { parseSafeCommand, validateAIActionCommandPolicy } from './aiActionCommandPolicy';
 import { redactAIActionText } from './aiActionRedaction';
+import { toPinnedRapidkitExecutionCommand } from '../utils/platformCapabilities';
 
 const execFileAsync = promisify(execFile);
 const COMMAND_TIMEOUT_MS = 120_000;
@@ -14,6 +15,10 @@ export interface AIActionCommandResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  cwd: string;
 }
 
 export interface AIActionExecutionResult {
@@ -36,16 +41,29 @@ async function runCommand(
   cwd: string,
   operation: AIActionOperation
 ): Promise<AIActionCommandResult> {
-  const policy = validateAIActionCommandPolicy(command, operation);
+  const executionCommand = toPinnedRapidkitExecutionCommand(command);
+  const displayCommand = redactAIActionText(command);
+  const startedAt = new Date().toISOString();
+  const startedMs = Date.now();
+  const finish = (
+    partial: Omit<AIActionCommandResult, 'startedAt' | 'completedAt' | 'durationMs' | 'cwd'>
+  ): AIActionCommandResult => ({
+    ...partial,
+    startedAt,
+    completedAt: new Date().toISOString(),
+    durationMs: Math.max(0, Date.now() - startedMs),
+    cwd,
+  });
+  const policy = validateAIActionCommandPolicy(executionCommand, operation);
   if (!policy.allowed) {
-    return {
-      command: redactAIActionText(command),
+    return finish({
+      command: displayCommand,
       exitCode: 1,
       stdout: '',
       stderr: redactAIActionText(policy.reason || 'Command policy blocked execution.'),
-    };
+    });
   }
-  const [bin, ...args] = parseSafeCommand(command);
+  const [bin, ...args] = parseSafeCommand(executionCommand);
 
   try {
     const { stdout, stderr } = await execFileAsync(bin, args, {
@@ -55,12 +73,12 @@ async function runCommand(
       windowsHide: true,
     });
 
-    return {
-      command: redactAIActionText(command),
+    return finish({
+      command: displayCommand,
       exitCode: 0,
       stdout: truncateOutput(stdout),
       stderr: truncateOutput(stderr),
-    };
+    });
   } catch (error) {
     const typed = error as Error & {
       code?: number | string;
@@ -68,12 +86,12 @@ async function runCommand(
       stderr?: string;
       signal?: string;
     };
-    return {
-      command: redactAIActionText(command),
+    return finish({
+      command: displayCommand,
       exitCode: typeof typed.code === 'number' ? typed.code : 1,
       stdout: truncateOutput(typed.stdout || ''),
       stderr: truncateOutput(typed.stderr || typed.message || typed.signal || ''),
-    };
+    });
   }
 }
 
@@ -83,6 +101,8 @@ async function gitApply(
   checkOnly: boolean
 ): Promise<AIActionCommandResult> {
   return new Promise((resolve) => {
+    const startedAt = new Date().toISOString();
+    const startedMs = Date.now();
     const args = ['apply', checkOnly ? '--check' : '--whitespace=nowarn'];
     const child = spawn('git', args, {
       cwd,
@@ -106,6 +126,10 @@ async function gitApply(
         exitCode: code ?? 1,
         stdout: truncateOutput(stdout),
         stderr: truncateOutput(stderr),
+        startedAt,
+        completedAt: new Date().toISOString(),
+        durationMs: Math.max(0, Date.now() - startedMs),
+        cwd,
       });
     });
     child.stdin.end(diff);

@@ -11,7 +11,11 @@ import {
   validateAIActionContract,
   type ParsedAIActionContract,
 } from '../../core/aiActionContract';
-import { AIActionExecutionResult, runAIActionContractOperation } from '../../core/aiActionExecutor';
+import {
+  AIActionCommandResult,
+  AIActionExecutionResult,
+  runAIActionContractOperation,
+} from '../../core/aiActionExecutor';
 import {
   AIActionRegistry,
   getLatestRunnableAIAction,
@@ -30,6 +34,11 @@ import {
 } from './incidentStudioAnalyze';
 import { resolveStudioMutationBlockReason } from './incidentStudioMutationGate';
 import { resolveIncidentStudioTelemetry } from './incidentStudioTelemetryBridge';
+import {
+  getStudioActionRegistryEntryById,
+  isStudioActionId,
+} from '../../core/studioActionCommands';
+import type { IncidentStudioExecutionTranscript } from './incidentStudioSessionPersistenceBridge';
 
 export type StudioAIActionEvidenceMetadata = {
   path: string;
@@ -58,15 +67,22 @@ export type PersistStudioAIActionContractResult = {
 
 export function buildStudioAIActionResult(params: {
   actionId: string;
+  status?: 'started' | 'completed' | 'failed';
   workspacePath: string;
   report?: AnalyzeReport | null;
   reportError?: string | null;
   registry?: AIActionRegistry | null;
   fallbackSummary?: string;
+  gatePassed?: boolean;
+  source?: 'studio-action' | 'ai-action' | 'ship-loop' | 'inline-command';
+  executionTranscript?: IncidentStudioExecutionTranscript;
 }): Record<string, unknown> {
   const latestEntry = params.registry?.entries[0];
   const latestExecution = latestEntry?.executions[0];
   const report = params.report || null;
+  const actionDefinition = isStudioActionId(params.actionId)
+    ? getStudioActionRegistryEntryById(params.actionId)
+    : null;
   const summary =
     params.fallbackSummary ||
     latestExecution?.summary ||
@@ -74,25 +90,125 @@ export function buildStudioAIActionResult(params: {
       ? `Analyze ${report.summary.verdict} · score ${report.summary.score}`
       : params.reportError || `Studio action ${params.actionId.replace(/-/g, ' ')}`);
   const failedCommands = latestExecution?.failedCommands || [];
+  const generatedAt =
+    report?.generatedAt || latestExecution?.completedAt || new Date().toISOString();
+  const evidencePath =
+    latestExecution?.evidencePath ||
+    report?.enterpriseControls?.evidencePath ||
+    (report ? getAnalyzeReportPath(params.workspacePath) : undefined);
+  const evidenceSha256 = latestExecution?.evidenceSha256;
+  const commandCount = latestExecution?.commandCount ?? params.executionTranscript?.commandCount;
+  const failedCommandCount =
+    latestExecution?.failedCommandCount ??
+    params.executionTranscript?.failedCommandCount ??
+    (failedCommands.length > 0 ? failedCommands.length : undefined);
 
   return {
     summary,
+    proofEvent: {
+      schemaVersion: 'workspai.studio.proof-event.v1',
+      actionId: params.actionId,
+      actionTitle: actionDefinition?.title,
+      status: params.status || (params.gatePassed === false ? 'failed' : 'completed'),
+      summary,
+      generatedAt,
+      evidencePath,
+      evidenceSha256,
+      score: report?.summary.score,
+      verdict: report?.summary.verdict,
+      gatePassed: params.gatePassed,
+      commandCount,
+      failedCommandCount,
+      executionTranscriptId: params.executionTranscript?.id,
+      durationMs: params.executionTranscript?.durationMs,
+      source: params.source || 'studio-action',
+    },
+    executionTranscript: params.executionTranscript,
     verdict: report?.summary.verdict,
     score: report?.summary.score,
-    generatedAt: report?.generatedAt,
-    evidencePath:
-      latestExecution?.evidencePath ||
-      report?.enterpriseControls?.evidencePath ||
-      (report ? getAnalyzeReportPath(params.workspacePath) : undefined),
-    evidenceSha256: latestExecution?.evidenceSha256,
+    generatedAt,
+    evidencePath,
+    evidenceSha256,
     evidenceSizeBytes: latestExecution?.evidenceSizeBytes,
-    commandCount: latestExecution?.commandCount,
-    failedCommandCount:
-      latestExecution?.failedCommandCount ??
-      (failedCommands.length > 0 ? failedCommands.length : undefined),
+    commandCount,
+    failedCommandCount,
     failedCommands,
     findings: report?.summary.findings,
     registryUpdatedAt: params.registry?.updatedAt,
+  };
+}
+
+function outputPreview(value: string | undefined): string | undefined {
+  const trimmed = (value || '').trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  return trimmed.split('\n').slice(0, 12).join('\n').slice(0, 1800);
+}
+
+function buildExecutionTranscriptFromAIResult(input: {
+  actionId: string;
+  title: string;
+  source: 'ai-action';
+  result: AIActionExecutionResult;
+  evidence?: StudioAIActionEvidenceMetadata | null;
+}): IncidentStudioExecutionTranscript {
+  const steps = input.result.commands.map((command: AIActionCommandResult, index: number) => ({
+    id: `${input.actionId}-${input.result.operation}-${index + 1}`,
+    command: command.command,
+    status: command.exitCode === 0 ? ('passed' as const) : ('failed' as const),
+    exitCode: command.exitCode,
+    startedAt: command.startedAt,
+    completedAt: command.completedAt,
+    durationMs: command.durationMs,
+    cwd: command.cwd,
+    stdoutPreview: outputPreview(command.stdout),
+    stderrPreview: outputPreview(command.stderr),
+    failureReason:
+      command.exitCode === 0
+        ? undefined
+        : outputPreview(command.stderr) || `Command exited with code ${command.exitCode}.`,
+  }));
+  const startedAt = steps[0]?.startedAt || new Date().toISOString();
+  const completedAt = steps[steps.length - 1]?.completedAt || startedAt;
+  const durationMs = steps.reduce((total, step) => total + (step.durationMs || 0), 0);
+
+  return {
+    schemaVersion: 'workspai.studio.execution-transcript.v1',
+    id: `${input.actionId}-${input.result.operation}-${completedAt.replace(/[:.]/g, '-')}`,
+    actionId: input.actionId,
+    source: input.source,
+    title: input.title,
+    status: input.result.ok ? 'completed' : 'failed',
+    startedAt,
+    completedAt,
+    durationMs,
+    commandCount: steps.length,
+    failedCommandCount: steps.filter((step) => step.status === 'failed').length,
+    steps,
+    evidencePath: input.evidence?.path,
+    evidenceSha256: input.evidence?.sha256,
+  };
+}
+
+function buildStudioProofOnlyActionResult(params: {
+  actionId: string;
+  summary: string;
+  status?: 'started' | 'completed' | 'failed';
+  gatePassed?: boolean;
+  source?: 'studio-action' | 'ai-action' | 'ship-loop' | 'inline-command';
+}): Record<string, unknown> {
+  return {
+    summary: params.summary,
+    proofEvent: {
+      schemaVersion: 'workspai.studio.proof-event.v1',
+      actionId: params.actionId,
+      status: params.status || 'failed',
+      summary: params.summary,
+      generatedAt: new Date().toISOString(),
+      gatePassed: params.gatePassed,
+      source: params.source || 'ai-action',
+    },
   };
 }
 
@@ -253,27 +369,62 @@ export async function executeGovernedAIActionOperation(
 
   const runningGuard = callbacks.assertNotRunning?.();
   if (runningGuard && !runningGuard.ok) {
-    callbacks.postActionStatus(statusActionId, 'failed', runningGuard.reason);
-    vscode.window.showWarningMessage(
-      runningGuard.reason || 'Another AI action is already running.'
+    const detail = runningGuard.reason || 'Another AI action is already running.';
+    callbacks.postActionStatus(
+      statusActionId,
+      'failed',
+      detail,
+      buildStudioProofOnlyActionResult({
+        actionId: statusActionId,
+        summary: detail,
+        gatePassed: false,
+      })
     );
+    vscode.window.showWarningMessage(detail);
     return;
   }
 
   callbacks.setRunning?.(operation);
-  callbacks.postActionStatus(statusActionId, 'started');
+  callbacks.postActionStatus(
+    statusActionId,
+    'started',
+    undefined,
+    buildStudioProofOnlyActionResult({
+      actionId: statusActionId,
+      summary: `AI action ${operation} started.`,
+      status: 'started',
+    })
+  );
 
   try {
     if (!input.activeContract || !input.activeActionId) {
       const detail = 'No governed AI action contract is active yet.';
-      callbacks.postActionStatus(statusActionId, 'failed', detail);
+      callbacks.postActionStatus(
+        statusActionId,
+        'failed',
+        detail,
+        buildStudioProofOnlyActionResult({
+          actionId: statusActionId,
+          summary: detail,
+          gatePassed: false,
+        })
+      );
       vscode.window.showWarningMessage(detail);
       return;
     }
 
     if (input.requestedActionId && input.requestedActionId !== input.activeActionId) {
       const detail = 'The selected AI action is no longer the active action.';
-      callbacks.postActionStatus(statusActionId, 'failed', detail);
+      callbacks.postActionStatus(
+        statusActionId,
+        'failed',
+        detail,
+        buildStudioProofOnlyActionResult({
+          actionId: statusActionId,
+          summary: detail,
+          gatePassed: false,
+        })
+      );
       vscode.window.showWarningMessage(detail);
       return;
     }
@@ -284,16 +435,32 @@ export async function executeGovernedAIActionOperation(
     );
     if (!activeEntry) {
       const detail = 'The persisted AI action record could not be found.';
-      callbacks.postActionStatus(statusActionId, 'failed', detail);
+      callbacks.postActionStatus(
+        statusActionId,
+        'failed',
+        detail,
+        buildStudioProofOnlyActionResult({
+          actionId: statusActionId,
+          summary: detail,
+          gatePassed: false,
+        })
+      );
       vscode.window.showWarningMessage(detail);
       return;
     }
 
     if (operation === 'apply' && !activeEntry.validation.canApply) {
       const detail = 'Contract validation blocked apply for this action.';
-      callbacks.postActionStatus(statusActionId, 'failed', detail, {
-        summary: detail,
-      });
+      callbacks.postActionStatus(
+        statusActionId,
+        'failed',
+        detail,
+        buildStudioProofOnlyActionResult({
+          actionId: statusActionId,
+          summary: detail,
+          gatePassed: false,
+        })
+      );
       callbacks.postAssistantMessage(
         [`AI action apply: BLOCKED`, detail].join('\n'),
         'ai-action-validation'
@@ -304,9 +471,16 @@ export async function executeGovernedAIActionOperation(
 
     if (operation === 'verify' && !activeEntry.validation.canVerify) {
       const detail = 'Contract validation blocked verify for this action.';
-      callbacks.postActionStatus(statusActionId, 'failed', detail, {
-        summary: detail,
-      });
+      callbacks.postActionStatus(
+        statusActionId,
+        'failed',
+        detail,
+        buildStudioProofOnlyActionResult({
+          actionId: statusActionId,
+          summary: detail,
+          gatePassed: false,
+        })
+      );
       callbacks.postAssistantMessage(
         [`AI action verify: BLOCKED`, detail].join('\n'),
         'ai-action-validation'
@@ -317,9 +491,16 @@ export async function executeGovernedAIActionOperation(
 
     if (operation === 'rollback' && !activeEntry.validation.canRollback) {
       const detail = 'Contract validation blocked rollback for this action.';
-      callbacks.postActionStatus(statusActionId, 'failed', detail, {
-        summary: detail,
-      });
+      callbacks.postActionStatus(
+        statusActionId,
+        'failed',
+        detail,
+        buildStudioProofOnlyActionResult({
+          actionId: statusActionId,
+          summary: detail,
+          gatePassed: false,
+        })
+      );
       callbacks.postAssistantMessage(
         [`AI action rollback: BLOCKED`, detail].join('\n'),
         'ai-action-validation'
@@ -363,6 +544,9 @@ export async function executeGovernedAIActionOperation(
             workspacePath,
             registry,
             fallbackSummary: `Preflight blocked ${operation}.`,
+            status: 'failed',
+            gatePassed: false,
+            source: 'ai-action',
           })
         );
         return;
@@ -389,6 +573,9 @@ export async function executeGovernedAIActionOperation(
               workspaceName: workspaceName ?? workspacePath,
             }).report,
             fallbackSummary: detail,
+            status: 'failed',
+            gatePassed: false,
+            source: 'ai-action',
           })
         );
         callbacks.postAssistantMessage(
@@ -422,7 +609,12 @@ export async function executeGovernedAIActionOperation(
         callbacks.postActionStatus(
           statusActionId,
           'failed',
-          `${operation} was cancelled before execution.`
+          `${operation} was cancelled before execution.`,
+          buildStudioProofOnlyActionResult({
+            actionId: statusActionId,
+            summary: `${operation} was cancelled before execution.`,
+            gatePassed: false,
+          })
         );
         return;
       }
@@ -438,6 +630,13 @@ export async function executeGovernedAIActionOperation(
       actionId: input.activeActionId,
       contract: input.activeContract,
       result,
+    });
+    const executionTranscript = buildExecutionTranscriptFromAIResult({
+      actionId: statusActionId,
+      title: `AI action ${result.operation}`,
+      source: 'ai-action',
+      result,
+      evidence,
     });
     const registry = await recordAIActionExecution(workspacePath, input.activeActionId, {
       operation: result.operation,
@@ -472,7 +671,7 @@ export async function executeGovernedAIActionOperation(
     callbacks.refreshReports?.();
     callbacks.postActionStatus(
       statusActionId,
-      'completed',
+      result.ok ? 'completed' : 'failed',
       undefined,
       buildStudioAIActionResult({
         actionId: statusActionId,
@@ -483,6 +682,10 @@ export async function executeGovernedAIActionOperation(
         }).report,
         registry,
         fallbackSummary: result.summary,
+        status: result.ok ? 'completed' : 'failed',
+        gatePassed: result.ok,
+        source: 'ai-action',
+        executionTranscript,
       })
     );
   } catch (error) {
@@ -499,6 +702,9 @@ export async function executeGovernedAIActionOperation(
           workspaceName: workspaceName ?? workspacePath,
         }).report,
         fallbackSummary: detail,
+        status: 'failed',
+        gatePassed: false,
+        source: 'ai-action',
       })
     );
     callbacks.postAssistantMessage(`AI action operation blocked: ${detail}`, 'ai-action-executor');

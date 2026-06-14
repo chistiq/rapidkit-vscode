@@ -22,6 +22,8 @@ describe('incidentStudioLifecycle', () => {
 
   it('closes the active conversation when leaving incident studio and keeps it while staying inside the view', () => {
     expect(getConversationIdToCloseOnViewExit('dashboard', 'conv-active')).toBe('conv-active');
+    expect(getConversationIdToCloseOnViewExit('settings', 'conv-active')).toBe('conv-active');
+    expect(getConversationIdToCloseOnViewExit('setup', 'conv-active')).toBe('conv-active');
     expect(getConversationIdToCloseOnViewExit('incident-studio', 'conv-active')).toBeNull();
     expect(getConversationIdToCloseOnViewExit('dashboard', null)).toBeNull();
   });

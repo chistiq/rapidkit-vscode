@@ -11,6 +11,9 @@ export type DashboardEvidenceCardId =
   | 'analyze'
   | 'readiness'
   | 'bootstrap'
+  | 'workspaceSync'
+  | 'foundation'
+  | 'contract'
   | 'autopilot'
   | 'snapshot'
   | 'share'
@@ -141,6 +144,9 @@ export function evidenceIsSparse(
 const OPERATE_EVIDENCE_CARD_IDS: DashboardEvidenceCardId[] = [
   'doctor',
   'bootstrap',
+  'workspaceSync',
+  'foundation',
+  'contract',
   'mirror',
   'policy',
   'infra',

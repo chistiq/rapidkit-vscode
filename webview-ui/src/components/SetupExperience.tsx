@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
     AlertTriangle,
     ArrowLeft,
@@ -8,6 +8,7 @@ import {
     Clipboard,
     FolderSearch,
     Gauge,
+    Loader2,
     RefreshCw,
     Save,
     Wrench,
@@ -211,29 +212,52 @@ function detectionLabel(source?: DetectionSource) {
 
 // ─── SVG Progress Ring ────────────────────────────────────────────────────────
 
-function ProgressRing({ value, max }: { value: number; max: number }) {
-    const r = 38;
+function ProgressRing({ value, max, loading = false, compact = false }: { value: number; max: number; loading?: boolean; compact?: boolean }) {
+    const r = compact ? 30 : 38;
+    const size = compact ? 72 : 96;
     const circ = 2 * Math.PI * r;
     const offset = circ * (1 - (max === 0 ? 0 : value / max));
-    const allDone = value === max && max > 0;
+    const allDone = !loading && value === max && max > 0;
+    const center = size / 2;
 
     return (
-        <div className="spc-ring-wrap">
-            <svg width="96" height="96" viewBox="0 0 96 96">
-                <circle cx="48" cy="48" r={r} fill="none" strokeWidth="5" className="spc-ring-track" />
+        <div className={'spc-ring-wrap' + (compact ? ' spc-ring-wrap--compact' : '') + (loading ? ' spc-ring-wrap--loading' : '')}>
+            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden={true}>
+                <circle cx={center} cy={center} r={r} fill="none" strokeWidth="5" className="spc-ring-track" />
                 <circle
-                    cx="48" cy="48" r={r} fill="none" strokeWidth="5"
-                    strokeDasharray={circ}
-                    strokeDashoffset={offset}
+                    cx={center} cy={center} r={r} fill="none" strokeWidth="5"
+                    strokeDasharray={loading ? `${circ * 0.28} ${circ}` : circ}
+                    strokeDashoffset={loading ? 0 : offset}
                     strokeLinecap="round"
-                    transform="rotate(-90 48 48)"
-                    className={'spc-ring-arc' + (allDone ? ' done' : '')}
-                    style={{ transition: 'stroke-dashoffset 0.7s cubic-bezier(0.4,0,0.2,1)' }}
+                    transform={`rotate(-90 ${center} ${center})`}
+                    className={'spc-ring-arc' + (allDone ? ' done' : '') + (loading ? ' is-loading' : '')}
+                    style={{ transition: loading ? undefined : 'stroke-dashoffset 0.7s cubic-bezier(0.4,0,0.2,1)' }}
                 />
             </svg>
             <div className="spc-ring-label">
-                <span className={'spc-ring-value' + (allDone ? ' done' : '')}>{value}/{max}</span>
-                <span className="spc-ring-caption">Core Ready</span>
+                {loading ? (
+                    <>
+                        <Loader2 size={compact ? 16 : 20} className="workspai-spinner spc-ring-spinner" />
+                        <span className="spc-ring-caption">Scanning</span>
+                    </>
+                ) : (
+                    <>
+                        <span className={'spc-ring-value' + (allDone ? ' done' : '')}>{value}/{max}</span>
+                        <span className="spc-ring-caption">Core Ready</span>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function SetupLoadingBanner({ refreshing }: { refreshing: boolean }) {
+    return (
+        <div className="ws-setup-loading-banner" role="status" aria-live="polite">
+            <Loader2 size={16} className="workspai-spinner" aria-hidden={true} />
+            <div className="ws-setup-loading-banner__copy">
+                <strong>{refreshing ? 'Refreshing environment' : 'Scanning your toolchain'}</strong>
+                <span>Checking Python, Node, RapidKit Core, and optional runtimes…</span>
             </div>
         </div>
     );
@@ -241,9 +265,25 @@ function ProgressRing({ value, max }: { value: number; max: number }) {
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
+function ToolRowSkeleton({ title }: { title: string }) {
+    return (
+        <div className="ws-setup-tool-row ws-setup-tool-row--skeleton" aria-hidden={true}>
+            <div className="ws-setup-tool-row__identity">
+                <span className="ws-setup-skeleton-dot" />
+                <div className="ws-setup-skeleton-lines">
+                    <span className="ws-setup-skeleton-line ws-setup-skeleton-line--title">{title}</span>
+                    <span className="ws-setup-skeleton-line ws-setup-skeleton-line--sub" />
+                </div>
+            </div>
+            <span className="ws-setup-skeleton-pill" />
+            <span className="ws-setup-skeleton-pill ws-setup-skeleton-pill--action" />
+        </div>
+    );
+}
+
 function SkeletonCard({ monogram, iconSrc, title, color }: { monogram: string; iconSrc?: string; title: string; color: string }) {
     return (
-        <div className="spc-skeleton-card" aria-hidden={true}>
+        <div className="spc-skeleton-card ws-setup-skeleton-card" aria-hidden={true}>
             <div className="spc-skeleton-head">
                 <Monogram letters={monogram} iconSrc={iconSrc} color={color} />
                 <div className="spc-skeleton-meta">
@@ -328,16 +368,151 @@ function ToolCard({ tool }: { tool: ToolDef }) {
     );
 }
 
+function ToolRow({ tool }: { tool: ToolDef }) {
+    const { installed, warning, version, hint, required, canUpgrade, detection } = tool;
+    const shouldShowPrimary = Boolean(tool.primaryAction && (!installed || canUpgrade || warning));
+    const primaryLabel = installed ? 'Upgrade' : tool.primaryAction?.label;
+    const detectionText = detectionLabel(detection?.source);
+    const statusLabel = installed
+        ? (version ? `v${version}` : 'Detected')
+        : (required ? 'Required' : 'Missing');
+
+    return (
+        <div className={'ws-setup-tool-row' + (installed ? ' is-ready' : '') + (warning ? ' is-warn' : '') + (!installed && required ? ' is-required' : '')}>
+            <div className="ws-setup-tool-row__identity">
+                <Monogram letters={tool.monogram} iconSrc={tool.iconSrc} color={tool.color} />
+                <div className="ws-setup-tool-row__copy">
+                    <div className="ws-setup-tool-row__title">{tool.title}</div>
+                    <div className="ws-setup-tool-row__sub">{tool.subtitle}</div>
+                </div>
+            </div>
+            <div className="ws-setup-tool-row__status">
+                {installed ? (
+                    <CheckCircle2 size={14} className="ws-setup-tool-row__status-icon is-ready" aria-hidden={true} />
+                ) : (
+                    <AlertTriangle size={14} className="ws-setup-tool-row__status-icon is-warn" aria-hidden={true} />
+                )}
+                <span className="ws-setup-tool-row__status-label">{statusLabel}</span>
+                {detectionText ? <span className="ws-chip ws-chip--muted">{detectionText}</span> : null}
+                {!installed && hint ? <span className="ws-setup-tool-row__hint">{hint}</span> : null}
+            </div>
+            <div className="ws-setup-tool-row__actions">
+                {shouldShowPrimary && tool.primaryAction ? (
+                    <button
+                        type="button"
+                        className="ws-btn ws-btn--primary ws-btn--compact"
+                        onClick={() => vscode.postMessage(tool.primaryAction!.command, tool.primaryAction!.data)}
+                    >
+                        {primaryLabel}
+                    </button>
+                ) : null}
+                {tool.secondaryActions?.map((action) => (
+                    <button
+                        key={action.command}
+                        type="button"
+                        className="ws-btn ws-btn--compact"
+                        onClick={() => vscode.postMessage(action.command)}
+                    >
+                        {action.label}
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 // ─── Tool Group ───────────────────────────────────────────────────────────────
 
-function ToolGroup({ title, tools, loading }: { title: string; tools: ToolDef[]; loading: boolean }) {
-    const [open, setOpen] = useState(true);
+function CollapsibleSection({
+    title,
+    subtitle,
+    defaultOpen = false,
+    summaryWhenClosed,
+    children,
+}: {
+    title: string;
+    subtitle?: string;
+    defaultOpen?: boolean;
+    summaryWhenClosed?: ReactNode;
+    children: ReactNode;
+}) {
+    const [open, setOpen] = useState(defaultOpen);
+
+    return (
+        <section className="ws-collapsible-section">
+            <button
+                type="button"
+                className="ws-collapsible-section__header"
+                onClick={() => setOpen((value) => !value)}
+            >
+                <span className="ws-collapsible-section__titles">
+                    <span className="ws-collapsible-section__title">{title}</span>
+                    {subtitle ? <span className="ws-collapsible-section__subtitle">{subtitle}</span> : null}
+                </span>
+                {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+            {!open && summaryWhenClosed ? (
+                <div className="ws-collapsible-section__summary">{summaryWhenClosed}</div>
+            ) : null}
+            {open ? <div className="ws-collapsible-section__body">{children}</div> : null}
+        </section>
+    );
+}
+
+function RuntimeSummaryChips({ tools, loading }: { tools: ToolDef[]; loading: boolean }) {
+    if (loading) {
+        return (
+            <div className="ws-setup-runtime-chips" aria-hidden={true}>
+                {tools.map((tool) => (
+                    <span key={tool.key} className="ws-setup-runtime-chip ws-setup-runtime-chip--skeleton">
+                        {tool.title}
+                    </span>
+                ))}
+            </div>
+        );
+    }
+
+    const readyCount = tools.filter((tool) => tool.installed).length;
+
+    return (
+        <div className="ws-setup-runtime-chips">
+            <span className="ws-setup-runtime-chips__meta">{readyCount}/{tools.length} ready</span>
+            {tools.map((tool) => (
+                <span
+                    key={tool.key}
+                    className={'ws-setup-runtime-chip' + (tool.installed ? ' is-ready' : '')}
+                    title={tool.installed ? (tool.version ? `v${tool.version}` : 'Detected') : (tool.hint || 'Not detected')}
+                >
+                    <span className="ws-setup-runtime-chip__dot" aria-hidden={true} />
+                    {tool.title}
+                </span>
+            ))}
+        </div>
+    );
+}
+
+function ToolGroup({
+    title,
+    tools,
+    loading,
+    defaultOpen = true,
+    nested = false,
+    layout = 'cards',
+}: {
+    title: string;
+    tools: ToolDef[];
+    loading: boolean;
+    defaultOpen?: boolean;
+    nested?: boolean;
+    layout?: 'cards' | 'rows';
+}) {
+    const [open, setOpen] = useState(defaultOpen);
     const ready = tools.filter(t => t.installed).length;
     const allReady = ready === tools.length;
 
     return (
-        <section className="spc-group">
-            <button className="spc-group-header" onClick={() => setOpen(v => !v)}>
+        <section className={'spc-group' + (nested ? ' spc-group--nested' : '')}>
+            <button type="button" className="spc-group-header" onClick={() => setOpen(v => !v)}>
                 <span className="spc-group-title">{title}</span>
                 <span className={'spc-group-tally' + (allReady ? ' ok' : '')}>
                     {allReady && <CheckCircle2 size={12} />}
@@ -346,18 +521,26 @@ function ToolGroup({ title, tools, loading }: { title: string; tools: ToolDef[];
                 {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </button>
             {open && (
-                <div className="spc-group-grid">
+                <div className={layout === 'rows' ? 'ws-setup-tool-matrix' : 'spc-group-grid'}>
                     {loading
                         ? tools.map((tool) => (
-                            <SkeletonCard
-                                key={tool.key}
-                                monogram={tool.monogram}
-                                iconSrc={tool.iconSrc}
-                                title={tool.title}
-                                color={tool.color}
-                            />
+                            layout === 'rows'
+                                ? <ToolRowSkeleton key={tool.key} title={tool.title} />
+                                : (
+                                    <SkeletonCard
+                                        key={tool.key}
+                                        monogram={tool.monogram}
+                                        iconSrc={tool.iconSrc}
+                                        title={tool.title}
+                                        color={tool.color}
+                                    />
+                                )
                         ))
-                        : tools.map(t => <ToolCard key={t.key} tool={t} />)
+                        : tools.map((tool) => (
+                            layout === 'rows'
+                                ? <ToolRow key={tool.key} tool={tool} />
+                                : <ToolCard key={tool.key} tool={tool} />
+                        ))
                     }
                 </div>
             )}
@@ -381,6 +564,183 @@ function AllSetBanner() {
     );
 }
 
+// ─── Advanced configuration blocks ──────────────────────────────────────────
+
+function renderAdvancedConfiguration({
+    manualDrafts,
+    preferences,
+    status,
+    validationResult,
+    pathDoctor,
+    installMethod,
+    setInstallMethod,
+    setManualDraft,
+    saveManualPath,
+    validateManualPath,
+    clearManualPath,
+    advancedOpen,
+    setAdvancedOpen,
+    compact,
+}: {
+    manualDrafts: Partial<Record<ManualPathTool, string>>;
+    preferences: SetupPreferences;
+    status: SetupStatus | null;
+    validationResult: SetupCheckResult | null;
+    pathDoctor: PathDoctorReport | null;
+    installMethod: (key: InstallMethodKey) => string;
+    setInstallMethod: (key: InstallMethodKey, method: string) => void;
+    setManualDraft: (tool: ManualPathTool, value: string) => void;
+    saveManualPath: (tool: ManualPathTool) => void;
+    validateManualPath: (tool: ManualPathTool) => void;
+    clearManualPath: (tool: ManualPathTool) => void;
+    advancedOpen: boolean;
+    setAdvancedOpen: (value: boolean | ((prev: boolean) => boolean)) => void;
+    compact: boolean;
+}) {
+    return (
+        <>
+            <section className={'ws-card' + (compact ? ' ws-setup-advanced-block' : '')}>
+                <div className="spc-panel-head">
+                    <FolderSearch size={14} />
+                    <span>Manual Binary Paths</span>
+                </div>
+                {!compact ? (
+                    <div className="spc-muted">
+                        Priority order: <strong>Manual Path</strong> &gt; <strong>PATH</strong> &gt; <strong>Fallbacks</strong>
+                    </div>
+                ) : null}
+                <div className={'spc-path-grid' + (compact ? ' spc-path-grid--compact' : '')}>
+                    {MANUAL_PATH_TOOLS.map((tool) => {
+                        const value = manualDrafts[tool.key] ?? preferences.manualPaths[tool.key] ?? '';
+                        const detection = status?.detections?.[tool.key];
+                        return (
+                            <div className="spc-path-row" key={tool.key}>
+                                <label className="spc-path-label">
+                                    <span>{tool.label}</span>
+                                    {detectionLabel(detection?.source) ? (
+                                        <span className="ws-chip ws-chip--muted">{detectionLabel(detection?.source)}</span>
+                                    ) : null}
+                                </label>
+                                <input
+                                    className="spc-input"
+                                    value={value}
+                                    placeholder={tool.placeholder}
+                                    onChange={(event) => setManualDraft(tool.key, event.target.value)}
+                                />
+                                <div className="spc-path-actions">
+                                    <button type="button" className="ws-btn" onClick={() => vscode.postMessage('pickManualPath', { tool: tool.key })}>Browse</button>
+                                    <button type="button" className="ws-btn" onClick={() => saveManualPath(tool.key)}>Save</button>
+                                    <button type="button" className="ws-btn" onClick={() => validateManualPath(tool.key)}>Validate</button>
+                                    <button type="button" className="ws-btn" onClick={() => clearManualPath(tool.key)}>Clear</button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+                {validationResult ? (
+                    <div className={'spc-validation-box' + (validationResult.ok ? ' ok' : ' warn')}>
+                        <div className="spc-validation-head">
+                            <span>Latest validation</span>
+                            {validationResult.command ? <code>{validationResult.command}</code> : null}
+                        </div>
+                        <div className="spc-hint">{validationResult.summary}</div>
+                        {validationResult.output ? <pre className="spc-snippet">{validationResult.output}</pre> : null}
+                    </div>
+                ) : null}
+            </section>
+
+            <section className={'ws-card' + (compact ? ' ws-setup-advanced-block' : '')}>
+                <div className="spc-panel-head">
+                    <span>Install Strategy</span>
+                </div>
+                <div className={'spc-strategy-grid' + (compact ? ' spc-strategy-grid--compact' : '')}>
+                    {([
+                        ['python', 'Python'],
+                        ['core', 'RapidKit Core'],
+                        ['cli', 'RapidKit CLI'],
+                        ['go', 'Go'],
+                        ['dotnet', '.NET'],
+                        ['java', 'Java'],
+                    ] as Array<[InstallMethodKey, string]>).map(([key, label]) => (
+                        <label key={key} className="spc-strategy-row">
+                            <span>{label}</span>
+                            <select
+                                className="spc-select"
+                                value={installMethod(key)}
+                                onChange={(event) => setInstallMethod(key, event.target.value)}
+                            >
+                                {INSTALL_METHOD_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                            </select>
+                        </label>
+                    ))}
+                </div>
+            </section>
+
+            <section className={'ws-card' + (compact ? ' ws-setup-advanced-block' : '')}>
+                <div className="spc-panel-head">
+                    <Wrench size={14} />
+                    <span>PATH Doctor</span>
+                </div>
+                <div className="spc-pathdoctor-meta">
+                    <span>Shell: {pathDoctor?.shellName || pathDoctor?.shell || 'unknown'}</span>
+                    {pathDoctor?.targetFile ? <span>Profile: {pathDoctor.targetFile}</span> : null}
+                    <button type="button" className="ws-btn" onClick={() => vscode.postMessage('runPathDoctor')}>Run PATH Doctor</button>
+                </div>
+                {pathDoctor?.missingCommonEntries?.length ? (
+                    <ul className="spc-plain-list">
+                        {pathDoctor.missingCommonEntries.map((entry) => <li key={entry}>{entry}</li>)}
+                    </ul>
+                ) : (
+                    <div className="spc-muted">No common PATH gaps detected.</div>
+                )}
+                {pathDoctor?.suggestions?.map((suggestion) => (
+                    <div key={suggestion.title} className="spc-snippet-wrap">
+                        <div className="spc-snippet-head">
+                            <span>{suggestion.title}</span>
+                            <div className="spc-inline-actions">
+                                {suggestion.targetFile ? (
+                                    <button type="button" className="ws-btn" onClick={() => vscode.postMessage('applyPathDoctorSuggestion', { suggestionId: suggestion.id })}>
+                                        Apply Snippet
+                                    </button>
+                                ) : null}
+                                <button type="button" className="ws-btn" onClick={() => vscode.postMessage('copyText', { text: suggestion.snippet })}>
+                                    <Clipboard size={13} />
+                                    Copy
+                                </button>
+                            </div>
+                        </div>
+                        {suggestion.reason ? <div className="spc-hint">{suggestion.reason}</div> : null}
+                        <pre className="spc-snippet">{suggestion.snippet}</pre>
+                    </div>
+                ))}
+            </section>
+
+            <section className="spc-advanced">
+                <button type="button" className="spc-advanced-toggle" onClick={() => setAdvancedOpen((value) => !value)}>
+                    {advancedOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                    Advanced Actions
+                </button>
+                {advancedOpen ? (
+                    <div className="spc-advanced-body">
+                        <button type="button" className="ws-btn" onClick={() => vscode.postMessage('installPipCore')}>Install Core via pipx</button>
+                        <button type="button" className="ws-btn" onClick={() => vscode.postMessage('upgradePipCore')}>Upgrade Core</button>
+                        <button type="button" className="ws-btn" onClick={() => vscode.postMessage('installPipxThenCore')}>Install pipx then Core</button>
+                        <button type="button" className="ws-btn" onClick={() => vscode.postMessage('installCoreFallback')}>Core fallback (pip)</button>
+                        <button type="button" className="ws-btn" onClick={() => vscode.postMessage('upgradeNpmGlobal')}>Upgrade CLI</button>
+                        <button type="button" className="ws-btn" onClick={() => vscode.postMessage('clearRequirementCache')}>Clear Cache</button>
+                        <button type="button" className="ws-btn" onClick={() => vscode.postMessage('exportSetupReport')}>
+                            <Save size={13} />
+                            Export Report
+                        </button>
+                    </div>
+                ) : null}
+            </section>
+        </>
+    );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function SetupExperience({
@@ -391,7 +751,7 @@ export function SetupExperience({
     const [status, setStatus] = useState<SetupStatus | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [advancedOpen, setAdvancedOpen] = useState(false);
-    const [insightsOpen, setInsightsOpen] = useState(true);
+    const [insightsOpen, setInsightsOpen] = useState(!embedded);
     const [preferences, setPreferences] = useState<SetupPreferences>({ manualPaths: {}, installMethods: {} });
     const [manualDrafts, setManualDrafts] = useState<Partial<Record<ManualPathTool, string>>>({});
     const [pathDoctor, setPathDoctor] = useState<PathDoctorReport | null>(null);
@@ -733,6 +1093,11 @@ export function SetupExperience({
 
     const loading = status === null || refreshing;
 
+    const optionalTools = useMemo(
+        () => [...pythonTools, ...goTools, ...dotnetTools, ...javaTools],
+        [pythonTools, goTools, dotnetTools, javaTools]
+    );
+
     const installMethod = useCallback((key: InstallMethodKey) => {
         return preferences.installMethods[key] || 'recommended';
     }, [preferences.installMethods]);
@@ -780,7 +1145,9 @@ export function SetupExperience({
             </header>
             )}
 
-            <div className={`spc-hero${embedded ? ' ws-setup-hero--embedded spc-hero--embedded' : ''}`}>
+            {embedded && loading ? <SetupLoadingBanner refreshing={refreshing} /> : null}
+
+            <div className={`spc-hero${embedded ? ' ws-setup-hero--embedded spc-hero--embedded' : ''}${embedded && loading ? ' ws-setup-hero--loading' : ''}`}>
                 <div className="spc-hero-copy">
                     {!embedded ? (
                         <>
@@ -791,15 +1158,111 @@ export function SetupExperience({
                     </p>
                         </>
                     ) : (
+                    <>
                     <p className="ws-setup-hero-desc--embedded spc-hero-desc--embedded">
-                        Your runtime toolchain at a glance — Python, Node, Go, and Spring Boot, all in one place.
+                        Enterprise toolchain readiness for Python, Node, Go, .NET, and Spring Boot workflows.
                     </p>
+                    <div className="ws-setup-hero-metrics">
+                        {loading ? (
+                            <>
+                                <span className="ws-setup-hero-score ws-setup-hero-score--pending">—</span>
+                                <span className="ws-setup-hero-score-label">Scan in progress</span>
+                            </>
+                        ) : (
+                            <>
+                                <span className="ws-setup-hero-score">{readinessScore}%</span>
+                                <span className="ws-setup-hero-score-label">Overall readiness</span>
+                                {readinessGaps.length > 0 ? (
+                                    <span className="ws-chip ws-chip--warn">{readinessGaps.length} gap{readinessGaps.length === 1 ? '' : 's'}</span>
+                                ) : null}
+                            </>
+                        )}
+                    </div>
+                    </>
                     )}
                     {allReady && !loading && <AllSetBanner />}
                 </div>
-                <ProgressRing value={coreReady} max={coreTools.length} />
+                <ProgressRing value={coreReady} max={coreTools.length} loading={loading} compact={embedded} />
             </div>
 
+            {embedded ? (
+            <div className="ws-setup-command-center">
+                <div className="ws-setup-command-center__primary">
+                    <ToolGroup title="Core Requirements" tools={coreTools} loading={loading} defaultOpen layout="rows" />
+                    <CollapsibleSection
+                        title="Optional Runtimes"
+                        subtitle="Python, Go, .NET, Java"
+                        defaultOpen={false}
+                        summaryWhenClosed={<RuntimeSummaryChips tools={optionalTools} loading={loading} />}
+                    >
+                        <ToolGroup title="Python Ecosystem" tools={pythonTools} loading={loading} defaultOpen={false} nested layout="rows" />
+                        <ToolGroup title="Go" tools={goTools} loading={loading} defaultOpen={false} nested layout="rows" />
+                        <ToolGroup title=".NET / ASP.NET Core" tools={dotnetTools} loading={loading} defaultOpen={false} nested layout="rows" />
+                        <ToolGroup title="Java / Spring Boot" tools={javaTools} loading={loading} defaultOpen={false} nested layout="rows" />
+                    </CollapsibleSection>
+                    <CollapsibleSection
+                        title="Advanced Configuration"
+                        subtitle="Manual paths, install strategy, PATH doctor, maintenance"
+                        defaultOpen={false}
+                    >
+                        {renderAdvancedConfiguration({
+                            manualDrafts,
+                            preferences,
+                            status,
+                            validationResult,
+                            pathDoctor,
+                            installMethod,
+                            setInstallMethod,
+                            setManualDraft,
+                            saveManualPath,
+                            validateManualPath,
+                            clearManualPath,
+                            advancedOpen,
+                            setAdvancedOpen,
+                            compact: true,
+                        })}
+                    </CollapsibleSection>
+                </div>
+
+                <aside className="ws-setup-command-center__aside">
+                    <section className="ws-card ws-setup-copilot-compact">
+                        <button type="button" className="spc-panel-toggle" onClick={() => setInsightsOpen((prev) => !prev)}>
+                            <span>AI Setup Copilot</span>
+                            {insightsOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                        </button>
+                        {loading ? (
+                            <div className="ws-setup-copilot-loading">
+                                <Loader2 size={14} className="workspai-spinner" aria-hidden={true} />
+                                <span>Building recommendations from your environment…</span>
+                            </div>
+                        ) : insightsOpen ? (
+                            <div className="spc-copilot-body">
+                                <ul className="spc-plain-list">
+                                    {aiInsights.slice(0, 5).map((insight) => (
+                                        <li key={insight}>{insight}</li>
+                                    ))}
+                                </ul>
+                                {copilotCommands.length > 0 && (
+                                    <div className="spc-snippet-wrap">
+                                        <div className="spc-snippet-head">
+                                            <span>Suggested command</span>
+                                            <button type="button" className="ws-btn" onClick={() => vscode.postMessage('copyText', { text: copilotCommands.join('\n') })}>
+                                                <Clipboard size={13} />
+                                                Copy
+                                            </button>
+                                        </div>
+                                        <pre className="spc-snippet">{copilotCommands[0]}</pre>
+                                    </div>
+                                )}
+                            </div>
+                        ) : aiInsights[0] ? (
+                            <p className="ws-setup-copilot-preview">{aiInsights[0]}</p>
+                        ) : null}
+                    </section>
+                </aside>
+            </div>
+            ) : (
+            <>
             <section className="spc-smart-grid">
                 <article className="ws-card">
                     <div className="spc-panel-head">
@@ -818,7 +1281,7 @@ export function SetupExperience({
                 </article>
 
                 <article className="ws-card">
-                    <button className="spc-panel-toggle" onClick={() => setInsightsOpen((prev) => !prev)}>
+                    <button type="button" className="spc-panel-toggle" onClick={() => setInsightsOpen((prev) => !prev)}>
                         <span>AI Setup Copilot</span>
                         {insightsOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                     </button>
@@ -839,7 +1302,7 @@ export function SetupExperience({
                                 <div className="spc-snippet-wrap">
                                     <div className="spc-snippet-head">
                                         <span>Exact command{copilotCommands.length > 1 ? 's' : ''}</span>
-                                        <button className="ws-btn" onClick={() => vscode.postMessage('copyText', { text: copilotCommands.join('\n') })}>
+                                        <button type="button" className="ws-btn" onClick={() => vscode.postMessage('copyText', { text: copilotCommands.join('\n') })}>
                                             <Clipboard size={13} />
                                             Copy
                                         </button>
@@ -852,148 +1315,30 @@ export function SetupExperience({
                 </article>
             </section>
 
-            <ToolGroup title="Core Requirements" tools={coreTools} loading={loading} />
+            <ToolGroup title="Core Requirements" tools={coreTools} loading={loading} defaultOpen />
             <ToolGroup title="Python Ecosystem" tools={pythonTools} loading={loading} />
             <ToolGroup title="Go" tools={goTools} loading={loading} />
             <ToolGroup title=".NET / ASP.NET Core" tools={dotnetTools} loading={loading} />
             <ToolGroup title="Java / Spring Boot" tools={javaTools} loading={loading} />
 
-            <section className="ws-card">
-                <div className="spc-panel-head">
-                    <FolderSearch size={14} />
-                    <span>Manual Binary Paths</span>
-                </div>
-                <div className="spc-muted">
-                    Priority order: <strong>Manual Path</strong> &gt; <strong>PATH</strong> &gt; <strong>Fallbacks</strong>
-                </div>
-                <div className="spc-path-grid">
-                    {MANUAL_PATH_TOOLS.map((tool) => {
-                        const value = manualDrafts[tool.key] ?? preferences.manualPaths[tool.key] ?? '';
-                        const detection = status?.detections?.[tool.key];
-                        return (
-                            <div className="spc-path-row" key={tool.key}>
-                                <label className="spc-path-label">
-                                    <span>{tool.label}</span>
-                                    {detectionLabel(detection?.source) && (
-                                        <span className="ws-chip ws-chip--muted">{detectionLabel(detection?.source)}</span>
-                                    )}
-                                </label>
-                                <input
-                                    className="spc-input"
-                                    value={value}
-                                    placeholder={tool.placeholder}
-                                    onChange={(event) => setManualDraft(tool.key, event.target.value)}
-                                />
-                                <div className="spc-path-actions">
-                                    <button className="ws-btn" onClick={() => vscode.postMessage('pickManualPath', { tool: tool.key })}>Browse</button>
-                                    <button className="ws-btn" onClick={() => saveManualPath(tool.key)}>Save</button>
-                                    <button className="ws-btn" onClick={() => validateManualPath(tool.key)}>Validate</button>
-                                    <button className="ws-btn" onClick={() => clearManualPath(tool.key)}>Clear</button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-                {validationResult && (
-                    <div className={'spc-validation-box' + (validationResult.ok ? ' ok' : ' warn')}>
-                        <div className="spc-validation-head">
-                            <span>Latest validation</span>
-                            {validationResult.command && <code>{validationResult.command}</code>}
-                        </div>
-                        <div className="spc-hint">{validationResult.summary}</div>
-                        {validationResult.output && <pre className="spc-snippet">{validationResult.output}</pre>}
-                    </div>
-                )}
-            </section>
-
-            <section className="ws-card">
-                <div className="spc-panel-head">
-                    <span>Install Strategy</span>
-                </div>
-                <div className="spc-strategy-grid">
-                    {([
-                        ['python', 'Python'],
-                        ['core', 'RapidKit Core'],
-                        ['cli', 'RapidKit CLI'],
-                        ['go', 'Go'],
-                        ['dotnet', '.NET'],
-                        ['java', 'Java'],
-                    ] as Array<[InstallMethodKey, string]>).map(([key, label]) => (
-                        <label key={key} className="spc-strategy-row">
-                            <span>{label}</span>
-                            <select
-                                className="spc-select"
-                                value={installMethod(key)}
-                                onChange={(event) => setInstallMethod(key, event.target.value)}
-                            >
-                                {INSTALL_METHOD_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                ))}
-                            </select>
-                        </label>
-                    ))}
-                </div>
-            </section>
-
-            <section className="ws-card">
-                <div className="spc-panel-head">
-                    <Wrench size={14} />
-                    <span>PATH Doctor</span>
-                </div>
-                <div className="spc-pathdoctor-meta">
-                    <span>Shell: {pathDoctor?.shellName || pathDoctor?.shell || 'unknown'}</span>
-                    {pathDoctor?.targetFile && <span>Profile: {pathDoctor.targetFile}</span>}
-                    <button className="ws-btn" onClick={() => vscode.postMessage('runPathDoctor')}>Run PATH Doctor</button>
-                </div>
-                {pathDoctor?.missingCommonEntries?.length ? (
-                    <ul className="spc-plain-list">
-                        {pathDoctor.missingCommonEntries.map((entry) => <li key={entry}>{entry}</li>)}
-                    </ul>
-                ) : (
-                    <div className="spc-muted">No common PATH gaps detected.</div>
-                )}
-                {pathDoctor?.suggestions?.map((suggestion) => (
-                    <div key={suggestion.title} className="spc-snippet-wrap">
-                        <div className="spc-snippet-head">
-                            <span>{suggestion.title}</span>
-                            <div className="spc-inline-actions">
-                                {suggestion.targetFile && (
-                                    <button className="ws-btn" onClick={() => vscode.postMessage('applyPathDoctorSuggestion', { suggestionId: suggestion.id })}>
-                                        Apply Snippet
-                                    </button>
-                                )}
-                                <button className="ws-btn" onClick={() => vscode.postMessage('copyText', { text: suggestion.snippet })}>
-                                    <Clipboard size={13} />
-                                    Copy
-                                </button>
-                            </div>
-                        </div>
-                        {suggestion.reason && <div className="spc-hint">{suggestion.reason}</div>}
-                        <pre className="spc-snippet">{suggestion.snippet}</pre>
-                    </div>
-                ))}
-            </section>
-
-            <section className="spc-advanced">
-                <button className="spc-advanced-toggle" onClick={() => setAdvancedOpen(v => !v)}>
-                    {advancedOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                    Advanced Actions
-                </button>
-                {advancedOpen && (
-                    <div className="spc-advanced-body">
-                        <button className="ws-btn" onClick={() => vscode.postMessage('installPipCore')}>Install Core via pipx</button>
-                        <button className="ws-btn" onClick={() => vscode.postMessage('upgradePipCore')}>Upgrade Core</button>
-                        <button className="ws-btn" onClick={() => vscode.postMessage('installPipxThenCore')}>Install pipx then Core</button>
-                        <button className="ws-btn" onClick={() => vscode.postMessage('installCoreFallback')}>Core fallback (pip)</button>
-                        <button className="ws-btn" onClick={() => vscode.postMessage('upgradeNpmGlobal')}>Upgrade CLI</button>
-                        <button className="ws-btn" onClick={() => vscode.postMessage('clearRequirementCache')}>Clear Cache</button>
-                        <button className="ws-btn" onClick={() => vscode.postMessage('exportSetupReport')}>
-                            <Save size={13} />
-                            Export Report
-                        </button>
-                    </div>
-                )}
-            </section>
+            {renderAdvancedConfiguration({
+                manualDrafts,
+                preferences,
+                status,
+                validationResult,
+                pathDoctor,
+                installMethod,
+                setInstallMethod,
+                setManualDraft,
+                saveManualPath,
+                validateManualPath,
+                clearManualPath,
+                advancedOpen,
+                setAdvancedOpen,
+                compact: false,
+            })}
+            </>
+            )}
 
         </main>
     );

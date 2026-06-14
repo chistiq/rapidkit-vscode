@@ -372,7 +372,10 @@ describe('smoke: dashboard command dispatch', () => {
 
     expect(buildDashboardDispatchMessages('openSetup')).toEqual([{ command: 'openSetup' }]);
     expect(buildDashboardDispatchMessages('projectDoctor')).toEqual([
-      { command: 'trackDashboardCommand', data: { command: 'projectDoctor' } },
+      {
+        command: 'trackDashboardCommand',
+        data: { command: 'projectDoctor', affectedEvidenceCardIds: ['projectDoctor'] },
+      },
       { command: 'projectDoctor', data: undefined },
     ]);
     expect(buildDashboardDispatchMessages('refreshModules', { path: '/tmp/ws' })).toEqual([

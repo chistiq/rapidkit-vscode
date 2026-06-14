@@ -110,7 +110,11 @@ import {
   buildIncidentStudioEvidenceContext,
   renderIncidentStudioEvidencePrompt,
 } from '../../core/incidentStudioEvidenceContext';
-import { isStudioActionId } from '../../core/studioActionCommands';
+import {
+  getStudioActionRegistryEntryById,
+  isStudioActionId,
+  type StudioActionId,
+} from '../../core/studioActionCommands';
 import { ProjectSelectionSequence } from './projectSelectionSequence';
 import { buildIncidentResumeSnapshot, type IncidentResumeSnapshot } from './incidentStudioResume';
 import {
@@ -171,7 +175,24 @@ import {
   readDoctorEvidenceSnapshot,
   type DoctorEvidenceSnapshot,
 } from './incidentStudioDoctorEvidence';
-import { executeStudioActionById } from './incidentStudioActionBridge';
+import {
+  executeStudioActionById,
+  type StudioActionExecutionResult,
+} from './incidentStudioActionBridge';
+import {
+  appendApprovalAuditEvent,
+  postSessionToWebview,
+  readIncidentStudioSession,
+  replaceChatMessages,
+  replaceExecutionTranscripts,
+  replaceProofEvents,
+  writeIncidentStudioSession,
+  type IncidentStudioApprovalAuditEvent,
+  type IncidentStudioChatMessage,
+  type IncidentStudioExecutionTranscript,
+  type IncidentStudioProofEvent,
+  type IncidentStudioSessionPhase,
+} from './incidentStudioSessionPersistenceBridge';
 import {
   buildStudioAIActionResult,
   executeGovernedAIActionOperation,
@@ -237,7 +258,13 @@ export class WelcomePanel {
   private _disposables: vscode.Disposable[] = [];
   private _aiQueryTokenSource?: vscode.CancellationTokenSource;
   private _activeAIQueryRequestId?: number;
-  private static _selectedProject: { name: string; path: string; type?: string } | null = null;
+  private static _selectedProject: {
+    name: string;
+    path: string;
+    type?: string;
+    workspacePath?: string;
+    workspaceName?: string;
+  } | null = null;
   private static _projectSelectionSequence = new ProjectSelectionSequence();
   private _modulesCatalog: ModuleData[] = MODULES;
   private _runningStudioActionId: string | null = null;
@@ -604,12 +631,6 @@ export class WelcomePanel {
       return;
     }
 
-    WelcomePanel._selectedProject = {
-      name: projectName,
-      path: projectPath,
-      type: projectType ?? undefined,
-    };
-
     const selectedWorkspace = WelcomePanel._workspaceExplorer?.getSelectedWorkspace();
     const explicitWorkspacePath =
       typeof options?.workspacePath === 'string' && options.workspacePath.trim().length > 0
@@ -651,6 +672,14 @@ export class WelcomePanel {
         explicitWorkspaceName ||
         path.basename(resolvedWorkspacePath);
     }
+
+    WelcomePanel._selectedProject = {
+      name: projectName,
+      path: projectPath,
+      type: projectType ?? undefined,
+      workspacePath: resolvedWorkspacePath,
+      workspaceName: resolvedWorkspaceName,
+    };
 
     if (WelcomePanel.currentPanel) {
       const currentPanel = WelcomePanel.currentPanel;
@@ -831,6 +860,7 @@ export class WelcomePanel {
     const selectedWorkspace = this._getSelectedWorkspaceInfo();
     const workspacePath =
       selectedWorkspace?.path ||
+      selectedProject.workspacePath ||
       (selectedProject.path ? path.dirname(selectedProject.path) : undefined);
 
     return {
@@ -841,7 +871,7 @@ export class WelcomePanel {
           }
         : workspacePath
           ? {
-              name: path.basename(workspacePath),
+              name: selectedProject.workspaceName || path.basename(workspacePath),
               path: workspacePath,
             }
           : undefined,
@@ -1386,6 +1416,17 @@ export class WelcomePanel {
             this._postDashboardAIActionRegistry(registry);
             break;
           }
+          case 'loadIncidentStudioSession': {
+            const workspacePath = this._resolveDashboardSessionWorkspacePath(message.data);
+            if (workspacePath) {
+              await postSessionToWebview(this._panel.webview, workspacePath, this._context);
+            }
+            break;
+          }
+          case 'saveIncidentStudioSession': {
+            await this._handleSaveDashboardIncidentStudioSession(message.data);
+            break;
+          }
           case 'studioMessage': {
             await this._handleDashboardStudioMessage(message.data);
             break;
@@ -1670,6 +1711,16 @@ export class WelcomePanel {
                 typeof message.data?.workspacePath === 'string'
                   ? message.data.workspacePath
                   : undefined,
+              projectPath:
+                typeof message.data?.projectPath === 'string'
+                  ? message.data.projectPath
+                  : undefined,
+              projectName:
+                typeof message.data?.projectName === 'string'
+                  ? message.data.projectName
+                  : undefined,
+              reportPath:
+                typeof message.data?.reportPath === 'string' ? message.data.reportPath : undefined,
             });
             break;
           case 'clearDashboardActivity':
@@ -1921,22 +1972,28 @@ export class WelcomePanel {
             await this._executeDashboardContractCommand('exportWorkspace', message.data);
             break;
           case 'importWorkspace':
-            await vscode.commands.executeCommand('workspai.importWorkspace');
+            await this._executeDashboardContractCommand('importWorkspace', message.data);
             break;
           case 'importProject':
-            await vscode.commands.executeCommand('workspai.importProject');
+            await this._executeDashboardContractCommand('importProject', message.data);
             break;
           case 'quickSwitchWorkspace':
             await this._executeDashboardContractCommand('quickSwitchWorkspace', message.data);
             break;
           case 'workspaceTerminal':
-            await vscode.commands.executeCommand('workspai.workspaceTerminal');
+            await this._executeDashboardContractCommand('workspaceTerminal', message.data);
             break;
           case 'workspaceBootstrap':
             await this._executeDashboardContractCommand('workspaceBootstrap', message.data);
             break;
           case 'workspaceSetup':
             await this._executeDashboardContractCommand('workspaceSetup', message.data);
+            break;
+          case 'workspaceSync':
+            await this._executeDashboardContractCommand('workspaceSync', message.data);
+            break;
+          case 'workspaceFoundationEnsure':
+            await this._executeDashboardContractCommand('workspaceFoundationEnsure', message.data);
             break;
           case 'workspaceReadiness':
             await this._executeDashboardContractCommand('workspaceReadiness', message.data);
@@ -1954,16 +2011,16 @@ export class WelcomePanel {
             await this._executeDashboardContractCommand('workspaceInfra', message.data);
             break;
           case 'workspaceRunInit':
-            await vscode.commands.executeCommand('workspai.workspaceRunInit');
+            await this._executeDashboardContractCommand('workspaceRunInit', message.data);
             break;
           case 'workspaceRunTest':
-            await vscode.commands.executeCommand('workspai.workspaceRunTest');
+            await this._executeDashboardContractCommand('workspaceRunTest', message.data);
             break;
           case 'workspaceRunBuild':
-            await vscode.commands.executeCommand('workspai.workspaceRunBuild');
+            await this._executeDashboardContractCommand('workspaceRunBuild', message.data);
             break;
           case 'workspaceRunStart':
-            await vscode.commands.executeCommand('workspai.workspaceRunStart');
+            await this._executeDashboardContractCommand('workspaceRunStart', message.data);
             break;
           case 'workspaceAnalyze':
             await this._executeDashboardContractCommand('workspaceAnalyze', message.data);
@@ -1972,46 +2029,46 @@ export class WelcomePanel {
             await this._executeDashboardContractCommand('workspaceAutopilotRelease', message.data);
             break;
           case 'workspaceSnapshot':
-            await vscode.commands.executeCommand('workspai.workspaceSnapshot');
+            await this._executeDashboardContractCommand('workspaceSnapshot', message.data);
             break;
           case 'workspaceSnapshotCreate':
             await this._executeDashboardContractCommand('workspaceSnapshotCreate', message.data);
             break;
           case 'workspaceSnapshotList':
-            await vscode.commands.executeCommand('workspai.workspaceSnapshotList');
+            await this._executeDashboardContractCommand('workspaceSnapshotList', message.data);
             break;
           case 'workspaceSnapshotInspect':
-            await vscode.commands.executeCommand('workspai.workspaceSnapshotInspect');
+            await this._executeDashboardContractCommand('workspaceSnapshotInspect', message.data);
             break;
           case 'workspaceSnapshotRestore':
-            await vscode.commands.executeCommand('workspai.workspaceSnapshotRestore');
+            await this._executeDashboardContractCommand('workspaceSnapshotRestore', message.data);
             break;
           case 'workspaceContract':
             await vscode.commands.executeCommand('workspai.workspaceContract');
             break;
           case 'workspaceContractInit':
-            await vscode.commands.executeCommand('workspai.workspaceContractInit');
+            await this._executeDashboardContractCommand('workspaceContractInit', message.data);
             break;
           case 'workspaceContractInspect':
-            await vscode.commands.executeCommand('workspai.workspaceContractInspect');
+            await this._executeDashboardContractCommand('workspaceContractInspect', message.data);
             break;
           case 'workspaceContractGraph':
-            await vscode.commands.executeCommand('workspai.workspaceContractGraph');
+            await this._executeDashboardContractCommand('workspaceContractGraph', message.data);
             break;
           case 'workspaceContractVerify':
-            await vscode.commands.executeCommand('workspai.workspaceContractVerify');
+            await this._executeDashboardContractCommand('workspaceContractVerify', message.data);
             break;
           case 'workspaceArchive':
-            await vscode.commands.executeCommand('workspai.workspaceArchive');
+            await this._executeDashboardContractCommand('workspaceArchive', message.data);
             break;
           case 'workspaceArchiveInspect':
-            await vscode.commands.executeCommand('workspai.workspaceArchiveInspect');
+            await this._executeDashboardContractCommand('workspaceArchiveInspect', message.data);
             break;
           case 'workspaceArchiveDoctor':
-            await vscode.commands.executeCommand('workspai.workspaceArchiveDoctor');
+            await this._executeDashboardContractCommand('workspaceArchiveDoctor', message.data);
             break;
           case 'workspaceArchiveVerify':
-            await vscode.commands.executeCommand('workspai.workspaceArchiveVerify');
+            await this._executeDashboardContractCommand('workspaceArchiveVerify', message.data);
             break;
           case 'workspaceShare':
             await this._executeDashboardContractCommand('workspaceShare', message.data);
@@ -2207,7 +2264,8 @@ export class WelcomePanel {
           case 'moduleDiff':
           case 'moduleRollback':
           case 'moduleUninstall':
-          case 'moduleUpgrade': {
+          case 'moduleUpgrade':
+          case 'moduleCheckpoint': {
             await this._executeDashboardContractCommand(message.command, message.data);
             break;
           }
@@ -2271,11 +2329,19 @@ export class WelcomePanel {
       vscode.window.showWarningMessage(detail);
       return;
     }
+    const studioActionId = actionId as StudioActionId;
+    const actionDefinition = getStudioActionRegistryEntryById(studioActionId);
 
     const workspace = { workspacePath, workspaceName };
     const seed = {
       source: 'incident-studio-vnext-dashboard',
       trigger: actionId,
+      action: {
+        title: actionDefinition.title,
+        scope: actionDefinition.scope,
+        stability: actionDefinition.stability,
+        summary: actionDefinition.summary,
+      },
       workspace: { path: workspacePath, name: workspaceName },
     };
 
@@ -2283,11 +2349,11 @@ export class WelcomePanel {
       this._runningStudioActionId = actionId;
       this._postDashboardStudioActionStatus(actionId, 'started');
       const lensSeed =
-        actionId === 'fix-lens' || actionId === 'impact-lens'
+        actionDefinition.actionType === 'fix' || actionDefinition.actionType === 'impact'
           ? {
               ...seed,
               seed:
-                actionId === 'fix-lens'
+                actionDefinition.actionType === 'fix'
                   ? 'Use the current workspace evidence and selected editor context to produce a fix lens. Do not apply changes.'
                   : 'Use the current workspace evidence and selected editor context to produce an impact lens. Do not apply changes.',
             }
@@ -2295,7 +2361,7 @@ export class WelcomePanel {
       const { refreshedReport, actionResult } = await executeStudioActionById(
         this._context,
         workspace,
-        actionId,
+        studioActionId,
         lensSeed
       );
 
@@ -2329,6 +2395,10 @@ export class WelcomePanel {
           report: refreshedReport,
           registry,
           fallbackSummary: actionResult?.summary,
+          status: actionResult?.gatePassed === false ? 'failed' : 'completed',
+          gatePassed: actionResult?.gatePassed,
+          source: 'studio-action',
+          executionTranscript: actionResult?.executionTranscript,
         })
       );
     } catch (error) {
@@ -2342,6 +2412,9 @@ export class WelcomePanel {
           workspacePath,
           report,
           fallbackSummary: error instanceof Error ? error.message : String(error),
+          status: 'failed',
+          gatePassed: false,
+          source: 'studio-action',
         })
       );
       vscode.window.showErrorMessage(
@@ -2368,6 +2441,10 @@ export class WelcomePanel {
     reportError?: string | null;
     registry?: Awaited<ReturnType<typeof readAIActionRegistry>> | null;
     fallbackSummary?: string;
+    status?: 'started' | 'completed' | 'failed';
+    gatePassed?: boolean;
+    source?: 'studio-action' | 'ai-action' | 'ship-loop' | 'inline-command';
+    executionTranscript?: StudioActionExecutionResult['executionTranscript'];
   }): Record<string, unknown> {
     return buildStudioAIActionResult({
       actionId: params.actionId,
@@ -2376,6 +2453,10 @@ export class WelcomePanel {
       reportError: params.reportError,
       registry: params.registry,
       fallbackSummary: params.fallbackSummary,
+      status: params.status,
+      gatePassed: params.gatePassed,
+      source: params.source,
+      executionTranscript: params.executionTranscript,
     });
   }
 
@@ -2385,7 +2466,10 @@ export class WelcomePanel {
     detail?: string,
     result?: Record<string, unknown>
   ): void {
-    const label = actionId.replace(/-/g, ' ');
+    const actionDefinition = isStudioActionId(actionId)
+      ? getStudioActionRegistryEntryById(actionId)
+      : null;
+    const label = actionDefinition?.title || actionId.replace(/-/g, ' ');
     const headline =
       status === 'started'
         ? `Studio action started: ${label}`
@@ -2404,6 +2488,8 @@ export class WelcomePanel {
       command: 'studioActionStatus',
       data: {
         actionId,
+        actionTitle: actionDefinition?.title,
+        actionSummary: actionDefinition?.summary,
         status,
         detail,
         result,
@@ -2775,7 +2861,9 @@ No markdown, no explanation outside the JSON.`;
       const { parseCreationIntent } = await import('../../core/aiService.js');
       let workspacePath: string | undefined;
       if (WelcomePanel._selectedProject) {
-        workspacePath = path.dirname(WelcomePanel._selectedProject.path);
+        workspacePath =
+          WelcomePanel._selectedProject.workspacePath ||
+          path.dirname(WelcomePanel._selectedProject.path);
       } else if (WelcomePanel._workspaceExplorer) {
         workspacePath = WelcomePanel._workspaceExplorer.getSelectedWorkspace()?.path;
       } else if (
@@ -3291,11 +3379,27 @@ No markdown, no explanation outside the JSON.`;
       return;
     }
 
-    const reportsDir = path.join(projectPath, '.rapidkit', 'reports');
-    const reportPath = path.join(reportsDir, 'doctor-project-last-run.json');
-    const reportExists = await fs.pathExists(reportPath);
+    const projectReportsDir = path.join(projectPath, '.rapidkit', 'reports');
+    const workspaceReportsDir = workspacePath
+      ? path.join(workspacePath, '.rapidkit', 'reports')
+      : undefined;
+    const reportCandidates = [
+      path.join(projectReportsDir, 'doctor-project-last-run.json'),
+      path.join(projectReportsDir, 'doctor-last-run.json'),
+      ...(workspaceReportsDir
+        ? [path.join(workspaceReportsDir, 'doctor-project-last-run.json')]
+        : []),
+    ];
+    const reportPath = await (async () => {
+      for (const candidate of reportCandidates) {
+        if (await fs.pathExists(candidate)) {
+          return candidate;
+        }
+      }
+      return undefined;
+    })();
 
-    if (!reportExists) {
+    if (!reportPath) {
       const scopeLabel = projectName || path.basename(projectPath);
       vscode.window.showInformationMessage(
         `No project doctor report found for "${scopeLabel}". Run project checks first.`
@@ -3397,7 +3501,7 @@ No markdown, no explanation outside the JSON.`;
     if (!selectedProject?.path) {
       return {};
     }
-    if (workspacePath && !selectedProject.path.startsWith(`${workspacePath}${path.sep}`)) {
+    if (workspacePath && !isWorkspacePathAncestor(workspacePath, selectedProject.path)) {
       return {};
     }
     return {
@@ -3458,13 +3562,21 @@ No markdown, no explanation outside the JSON.`;
       typeof context === 'string' ? { workspacePath: context } : context;
 
     const selectedWorkspace = this._getSelectedWorkspaceInfo();
+    const selectedProject = WelcomePanel._selectedProject;
     const workspacePath =
       normalizedContext?.workspacePath ||
       selectedWorkspace?.path ||
+      selectedProject?.workspacePath ||
       vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const projectContext = this._resolveDashboardProjectContext(workspacePath);
+    const projectContext =
+      normalizedContext?.projectPath || normalizedContext?.projectName
+        ? {
+            projectPath: normalizedContext.projectPath,
+            projectName: normalizedContext.projectName,
+          }
+        : this._resolveDashboardProjectContext(workspacePath);
     const recentWorkspaces = await this._getRecentWorkspaces();
-    const hasActiveWorkspace = Boolean(selectedWorkspace?.path);
+    const hasActiveWorkspace = Boolean(selectedWorkspace?.path || selectedProject?.workspacePath);
     const recentWorkspaceCount = recentWorkspaces.length;
     const isFreshInstall = recentWorkspaceCount === 0 && !hasActiveWorkspace;
 
@@ -3725,6 +3837,89 @@ No markdown, no explanation outside the JSON.`;
       WelcomePanel._workspaceExplorer?.getSelectedWorkspace()?.path,
       vscode.workspace.workspaceFolders
     );
+  }
+
+  private _resolveDashboardSessionWorkspacePath(data: unknown): string | undefined {
+    const explicit =
+      typeof data === 'object' && data !== null && 'workspacePath' in data
+        ? String((data as { workspacePath?: unknown }).workspacePath || '').trim()
+        : '';
+    return explicit || this._resolveTelemetryWorkspacePath();
+  }
+
+  private _normalizeIncidentStudioSessionPhase(value: unknown): IncidentStudioSessionPhase {
+    if (
+      value === 'detect' ||
+      value === 'diagnose' ||
+      value === 'plan' ||
+      value === 'verify' ||
+      value === 'learn'
+    ) {
+      return value;
+    }
+    return 'detect';
+  }
+
+  private async _handleSaveDashboardIncidentStudioSession(data: unknown) {
+    const workspacePath = this._resolveDashboardSessionWorkspacePath(data);
+    if (!workspacePath?.trim()) {
+      return;
+    }
+
+    const payload =
+      typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : {};
+
+    if (typeof payload.phase === 'string') {
+      const session = readIncidentStudioSession(this._context, workspacePath);
+      await writeIncidentStudioSession(this._context, workspacePath, {
+        ...session,
+        phase: this._normalizeIncidentStudioSessionPhase(payload.phase),
+      });
+    }
+
+    const chatMessages = Array.isArray(payload.chatMessages)
+      ? payload.chatMessages
+      : Array.isArray(payload.messages)
+        ? payload.messages
+        : null;
+
+    if (chatMessages) {
+      await replaceChatMessages(
+        this._context,
+        workspacePath,
+        chatMessages as IncidentStudioChatMessage[]
+      );
+    }
+
+    if (Array.isArray(payload.approvalAuditEvents)) {
+      const session = readIncidentStudioSession(this._context, workspacePath);
+      await writeIncidentStudioSession(this._context, workspacePath, {
+        ...session,
+        approvalAuditEvents: payload.approvalAuditEvents as IncidentStudioApprovalAuditEvent[],
+      });
+    } else if (payload.approvalAuditEvent && typeof payload.approvalAuditEvent === 'object') {
+      await appendApprovalAuditEvent(
+        this._context,
+        workspacePath,
+        payload.approvalAuditEvent as Omit<IncidentStudioApprovalAuditEvent, 'id' | 'happenedAt'>
+      );
+    }
+
+    if (Array.isArray(payload.proofEvents)) {
+      await replaceProofEvents(
+        this._context,
+        workspacePath,
+        payload.proofEvents as IncidentStudioProofEvent[]
+      );
+    }
+
+    if (Array.isArray(payload.executionTranscripts)) {
+      await replaceExecutionTranscripts(
+        this._context,
+        workspacePath,
+        payload.executionTranscripts as IncidentStudioExecutionTranscript[]
+      );
+    }
   }
 
   private _trackStudioEvent(
@@ -9194,7 +9389,10 @@ No markdown, no explanation outside the JSON.`;
     }
 
     if (WelcomePanel._selectedProject?.path) {
-      return path.dirname(WelcomePanel._selectedProject.path);
+      return (
+        WelcomePanel._selectedProject.workspacePath ||
+        path.dirname(WelcomePanel._selectedProject.path)
+      );
     }
 
     if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
@@ -9206,20 +9404,33 @@ No markdown, no explanation outside the JSON.`;
 
   private async _sendWorkspaceStatus() {
     const selectedWorkspace = this._getSelectedWorkspaceInfo();
-    const hasWorkspace = selectedWorkspace !== null;
+    const selectedProject = WelcomePanel._selectedProject;
+    const fallbackWorkspacePath = selectedProject?.workspacePath;
+    const fallbackWorkspaceName =
+      selectedProject?.workspaceName ||
+      (fallbackWorkspacePath ? path.basename(fallbackWorkspacePath) : undefined);
+    const effectiveWorkspace = selectedWorkspace
+      ? selectedWorkspace
+      : fallbackWorkspacePath
+        ? {
+            path: fallbackWorkspacePath,
+            name: fallbackWorkspaceName || path.basename(fallbackWorkspacePath),
+          }
+        : null;
+    const hasWorkspace = effectiveWorkspace !== null;
     let hasProjectSelected = false;
     let installedModules: { slug: string; version: string; display_name: string }[] = [];
     let projectType: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet' | undefined;
 
-    if (!selectedWorkspace) {
+    if (!selectedWorkspace && !fallbackWorkspacePath) {
       WelcomePanel._selectedProject = null;
     }
 
     // Keep project-scoped details only when selected project belongs to selected workspace.
     if (
       WelcomePanel._selectedProject &&
-      selectedWorkspace &&
-      WelcomePanel._selectedProject.path.startsWith(`${selectedWorkspace.path}${path.sep}`)
+      effectiveWorkspace &&
+      isWorkspacePathAncestor(effectiveWorkspace.path, WelcomePanel._selectedProject.path)
     ) {
       hasProjectSelected = true;
       installedModules = await WelcomePanel._readInstalledModules(
@@ -9234,7 +9445,7 @@ No markdown, no explanation outside the JSON.`;
     if (
       WelcomePanel._selectedProject &&
       selectedWorkspace &&
-      !WelcomePanel._selectedProject.path.startsWith(`${selectedWorkspace.path}${path.sep}`)
+      !isWorkspacePathAncestor(selectedWorkspace.path, WelcomePanel._selectedProject.path)
     ) {
       WelcomePanel._selectedProject = null;
     }
@@ -9244,8 +9455,8 @@ No markdown, no explanation outside the JSON.`;
       data: {
         hasWorkspace,
         hasProjectSelected,
-        workspaceName: selectedWorkspace?.name,
-        workspacePath: selectedWorkspace?.path,
+        workspaceName: effectiveWorkspace?.name,
+        workspacePath: effectiveWorkspace?.path,
         projectName: hasProjectSelected ? WelcomePanel._selectedProject?.name : undefined,
         projectPath: hasProjectSelected ? WelcomePanel._selectedProject?.path : undefined,
         projectType,
@@ -9677,7 +9888,9 @@ No markdown, no explanation outside the JSON.`;
     try {
       let workspacePath: string | undefined;
       if (WelcomePanel._selectedProject) {
-        workspacePath = WelcomePanel._selectedProject.path;
+        workspacePath =
+          WelcomePanel._selectedProject.workspacePath ||
+          path.dirname(WelcomePanel._selectedProject.path);
       } else if (
         vscode.workspace.workspaceFolders &&
         vscode.workspace.workspaceFolders.length > 0

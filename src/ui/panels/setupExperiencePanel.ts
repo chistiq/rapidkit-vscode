@@ -8,11 +8,13 @@ import { constants as fsConstants, readFileSync } from 'fs';
 import * as https from 'https';
 import * as os from 'os';
 import * as path from 'path';
-import { runCommandsInTerminal, runRapidkitCommandsInTerminal } from '../../utils/terminalExecutor';
+import { runCommandsInTerminal } from '../../utils/terminalExecutor';
 import { run } from '../../utils/exec';
 import {
-  buildNpxRapidkitArgs,
+  buildNpmCliVersionVerifyCommands,
+  buildNpxRapidkitVersionProbeArgs,
   buildRapidkitDisplayCommand,
+  parseNpmCliVersionOutput,
 } from '../../utils/platformCapabilities';
 
 const SETUP_PREFERENCES_KEY = 'workspai.setup.preferences';
@@ -702,9 +704,9 @@ export class SetupPanel {
         break;
       }
       case 'verifyNpm': {
-        runRapidkitCommandsInTerminal({
-          name: 'Verify Workspai CLI',
-          commands: [['--version']],
+        runCommandsInTerminal({
+          name: 'Verify Workspai CLI (npm)',
+          commands: buildNpmCliVersionVerifyCommands(),
         });
         break;
       }
@@ -1268,22 +1270,22 @@ export class SetupPanel {
     // Check if rapidkit is available via npx (even if not globally installed)
     if (!status.npmInstalled) {
       try {
-        const npxResult = await execa('npx', buildNpxRapidkitArgs(['--version']), {
+        const npxResult = await execa('npx', buildNpxRapidkitVersionProbeArgs(), {
           shell: status.isWindows,
           timeout: 5000,
           reject: false,
         });
 
         if (npxResult.exitCode === 0 && npxResult.stdout) {
-          const match = npxResult.stdout.match(/([\d.]+)/);
-          if (match) {
-            status.npmVersion = match[1];
+          const parsedVersion = parseNpmCliVersionOutput(npxResult.stdout);
+          if (parsedVersion) {
+            status.npmVersion = parsedVersion;
             status.npmAvailableViaNpx = true;
             status.npmLocation = 'npx (not global)';
             status.detections.cli = {
               source: 'fallback',
               command: buildRapidkitDisplayCommand(['--version']),
-              note: 'CLI available through the pinned npm package wrapper rather than a global install.',
+              note: 'CLI available through npx (npm bridge), not a global install.',
             };
           }
         }

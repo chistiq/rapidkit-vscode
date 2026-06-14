@@ -95,6 +95,7 @@ export function ProjectActions({
                     <ActionTile icon={<Wand2 size={15} />} label="Format" detail="Code style" onClick={onFormat} title="Run Format" />
                 ) : null}
                 <ActionTile icon={<Stethoscope size={15} />} label="Doctor" detail="Health scan" onClick={onDoctor} title="Check Project Health" />
+                <ActionTile icon={<Hammer size={15} />} label="Build" detail="Compile project" variant="warn" onClick={onBuild} title="Build Project" />
                 <ActionTile icon={<GitBranch size={15} />} label="Map" detail="Architecture" onClick={onArchitecture} title="Open Architecture Map" />
                 <ActionTile icon={<BrainCircuit size={15} />} label="Incident" detail="Studio analyze" onClick={onIncident} title="Analyze in Incident Studio" />
                 <ActionTile icon={<BrainCircuit size={15} />} label="AI" detail="Ask assistant" onClick={onAI} title="AI Assistant for this project" />
@@ -108,7 +109,6 @@ export function ProjectActions({
                     disabled={!isRunning}
                     title={isRunning ? `Open in Browser (port ${workspaceStatus.runningPort || 8000})` : 'Start server first'}
                 />
-                <ActionTile icon={<Hammer size={15} />} label="Build" detail="Compile project" variant="warn" onClick={onBuild} title="Build Project" />
             </ActionTileGrid>
         </div>
     );

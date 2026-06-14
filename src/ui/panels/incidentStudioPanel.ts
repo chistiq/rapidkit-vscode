@@ -28,8 +28,15 @@ import {
   renderIncidentStudioEvidencePrompt,
 } from '../../core/incidentStudioEvidenceContext';
 import { askConfiguredAIProvider, getAIProviderStatus } from '../../core/aiProviderService';
-import { isStudioActionId, type StudioActionId } from '../../core/studioActionCommands';
-import { executeStudioActionById } from './incidentStudioActionBridge';
+import {
+  getStudioActionRegistryEntryById,
+  isStudioActionId,
+  type StudioActionId,
+} from '../../core/studioActionCommands';
+import {
+  executeStudioActionById,
+  type StudioActionExecutionResult,
+} from './incidentStudioActionBridge';
 import { exportIncidentReproPack, importIncidentReproPack } from './incidentStudioReproPackBridge';
 import { dispatchIncidentStudioInlineCommand } from './incidentStudioInlineCommandBridge';
 import {
@@ -46,9 +53,13 @@ import {
   postSessionToWebview,
   readIncidentStudioSession,
   replaceChatMessages,
+  replaceExecutionTranscripts,
+  replaceProofEvents,
   writeIncidentStudioSession,
   type IncidentStudioApprovalAuditEvent,
   type IncidentStudioChatMessage,
+  type IncidentStudioExecutionTranscript,
+  type IncidentStudioProofEvent,
   type IncidentStudioSessionPhase,
 } from './incidentStudioSessionPersistenceBridge';
 import { WelcomePanel } from './welcomePanel';
@@ -401,10 +412,18 @@ export class IncidentStudioPanel {
       vscode.window.showWarningMessage(detail);
       return;
     }
+    const studioActionId = actionId as StudioActionId;
+    const actionDefinition = getStudioActionRegistryEntryById(studioActionId);
 
     const seed = {
       source: 'incident-studio-vnext',
       trigger: actionId,
+      action: {
+        title: actionDefinition.title,
+        scope: actionDefinition.scope,
+        stability: actionDefinition.stability,
+        summary: actionDefinition.summary,
+      },
       workspace: {
         path: this._workspaceContext.workspacePath,
         name: this._workspaceContext.workspaceName,
@@ -415,11 +434,11 @@ export class IncidentStudioPanel {
       this._runningStudioActionId = actionId;
       this._postStudioActionStatus(actionId, 'started');
       const lensSeed =
-        actionId === 'fix-lens' || actionId === 'impact-lens'
+        actionDefinition.actionType === 'fix' || actionDefinition.actionType === 'impact'
           ? {
               ...seed,
               seed:
-                actionId === 'fix-lens'
+                actionDefinition.actionType === 'fix'
                   ? 'Use the current workspace evidence and selected editor context to produce a fix lens. Do not apply changes.'
                   : 'Use the current workspace evidence and selected editor context to produce an impact lens. Do not apply changes.',
             }
@@ -427,7 +446,7 @@ export class IncidentStudioPanel {
       const { refreshedReport, actionResult } = await executeStudioActionById(
         this._context,
         this._workspaceContext,
-        actionId as StudioActionId,
+        studioActionId,
         lensSeed
       );
       await this._refreshStudioState(actionId);
@@ -448,6 +467,10 @@ export class IncidentStudioPanel {
           report: refreshedReport,
           registry,
           fallbackSummary: actionResult?.summary,
+          status: actionResult?.gatePassed === false ? 'failed' : 'completed',
+          gatePassed: actionResult?.gatePassed,
+          source: 'studio-action',
+          executionTranscript: actionResult?.executionTranscript,
         })
       );
       return;
@@ -460,6 +483,9 @@ export class IncidentStudioPanel {
           actionId,
           report: loadAnalyzeReport(this._workspaceContext).report,
           fallbackSummary: error instanceof Error ? error.message : String(error),
+          status: 'failed',
+          gatePassed: false,
+          source: 'studio-action',
         })
       );
       vscode.window.showErrorMessage(
@@ -476,7 +502,10 @@ export class IncidentStudioPanel {
     detail?: string,
     result?: Record<string, unknown>
   ) {
-    const label = actionId.replace(/-/g, ' ');
+    const actionDefinition = isStudioActionId(actionId)
+      ? getStudioActionRegistryEntryById(actionId)
+      : null;
+    const label = actionDefinition?.title || actionId.replace(/-/g, ' ');
     const headline =
       status === 'started'
         ? `Studio action started: ${label}`
@@ -495,6 +524,8 @@ export class IncidentStudioPanel {
       command: 'studioActionStatus',
       data: {
         actionId,
+        actionTitle: actionDefinition?.title,
+        actionSummary: actionDefinition?.summary,
         status,
         detail,
         result,
@@ -508,6 +539,10 @@ export class IncidentStudioPanel {
     report?: AnalyzeReport | null;
     registry?: Awaited<ReturnType<typeof readAIActionRegistry>> | null;
     fallbackSummary?: string;
+    status?: 'started' | 'completed' | 'failed';
+    gatePassed?: boolean;
+    source?: 'studio-action' | 'ai-action' | 'ship-loop' | 'inline-command';
+    executionTranscript?: StudioActionExecutionResult['executionTranscript'];
   }): Record<string, unknown> {
     return buildStudioAIActionResult({
       actionId: params.actionId,
@@ -515,6 +550,10 @@ export class IncidentStudioPanel {
       report: params.report,
       registry: params.registry,
       fallbackSummary: params.fallbackSummary,
+      status: params.status,
+      gatePassed: params.gatePassed,
+      source: params.source,
+      executionTranscript: params.executionTranscript,
     });
   }
 
@@ -816,19 +855,47 @@ export class IncidentStudioPanel {
       });
     }
 
-    if (Array.isArray(payload.chatMessages)) {
+    const chatMessages = Array.isArray(payload.chatMessages)
+      ? payload.chatMessages
+      : Array.isArray(payload.messages)
+        ? payload.messages
+        : null;
+
+    if (chatMessages) {
       await replaceChatMessages(
         this._context,
         workspacePath,
-        payload.chatMessages as IncidentStudioChatMessage[]
+        chatMessages as IncidentStudioChatMessage[]
       );
     }
 
-    if (payload.approvalAuditEvent && typeof payload.approvalAuditEvent === 'object') {
+    if (Array.isArray(payload.approvalAuditEvents)) {
+      const session = readIncidentStudioSession(this._context, workspacePath);
+      await writeIncidentStudioSession(this._context, workspacePath, {
+        ...session,
+        approvalAuditEvents: payload.approvalAuditEvents as IncidentStudioApprovalAuditEvent[],
+      });
+    } else if (payload.approvalAuditEvent && typeof payload.approvalAuditEvent === 'object') {
       await appendApprovalAuditEvent(
         this._context,
         workspacePath,
         payload.approvalAuditEvent as Omit<IncidentStudioApprovalAuditEvent, 'id' | 'happenedAt'>
+      );
+    }
+
+    if (Array.isArray(payload.proofEvents)) {
+      await replaceProofEvents(
+        this._context,
+        workspacePath,
+        payload.proofEvents as IncidentStudioProofEvent[]
+      );
+    }
+
+    if (Array.isArray(payload.executionTranscripts)) {
+      await replaceExecutionTranscripts(
+        this._context,
+        workspacePath,
+        payload.executionTranscripts as IncidentStudioExecutionTranscript[]
       );
     }
   }

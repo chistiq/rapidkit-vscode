@@ -1,5 +1,9 @@
 /** Unified dashboard command dispatch with activity tracking. */
-import { getDashboardCommandMeta, shouldTrackDashboardCommand } from './dashboardCommandRegistry';
+import {
+  getDashboardCommandAffectedEvidenceCards,
+  getDashboardCommandMeta,
+  shouldTrackDashboardCommand,
+} from './dashboardCommandRegistry';
 
 export function buildDashboardDispatchMessages(
   command: string,
@@ -15,7 +19,10 @@ export function buildDashboardDispatchMessages(
   }
 
   return [
-    { command: 'trackDashboardCommand', data: { command } },
+    {
+      command: 'trackDashboardCommand',
+      data: { command, affectedEvidenceCardIds: getDashboardCommandAffectedEvidenceCards(command) },
+    },
     { command, data },
   ];
 }

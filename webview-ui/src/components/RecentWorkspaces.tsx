@@ -177,6 +177,18 @@ export function RecentWorkspaces({
                   key={workspace.path}
                   className={`ws-card${isBusy ? ' ws-card--busy' : ''}`}
                   onClick={() => !isBusy && onSelect(workspace)}
+                  onKeyDown={(event) => {
+                    if (isBusy) {
+                      return;
+                    }
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onSelect(workspace);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={isBusy ? -1 : 0}
+                  aria-label={`Open workspace ${workspace.name}`}
                   aria-busy={isBusy}
                 >
                   <div className="ws-row-top">

@@ -1,4 +1,12 @@
-import { ClipboardCheck, FolderKanban, LayoutGrid, Package, Settings2, TerminalSquare } from 'lucide-react';
+import { useRef, type KeyboardEvent } from 'react';
+import {
+    ClipboardCheck,
+    FolderKanban,
+    LayoutGrid,
+    Package,
+    Settings2,
+    TerminalSquare,
+} from 'lucide-react';
 import {
     DASHBOARD_SECTIONS,
     type DashboardSection,
@@ -30,6 +38,44 @@ export function DashboardSubNav({
     evidenceAttentionCount = 0,
     operateAttentionCount = 0,
 }: DashboardSubNavProps) {
+    const tabRefs = useRef<Partial<Record<DashboardSection, HTMLButtonElement | null>>>({});
+
+    const focusSection = (section: DashboardSection) => {
+        window.requestAnimationFrame(() => tabRefs.current[section]?.focus());
+    };
+
+    const handleTabKeyDown = (
+        event: KeyboardEvent<HTMLButtonElement>,
+        currentSection: DashboardSection
+    ) => {
+        const currentIndex = DASHBOARD_SECTIONS.findIndex((section) => section.id === currentSection);
+        if (currentIndex < 0) {
+            return;
+        }
+
+        let nextSection: DashboardSection | null = null;
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+            nextSection = DASHBOARD_SECTIONS[(currentIndex + 1) % DASHBOARD_SECTIONS.length].id;
+        } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+            nextSection =
+                DASHBOARD_SECTIONS[
+                    (currentIndex - 1 + DASHBOARD_SECTIONS.length) % DASHBOARD_SECTIONS.length
+                ].id;
+        } else if (event.key === 'Home') {
+            nextSection = DASHBOARD_SECTIONS[0].id;
+        } else if (event.key === 'End') {
+            nextSection = DASHBOARD_SECTIONS[DASHBOARD_SECTIONS.length - 1].id;
+        }
+
+        if (!nextSection) {
+            return;
+        }
+
+        event.preventDefault();
+        onSectionChange(nextSection);
+        focusSection(nextSection);
+    };
+
     return (
         <nav
             className="dashboard-sub-nav"
@@ -55,9 +101,14 @@ export function DashboardSubNav({
                         aria-selected={isActive}
                         aria-controls={`dashboard-panel-${section.id}`}
                         id={`dashboard-tab-${section.id}`}
+                        ref={(node) => {
+                            tabRefs.current[section.id] = node;
+                        }}
+                        tabIndex={isActive ? 0 : -1}
                         title={section.description}
                         className={`dashboard-sub-nav__tab ${isActive ? 'is-active' : ''}`}
                         onClick={() => onSectionChange(section.id)}
+                        onKeyDown={(event) => handleTabKeyDown(event, section.id)}
                     >
                         <span className="dashboard-sub-nav__tab-content">
                             <Icon size={12} aria-hidden="true" />

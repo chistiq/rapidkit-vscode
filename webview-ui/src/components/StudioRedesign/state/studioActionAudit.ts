@@ -1,4 +1,4 @@
-import { AIActionRegistryView, StudioActionStatus } from './studioState';
+import { AIActionRegistryView, StudioActionStatus, StudioProofEvent } from './studioState';
 
 export type StudioActionAuditOutcome =
   | 'running'
@@ -34,6 +34,8 @@ export interface StudioActionAuditEvent {
   commandCount?: number;
   failedCommandCount?: number;
   failedCommands?: string[];
+  transcriptId?: string;
+  durationMs?: number;
   canRevealEvidence: boolean;
 }
 
@@ -79,9 +81,10 @@ export function buildStudioActionAuditTimeline(params: {
   registry?: AIActionRegistryView | null;
   status?: StudioActionStatus | null;
   approvalEvents?: StudioApprovalAuditEvent[];
+  proofEvents?: StudioProofEvent[];
   nowMs?: number;
 }): StudioActionAuditEvent[] {
-  const { registry, status, approvalEvents = [], nowMs = Date.now() } = params;
+  const { registry, status, approvalEvents = [], proofEvents = [], nowMs = Date.now() } = params;
   const events: StudioActionAuditEvent[] = [];
 
   for (const event of approvalEvents) {
@@ -112,16 +115,42 @@ export function buildStudioActionAuditTimeline(params: {
     });
   }
 
+  for (const proof of proofEvents) {
+    events.push({
+      id: `proof-${proof.generatedAt}-${proof.actionId}`,
+      actionId: proof.actionId,
+      title: proof.summary,
+      scope: proof.verdict ? `proof · ${proof.verdict}` : `proof · ${proof.source}`,
+      phase: proof.status === 'failed' ? 'diagnose' : 'verify',
+      outcome: proof.status === 'failed' ? 'failed' : 'completed',
+      happenedAt: proof.generatedAt,
+      timeAgo: formatAuditRelativeTime(proof.generatedAt, nowMs),
+      detail: typeof proof.score === 'number' ? `Score ${proof.score}` : undefined,
+      evidencePath: proof.evidencePath,
+      evidenceSha256: proof.evidenceSha256,
+      commandCount: proof.commandCount,
+      failedCommandCount: proof.failedCommandCount,
+      transcriptId: proof.executionTranscriptId,
+      durationMs: proof.durationMs,
+      canRevealEvidence: Boolean(proof.evidencePath),
+    });
+  }
+
   if (status) {
     const result = status.result;
+    const proofEvent = result?.proofEvent;
     events.push({
       id: `live-${status.updatedAt}-${status.actionId}`,
       actionId: status.actionId,
       title:
+        proofEvent?.summary ||
         result?.summary ||
         status.detail ||
-        `Studio action ${status.status}: ${status.actionId.replace(/-/g, ' ')}`,
-      scope: result?.verdict ? `live status · ${result.verdict}` : 'live status',
+        `Studio action ${status.status}: ${status.actionTitle || status.actionId.replace(/-/g, ' ')}`,
+      scope:
+        proofEvent?.verdict || result?.verdict
+          ? `live status · ${proofEvent?.verdict || result?.verdict}`
+          : 'live status',
       phase:
         status.status === 'failed' ? 'diagnose' : status.status === 'completed' ? 'verify' : 'plan',
       outcome:
@@ -133,14 +162,21 @@ export function buildStudioActionAuditTimeline(params: {
       happenedAt: status.updatedAt,
       timeAgo: formatAuditRelativeTime(status.updatedAt, nowMs),
       detail:
-        status.detail || (typeof result?.score === 'number' ? `Score ${result.score}` : undefined),
-      evidencePath: result?.evidencePath,
-      evidenceSha256: result?.evidenceSha256,
+        status.detail ||
+        (typeof proofEvent?.score === 'number'
+          ? `Score ${proofEvent.score}`
+          : typeof result?.score === 'number'
+            ? `Score ${result.score}`
+            : undefined),
+      evidencePath: proofEvent?.evidencePath || result?.evidencePath,
+      evidenceSha256: proofEvent?.evidenceSha256 || result?.evidenceSha256,
       evidenceSizeBytes: result?.evidenceSizeBytes,
       commandCount: result?.commandCount,
       failedCommandCount: result?.failedCommandCount,
       failedCommands: result?.failedCommands,
-      canRevealEvidence: Boolean(result?.evidencePath),
+      transcriptId: proofEvent?.executionTranscriptId || result?.executionTranscript?.id,
+      durationMs: proofEvent?.durationMs || result?.executionTranscript?.durationMs,
+      canRevealEvidence: Boolean(proofEvent?.evidencePath || result?.evidencePath),
     });
   }
 

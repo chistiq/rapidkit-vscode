@@ -4,6 +4,8 @@ export const INCIDENT_STUDIO_SESSION_KEY_PREFIX = 'rapidkit.incidentStudio.sessi
 
 export const MAX_INCIDENT_STUDIO_APPROVAL_AUDIT_EVENTS = 50;
 export const MAX_INCIDENT_STUDIO_CHAT_MESSAGES = 100;
+export const MAX_INCIDENT_STUDIO_PROOF_EVENTS = 50;
+export const MAX_INCIDENT_STUDIO_EXECUTION_TRANSCRIPTS = 50;
 
 export type IncidentStudioSessionPhase = 'detect' | 'diagnose' | 'plan' | 'verify' | 'learn';
 
@@ -41,10 +43,62 @@ export type IncidentStudioChatMessage = {
   }>;
 };
 
+export type IncidentStudioProofEvent = {
+  schemaVersion: 'workspai.studio.proof-event.v1';
+  actionId: string;
+  actionTitle?: string;
+  status: 'started' | 'completed' | 'failed';
+  summary: string;
+  generatedAt: string;
+  evidencePath?: string | null;
+  evidenceSha256?: string | null;
+  score?: number;
+  verdict?: 'ready' | 'needs-attention' | 'blocked';
+  gatePassed?: boolean;
+  commandCount?: number;
+  failedCommandCount?: number;
+  executionTranscriptId?: string;
+  durationMs?: number;
+  source: 'studio-action' | 'ai-action' | 'ship-loop' | 'inline-command';
+};
+
+export type IncidentStudioExecutionTranscriptStep = {
+  id: string;
+  command: string;
+  status: 'passed' | 'failed' | 'blocked' | 'skipped';
+  exitCode?: number | null;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+  cwd?: string;
+  stdoutPreview?: string;
+  stderrPreview?: string;
+  failureReason?: string;
+};
+
+export type IncidentStudioExecutionTranscript = {
+  schemaVersion: 'workspai.studio.execution-transcript.v1';
+  id: string;
+  actionId: string;
+  source: IncidentStudioProofEvent['source'];
+  title: string;
+  status: 'completed' | 'failed' | 'blocked';
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  commandCount: number;
+  failedCommandCount: number;
+  steps: IncidentStudioExecutionTranscriptStep[];
+  evidencePath?: string | null;
+  evidenceSha256?: string | null;
+};
+
 export type IncidentStudioSession = {
   workspacePath: string;
   phase: IncidentStudioSessionPhase;
   approvalAuditEvents: IncidentStudioApprovalAuditEvent[];
+  proofEvents: IncidentStudioProofEvent[];
+  executionTranscripts: IncidentStudioExecutionTranscript[];
   chatMessages: IncidentStudioChatMessage[];
   updatedAt: string;
 };
@@ -163,11 +217,220 @@ function normalizeChatMessage(value: unknown, index: number): IncidentStudioChat
   };
 }
 
+function normalizeProofEvent(value: unknown, index: number): IncidentStudioProofEvent | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const event = value as Record<string, unknown>;
+  const actionId = typeof event.actionId === 'string' ? event.actionId.trim() : '';
+  const summary = typeof event.summary === 'string' ? event.summary.trim() : '';
+  if (!actionId || !summary) {
+    return null;
+  }
+
+  const status =
+    event.status === 'started' || event.status === 'completed' || event.status === 'failed'
+      ? event.status
+      : 'completed';
+  const source =
+    event.source === 'studio-action' ||
+    event.source === 'ai-action' ||
+    event.source === 'ship-loop' ||
+    event.source === 'inline-command'
+      ? event.source
+      : 'studio-action';
+  const verdict =
+    event.verdict === 'ready' || event.verdict === 'needs-attention' || event.verdict === 'blocked'
+      ? event.verdict
+      : undefined;
+
+  return {
+    schemaVersion: 'workspai.studio.proof-event.v1',
+    actionId,
+    actionTitle: typeof event.actionTitle === 'string' ? event.actionTitle : undefined,
+    status,
+    summary,
+    generatedAt:
+      typeof event.generatedAt === 'string' && event.generatedAt.trim()
+        ? event.generatedAt
+        : new Date(Date.now() + index).toISOString(),
+    evidencePath:
+      typeof event.evidencePath === 'string' || event.evidencePath === null
+        ? event.evidencePath
+        : undefined,
+    evidenceSha256: typeof event.evidenceSha256 === 'string' ? event.evidenceSha256 : undefined,
+    score:
+      typeof event.score === 'number' && Number.isFinite(event.score) ? event.score : undefined,
+    verdict,
+    gatePassed: typeof event.gatePassed === 'boolean' ? event.gatePassed : undefined,
+    commandCount:
+      typeof event.commandCount === 'number' && Number.isFinite(event.commandCount)
+        ? event.commandCount
+        : undefined,
+    failedCommandCount:
+      typeof event.failedCommandCount === 'number' && Number.isFinite(event.failedCommandCount)
+        ? event.failedCommandCount
+        : undefined,
+    executionTranscriptId:
+      typeof event.executionTranscriptId === 'string' && event.executionTranscriptId.trim()
+        ? event.executionTranscriptId.trim()
+        : undefined,
+    durationMs:
+      typeof event.durationMs === 'number' && Number.isFinite(event.durationMs)
+        ? Math.max(0, Math.round(event.durationMs))
+        : undefined,
+    source,
+  };
+}
+
+function normalizeExecutionTranscriptStep(
+  value: unknown,
+  index: number
+): IncidentStudioExecutionTranscriptStep | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const step = value as Record<string, unknown>;
+  const command = typeof step.command === 'string' ? step.command.trim() : '';
+  if (!command) {
+    return null;
+  }
+
+  const status =
+    step.status === 'passed' ||
+    step.status === 'failed' ||
+    step.status === 'blocked' ||
+    step.status === 'skipped'
+      ? step.status
+      : step.exitCode === 0
+        ? 'passed'
+        : 'failed';
+
+  return {
+    id:
+      typeof step.id === 'string' && step.id.trim()
+        ? step.id.trim()
+        : `step-${Date.now()}-${index}`,
+    command,
+    status,
+    exitCode:
+      typeof step.exitCode === 'number' && Number.isFinite(step.exitCode)
+        ? step.exitCode
+        : step.exitCode === null
+          ? null
+          : undefined,
+    startedAt:
+      typeof step.startedAt === 'string' && step.startedAt.trim() ? step.startedAt : undefined,
+    completedAt:
+      typeof step.completedAt === 'string' && step.completedAt.trim()
+        ? step.completedAt
+        : undefined,
+    durationMs:
+      typeof step.durationMs === 'number' && Number.isFinite(step.durationMs)
+        ? Math.max(0, Math.round(step.durationMs))
+        : undefined,
+    cwd: typeof step.cwd === 'string' && step.cwd.trim() ? step.cwd : undefined,
+    stdoutPreview:
+      typeof step.stdoutPreview === 'string' && step.stdoutPreview.trim()
+        ? step.stdoutPreview.slice(0, 4000)
+        : undefined,
+    stderrPreview:
+      typeof step.stderrPreview === 'string' && step.stderrPreview.trim()
+        ? step.stderrPreview.slice(0, 4000)
+        : undefined,
+    failureReason:
+      typeof step.failureReason === 'string' && step.failureReason.trim()
+        ? step.failureReason.slice(0, 1000)
+        : undefined,
+  };
+}
+
+function normalizeExecutionTranscript(
+  value: unknown,
+  index: number
+): IncidentStudioExecutionTranscript | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const transcript = value as Record<string, unknown>;
+  const id = typeof transcript.id === 'string' ? transcript.id.trim() : '';
+  const actionId = typeof transcript.actionId === 'string' ? transcript.actionId.trim() : '';
+  const title = typeof transcript.title === 'string' ? transcript.title.trim() : '';
+  const steps = Array.isArray(transcript.steps)
+    ? transcript.steps
+        .map((step, stepIndex) => normalizeExecutionTranscriptStep(step, stepIndex))
+        .filter((step): step is IncidentStudioExecutionTranscriptStep => step !== null)
+    : [];
+  if (!id || !actionId || !title || steps.length === 0) {
+    return null;
+  }
+
+  const source =
+    transcript.source === 'studio-action' ||
+    transcript.source === 'ai-action' ||
+    transcript.source === 'ship-loop' ||
+    transcript.source === 'inline-command'
+      ? transcript.source
+      : 'studio-action';
+  const status =
+    transcript.status === 'completed' ||
+    transcript.status === 'failed' ||
+    transcript.status === 'blocked'
+      ? transcript.status
+      : steps.some((step) => step.status === 'failed' || step.status === 'blocked')
+        ? 'failed'
+        : 'completed';
+  const startedAt =
+    typeof transcript.startedAt === 'string' && transcript.startedAt.trim()
+      ? transcript.startedAt
+      : steps[0]?.startedAt || new Date(Date.now() + index).toISOString();
+  const completedAt =
+    typeof transcript.completedAt === 'string' && transcript.completedAt.trim()
+      ? transcript.completedAt
+      : steps[steps.length - 1]?.completedAt || startedAt;
+
+  return {
+    schemaVersion: 'workspai.studio.execution-transcript.v1',
+    id,
+    actionId,
+    source,
+    title,
+    status,
+    startedAt,
+    completedAt,
+    durationMs:
+      typeof transcript.durationMs === 'number' && Number.isFinite(transcript.durationMs)
+        ? Math.max(0, Math.round(transcript.durationMs))
+        : Math.max(0, new Date(completedAt).getTime() - new Date(startedAt).getTime()),
+    commandCount:
+      typeof transcript.commandCount === 'number' && Number.isFinite(transcript.commandCount)
+        ? transcript.commandCount
+        : steps.length,
+    failedCommandCount:
+      typeof transcript.failedCommandCount === 'number' &&
+      Number.isFinite(transcript.failedCommandCount)
+        ? transcript.failedCommandCount
+        : steps.filter((step) => step.status === 'failed' || step.status === 'blocked').length,
+    steps,
+    evidencePath:
+      typeof transcript.evidencePath === 'string' || transcript.evidencePath === null
+        ? transcript.evidencePath
+        : undefined,
+    evidenceSha256:
+      typeof transcript.evidenceSha256 === 'string' ? transcript.evidenceSha256 : undefined,
+  };
+}
+
 function createEmptyIncidentStudioSession(workspacePath: string): IncidentStudioSession {
   return {
     workspacePath: workspacePath.trim(),
     phase: 'detect',
     approvalAuditEvents: [],
+    proofEvents: [],
+    executionTranscripts: [],
     chatMessages: [],
     updatedAt: new Date().toISOString(),
   };
@@ -194,11 +457,27 @@ function normalizeIncidentStudioSession(
         .filter((message): message is IncidentStudioChatMessage => message !== null)
         .slice(-MAX_INCIDENT_STUDIO_CHAT_MESSAGES)
     : [];
+  const proofEvents = Array.isArray(session.proofEvents)
+    ? session.proofEvents
+        .map((event, index) => normalizeProofEvent(event, index))
+        .filter((event): event is IncidentStudioProofEvent => event !== null)
+        .slice(0, MAX_INCIDENT_STUDIO_PROOF_EVENTS)
+    : [];
+  const executionTranscripts = Array.isArray(session.executionTranscripts)
+    ? session.executionTranscripts
+        .map((transcript, index) => normalizeExecutionTranscript(transcript, index))
+        .filter(
+          (transcript): transcript is IncidentStudioExecutionTranscript => transcript !== null
+        )
+        .slice(0, MAX_INCIDENT_STUDIO_EXECUTION_TRANSCRIPTS)
+    : [];
 
   return {
     workspacePath: workspacePath.trim(),
     phase: normalizePhase(session.phase),
     approvalAuditEvents,
+    proofEvents,
+    executionTranscripts,
     chatMessages,
     updatedAt:
       typeof session.updatedAt === 'string' && session.updatedAt.trim()
@@ -270,6 +549,40 @@ export async function appendApprovalAuditEvent(
       0,
       MAX_INCIDENT_STUDIO_APPROVAL_AUDIT_EVENTS
     ),
+  });
+}
+
+export async function replaceProofEvents(
+  context: vscode.ExtensionContext,
+  workspacePath: string,
+  proofEvents: IncidentStudioProofEvent[]
+): Promise<IncidentStudioSession> {
+  const session = readIncidentStudioSession(context, workspacePath);
+  const normalizedProofEvents = proofEvents
+    .map((event, index) => normalizeProofEvent(event, index))
+    .filter((event): event is IncidentStudioProofEvent => event !== null)
+    .slice(0, MAX_INCIDENT_STUDIO_PROOF_EVENTS);
+
+  return writeIncidentStudioSession(context, workspacePath, {
+    ...session,
+    proofEvents: normalizedProofEvents,
+  });
+}
+
+export async function replaceExecutionTranscripts(
+  context: vscode.ExtensionContext,
+  workspacePath: string,
+  executionTranscripts: IncidentStudioExecutionTranscript[]
+): Promise<IncidentStudioSession> {
+  const session = readIncidentStudioSession(context, workspacePath);
+  const normalizedTranscripts = executionTranscripts
+    .map((transcript, index) => normalizeExecutionTranscript(transcript, index))
+    .filter((transcript): transcript is IncidentStudioExecutionTranscript => transcript !== null)
+    .slice(0, MAX_INCIDENT_STUDIO_EXECUTION_TRANSCRIPTS);
+
+  return writeIncidentStudioSession(context, workspacePath, {
+    ...session,
+    executionTranscripts: normalizedTranscripts,
   });
 }
 

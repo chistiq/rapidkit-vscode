@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 
+import type { StudioActionId } from '../../core/studioActionCommands';
 import type { WorkspaceContext } from './incidentStudioAnalyze';
 import { executeStudioActionById } from './incidentStudioActionBridge';
 import { resolveStudioMutationBlockReason } from './incidentStudioMutationGate';
@@ -10,6 +11,7 @@ import {
 import { resolveIncidentStudioTelemetry } from './incidentStudioTelemetryBridge';
 import { refreshIncidentStudioStabilizationLoop } from './incidentStudioStabilizationLoopBridge';
 import { postIncidentStudioShipEvidence } from './incidentStudioShipEvidenceBridge';
+import type { IncidentStudioExecutionTranscript } from './incidentStudioSessionPersistenceBridge';
 
 export type ShipLoopStepId =
   | 'analyze'
@@ -23,7 +25,7 @@ export type ShipLoopStepExecutionKind = 'studio-action' | 'inline-command';
 export type ShipLoopStepDefinition = {
   id: ShipLoopStepId;
   kind: ShipLoopStepExecutionKind;
-  studioActionId?: 'run-analyze' | 'verify-gates';
+  studioActionId?: StudioActionId;
   inlineCommand?: string;
   mutating?: boolean;
 };
@@ -79,7 +81,49 @@ export type DispatchIncidentStudioShipLoopStepResult = {
   success: boolean;
   summary?: string;
   error?: string;
+  proofEvent?: {
+    schemaVersion: 'workspai.studio.proof-event.v1';
+    actionId: string;
+    status: 'completed' | 'failed';
+    summary: string;
+    generatedAt: string;
+    evidencePath?: string | null;
+    evidenceSha256?: string | null;
+    gatePassed?: boolean;
+    executionTranscriptId?: string;
+    durationMs?: number;
+    source: 'ship-loop';
+  };
+  executionTranscript?: IncidentStudioExecutionTranscript;
 };
+
+function buildShipLoopProofEvent(input: {
+  stepId: ShipLoopStepId;
+  success: boolean;
+  summary?: string;
+  error?: string;
+  evidencePath?: string | null;
+  evidenceSha256?: string | null;
+  executionTranscript?: IncidentStudioExecutionTranscript;
+}): DispatchIncidentStudioShipLoopStepResult['proofEvent'] {
+  const summary =
+    input.summary ||
+    input.error ||
+    `Ship loop step ${input.stepId} ${input.success ? 'completed' : 'failed'}.`;
+  return {
+    schemaVersion: 'workspai.studio.proof-event.v1',
+    actionId: `ship-loop-${input.stepId}`,
+    status: input.success ? 'completed' : 'failed',
+    summary,
+    generatedAt: new Date().toISOString(),
+    evidencePath: input.evidencePath,
+    evidenceSha256: input.evidenceSha256,
+    gatePassed: input.success,
+    executionTranscriptId: input.executionTranscript?.id,
+    durationMs: input.executionTranscript?.durationMs,
+    source: 'ship-loop',
+  };
+}
 
 export async function dispatchIncidentStudioShipLoopStep(
   input: DispatchIncidentStudioShipLoopStepInput
@@ -90,6 +134,11 @@ export async function dispatchIncidentStudioShipLoopStep(
       stepId: input.stepId,
       success: false,
       error: `Unknown ship loop step: ${input.stepId}`,
+      proofEvent: buildShipLoopProofEvent({
+        stepId: input.stepId,
+        success: false,
+        error: `Unknown ship loop step: ${input.stepId}`,
+      }),
     };
   }
 
@@ -106,6 +155,11 @@ export async function dispatchIncidentStudioShipLoopStep(
         stepId: input.stepId,
         success: false,
         error: mutationBlockReason,
+        proofEvent: buildShipLoopProofEvent({
+          stepId: input.stepId,
+          success: false,
+          error: mutationBlockReason,
+        }),
       };
     }
   }
@@ -119,11 +173,35 @@ export async function dispatchIncidentStudioShipLoopStep(
         input.seed ?? {}
       );
       await refreshShipLoopSurfaces(input);
+      const success = actionResult?.gatePassed !== false;
       return {
         stepId: input.stepId,
-        success: actionResult?.gatePassed !== false,
+        success,
         summary: actionResult?.summary,
-        error: actionResult?.gatePassed === false ? actionResult.summary : undefined,
+        error: success ? undefined : actionResult?.summary,
+        executionTranscript: actionResult?.executionTranscript
+          ? {
+              ...actionResult.executionTranscript,
+              actionId: `ship-loop-${input.stepId}`,
+              source: 'ship-loop',
+              title: `Ship loop ${input.stepId}`,
+            }
+          : undefined,
+        proofEvent: buildShipLoopProofEvent({
+          stepId: input.stepId,
+          success,
+          summary: actionResult?.summary,
+          error: success ? undefined : actionResult?.summary,
+          evidencePath: actionResult?.evidencePath,
+          executionTranscript: actionResult?.executionTranscript
+            ? {
+                ...actionResult.executionTranscript,
+                actionId: `ship-loop-${input.stepId}`,
+                source: 'ship-loop',
+                title: `Ship loop ${input.stepId}`,
+              }
+            : undefined,
+        }),
       };
     }
 
@@ -142,6 +220,28 @@ export async function dispatchIncidentStudioShipLoopStep(
         success: result.success,
         summary: result.output,
         error: result.error,
+        executionTranscript: result.executionTranscript
+          ? {
+              ...result.executionTranscript,
+              actionId: `ship-loop-${input.stepId}`,
+              source: 'ship-loop',
+              title: `Ship loop ${input.stepId}`,
+            }
+          : undefined,
+        proofEvent: buildShipLoopProofEvent({
+          stepId: input.stepId,
+          success: result.success,
+          summary: result.output,
+          error: result.error,
+          executionTranscript: result.executionTranscript
+            ? {
+                ...result.executionTranscript,
+                actionId: `ship-loop-${input.stepId}`,
+                source: 'ship-loop',
+                title: `Ship loop ${input.stepId}`,
+              }
+            : undefined,
+        }),
       };
     }
 
@@ -149,12 +249,23 @@ export async function dispatchIncidentStudioShipLoopStep(
       stepId: input.stepId,
       success: false,
       error: 'Ship loop step is missing an execution handler.',
+      proofEvent: buildShipLoopProofEvent({
+        stepId: input.stepId,
+        success: false,
+        error: 'Ship loop step is missing an execution handler.',
+      }),
     };
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     return {
       stepId: input.stepId,
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
+      proofEvent: buildShipLoopProofEvent({
+        stepId: input.stepId,
+        success: false,
+        error: message,
+      }),
     };
   }
 }

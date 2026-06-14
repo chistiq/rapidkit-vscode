@@ -62,6 +62,13 @@ export const ShipLoopSection: React.FC<ShipLoopSectionProps> = ({
         {shipLoop.steps.map((step, index) => {
           const isRunning = executingStepId === step.id;
           const disabled = isRunning || !!executingStepId || !canRunStep(step.id);
+          const disabledReason = isRunning
+            ? 'This ship loop step is already running.'
+            : executingStepId
+              ? 'Another ship loop step is running.'
+              : !canRunStep(step.id)
+                ? step.blockers[0] || 'This step is blocked by upstream evidence.'
+                : undefined;
           return (
             <div key={step.id} className="studio-ship-loop__step">
               <div className="studio-ship-loop__step-head">
@@ -76,6 +83,7 @@ export const ShipLoopSection: React.FC<ShipLoopSectionProps> = ({
                   type="button"
                   className={`${studioClass.btnGhost} studio-ship-loop__run`}
                   disabled={disabled}
+                  title={disabledReason || `Run ${step.label}`}
                   onClick={() => onRunStep(step.id)}
                 >
                   {isRunning ? 'Running…' : step.runLabel}

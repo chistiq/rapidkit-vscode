@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildNpmCliVersionVerifyCommands,
   buildNpxRapidkitArgs,
+  buildNpxRapidkitVersionProbeArgs,
   buildRapidkitDisplayCommand,
   buildRapidkitCommand,
   buildShellCommand,
   detectPlatformKind,
+  parseNpmCliVersionOutput,
   quoteShellArg,
   toDisplayRapidkitCommand,
   toPinnedRapidkitExecutionCommand,
@@ -162,5 +165,19 @@ describe('platformCapabilities', () => {
       'npx --yes --package rapidkit rapidkit snapshot restore ' +
         '"before upgrade" --force --reason "rollback & verify"'
     );
+  });
+
+  it('uses unpinned npx args for npm CLI version probes only', () => {
+    expect(buildNpxRapidkitVersionProbeArgs()).toEqual(['--yes', 'rapidkit', '--version']);
+    expect(buildNpmCliVersionVerifyCommands('linux')).toEqual([
+      'npx rapidkit --version',
+      'npm list -g rapidkit --depth=0',
+    ]);
+  });
+
+  it('parses npm CLI version output and ignores python core banners', () => {
+    expect(parseNpmCliVersionOutput('0.34.0')).toBe('0.34.0');
+    expect(parseNpmCliVersionOutput('RapidKit Version v0.5.4')).toBeNull();
+    expect(parseNpmCliVersionOutput('rapidkit@0.34.0')).toBe('0.34.0');
   });
 });

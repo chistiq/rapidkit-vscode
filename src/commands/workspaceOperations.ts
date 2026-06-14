@@ -22,6 +22,7 @@ type WorkspaceCommandItem = {
   stage?: unknown;
   mode?: unknown;
   preferredAction?: unknown;
+  json?: unknown;
 };
 
 type WorkspaceTarget = {
@@ -1075,6 +1076,21 @@ export function registerWorkspaceOperationsCommands(options: {
       });
     }),
 
+    vscode.commands.registerCommand('workspai.workspaceSync', async (item?: unknown) => {
+      const workspaceTarget = requireWorkspaceTarget(item, getWorkspaceExplorer());
+      if (!workspaceTarget) {
+        return;
+      }
+
+      const { workspacePath, workspaceName } = workspaceTarget;
+      runRapidkitCommandsInTerminal({
+        name: `Workspai: Workspace Sync — ${workspaceName}`,
+        cwd: workspacePath,
+        commands: [['workspace', 'sync']],
+      });
+      logger.info(`Running workspace sync for: ${workspacePath}`);
+    }),
+
     vscode.commands.registerCommand(
       'workspai.workspaceFoundationEnsure',
       async (item?: unknown) => {
@@ -1084,33 +1100,44 @@ export function registerWorkspaceOperationsCommands(options: {
         }
 
         const { workspacePath, workspaceName } = workspaceTarget;
+        const requestedMode =
+          item &&
+          typeof item === 'object' &&
+          ((item as WorkspaceCommandItem).mode === 'ensure' ||
+            (item as WorkspaceCommandItem).mode === 'force')
+            ? ((item as WorkspaceCommandItem).mode as 'ensure' | 'force')
+            : undefined;
 
-        const mode = await vscode.window.showQuickPick(
-          [
-            {
-              label: '$(check) Ensure foundation',
-              description: 'Create missing foundation files only (non-destructive)',
-              value: 'ensure' as const,
-            },
-            {
-              label: '$(sync) Force re-sync foundation',
-              description: 'Rewrite foundation files from current defaults (--force)',
-              value: 'force' as const,
-            },
-          ],
-          {
-            title: `Workspace Foundation — ${workspaceName}`,
-            placeHolder: 'Choose foundation mode',
-            ignoreFocusOut: true,
-          }
-        );
+        const mode =
+          requestedMode ??
+          (
+            await vscode.window.showQuickPick(
+              [
+                {
+                  label: '$(check) Ensure foundation',
+                  description: 'Create missing foundation files only (non-destructive)',
+                  value: 'ensure' as const,
+                },
+                {
+                  label: '$(sync) Force re-sync foundation',
+                  description: 'Rewrite foundation files from current defaults (--force)',
+                  value: 'force' as const,
+                },
+              ],
+              {
+                title: `Workspace Foundation — ${workspaceName}`,
+                placeHolder: 'Choose foundation mode',
+                ignoreFocusOut: true,
+              }
+            )
+          )?.value;
 
         if (!mode) {
           return;
         }
 
         const command = ['workspace', 'foundation', 'ensure'];
-        if (mode.value === 'force') {
+        if (mode === 'force') {
           const confirmed = await vscode.window.showWarningMessage(
             `Force re-sync foundation files for "${workspaceName}"? Existing workspace marker, policies, and toolchain stubs will be rewritten from defaults.`,
             { modal: true },
@@ -1120,6 +1147,9 @@ export function registerWorkspaceOperationsCommands(options: {
             return;
           }
           command.push('--force');
+        }
+        if (item && typeof item === 'object' && (item as WorkspaceCommandItem).json === true) {
+          command.push('--json');
         }
 
         runRapidkitCommandsInTerminal({

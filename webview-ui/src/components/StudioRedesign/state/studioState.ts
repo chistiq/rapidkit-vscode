@@ -92,6 +92,8 @@ export interface ActionItem {
 
 export interface StudioActionStatus {
   actionId: string;
+  actionTitle?: string;
+  actionSummary?: string;
   status: 'started' | 'completed' | 'failed';
   detail?: string;
   result?: StudioActionResult;
@@ -100,6 +102,8 @@ export interface StudioActionStatus {
 
 export interface StudioActionResult {
   summary: string;
+  proofEvent?: StudioProofEvent;
+  executionTranscript?: StudioExecutionTranscript;
   verdict?: 'ready' | 'needs-attention' | 'blocked';
   score?: number;
   generatedAt?: string;
@@ -115,6 +119,56 @@ export interface StudioActionResult {
     info: number;
   };
   registryUpdatedAt?: string;
+}
+
+export interface StudioProofEvent {
+  schemaVersion: 'workspai.studio.proof-event.v1';
+  actionId: string;
+  actionTitle?: string;
+  status: 'started' | 'completed' | 'failed';
+  summary: string;
+  generatedAt: string;
+  evidencePath?: string | null;
+  evidenceSha256?: string | null;
+  score?: number;
+  verdict?: 'ready' | 'needs-attention' | 'blocked';
+  gatePassed?: boolean;
+  commandCount?: number;
+  failedCommandCount?: number;
+  executionTranscriptId?: string;
+  durationMs?: number;
+  source: 'studio-action' | 'ai-action' | 'ship-loop' | 'inline-command';
+}
+
+export interface StudioExecutionTranscriptStep {
+  id: string;
+  command: string;
+  status: 'passed' | 'failed' | 'blocked' | 'skipped';
+  exitCode?: number | null;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+  cwd?: string;
+  stdoutPreview?: string;
+  stderrPreview?: string;
+  failureReason?: string;
+}
+
+export interface StudioExecutionTranscript {
+  schemaVersion: 'workspai.studio.execution-transcript.v1';
+  id: string;
+  actionId: string;
+  source: StudioProofEvent['source'];
+  title: string;
+  status: 'completed' | 'failed' | 'blocked';
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  commandCount: number;
+  failedCommandCount: number;
+  steps: StudioExecutionTranscriptStep[];
+  evidencePath?: string | null;
+  evidenceSha256?: string | null;
 }
 
 export interface StudioEvidenceFinding {

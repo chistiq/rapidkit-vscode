@@ -9,7 +9,11 @@ import {
     StudioActionStatus,
     StudioEvidenceSummary,
 } from '../state/studioState';
-import { STUDIO_ACTION_COMMANDS, StudioActionCommand } from '../state/studioActions';
+import {
+    getStudioActionRegistryEntry,
+    STUDIO_ACTION_COMMANDS,
+} from '../state/studioActions';
+import type { StudioActionCommand } from '../state/studioActions';
 import { buildStudioPosture } from '../state/studioPosture';
 import { studioClass, postureToneClass } from '../styles/studioUi';
 import type { StudioPostureTone } from '../state/studioPosture';
@@ -70,18 +74,30 @@ export const CommandRibbon: React.FC<CommandRibbonProps> = ({
         policyGates,
         verifyGateBlockedReasons,
     });
+    const runningReason = actionRunning ? 'Another Studio action is running.' : undefined;
+    const verifyBlockedReason = verifyBlocked
+        ? verifyGateBlockedReasons[0] || 'Policy gates must pass before verify can run.'
+        : undefined;
     const actionResult = studioActionStatus?.result;
+    const proofEvent = actionResult?.proofEvent;
     const actionValue = studioActionStatus
-        ? actionResult?.summary || `${studioActionStatus.actionId}/${studioActionStatus.status}`
+        ? proofEvent?.summary ||
+          actionResult?.summary ||
+          `${studioActionStatus.actionTitle || studioActionStatus.actionId}/${studioActionStatus.status}`
         : status.action;
     const proofValue =
-        actionResult?.evidenceSha256
-            ? `sha256:${actionResult.evidenceSha256.slice(0, 12)}`
-            : actionResult?.evidencePath
+        proofEvent?.evidenceSha256 || actionResult?.evidenceSha256
+            ? `sha256:${(proofEvent?.evidenceSha256 || actionResult?.evidenceSha256 || '').slice(
+                  0,
+                  12,
+              )}`
+            : proofEvent?.evidencePath || actionResult?.evidencePath
                 ? 'evidence file'
-                : typeof actionResult?.score === 'number'
-                    ? `score ${actionResult.score}`
-                    : status.proof;
+                : typeof proofEvent?.score === 'number'
+                    ? `score ${proofEvent.score}`
+                    : typeof actionResult?.score === 'number'
+                        ? `score ${actionResult.score}`
+                        : status.proof;
 
     const isLiteView = displayMode === 'lite';
     const liteStatusLine = `${PHASE_LABELS[currentPhase]} · ${actionValue}${proofValue !== status.proof ? ` · ${proofValue}` : ''}`;
@@ -141,24 +157,24 @@ export const CommandRibbon: React.FC<CommandRibbonProps> = ({
 
             <div className="studio-command-ribbon__actions">
                 <RibbonButton
-                    label="Analyze"
                     command={STUDIO_ACTION_COMMANDS.runAnalyze}
                     disabled={actionRunning}
+                    disabledReason={runningReason}
                     primary
                     onExecute={onExecuteAction}
                 />
                 {!compactMode ? (
                     <RibbonButton
-                        label="Impact"
                         command={STUDIO_ACTION_COMMANDS.impactLens}
                         disabled={actionRunning}
+                        disabledReason={runningReason}
                         onExecute={onExecuteAction}
                     />
                 ) : null}
                 <RibbonButton
-                    label="Verify"
                     command={STUDIO_ACTION_COMMANDS.verifyGates}
                     disabled={actionRunning || verifyBlocked}
+                    disabledReason={runningReason || verifyBlockedReason}
                     onExecute={onExecuteAction}
                 />
             </div>
@@ -183,23 +199,28 @@ const RibbonMetric: React.FC<{
 );
 
 const RibbonButton: React.FC<{
-    label: string;
     command: StudioActionCommand;
     disabled?: boolean;
+    disabledReason?: string;
     primary?: boolean;
     onExecute: (command: StudioActionCommand) => void;
-}> = ({ label, command, disabled = false, primary = false, onExecute }) => (
-    <button
-        type="button"
-        disabled={disabled}
-        className={primary && !disabled ? studioClass.btnPrimary : studioClass.btnGhost}
-        onClick={() => {
-            if (!disabled) {
-                onExecute(command);
-            }
-        }}
-    >
-        <PlayCircle size={12} />
-        {label}
-    </button>
-);
+}> = ({ command, disabled = false, disabledReason, primary = false, onExecute }) => {
+    const action = getStudioActionRegistryEntry(command);
+    return (
+        <button
+            type="button"
+            disabled={disabled}
+            aria-disabled={disabled}
+            title={disabledReason || action.summary}
+            className={primary && !disabled ? studioClass.btnPrimary : studioClass.btnGhost}
+            onClick={() => {
+                if (!disabled) {
+                    onExecute(command);
+                }
+            }}
+        >
+            <PlayCircle size={12} />
+            {action.shortLabel}
+        </button>
+    );
+};

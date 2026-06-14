@@ -89,7 +89,11 @@ export function CommandActivityPanel({
                     onRunCommand(runAction.command);
                   }
                 }}
-                title={runAction ? `${card.summary} · Re-run ${runAction.label}` : card.summary}
+                title={
+                  runAction
+                    ? `${card.summary} · ${runAction.label} · ${runAction.scope} scope`
+                    : card.summary
+                }
               >
                 <Icon size={14} aria-hidden="true" />
                 <span className="command-activity-panel__card-copy">

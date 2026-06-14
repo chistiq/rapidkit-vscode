@@ -158,6 +158,26 @@ const IncidentStudioApp = () => {
         releasePosture: reportBackedState?.releasePosture,
         verifyGateBlockedReasons,
         postMessage: postHostMessage,
+        onStepResult: (result) => {
+            const proofEvent = result.proofEvent;
+            setIncomingActionStatus({
+                actionId: proofEvent?.actionId || `ship-loop-${result.stepId}`,
+                actionTitle: `Ship loop ${result.stepId}`,
+                actionSummary: result.summary || result.error,
+                status: result.success ? 'completed' : 'failed',
+                detail: result.error,
+                result: {
+                    summary: result.summary || result.error || `Ship loop ${result.stepId}`,
+                    proofEvent,
+                    executionTranscript: result.executionTranscript,
+                    commandCount: result.executionTranscript?.commandCount,
+                    failedCommandCount: result.executionTranscript?.failedCommandCount,
+                    evidencePath: proofEvent?.evidencePath,
+                    evidenceSha256: proofEvent?.evidenceSha256,
+                },
+                updatedAt: proofEvent?.generatedAt || new Date().toISOString(),
+            });
+        },
     });
     const sessionHostMessageHandlerRef = useRef<
         ((command: string, data?: unknown) => boolean) | null
@@ -257,6 +277,14 @@ const IncidentStudioApp = () => {
                             typeof message.data?.actionId === 'string'
                                 ? message.data.actionId
                                 : 'unknown',
+                        actionTitle:
+                            typeof message.data?.actionTitle === 'string'
+                                ? message.data.actionTitle
+                                : undefined,
+                        actionSummary:
+                            typeof message.data?.actionSummary === 'string'
+                                ? message.data.actionSummary
+                                : undefined,
                         status:
                             message.data?.status === 'completed' || message.data?.status === 'failed'
                                 ? message.data.status

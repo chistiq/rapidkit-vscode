@@ -1,6 +1,7 @@
 import { ExternalLink, Play, RotateCcw } from 'lucide-react';
 import type {
   DashboardEvidenceCard,
+  DashboardEvidenceCardId,
   DashboardEvidencePayload,
   DashboardEvidenceStatus,
 } from '@/lib/dashboardEvidence';
@@ -12,6 +13,7 @@ import {
 
 interface EvidenceOutcomePanelProps {
   evidence: DashboardEvidencePayload | null;
+  pendingCardIds?: DashboardEvidenceCardId[];
   onRunCommand: (command: string, data?: Record<string, unknown>) => void;
   onOpenIncidentStudio: (card: DashboardEvidenceCard) => void;
   onRevealArtifact?: (artifactPath: string) => void;
@@ -26,6 +28,7 @@ const statusChipClass: Record<DashboardEvidenceStatus, string> = {
 
 export function EvidenceOutcomePanel({
   evidence,
+  pendingCardIds = [],
   onRunCommand,
   onOpenIncidentStudio,
   onRevealArtifact,
@@ -48,6 +51,7 @@ export function EvidenceOutcomePanel({
           const runAction = resolveEvidenceCardCommandAction(card);
           const studioTarget = buildIncidentStudioEvidenceOpen(card);
           const blockers = card.blockers ?? [];
+          const isPending = pendingCardIds.includes(card.id);
           return (
             <article
               key={`${card.scope}-${card.id}`}
@@ -56,7 +60,7 @@ export function EvidenceOutcomePanel({
               <div className="evidence-outcome-panel__item-head">
                 <strong>{card.label}</strong>
                 <span className={statusChipClass[card.status]}>
-                  {evidenceStatusLabel(card.status)}
+                  {isPending ? 'Refreshing' : evidenceStatusLabel(card.status)}
                 </span>
               </div>
               <p className="evidence-outcome-panel__summary">{card.summary}</p>
@@ -73,10 +77,12 @@ export function EvidenceOutcomePanel({
                     type="button"
                     className="ws-btn"
                     onClick={() => onRunCommand(runAction.command)}
-                    title={`Re-run ${runAction.label}`}
+                    disabled={isPending}
+                    aria-busy={isPending || undefined}
+                    title={`${runAction.label} · ${runAction.scope} scope`}
                   >
                     <RotateCcw size={12} aria-hidden="true" />
-                    Re-run
+                    {isPending ? 'Running' : runAction.label}
                   </button>
                 ) : null}
                 {card.artifactPath && onRevealArtifact ? (
@@ -96,7 +102,7 @@ export function EvidenceOutcomePanel({
                     onClick={() => onOpenIncidentStudio(card)}
                   >
                     <Play size={12} aria-hidden="true" />
-                    Open in Incident Studio
+                    Open in Studio
                   </button>
                 ) : null}
               </div>

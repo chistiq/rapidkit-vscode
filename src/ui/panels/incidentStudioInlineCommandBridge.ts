@@ -6,6 +6,7 @@ import { WorkspaceUsageTracker } from '../../utils/workspaceUsageTracker';
 import { toPinnedRapidkitExecutionCommand } from '../../utils/platformCapabilities';
 import { resolveStudioMutationBlockReason } from './incidentStudioMutationGate';
 import type { IncidentStudioTelemetryGateSlice } from './incidentStudioPolicyGateMapper';
+import type { IncidentStudioExecutionTranscript } from './incidentStudioSessionPersistenceBridge';
 
 export type RunIncidentInlineCommandOptions = {
   command: string;
@@ -22,6 +23,7 @@ export type RunIncidentInlineCommandResult = {
   success: boolean;
   output?: string;
   error?: string;
+  executionTranscript?: IncidentStudioExecutionTranscript;
 };
 
 const WORKSPACE_SCOPED_RAPIDKIT_COMMAND =
@@ -158,11 +160,64 @@ export async function runIncidentInlineCommand(
   options: RunIncidentInlineCommandOptions
 ): Promise<RunIncidentInlineCommandResult> {
   const inlineCommand = options.command.trim();
+  const startedAt = new Date().toISOString();
+  const startedMs = Date.now();
+  const buildTranscript = (input: {
+    success: boolean;
+    exitCode?: number | null;
+    cwd?: string;
+    output?: string;
+    error?: string;
+  }): IncidentStudioExecutionTranscript => {
+    const completedAt = new Date().toISOString();
+    const durationMs = Math.max(0, Date.now() - startedMs);
+    const status = input.success ? ('completed' as const) : ('failed' as const);
+    const stepStatus = input.success ? ('passed' as const) : ('failed' as const);
+    const outputPreview = input.output?.trim()
+      ? input.output.trim().split('\n').slice(0, 12).join('\n').slice(0, 1800)
+      : undefined;
+    const stderrPreview = input.error?.trim()
+      ? input.error.trim().split('\n').slice(0, 12).join('\n').slice(0, 1800)
+      : undefined;
+
+    return {
+      schemaVersion: 'workspai.studio.execution-transcript.v1',
+      id: `${options.actionId || 'inline-command'}-${completedAt.replace(/[:.]/g, '-')}`,
+      actionId: options.actionId || 'inline-command',
+      source: 'inline-command',
+      title: 'Inline command',
+      status,
+      startedAt,
+      completedAt,
+      durationMs,
+      commandCount: 1,
+      failedCommandCount: input.success ? 0 : 1,
+      steps: [
+        {
+          id: `${options.actionId || 'inline-command'}-step-1`,
+          command: inlineCommand,
+          status: stepStatus,
+          exitCode: typeof input.exitCode === 'number' ? input.exitCode : (input.exitCode ?? null),
+          startedAt,
+          completedAt,
+          durationMs,
+          cwd: input.cwd,
+          stdoutPreview: input.success ? outputPreview : undefined,
+          stderrPreview: input.success ? undefined : stderrPreview,
+          failureReason: input.success ? undefined : stderrPreview || input.error,
+        },
+      ],
+    };
+  };
   if (!inlineCommand) {
     return {
       command: inlineCommand,
       success: false,
       error: 'No command provided to run.',
+      executionTranscript: buildTranscript({
+        success: false,
+        error: 'No command provided to run.',
+      }),
     };
   }
   if (!options.workspacePath.trim()) {
@@ -170,6 +225,10 @@ export async function runIncidentInlineCommand(
       command: inlineCommand,
       success: false,
       error: 'No workspace selected. Open a workspace first.',
+      executionTranscript: buildTranscript({
+        success: false,
+        error: 'No workspace selected. Open a workspace first.',
+      }),
     };
   }
 
@@ -265,6 +324,13 @@ export async function runIncidentInlineCommand(
       success,
       output: success ? truncatedOutput : undefined,
       error: !success ? `Exit ${result.exitCode}: ${truncatedOutput}` : undefined,
+      executionTranscript: buildTranscript({
+        success,
+        exitCode: result.exitCode,
+        cwd: effectiveCwd,
+        output: success ? truncatedOutput : undefined,
+        error: !success ? `Exit ${result.exitCode}: ${truncatedOutput}` : undefined,
+      }),
     };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -296,6 +362,11 @@ export async function runIncidentInlineCommand(
       command: inlineCommand,
       success: false,
       error: errorMsg,
+      executionTranscript: buildTranscript({
+        success: false,
+        cwd: workspacePath,
+        error: errorMsg,
+      }),
     };
   }
 }

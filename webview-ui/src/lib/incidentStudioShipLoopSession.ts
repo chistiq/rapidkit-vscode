@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 import type {
+  StudioExecutionTranscript,
   PolicyGateState,
   ReleaseGatePosture,
 } from '@/components/StudioRedesign/state/studioState';
@@ -25,6 +26,20 @@ export type ShipLoopStepResult = {
   success: boolean;
   summary?: string;
   error?: string;
+  proofEvent?: {
+    schemaVersion: 'workspai.studio.proof-event.v1';
+    actionId: string;
+    status: 'completed' | 'failed';
+    summary: string;
+    generatedAt: string;
+    evidencePath?: string | null;
+    evidenceSha256?: string | null;
+    gatePassed?: boolean;
+    executionTranscriptId?: string;
+    durationMs?: number;
+    source: 'ship-loop';
+  };
+  executionTranscript?: StudioExecutionTranscript;
 };
 
 type UseIncidentStudioShipLoopOptions = {

@@ -26,6 +26,8 @@ import type { EnterpriseShipLoopView, ShipLoopStepId } from '../../../lib/incide
 import type { EnterpriseObservabilityView } from '../../../lib/incidentStudioObservabilityView';
 import { formatObservabilityPercent } from '../../../lib/incidentStudioObservabilityView';
 import type { PhaseShipGuidance } from '../../../lib/incidentStudioPhaseShipGuidance';
+import { resolveStudioAIActionOperationBlockReason } from '../../../lib/incidentStudioAIActionGate';
+import type { StudioAIActionOperation } from '../../../lib/incidentStudioAIActionGate';
 import { ShipLoopSection } from './ShipLoopSection';
 import { CollapsibleSection } from './CollapsibleSection';
 
@@ -375,7 +377,29 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
         );
     };
 
-    const handleAIActionOperation = (operation: 'apply' | 'verify' | 'rollback') => {
+    const resolveAIActionButtonBlockReason = (operation: StudioAIActionOperation): string | null => {
+        const contractReason = resolveStudioAIActionOperationBlockReason(operation, aiActionContract);
+        if (contractReason) {
+            return contractReason;
+        }
+        if ((operation === 'apply' || operation === 'rollback') && !actionApprovalConfirmed) {
+            return 'Explicit approval is required before mutating the workspace.';
+        }
+        return null;
+    };
+    const applyBlockReason = resolveAIActionButtonBlockReason('apply');
+    const verifyBlockReason = resolveAIActionButtonBlockReason('verify');
+    const rollbackBlockReason = resolveAIActionButtonBlockReason('rollback');
+
+    const handleAIActionOperation = (operation: StudioAIActionOperation) => {
+        const blockReason = resolveAIActionButtonBlockReason(operation);
+        if (blockReason) {
+            postApprovalAuditEvent(
+                `${operation}-requested` as StudioApprovalAuditOperation,
+                `${operation} blocked from Risk & Approval Gate: ${blockReason}`
+            );
+            return;
+        }
         postApprovalAuditEvent(
             `${operation}-requested` as StudioApprovalAuditOperation,
             `${operation} requested from Risk & Approval Gate.`
@@ -829,17 +853,20 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
                             <div className={studioClass.traceGrid3}>
                                 <AIActionButton
                                     label="Apply"
-                                    disabled={!actionApprovalGate.canApplyAfterApproval || !actionApprovalConfirmed}
+                                    disabled={!!applyBlockReason}
+                                    disabledReason={applyBlockReason}
                                     onClick={() => handleAIActionOperation('apply')}
                                 />
                                 <AIActionButton
                                     label="Verify"
-                                    disabled={!actionApprovalGate.canVerify}
+                                    disabled={!!verifyBlockReason}
+                                    disabledReason={verifyBlockReason}
                                     onClick={() => handleAIActionOperation('verify')}
                                 />
                                 <AIActionButton
                                     label="Rollback"
-                                    disabled={!actionApprovalGate.canRollbackAfterApproval || !actionApprovalConfirmed}
+                                    disabled={!!rollbackBlockReason}
+                                    disabledReason={rollbackBlockReason}
                                     onClick={() => handleAIActionOperation('rollback')}
                                 />
                             </div>
@@ -1138,11 +1165,14 @@ const TraceabilityTile: React.FC<{ label: string; value: string }> = ({ label, v
 const AIActionButton: React.FC<{
     label: string;
     disabled: boolean;
+    disabledReason?: string | null;
     onClick: () => void;
-}> = ({ label, disabled, onClick }) => (
+}> = ({ label, disabled, disabledReason, onClick }) => (
     <button
         type="button"
         disabled={disabled}
+        aria-disabled={disabled}
+        title={disabledReason || label}
         onClick={onClick}
         className={disabled ? studioClass.btnGhost : studioClass.btnPrimary}
     >

@@ -4,6 +4,7 @@ import {
   type IncidentCliActionEntry,
 } from './incidentCliActionMatrix';
 import type { IncidentStudioTelemetryGateSlice } from './incidentStudioPolicyGateMapper';
+import type { IncidentUserMode } from './incidentStudioPreferences';
 import { resolveStudioMutationBlockReason } from './incidentStudioMutationGate';
 
 export type IncidentCliSurfaceDispatchInput = {
@@ -11,7 +12,7 @@ export type IncidentCliSurfaceDispatchInput = {
   cliActionId?: string;
   workspacePath?: string;
   hasProjectSelected?: boolean;
-  userMode?: 'guided' | 'expert';
+  userMode?: IncidentUserMode;
   telemetry?: IncidentStudioTelemetryGateSlice | null;
 };
 

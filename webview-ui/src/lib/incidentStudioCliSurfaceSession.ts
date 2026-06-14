@@ -6,6 +6,7 @@ import {
   canDispatchIncidentCliSurface,
   resolveIncidentCliSurfaceBlockReason,
 } from '@/lib/incidentStudioCliSurfaceGate';
+import type { IncidentUserMode } from '@/lib/incidentStudioPreferences';
 
 export type IncidentCliSurfaceResult = {
   command: string;
@@ -24,7 +25,7 @@ type UseIncidentStudioCliSurfaceOptions = {
   workspacePath: string;
   workspaceName?: string;
   projectSelection?: IncidentProjectSelection | null;
-  userMode?: 'guided' | 'expert';
+  userMode?: IncidentUserMode;
   telemetry?: IncidentStudioTelemetryGateSlice | null;
   postMessage: (command: string, data?: unknown) => void;
   onResult?: (result: IncidentCliSurfaceResult) => void;

@@ -8,7 +8,9 @@ import {
 } from '../core/dashboardCommandContracts';
 import {
   DASHBOARD_COMMAND_REGISTRY,
+  getDashboardCommandAffectedEvidenceCards,
   getDashboardCommandMeta,
+  shouldRefreshDashboardEvidenceAfterCommand,
   shouldTrackDashboardCommand,
 } from '../../webview-ui/src/lib/dashboardCommandRegistry';
 import { buildDashboardDispatchMessages } from '../../webview-ui/src/lib/dashboardDispatch';
@@ -40,10 +42,26 @@ describe('dashboardCommandRegistry', () => {
   it('registers every dashboard command dispatched from App and next-step builders', () => {
     const appSource = read('webview-ui/src/App.tsx');
     const nextStepsSource = read('webview-ui/src/lib/dashboardNextSteps.ts');
+    const enterpriseFlowSource = read('webview-ui/src/components/EnterpriseDashboardFlow.tsx');
     const appCommands = uniqueMatches(appSource, /dispatchDashboardCommand\('([^']+)'/g);
+    const appHandlerCommands = uniqueMatches(appSource, /handleDashboardCommand\('([^']+)'/g);
     const nextStepCommands = uniqueMatches(nextStepsSource, /command:\s*'([^']+)'/g);
+    const enterpriseFlowCommands = uniqueMatches(
+      enterpriseFlowSource,
+      /runWorkspaceAction\('([^']+)'/g
+    );
+    const enterpriseFlowDirectCommands = uniqueMatches(
+      enterpriseFlowSource,
+      /onRunWorkspaceCommand\('([^']+)'/g
+    );
 
-    for (const command of [...appCommands, ...nextStepCommands]) {
+    for (const command of [
+      ...appCommands,
+      ...appHandlerCommands,
+      ...nextStepCommands,
+      ...enterpriseFlowCommands,
+      ...enterpriseFlowDirectCommands,
+    ]) {
       expect(getDashboardCommandMeta(command), command).toBeDefined();
     }
   });
@@ -59,6 +77,15 @@ describe('dashboardCommandRegistry', () => {
     }
   });
 
+  it('keeps evidence refresh payload-aware after command dispatch', () => {
+    const appSource = read('webview-ui/src/App.tsx');
+
+    expect(appSource).toContain('requestDashboardEvidenceRefresh(context)');
+    expect(appSource).toContain('scheduleDashboardEvidenceRefresh(payload)');
+    expect(appSource).toContain("typeof context?.projectPath === 'string'");
+    expect(appSource).toContain("typeof context?.path === 'string'");
+  });
+
   it('keeps webview command metadata aligned with host command contracts', () => {
     for (const [command, meta] of Object.entries(DASHBOARD_COMMAND_REGISTRY)) {
       const contract = resolveDashboardCommandContract(command);
@@ -66,6 +93,10 @@ describe('dashboardCommandRegistry', () => {
       expect(contract?.label, command).toBe(meta.label);
       expect(contract?.scope, command).toBe(meta.scope);
       expect(contract?.trackActivity, command).toBe(meta.trackActivity);
+    }
+
+    for (const command of Object.keys(DASHBOARD_COMMAND_CONTRACTS)) {
+      expect(getDashboardCommandMeta(command), command).toBeDefined();
     }
   });
 
@@ -114,6 +145,54 @@ describe('dashboardCommandRegistry', () => {
       "await this._executeDashboardContractCommand('workspaceAnalyze', message.data);"
     );
     expect(welcomePanelSource).toContain(
+      "await this._executeDashboardContractCommand('workspaceContractGraph', message.data);"
+    );
+    expect(welcomePanelSource).toContain(
+      "await this._executeDashboardContractCommand('workspaceSync', message.data);"
+    );
+    expect(welcomePanelSource).toContain(
+      "await this._executeDashboardContractCommand('workspaceFoundationEnsure', message.data);"
+    );
+    expect(welcomePanelSource).toContain(
+      "await this._executeDashboardContractCommand('workspaceContractInspect', message.data);"
+    );
+    expect(welcomePanelSource).toContain(
+      "await this._executeDashboardContractCommand('workspaceContractVerify', message.data);"
+    );
+    expect(welcomePanelSource).toContain(
+      "await this._executeDashboardContractCommand('workspaceRunTest', message.data);"
+    );
+    expect(welcomePanelSource).toContain(
+      "await this._executeDashboardContractCommand('workspaceRunBuild', message.data);"
+    );
+    expect(welcomePanelSource).toContain(
+      "await this._executeDashboardContractCommand('workspaceRunInit', message.data);"
+    );
+    expect(welcomePanelSource).toContain(
+      "await this._executeDashboardContractCommand('workspaceRunStart', message.data);"
+    );
+    expect(welcomePanelSource).toContain(
+      "await this._executeDashboardContractCommand('workspaceSnapshot', message.data);"
+    );
+    expect(welcomePanelSource).toContain(
+      "await this._executeDashboardContractCommand('workspaceSnapshotList', message.data);"
+    );
+    expect(welcomePanelSource).toContain(
+      "await this._executeDashboardContractCommand('workspaceSnapshotInspect', message.data);"
+    );
+    expect(welcomePanelSource).toContain(
+      "await this._executeDashboardContractCommand('workspaceSnapshotRestore', message.data);"
+    );
+    expect(welcomePanelSource).toContain(
+      "await this._executeDashboardContractCommand('workspaceContractInit', message.data);"
+    );
+    expect(welcomePanelSource).toContain(
+      "await this._executeDashboardContractCommand('workspaceArchiveInspect', message.data);"
+    );
+    expect(welcomePanelSource).toContain(
+      "await this._executeDashboardContractCommand('workspaceTerminal', message.data);"
+    );
+    expect(welcomePanelSource).toContain(
       "await this._executeDashboardContractCommand('projectTest', message.data);"
     );
     expect(welcomePanelSource).toContain(
@@ -145,11 +224,124 @@ describe('dashboardCommandRegistry', () => {
       'workspai.aiForProject',
       'workspai.aiReleaseReadinessCommander',
       'workspai.aiChangeImpactLite',
+      'workspai.workspaceContractInspect',
+      'workspai.workspaceContractVerify',
+      'workspai.workspaceRunInit',
+      'workspai.workspaceRunStart',
+      'workspai.workspaceSnapshot',
+      'workspai.workspaceSnapshotList',
+      'workspai.workspaceSnapshotInspect',
+      'workspai.workspaceSnapshotRestore',
+      'workspai.workspaceContractInit',
+      'workspai.workspaceArchiveInspect',
     ]) {
       expect(projectActionSwitchSource).not.toContain(
         `await vscode.commands.executeCommand('${directCommand}'`
       );
     }
+  });
+
+  it('keeps dashboard project scope stable across workspace refreshes', () => {
+    const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
+
+    expect(welcomePanelSource).toContain('workspacePath?: string;');
+    expect(welcomePanelSource).toContain('workspaceName?: string;');
+    expect(welcomePanelSource).toContain('selectedProject?.workspacePath');
+    expect(welcomePanelSource).toContain('WelcomePanel._selectedProject.workspacePath ||');
+    expect(welcomePanelSource).toContain('if (!selectedWorkspace && !fallbackWorkspacePath) {');
+    expect(welcomePanelSource).toContain(
+      'isWorkspacePathAncestor(workspacePath, selectedProject.path)'
+    );
+    expect(welcomePanelSource).toContain('normalizedContext?.projectPath');
+    expect(welcomePanelSource).toContain("typeof message.data?.projectPath === 'string'");
+    expect(welcomePanelSource).toContain("typeof message.data?.projectName === 'string'");
+    expect(welcomePanelSource).toContain("typeof message.data?.reportPath === 'string'");
+    expect(welcomePanelSource).not.toContain(
+      'selectedProject.path.startsWith(`${workspacePath}${path.sep}`)'
+    );
+    expect(welcomePanelSource).not.toContain('workspacePath = WelcomePanel._selectedProject.path;');
+
+    const appSource = read('webview-ui/src/App.tsx');
+    expect(appSource).toContain('const projectCommandPayload = () => ({');
+    expect(appSource).toContain("command.startsWith('project')");
+    expect(appSource).toContain(
+      'projectPath: selectedProjectForAnalysis?.path || workspaceStatus.projectPath'
+    );
+    expect(appSource).toContain(
+      'projectName: selectedProjectForAnalysis?.name || workspaceStatus.projectName'
+    );
+    expect(appSource).toContain('contextProjectPath || selectedProjectForAnalysis?.path');
+    expect(appSource).toContain('contextProjectName || selectedProjectForAnalysis?.name');
+    expect(appSource).toContain("typeof context?.projectPath === 'string'");
+    expect(appSource).toContain("typeof context?.projectName === 'string'");
+    expect(appSource).toContain('projectPath: selectedProjectForAnalysisRef.current?.path');
+    expect(appSource).toContain('projectName: selectedProjectForAnalysisRef.current?.name');
+  });
+
+  it('keeps user-facing dashboard actions on the command dispatcher', () => {
+    const appSource = read('webview-ui/src/App.tsx');
+    const overviewStart = appSource.indexOf('<WorkspaceOverview');
+    const overviewEnd = appSource.indexOf('<DashboardOverviewQuickNav');
+    expect(overviewStart).toBeGreaterThanOrEqual(0);
+    expect(overviewEnd).toBeGreaterThan(overviewStart);
+    const overviewSource = appSource.slice(overviewStart, overviewEnd);
+
+    expect(overviewSource).toContain("handleDashboardCommand('importWorkspace')");
+    expect(overviewSource).not.toContain("vscode.postMessage('importWorkspace')");
+
+    const recentWorkspacesStart = appSource.indexOf('<RecentWorkspaces');
+    const recentWorkspacesEnd = appSource.indexOf('</div>', recentWorkspacesStart);
+    expect(recentWorkspacesStart).toBeGreaterThanOrEqual(0);
+    expect(recentWorkspacesEnd).toBeGreaterThan(recentWorkspacesStart);
+    const recentWorkspacesSource = appSource.slice(recentWorkspacesStart, recentWorkspacesEnd);
+
+    expect(recentWorkspacesSource).toContain("dispatchDashboardCommand('checkWorkspaceHealth'");
+    expect(recentWorkspacesSource).toContain('name: workspace.name');
+  });
+
+  it('surfaces pending dashboard command state across operate and release cards', () => {
+    const actionTileSource = read('webview-ui/src/components/ActionTile.tsx');
+    const appSource = read('webview-ui/src/App.tsx');
+    const operateSource = read('webview-ui/src/components/DashboardOperateSection.tsx');
+    const governanceSource = read('webview-ui/src/components/WorkspaceGovernancePanel.tsx');
+    const enterpriseFlowSource = read('webview-ui/src/components/EnterpriseDashboardFlow.tsx');
+    const evidenceSource = read('webview-ui/src/components/DashboardEvidenceSection.tsx');
+    const releaseHubSource = read('webview-ui/src/components/ReleaseHub.tsx');
+
+    expect(actionTileSource).toContain('pending?: boolean;');
+    expect(actionTileSource).toContain('aria-busy={pending || undefined}');
+    expect(appSource).toContain('pendingCardIds={pendingEvidenceCardIds}');
+    expect(appSource).toContain('const reconcilePendingEvidenceCards = useCallback');
+    expect(appSource).toContain(
+      "card.status !== 'missing' || card.generatedAt || card.artifactPath"
+    );
+    expect(appSource).toContain('reconcilePendingEvidenceCards(message.data ?? null)');
+    expect(operateSource).toContain('pendingCardIds?: DashboardEvidenceCardId[];');
+    expect(operateSource).toContain('pendingCardIds={pendingCardIds}');
+
+    for (const cardId of [
+      'bootstrap',
+      'doctor',
+      'readiness',
+      'workspaceSync',
+      'foundation',
+      'contract',
+      'mirror',
+      'cache',
+      'policy',
+      'infra',
+    ]) {
+      expect(governanceSource, cardId).toContain(`isPending('${cardId}')`);
+    }
+
+    for (const cardId of ['doctor', 'analyze', 'autopilot', 'archive', 'share', 'snapshot']) {
+      expect(enterpriseFlowSource, cardId).toContain(`isPending('${cardId}')`);
+    }
+
+    expect(evidenceSource).toContain('pendingCardIds={pendingCardIds}');
+    expect(releaseHubSource).toContain('pendingCardIds?: DashboardEvidenceCardId[];');
+    expect(releaseHubSource).toContain("stage.pending ? 'Running' : stage.actionLabel");
+    expect(releaseHubSource).toContain('disabled={stage.pending ||');
   });
 
   it('declares payload adapters for project commands with richer host context', () => {
@@ -175,7 +367,10 @@ describe('dashboardCommandRegistry', () => {
       { command: 'refreshModules', data: undefined },
     ]);
     expect(buildDashboardDispatchMessages('workspaceAnalyze', { path: '/repo' })).toEqual([
-      { command: 'trackDashboardCommand', data: { command: 'workspaceAnalyze' } },
+      {
+        command: 'trackDashboardCommand',
+        data: { command: 'workspaceAnalyze', affectedEvidenceCardIds: ['analyze'] },
+      },
       { command: 'workspaceAnalyze', data: { path: '/repo' } },
     ]);
     expect(shouldTrackDashboardCommand('workspaceAnalyze')).toBe(true);
@@ -224,8 +419,11 @@ describe('dashboardCommandRegistry', () => {
   });
 
   it('resolves evidence card CTAs through registry-backed command actions', () => {
+    expect(EVIDENCE_CARD_COMMANDS.archive).toBe('exportWorkspace');
+
     for (const [cardId, command] of Object.entries(EVIDENCE_CARD_COMMANDS)) {
       const meta = getDashboardCommandMeta(command);
+      const affectedCards = getDashboardCommandAffectedEvidenceCards(command);
       const action = resolveEvidenceCardCommandAction({
         id: cardId as keyof typeof EVIDENCE_CARD_COMMANDS,
         label: cardId,
@@ -235,6 +433,8 @@ describe('dashboardCommandRegistry', () => {
       });
 
       expect(meta, cardId).toBeDefined();
+      expect(affectedCards, cardId).toContain(cardId);
+      expect(shouldRefreshDashboardEvidenceAfterCommand(command), cardId).toBe(true);
       expect(action, cardId).toMatchObject({
         command,
         label: meta?.label,
