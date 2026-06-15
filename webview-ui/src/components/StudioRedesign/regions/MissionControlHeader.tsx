@@ -15,7 +15,6 @@ import {
     UserMode,
 } from '../state/studioState';
 import { StudioActionCommand } from '../state/studioActions';
-import { ThemeMode } from '../styles/themeSystem';
 import { studioClass } from '../styles/studioUi';
 import type { LiteReleaseState } from '../../../lib/incidentStudioLiteMode';
 import type { IncidentStudioDisplayMode } from '../../../lib/incidentStudioPreferences';
@@ -28,7 +27,6 @@ export interface MissionControlHeaderProps {
     currentPhase: IncidentPhase;
     policyGates: PolicyGateState;
     userMode: UserMode;
-    themeMode: ThemeMode;
     scopeType: ScopeType;
     workspaceName?: string;
     releasePosture: ReleaseGatePosture;
@@ -44,7 +42,6 @@ export interface MissionControlHeaderProps {
     onDisplayModeChange?: (mode: IncidentStudioDisplayMode) => void;
     onTelemetryRefresh?: () => void;
     onUserModeChange: (mode: UserMode) => void;
-    onThemeModeChange: (mode: ThemeMode) => void;
     onScopeChange: (scope: ScopeType) => void;
     onExecuteAction: (command: StudioActionCommand) => void;
     verifyGateBlockedReasons?: string[];
@@ -61,7 +58,6 @@ export const MissionControlHeader: React.FC<MissionControlHeaderProps> = ({
     currentPhase,
     policyGates,
     userMode,
-    themeMode,
     scopeType,
     workspaceName,
     releasePosture,
@@ -77,7 +73,6 @@ export const MissionControlHeader: React.FC<MissionControlHeaderProps> = ({
     onDisplayModeChange,
     onTelemetryRefresh,
     onUserModeChange,
-    onThemeModeChange,
     onScopeChange,
     onExecuteAction,
     verifyGateBlockedReasons = [],
@@ -104,7 +99,6 @@ export const MissionControlHeader: React.FC<MissionControlHeaderProps> = ({
                 currentPhase={currentPhase}
                 policyGates={policyGates}
                 userMode={userMode}
-                themeMode={themeMode}
                 scopeType={scopeType}
                 workspaceName={workspaceName}
                 releasePosture={releasePosture}
@@ -117,7 +111,6 @@ export const MissionControlHeader: React.FC<MissionControlHeaderProps> = ({
                 isTelemetryRefreshing={isTelemetryRefreshing}
                 onTelemetryRefresh={onTelemetryRefresh}
                 onUserModeChange={onUserModeChange}
-                onThemeModeChange={onThemeModeChange}
                 onScopeChange={onScopeChange}
                 hasProjectSelected={hasProjectSelected}
                 selectedProjectPath={selectedProjectPath}

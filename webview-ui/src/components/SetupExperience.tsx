@@ -224,22 +224,23 @@ function ProgressRing({ value, max, loading = false, compact = false }: { value:
         <div className={'spc-ring-wrap' + (compact ? ' spc-ring-wrap--compact' : '') + (loading ? ' spc-ring-wrap--loading' : '')}>
             <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden={true}>
                 <circle cx={center} cy={center} r={r} fill="none" strokeWidth="5" className="spc-ring-track" />
-                <circle
-                    cx={center} cy={center} r={r} fill="none" strokeWidth="5"
-                    strokeDasharray={loading ? `${circ * 0.28} ${circ}` : circ}
-                    strokeDashoffset={loading ? 0 : offset}
-                    strokeLinecap="round"
+                <g
+                    className={'spc-ring-arc-rotator' + (loading ? ' is-loading' : '')}
                     transform={`rotate(-90 ${center} ${center})`}
-                    className={'spc-ring-arc' + (allDone ? ' done' : '') + (loading ? ' is-loading' : '')}
-                    style={{ transition: loading ? undefined : 'stroke-dashoffset 0.7s cubic-bezier(0.4,0,0.2,1)' }}
-                />
+                >
+                    <circle
+                        cx={center} cy={center} r={r} fill="none" strokeWidth="5"
+                        strokeDasharray={loading ? `${circ * 0.28} ${circ}` : circ}
+                        strokeDashoffset={loading ? 0 : offset}
+                        strokeLinecap="round"
+                        className={'spc-ring-arc' + (allDone ? ' done' : '')}
+                        style={{ transition: loading ? undefined : 'stroke-dashoffset 0.7s cubic-bezier(0.4,0,0.2,1)' }}
+                    />
+                </g>
             </svg>
             <div className="spc-ring-label">
                 {loading ? (
-                    <>
-                        <Loader2 size={compact ? 16 : 20} className="workspai-spinner spc-ring-spinner" />
-                        <span className="spc-ring-caption">Scanning</span>
-                    </>
+                    <span className="spc-ring-caption spc-ring-caption--loading">Scanning</span>
                 ) : (
                     <>
                         <span className={'spc-ring-value' + (allDone ? ' done' : '')}>{value}/{max}</span>

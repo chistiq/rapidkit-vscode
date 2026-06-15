@@ -2241,9 +2241,25 @@
   width: 64px;
 }
 
-.spc-ring-wrap--loading .spc-ring-arc.is-loading {
+.spc-ring-wrap--compact {
+  width: 72px;
+  height: 72px;
+}
+
+.spc-ring-wrap--loading .spc-ring-arc-rotator.is-loading {
   animation: ws-setup-ring-spin 1.1s linear infinite;
+  transform-box: fill-box;
   transform-origin: center;
+}
+
+.spc-ring-wrap--loading .spc-ring-label {
+  gap: 0;
+}
+
+.spc-ring-caption--loading {
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
 }
 
 @keyframes ws-setup-shimmer {

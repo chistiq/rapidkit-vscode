@@ -2,12 +2,22 @@ import * as vscode from 'vscode';
 
 import { resetModelSelectionCache } from './aiModelSelection';
 
+export type WorkspaiThemeMode = 'auto' | 'light' | 'dark';
+
 export interface WorkspaiSettingsSnapshot {
   preferredModel: string;
   aiStreamTimeoutMs: number;
   aiProvider: 'vscode-lm' | 'openai-compatible';
   customAIBaseUrl: string;
   customAIModel: string;
+  themeMode: WorkspaiThemeMode;
+}
+
+function normalizeThemeMode(value: unknown): WorkspaiThemeMode {
+  if (value === 'light' || value === 'dark') {
+    return value;
+  }
+  return 'auto';
 }
 
 export function readWorkspaiSettings(): WorkspaiSettingsSnapshot {
@@ -17,6 +27,7 @@ export function readWorkspaiSettings(): WorkspaiSettingsSnapshot {
   const aiProvider = config.get<string>('aiProvider', 'vscode-lm');
   const customAIBaseUrl = config.get<string>('customAIBaseUrl', '');
   const customAIModel = config.get<string>('customAIModel', '');
+  const themeMode = config.get<string>('themeMode', 'auto');
 
   return {
     preferredModel:
@@ -36,7 +47,16 @@ export function readWorkspaiSettings(): WorkspaiSettingsSnapshot {
       typeof customAIModel === 'string' && customAIModel.trim().length > 0
         ? customAIModel.trim()
         : '',
+    themeMode: normalizeThemeMode(themeMode),
   };
+}
+
+export async function setWorkspaiThemeMode(mode: string): Promise<WorkspaiThemeMode> {
+  const normalized = normalizeThemeMode(mode);
+  await vscode.workspace
+    .getConfiguration('workspai')
+    .update('themeMode', normalized, vscode.ConfigurationTarget.Global);
+  return normalized;
 }
 
 export async function setWorkspaiPreferredModel(modelId: string): Promise<string> {

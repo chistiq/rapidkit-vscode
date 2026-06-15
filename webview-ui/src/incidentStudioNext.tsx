@@ -2,6 +2,10 @@ import { StrictMode, useState, useEffect, useCallback, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { IncidentStudioVNext } from '@/components/StudioRedesign';
 import { WorkspaiThemeProvider } from '@/components/WorkspaiThemeProvider';
+import {
+    normalizeThemeMode,
+    type ThemeMode,
+} from '@/components/StudioRedesign/styles/themeSystem';
 import type {
     AIActionContractView,
     AIActionRegistryView,
@@ -117,6 +121,7 @@ const IncidentStudioApp = () => {
     const [preferredModelId, setPreferredModelId] = useState<string>('auto');
     const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
     const [modelsLoading, setModelsLoading] = useState(false);
+    const [themeMode, setThemeMode] = useState<ThemeMode>('auto');
     const postHostMessage = useCallback((command: string, data?: unknown) => {
         vscode.postMessage(command, data);
     }, []);
@@ -374,6 +379,7 @@ const IncidentStudioApp = () => {
                     setPreferredModelId(preferredModel);
                     setAvailableModels(models);
                     setModelsLoading(false);
+                    setThemeMode(normalizeThemeMode(message.data?.themeMode));
                     setSelectedModelId(preferredModel === 'auto' ? null : preferredModel);
                     break;
                 }
@@ -678,6 +684,7 @@ const IncidentStudioApp = () => {
     };
 
     return (
+        <WorkspaiThemeProvider themeMode={themeMode}>
         <StrictMode>
             {/* Report Missing Banner */}
             {!reportExists && workspacePath ? (
@@ -763,15 +770,12 @@ const IncidentStudioApp = () => {
                 onExecuteChatBrainAction={handleChatBrainExecuteAction}
             />
         </StrictMode>
+        </WorkspaiThemeProvider>
     );
 };
 
 const root = document.getElementById('root');
 
 if (root) {
-    createRoot(root).render(
-        <WorkspaiThemeProvider>
-            <IncidentStudioApp />
-        </WorkspaiThemeProvider>,
-    );
+    createRoot(root).render(<IncidentStudioApp />);
 }

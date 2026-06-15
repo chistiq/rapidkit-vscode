@@ -7,7 +7,6 @@ import {
     ScopeType,
     UserMode,
 } from '../state/studioState';
-import { ThemeMode } from '../styles/themeSystem';
 import { studioClass, releasePostureToneClass } from '../styles/studioUi';
 import type { IncidentStudioDisplayMode } from '../../../lib/incidentStudioPreferences';
 import type { WorkspaceProjectOption } from '../../../lib/incidentStudioAnalysisScope';
@@ -33,7 +32,6 @@ interface TopBarProps {
     currentPhase: IncidentPhase;
     policyGates: PolicyGateState;
     userMode: UserMode;
-    themeMode: ThemeMode;
     scopeType: ScopeType;
     workspaceName?: string;
     releasePosture: ReleaseGatePosture;
@@ -47,7 +45,6 @@ interface TopBarProps {
     isTelemetryRefreshing?: boolean;
     onTelemetryRefresh?: () => void;
     onUserModeChange: (mode: UserMode) => void;
-    onThemeModeChange: (mode: ThemeMode) => void;
     onScopeChange: (scope: ScopeType) => void;
     hasProjectSelected?: boolean;
     selectedProjectPath?: string | null;
@@ -59,7 +56,6 @@ interface TopBarProps {
 export const TopBar: React.FC<TopBarProps> = ({
     policyGates,
     userMode,
-    themeMode,
     scopeType,
     workspaceName,
     releasePosture,
@@ -72,7 +68,6 @@ export const TopBar: React.FC<TopBarProps> = ({
     isTelemetryRefreshing = false,
     onTelemetryRefresh,
     onUserModeChange,
-    onThemeModeChange,
     onScopeChange,
     hasProjectSelected = false,
     selectedProjectPath = null,
@@ -80,9 +75,6 @@ export const TopBar: React.FC<TopBarProps> = ({
     availableProjects = [],
     onSelectProject,
 }) => {
-    void themeMode;
-    void onThemeModeChange;
-
     const [isScopeOpen, setIsScopeOpen] = useState(false);
     const scopeContainerRef = useRef<HTMLDivElement | null>(null);
     const scopeTriggerRef = useRef<HTMLButtonElement | null>(null);

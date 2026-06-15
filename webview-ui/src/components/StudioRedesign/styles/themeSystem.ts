@@ -7,6 +7,13 @@ export type ThemeMode = 'light' | 'dark' | 'auto';
 
 type ThemeKind = 'light' | 'dark';
 
+export function normalizeThemeMode(value: unknown): ThemeMode {
+  if (value === 'light' || value === 'dark' || value === 'auto') {
+    return value;
+  }
+  return 'auto';
+}
+
 // ─── Dark Theme (default, current system) ──────────────────────────────────
 
 export const darkTheme = {
@@ -330,7 +337,7 @@ export function getActiveTheme(userMode: ThemeMode): ColorTokens {
 }
 
 /**
- * Persist theme preference to localStorage
+ * @deprecated Theme preference is persisted in VS Code settings (`workspai.themeMode`).
  */
 export function saveThemePreference(mode: ThemeMode): void {
   if (typeof window !== 'undefined') {
@@ -339,7 +346,7 @@ export function saveThemePreference(mode: ThemeMode): void {
 }
 
 /**
- * Load theme preference from localStorage
+ * @deprecated Theme preference is loaded from VS Code settings (`workspai.themeMode`).
  */
 export function loadThemePreference(): ThemeMode {
   if (typeof window !== 'undefined') {
@@ -348,5 +355,5 @@ export function loadThemePreference(): ThemeMode {
       return saved;
     }
   }
-  return 'auto'; // default
+  return 'auto';
 }

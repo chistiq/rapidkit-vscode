@@ -20,7 +20,7 @@ import {
     StudioProofEvent,
 } from './state/studioState';
 import { studioClass } from './styles/studioUi';
-import { detectVSCodeThemeKind, resolveThemeKind, saveThemePreference, ThemeMode } from './styles/themeSystem';
+import { useWorkspaiThemeKind } from '@/components/WorkspaiThemeProvider';
 import { ErrorBoundary } from './ErrorBoundary';
 import { MissionControlHeader } from './regions/MissionControlHeader';
 import { PhaseStepper } from './regions/PhaseStepper';
@@ -317,9 +317,7 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
     const [viewportWidth, setViewportWidth] = useState<number>(
         typeof window !== 'undefined' ? window.innerWidth : 1366,
     );
-    const [themeMode, setThemeMode] = useState<ThemeMode>('auto');
-    const [studioThemeKind, setStudioThemeKind] = useState<'light' | 'dark'>(() => resolveThemeKind('auto'));
-    const themeSignatureRef = useRef<string>('');
+    const studioThemeKind = useWorkspaiThemeKind();
     const phaseTransitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const incomingMessageIdsRef = useRef<Set<string>>(new Set());
 
@@ -469,64 +467,6 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
             },
         ];
     }, [chatBrainStreamingEnabled, state.currentPhase, state.messages, streamAssistantText]);
-
-    useEffect(() => {
-        const syncThemeKind = () => {
-            const nextKind = resolveThemeKind(themeMode);
-            const nextSignature = `${themeMode}:${nextKind}:${detectVSCodeThemeKind()}`;
-            if (themeSignatureRef.current === nextSignature) {
-                return;
-            }
-
-            themeSignatureRef.current = nextSignature;
-            setStudioThemeKind(nextKind);
-        };
-
-        syncThemeKind();
-
-        if (themeMode !== 'auto' || typeof MutationObserver === 'undefined' || typeof document === 'undefined') {
-            return;
-        }
-
-        const observer = new MutationObserver(() => {
-            syncThemeKind();
-        });
-
-        if (document.body) {
-            observer.observe(document.body, {
-                attributes: true,
-                attributeFilter: ['class', 'data-vscode-theme-kind'],
-            });
-        }
-        if (document.documentElement) {
-            observer.observe(document.documentElement, {
-                attributes: true,
-                attributeFilter: ['class', 'style', 'data-vscode-theme-kind'],
-            });
-        }
-
-        if (document.head) {
-            observer.observe(document.head, {
-                childList: true,
-                subtree: true,
-                characterData: true,
-            });
-        }
-
-        const intervalId = window.setInterval(() => {
-            syncThemeKind();
-        }, 500);
-
-        return () => {
-            observer.disconnect();
-            window.clearInterval(intervalId);
-        };
-    }, [themeMode]);
-
-    const handleThemeModeChange = useCallback((mode: ThemeMode) => {
-        saveThemePreference(mode);
-        setThemeMode(mode);
-    }, []);
 
     const sidebarItems = useMemo(
         () => [
@@ -868,7 +808,6 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
                         currentPhase={state.currentPhase}
                         policyGates={state.policyGates}
                         userMode={state.userMode}
-                        themeMode={themeMode}
                         scopeType={state.scopeType}
                         workspaceName={state.workspaceName || 'Current Workspace'}
                         releasePosture={state.releasePosture}
@@ -884,7 +823,6 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
                         onDisplayModeChange={onStudioDisplayModeChange}
                         onTelemetryRefresh={onTelemetryRefresh}
                         onUserModeChange={handleUserModeChange}
-                        onThemeModeChange={handleThemeModeChange}
                         onScopeChange={handleScopeChange}
                         onExecuteAction={handleSendMessage}
                         verifyGateBlockedReasons={verifyGateBlockedReasons}

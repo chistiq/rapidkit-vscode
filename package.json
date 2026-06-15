@@ -2035,6 +2035,22 @@
           "markdownDescription": "Preferred AI model for Workspai AI features. Use `auto` to pick the best entitled VS Code language model, or set a specific model id/name from `Developer: Show Language Model Information`. Requires GitHub Copilot or another compatible language-model extension.",
           "scope": "window"
         },
+        "workspai.themeMode": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "light",
+            "dark"
+          ],
+          "enumDescriptions": [
+            "Follow the active VS Code color theme",
+            "Force Workspai webviews to use the light palette",
+            "Force Workspai webviews to use the dark palette"
+          ],
+          "description": "Appearance mode for Workspai dashboard, setup, settings, and Incident Studio webviews.",
+          "scope": "window"
+        },
         "workspai.aiProvider": {
           "type": "string",
           "default": "vscode-lm",

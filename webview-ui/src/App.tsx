@@ -102,6 +102,11 @@ import { CreateProjectModal } from '@/components/CreateProjectModal';
 import { InstallModuleModal } from '@/components/InstallModuleModal';
 import { ModuleDetailsModal } from '@/components/ModuleDetailsModal';
 import { WorkspaiSettingsPanel } from '@/components/WorkspaiSettingsPanel';
+import { WorkspaiThemeProvider } from '@/components/WorkspaiThemeProvider';
+import {
+  normalizeThemeMode,
+  type ThemeMode,
+} from '@/components/StudioRedesign/styles/themeSystem';
 import { WorkspaiBanner } from '@/components/WorkspaiBanner';
 import { buildAnalyzeLoadKey } from '@/lib/analyzeScopeKey';
 import {
@@ -452,6 +457,7 @@ export function App() {
   } | null>(null);
   const [providerHealthChecking, setProviderHealthChecking] = useState(false);
   const [aiModelsLoading, setAiModelsLoading] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>('auto');
   const [aiSelectedModelId, setAISelectedModelId] = useState<string | null>(null);
   const [aiContextContract, setAIContextContract] = useState<ContextAssistContractSummary | null>(
     null
@@ -625,6 +631,12 @@ export function App() {
     setPreferredModelId(normalized);
     syncPreferredModelToSelectors(normalized);
     vscode.postMessage('setPreferredModel', { modelId: normalized });
+  };
+
+  const handleThemeModeChange = (mode: ThemeMode) => {
+    const normalized = normalizeThemeMode(mode);
+    setThemeMode(normalized);
+    vscode.postMessage('setThemeMode', { mode: normalized });
   };
 
   incidentSelectedModelIdRef.current = incidentSelectedModelId;
@@ -1726,6 +1738,7 @@ export function App() {
           );
           setAIAvailableModels(normalizedModels);
           setAiModelsLoading(false);
+          setThemeMode(normalizeThemeMode(message.data?.themeMode));
           syncPreferredModelToSelectors(preferredModel);
           break;
         }
@@ -2887,6 +2900,7 @@ export function App() {
   ]);
 
   return (
+    <WorkspaiThemeProvider themeMode={themeMode}>
     <div
       className={[
         'container',
@@ -3379,6 +3393,8 @@ export function App() {
               vscode.postMessage('testAIProvider');
             }}
             onRefreshModels={refreshWorkspaiSettings}
+            themeMode={themeMode}
+            onThemeModeChange={handleThemeModeChange}
           />
         </div>
       ) : activeView === 'setup' ? (
@@ -3559,5 +3575,6 @@ export function App() {
       )}
       <Footer />
     </div>
+    </WorkspaiThemeProvider>
   );
 }

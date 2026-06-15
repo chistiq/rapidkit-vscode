@@ -22,6 +22,7 @@ import {
   setWorkspaiAIProvider,
   setWorkspaiCustomAIConfig,
   setWorkspaiPreferredModel,
+  setWorkspaiThemeMode,
 } from '../../core/workspaiSettingsBridge';
 import {
   clearCustomAIAPIKey,
@@ -1652,6 +1653,12 @@ export class WelcomePanel {
               typeof message.data?.modelId === 'string' ? message.data.modelId : 'auto';
             const preferredModel = await setWorkspaiPreferredModel(modelId);
             await this._sendWorkspaiSettings(preferredModel);
+            break;
+          }
+          case 'setThemeMode': {
+            const mode = typeof message.data?.mode === 'string' ? message.data.mode : 'auto';
+            await setWorkspaiThemeMode(mode);
+            await this._sendWorkspaiSettings();
             break;
           }
           case 'setAIProvider': {
@@ -8921,6 +8928,7 @@ No markdown, no explanation outside the JSON.`;
         aiProvider: settings.aiProvider,
         customAIBaseUrl: settings.customAIBaseUrl,
         customAIModel: settings.customAIModel,
+        themeMode: settings.themeMode,
         aiProviderStatus,
         models,
       },

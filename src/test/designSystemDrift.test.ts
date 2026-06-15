@@ -7,14 +7,12 @@ describe('Workspai design system drift', () => {
 
   it('loads the shared token spine before product surfaces', () => {
     const indexSource = fs.readFileSync(path.join(repoRoot, 'webview-ui/src/index.tsx'), 'utf8');
+    const appSource = fs.readFileSync(path.join(repoRoot, 'webview-ui/src/App.tsx'), 'utf8');
     const incidentSource = fs.readFileSync(
       path.join(repoRoot, 'webview-ui/src/incidentStudioNext.tsx'),
       'utf8'
     );
 
-    expect(indexSource).toContain(
-      "import { WorkspaiThemeProvider } from '@/components/WorkspaiThemeProvider';"
-    );
     expect(indexSource).toContain("import '@/styles/workspai-tokens.css';");
     expect(indexSource.indexOf("import '@/styles/workspai-tokens.css';")).toBeLessThan(
       indexSource.indexOf("import '@/styles-tailwind.css';")
@@ -22,7 +20,11 @@ describe('Workspai design system drift', () => {
     expect(indexSource.indexOf("import '@/styles-tailwind.css';")).toBeLessThan(
       indexSource.indexOf("import '@/styles/workspai-primitives.css';")
     );
-    expect(indexSource).toContain('<WorkspaiThemeProvider>');
+
+    expect(appSource).toContain(
+      "import { WorkspaiThemeProvider } from '@/components/WorkspaiThemeProvider';"
+    );
+    expect(appSource).toContain('<WorkspaiThemeProvider themeMode={themeMode}>');
 
     expect(incidentSource).toContain(
       "import { WorkspaiThemeProvider } from '@/components/WorkspaiThemeProvider';"
@@ -34,7 +36,7 @@ describe('Workspai design system drift', () => {
     expect(incidentSource.indexOf("import '@/styles-tailwind.css';")).toBeLessThan(
       incidentSource.indexOf("import '@/styles/workspai-primitives.css';")
     );
-    expect(incidentSource).toContain('<WorkspaiThemeProvider>');
+    expect(incidentSource).toContain('<WorkspaiThemeProvider themeMode={themeMode}>');
   });
 
   it('keeps theme detection centralized and VS Code sourced', () => {
@@ -47,12 +49,14 @@ describe('Workspai design system drift', () => {
     expect(providerSource).toContain('data-workspai-theme-kind');
     expect(providerSource).toContain('data-workspai-theme-source');
     expect(providerSource).toContain("'vscode'");
+    expect(providerSource).toContain("'override'");
+    expect(providerSource).toContain('resolveWorkspaiThemeOverrideStyle');
     expect(providerSource).toContain('MutationObserver');
     expect(providerSource).toContain('document.documentElement');
     expect(providerSource).toContain('document.body');
   });
 
-  it('keeps Studio product UI auto themed without local override controls', () => {
+  it('keeps Studio product UI themed via provider without local override controls', () => {
     const wrapperSource = fs.readFileSync(
       path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/IncidentStudioVNext.tsx'),
       'utf8'
@@ -61,13 +65,20 @@ describe('Workspai design system drift', () => {
       path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/regions/TopBar.tsx'),
       'utf8'
     );
+    const settingsSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/components/WorkspaiSettingsPanel.tsx'),
+      'utf8'
+    );
 
-    expect(wrapperSource).toContain("useState<ThemeMode>('auto')");
-    expect(wrapperSource).not.toContain('loadThemePreference');
+    expect(wrapperSource).toContain('useWorkspaiThemeKind');
+    expect(wrapperSource).not.toContain('saveThemePreference');
+    expect(wrapperSource).not.toContain('onThemeModeChange');
     expect(topbarSource).not.toContain('Theme mode');
     expect(topbarSource).not.toContain('Follow VS Code theme');
     expect(topbarSource).not.toContain('Force light theme');
     expect(topbarSource).not.toContain('Force dark theme');
+    expect(settingsSource).toContain('Appearance');
+    expect(settingsSource).toContain('Auto — follow VS Code theme');
   });
 
   it('defines the minimum semantic token contract', () => {

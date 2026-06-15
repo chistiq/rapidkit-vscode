@@ -34,6 +34,7 @@ import {
   setWorkspaiAIProvider,
   setWorkspaiCustomAIConfig,
   setWorkspaiPreferredModel,
+  setWorkspaiThemeMode,
 } from '../core/workspaiSettingsBridge.js';
 
 describe('workspaiSettingsBridge', () => {
@@ -54,6 +55,9 @@ describe('workspaiSettingsBridge', () => {
       }
       if (key === 'customAIBaseUrl' || key === 'customAIModel') {
         return '';
+      }
+      if (key === 'themeMode') {
+        return 'auto';
       }
       return defaultValue;
     });
@@ -82,6 +86,9 @@ describe('workspaiSettingsBridge', () => {
       if (key === 'customAIModel') {
         return 'enterprise-model';
       }
+      if (key === 'themeMode') {
+        return 'dark';
+      }
       return defaultValue;
     });
 
@@ -91,7 +98,20 @@ describe('workspaiSettingsBridge', () => {
       aiProvider: 'openai-compatible',
       customAIBaseUrl: 'https://api.example.test/v1',
       customAIModel: 'enterprise-model',
+      themeMode: 'dark',
     });
+  });
+
+  it('persists theme mode to VS Code settings', async () => {
+    await expect(setWorkspaiThemeMode('light')).resolves.toBe('light');
+
+    expect(mockUpdate).toHaveBeenCalledWith('themeMode', 'light', 1);
+  });
+
+  it('normalizes invalid theme mode values to auto', async () => {
+    await expect(setWorkspaiThemeMode('invalid')).resolves.toBe('auto');
+
+    expect(mockUpdate).toHaveBeenCalledWith('themeMode', 'auto', 1);
   });
 
   it('persists preferred model and clears model selection cache', async () => {

@@ -74,6 +74,9 @@
     color-scheme: dark;
 }
 
+/* Light/Dark override palettes are injected inline by WorkspaiThemeProvider
+   via resolveWorkspaiThemeOverrideStyle() when data-workspai-theme-source="override". */
+
 .workspai-theme-root {
     min-height: 100vh;
     min-height: 100dvh;

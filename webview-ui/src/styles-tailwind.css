@@ -11558,6 +11558,7 @@
     inset: 0;
     display: flex;
     flex-direction: column;
+    font-size: 8px;
     align-items: center;
     justify-content: center;
     gap: 3px;
@@ -11575,7 +11576,7 @@
   }
 
   .spc-ring-caption {
-    font-size: 9px;
+    font-size: 8px;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     color: var(--vscode-descriptionForeground);

@@ -1,6 +1,7 @@
-import { ExternalLink, KeyRound, Loader2, RefreshCw, Settings2, Sparkles } from 'lucide-react';
+import { ExternalLink, KeyRound, Loader2, Palette, RefreshCw, Settings2, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { ModelSelect } from '@/components/ModelSelect';
+import type { ThemeMode } from '@/components/StudioRedesign/styles/themeSystem';
 import { vscode } from '@/vscode';
 
 export interface WorkspaiSettingsModel {
@@ -38,6 +39,8 @@ interface WorkspaiSettingsPanelProps {
   onCustomAIAPIKeyClear: () => void;
   onTestAIProvider: () => void;
   onRefreshModels: () => void;
+  themeMode: ThemeMode;
+  onThemeModeChange: (mode: ThemeMode) => void;
 }
 
 export function WorkspaiSettingsPanel({
@@ -57,6 +60,8 @@ export function WorkspaiSettingsPanel({
   onCustomAIAPIKeyClear,
   onTestAIProvider,
   onRefreshModels,
+  themeMode,
+  onThemeModeChange,
 }: WorkspaiSettingsPanelProps) {
   const selectedModel = availableModels.find((model) => model.id === preferredModelId);
   const [customBaseUrlDraft, setCustomBaseUrlDraft] = useState(customAIBaseUrl);
@@ -256,6 +261,35 @@ export function WorkspaiSettingsPanel({
                 : 'Runs a minimal live request without storing response content.'}
             </span>
           </div>
+        </article>
+
+        <article className="ws-card ws-settings-card">
+          <div className="ws-settings-card-head">
+            <Palette size={15} />
+            <div>
+              <h3>Appearance</h3>
+              <p>Choose how Workspai webviews follow your editor color theme.</p>
+            </div>
+          </div>
+
+          <label className="ws-field">
+            <span className="ws-field__label">Theme mode</span>
+            <select
+              value={themeMode}
+              onChange={(event) => onThemeModeChange(event.target.value as ThemeMode)}
+            >
+              <option value="auto">Auto — follow VS Code theme</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+            <small className="ws-field__hint">
+              {themeMode === 'auto'
+                ? 'Dashboard, Setup, Settings, and Incident Studio track your active VS Code color theme.'
+                : themeMode === 'light'
+                  ? 'Workspai webviews stay on the light palette regardless of your editor theme.'
+                  : 'Workspai webviews stay on the dark palette regardless of your editor theme.'}
+            </small>
+          </label>
         </article>
 
         <article className="ws-card ws-settings-card ws-settings-card--muted">
