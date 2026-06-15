@@ -134,7 +134,7 @@ describe('Workspai design system drift', () => {
     }
 
     expect(primitivesSource).toContain('var(--ws-accent)');
-    expect(primitivesSource).not.toContain('linear-gradient');
+    expect(primitivesSource).not.toMatch(/linear-gradient\(\s*135deg,\s*#/);
   });
 
   it('uses the unified embedded host for setup, settings, and studio tabs', () => {

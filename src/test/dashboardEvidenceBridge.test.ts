@@ -220,6 +220,27 @@ describe('dashboardEvidenceBridge', () => {
     expect(projectDoctor?.artifactPath).toBe(artifactPath);
   });
 
+  it('ignores workspace-level project doctor evidence without project identity', async () => {
+    const workspacePath = await createWorkspaceWithReports({});
+    const projectPath = path.join(workspacePath, 'api');
+    await fs.ensureDir(projectPath);
+    await fs.writeJSON(
+      path.join(workspacePath, '.rapidkit', 'reports', 'doctor-project-last-run.json'),
+      {
+        generatedAt: '2026-06-10T10:15:00.000Z',
+        healthScore: { passed: 6, warnings: 0, errors: 0, total: 6 },
+      }
+    );
+
+    const bundle = await buildDashboardEvidenceBundle({
+      workspacePath,
+      projectPath,
+      projectName: 'api',
+    });
+
+    expect(findEvidenceCard(bundle, 'projectDoctor')?.status).toBe('missing');
+  });
+
   it('ignores workspace-level project doctor evidence for a different project', async () => {
     const workspacePath = await createWorkspaceWithReports({});
     const projectPath = path.join(workspacePath, 'api');

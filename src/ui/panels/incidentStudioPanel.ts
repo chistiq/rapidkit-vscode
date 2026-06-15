@@ -970,6 +970,8 @@ export class IncidentStudioPanel {
     <script nonce="${nonce}">
         window.INCIDENT_STUDIO_WORKSPACE_PATH = '${this._escapeHtml(this._workspaceContext.workspacePath)}';
         window.INCIDENT_STUDIO_WORKSPACE_NAME = '${this._escapeHtml(this._workspaceContext.workspaceName)}';
+        window.INCIDENT_STUDIO_PROJECT_PATH = '${this._escapeHtml(this._workspaceContext.projectPath ?? '')}';
+        window.INCIDENT_STUDIO_PROJECT_NAME = '${this._escapeHtml(this._workspaceContext.projectName ?? '')}';
     </script>
     <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>

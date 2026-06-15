@@ -32,6 +32,9 @@ import {
 } from '../../core/aiProviderService';
 import type { AIOutputScenario } from '../../core/aiOutputQuality';
 import { isWorkspacePathAncestor } from '../../core/aiContextResolver';
+import { buildArchitectureGroundingForPromptAsync } from '../../core/aiArchitectureGrounding';
+import type { AIModalContext } from '../../core/aiService';
+import { buildModuleListForPrompt, getWorkspaceAwareLiveModules } from '../../core/aiService';
 import {
   indexProjectSystemGraph,
   queryProjectSystemGraphImpact,
@@ -65,6 +68,7 @@ import { checkPythonEnvironmentCached } from '../../utils/pythonChecker';
 import { runCommandsInTerminal, runShellCommandInTerminal } from '../../utils/terminalExecutor';
 import { WorkspaceUsageTracker } from '../../utils/workspaceUsageTracker';
 import type { WorkspaceExplorerProvider } from '../treeviews/workspaceExplorer';
+import type { ProjectExplorerProvider } from '../treeviews/projectExplorer';
 import {
   createDoctorTelemetryRefreshController,
   type DashboardEvidenceRefreshContext,
@@ -84,6 +88,8 @@ import {
 import { resolveDashboardCommandContract } from '../../core/dashboardCommandContracts';
 import {
   advanceDashboardOpsChain,
+  blockDashboardOpsChain,
+  filterOpsChainForWorkspace,
   getDashboardOpsChain,
   getNextOpsChainCommand,
   startDashboardOpsChain,
@@ -272,6 +278,7 @@ export class WelcomePanel {
   private _latestDashboardAIActionContract: AIActionContract | null = null;
   private _latestDashboardAIActionId: string | null = null;
   private static _workspaceExplorer: WorkspaceExplorerProvider | undefined;
+  private static _projectExplorer: ProjectExplorerProvider | undefined;
   /** Framework name queued to open as a modal after the webview becomes ready */
   private static _pendingModal: string | null = null;
   private static _pendingAICreateMode: 'workspace' | 'project' = 'workspace';
@@ -607,6 +614,106 @@ export class WelcomePanel {
     WelcomePanel._workspaceExplorer = explorer;
   }
 
+  public static setProjectExplorer(explorer: ProjectExplorerProvider) {
+    WelcomePanel._projectExplorer = explorer;
+  }
+
+  /**
+   * Lightweight analysis-selection sync from dashboard/studio — updates sidebar state
+   * without stealing focus or triggering heavy catalog/evidence refresh.
+   */
+  public static async syncAnalysisSelectionFromWebview(data: {
+    workspacePath?: string;
+    projectPath?: string;
+    projectName?: string;
+    projectType?: string;
+    scopeMode?: 'workspace' | 'project';
+  }): Promise<void> {
+    if (data.scopeMode !== 'project' || !data.projectPath) {
+      return;
+    }
+
+    const projectPath = data.projectPath.trim();
+    const projectName =
+      typeof data.projectName === 'string' && data.projectName.trim().length > 0
+        ? data.projectName.trim()
+        : path.basename(projectPath);
+    const projectType =
+      data.projectType === 'fastapi' ||
+      data.projectType === 'nestjs' ||
+      data.projectType === 'go' ||
+      data.projectType === 'springboot' ||
+      data.projectType === 'dotnet'
+        ? data.projectType
+        : undefined;
+
+    const resolvedWorkspacePath =
+      typeof data.workspacePath === 'string' && data.workspacePath.trim().length > 0
+        ? data.workspacePath.trim()
+        : WelcomePanel._workspaceExplorer?.getSelectedWorkspace()?.path;
+
+    const existingProject = WelcomePanel._projectExplorer?.getSelectedProject();
+    const project: import('../../types').WorkspaiProject =
+      existingProject?.path === projectPath
+        ? existingProject
+        : {
+            name: projectName,
+            path: projectPath,
+            type: projectType ?? 'unknown',
+            kit: 'unknown',
+            modules: [],
+            isValid: true,
+            workspacePath: resolvedWorkspacePath,
+          };
+
+    WelcomePanel._selectedProject = project;
+    WelcomePanel._projectExplorer?.setSelectedProject(project);
+
+    const panel = WelcomePanel.currentPanel;
+    if (!panel?._isReady) {
+      return;
+    }
+
+    panel._panel.webview.postMessage({
+      command: 'updateWorkspaceStatus',
+      data: {
+        hasWorkspace: Boolean(resolvedWorkspacePath),
+        hasProjectSelected: true,
+        workspacePath: resolvedWorkspacePath,
+        workspaceName:
+          resolvedWorkspacePath && WelcomePanel._workspaceExplorer
+            ? WelcomePanel._workspaceExplorer.getWorkspaceByPath(resolvedWorkspacePath)?.name
+            : undefined,
+        projectName,
+        projectPath,
+        projectType,
+        source: 'analysis-sync',
+      },
+    });
+  }
+
+  public static async listWorkspaceProjectsForWebview(
+    workspacePath: string
+  ): Promise<Array<{ path: string; name: string; type?: string }>> {
+    const normalizedPath = workspacePath.trim();
+    if (!normalizedPath) {
+      return [];
+    }
+
+    const explorer = WelcomePanel._projectExplorer;
+    const selectedWorkspace = explorer?.getSelectedWorkspace();
+    if (selectedWorkspace?.path === normalizedPath && explorer) {
+      const projects = await explorer.ensureProjectsLoaded();
+      return projects.map((project) => ({
+        path: project.path,
+        name: project.name,
+        type: project.type,
+      }));
+    }
+
+    return [];
+  }
+
   public static setExtensionContext(context: vscode.ExtensionContext) {
     WelcomePanel._extensionContext = context;
   }
@@ -916,6 +1023,17 @@ export class WelcomePanel {
     return selectedProject?.path ? { projectPath: selectedProject.path } : null;
   }
 
+  private _failDashboardContractCommand(command: string, reason: string): boolean {
+    void vscode.window.showWarningMessage(reason);
+    if (this._panelRole === 'dashboard') {
+      this._panel.webview.postMessage({
+        command: 'dashboardCommandFailed',
+        data: { command, reason },
+      });
+    }
+    return false;
+  }
+
   private async _executeDashboardContractCommand(
     command: string,
     data?: Record<string, unknown>
@@ -928,7 +1046,10 @@ export class WelcomePanel {
     if (contract.scope === 'module' || contract.payloadKind === 'module-maintenance') {
       const projectPayload = this._getDashboardProjectPayload(command);
       if (!projectPayload || !WelcomePanel._selectedProject) {
-        return true;
+        return this._failDashboardContractCommand(
+          command,
+          'Select a project before running module maintenance commands.'
+        );
       }
       const moduleSlug = typeof data?.moduleSlug === 'string' ? data.moduleSlug : undefined;
       await vscode.commands.executeCommand(contract.vscodeCommand, {
@@ -946,7 +1067,10 @@ export class WelcomePanel {
     if (contract.payloadKind === 'project-context') {
       const contextItem = this._getSelectedProjectCommandContext();
       if (!contextItem) {
-        return true;
+        return this._failDashboardContractCommand(
+          command,
+          'Select a project before running this dashboard command.'
+        );
       }
       await vscode.commands.executeCommand(contract.vscodeCommand, {
         ...contextItem,
@@ -959,7 +1083,10 @@ export class WelcomePanel {
     if (contract.payloadKind === 'project-path' || contract.requiresProject) {
       const projectPayload = this._getDashboardProjectPayload(command);
       if (!projectPayload) {
-        return true;
+        return this._failDashboardContractCommand(
+          command,
+          'Select a project before running this dashboard command.'
+        );
       }
       await vscode.commands.executeCommand(contract.vscodeCommand, {
         ...contract.payloadDefaults,
@@ -971,7 +1098,10 @@ export class WelcomePanel {
     if (contract.payloadKind === 'workspace' || contract.requiresWorkspace) {
       const workspacePayload = this._getDashboardWorkspacePayload(command, data);
       if (!workspacePayload) {
-        return true;
+        return this._failDashboardContractCommand(
+          command,
+          'Select a workspace before running this dashboard command.'
+        );
       }
       await vscode.commands.executeCommand(contract.vscodeCommand, {
         ...contract.payloadDefaults,
@@ -1068,6 +1198,7 @@ export class WelcomePanel {
       verifyPassedAt?: number;
       repeatedIncidentDetected?: boolean;
       framework?: string;
+      scopeMode?: 'workspace' | 'project';
       importedIncidentReplay?: {
         packId: string;
         actionType: string;
@@ -1285,6 +1416,47 @@ export class WelcomePanel {
             break;
           case 'openDashboardTab':
             WelcomePanel.openDashboardTab(this._context);
+            break;
+          case 'focusProjectExplorer':
+            await vscode.commands.executeCommand('rapidkitProjects.focus');
+            break;
+          case 'requestWorkspaceProjects': {
+            const workspacePath =
+              (typeof message.data?.workspacePath === 'string' && message.data.workspacePath) ||
+              WelcomePanel._workspaceExplorer?.getSelectedWorkspace()?.path;
+            if (!workspacePath) {
+              break;
+            }
+            const projects = await WelcomePanel.listWorkspaceProjectsForWebview(workspacePath);
+            this._panel.webview.postMessage({
+              command: 'workspaceProjects',
+              data: { workspacePath, projects },
+            });
+            break;
+          }
+          case 'syncAnalysisSelection':
+            await WelcomePanel.syncAnalysisSelectionFromWebview({
+              workspacePath:
+                typeof message.data?.workspacePath === 'string'
+                  ? message.data.workspacePath
+                  : undefined,
+              projectPath:
+                typeof message.data?.projectPath === 'string'
+                  ? message.data.projectPath
+                  : undefined,
+              projectName:
+                typeof message.data?.projectName === 'string'
+                  ? message.data.projectName
+                  : undefined,
+              projectType:
+                typeof message.data?.projectType === 'string'
+                  ? message.data.projectType
+                  : undefined,
+              scopeMode:
+                message.data?.scopeMode === 'project' || message.data?.scopeMode === 'workspace'
+                  ? message.data.scopeMode
+                  : undefined,
+            });
             break;
           case 'openIncidentStudioTab': {
             const selectedWorkspace = WelcomePanel._workspaceExplorer?.getSelectedWorkspace();
@@ -3531,6 +3703,12 @@ No markdown, no explanation outside the JSON.`;
       command === 'checkWorkspaceHealth' ? { ...payload, preferredAction: 'check' } : payload
     );
     if (!handled) {
+      await blockDashboardOpsChain(
+        this._context,
+        workspacePath,
+        `Could not dispatch ${command}. Select workspace/project context and retry.`
+      );
+      await this._sendDashboardEvidence({ workspacePath });
       return;
     }
   }
@@ -3628,7 +3806,7 @@ No markdown, no explanation outside the JSON.`;
     }
 
     const activity = getDashboardActivityLog(this._context);
-    const opsChain = getDashboardOpsChain(this._context);
+    const opsChain = filterOpsChainForWorkspace(getDashboardOpsChain(this._context), workspacePath);
 
     this._panel.webview.postMessage({
       command: 'dashboardEvidence',
@@ -4338,6 +4516,12 @@ No markdown, no explanation outside the JSON.`;
       actionCount: 0,
       repeatedIncidentDetected: false,
       framework,
+      scopeMode:
+        input.scopeMode === 'project' || input.scopeMode === 'workspace'
+          ? input.scopeMode
+          : projectPath
+            ? 'project'
+            : 'workspace',
       importedIncidentReplay: undefined,
     };
 
@@ -4975,6 +5159,36 @@ No markdown, no explanation outside the JSON.`;
     return mode === 'debug' ? 'debug' : 'ask';
   }
 
+  private _buildStructuredPromptAIModalContext(input: {
+    workspacePath?: string;
+    projectPath?: string;
+    projectName?: string;
+    projectType?: string;
+    scopeIntent?: 'workspace' | 'project';
+  }): AIModalContext {
+    const explicitProjectPath = input.projectPath?.trim();
+    const isProjectScope = Boolean(explicitProjectPath) || input.scopeIntent === 'project';
+
+    if (isProjectScope && explicitProjectPath) {
+      return {
+        type: 'project',
+        name: input.projectName?.trim() || path.basename(explicitProjectPath),
+        path: explicitProjectPath,
+        framework: input.projectType,
+        projectRootPath: explicitProjectPath,
+        workspaceRootPath: input.workspacePath?.trim() || undefined,
+      };
+    }
+
+    const workspacePath = input.workspacePath?.trim();
+    return {
+      type: 'workspace',
+      name: workspacePath ? path.basename(workspacePath) : 'Workspace',
+      path: workspacePath,
+      workspaceRootPath: workspacePath,
+    };
+  }
+
   private async _buildStructuredIncidentPrompt(
     message: string,
     options?: {
@@ -4987,6 +5201,21 @@ No markdown, no explanation outside the JSON.`;
   ): Promise<string> {
     const resolvedWorkspacePath = options?.workspacePath || this._resolveTelemetryWorkspacePath();
     const doctorSnapshot = await this._readDoctorEvidenceSnapshot(resolvedWorkspacePath);
+    const architectureGrounding = await buildArchitectureGroundingForPromptAsync(
+      this._buildStructuredPromptAIModalContext({
+        workspacePath: resolvedWorkspacePath,
+        projectPath: options?.projectPath,
+        projectName: options?.projectName,
+        projectType: options?.projectType,
+        scopeIntent: options?.scopeIntent,
+      }),
+      undefined
+    );
+    const liveModules = await getWorkspaceAwareLiveModules(resolvedWorkspacePath);
+    const liveCatalogBlock =
+      liveModules && liveModules.length > 0
+        ? `LIVE MODULE CATALOG:\n${buildModuleListForPrompt(liveModules)}`
+        : '';
 
     // Explicit project path or scopeIntent='project' → project-level analysis.
     // No project path and scopeIntent='workspace' (or omitted) → workspace-level analysis.
@@ -5009,6 +5238,8 @@ No markdown, no explanation outside the JSON.`;
       const workspaceResponseRules = [
         'SCOPE: This is a workspace-level analysis. Reason across ALL projects in the workspace topology — do not collapse focus onto a single service.',
         'EVIDENCE INTEGRITY: Use only facts from the WORKSPACE ARCHITECTURE block. Do not invent project names, paths, or issue counts.',
+        'Do not assume fastapi.standard/nestjs.standard when analyze lists framework=python or kit unknown — state the gap and recommend create/import project first.',
+        'Do not recommend Docker/K8s/uvicorn deploy for minimal workspaces without Dockerfile and application entrypoint.',
         'CROSS-PROJECT REASONING: Identify which projects share dependencies, configs, or failure modes. Surface topology-level risks explicitly.',
         'WORKSPACE HEALTH: Lead with the overall workspace health score and how issues are distributed across projects.',
         'If all projects are healthy, confirm that explicitly and suggest a proactive workspace-level improvement (e.g., memory capture, topology snapshot).',
@@ -5025,6 +5256,9 @@ No markdown, no explanation outside the JSON.`;
         '',
         ...(projectCandidatesBlock ? [projectCandidatesBlock, ''] : []),
         workspaceArchitectureBlock,
+        '',
+        ...(liveCatalogBlock ? [liveCatalogBlock, ''] : []),
+        architectureGrounding,
         '',
         ...workspaceResponseRules,
         '',
@@ -5069,6 +5303,8 @@ No markdown, no explanation outside the JSON.`;
     const responseRules = [
       'SCOPE: This is a project-level analysis. Focus on the selected project internals — runtime state, module health, framework-specific blockers, and execution readiness.',
       'EVIDENCE INTEGRITY: Use only facts present in WORKSPACE ARCHITECTURE and PROJECT EXECUTION STATE blocks. Do not invent missing modules, unknown kit, or missing projects.',
+      'Domain feature modules (src/<feature>/) ≠ RapidKit catalog modules (npx rapidkit add module <slug>). Route questions accordingly.',
+      'NestJS routes: mirror src/examples/ — no /api prefix unless setGlobalPrefix exists in main.ts.',
       'If doctor evidence shows healthy projects with zero issues, do not recommend setup/reset commands unless the user explicitly asks for reconfiguration.',
       'Never claim `kit unknown` or `no modules installed` unless those exact conditions are explicitly listed in the evidence block.',
       'CLARITY: Keep response short (6-10 lines), concrete, and execution-first. Avoid long narrative and avoid repeating the same risk in multiple sections.',
@@ -5096,6 +5332,9 @@ No markdown, no explanation outside the JSON.`;
       ...(projectCandidatesBlock ? [projectCandidatesBlock, ''] : []),
       ...(projectExecutionBlock ? [projectExecutionBlock, ''] : []),
       workspaceArchitectureBlock,
+      '',
+      ...(liveCatalogBlock ? [liveCatalogBlock, ''] : []),
+      architectureGrounding,
       '',
       ...responseRules,
       ...(responseRules.length ? [''] : []),
@@ -6737,6 +6976,10 @@ No markdown, no explanation outside the JSON.`;
       actionCount: 0,
       repeatedIncidentDetected: false,
       framework: undefined as string | undefined,
+      scopeMode:
+        data?.scopeMode === 'project' || data?.scopeMode === 'workspace'
+          ? data.scopeMode
+          : undefined,
     };
 
     current.workspacePath =
@@ -6828,10 +7071,17 @@ No markdown, no explanation outside the JSON.`;
 
     try {
       const { prepareAIConversation, streamAIResponse } = await import('../../core/aiService.js');
-      // Derive scope intent from the conversation's projectPath.
-      // When the user is in workspace scope, projectPath is absent; we must NOT silently
-      // collapse into single-project focus via auto-detection.
-      const scopeIntent: 'workspace' | 'project' = current.projectPath ? 'project' : 'workspace';
+      // Derive scope intent from explicit scopeMode, then projectPath.
+      const requestedScopeMode =
+        data?.scopeMode === 'project' || data?.scopeMode === 'workspace'
+          ? data.scopeMode
+          : current.scopeMode === 'project' || current.scopeMode === 'workspace'
+            ? current.scopeMode
+            : current.projectPath
+              ? 'project'
+              : 'workspace';
+      const scopeIntent: 'workspace' | 'project' = requestedScopeMode;
+      current.scopeMode = scopeIntent;
       const aiContext = await this._buildChatBrainAIContext({
         workspacePath: current.workspacePath,
         projectPath: current.projectPath,
@@ -6919,7 +7169,7 @@ No markdown, no explanation outside the JSON.`;
           if (!attemptReceivedChunk && !attemptTokenSource.token.isCancellationRequested) {
             attemptTokenSource.cancel();
           }
-        }, 20_000);
+        }, 45_000);
 
         try {
           flushTimer = setInterval(() => {
@@ -7134,8 +7384,8 @@ No markdown, no explanation outside the JSON.`;
                     {
                       id: `action-followup-${Date.now()}`,
                       label: 'Preview safe patch from this error',
-                      actionType: 'fix-preview-lite',
-                      riskLevel: 'low',
+                      actionType: 'apply-debug-patch',
+                      riskLevel: 'medium',
                     },
                   ]
                 : []),

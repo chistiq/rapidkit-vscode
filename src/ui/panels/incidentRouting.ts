@@ -7,6 +7,7 @@ export type RoutingResult = {
     | 'workspace-memory-wizard'
     | 'doctor-fix'
     | 'recipe-pack'
+    | 'apply-module-gen'
     | 'incident-repro-pack'
     | 'release-readiness-commander'
     | 'browser-smoke-test'
@@ -60,6 +61,14 @@ export function routeIncidentActionTypeFromMessage(message: string): RoutingResu
     normalized.includes('share incident')
   ) {
     return { actionType: 'incident-repro-pack', fallbackReason: 'success' };
+  }
+  if (
+    normalized.includes('install') &&
+    (normalized.includes('module') ||
+      normalized.includes('catalog') ||
+      normalized.includes('package'))
+  ) {
+    return { actionType: 'apply-module-gen', fallbackReason: 'success' };
   }
   if (
     normalized.includes('recipe') ||

@@ -61,8 +61,19 @@ export type DashboardOpsChainState = {
   status: 'running' | 'completed' | 'blocked';
   startedAt: number;
   updatedAt: number;
+  currentStepStartedAt?: number;
   lastDetail?: string;
 };
+
+export function filterOpsChainForActiveWorkspace(
+  chain: DashboardOpsChainState | null | undefined,
+  workspacePath?: string | null
+): DashboardOpsChainState | null {
+  if (!chain?.workspacePath || !workspacePath) {
+    return null;
+  }
+  return chain.workspacePath === workspacePath ? chain : null;
+}
 
 export type DashboardOnboardingState = {
   isFreshInstall: boolean;

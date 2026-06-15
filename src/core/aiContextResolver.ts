@@ -120,6 +120,12 @@ export function buildRapidkitCommandScopeSection(ctx: AIModalContext): string {
     '- `npx rapidkit doctor project` belongs in project root for selected-service diagnostics.'
   );
   lines.push(
+    '- Catalog module install/remove belongs in PROJECT root: `npx rapidkit add module <slug>` and `rapidkit uninstall module <slug>`.'
+  );
+  lines.push(
+    '- Domain feature scaffolding (NestJS src/<feature>/, FastAPI routers) is manual/code-gen — not `rapidkit add module`.'
+  );
+  lines.push(
     '- `npx rapidkit doctor` is a host pre-flight check. It is not a substitute for `npx rapidkit doctor workspace`.'
   );
 

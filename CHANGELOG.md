@@ -31,6 +31,9 @@ Planned as extension **0.35.0** (after marketplace **0.34.0**). Aligns with Rapi
 * **Setup command-center**: embedded Setup & Settings with full-width host, theme-safe loading skeletons, `ToolRow` matrix, and collapsible optional/advanced sections.
 * **npm governance pipeline parity** (npm `0.34.0` CLI): `workspai.workspacePipeline` (`pipeline --json --strict`), `pipeline` evidence card from `pipeline-last-run.json`, Release hub orchestrator banner, and sidebar Run & Release / Governance menu entries.
 * **Vitest expansion**: dashboard bridges, studio redesign contracts, design-system drift, ship-loop integration, AI action framework, presentation contracts, and smoke stabilization suites.
+* **Enterprise hardening modules**: `workspacePathBoundary`, `incidentInlineCommandRunner`, `incidentStudioStabilizationPolicy`, `dashboardEvidencePending`, and `dashboardEvidenceRefreshSchedule` (webview).
+* **Workspace adoption parity**: extension adoption now delegates to canonical `rapidkit adopt --json` first, with a schema-aligned local fallback for offline or unavailable npm CLI scenarios.
+* **Multi-stack adopted project discovery**: adopted frontend and backend projects can be registered outside the workspace tree and still appear in Dashboard, Evidence, Sidebar, and project discovery flows.
 
 ### Changed
 
@@ -40,6 +43,8 @@ Planned as extension **0.35.0** (after marketplace **0.34.0**). Aligns with Rapi
 * Expanded workspace and project treeviews to notify governance ops chain and honor dashboard workspace payloads.
 * **npm CLI verify**: Setup version probe uses developer-style `npx rapidkit --version` so terminal output matches the card; orchestration commands remain pinned.
 * Guided/lite/responsive studio polish (Wave Y): denser guided conversation, action outcome essentials, collapsible sections, and responsive studio chrome.
+* **Evidence refresh**: replaced multi-timer refresh storm (0 / 1.8s / 5s / 12s) with debounced coalescing (750ms + one 5s follow-up); refresh only when commands opt in via `refreshEvidence: true`.
+* **Project adoption UX**: “convert generic project” is now “adopt project into Workspai workspace”; known stacks are no longer skipped and are adopted through the same governance contract.
 
 ### Fixed
 
@@ -47,6 +52,14 @@ Planned as extension **0.35.0** (after marketplace **0.34.0**). Aligns with Rapi
 * AI creation intent planning and module suggestion boundaries for supported project types.
 * `UserMode` typing (`standard`) and shell-view lifecycle guards for Settings/Setup tabs.
 * Doctor telemetry refresh alignment with scoped workspace/project evidence.
+* **Security (P0)**: user-supplied paths cannot escape the active workspace; shell metacharacters rejected; Studio inline CLI restricted to an allowlisted RapidKit surface executed without a shell.
+* **Dashboard ops chain (P0)**: cross-workspace chain bleed in the webview; bootstrap step stall without timeout; silent no-op when contract dispatch fails (now warns + `dashboardCommandFailed`).
+* **Evidence (P0)**: workspace-level project-doctor artifacts without project identity no longer attach to the wrong selected project; missing bootstrap card always shown.
+* **Studio (P1)**: mutation gate parity via shared stabilization policy; standalone panel `incomingMessage` merge and project path/name injection.
+* **Reliability (P1)**: pending evidence cards reconcile from resolved cards and activity `completed`/`failed`; removed blind 15s pending timeout.
+* **Incident Studio stabilization (0.35.0)**: resync analyze-backed VNext state after report reload; project scope for standalone chat brain and palette open; CLI mutation detection without `cliActionId`; session persistence queue before load; scope selector disabled without project; ContextPanel AI/verify gate parity; chat-brain error banner; mission-control ErrorBoundary; coalesced App embed host-handler refs for CLI/ship loop.
+* **Adopted project visibility**: external adopted projects written to `.rapidkit/imported-projects.json` are now resolved by workspace manager, project explorer, and welcome-panel project discovery instead of disappearing after refresh.
+* **Fallback adoption drift**: if npm CLI adoption is unavailable, the extension writes aligned `project.json`, `adopt.json`, `adopt-readiness.json`, `context.json`, and workspace registry metadata instead of legacy partial markers.
 
 ### Removed
 

@@ -16,10 +16,12 @@ export type DashboardOpsChainState = {
   status: 'running' | 'completed' | 'blocked';
   startedAt: number;
   updatedAt: number;
+  currentStepStartedAt: number;
   lastDetail?: string;
 };
 
 const OPS_CHAIN_KEY = 'rapidkit.dashboard.opsChain';
+export const OPS_CHAIN_STEP_TIMEOUT_MS = 120_000;
 
 const STEP_COMMANDS: Record<DashboardOpsChainStep, string> = {
   bootstrap: 'workspaceBootstrap',
@@ -41,7 +43,24 @@ export function getDashboardOpsChain(
   context: vscode.ExtensionContext
 ): DashboardOpsChainState | null {
   const raw = context.globalState.get<DashboardOpsChainState>(OPS_CHAIN_KEY);
-  return raw && typeof raw === 'object' ? raw : null;
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+  return {
+    ...raw,
+    currentStepStartedAt:
+      typeof raw.currentStepStartedAt === 'number' ? raw.currentStepStartedAt : raw.startedAt,
+  };
+}
+
+export function filterOpsChainForWorkspace(
+  chain: DashboardOpsChainState | null | undefined,
+  workspacePath?: string
+): DashboardOpsChainState | null {
+  if (!chain || !workspacePath) {
+    return null;
+  }
+  return chain.workspacePath === workspacePath ? chain : null;
 }
 
 export async function startDashboardOpsChain(
@@ -54,8 +73,9 @@ export async function startDashboardOpsChain(
   }
 ): Promise<DashboardOpsChainState> {
   const steps = input.steps ?? DEFAULT_CHAIN;
+  const now = Date.now();
   const next: DashboardOpsChainState = {
-    id: `${input.workspacePath}-${Date.now()}`,
+    id: `${input.workspacePath}-${now}`,
     workspacePath: input.workspacePath,
     workspaceName: input.workspaceName,
     triggeredBy: input.triggeredBy,
@@ -63,8 +83,9 @@ export async function startDashboardOpsChain(
     currentStep: steps[0],
     completedSteps: [],
     status: 'running',
-    startedAt: Date.now(),
-    updatedAt: Date.now(),
+    startedAt: now,
+    updatedAt: now,
+    currentStepStartedAt: now,
   };
   await context.globalState.update(OPS_CHAIN_KEY, next);
   return next;
@@ -82,6 +103,15 @@ export function isEvidenceGreenEnough(status: DashboardEvidenceStatus): boolean 
   return status === 'pass' || status === 'warn';
 }
 
+function blockOpsChain(chain: DashboardOpsChainState, detail: string): DashboardOpsChainState {
+  return {
+    ...chain,
+    status: 'blocked',
+    updatedAt: Date.now(),
+    lastDetail: detail,
+  };
+}
+
 export async function advanceDashboardOpsChain(
   context: vscode.ExtensionContext,
   cards: DashboardEvidenceCard[],
@@ -96,17 +126,24 @@ export async function advanceDashboardOpsChain(
     { cards, workspacePath },
     STEP_CARD_IDS[chain.currentStep]
   );
+  const stepAgeMs = Date.now() - chain.currentStepStartedAt;
+
   if (!currentCard || currentCard.status === 'missing') {
+    if (stepAgeMs >= OPS_CHAIN_STEP_TIMEOUT_MS) {
+      const blocked = blockOpsChain(
+        chain,
+        `${chain.currentStep} evidence did not arrive within ${Math.round(
+          OPS_CHAIN_STEP_TIMEOUT_MS / 1000
+        )}s. Run the step manually from Operate.`
+      );
+      await context.globalState.update(OPS_CHAIN_KEY, blocked);
+      return blocked;
+    }
     return chain;
   }
 
   if (currentCard.status === 'fail') {
-    const blocked: DashboardOpsChainState = {
-      ...chain,
-      status: 'blocked',
-      updatedAt: Date.now(),
-      lastDetail: currentCard.blockers?.[0] ?? currentCard.summary,
-    };
+    const blocked = blockOpsChain(chain, currentCard.blockers?.[0] ?? currentCard.summary);
     await context.globalState.update(OPS_CHAIN_KEY, blocked);
     return blocked;
   }
@@ -133,11 +170,13 @@ export async function advanceDashboardOpsChain(
     return completed;
   }
 
+  const now = Date.now();
   const running: DashboardOpsChainState = {
     ...chain,
     completedSteps,
     currentStep: nextStep,
-    updatedAt: Date.now(),
+    updatedAt: now,
+    currentStepStartedAt: now,
     lastDetail: `${chain.currentStep} complete — ready for ${nextStep}.`,
   };
   await context.globalState.update(OPS_CHAIN_KEY, running);
@@ -149,4 +188,18 @@ export function getNextOpsChainCommand(chain: DashboardOpsChainState | null): st
     return undefined;
   }
   return resolveOpsChainCommand(chain.currentStep);
+}
+
+export async function blockDashboardOpsChain(
+  context: vscode.ExtensionContext,
+  workspacePath: string,
+  detail: string
+): Promise<DashboardOpsChainState | null> {
+  const chain = getDashboardOpsChain(context);
+  if (!chain || chain.workspacePath !== workspacePath || chain.status !== 'running') {
+    return chain;
+  }
+  const blocked = blockOpsChain(chain, detail);
+  await context.globalState.update(OPS_CHAIN_KEY, blocked);
+  return blocked;
 }

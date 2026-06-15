@@ -502,8 +502,8 @@ describe('contract drift guard', () => {
     expect(read('src/utils/platformCapabilities.ts')).toContain(
       "['--yes', '--package', 'rapidkit', 'rapidkit', ...args]"
     );
-    expect(read('src/ui/panels/incidentStudioInlineCommandBridge.ts')).toContain(
-      'toPinnedRapidkitExecutionCommand(inlineCommand)'
+    expect(read('src/core/incidentInlineCommandRunner.ts')).toContain(
+      'toPinnedRapidkitExecutionCommand(trimmed)'
     );
     expect(read('src/ui/panels/welcomePanel.ts')).toContain('dispatchIncidentStudioInlineCommand');
     expect(combined).not.toContain('rapidkit doctor --scope=workspace');
@@ -530,8 +530,8 @@ describe('contract drift guard', () => {
     expect(assistPanelSource).toContain('ws-assist-panel__contract');
     expect(assistPanelSource).toContain('Evidence {contextContract.evidence_confidence}');
     expect(assistPanelSource).toContain('onCancel: () => void;');
-    expect(assistPanelSource).toContain('onClick={isStreaming ? onCancel : handleSubmit}');
-    expect(assistPanelSource).toContain("{isStreaming ? 'Stop' : 'Send'}");
+    expect(assistPanelSource).toContain('onStop={onCancel}');
+    expect(assistPanelSource).toContain('<ChatComposer');
 
     expect(welcomePanelSource).toContain("case 'aiCancelQuery':");
     expect(welcomePanelSource).toContain('this._aiQueryTokenSource?.cancel();');

@@ -2,8 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { describe, expect, it, vi } from 'vitest';
 
-const { createOrShowMock, showWarningMessageMock, showErrorMessageMock } = vi.hoisted(() => ({
-  createOrShowMock: vi.fn(),
+const { openIncidentStudioMock, showWarningMessageMock, showErrorMessageMock } = vi.hoisted(() => ({
+  openIncidentStudioMock: vi.fn(),
   showWarningMessageMock: vi.fn(),
   showErrorMessageMock: vi.fn(),
 }));
@@ -15,9 +15,9 @@ vi.mock('vscode', () => ({
   },
 }));
 
-vi.mock('../ui/panels/incidentStudioPanel', () => ({
-  IncidentStudioPanel: {
-    createOrShow: createOrShowMock,
+vi.mock('../ui/panels/welcomePanel', () => ({
+  WelcomePanel: {
+    openIncidentStudio: openIncidentStudioMock,
   },
 }));
 
@@ -33,8 +33,8 @@ vi.mock('../utils/logger', () => ({
 import { showIncidentStudioNextCommand } from '../commands/incidentStudioNext';
 
 describe('incident studio consolidation', () => {
-  it('routes incidentStudioNext to canonical IncidentStudioPanel path', async () => {
-    createOrShowMock.mockReset();
+  it('routes incidentStudioNext to dashboard embed via WelcomePanel.openIncidentStudio', async () => {
+    openIncidentStudioMock.mockReset();
     showWarningMessageMock.mockReset();
     showErrorMessageMock.mockReset();
 
@@ -42,7 +42,7 @@ describe('incident studio consolidation', () => {
       getSelectedWorkspace: () => ({ path: '/tmp/demo-ws', name: 'demo-ws' }),
     });
 
-    expect(createOrShowMock).toHaveBeenCalledWith(
+    expect(openIncidentStudioMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         workspacePath: '/tmp/demo-ws',
@@ -54,7 +54,7 @@ describe('incident studio consolidation', () => {
   });
 
   it('asks for workspace selection when no workspace is selected', async () => {
-    createOrShowMock.mockReset();
+    openIncidentStudioMock.mockReset();
     showWarningMessageMock.mockReset();
     showErrorMessageMock.mockReset();
 
@@ -63,7 +63,7 @@ describe('incident studio consolidation', () => {
     });
 
     expect(showWarningMessageMock).toHaveBeenCalledWith('Select a workspace first.');
-    expect(createOrShowMock).not.toHaveBeenCalled();
+    expect(openIncidentStudioMock).not.toHaveBeenCalled();
     expect(showErrorMessageMock).not.toHaveBeenCalled();
   });
 });

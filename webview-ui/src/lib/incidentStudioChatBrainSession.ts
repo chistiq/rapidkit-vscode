@@ -13,9 +13,18 @@ import {
 } from '@/lib/incidentStudioPayload';
 import { logChatBrain } from '@/lib/chatBrainDebug';
 
+export type IncidentStudioChatBrainBoardAction = {
+  id?: string;
+  label: string;
+  actionType?: string;
+  riskLevel?: string;
+};
+
 export type IncidentStudioChatBrainBoard = {
-  actions?: Array<{ label: string }>;
-  data?: { command?: string };
+  title?: string;
+  summary?: string;
+  actions?: IncidentStudioChatBrainBoardAction[];
+  data?: { command?: string; route?: string };
 };
 
 export type IncidentStudioChatBrainHostMessage = {
@@ -28,8 +37,14 @@ type UseIncidentStudioChatBrainOptions = {
   workspacePath: string;
   workspaceName?: string;
   projectSelection?: IncidentProjectSelection | null;
+  scopeMode?: 'workspace' | 'project';
   modelId?: string | null;
   postMessage: (command: string, data?: unknown) => void;
+  callbacks?: {
+    onStreamChunk?: () => void;
+    onDone?: (detail: { finalText: string; modelId?: string; messageId: string | null }) => void;
+    onStarted?: (data?: Record<string, unknown>) => void;
+  };
 };
 
 function createRequestId(prefix: string): string {
@@ -55,8 +70,10 @@ export function useIncidentStudioChatBrain({
   workspacePath,
   workspaceName,
   projectSelection,
+  scopeMode = 'workspace',
   modelId,
   postMessage,
+  callbacks,
 }: UseIncidentStudioChatBrainOptions) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [streamText, setStreamText] = useState('');
@@ -66,6 +83,7 @@ export function useIncidentStudioChatBrain({
     useState<NormalizedIncidentActionResultPayload | null>(null);
   const [board, setBoard] = useState<IncidentStudioChatBrainBoard | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorRetryable, setErrorRetryable] = useState(true);
 
   const streamTextRef = useRef('');
   const messageIdRef = useRef<string | null>(null);
@@ -96,6 +114,7 @@ export function useIncidentStudioChatBrain({
           buildIncidentChatStartPayload({
             workspacePath,
             projectSelection,
+            scopeMode,
             resumeConversationId: nextConversationId,
             requestId: createRequestId('cb'),
           })
@@ -104,6 +123,7 @@ export function useIncidentStudioChatBrain({
 
       setIsStreaming(true);
       setError(null);
+      setErrorRetryable(true);
       setIncomingActionResult(null);
       setBoard(null);
       resetStreamState();
@@ -114,13 +134,22 @@ export function useIncidentStudioChatBrain({
           conversationId: nextConversationId,
           workspacePath,
           projectSelection,
+          scopeMode,
           requestId: createRequestId('cbq'),
           modelId: modelId ?? undefined,
           message: trimmedQuery,
         })
       );
     },
-    [conversationId, modelId, postMessage, projectSelection, resetStreamState, workspacePath]
+    [
+      conversationId,
+      modelId,
+      postMessage,
+      projectSelection,
+      resetStreamState,
+      scopeMode,
+      workspacePath,
+    ]
   );
 
   const handleHostMessage = useCallback(
@@ -132,6 +161,9 @@ export function useIncidentStudioChatBrain({
           }
           resetStreamState();
           setIsStreaming(false);
+          setError(null);
+          setErrorRetryable(true);
+          callbacks?.onStarted?.(message.data);
           logChatBrain(message.command, message.data);
           return true;
         case 'aiChatChunk':
@@ -143,6 +175,7 @@ export function useIncidentStudioChatBrain({
             const nextChunk = typeof message.data?.chunk === 'string' ? message.data.chunk : '';
             streamTextRef.current = nextChunk;
             setStreamText(nextChunk);
+            callbacks?.onStreamChunk?.();
           } else {
             const nextChunk =
               streamTextRef.current +
@@ -152,6 +185,7 @@ export function useIncidentStudioChatBrain({
           }
           setIsStreaming(true);
           setError(null);
+          setErrorRetryable(true);
           logChatBrain(message.command, message.data);
           return true;
         case 'aiChatActionBoard':
@@ -198,6 +232,12 @@ export function useIncidentStudioChatBrain({
             );
           }
 
+          callbacks?.onDone?.({
+            finalText,
+            modelId: donePayload.modelId,
+            messageId: messageIdRef.current,
+          });
+
           resetStreamState();
           logChatBrain(message.command, message.data);
           return true;
@@ -231,6 +271,7 @@ export function useIncidentStudioChatBrain({
             setBoard(message.data.board as IncidentStudioChatBrainBoard);
           }
           setError(partialFailure.message);
+          setErrorRetryable(partialFailure.retryable !== false);
           logChatBrain(message.command, message.data);
           return true;
         }
@@ -251,11 +292,20 @@ export function useIncidentStudioChatBrain({
             );
           }
           resetStreamState();
-          setError(
+          const errorMessage =
             typeof message.data?.message === 'string'
               ? message.data.message
-              : 'Chat Brain request failed.'
-          );
+              : 'Chat Brain request failed.';
+          if (errorMessage.trim()) {
+            setIncomingMessage(
+              buildAssistantChatMessage({
+                id: `assistant-error-${Date.now()}`,
+                content: errorMessage,
+              })
+            );
+          }
+          setError(errorMessage);
+          setErrorRetryable(message.data?.retryable !== false);
           logChatBrain(message.command, message.data);
           return true;
         }
@@ -263,18 +313,53 @@ export function useIncidentStudioChatBrain({
           return false;
       }
     },
-    [resetStreamState]
+    [callbacks, resetStreamState]
   );
+
+  const setBlockingError = useCallback((message: string) => {
+    setError(message);
+    setErrorRetryable(false);
+  }, []);
+
+  const resetForQuery = useCallback(() => {
+    setIncomingActionResult(null);
+    setBoard(null);
+    setError(null);
+    setErrorRetryable(true);
+  }, []);
+
+  const resetHostState = useCallback(() => {
+    resetStreamState();
+    setIsStreaming(false);
+    setIncomingActionResult(null);
+    setBoard(null);
+    setError(null);
+    setErrorRetryable(true);
+    messageIdRef.current = null;
+    lastDoneRequestIdRef.current = null;
+    lastActionResultRequestIdRef.current = null;
+    lastPartialFailureRequestIdRef.current = null;
+    lastErrorRequestIdRef.current = null;
+  }, [resetStreamState]);
 
   return {
     workspaceName,
     conversationId,
+    setConversationId,
     streamText,
     isStreaming,
     incomingMessage,
     incomingActionResult,
     board,
     error,
+    errorRetryable,
+    clearError: () => {
+      setError(null);
+      setErrorRetryable(true);
+    },
+    setBlockingError,
+    resetForQuery,
+    resetHostState,
     submitQuery,
     handleHostMessage,
   };

@@ -50,9 +50,16 @@ import {
 import { resolvePhaseShipGuidance } from '../../lib/incidentStudioPhaseShipGuidance';
 import { deriveEnterpriseObservabilityView } from '../../lib/incidentStudioObservabilityView';
 import {
+  buildReportBackedStateRevision,
+  mergeReportBackedStudioState,
+} from '../../lib/incidentStudioReportStateSync';
+import { resolveStudioMutationBlockReason } from '../../lib/incidentStudioMutationGate';
+import {
   useIncidentStudioSessionPersistence,
 } from '../../lib/incidentStudioSessionPersistence';
 import type { IncidentReleaseReadinessCommanderArtifact } from '../../lib/incidentStudioPayload';
+import type { IncidentStudioChatBrainBoard } from '../../lib/incidentStudioChatBrainSession';
+import type { StudioCodeChangeActionPayload } from '../../lib/incidentStudioCodeChangeActions';
 
 interface IncidentStudioVNextProps {
     onSendMessage?: (message: string) => string | void | Promise<string | void>;
@@ -77,7 +84,19 @@ interface IncidentStudioVNextProps {
         acceptedPaths: string[],
         branchSafeApply: boolean,
     ) => void;
-    guidedPrimaryBoardAction?: { label: string; command?: string } | null;
+    guidedPrimaryBoardAction?: {
+        label: string;
+        command?: string;
+        actionType?: string;
+        actionId?: string;
+    } | null;
+    chatBrainBoard?: IncidentStudioChatBrainBoard | null;
+    onExecuteChatBrainAction?: (
+        actionType: string,
+        actionId?: string,
+        payload?: StudioCodeChangeActionPayload,
+        userMessage?: string,
+    ) => void;
     onRunGuidedCommand?: (command: string) => void;
     onRunCliSurfaceAction?: (entry: { command: string; cliActionId: string }) => void;
     executingCliCommand?: string | null;
@@ -107,6 +126,23 @@ interface IncidentStudioVNextProps {
     sessionHostMessageHandlerRef?: MutableRefObject<
         ((command: string, data?: unknown) => boolean) | null
     >;
+    onScopeChange?: (scope: 'workspace' | 'project') => void;
+    analysisScopeNotice?: import('@/lib/incidentStudioAnalysisScope').AnalysisScopeNotice | null;
+    selectedProjectPath?: string | null;
+    selectedProjectName?: string;
+    availableProjects?: import('@/lib/incidentStudioAnalysisScope').WorkspaceProjectOption[];
+    onSelectAnalysisProject?: (
+        project: import('@/lib/incidentStudioAnalysisScope').WorkspaceProjectOption
+    ) => void;
+    onDismissScopeNotice?: () => void;
+    chatBrainError?: string | null;
+    chatBrainErrorRetryable?: boolean;
+    onDismissChatBrainError?: () => void;
+    availableModels?: Array<{ id: string; name: string; vendor: string }>;
+    selectedModelId?: string | null;
+    preferredModelId?: string;
+    modelsLoading?: boolean;
+    onModelChange?: (modelId: string | null) => void;
 }
 
 export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
@@ -129,10 +165,18 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
     onReplayIncidentQuery,
     onApplyMultiFilePatch,
     guidedPrimaryBoardAction = null,
+    chatBrainBoard = null,
+    onExecuteChatBrainAction,
     onRunGuidedCommand,
     onRunCliSurfaceAction,
     executingCliCommand = null,
     hasProjectSelected = false,
+    analysisScopeNotice = null,
+    selectedProjectPath = null,
+    selectedProjectName,
+    availableProjects = [],
+    onSelectAnalysisProject,
+    onDismissScopeNotice,
     preferredUserMode,
     onUserModeChange,
     studioDisplayMode = 'full',
@@ -152,6 +196,15 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
     workspacePath = '',
     sessionPostMessage,
     sessionHostMessageHandlerRef,
+    onScopeChange,
+    chatBrainError = null,
+    chatBrainErrorRetryable = true,
+    onDismissChatBrainError,
+    availableModels = [],
+    selectedModelId = null,
+    preferredModelId = 'auto',
+    modelsLoading = false,
+    onModelChange,
 }) => {
     const actionOutcomeCallbacks = useMemo(
         () =>
@@ -188,6 +241,7 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
     const [state, setState] = useState<IncidentStudioState>(
         createInitialState(initialState),
     );
+    const reportBackedRevisionRef = useRef('');
     const [approvalAuditEvents, setApprovalAuditEvents] = useState<StudioApprovalAuditEvent[]>([]);
     const [proofEvents, setProofEvents] = useState<StudioProofEvent[]>([]);
     const [executionTranscripts, setExecutionTranscripts] = useState<StudioExecutionTranscript[]>([]);
@@ -225,10 +279,36 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
     }, [sessionPersistence.loadedSession]);
 
     useEffect(() => {
+        if (!initialState) {
+            return;
+        }
+        const revision = buildReportBackedStateRevision(initialState);
+        if (!revision || revision === reportBackedRevisionRef.current) {
+            return;
+        }
+        reportBackedRevisionRef.current = revision;
+        setState((prev) =>
+            mergeReportBackedStudioState(prev, initialState, {
+                preserveConversation: sessionLoadedRef.current || prev.messages.length > 0,
+            })
+        );
+    }, [initialState]);
+
+    useEffect(() => {
+        if (!initialState?.scopeType || initialState.scopeType === state.scopeType) {
+            return;
+        }
+        setState((prev) => ({ ...prev, scopeType: initialState.scopeType! }));
+    }, [initialState?.scopeType, state.scopeType]);
+
+    if (sessionHostMessageHandlerRef) {
+        sessionHostMessageHandlerRef.current = sessionPersistence.handleHostMessage;
+    }
+
+    useEffect(() => {
         if (!sessionHostMessageHandlerRef) {
             return;
         }
-        sessionHostMessageHandlerRef.current = sessionPersistence.handleHostMessage;
         return () => {
             sessionHostMessageHandlerRef.current = null;
         };
@@ -537,6 +617,10 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
         () => deriveEnterpriseStabilizationLoopView(incomingTelemetry),
         [incomingTelemetry],
     );
+    const policyMutationBlockReason = useMemo(
+        () => resolveStudioMutationBlockReason(incomingTelemetry),
+        [incomingTelemetry]
+    );
     const enterpriseShipLoop = useMemo(
         () =>
             deriveEnterpriseShipLoopView({
@@ -649,12 +733,16 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
     }, [onCopyText]);
 
     // Scope changes
-    const handleScopeChange = useCallback((scope: 'workspace' | 'project') => {
-        setState((prev) => ({
-            ...prev,
-            scopeType: scope,
-        }));
-    }, []);
+    const handleScopeChange = useCallback(
+        (scope: 'workspace' | 'project') => {
+            setState((prev) => ({
+                ...prev,
+                scopeType: scope,
+            }));
+            onScopeChange?.(scope);
+        },
+        [onScopeChange]
+    );
 
     const handleApprovalAuditEvent = useCallback((
         event: Omit<StudioApprovalAuditEvent, 'id' | 'happenedAt'>,
@@ -775,39 +863,47 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
             data-studio-viewport={viewportTier}
         >
             <div className={studioClass.workspace}>
-                {/* Top Bar */}
-                <MissionControlHeader
-                    currentPhase={state.currentPhase}
-                    policyGates={state.policyGates}
-                    userMode={state.userMode}
-                    themeMode={themeMode}
-                    scopeType={state.scopeType}
-                    workspaceName={state.workspaceName || 'Current Workspace'}
-                    releasePosture={state.releasePosture}
-                    studioEvidence={state.studioEvidence}
-                    aiActionRegistry={state.aiActionRegistry}
-                    studioActionStatus={state.studioActionStatus}
-                    compactMode={compactTopBar || isGuided}
-                    embedded={embedded}
-                    displayMode={studioDisplayMode}
-                    liteReleaseState={liteReleaseState}
-                    telemetryRefreshLabel={telemetryRefreshLabel}
-                    isTelemetryRefreshing={isTelemetryRefreshing}
-                    onDisplayModeChange={onStudioDisplayModeChange}
-                    onTelemetryRefresh={onTelemetryRefresh}
-                    onUserModeChange={handleUserModeChange}
-                    onThemeModeChange={handleThemeModeChange}
-                    onScopeChange={handleScopeChange}
-                    onExecuteAction={handleSendMessage}
-                    verifyGateBlockedReasons={verifyGateBlockedReasons}
-                />
+                <ErrorBoundary region="Mission Control">
+                    <MissionControlHeader
+                        currentPhase={state.currentPhase}
+                        policyGates={state.policyGates}
+                        userMode={state.userMode}
+                        themeMode={themeMode}
+                        scopeType={state.scopeType}
+                        workspaceName={state.workspaceName || 'Current Workspace'}
+                        releasePosture={state.releasePosture}
+                        studioEvidence={state.studioEvidence}
+                        aiActionRegistry={state.aiActionRegistry}
+                        studioActionStatus={state.studioActionStatus}
+                        compactMode={compactTopBar || isGuided}
+                        embedded={embedded}
+                        displayMode={studioDisplayMode}
+                        liteReleaseState={liteReleaseState}
+                        telemetryRefreshLabel={telemetryRefreshLabel}
+                        isTelemetryRefreshing={isTelemetryRefreshing}
+                        onDisplayModeChange={onStudioDisplayModeChange}
+                        onTelemetryRefresh={onTelemetryRefresh}
+                        onUserModeChange={handleUserModeChange}
+                        onThemeModeChange={handleThemeModeChange}
+                        onScopeChange={handleScopeChange}
+                        onExecuteAction={handleSendMessage}
+                        verifyGateBlockedReasons={verifyGateBlockedReasons}
+                        hasProjectSelected={hasProjectSelected}
+                        analysisScopeNotice={analysisScopeNotice}
+                        selectedProjectPath={selectedProjectPath}
+                        selectedProjectName={selectedProjectName}
+                        availableProjects={availableProjects}
+                        onSelectProject={onSelectAnalysisProject}
+                        onDismissScopeNotice={onDismissScopeNotice}
+                    />
 
-                <PhaseStepper
-                    currentPhase={state.currentPhase}
-                    compactMode={compactStudio}
-                    guidedMode={isGuided}
-                    onSelectPhase={handlePhaseSelect}
-                />
+                    <PhaseStepper
+                        currentPhase={state.currentPhase}
+                        compactMode={compactStudio}
+                        guidedMode={isGuided}
+                        onSelectPhase={handlePhaseSelect}
+                    />
+                </ErrorBoundary>
 
                 {/* Main Layout: 4-region shell */}
                 <div
@@ -880,6 +976,9 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
                                     canRunShipLoopStep={canRunShipLoopStep}
                                     observabilityView={observabilityView}
                                     phaseShipGuidance={phaseShipGuidance}
+                                    verifyGateBlockedReasons={verifyGateBlockedReasons}
+                                    policyMutationBlocked={Boolean(policyMutationBlockReason)}
+                                    policyMutationReason={policyMutationBlockReason ?? undefined}
                                 />
                             </ErrorBoundary>
                         </div>
@@ -914,6 +1013,16 @@ export const IncidentStudioVNext: React.FC<IncidentStudioVNextProps> = ({
                                 onLearnExportArchive={learnExportArchive}
                                 guidedPrimaryBoardAction={guidedPrimaryBoardAction}
                                 onRunGuidedCommand={onRunGuidedCommand}
+                                chatBrainBoard={chatBrainBoard}
+                                onExecuteChatBrainAction={onExecuteChatBrainAction}
+                                chatBrainError={chatBrainError}
+                                chatBrainErrorRetryable={chatBrainErrorRetryable}
+                                onDismissChatBrainError={onDismissChatBrainError}
+                                availableModels={availableModels}
+                                selectedModelId={selectedModelId}
+                                preferredModelId={preferredModelId}
+                                modelsLoading={modelsLoading}
+                                onModelChange={onModelChange}
                             />
                         </ErrorBoundary>
                     </div>

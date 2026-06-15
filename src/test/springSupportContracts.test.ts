@@ -37,8 +37,8 @@ describe('spring support contracts', () => {
 
     expect(enterpriseFlowSource).toContain("framework: 'springboot'");
     expect(enterpriseFlowSource).toContain("framework: 'dotnet'");
-    expect(appSource).toContain(
-      'const handleCreateProject = (projectName: string, framework: AICreateFramework, kitName: string) =>'
+    expect(appSource).toMatch(
+      /const handleCreateProject = \(\s*projectName: string,\s*framework: AICreateFramework,\s*kitName: string\s*\) =>/
     );
   });
 

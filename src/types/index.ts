@@ -12,21 +12,34 @@ export interface WorkspaiWorkspace {
   }>;
 }
 
+export type WorkspaiProjectType =
+  | 'fastapi'
+  | 'django'
+  | 'flask'
+  | 'nestjs'
+  | 'express'
+  | 'koa'
+  | 'go'
+  | 'springboot'
+  | 'rails'
+  | 'dotnet'
+  | 'nextjs'
+  | 'react'
+  | 'vite'
+  | 'vue'
+  | 'nuxt'
+  | 'remix'
+  | 'sveltekit'
+  | 'svelte'
+  | 'angular'
+  | 'astro'
+  | 'solid'
+  | 'unknown';
+
 export interface WorkspaiProject {
   name: string;
   path: string;
-  type:
-    | 'fastapi'
-    | 'django'
-    | 'flask'
-    | 'nestjs'
-    | 'express'
-    | 'koa'
-    | 'go'
-    | 'springboot'
-    | 'rails'
-    | 'dotnet'
-    | 'unknown';
+  type: WorkspaiProjectType;
   kit: string;
   managed?: boolean;
   modules: string[];

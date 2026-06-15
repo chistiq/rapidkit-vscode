@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
-import fs from 'fs-extra';
 import path from 'path';
 
+import {
+  execRapidkitExecutionPlan,
+  resolveRapidkitExecutionPlan,
+} from '../../core/incidentInlineCommandRunner';
 import { WorkspaceUsageTracker } from '../../utils/workspaceUsageTracker';
-import { toPinnedRapidkitExecutionCommand } from '../../utils/platformCapabilities';
 import { resolveStudioMutationBlockReason } from './incidentStudioMutationGate';
 import type { IncidentStudioTelemetryGateSlice } from './incidentStudioPolicyGateMapper';
 import type { IncidentStudioExecutionTranscript } from './incidentStudioSessionPersistenceBridge';
@@ -25,9 +27,6 @@ export type RunIncidentInlineCommandResult = {
   error?: string;
   executionTranscript?: IncidentStudioExecutionTranscript;
 };
-
-const WORKSPACE_SCOPED_RAPIDKIT_COMMAND =
-  /^(?:(?:npx\s+(?:(?:--yes\s+--package\s+rapidkit\s+)?rapidkit))|rapidkit|poetry\s+run\s+rapidkit|\.\/\.venv\/bin\/rapidkit|\.\/rapidkit)\s+(?:create(?:\s+workspace|\s+project)?|bootstrap\b|setup\b|workspace\b|cache\b|mirror\b|readiness\b|analyze\b|import\b|snapshot\b|project\s+(?:archive|archives|restore|delete)\b|doctor(?:\s+(?:workspace|project))?\b|autopilot\s+release\b)/;
 
 const MUTATING_RAPIDKIT_CLI_COMMAND =
   /(?:\bdoctor\b[^\n]*--fix\b|\bworkspace\s+sync\b|\bworkspace\s+run\s+init\b|\bworkspace\s+archive\b|\bautopilot\s+release\b|\binit\b|\bbuild\b|\bdev\b)/i;
@@ -62,8 +61,17 @@ export function parseIncidentInlineCommandPayload(
 }
 
 export function isMutatingRapidkitCliCommand(command: string): boolean {
-  const normalized = toPinnedRapidkitExecutionCommand(command).replace(/\s+/g, ' ').trim();
-  if (!/(?:^|\s)rapidkit\b/.test(normalized)) {
+  const parsed = parseIncidentInlineCommandPayload({ command });
+  if (!parsed.command) {
+    return false;
+  }
+  const normalized = parsed.command.replace(/\s+/g, ' ').trim().toLowerCase();
+  if (
+    !/(?:^|\s)rapidkit\b/.test(normalized) &&
+    !/^(doctor|readiness|pipeline|workspace|analyze|autopilot|init|test|build|dev|shell)\b/.test(
+      normalized
+    )
+  ) {
     return false;
   }
   return MUTATING_RAPIDKIT_CLI_COMMAND.test(normalized);
@@ -239,50 +247,26 @@ export async function runIncidentInlineCommand(
   const inlineScopeProps = projectPath && projectBelongsToWorkspace ? { projectPath } : {};
 
   try {
-    const executionInlineCommand = toPinnedRapidkitExecutionCommand(inlineCommand);
-    let finalCommand = executionInlineCommand;
-    const normalizedCommand = executionInlineCommand.replace(/\s+/g, ' ').trim();
-    const isWorkspaceScopedRapidkitCommand =
-      WORKSPACE_SCOPED_RAPIDKIT_COMMAND.test(normalizedCommand);
-    const effectiveCwd =
-      !isWorkspaceScopedRapidkitCommand && projectPath && projectBelongsToWorkspace
-        ? projectPath
-        : workspacePath;
-
-    const isRapidkitCmd = /^rapidkit\b/.test(executionInlineCommand);
-    if (isRapidkitCmd) {
-      const projectLauncher =
-        effectiveCwd && (await fs.pathExists(path.join(effectiveCwd, 'rapidkit')))
-          ? path.join(effectiveCwd, 'rapidkit')
-          : undefined;
-      const venvRapidkit = path.join(workspacePath, '.venv', 'bin', 'rapidkit');
-      const hasVenvBin = await fs.pathExists(venvRapidkit);
-      if (projectLauncher && effectiveCwd === projectPath) {
-        finalCommand = './rapidkit' + executionInlineCommand.slice('rapidkit'.length);
-      } else if (hasVenvBin) {
-        finalCommand = venvRapidkit + executionInlineCommand.slice('rapidkit'.length);
-      } else {
-        const poetryLock = effectiveCwd
-          ? await fs.pathExists(path.join(effectiveCwd, 'pyproject.toml'))
-          : false;
-        if (poetryLock) {
-          finalCommand = 'poetry run ' + executionInlineCommand;
-        }
-      }
+    const executionPlan = await resolveRapidkitExecutionPlan({
+      command: inlineCommand,
+      workspacePath,
+      projectPath,
+      projectBelongsToWorkspace,
+    });
+    if ('error' in executionPlan) {
+      return {
+        command: inlineCommand,
+        success: false,
+        error: executionPlan.error,
+        executionTranscript: buildTranscript({
+          success: false,
+          error: executionPlan.error,
+        }),
+      };
     }
 
-    const shellCommand =
-      process.platform === 'win32'
-        ? { cmd: 'cmd', args: ['/d', '/s', '/c', finalCommand] }
-        : { cmd: 'sh', args: ['-c', finalCommand] };
-
-    const { execa } = await import('execa');
-    const result = await execa(shellCommand.cmd, shellCommand.args, {
-      cwd: effectiveCwd,
-      shell: false,
-      timeout: 60_000,
-      reject: false,
-    });
+    const result = await execRapidkitExecutionPlan(executionPlan);
+    const effectiveCwd = executionPlan.cwd;
 
     const combinedOutput = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
     const output = combinedOutput || 'Command completed with no output.';

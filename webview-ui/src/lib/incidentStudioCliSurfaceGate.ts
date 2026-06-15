@@ -6,6 +6,7 @@ import {
 import type { IncidentStudioTelemetryGateSlice } from './incidentStudioPolicyGateMapper';
 import type { IncidentUserMode } from './incidentStudioPreferences';
 import { resolveStudioMutationBlockReason } from './incidentStudioMutationGate';
+import { isMutatingRapidkitCliCommandText } from './incidentStudioCliMutationDetect';
 
 export type IncidentCliSurfaceDispatchInput = {
   command: string;
@@ -66,7 +67,7 @@ export function resolveIncidentCliSurfaceBlockReason(
     return 'Advanced CLI commands are blocked in guided mode. Switch to expert mode first.';
   }
 
-  const mutating = entry ? isMutatingCliEntry(entry) : false;
+  const mutating = entry ? isMutatingCliEntry(entry) : isMutatingRapidkitCliCommandText(command);
   if (mutating) {
     const mutationBlockReason = resolveStudioMutationBlockReason(input.telemetry);
     if (mutationBlockReason) {

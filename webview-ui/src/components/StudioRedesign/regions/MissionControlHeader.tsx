@@ -21,6 +21,8 @@ import type { LiteReleaseState } from '../../../lib/incidentStudioLiteMode';
 import type { IncidentStudioDisplayMode } from '../../../lib/incidentStudioPreferences';
 import { TopBar } from './TopBar';
 import { CommandRibbon } from './CommandRibbon';
+import { AnalysisScopeNoticeBanner } from './AnalysisScopeNoticeBanner';
+import type { AnalysisScopeNotice, WorkspaceProjectOption } from '../../../lib/incidentStudioAnalysisScope';
 
 export interface MissionControlHeaderProps {
     currentPhase: IncidentPhase;
@@ -46,6 +48,13 @@ export interface MissionControlHeaderProps {
     onScopeChange: (scope: ScopeType) => void;
     onExecuteAction: (command: StudioActionCommand) => void;
     verifyGateBlockedReasons?: string[];
+    hasProjectSelected?: boolean;
+    analysisScopeNotice?: AnalysisScopeNotice | null;
+    selectedProjectPath?: string | null;
+    selectedProjectName?: string;
+    availableProjects?: WorkspaceProjectOption[];
+    onSelectProject?: (project: WorkspaceProjectOption) => void;
+    onDismissScopeNotice?: () => void;
 }
 
 export const MissionControlHeader: React.FC<MissionControlHeaderProps> = ({
@@ -72,11 +81,24 @@ export const MissionControlHeader: React.FC<MissionControlHeaderProps> = ({
     onScopeChange,
     onExecuteAction,
     verifyGateBlockedReasons = [],
+    hasProjectSelected = false,
+    analysisScopeNotice = null,
+    selectedProjectPath = null,
+    selectedProjectName,
+    availableProjects = [],
+    onSelectProject,
+    onDismissScopeNotice,
 }) => (
     <div
         className={`${studioClass.missionControl}${embedded ? ' is-embedded' : ''}`}
         aria-label="Mission control"
     >
+        {analysisScopeNotice ? (
+            <AnalysisScopeNoticeBanner
+                notice={analysisScopeNotice}
+                onDismiss={analysisScopeNotice.dismissible ? onDismissScopeNotice : undefined}
+            />
+        ) : null}
         <div className={studioClass.missionControlIdentity}>
             <TopBar
                 currentPhase={currentPhase}
@@ -97,6 +119,11 @@ export const MissionControlHeader: React.FC<MissionControlHeaderProps> = ({
                 onUserModeChange={onUserModeChange}
                 onThemeModeChange={onThemeModeChange}
                 onScopeChange={onScopeChange}
+                hasProjectSelected={hasProjectSelected}
+                selectedProjectPath={selectedProjectPath}
+                selectedProjectName={selectedProjectName}
+                availableProjects={availableProjects}
+                onSelectProject={onSelectProject}
             />
         </div>
         <div className={studioClass.missionControlOps}>

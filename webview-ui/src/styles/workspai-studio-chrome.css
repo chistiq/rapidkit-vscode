@@ -592,9 +592,138 @@ button, input, textarea, select {
 }
 
 .studio-scope-option__desc {
-    font-size: 10.5px;
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--ws-text-muted);
+}
+
+.studio-scope-project-list {
+    border-top: 1px solid var(--ws-border-subtle);
+    padding: 6px 0 4px;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.studio-scope-project-list__heading {
+    padding: 6px 12px 4px;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ws-text-muted);
+    font-weight: 650;
+}
+
+.studio-scope-project-option {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    color: var(--ws-text);
+    cursor: pointer;
+    text-align: left;
+}
+
+.studio-scope-project-option:hover,
+.studio-scope-project-option.is-selected {
+    background: color-mix(in srgb, var(--ws-accent) 12%, transparent);
+}
+
+.studio-scope-project-option__name {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.studio-scope-project-option__meta {
+    font-size: 10px;
+    color: var(--ws-text-muted);
+    text-transform: capitalize;
+}
+
+.studio-scope-project-empty {
+    padding: 10px 12px 12px;
+    font-size: 11px;
     line-height: 1.4;
     color: var(--ws-text-muted);
+    border-top: 1px solid var(--ws-border-subtle);
+}
+
+.studio-scope-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 0 8px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--ws-border-subtle);
+    background: color-mix(in srgb, var(--ws-surface-raised) 92%, transparent);
+}
+
+.studio-scope-notice--info {
+    border-color: color-mix(in srgb, var(--ws-accent) 35%, var(--ws-border-subtle));
+}
+
+.studio-scope-notice--warning {
+    border-color: color-mix(in srgb, var(--ws-warning) 45%, var(--ws-border-subtle));
+}
+
+.studio-scope-notice--success {
+    border-color: color-mix(in srgb, var(--ws-success) 40%, var(--ws-border-subtle));
+}
+
+.studio-scope-notice__icon {
+    display: inline-flex;
+    margin-top: 1px;
+    color: var(--ws-accent);
+}
+
+.studio-scope-notice--warning .studio-scope-notice__icon {
+    color: var(--ws-warning);
+}
+
+.studio-scope-notice--success .studio-scope-notice__icon {
+    color: var(--ws-success);
+}
+
+.studio-scope-notice__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.studio-scope-notice__title {
+    font-size: 12px;
+    font-weight: 650;
+    color: var(--ws-text);
+}
+
+.studio-scope-notice__message {
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--ws-text-muted);
+}
+
+.studio-scope-notice__dismiss {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ws-text-muted);
+    cursor: pointer;
+}
+
+.studio-scope-notice__dismiss:hover {
+    background: color-mix(in srgb, var(--ws-text) 8%, transparent);
+    color: var(--ws-text);
 }
 
 .studio-release-pill {

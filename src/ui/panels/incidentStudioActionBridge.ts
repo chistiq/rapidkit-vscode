@@ -127,6 +127,9 @@ export async function executeStudioActionById(
     case 'fix-lens':
       await vscode.commands.executeCommand('workspai.aiFixPreviewLite', seed);
       return { refreshedReport: loadAnalyzeReport(workspace).report };
+    case 'install-module':
+      // Embed/standalone webviews route this through ChatBrain apply-module-gen.
+      return { refreshedReport: loadAnalyzeReport(workspace).report };
     case 'impact-lens':
       await vscode.commands.executeCommand('workspai.aiChangeImpactLite', seed);
       return { refreshedReport: loadAnalyzeReport(workspace).report };

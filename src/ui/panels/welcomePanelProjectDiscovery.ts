@@ -1,6 +1,10 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import { isWorkspacePathAncestor } from '../../core/aiContextResolver';
+import {
+  readImportedProjectsRegistry,
+  resolveImportedProjectPath,
+} from '../../utils/importedProjectsRegistry';
 
 export type WorkspaceMarkerSnapshot = {
   signature?: string;
@@ -158,13 +162,40 @@ export async function rankWorkspaceProjectCandidates(
       fromWorkspaceRegistry: boolean;
     }
   >();
+  const trustedProjectPaths = new Set<string>();
+
+  const addCandidate = (candidate: {
+    name: string;
+    path: string;
+    fromWorkspaceRegistry: boolean;
+  }) => {
+    const normalizedPath = path.resolve(candidate.path);
+    candidateMap.set(normalizedPath, {
+      name: candidate.name || path.basename(normalizedPath),
+      path: normalizedPath,
+      fromWorkspaceRegistry: candidate.fromWorkspaceRegistry,
+    });
+    if (candidate.fromWorkspaceRegistry) {
+      trustedProjectPaths.add(normalizedPath);
+    }
+  };
 
   for (const project of workspaceRecord?.projects || []) {
-    if (!isWorkspacePathAncestor(workspacePath, project.path)) {
+    if (!project.path) {
       continue;
     }
     const normalizedPath = path.resolve(project.path);
-    candidateMap.set(normalizedPath, {
+    addCandidate({
+      name: project.name || path.basename(normalizedPath),
+      path: project.path,
+      fromWorkspaceRegistry: true,
+    });
+  }
+
+  const importedRegistryEntries = await readImportedProjectsRegistry(workspacePath);
+  for (const project of importedRegistryEntries) {
+    const normalizedPath = resolveImportedProjectPath(workspacePath, project.path);
+    addCandidate({
       name: project.name || path.basename(normalizedPath),
       path: normalizedPath,
       fromWorkspaceRegistry: true,
@@ -172,10 +203,16 @@ export async function rankWorkspaceProjectCandidates(
   }
 
   for (const project of doctorSnapshot?.projects || []) {
-    if (!project.path || !isWorkspacePathAncestor(workspacePath, project.path)) {
+    if (!project.path) {
       continue;
     }
     const normalizedPath = path.resolve(project.path);
+    if (
+      !isWorkspacePathAncestor(workspacePath, normalizedPath) &&
+      !trustedProjectPaths.has(normalizedPath)
+    ) {
+      continue;
+    }
     if (!candidateMap.has(normalizedPath)) {
       candidateMap.set(normalizedPath, {
         name: project.name || path.basename(normalizedPath),
@@ -391,14 +428,48 @@ export async function resolveScopedProjectForWorkspace(
     };
   }
 
-  const selectedWorkspace = deps.workspaceExplorer?.getSelectedWorkspace?.();
-  if (selectedWorkspace && isWorkspacePathAncestor(workspacePath, selectedWorkspace.path)) {
-    return {
-      name: selectedWorkspace.name || path.basename(selectedWorkspace.path),
-      path: selectedWorkspace.path,
-      type: undefined,
-    };
+  if (options.projectPath) {
+    const normalizedProjectPath = path.resolve(options.projectPath);
+    const selectedWorkspace = deps.workspaceExplorer?.getSelectedWorkspace?.();
+    const workspaceRecord =
+      selectedWorkspace?.path === workspacePath
+        ? selectedWorkspace
+        : deps.workspaceExplorer?.getWorkspaceByPath?.(workspacePath);
+    const registryProjects = workspaceRecord?.projects || [];
+    const importedRegistryEntries = await readImportedProjectsRegistry(workspacePath);
+    const isTrustedExternalProject =
+      registryProjects.some((project) => path.resolve(project.path) === normalizedProjectPath) ||
+      importedRegistryEntries.some(
+        (project) =>
+          resolveImportedProjectPath(workspacePath, project.path) === normalizedProjectPath
+      );
+
+    if (isTrustedExternalProject) {
+      const inferredType =
+        options.projectType || (await deps.detectProjectType(normalizedProjectPath)) || undefined;
+      return {
+        name: options.projectName || path.basename(normalizedProjectPath),
+        path: normalizedProjectPath,
+        type: inferredType,
+      };
+    }
   }
+
+  const resolveSelectedDescendantProject = () => {
+    const selectedWorkspace = deps.workspaceExplorer?.getSelectedWorkspace?.();
+    if (
+      selectedWorkspace &&
+      path.resolve(selectedWorkspace.path) !== path.resolve(workspacePath) &&
+      isWorkspacePathAncestor(workspacePath, selectedWorkspace.path)
+    ) {
+      return {
+        name: selectedWorkspace.name || path.basename(selectedWorkspace.path),
+        path: selectedWorkspace.path,
+        type: undefined,
+      };
+    }
+    return null;
+  };
 
   const rankedCandidates = await rankWorkspaceProjectCandidates(
     workspacePath,
@@ -406,7 +477,7 @@ export async function resolveScopedProjectForWorkspace(
     options.doctorSnapshot
   );
   if (rankedCandidates.length === 0) {
-    return null;
+    return resolveSelectedDescendantProject();
   }
 
   const chooseByConfidence = () => {
@@ -422,7 +493,7 @@ export async function resolveScopedProjectForWorkspace(
 
   const candidate = chooseByConfidence();
   if (!candidate) {
-    return null;
+    return resolveSelectedDescendantProject();
   }
 
   return {

@@ -1,16 +1,19 @@
 import * as fs from 'fs-extra';
 import * as vscode from 'vscode';
+
 import {
   inferWorkspacePathOpenMode,
-  resolveWorkspaceAbsolutePath,
   type WorkspacePathOpenMode,
 } from './workspacePathNavigationPolicy';
+import { resolveBoundedWorkspaceAbsolutePath } from './workspacePathBoundary';
 
 export type { WorkspacePathOpenMode } from './workspacePathNavigationPolicy';
+export { inferWorkspacePathOpenMode } from './workspacePathNavigationPolicy';
 export {
-  inferWorkspacePathOpenMode,
-  resolveWorkspaceAbsolutePath,
-} from './workspacePathNavigationPolicy';
+  resolveBoundedWorkspaceAbsolutePath,
+  isPathWithinWorkspaceRoot,
+} from './workspacePathBoundary';
+export { resolveWorkspaceAbsolutePath } from './workspacePathNavigationPolicy';
 
 export async function openWorkspacePath(input: {
   workspacePath: string;
@@ -24,7 +27,7 @@ export async function openWorkspacePath(input: {
     throw new Error('Workspace path is not available.');
   }
 
-  const resolvedPath = resolveWorkspaceAbsolutePath(workspacePath, relativeOrAbsolutePath);
+  const resolvedPath = resolveBoundedWorkspaceAbsolutePath(workspacePath, relativeOrAbsolutePath);
   const mode = input.mode ?? inferWorkspacePathOpenMode(resolvedPath);
   const uri = vscode.Uri.file(resolvedPath);
 

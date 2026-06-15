@@ -25,7 +25,7 @@ describe('ChatSurface presentation', () => {
     expect(html).toContain('Conversation');
     expect(html).toContain('Decision Layer');
     expect(html).toContain('Start the incident review');
-    expect(html).toContain('Message input');
+    expect(html).toContain('Studio message input');
   });
 
   it('renders guided intent chips and banner in guided mode', () => {

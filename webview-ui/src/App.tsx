@@ -36,6 +36,11 @@ import type {
   ChatMessage,
   StudioActionStatus,
 } from '@/components/StudioRedesign/state/studioState';
+import {
+  isStudioCodeChangeActionId,
+  resolveStudioActionChatBrainExecution,
+  type StudioCodeChangeActionPayload,
+} from '@/lib/incidentStudioCodeChangeActions';
 import { parseStudioActionCommand } from '@/components/StudioRedesign/state/studioActions';
 import { mapAnalyzeReportToStudioState } from '@/lib/incidentStudioReportMapper';
 import {
@@ -60,15 +65,10 @@ import {
   buildIncidentChatSyncWorkspacePayload,
   buildIncidentChatApplyPatchPayload,
   buildIncidentChatStartPayload,
-  isIncidentDuplicateRequest,
-  normalizeIncidentPartialFailurePayload,
   normalizeIncidentActionProgressPayload,
-  normalizeIncidentActionResultPayload,
-  normalizeIncidentDonePayload,
   normalizeIncidentImpactAssessmentPayload,
   normalizeIncomingIncidentStudioOpen,
   normalizeIncidentPredictiveWarningPayload,
-  normalizeIncidentProtocolMeta,
   normalizeIncidentReleaseGateEvidencePayload,
   normalizeIncidentSystemGraphSnapshotPayload,
   normalizeIncidentWorkspaceGraphSnapshot,
@@ -83,6 +83,9 @@ import {
 import { resolveVerifyGateBlockedReasonsFromTelemetry } from '@/lib/incidentStudioPolicyGateMapper';
 import { resolveStudioAIActionOperationBlockReason } from '@/lib/incidentStudioAIActionGate';
 import { useIncidentStudioCliSurface } from '@/lib/incidentStudioCliSurfaceSession';
+import {
+  useIncidentStudioChatBrain,
+} from '@/lib/incidentStudioChatBrainSession';
 import { useIncidentStudioShipLoop } from '@/lib/incidentStudioShipLoopSession';
 import { isIncidentStudioSessionHostCommand } from '@/lib/incidentStudioSessionPersistence';
 import { logChatBrain } from '@/lib/chatBrainDebug';
@@ -102,6 +105,18 @@ import { WorkspaiSettingsPanel } from '@/components/WorkspaiSettingsPanel';
 import { WorkspaiBanner } from '@/components/WorkspaiBanner';
 import { buildAnalyzeLoadKey } from '@/lib/analyzeScopeKey';
 import {
+  buildProjectScopePickNotice,
+  buildSharedAnalysisContext,
+  normalizeWorkspaceProjectOptions,
+  persistAnalysisScopeMode,
+  readPersistedAnalysisScopeMode,
+  resolveEffectiveAnalysisScope,
+  resolveSidebarProjectSelection,
+  type AnalysisScopeMode,
+  type AnalysisScopeNotice,
+  type WorkspaceProjectOption,
+} from '@/lib/incidentStudioAnalysisScope';
+import {
   dashboardSectionForIncidentTarget,
   dashboardSectionForOpsChainStep,
   dashboardSectionNeedsCatalog,
@@ -119,6 +134,11 @@ import {
   getDashboardCommandAffectedEvidenceCards,
   shouldRefreshDashboardEvidenceAfterCommand,
 } from '@/lib/dashboardCommandRegistry';
+import {
+  clearPendingEvidenceForCommand,
+  reconcilePendingEvidenceCardIds,
+} from '@/lib/dashboardEvidencePending';
+import { createDashboardEvidenceRefreshScheduler } from '@/lib/dashboardEvidenceRefreshSchedule';
 import { isUnsupportedModuleProjectType } from '@/lib/moduleSupport';
 import { buildDashboardNextSteps } from '@/lib/dashboardNextSteps';
 import type {
@@ -126,7 +146,7 @@ import type {
   DashboardEvidenceCardId,
   DashboardEvidencePayload,
 } from '@/lib/dashboardEvidence';
-import { countEvidenceAttention, countOperateAttention } from '@/lib/dashboardEvidence';
+import { countEvidenceAttention, countOperateAttention, filterOpsChainForActiveWorkspace } from '@/lib/dashboardEvidence';
 
 function normalizeWebviewFsPath(value?: string | null): string {
   return (value || '').trim().replace(/\\/g, '/').replace(/\/+$/g, '');
@@ -201,22 +221,6 @@ function resolveInitialActiveView(): WorkspaiActiveView {
 }
 
 export function App() {
-  type ChatBrainBoardAction = {
-    id: string;
-    label: string;
-    actionType: string;
-    riskLevel?: string;
-  };
-
-  type ChatBrainBoard = {
-    id: string;
-    type: string;
-    title: string;
-    summary?: string;
-    data?: Record<string, unknown>;
-    actions?: ChatBrainBoardAction[];
-  };
-
   type ChatBrainHistoryItem = {
     id: string;
     role: 'user' | 'assistant';
@@ -500,18 +504,13 @@ export function App() {
     null
   );
   const [incidentResume, setIncidentResume] = useState<IncidentResumeSnapshot | null>(null);
-  const [chatBrainConversationId, setChatBrainConversationId] = useState<string | null>(null);
-  const [chatBrainStreamText, setChatBrainStreamText] = useState('');
   const [chatBrainHistory, setChatBrainHistory] = useState<ChatBrainHistoryItem[]>([]);
   const [chatBrainSuggestedQuestions, setChatBrainSuggestedQuestions] = useState<string[]>([]);
-  const [chatBrainBoard, setChatBrainBoard] = useState<ChatBrainBoard | null>(null);
   const [chatBrainActionProgress, setChatBrainActionProgress] = useState<{
     stage: string;
     progress: number;
     note?: string;
   } | null>(null);
-  const [chatBrainActionResult, setChatBrainActionResult] =
-    useState<NormalizedIncidentActionResultPayload | null>(null);
   const [chatBrainSystemGraphSnapshot, setChatBrainSystemGraphSnapshot] =
     useState<NormalizedIncidentSystemGraphSnapshotPayload | null>(null);
   const [chatBrainImpactAssessment, setChatBrainImpactAssessment] =
@@ -520,9 +519,6 @@ export function App() {
     useState<NormalizedIncidentPredictiveWarningPayload | null>(null);
   const [chatBrainReleaseGateEvidence, setChatBrainReleaseGateEvidence] =
     useState<NormalizedIncidentReleaseGateEvidencePayload | null>(null);
-  const [chatBrainError, setChatBrainError] = useState<string | null>(null);
-  const [chatBrainErrorRetryable, setChatBrainErrorRetryable] = useState<boolean>(true);
-  const [chatBrainIsStreaming, setChatBrainIsStreaming] = useState(false);
   const [lastInlineCommandResult, setLastInlineCommandResult] = useState<{
     command: string;
     success: boolean;
@@ -546,7 +542,7 @@ export function App() {
   const [pendingEvidenceCardIds, setPendingEvidenceCardIds] = useState<DashboardEvidenceCardId[]>(
     []
   );
-  const dashboardEvidenceRefreshTimersRef = useRef<number[]>([]);
+  const dashboardEvidenceRefreshSchedulerRef = useRef(createDashboardEvidenceRefreshScheduler());
   const incidentDashboardReturnSectionRef = useRef<DashboardSection>('evidence');
   const [dashboardEvidence, setDashboardEvidence] = useState<DashboardEvidencePayload | null>(null);
   const [importedWorkspaceShare, setImportedWorkspaceShare] =
@@ -569,6 +565,11 @@ export function App() {
   );
   const [selectedProjectForAnalysis, setSelectedProjectForAnalysis] =
     useState<IncidentProjectSelection | null>(null);
+  const [analysisScopeMode, setAnalysisScopeMode] = useState<AnalysisScopeMode>(
+    readPersistedAnalysisScopeMode
+  );
+  const [analysisScopeNotice, setAnalysisScopeNotice] = useState<AnalysisScopeNotice | null>(null);
+  const [workspaceProjects, setWorkspaceProjects] = useState<WorkspaceProjectOption[]>([]);
   const workspaceStatusRef = useRef(workspaceStatus);
   const selectedWorkspaceForAnalysisRef = useRef<string | null>(selectedWorkspaceForAnalysis);
   const selectedProjectForAnalysisRef = useRef<IncidentProjectSelection | null>(
@@ -587,12 +588,6 @@ export function App() {
   const [incidentActionStatus, setIncidentActionStatus] = useState<StudioActionStatus | null>(null);
   const [isAnalyzeLoading, setIsAnalyzeLoading] = useState(false);
   const aiRequestIdRef = useRef(0);
-  const chatBrainMessageIdRef = useRef<string | null>(null);
-  const chatBrainStreamTextRef = useRef('');
-  const chatBrainLastDoneRequestIdRef = useRef<string | null>(null);
-  const chatBrainLastActionResultRequestIdRef = useRef<string | null>(null);
-  const chatBrainLastPartialFailureRequestIdRef = useRef<string | null>(null);
-  const chatBrainLastErrorRequestIdRef = useRef<string | null>(null);
   const lastIncidentBootstrapWorkspaceRef = useRef<string | null>(null);
   const lastAnalyzeLoadKeyRef = useRef<string | null>(null);
   const analyzeLoadTimeoutRef = useRef<number | null>(null);
@@ -716,18 +711,22 @@ export function App() {
                 ? 'release'
                 : undefined)
     );
-    vscode.postMessage('openIncidentStudioTab', {
-      workspacePath,
-      workspaceName,
-      projectPath: projectSelection?.path,
-      projectName: projectSelection?.name,
-      projectType: projectSelection?.type,
-      preferredDisplayMode: 'full',
-    });
-    vscode.postMessage('requestIncidentStudioTelemetry', {
-      workspacePath,
-      projectPath: projectSelection?.path,
+    setActiveView('incident-studio');
+    setSelectedWorkspaceForAnalysis(workspacePath);
+    if (projectSelection?.path) {
+      setAnalysisScopeMode('project');
+      persistAnalysisScopeMode('project');
+    } else {
+      setAnalysisScopeMode('workspace');
+      persistAnalysisScopeMode('workspace');
+    }
+    setAnalysisScopeNotice(null);
+    vscode.postMessage('checkReportExists', { workspacePath });
+    vscode.postMessage('loadReport', { workspacePath, workspaceName });
+    vscode.postMessage('loadAIActionRegistry', { workspacePath });
+    requestIncidentStudioTelemetryRefresh({
       forceRefresh: true,
+      projectPath: projectSelection?.path ?? null,
     });
   };
 
@@ -754,6 +753,15 @@ export function App() {
   const activeWorkspaceProfile = activeWorkspace?.bootstrapProfile;
   const activeWorkspaceName =
     selectedWorkspaceForAnalysisObj?.name || workspaceStatus.workspaceName || activeWorkspace?.name;
+  const activeDashboardWorkspacePath =
+    dashboardEvidence?.workspacePath ||
+    selectedWorkspaceForAnalysis ||
+    workspaceStatus.workspacePath ||
+    null;
+  const visibleOpsChain = useMemo(
+    () => filterOpsChainForActiveWorkspace(dashboardEvidence?.opsChain, activeDashboardWorkspacePath),
+    [dashboardEvidence?.opsChain, activeDashboardWorkspacePath]
+  );
   const workspaceCommandPayload = () => ({
     path: workspaceStatus.workspacePath,
     workspacePath: workspaceStatus.workspacePath,
@@ -797,35 +805,21 @@ export function App() {
     ]
   );
   const clearDashboardEvidenceRefreshTimers = useCallback(() => {
-    dashboardEvidenceRefreshTimersRef.current.forEach((timer) => window.clearTimeout(timer));
-    dashboardEvidenceRefreshTimersRef.current = [];
+    dashboardEvidenceRefreshSchedulerRef.current.cancel();
   }, []);
   const reconcilePendingEvidenceCards = useCallback((payload?: DashboardEvidencePayload | null) => {
-    const resolvedCardIds = new Set<DashboardEvidenceCardId>();
-    for (const card of payload?.cards ?? []) {
-      if (card.status !== 'missing' || card.generatedAt || card.artifactPath) {
-        resolvedCardIds.add(card.id);
-      }
-    }
-    if (resolvedCardIds.size === 0) {
-      return;
-    }
-    setPendingEvidenceCardIds((current) =>
-      current.filter((cardId) => !resolvedCardIds.has(cardId))
-    );
+    setPendingEvidenceCardIds((current) => reconcilePendingEvidenceCardIds(current, payload));
   }, []);
   const scheduleDashboardEvidenceRefresh = useCallback(
     (context?: Record<string, unknown>) => {
-      clearDashboardEvidenceRefreshTimers();
-      requestDashboardEvidenceRefresh(context);
-      dashboardEvidenceRefreshTimersRef.current = [1800, 5000, 12000].map((delayMs) =>
-        window.setTimeout(() => requestDashboardEvidenceRefresh(context), delayMs)
+      dashboardEvidenceRefreshSchedulerRef.current.schedule(() =>
+        requestDashboardEvidenceRefresh(context)
       );
     },
-    [clearDashboardEvidenceRefreshTimers, requestDashboardEvidenceRefresh]
+    [requestDashboardEvidenceRefresh]
   );
 
-  useEffect(() => clearDashboardEvidenceRefreshTimers, [clearDashboardEvidenceRefreshTimers]);
+  useEffect(() => () => dashboardEvidenceRefreshSchedulerRef.current.cancel(), []);
   const openSetupInDashboard = () => {
     setActiveView('setup');
   };
@@ -855,13 +849,6 @@ export function App() {
     }
     if (shouldRefreshEvidence) {
       scheduleDashboardEvidenceRefresh(payload);
-    }
-    if (affectedCards.length > 0) {
-      window.setTimeout(() => {
-        setPendingEvidenceCardIds((current) =>
-          current.filter((cardId) => !affectedCards.includes(cardId))
-        );
-      }, 15000);
     }
   };
   const handleDashboardCommand = dispatchDashboardCommand;
@@ -899,55 +886,58 @@ export function App() {
       }),
     [dashboardEvidence, activeWorkspace?.complianceStatus, activeWorkspace?.mirrorStatus]
   );
-  const analysisScopeType: 'workspace' | 'project' = selectedProjectForAnalysis?.path
-    ? 'project'
-    : 'workspace';
+  const effectiveAnalysisScope = useMemo(
+    () =>
+      resolveEffectiveAnalysisScope({
+        mode: analysisScopeMode,
+        analysisProject: selectedProjectForAnalysis,
+      }),
+    [analysisScopeMode, selectedProjectForAnalysis]
+  );
+  const activeAnalysisProject = effectiveAnalysisScope.activeProject;
+  const analysisScopeType = effectiveAnalysisScope.scopeType;
   const analysisScopeLabel =
     (analysisScopeType === 'project'
-      ? [selectedProjectForAnalysis?.name, activeWorkspaceName]
+      ? [activeAnalysisProject?.name, activeWorkspaceName]
           .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
           .join(' @ ')
       : activeWorkspaceName) ||
     (analysisScopeType === 'project'
-      ? selectedProjectForAnalysis?.path
+      ? activeAnalysisProject?.path
       : selectedWorkspaceForAnalysis || workspaceStatus.workspacePath) ||
     'No active scope';
   const analysisScopePath =
     (analysisScopeType === 'project'
-      ? selectedProjectForAnalysis?.path
+      ? activeAnalysisProject?.path
       : selectedWorkspaceForAnalysis || workspaceStatus.workspacePath) || null;
   const analysisWorkspacePath =
     selectedWorkspaceForAnalysis || workspaceStatus.workspacePath || null;
-  const analysisProjectPath = selectedProjectForAnalysis?.path || null;
-  const defaultContextAssistContext = useMemo<ContextAssistContext | null>(() => {
-    if (selectedProjectForAnalysis?.path) {
-      return {
-        type: 'project',
-        name:
-          selectedProjectForAnalysis.name ||
-          selectedProjectForAnalysis.path.split(/[\\/]/).filter(Boolean).pop() ||
-          'Selected project',
-        path: selectedProjectForAnalysis.path,
-        framework: selectedProjectForAnalysis.type,
-      };
-    }
+  const analysisProjectPath = activeAnalysisProject?.path || null;
+
+  useEffect(() => {
     const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
-    if (workspacePath) {
-      return {
-        type: 'workspace',
-        name:
-          activeWorkspaceName ||
-          workspacePath.split(/[\\/]/).filter(Boolean).pop() ||
-          'Active workspace',
-        path: workspacePath,
-      };
+    if (!workspacePath) {
+      setWorkspaceProjects([]);
+      return;
     }
-    return null;
+
+    vscode.postMessage('requestWorkspaceProjects', { workspacePath });
+  }, [selectedWorkspaceForAnalysis, workspaceStatus.workspacePath]);
+
+  const defaultContextAssistContext = useMemo<ContextAssistContext | null>(() => {
+    return buildSharedAnalysisContext({
+      workspacePath: selectedWorkspaceForAnalysis || workspaceStatus.workspacePath,
+      workspaceName: activeWorkspaceName,
+      project: selectedProjectForAnalysis,
+      scopeMode:
+        analysisScopeMode === 'project' && selectedProjectForAnalysis?.path
+          ? 'project'
+          : 'workspace',
+    });
   }, [
     activeWorkspaceName,
-    selectedProjectForAnalysis?.name,
-    selectedProjectForAnalysis?.path,
-    selectedProjectForAnalysis?.type,
+    analysisScopeMode,
+    selectedProjectForAnalysis,
     selectedWorkspaceForAnalysis,
     workspaceStatus.workspacePath,
   ]);
@@ -983,6 +973,14 @@ export function App() {
         );
       } else if (!result.success && result.error) {
         const errorMessage = `✗ Command failed: ${result.error}`;
+        setIncidentStudioMessage({
+          id: `command-error-${Date.now()}`,
+          role: 'assistant',
+          content: errorMessage,
+          timestamp: new Date().toISOString(),
+          phase: 'verify',
+          sources: [{ type: 'system', label: 'rapidkit-cli' }],
+        });
         setChatBrainHistory((prev) =>
           [
             ...prev,
@@ -1003,7 +1001,7 @@ export function App() {
   const cliSurface = useIncidentStudioCliSurface({
     workspacePath: analysisWorkspacePath || '',
     workspaceName: activeWorkspaceName,
-    projectSelection: selectedProjectForAnalysis,
+    projectSelection: activeAnalysisProject,
     userMode: incidentUserMode,
     telemetry: incidentTelemetry,
     postMessage: (command, data) => vscode.postMessage(command, data),
@@ -1016,7 +1014,7 @@ export function App() {
 
   const shipLoop = useIncidentStudioShipLoop({
     workspacePath: analysisWorkspacePath || '',
-    projectPath: selectedProjectForAnalysis?.path,
+    projectPath: activeAnalysisProject?.path,
     studioEvidence: incidentStudioInitialState?.studioEvidence ?? null,
     telemetry: incidentTelemetry,
     policyGates: incidentStudioInitialState?.policyGates,
@@ -1044,6 +1042,75 @@ export function App() {
       });
     },
   });
+  const embedChatBrainSideEffectsRef = useRef({
+    onStarted: (_data?: Record<string, unknown>) => {},
+    onStreamChunk: () => {},
+    onDone: (_detail: { finalText: string; modelId?: string; messageId: string | null }) => {},
+  });
+  embedChatBrainSideEffectsRef.current = {
+    onStarted: (data) => {
+      setIncidentModelId(null);
+      setIncidentResume(
+        data?.resumeSnapshot && typeof data.resumeSnapshot === 'object'
+          ? (data.resumeSnapshot as IncidentResumeSnapshot)
+          : null
+      );
+      setChatBrainHistory([]);
+      setChatBrainSuggestedQuestions([]);
+      setChatBrainActionProgress(null);
+      setChatBrainSystemGraphSnapshot(null);
+      setChatBrainImpactAssessment(null);
+      setChatBrainPredictiveWarning(null);
+      setChatBrainReleaseGateEvidence(null);
+    },
+    onStreamChunk: () => {
+      setChatBrainActionProgress(null);
+    },
+    onDone: ({ finalText, modelId, messageId }) => {
+      if (modelId) {
+        setIncidentModelId(modelId);
+      }
+      if (finalText.trim()) {
+        setChatBrainHistory((prev) =>
+          [
+            ...prev,
+            {
+              id: messageId || `assistant-${Date.now()}`,
+              role: 'assistant' as const,
+              text: finalText,
+              timestamp: Date.now(),
+            },
+          ].slice(-24)
+        );
+      }
+    },
+  };
+  const embedChatBrain = useIncidentStudioChatBrain({
+    workspacePath: analysisWorkspacePath || '',
+    workspaceName: activeWorkspaceName,
+    projectSelection: activeAnalysisProject,
+    scopeMode: analysisScopeMode,
+    modelId: incidentSelectedModelId,
+    postMessage: (command, data) => vscode.postMessage(command, data),
+    callbacks: {
+      onStarted: (data) => embedChatBrainSideEffectsRef.current.onStarted(data),
+      onStreamChunk: () => embedChatBrainSideEffectsRef.current.onStreamChunk(),
+      onDone: (detail) => embedChatBrainSideEffectsRef.current.onDone(detail),
+    },
+  });
+  const embedChatBrainRef = useRef(embedChatBrain);
+  embedChatBrainRef.current = embedChatBrain;
+
+  useEffect(() => {
+    if (embedChatBrain.incomingMessage) {
+      setIncidentStudioMessage(embedChatBrain.incomingMessage);
+    }
+  }, [embedChatBrain.incomingMessage]);
+
+  const cliSurfaceRef = useRef(cliSurface);
+  cliSurfaceRef.current = cliSurface;
+  const shipLoopRef = useRef(shipLoop);
+  shipLoopRef.current = shipLoop;
   const incidentPrimaryCtaMode = resolveIncidentPrimaryCtaMode(
     incidentUserMode,
     incidentPrimaryCtaExperimentVariant
@@ -1064,7 +1131,10 @@ export function App() {
     });
   };
 
-  const requestIncidentStudioTelemetryRefresh = (options?: { forceRefresh?: boolean }) => {
+  const requestIncidentStudioTelemetryRefresh = (options?: {
+    forceRefresh?: boolean;
+    projectPath?: string | null;
+  }) => {
     const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
     if (!workspacePath) {
       return;
@@ -1073,10 +1143,65 @@ export function App() {
     setIsIncidentRefreshing(true);
     vscode.postMessage('requestIncidentStudioTelemetry', {
       workspacePath,
-      projectPath: selectedProjectForAnalysis?.path,
+      projectPath:
+        options?.projectPath === undefined
+          ? activeAnalysisProject?.path
+          : options.projectPath || undefined,
       forceRefresh: options?.forceRefresh ?? false,
     });
   };
+
+  const handleAnalysisScopeChange = useCallback(
+    (scope: 'workspace' | 'project') => {
+      if (scope === 'project') {
+        setAnalysisScopeMode('project');
+        persistAnalysisScopeMode('project');
+
+        if (selectedProjectForAnalysis?.path) {
+          setAnalysisScopeNotice(null);
+          requestIncidentStudioTelemetryRefresh({
+            forceRefresh: false,
+            projectPath: selectedProjectForAnalysis.path,
+          });
+          return;
+        }
+
+        setAnalysisScopeNotice(buildProjectScopePickNotice());
+        return;
+      }
+
+      setAnalysisScopeMode('workspace');
+      persistAnalysisScopeMode('workspace');
+      setAnalysisScopeNotice(null);
+      requestIncidentStudioTelemetryRefresh({ forceRefresh: false, projectPath: null });
+    },
+    [selectedProjectForAnalysis?.path]
+  );
+
+  const handleSelectAnalysisProject = useCallback(
+    (project: WorkspaceProjectOption) => {
+      setSelectedProjectForAnalysis({
+        path: project.path,
+        name: project.name,
+        type: project.type,
+      });
+      setAnalysisScopeMode('project');
+      persistAnalysisScopeMode('project');
+      setAnalysisScopeNotice(null);
+
+      const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
+      vscode.postMessage('syncAnalysisSelection', {
+        workspacePath,
+        projectPath: project.path,
+        projectName: project.name,
+        projectType: project.type,
+        scopeMode: 'project',
+      });
+
+      requestIncidentStudioTelemetryRefresh({ forceRefresh: false, projectPath: project.path });
+    },
+    [selectedWorkspaceForAnalysis, workspaceStatus.workspacePath]
+  );
 
   const resolveIncidentPreferenceWorkspacePath = () =>
     selectedWorkspaceForAnalysis || workspaceStatus.workspacePath || undefined;
@@ -1233,48 +1358,48 @@ export function App() {
           break;
         case 'updateWorkspaceStatus':
           console.log('[React Webview] Updating workspace status:', message.data);
-          setWorkspaceStatus(message.data);
+          {
+            const previousWorkspacePath = workspaceStatusRef.current.workspacePath;
+            setWorkspaceStatus(message.data);
 
+            if (
+              typeof message.data?.workspacePath === 'string' &&
+              message.data.workspacePath.trim().length > 0
+            ) {
+              setSelectedWorkspaceForAnalysis(message.data.workspacePath.trim());
+            }
+
+            const workspaceChanged =
+              typeof message.data?.workspacePath === 'string' &&
+              message.data.workspacePath !== previousWorkspacePath;
+
+            if (
+              message.data?.hasProjectSelected === true &&
+              typeof message.data?.projectPath === 'string' &&
+              message.data.projectPath.trim().length > 0
+            ) {
+              const inboundProject = resolveSidebarProjectSelection(message.data);
+              if (inboundProject) {
+                setSelectedProjectForAnalysis((current) =>
+                  current?.path === inboundProject.path ? current : inboundProject
+                );
+                if (message.data?.source !== 'analysis-sync') {
+                  setAnalysisScopeNotice(null);
+                }
+              }
+            } else if (message.data?.hasProjectSelected === false && workspaceChanged) {
+              setSelectedProjectForAnalysis(null);
+            }
+          }
+          break;
+        case 'workspaceProjects':
           if (
             typeof message.data?.workspacePath === 'string' &&
-            message.data.workspacePath.trim().length > 0
+            message.data.workspacePath ===
+              (selectedWorkspaceForAnalysisRef.current ||
+                workspaceStatusRef.current.workspacePath)
           ) {
-            setSelectedWorkspaceForAnalysis(message.data.workspacePath.trim());
-          }
-
-          if (
-            message.data?.hasProjectSelected === true &&
-            typeof message.data?.projectPath === 'string' &&
-            message.data.projectPath.trim().length > 0
-          ) {
-            const rawProjectType =
-              typeof message.data?.projectType === 'string' ? message.data.projectType : undefined;
-            const normalizedProjectType =
-              rawProjectType === 'fastapi' ||
-              rawProjectType === 'nestjs' ||
-              rawProjectType === 'go' ||
-              rawProjectType === 'springboot' ||
-              rawProjectType === 'dotnet'
-                ? rawProjectType
-                : undefined;
-
-            setSelectedProjectForAnalysis({
-              path: message.data.projectPath.trim(),
-              name:
-                typeof message.data?.projectName === 'string' &&
-                message.data.projectName.trim().length > 0
-                  ? message.data.projectName.trim()
-                  : undefined,
-              type: normalizedProjectType,
-            });
-          } else if (message.data?.hasProjectSelected === false) {
-            const nextWorkspacePath =
-              typeof message.data?.workspacePath === 'string'
-                ? message.data.workspacePath.trim()
-                : undefined;
-            setSelectedProjectForAnalysis((current) =>
-              isProjectPathInsideWorkspace(current?.path, nextWorkspacePath) ? current : null
-            );
+            setWorkspaceProjects(normalizeWorkspaceProjectOptions(message.data.projects));
           }
           break;
         case 'reportExistsResult':
@@ -1370,6 +1495,16 @@ export function App() {
           setDashboardEvidence(message.data ?? null);
           reconcilePendingEvidenceCards(message.data ?? null);
           break;
+        case 'dashboardCommandFailed': {
+          const failedCommand =
+            typeof message.data?.command === 'string' ? message.data.command : undefined;
+          if (failedCommand) {
+            setPendingEvidenceCardIds((current) =>
+              clearPendingEvidenceForCommand(current, failedCommand)
+            );
+          }
+          break;
+        }
         case 'updateExampleWorkspaces':
           console.log('[React Webview] Updating examples:', message.data);
           setExampleWorkspaces(message.data);
@@ -1574,7 +1709,6 @@ export function App() {
               ? message.data.preferredModel.trim()
               : 'auto';
           const normalizedModels = normalizeAvailableModels(message.data?.models);
-          const sessionModelId = preferredModel === 'auto' ? null : preferredModel;
           setPreferredModelId(preferredModel);
           setAIProvider(
             message.data?.aiProvider === 'openai-compatible' ? 'openai-compatible' : 'vscode-lm'
@@ -1592,8 +1726,7 @@ export function App() {
           );
           setAIAvailableModels(normalizedModels);
           setAiModelsLoading(false);
-          setAISelectedModelId((current) => current ?? sessionModelId);
-          setIncidentSelectedModelId((current) => current ?? sessionModelId);
+          syncPreferredModelToSelectors(preferredModel);
           break;
         }
         case 'aiProviderHealthCheck': {
@@ -1688,6 +1821,10 @@ export function App() {
           }
 
           setActiveView('incident-studio');
+          if (normalizedOpen.projectSelection?.path) {
+            setAnalysisScopeMode('project');
+            persistAnalysisScopeMode('project');
+          }
           bootstrapIncidentStudioForWorkspace(
             normalizedOpen.workspacePath,
             normalizedOpen.workspaceName,
@@ -1709,33 +1846,7 @@ export function App() {
           setLastIncidentRefreshedAt(Date.now());
           break;
         case 'aiChatStarted':
-          setChatBrainConversationId(message.data?.conversationId ?? null);
-          setIncidentModelId(null);
-          setIncidentResume(
-            message.data?.resumeSnapshot && typeof message.data.resumeSnapshot === 'object'
-              ? (message.data.resumeSnapshot as IncidentResumeSnapshot)
-              : null
-          );
-          chatBrainMessageIdRef.current = null;
-          chatBrainStreamTextRef.current = '';
-          chatBrainLastDoneRequestIdRef.current = null;
-          chatBrainLastActionResultRequestIdRef.current = null;
-          chatBrainLastPartialFailureRequestIdRef.current = null;
-          chatBrainLastErrorRequestIdRef.current = null;
-          setChatBrainStreamText('');
-          setChatBrainHistory([]);
-          setChatBrainSuggestedQuestions([]);
-          setChatBrainBoard(null);
-          setChatBrainActionProgress(null);
-          setChatBrainActionResult(null);
-          setChatBrainSystemGraphSnapshot(null);
-          setChatBrainImpactAssessment(null);
-          setChatBrainPredictiveWarning(null);
-          setChatBrainReleaseGateEvidence(null);
-          setChatBrainError(null);
-          setChatBrainErrorRetryable(true);
-          setChatBrainIsStreaming(false);
-          logChatBrain(message.command, message.data);
+          embedChatBrainRef.current.handleHostMessage(message);
           break;
         case 'aiChatWorkspaceSynced':
           {
@@ -1763,23 +1874,13 @@ export function App() {
 
             if (syncState.selectionChanged) {
               setChatBrainHistory([]);
-              setChatBrainStreamText('');
-              chatBrainStreamTextRef.current = '';
-              chatBrainMessageIdRef.current = null;
-              chatBrainLastDoneRequestIdRef.current = null;
-              chatBrainLastActionResultRequestIdRef.current = null;
-              chatBrainLastPartialFailureRequestIdRef.current = null;
-              chatBrainLastErrorRequestIdRef.current = null;
-              setChatBrainBoard(null);
+              embedChatBrainRef.current.resetHostState();
               setChatBrainActionProgress(null);
-              setChatBrainActionResult(null);
               setChatBrainSystemGraphSnapshot(null);
               setChatBrainImpactAssessment(null);
               setChatBrainPredictiveWarning(null);
               setChatBrainReleaseGateEvidence(null);
               setChatBrainSuggestedQuestions([]);
-              setChatBrainError(null);
-              setChatBrainErrorRetryable(true);
               setIncidentResume(null);
             }
 
@@ -1796,31 +1897,11 @@ export function App() {
           logChatBrain(message.command, message.data);
           break;
         case 'aiChatChunk':
-          if (
-            typeof message.data?.messageId === 'string' &&
-            message.data.messageId !== chatBrainMessageIdRef.current
-          ) {
-            // New message stream starting — clear stale progress indicator
-            chatBrainMessageIdRef.current = message.data.messageId;
-            const nextChunk = message.data?.chunk || '';
-            chatBrainStreamTextRef.current = nextChunk;
-            setChatBrainStreamText(nextChunk);
-            setChatBrainActionProgress(null);
-          } else {
-            const nextChunk = chatBrainStreamTextRef.current + (message.data?.chunk || '');
-            chatBrainStreamTextRef.current = nextChunk;
-            setChatBrainStreamText(nextChunk);
-          }
-          setChatBrainIsStreaming(true);
-          setChatBrainError(null);
-          setChatBrainErrorRetryable(true);
-          logChatBrain(message.command, message.data);
-          break;
         case 'aiChatActionBoard':
-          if (message.data?.board) {
-            setChatBrainBoard(message.data.board as ChatBrainBoard);
-          }
-          logChatBrain(message.command, message.data);
+        case 'aiChatDone':
+        case 'aiChatPartialFailure':
+        case 'aiChatError':
+          embedChatBrainRef.current.handleHostMessage(message);
           break;
         case 'aiChatSuggestedQuestions':
           if (Array.isArray(message.data?.questions)) {
@@ -1833,19 +1914,7 @@ export function App() {
           logChatBrain(message.command, message.data);
           break;
         case 'aiChatActionResult': {
-          {
-            const protocolMeta = normalizeIncidentProtocolMeta(message.meta);
-            if (
-              isIncidentDuplicateRequest(
-                chatBrainLastActionResultRequestIdRef.current,
-                protocolMeta.requestId
-              )
-            ) {
-              break;
-            }
-            chatBrainLastActionResultRequestIdRef.current = protocolMeta.requestId;
-          }
-          const actionResultPayload = normalizeIncidentActionResultPayload(message.data);
+          embedChatBrainRef.current.handleHostMessage(message);
           const graphPayload = normalizeIncidentSystemGraphSnapshotPayload(
             message.data?.systemGraphSnapshot
           );
@@ -1859,7 +1928,6 @@ export function App() {
             message.data?.releaseGateEvidence
           );
 
-          setChatBrainActionResult(actionResultPayload);
           setChatBrainSystemGraphSnapshot(graphPayload);
 
           const hasImpactAssessment =
@@ -1889,172 +1957,11 @@ export function App() {
           setChatBrainReleaseGateEvidence(
             message.data?.releaseGateEvidence && hasGateEvidence ? gateEvidencePayload : null
           );
-
-          if (message.data?.board) {
-            setChatBrainBoard(message.data.board as ChatBrainBoard);
-          }
-          logChatBrain(message.command, message.data);
           break;
         }
-        case 'aiChatDone':
-          {
-            const protocolMeta = normalizeIncidentProtocolMeta(message.meta);
-            if (
-              isIncidentDuplicateRequest(
-                chatBrainLastDoneRequestIdRef.current,
-                protocolMeta.requestId
-              )
-            ) {
-              break;
-            }
-            chatBrainLastDoneRequestIdRef.current = protocolMeta.requestId;
-          }
-          setChatBrainIsStreaming(false);
-          {
-            const donePayload = normalizeIncidentDonePayload(message.data);
-            if (donePayload.modelId) {
-              setIncidentModelId(donePayload.modelId);
-            }
-
-            const finalText =
-              typeof donePayload.finalText === 'string' && donePayload.finalText.trim()
-                ? donePayload.finalText
-                : chatBrainStreamTextRef.current;
-            if (finalText.trim()) {
-              setChatBrainHistory((prev) =>
-                [
-                  ...prev,
-                  {
-                    id: chatBrainMessageIdRef.current || `assistant-${Date.now()}`,
-                    role: 'assistant' as const,
-                    text: finalText,
-                    timestamp: Date.now(),
-                  },
-                ].slice(-24)
-              );
-              setIncidentStudioMessage({
-                id: chatBrainMessageIdRef.current || `assistant-${Date.now()}`,
-                role: 'assistant',
-                content: finalText,
-                timestamp: new Date().toISOString(),
-                phase: 'diagnose',
-                sources: [{ type: 'system', label: 'chat-brain' }],
-              });
-            }
-          }
-          chatBrainStreamTextRef.current = '';
-          setChatBrainStreamText('');
-          setChatBrainErrorRetryable(true);
-          logChatBrain(message.command, message.data);
-          break;
-        case 'aiChatPartialFailure': {
-          {
-            const protocolMeta = normalizeIncidentProtocolMeta(message.meta);
-            if (
-              isIncidentDuplicateRequest(
-                chatBrainLastPartialFailureRequestIdRef.current,
-                protocolMeta.requestId
-              )
-            ) {
-              break;
-            }
-            chatBrainLastPartialFailureRequestIdRef.current = protocolMeta.requestId;
-          }
-
-          const partialFailure = normalizeIncidentPartialFailurePayload(message.data);
-          setChatBrainIsStreaming(false);
-          if (chatBrainStreamTextRef.current.trim()) {
-            const partialText = `${chatBrainStreamTextRef.current}\n\nResponse interrupted before completion.`;
-            setChatBrainHistory((prev) =>
-              [
-                ...prev,
-                {
-                  id: chatBrainMessageIdRef.current || `assistant-partial-${Date.now()}`,
-                  role: 'assistant' as const,
-                  text: partialText,
-                  timestamp: Date.now(),
-                },
-              ].slice(-24)
-            );
-            setIncidentStudioMessage({
-              id: chatBrainMessageIdRef.current || `assistant-partial-${Date.now()}`,
-              role: 'assistant',
-              content: partialText,
-              timestamp: new Date().toISOString(),
-              phase: 'diagnose',
-              sources: [{ type: 'system', label: 'chat-brain' }],
-            });
-          }
-          chatBrainStreamTextRef.current = '';
-          setChatBrainStreamText('');
-          setChatBrainActionProgress(null);
-          if (message.data?.board) {
-            setChatBrainBoard(message.data.board as ChatBrainBoard);
-          }
-          setChatBrainError(partialFailure.message);
-          setChatBrainErrorRetryable(partialFailure.retryable !== false);
-          logChatBrain(message.command, message.data);
-          break;
-        }
-        case 'aiChatError':
-          {
-            const protocolMeta = normalizeIncidentProtocolMeta(message.meta);
-            if (
-              isIncidentDuplicateRequest(
-                chatBrainLastErrorRequestIdRef.current,
-                protocolMeta.requestId
-              )
-            ) {
-              break;
-            }
-            chatBrainLastErrorRequestIdRef.current = protocolMeta.requestId;
-          }
-          setChatBrainIsStreaming(false);
-          if (chatBrainStreamTextRef.current.trim()) {
-            const partialText = `${chatBrainStreamTextRef.current}\n\nResponse interrupted before completion.`;
-            setChatBrainHistory((prev) =>
-              [
-                ...prev,
-                {
-                  id: chatBrainMessageIdRef.current || `assistant-partial-${Date.now()}`,
-                  role: 'assistant' as const,
-                  text: partialText,
-                  timestamp: Date.now(),
-                },
-              ].slice(-24)
-            );
-            setIncidentStudioMessage({
-              id: chatBrainMessageIdRef.current || `assistant-partial-${Date.now()}`,
-              role: 'assistant',
-              content: partialText,
-              timestamp: new Date().toISOString(),
-              phase: 'diagnose',
-              sources: [{ type: 'system', label: 'chat-brain' }],
-            });
-          }
-          chatBrainStreamTextRef.current = '';
-          setChatBrainStreamText('');
-          setChatBrainError(
-            typeof message.data?.message === 'string'
-              ? message.data.message
-              : 'Chat Brain request failed.'
-          );
-          setChatBrainErrorRetryable(message.data?.retryable !== false);
-          if (typeof message.data?.message === 'string' && message.data.message.trim()) {
-            setIncidentStudioMessage({
-              id: `assistant-error-${Date.now()}`,
-              role: 'assistant',
-              content: message.data.message,
-              timestamp: new Date().toISOString(),
-              phase: 'diagnose',
-              sources: [{ type: 'system', label: 'chat-brain' }],
-            });
-          }
-          logChatBrain(message.command, message.data);
-          break;
         case 'runIncidentInlineCommandDone':
-          cliSurface.handleHostMessage(message);
-          shipLoop.handleHostMessage(message.command, message.data, message.meta);
+          cliSurfaceRef.current.handleHostMessage(message);
+          shipLoopRef.current.handleHostMessage(message.command, message.data, message.meta);
           break;
         case 'aiChatPatchApplied': {
           const patchResult = message.data?.result;
@@ -2091,7 +1998,7 @@ export function App() {
         case 'incidentStudioShipEvidence':
         case 'runShipLoopStepDone':
         case 'shipLoopPatchReverifyHint':
-          shipLoop.handleHostMessage(message.command, message.data, message.meta);
+          shipLoopRef.current.handleHostMessage(message.command, message.data, message.meta);
           break;
         case 'incidentStudioSessionLoaded':
           if (isIncidentStudioSessionHostCommand(message.command)) {
@@ -2273,7 +2180,7 @@ export function App() {
     window.setTimeout(() => {
       vscode.postMessage('requestIncidentStudioTelemetry', {
         workspacePath: selectedWorkspaceForAnalysis || workspaceStatus.workspacePath,
-        projectPath: selectedProjectForAnalysis?.path,
+        projectPath: activeAnalysisProject?.path,
       });
     }, 450);
   };
@@ -2337,10 +2244,12 @@ export function App() {
     initialQuery?: string,
     projectSelection?: IncidentProjectSelection | null
   ) => {
-    const requestId = `cb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const startRequestId = `cb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const syncRequestId = `cbs-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const queryRequestId = `cbq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const conversationId = `conv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const conversationIdToClose = getConversationIdToCloseOnBootstrap(
-      chatBrainConversationId,
+      embedChatBrain.conversationId,
       conversationId
     );
 
@@ -2351,26 +2260,15 @@ export function App() {
     lastIncidentBootstrapWorkspaceRef.current = workspacePath;
     setSelectedWorkspaceForAnalysis(workspacePath);
     setSelectedProjectForAnalysis(projectSelection || null);
-    setChatBrainConversationId(conversationId);
+    embedChatBrain.setConversationId(conversationId);
+    embedChatBrain.resetHostState();
     setChatBrainHistory([]);
-    setChatBrainStreamText('');
-    chatBrainStreamTextRef.current = '';
-    chatBrainMessageIdRef.current = null;
-    chatBrainLastDoneRequestIdRef.current = null;
-    chatBrainLastActionResultRequestIdRef.current = null;
-    chatBrainLastPartialFailureRequestIdRef.current = null;
-    chatBrainLastErrorRequestIdRef.current = null;
     setChatBrainSuggestedQuestions([]);
-    setChatBrainBoard(null);
     setChatBrainActionProgress(null);
-    setChatBrainActionResult(null);
     setChatBrainSystemGraphSnapshot(null);
     setChatBrainImpactAssessment(null);
     setChatBrainPredictiveWarning(null);
     setChatBrainReleaseGateEvidence(null);
-    setChatBrainError(null);
-    setChatBrainErrorRetryable(true);
-    setChatBrainIsStreaming(false);
     setIncidentModelId(null);
     setIncidentResume(null);
 
@@ -2384,17 +2282,19 @@ export function App() {
         'aiChatStart',
         buildIncidentChatStartPayload({
           workspacePath,
-          requestId,
+          requestId: startRequestId,
           resumeConversationId: conversationId,
           projectSelection,
+          scopeMode: projectSelection?.path ? 'project' : 'workspace',
         })
       );
       vscode.postMessage(
         'aiChatSyncWorkspace',
         buildIncidentChatSyncWorkspacePayload({
           workspacePath,
-          requestId,
+          requestId: syncRequestId,
           projectSelection,
+          scopeMode: projectSelection?.path ? 'project' : 'workspace',
         })
       );
 
@@ -2404,9 +2304,10 @@ export function App() {
           buildIncidentChatQueryPayload({
             conversationId,
             workspacePath,
-            requestId,
+            requestId: queryRequestId,
             modelId: normalizeSelectedModelId(incidentSelectedModelIdRef.current) ?? undefined,
             projectSelection,
+            scopeMode: projectSelection?.path ? 'project' : 'workspace',
             message:
               initialQuery ||
               `Analyze workspace ${workspaceName || workspacePath} and surface top incident risks with one recommended next action.`,
@@ -2483,8 +2384,9 @@ export function App() {
 
     const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
     if (!workspacePath) {
-      setChatBrainError('Select or open a workspace before sending an Incident Studio query.');
-      setChatBrainErrorRetryable(false);
+      embedChatBrain.setBlockingError(
+        'Select or open a workspace before sending an Incident Studio query.'
+      );
       return;
     }
 
@@ -2492,29 +2394,12 @@ export function App() {
       setSelectedWorkspaceForAnalysis(workspacePath);
     }
 
-    const conversationId =
-      chatBrainConversationId || `conv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    if (!chatBrainConversationId) {
-      setChatBrainConversationId(conversationId);
-      vscode.postMessage(
-        'aiChatStart',
-        buildIncidentChatStartPayload({
-          workspacePath,
-          projectSelection: selectedProjectForAnalysis,
-          resumeConversationId: conversationId,
-          requestId: `cb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        })
-      );
-    }
-    setChatBrainIsStreaming(true);
-    setChatBrainError(null);
-    setChatBrainErrorRetryable(true);
+    embedChatBrain.resetForQuery();
     setChatBrainActionProgress(null);
-    setChatBrainActionResult(null);
+    setChatBrainSystemGraphSnapshot(null);
     setChatBrainImpactAssessment(null);
     setChatBrainPredictiveWarning(null);
     setChatBrainReleaseGateEvidence(null);
-    setChatBrainBoard(null);
     setChatBrainSuggestedQuestions([]);
     if (options?.appendHistory !== false) {
       setChatBrainHistory((prev) =>
@@ -2529,17 +2414,7 @@ export function App() {
         ].slice(-24)
       );
     }
-    vscode.postMessage(
-      'aiChatQuery',
-      buildIncidentChatQueryPayload({
-        conversationId,
-        workspacePath,
-        projectSelection: selectedProjectForAnalysis,
-        requestId: `cbq-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        modelId: normalizeSelectedModelId(incidentSelectedModelId) ?? undefined,
-        message: trimmedQuery,
-      })
-    );
+    embedChatBrain.submitQuery(trimmedQuery);
   };
 
   const handleStudioVNextMessage = (message: string) => {
@@ -2555,6 +2430,24 @@ export function App() {
       if (!actionId) {
         return `Unknown Studio action blocked: ${message}`;
       }
+
+      if (isStudioCodeChangeActionId(actionId)) {
+        const resolution = resolveStudioActionChatBrainExecution(
+          actionId,
+          incidentStudioInitialState?.studioEvidence ?? null,
+          activeAnalysisProject
+        );
+        if (resolution) {
+          handleChatBrainExecuteAction(
+            resolution.actionType,
+            `studio-${actionId}-${Date.now()}`,
+            resolution.payload,
+            resolution.userMessage
+          );
+          return resolution.userMessage;
+        }
+      }
+
       vscode.postMessage('runStudioAction', {
         workspacePath,
         workspaceName,
@@ -2570,6 +2463,90 @@ export function App() {
 
     submitIncidentStudioChatBrainQuery(message, { appendHistory: false });
     return undefined;
+  };
+
+  const ensureEmbedChatBrainConversation = () => {
+    const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
+    if (!workspacePath) {
+      return null;
+    }
+
+    const conversationId =
+      embedChatBrain.conversationId || `conv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+    if (!embedChatBrain.conversationId) {
+      embedChatBrain.setConversationId(conversationId);
+      vscode.postMessage(
+        'aiChatStart',
+        buildIncidentChatStartPayload({
+          workspacePath,
+          requestId: `cb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          resumeConversationId: conversationId,
+          projectSelection: activeAnalysisProject,
+          scopeMode: analysisScopeMode,
+        })
+      );
+      vscode.postMessage(
+        'aiChatSyncWorkspace',
+        buildIncidentChatSyncWorkspacePayload({
+          workspacePath,
+          requestId: `cbs-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          projectSelection: activeAnalysisProject,
+          scopeMode: analysisScopeMode,
+        })
+      );
+    }
+
+    return conversationId;
+  };
+
+  const handleChatBrainExecuteAction = (
+    actionType: string,
+    actionId?: string,
+    payload?: StudioCodeChangeActionPayload,
+    userMessage?: string
+  ) => {
+    const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
+    if (!workspacePath) {
+      embedChatBrain.setBlockingError(
+        'Select or open a workspace before executing Studio code-change actions.'
+      );
+      return;
+    }
+
+    const conversationId = ensureEmbedChatBrainConversation();
+    if (!conversationId || !actionType) {
+      return;
+    }
+
+    if (userMessage?.trim()) {
+      setIncidentStudioMessage({
+        id: `user-action-${Date.now()}`,
+        role: 'user',
+        content: userMessage.trim(),
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    setChatBrainActionProgress({ stage: 'running', progress: 10, note: `Executing ${actionType}` });
+    embedChatBrain.resetForQuery();
+    setChatBrainSystemGraphSnapshot(null);
+    setChatBrainImpactAssessment(null);
+    setChatBrainPredictiveWarning(null);
+    setChatBrainReleaseGateEvidence(null);
+    vscode.postMessage(
+      'aiChatExecuteAction',
+      buildIncidentChatExecuteActionPayload({
+        conversationId,
+        actionId: actionId || `action-${Date.now()}`,
+        actionType,
+        workspacePath,
+        projectSelection: activeAnalysisProject,
+        modelId: normalizeSelectedModelId(incidentSelectedModelId) ?? undefined,
+        requestId: `cba-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        payload,
+      })
+    );
   };
 
   const handleStudioVNextAIActionCommand = (operation: 'apply' | 'verify' | 'rollback') => {
@@ -2652,7 +2629,8 @@ export function App() {
 
   useEffect(() => {
     const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
-    const projectPath = selectedProjectForAnalysis?.path ?? null;
+    const projectPath =
+      analysisScopeMode === 'project' ? selectedProjectForAnalysis?.path ?? null : null;
     if (activeView !== 'incident-studio' || !workspacePath) {
       return;
     }
@@ -2672,6 +2650,7 @@ export function App() {
     requestAnalyzeEvidence(workspacePath, workspaceName);
   }, [
     activeView,
+    analysisScopeMode,
     selectedWorkspaceForAnalysis,
     selectedProjectForAnalysis?.path,
     workspaceStatus.workspacePath,
@@ -2688,41 +2667,14 @@ export function App() {
     submitIncidentStudioChatBrainQuery(query, { appendHistory: true });
   };
 
-  const handleChatBrainExecuteAction = (actionType: string, actionId?: string) => {
-    if (!chatBrainConversationId || !actionType) {
-      return;
-    }
-    setChatBrainActionProgress({ stage: 'running', progress: 10, note: `Executing ${actionType}` });
-    setChatBrainActionResult(null);
-    setChatBrainSystemGraphSnapshot(null);
-    setChatBrainImpactAssessment(null);
-    setChatBrainPredictiveWarning(null);
-    setChatBrainReleaseGateEvidence(null);
-    setChatBrainError(null);
-    setChatBrainErrorRetryable(true);
-    vscode.postMessage(
-      'aiChatExecuteAction',
-      buildIncidentChatExecuteActionPayload({
-        conversationId: chatBrainConversationId,
-        actionId: actionId || `action-${Date.now()}`,
-        actionType,
-        workspacePath: selectedWorkspaceForAnalysis || workspaceStatus.workspacePath,
-        projectSelection: selectedProjectForAnalysis,
-        modelId: normalizeSelectedModelId(incidentSelectedModelId) ?? undefined,
-        requestId: `cba-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      })
-    );
-  };
-
   const handleChatBrainApplyPatch = (
     patchId: string,
     acceptedPaths: string[],
     branchSafeApply: boolean
   ) => {
     const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
-    if (!chatBrainConversationId || !workspacePath) {
-      setChatBrainError('Select a workspace before applying patches.');
-      setChatBrainErrorRetryable(false);
+    if (!embedChatBrain.conversationId || !workspacePath) {
+      embedChatBrain.setBlockingError('Select a workspace before applying patches.');
       return;
     }
 
@@ -2736,7 +2688,7 @@ export function App() {
     vscode.postMessage(
       'aiChatApplyPatch',
       buildIncidentChatApplyPatchPayload({
-        conversationId: chatBrainConversationId,
+        conversationId: embedChatBrain.conversationId,
         patchId,
         acceptedPaths,
         branchSafeApply,
@@ -2752,14 +2704,14 @@ export function App() {
     note?: string;
   }) => {
     const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
-    if (!chatBrainConversationId || !workspacePath) {
+    if (!embedChatBrain.conversationId || !workspacePath) {
       return;
     }
 
     vscode.postMessage('aiChatFeedback', {
-      conversationId: chatBrainConversationId,
+      conversationId: embedChatBrain.conversationId,
       workspacePath,
-      projectPath: selectedProjectForAnalysis?.path,
+      projectPath: activeAnalysisProject?.path,
       messageId: payload.messageId,
       rating: payload.rating,
       note: payload.note,
@@ -2769,14 +2721,14 @@ export function App() {
 
   const handlePredictiveWarningAccepted = (warningId: string, predictionKey: string) => {
     const workspacePath = selectedWorkspaceForAnalysis || workspaceStatus.workspacePath;
-    if (!workspacePath || !chatBrainConversationId) {
+    if (!workspacePath || !embedChatBrain.conversationId) {
       return;
     }
 
     vscode.postMessage('incidentPredictionAccepted', {
-      conversationId: chatBrainConversationId,
+      conversationId: embedChatBrain.conversationId,
       workspacePath,
-      projectPath: selectedProjectForAnalysis?.path,
+      projectPath: activeAnalysisProject?.path,
       warningId,
       predictionKey,
     });
@@ -2789,9 +2741,9 @@ export function App() {
       selectedWorkspaceForAnalysis || workspaceStatus.workspacePath || reproPack.workspacePath;
     vscode.postMessage('exportIncidentReproPack', {
       incidentReproPack: reproPack,
-      memoryInfluenceAuditTimeline: chatBrainActionResult?.memoryInfluenceAuditTimeline,
+      memoryInfluenceAuditTimeline: embedChatBrain.incomingActionResult?.memoryInfluenceAuditTimeline,
       workspacePath,
-      projectPath: selectedProjectForAnalysis?.path,
+      projectPath: activeAnalysisProject?.path,
     });
   };
 
@@ -2829,16 +2781,16 @@ export function App() {
 
   useEffect(() => {
     return () => {
-      if (chatBrainConversationId) {
-        vscode.postMessage('aiChatClose', { conversationId: chatBrainConversationId });
+      if (embedChatBrain.conversationId) {
+        vscode.postMessage('aiChatClose', { conversationId: embedChatBrain.conversationId });
       }
     };
-  }, [chatBrainConversationId]);
+  }, [embedChatBrain.conversationId]);
 
   useEffect(() => {
     const conversationIdToClose = getConversationIdToCloseOnViewExit(
       activeView,
-      chatBrainConversationId
+      embedChatBrain.conversationId
     );
 
     if (!conversationIdToClose) {
@@ -2846,8 +2798,8 @@ export function App() {
     }
 
     vscode.postMessage('aiChatClose', { conversationId: conversationIdToClose });
-    setChatBrainConversationId(null);
-  }, [activeView, chatBrainConversationId]);
+    embedChatBrain.setConversationId(null);
+  }, [activeView, embedChatBrain.conversationId, embedChatBrain.setConversationId]);
 
   useEffect(() => {
     if (!shouldRequestCatalogRefresh(dashboardSectionNeedsCatalog(dashboardSection), activeView)) {
@@ -2893,7 +2845,7 @@ export function App() {
     }
     vscode.postMessage('requestDashboardEvidence', {
       workspacePath: workspaceStatus.workspacePath,
-      projectPath: selectedProjectForAnalysis?.path,
+      projectPath: activeAnalysisProject?.path,
       projectName: selectedProjectForAnalysis?.name,
     });
   }, [
@@ -3051,16 +3003,15 @@ export function App() {
               />
             )}
 
-            {dashboardEvidence?.opsChain &&
-            (dashboardEvidence.opsChain.status === 'running' ||
-              dashboardEvidence.opsChain.status === 'blocked') ? (
+            {visibleOpsChain &&
+            (visibleOpsChain.status === 'running' || visibleOpsChain.status === 'blocked') ? (
               <OpsChainBanner
-                chain={dashboardEvidence.opsChain}
+                chain={visibleOpsChain}
                 onDismiss={() => vscode.postMessage('dismissDashboardOpsChain')}
                 onViewEvidence={() =>
                   updateDashboardSection(
-                    dashboardEvidence.opsChain?.status === 'blocked'
-                      ? dashboardSectionForOpsChainStep(dashboardEvidence.opsChain.currentStep)
+                    visibleOpsChain.status === 'blocked'
+                      ? dashboardSectionForOpsChainStep(visibleOpsChain.currentStep)
                       : 'evidence'
                   )
                 }
@@ -3363,8 +3314,10 @@ export function App() {
             streamError={aiStreamError}
             availableModels={aiAvailableModels}
             selectedModelId={aiSelectedModelId}
+            preferredModelId={preferredModelId}
+            modelsLoading={aiModelsLoading}
             contextContract={aiContextContract}
-            onModelChange={(modelId) => setAISelectedModelId(normalizeSelectedModelId(modelId))}
+            onModelChange={(modelId) => handlePreferredModelChange(modelId ?? 'auto')}
             onClose={() => {
               if (!aiIsStreaming) {
                 aiRequestIdRef.current = 0;
@@ -3454,8 +3407,8 @@ export function App() {
             onTelemetryRefresh={() => requestIncidentStudioTelemetryRefresh({ forceRefresh: true })}
             onSendMessage={handleStudioVNextMessage}
             incomingMessage={incidentStudioMessage}
-            streamAssistantText={chatBrainStreamText}
-            externalIsStreaming={chatBrainIsStreaming}
+            streamAssistantText={embedChatBrain.streamText}
+            externalIsStreaming={embedChatBrain.isStreaming}
             chatBrainStreamingEnabled
             incomingActionContract={incidentActionContract}
             incomingActionRegistry={incidentActionRegistry}
@@ -3464,7 +3417,7 @@ export function App() {
             onRevealEvidence={handleStudioVNextRevealEvidence}
             onCopyText={(text) => vscode.postMessage('copyText', { text })}
             showDemoScenario={false}
-            incomingActionResult={chatBrainActionResult}
+            incomingActionResult={embedChatBrain.incomingActionResult}
             verifyGateBlockedReasons={resolveVerifyGateBlockedReasonsFromTelemetry(
               incidentTelemetry
             )}
@@ -3476,16 +3429,20 @@ export function App() {
             onReplayIncidentQuery={handleChatBrainQuery}
             onApplyMultiFilePatch={handleChatBrainApplyPatch}
             guidedPrimaryBoardAction={
-              chatBrainBoard?.actions?.[0]
+              embedChatBrain.board?.actions?.[0]
                 ? {
-                    label: chatBrainBoard.actions[0].label,
+                    label: embedChatBrain.board.actions[0].label,
                     command:
-                      typeof chatBrainBoard.data?.command === 'string'
-                        ? chatBrainBoard.data.command
+                      typeof embedChatBrain.board.data?.command === 'string'
+                        ? embedChatBrain.board.data.command
                         : undefined,
+                    actionType: embedChatBrain.board.actions[0].actionType,
+                    actionId: embedChatBrain.board.actions[0].id,
                   }
                 : null
             }
+            chatBrainBoard={embedChatBrain.board}
+            onExecuteChatBrainAction={handleChatBrainExecuteAction}
             onRunGuidedCommand={runIncidentInlineCommand}
             onRunCliSurfaceAction={handleRunCliSurfaceAction}
             executingCliCommand={cliSurface.executingCommand}
@@ -3494,6 +3451,23 @@ export function App() {
             onRunShipLoopStep={shipLoop.runShipLoopStep}
             canRunShipLoopStep={shipLoop.canRunStep}
             hasProjectSelected={Boolean(selectedProjectForAnalysis?.path)}
+            analysisScopeNotice={analysisScopeNotice}
+            selectedProjectPath={selectedProjectForAnalysis?.path ?? null}
+            selectedProjectName={
+              selectedProjectForAnalysis?.name || selectedProjectForAnalysis?.path
+            }
+            availableProjects={workspaceProjects}
+            onSelectAnalysisProject={handleSelectAnalysisProject}
+            onDismissScopeNotice={() => setAnalysisScopeNotice(null)}
+            chatBrainError={embedChatBrain.error}
+            chatBrainErrorRetryable={embedChatBrain.errorRetryable}
+            onDismissChatBrainError={embedChatBrain.clearError}
+            availableModels={aiAvailableModels}
+            selectedModelId={incidentSelectedModelId}
+            preferredModelId={preferredModelId}
+            modelsLoading={aiModelsLoading}
+            onModelChange={(modelId) => handlePreferredModelChange(modelId ?? 'auto')}
+            onScopeChange={handleAnalysisScopeChange}
           />
         </div>
       )}

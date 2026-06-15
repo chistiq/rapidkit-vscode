@@ -32,7 +32,17 @@ import { useIncidentStudioShipLoop } from '@/lib/incidentStudioShipLoopSession';
 import {
     isIncidentStudioSessionHostCommand,
 } from '@/lib/incidentStudioSessionPersistence';
-import { buildIncidentChatApplyPatchPayload } from '@/lib/incidentStudioPayload';
+import {
+  buildIncidentChatApplyPatchPayload,
+  buildIncidentChatExecuteActionPayload,
+  buildIncidentChatStartPayload,
+  buildIncidentChatSyncWorkspacePayload,
+} from '@/lib/incidentStudioPayload';
+import {
+  isStudioCodeChangeActionId,
+  resolveStudioActionChatBrainExecution,
+  type StudioCodeChangeActionPayload,
+} from '@/lib/incidentStudioCodeChangeActions';
 import { vscode } from '@/vscode';
 import '@/styles/workspai-tokens.css';
 import '@/styles-tailwind.css';
@@ -45,6 +55,7 @@ declare global {
         INCIDENT_STUDIO_WORKSPACE_PATH?: string;
         INCIDENT_STUDIO_WORKSPACE_NAME?: string;
         INCIDENT_STUDIO_PROJECT_PATH?: string;
+        INCIDENT_STUDIO_PROJECT_NAME?: string;
     }
 }
 
@@ -86,7 +97,11 @@ const IncidentStudioApp = () => {
     const workspacePath = window.INCIDENT_STUDIO_WORKSPACE_PATH || '';
     const workspaceName = window.INCIDENT_STUDIO_WORKSPACE_NAME || 'Unknown Workspace';
     const projectPath = window.INCIDENT_STUDIO_PROJECT_PATH || '';
+    const projectName = window.INCIDENT_STUDIO_PROJECT_NAME || '';
     const hasProjectSelected = Boolean(projectPath);
+    const projectSelection = hasProjectSelected
+        ? { path: projectPath, name: projectName || undefined }
+        : null;
     // Report state
     const [reportExists, setReportExists] = useState<boolean | null>(null);
     const [reportData, setReportData] = useState<AnalyzeReport | null>(null);
@@ -96,15 +111,23 @@ const IncidentStudioApp = () => {
     const [incomingActionContract, setIncomingActionContract] = useState<AIActionContractView | null>(null);
     const [incomingActionRegistry, setIncomingActionRegistry] = useState<AIActionRegistryView | null>(null);
     const [incomingActionStatus, setIncomingActionStatus] = useState<StudioActionStatus | null>(null);
+    const [availableModels, setAvailableModels] = useState<
+        Array<{ id: string; name: string; vendor: string }>
+    >([]);
+    const [preferredModelId, setPreferredModelId] = useState<string>('auto');
+    const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+    const [modelsLoading, setModelsLoading] = useState(false);
     const postHostMessage = useCallback((command: string, data?: unknown) => {
         vscode.postMessage(command, data);
     }, []);
     const chatBrain = useIncidentStudioChatBrain({
         workspacePath,
         workspaceName,
+        projectSelection,
+        modelId: selectedModelId,
         postMessage: postHostMessage,
     });
-    const incomingMessage = chatBrain.incomingMessage ?? legacyIncomingMessage;
+    const incomingMessage = legacyIncomingMessage ?? chatBrain.incomingMessage;
     const incomingActionResult = chatBrain.incomingActionResult;
     const [verifyGateBlockedReasons, setVerifyGateBlockedReasons] = useState<string[]>([]);
     const [incomingTelemetry, setIncomingTelemetry] =
@@ -120,6 +143,7 @@ const IncidentStudioApp = () => {
     const cliSurface = useIncidentStudioCliSurface({
         workspacePath,
         workspaceName,
+        projectSelection,
         userMode: preferredUserMode,
         telemetry: incomingTelemetry,
         postMessage: postHostMessage,
@@ -197,11 +221,13 @@ const IncidentStudioApp = () => {
         vscode.postMessage('getUiPreferences', { workspacePath });
         vscode.postMessage('requestIncidentStudioTelemetry', {
             workspacePath,
+            projectPath: projectPath || undefined,
             forceRefresh: true,
         });
+        vscode.postMessage('requestWorkspaiSettings');
         shipLoop.requestShipEvidence();
         setIsTelemetryRefreshing(true);
-    }, [workspacePath]);
+    }, [projectPath, shipLoop.requestShipEvidence, workspacePath]);
 
     // Listen for messages from extension
     useEffect(() => {
@@ -330,6 +356,46 @@ const IncidentStudioApp = () => {
                         normalizeIncidentStudioDisplayMode(message.data?.incidentStudioDisplayMode),
                     );
                     break;
+                case 'workspaiSettings': {
+                    const preferredModel =
+                        typeof message.data?.preferredModel === 'string' &&
+                        message.data.preferredModel.trim().length > 0
+                            ? message.data.preferredModel.trim()
+                            : 'auto';
+                    const models = Array.isArray(message.data?.models)
+                        ? message.data.models.filter(
+                              (model: unknown): model is { id: string; name: string; vendor: string } =>
+                                  Boolean(model) &&
+                                  typeof (model as { id?: unknown }).id === 'string' &&
+                                  typeof (model as { name?: unknown }).name === 'string' &&
+                                  typeof (model as { vendor?: unknown }).vendor === 'string',
+                          )
+                        : [];
+                    setPreferredModelId(preferredModel);
+                    setAvailableModels(models);
+                    setModelsLoading(false);
+                    setSelectedModelId(preferredModel === 'auto' ? null : preferredModel);
+                    break;
+                }
+                case 'aiModelsList':
+                    if (Array.isArray(message.data?.models)) {
+                        const models = message.data.models.filter(
+                            (model: unknown): model is { id: string; name: string; vendor: string } =>
+                                Boolean(model) &&
+                                typeof (model as { id?: unknown }).id === 'string' &&
+                                typeof (model as { name?: unknown }).name === 'string' &&
+                                typeof (model as { vendor?: unknown }).vendor === 'string',
+                        );
+                        setAvailableModels(models);
+                        setModelsLoading(false);
+                        setSelectedModelId((current) => {
+                            if (!current) {
+                                return null;
+                            }
+                            return models.some((model) => model.id === current) ? current : null;
+                        });
+                    }
+                    break;
                 case 'runIncidentInlineCommandDone':
                     cliSurface.handleHostMessage(message);
                     shipLoop.handleHostMessage(message.command, message.data, message.meta);
@@ -352,6 +418,24 @@ const IncidentStudioApp = () => {
             if (!actionId) {
                 return `Unknown Studio action blocked: ${message}`;
             }
+
+            if (isStudioCodeChangeActionId(actionId)) {
+                const resolution = resolveStudioActionChatBrainExecution(
+                    actionId,
+                    reportBackedState?.studioEvidence ?? null,
+                    projectSelection,
+                );
+                if (resolution) {
+                    handleChatBrainExecuteAction(
+                        resolution.actionType,
+                        `studio-${actionId}-${Date.now()}`,
+                        resolution.payload,
+                        resolution.userMessage,
+                    );
+                    return resolution.userMessage;
+                }
+            }
+
             vscode.postMessage('runStudioAction', {
                 workspacePath,
                 workspaceName,
@@ -367,6 +451,84 @@ const IncidentStudioApp = () => {
 
         chatBrain.submitQuery(message);
         return undefined;
+    };
+
+    const ensureChatBrainConversation = () => {
+        if (!workspacePath) {
+            return null;
+        }
+
+        const conversationId =
+            chatBrain.conversationId ||
+            `conv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+        if (!chatBrain.conversationId) {
+            chatBrain.setConversationId(conversationId);
+            vscode.postMessage(
+                'aiChatStart',
+                buildIncidentChatStartPayload({
+                    workspacePath,
+                    requestId: `cb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                    resumeConversationId: conversationId,
+                    projectSelection,
+                    scopeMode: hasProjectSelected ? 'project' : 'workspace',
+                }),
+            );
+            vscode.postMessage(
+                'aiChatSyncWorkspace',
+                buildIncidentChatSyncWorkspacePayload({
+                    workspacePath,
+                    requestId: `cbs-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                    projectSelection,
+                    scopeMode: hasProjectSelected ? 'project' : 'workspace',
+                }),
+            );
+        }
+
+        return conversationId;
+    };
+
+    const handleChatBrainExecuteAction = (
+        actionType: string,
+        actionId?: string,
+        payload?: StudioCodeChangeActionPayload,
+        userMessage?: string,
+    ) => {
+        if (!workspacePath) {
+            chatBrain.setBlockingError(
+                'Open a workspace before executing Studio code-change actions.',
+            );
+            return;
+        }
+
+        const conversationId = ensureChatBrainConversation();
+        if (!conversationId || !actionType) {
+            return;
+        }
+
+        if (userMessage?.trim()) {
+            setLegacyIncomingMessage({
+                id: `user-action-${Date.now()}`,
+                role: 'user',
+                content: userMessage.trim(),
+                timestamp: new Date().toISOString(),
+            });
+        }
+
+        chatBrain.resetForQuery();
+        vscode.postMessage(
+            'aiChatExecuteAction',
+            buildIncidentChatExecuteActionPayload({
+                conversationId,
+                actionId: actionId || `action-${Date.now()}`,
+                actionType,
+                workspacePath,
+                projectSelection,
+                modelId: selectedModelId ?? undefined,
+                requestId: `cba-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                payload,
+            }),
+        );
     };
 
     const handleRunAnalyzeClick = () => {
@@ -496,6 +658,13 @@ const IncidentStudioApp = () => {
         });
     };
 
+    const handleModelChange = (modelId: string | null) => {
+        const normalized = modelId?.trim() || 'auto';
+        setPreferredModelId(normalized);
+        setSelectedModelId(normalized === 'auto' ? null : normalized);
+        vscode.postMessage('setPreferredModel', { modelId: normalized });
+    };
+
     const handleTelemetryRefresh = () => {
         if (!workspacePath) {
             return;
@@ -503,6 +672,7 @@ const IncidentStudioApp = () => {
         setIsTelemetryRefreshing(true);
         vscode.postMessage('requestIncidentStudioTelemetry', {
             workspacePath,
+            projectPath: projectPath || undefined,
             forceRefresh: true,
         });
     };
@@ -541,6 +711,7 @@ const IncidentStudioApp = () => {
                     ...(reportBackedState || {}),
                     workspaceName,
                     userMode: preferredUserMode,
+                    scopeType: hasProjectSelected ? 'project' : 'workspace',
                 }}
                 workspacePath={workspacePath}
                 sessionPostMessage={postHostMessage}
@@ -580,6 +751,16 @@ const IncidentStudioApp = () => {
                 onRunShipLoopStep={shipLoop.runShipLoopStep}
                 canRunShipLoopStep={shipLoop.canRunStep}
                 hasProjectSelected={hasProjectSelected}
+                chatBrainError={chatBrain.error}
+                chatBrainErrorRetryable
+                onDismissChatBrainError={chatBrain.clearError}
+                availableModels={availableModels}
+                selectedModelId={selectedModelId}
+                preferredModelId={preferredModelId}
+                modelsLoading={modelsLoading}
+                onModelChange={handleModelChange}
+                chatBrainBoard={chatBrain.board}
+                onExecuteChatBrainAction={handleChatBrainExecuteAction}
             />
         </StrictMode>
     );

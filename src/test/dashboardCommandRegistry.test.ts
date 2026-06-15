@@ -312,7 +312,8 @@ describe('dashboardCommandRegistry', () => {
     expect(actionTileSource).toContain('aria-busy={pending || undefined}');
     expect(appSource).toContain('pendingCardIds={pendingEvidenceCardIds}');
     expect(appSource).toContain('const reconcilePendingEvidenceCards = useCallback');
-    expect(appSource).toContain(
+    expect(appSource).toContain('reconcilePendingEvidenceCardIds(current, payload)');
+    expect(read('webview-ui/src/lib/dashboardEvidencePending.ts')).toContain(
       "card.status !== 'missing' || card.generatedAt || card.artifactPath"
     );
     expect(appSource).toContain('reconcilePendingEvidenceCards(message.data ?? null)');

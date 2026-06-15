@@ -9,7 +9,11 @@ import * as path from 'path';
 import { WorkspaiProject, WorkspaiWorkspace } from '../../types';
 import { runningServers } from '../../extension';
 import { detectProjectStackFromSignals } from '../../commands/importProjectUtils';
-import { readImportedProjectsRegistry } from '../../utils/importedProjectsRegistry';
+import {
+  readImportedProjectsRegistry,
+  resolveImportedProjectPath,
+  type ImportedProjectRegistryEntry,
+} from '../../utils/importedProjectsRegistry';
 
 // Store extension path for icons
 let extensionPath: string = '';
@@ -77,6 +81,22 @@ function shouldHide(name: string, projectType?: string): boolean {
 }
 
 function frameworkLabel(type: string): string {
+  const frontendLabels: Record<string, string> = {
+    nextjs: 'Next.js',
+    react: 'React',
+    vite: 'Vite',
+    vue: 'Vue',
+    nuxt: 'Nuxt',
+    remix: 'Remix',
+    sveltekit: 'SvelteKit',
+    svelte: 'Svelte',
+    angular: 'Angular',
+    astro: 'Astro',
+    solid: 'Solid',
+  };
+  if (frontendLabels[type]) {
+    return frontendLabels[type];
+  }
   if (type === 'fastapi') {
     return 'FastAPI';
   }
@@ -99,6 +119,22 @@ function frameworkLabel(type: string): string {
 }
 
 function inferKit(type: WorkspaiProject['type']): string {
+  const adoptedFrontendStacks = new Set<WorkspaiProject['type']>([
+    'nextjs',
+    'react',
+    'vite',
+    'vue',
+    'nuxt',
+    'remix',
+    'sveltekit',
+    'svelte',
+    'angular',
+    'astro',
+    'solid',
+  ]);
+  if (adoptedFrontendStacks.has(type)) {
+    return `adopted.${type}`;
+  }
   if (type === 'fastapi') {
     return 'fastapi.standard';
   }
@@ -122,23 +158,70 @@ function stackFromKitName(kitName?: string): WorkspaiProject['type'] {
     return 'unknown';
   }
 
-  if (kitName.startsWith('fastapi.')) {
+  const normalized = kitName.toLowerCase();
+
+  if (normalized.startsWith('adopted.nextjs') || normalized.startsWith('nextjs.')) {
+    return 'nextjs';
+  }
+  if (normalized.startsWith('adopted.react') || normalized.startsWith('react.')) {
+    return 'react';
+  }
+  if (normalized.startsWith('adopted.vite') || normalized.startsWith('vite.')) {
+    return 'vite';
+  }
+  if (normalized.startsWith('adopted.vue') || normalized.startsWith('vue.')) {
+    return 'vue';
+  }
+  if (normalized.startsWith('adopted.nuxt') || normalized.startsWith('nuxt.')) {
+    return 'nuxt';
+  }
+  if (normalized.startsWith('adopted.remix') || normalized.startsWith('remix.')) {
+    return 'remix';
+  }
+  if (normalized.startsWith('adopted.sveltekit') || normalized.startsWith('sveltekit.')) {
+    return 'sveltekit';
+  }
+  if (normalized.startsWith('adopted.svelte') || normalized.startsWith('svelte.')) {
+    return 'svelte';
+  }
+  if (normalized.startsWith('adopted.angular') || normalized.startsWith('angular.')) {
+    return 'angular';
+  }
+  if (normalized.startsWith('adopted.astro') || normalized.startsWith('astro.')) {
+    return 'astro';
+  }
+  if (normalized.startsWith('adopted.solid') || normalized.startsWith('solid.')) {
+    return 'solid';
+  }
+
+  if (normalized.startsWith('fastapi.')) {
     return 'fastapi';
   }
-  if (kitName.startsWith('nestjs.')) {
+  if (normalized.startsWith('nestjs.')) {
     return 'nestjs';
   }
-  if (kitName.startsWith('go') || kitName.startsWith('gofiber.') || kitName.startsWith('gogin.')) {
+  if (
+    normalized.startsWith('go') ||
+    normalized.startsWith('gofiber.') ||
+    normalized.startsWith('gogin.')
+  ) {
     return 'go';
   }
-  if (kitName.startsWith('springboot.')) {
+  if (normalized.startsWith('springboot.')) {
     return 'springboot';
   }
-  if (kitName.startsWith('dotnet.')) {
+  if (normalized.startsWith('dotnet.')) {
     return 'dotnet';
   }
 
   return 'unknown';
+}
+
+function stackFromRegistryEntry(entry?: ImportedProjectRegistryEntry): WorkspaiProject['type'] {
+  if (!entry || entry.stack === 'unknown') {
+    return 'unknown';
+  }
+  return entry.stack as WorkspaiProject['type'];
 }
 
 async function hasFileWithExtension(rootPath: string, extension: string): Promise<boolean> {
@@ -242,6 +325,21 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
 
   getSelectedProject(): WorkspaiProject | null {
     return this.selectedProject;
+  }
+
+  /** Load projects for the selected workspace when the tree has not scanned yet. */
+  public async ensureProjectsLoaded(): Promise<WorkspaiProject[]> {
+    if (!this.selectedWorkspace) {
+      return [];
+    }
+
+    if (!this._projectsLoaded) {
+      await this.loadProjects();
+      this._projectsLoaded = true;
+      await this.updateProjectsContext();
+    }
+
+    return [...this.projects];
   }
 
   private async updateProjectsContext(): Promise<void> {
@@ -394,18 +492,46 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
 
     try {
       const importedRegistryEntries = await readImportedProjectsRegistry(wsPath);
-      const importedByPath = new Map(
-        importedRegistryEntries.map((entry) => [entry.path, entry] as const)
-      );
+      const importedByPath = new Map<string, ImportedProjectRegistryEntry>();
+      const projectCandidates = new Map<
+        string,
+        {
+          name: string;
+          path: string;
+          registryEntry?: ImportedProjectRegistryEntry;
+        }
+      >();
+
+      for (const registryEntry of importedRegistryEntries) {
+        const projectPath = resolveImportedProjectPath(wsPath, registryEntry.path);
+        importedByPath.set(projectPath, registryEntry);
+        projectCandidates.set(projectPath, {
+          name: registryEntry.name || path.basename(projectPath),
+          path: projectPath,
+          registryEntry,
+        });
+      }
 
       const entries = await fs.readdir(wsPath, { withFileTypes: true });
       const projectDirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith('.'));
+      for (const entry of projectDirs) {
+        const projectPath = path.resolve(path.join(wsPath, entry.name));
+        const registryEntry = importedByPath.get(projectPath);
+        projectCandidates.set(projectPath, {
+          name: registryEntry?.name || entry.name,
+          path: projectPath,
+          registryEntry,
+        });
+      }
 
       // Detect all projects in parallel — no sequential pathExists chains
       const detected = await Promise.all(
-        projectDirs.map(async (entry) => {
-          const projectPath = path.join(wsPath, entry.name);
-          const registryEntry = importedByPath.get(projectPath);
+        Array.from(projectCandidates.values()).map(async (candidate) => {
+          const projectPath = candidate.path;
+          const registryEntry = candidate.registryEntry;
+          if (!(await fs.pathExists(projectPath))) {
+            return null;
+          }
 
           const [hasPyproject, hasPackageJson, hasGoMod, hasPomXml, hasGradle, hasGradleKts] =
             await Promise.all([
@@ -466,7 +592,7 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
           });
 
           const hasRapidkitProjectMarker = hasRapidkitProjectJson || hasRapidkitContextJson;
-          const registryStack = registryEntry?.stack;
+          const registryStack = stackFromRegistryEntry(registryEntry);
           const markerStack = stackFromKitName(managedKitName);
           const projectType: WorkspaiProject['type'] =
             registryStack && registryStack !== 'unknown'
@@ -480,7 +606,7 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
           }
 
           const base: Omit<WorkspaiProject, 'type'> = {
-            name: entry.name,
+            name: candidate.name,
             path: projectPath,
             kit: managedKitName ?? inferKit(projectType),
             managed: hasRapidkitProjectMarker,

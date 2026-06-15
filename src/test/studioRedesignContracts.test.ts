@@ -29,10 +29,11 @@ describe('StudioRedesign contracts', () => {
       'studio-action:run-analyze',
       'studio-action:terminal-bridge',
       'studio-action:fix-lens',
+      'studio-action:install-module',
       'studio-action:impact-lens',
       'studio-action:verify-gates',
     ]);
-    expect(STUDIO_ACTION_COMMAND_SET.size).toBe(5);
+    expect(STUDIO_ACTION_COMMAND_SET.size).toBe(6);
     expect(isStudioActionCommand(STUDIO_ACTION_COMMANDS.verifyGates)).toBe(true);
     expect(isStudioActionCommand('studio-action:unknown')).toBe(false);
     expect(parseStudioActionCommand(STUDIO_ACTION_COMMANDS.impactLens)).toBe('impact-lens');
@@ -252,6 +253,7 @@ describe('StudioRedesign contracts', () => {
       'verify-gates',
       'terminal-bridge',
       'fix-lens',
+      'install-module',
       'impact-lens',
     ]) {
       expect(panelSource).toContain(`await this._refreshStudioState(actionId);`);
@@ -1041,7 +1043,7 @@ describe('StudioRedesign contracts', () => {
     expect(contextSource).toContain('`${operation}-requested`');
     expect(contextSource).toContain('resolveAIActionButtonBlockReason');
     expect(contextSource).toContain(
-      'resolveStudioAIActionOperationBlockReason(operation, aiActionContract)'
+      'resolveStudioAIActionOperationBlockReason(operation, aiActionContract,'
     );
     expect(contextSource).toContain(
       "(operation === 'apply' || operation === 'rollback') && !actionApprovalConfirmed"

@@ -12,14 +12,32 @@ export type ImportedProjectStack =
   | 'springboot'
   | 'rails'
   | 'dotnet'
+  | 'nextjs'
+  | 'react'
+  | 'vite'
+  | 'vue'
+  | 'nuxt'
+  | 'remix'
+  | 'sveltekit'
+  | 'svelte'
+  | 'angular'
+  | 'astro'
+  | 'solid'
   | 'unknown';
 
 export interface ImportedProjectRegistryEntry {
   name: string;
   path: string;
+  relativePath?: string;
+  relationship?: 'imported' | 'adopted';
   stack: ImportedProjectStack;
+  runtime?: string;
+  framework?: string;
+  frameworkDisplayName?: string;
+  supportTier?: string;
+  moduleSupport?: boolean;
   confidence: 'high' | 'medium' | 'low';
-  source?: 'local-folder' | 'git-url' | 'drag-drop';
+  source?: 'local-folder' | 'git-url' | 'drag-drop' | 'adopted-local';
   importedAt: string;
 }
 
@@ -31,6 +49,12 @@ interface ImportedProjectsRegistryFile {
 
 function registryFilePath(workspacePath: string): string {
   return path.join(workspacePath, '.rapidkit', 'imported-projects.json');
+}
+
+export function resolveImportedProjectPath(workspacePath: string, projectPath: string): string {
+  return path.resolve(
+    path.isAbsolute(projectPath) ? projectPath : path.join(workspacePath, projectPath)
+  );
 }
 
 export async function readImportedProjectsRegistry(

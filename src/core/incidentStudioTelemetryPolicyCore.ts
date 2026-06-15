@@ -39,7 +39,15 @@ export type IncidentStudioTelemetryGateSliceCore = {
   enterpriseStabilizationGateStatus?: {
     expansionFrozen?: boolean;
     freezeReason?: string | null;
+    consecutiveWindowsPass?: number;
     last7d?: {
+      overallPass?: boolean;
+      hardGatePass?: boolean;
+      verifyPathCompletionPass?: boolean;
+      falseConfidencePass?: boolean;
+      rollbackRecoveryPass?: boolean;
+    } | null;
+    last30d?: {
       overallPass?: boolean;
       hardGatePass?: boolean;
       verifyPathCompletionPass?: boolean;

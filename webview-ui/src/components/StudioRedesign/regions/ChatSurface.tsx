@@ -5,7 +5,6 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Send,
     Lightbulb,
     Zap,
     Code,
@@ -14,6 +13,8 @@ import {
     ChevronDown,
     MessageSquare,
 } from 'lucide-react';
+import { ChatComposer } from '@/components/ChatComposer';
+import type { ModelSelectOption } from '@/components/ModelSelect';
 import { studioClass, riskToneClass, chipFadeClass } from '../styles/studioUi';
 import { buildActionOutcomePresentation } from '../../../lib/incidentStudioActionOutcomePresentation';
 import type {
@@ -25,6 +26,8 @@ import {
     resolveGuidedIntentChipsFromStudioContext,
     type GuidedIntentChip,
 } from '../../../lib/incidentStudioGuidedActions';
+import type { IncidentStudioChatBrainBoard } from '../../../lib/incidentStudioChatBrainSession';
+import type { StudioCodeChangeActionPayload } from '../../../lib/incidentStudioCodeChangeActions';
 import { ActionOutcomePanel, type ActionOutcomeCallbacks } from './ActionOutcomePanel';
 import {
     ChatMessage,
@@ -66,8 +69,28 @@ interface ChatSurfaceProps {
             releaseReadiness: IncidentReleaseReadinessCommanderArtifact,
         ) => void;
     };
-    guidedPrimaryBoardAction?: { label: string; command?: string } | null;
+    guidedPrimaryBoardAction?: {
+        label: string;
+        command?: string;
+        actionType?: string;
+        actionId?: string;
+    } | null;
+    chatBrainBoard?: IncidentStudioChatBrainBoard | null;
+    onExecuteChatBrainAction?: (
+        actionType: string,
+        actionId?: string,
+        payload?: StudioCodeChangeActionPayload,
+        userMessage?: string,
+    ) => void;
     onRunGuidedCommand?: (command: string) => void;
+    chatBrainError?: string | null;
+    chatBrainErrorRetryable?: boolean;
+    onDismissChatBrainError?: () => void;
+    availableModels?: ModelSelectOption[];
+    selectedModelId?: string | null;
+    preferredModelId?: string;
+    modelsLoading?: boolean;
+    onModelChange?: (modelId: string | null) => void;
 }
 
 export const ChatSurface: React.FC<ChatSurfaceProps> = ({
@@ -90,7 +113,17 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
     actionOutcomeCallbacks,
     onLearnExportArchive,
     guidedPrimaryBoardAction = null,
+    chatBrainBoard = null,
+    onExecuteChatBrainAction,
     onRunGuidedCommand,
+    chatBrainError = null,
+    chatBrainErrorRetryable = true,
+    onDismissChatBrainError,
+    availableModels = [],
+    selectedModelId = null,
+    preferredModelId = 'auto',
+    modelsLoading = false,
+    onModelChange,
 }) => {
     const [input, setInput] = useState('');
     const [expandedSourceMessageId, setExpandedSourceMessageId] = useState<string | null>(null);
@@ -205,6 +238,22 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                 </div>
             </div>
 
+            {chatBrainError ? (
+                <div className={`${studioClass.banner} studio-chat-error-banner`} role="alert">
+                    <strong>{chatBrainErrorRetryable ? 'Request failed' : 'Request blocked'}</strong>
+                    <span>{chatBrainError}</span>
+                    {onDismissChatBrainError ? (
+                        <button
+                            type="button"
+                            className={`${studioClass.btnGhost} studio-chat-error-banner__dismiss`}
+                            onClick={onDismissChatBrainError}
+                        >
+                            Dismiss
+                        </button>
+                    ) : null}
+                </div>
+            ) : null}
+
             {guidedMode ? (
                 <div className={`${studioClass.banner} studio-guided-banner`}>
                     <strong>Guided route</strong>
@@ -299,7 +348,7 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                                 ? 'Evidence is ready. Use the guided chips below for the next deterministic step, then verify before claiming completion.'
                                 : 'Evidence is loaded. Ask Studio to explain findings, map blast radius, or validate release gates with explicit proof.'}
                         </div>
-                        {guidedMode && guidedIntentChips.length > 0 && onRunGuidedCommand ? (
+                        {guidedMode && guidedIntentChips.length > 0 ? (
                             <div
                                 className="studio-empty-state__guided-actions"
                                 aria-label="Guided intent chips"
@@ -309,6 +358,7 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                                         key={chip.id}
                                         chip={chip}
                                         onRun={onRunGuidedCommand}
+                                        onExecuteChatBrainAction={onExecuteChatBrainAction}
                                     />
                                 ))}
                             </div>
@@ -379,6 +429,37 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                 />
             ) : null}
 
+            {!guidedMode && chatBrainBoard?.actions?.length && onExecuteChatBrainAction ? (
+                <div className={`${studioClass.banner} studio-action-board`} aria-label="Next safe actions">
+                    <strong>{chatBrainBoard.title || 'Next safe action'}</strong>
+                    {chatBrainBoard.summary ? <span>{chatBrainBoard.summary}</span> : null}
+                    <div className={studioClass.suggestionRow}>
+                        {chatBrainBoard.actions.map((action) => (
+                            <button
+                                key={action.id || action.label}
+                                type="button"
+                                className={studioClass.chipActive}
+                                disabled={isStreaming || !action.actionType}
+                                title={action.actionType ? `Execute ${action.actionType}` : action.label}
+                                onClick={() => {
+                                    if (!action.actionType) {
+                                        return;
+                                    }
+                                    onExecuteChatBrainAction(
+                                        action.actionType,
+                                        action.id,
+                                        undefined,
+                                        action.label,
+                                    );
+                                }}
+                            >
+                                {action.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            ) : null}
+
             {/* Input Area */}
             <div className={studioClass.composer}>
                 {/* Phase Advancement Gate — shown after ≥2 messages, not on 'learn' */}
@@ -397,13 +478,14 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                 })()}
 
                 {/* Guided intent chips — deterministic next + verify only */}
-                {guidedMode && guidedIntentChips.length > 0 && onRunGuidedCommand ? (
+                {guidedMode && guidedIntentChips.length > 0 ? (
                     <div className={studioClass.suggestionRow} aria-label="Guided intent chips">
                         {guidedIntentChips.map((chip) => (
                             <GuidedIntentChipButton
                                 key={chip.id}
                                 chip={chip}
                                 onRun={onRunGuidedCommand}
+                                onExecuteChatBrainAction={onExecuteChatBrainAction}
                             />
                         ))}
                     </div>
@@ -415,6 +497,7 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                         <SuggestionChip label="Analyze git log" command={STUDIO_ACTION_COMMANDS.runAnalyze} onSelect={onSendMessage} />
                         <SuggestionChip label="Check dependencies" command={STUDIO_ACTION_COMMANDS.impactLens} onSelect={onSendMessage} />
                         <SuggestionChip label="Generate fix" command={STUDIO_ACTION_COMMANDS.fixLens} onSelect={onSendMessage} />
+                        <SuggestionChip label="Install module" command={STUDIO_ACTION_COMMANDS.installModule} onSelect={onSendMessage} />
                         <SuggestionChip label="Verify gates" command={STUDIO_ACTION_COMMANDS.verifyGates} onSelect={onSendMessage} />
                     </div>
                 )}
@@ -424,37 +507,26 @@ export const ChatSurface: React.FC<ChatSurfaceProps> = ({
                     <div className={studioClass.composerMeta}>
                         <MetadataItem label="Scope" value={scopeType === 'workspace' ? 'Workspace' : 'Project'} />
                         <MetadataItem label="Phase" value={PHASE_LABELS[currentPhase]} />
-                        <MetadataItem label="Model" value="WorkspAI" />
                     </div>
                 ) : null}
 
-                {/* Input */}
-                <div className={studioClass.composerField}>
-                    <textarea
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault();
-                                handleSend();
-                            }
-                        }}
-                        aria-label="Message input — press Enter to send, Shift+Enter for new line"
-                        aria-multiline="true"
-                        placeholder="Ask about incident... (Shift+Enter for new line)"
-                        className={studioClass.composerInput}
-                    />
-                    <button
-                        onClick={handleSend}
-                        disabled={sendDisabled}
-                        aria-disabled={sendDisabled}
-                        aria-label="Send message"
-                        title={sendDisabledReason || 'Send message'}
-                        className={`${studioClass.btnAccent}${sendDisabled ? ' studio-composer__send is-disabled' : ''}`}
-                    >
-                        <Send size={18} />
-                    </button>
-                </div>
+                <ChatComposer
+                    variant="studio"
+                    value={input}
+                    onChange={setInput}
+                    onSubmit={handleSend}
+                    isStreaming={isStreaming}
+                    placeholder="Plan, diagnose, or verify… (Shift+Enter for new line)"
+                    submitDisabled={sendDisabled}
+                    submitDisabledReason={sendDisabledReason}
+                    availableModels={availableModels}
+                    selectedModelId={selectedModelId}
+                    preferredModelId={preferredModelId}
+                    modelsLoading={modelsLoading}
+                    onModelChange={onModelChange}
+                    hint={userMode === 'guided' ? 'Guided mode' : undefined}
+                    inputAriaLabel="Studio message input"
+                />
             </div>
         </div>
     );
@@ -741,16 +813,32 @@ const SuggestionChip: React.FC<SuggestionChipProps> = ({ label, command, onSelec
 
 interface GuidedIntentChipButtonProps {
     chip: GuidedIntentChip;
-    onRun: (command: string) => void;
+    onRun?: (command: string) => void;
+    onExecuteChatBrainAction?: (
+        actionType: string,
+        actionId?: string,
+        payload?: StudioCodeChangeActionPayload,
+        userMessage?: string,
+    ) => void;
 }
 
-const GuidedIntentChipButton: React.FC<GuidedIntentChipButtonProps> = ({ chip, onRun }) => (
+const GuidedIntentChipButton: React.FC<GuidedIntentChipButtonProps> = ({
+    chip,
+    onRun,
+    onExecuteChatBrainAction,
+}) => (
     <button
         type="button"
         className={chip.isPrimary ? studioClass.chipActive : studioClass.chip}
         title={chip.detail}
         aria-label={`${chip.label}: ${chip.detail}`}
-        onClick={() => onRun(chip.command)}
+        onClick={() => {
+            if (chip.kind === 'chat-brain-action' && chip.actionType && onExecuteChatBrainAction) {
+                onExecuteChatBrainAction(chip.actionType, chip.actionId, undefined, chip.label);
+                return;
+            }
+            onRun?.(chip.command);
+        }}
     >
         {chip.label}
     </button>

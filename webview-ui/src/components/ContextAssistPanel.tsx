@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowRight, Bug, BrainCircuit, PanelRightClose, Square, Send, Sparkles } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ArrowRight, Bug, BrainCircuit, PanelRightClose, Sparkles } from 'lucide-react';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
-import { ModelSelect } from '@/components/ModelSelect';
+import { ChatComposer } from '@/components/ChatComposer';
+import type { ModelSelectOption } from '@/components/ModelSelect';
 import {
     CONTEXT_ASSIST_FRAMEWORK_LABELS,
     CONTEXT_ASSIST_TYPE_LABELS,
@@ -17,8 +18,10 @@ interface ContextAssistPanelProps {
     isStreaming: boolean;
     streamContent: string;
     streamError: string | null;
-    availableModels?: { id: string; name: string; vendor: string }[];
+    availableModels?: ModelSelectOption[];
     selectedModelId?: string | null;
+    preferredModelId?: string;
+    modelsLoading?: boolean;
     contextContract?: ContextAssistContractSummary | null;
     onModelChange?: (modelId: string | null) => void;
     onClose: () => void;
@@ -36,6 +39,8 @@ export function ContextAssistPanel({
     streamError,
     availableModels = [],
     selectedModelId,
+    preferredModelId = 'auto',
+    modelsLoading = false,
     contextContract,
     onModelChange,
     onClose,
@@ -47,14 +52,6 @@ export function ContextAssistPanel({
     const [mode, setMode] = useState<ContextAssistMode>('ask');
     const [input, setInput] = useState('');
     const responseRef = useRef<HTMLDivElement>(null);
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-    const adjustTextareaHeight = useCallback(() => {
-        const el = textareaRef.current;
-        if (!el) { return; }
-        el.style.height = 'auto';
-        el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-    }, []);
 
     useEffect(() => {
         if (isOpen && context) {
@@ -65,13 +62,8 @@ export function ContextAssistPanel({
                 setMode('ask');
                 setInput('');
             }
-            setTimeout(() => textareaRef.current?.focus(), 120);
         }
     }, [isOpen, context]);
-
-    useEffect(() => {
-        adjustTextareaHeight();
-    }, [input, adjustTextareaHeight]);
 
     useEffect(() => {
         if (responseRef.current) {
@@ -90,11 +82,7 @@ export function ContextAssistPanel({
         onQuery(mode, input.trim(), context);
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-            e.preventDefault();
-            handleSubmit();
-        }
+    const handleComposerKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Escape') {
             if (isStreaming) {
                 onCancel();
@@ -123,7 +111,7 @@ export function ContextAssistPanel({
         >
             <header className="ws-assist-panel__header">
                 <div className="ws-assist-panel__title-block">
-                    <div className="ws-kicker ws-assist-panel__kicker">Context assist</div>
+                    <div className="ws-kicker ws-assist-panel__kicker">Impact Lens</div>
                     <div className="ws-assist-panel__title">{context.name}</div>
                     <div className="ws-assist-panel__meta">
                         <span className="ws-chip ws-chip--muted">
@@ -138,17 +126,6 @@ export function ContextAssistPanel({
                     </div>
                 </div>
                 <div className="ws-assist-panel__header-actions">
-                    {availableModels.length > 0 ? (
-                        <ModelSelect
-                            className="ai-model-selector-inline workspai-model-select"
-                            value={selectedModelId ?? null}
-                            models={availableModels}
-                            disabled={isStreaming}
-                            ariaLabel="Model policy"
-                            autoLabel="Policy default"
-                            onChange={onModelChange}
-                        />
-                    ) : null}
                     <button
                         type="button"
                         className="ws-btn ws-btn--ghost ws-btn--icon ws-assist-panel__close"
@@ -282,34 +259,29 @@ export function ContextAssistPanel({
                 ) : null}
             </div>
 
-            <footer className="ws-assist-panel__footer">
-                <textarea
-                    ref={textareaRef}
-                    className="ws-field__control ws-assist-panel__input"
+            <footer className="ws-assist-panel__footer" onKeyDown={handleComposerKeyDown}>
+                <ChatComposer
+                    variant="assist"
                     value={input}
-                    onChange={(e) => { setInput(e.target.value); }}
-                    onKeyDown={handleKeyDown}
+                    onChange={setInput}
+                    onSubmit={handleSubmit}
+                    onStop={onCancel}
+                    isStreaming={isStreaming}
+                    disabled={false}
                     placeholder={
                         mode === 'debug'
                             ? 'Paste error output or describe the failure…'
                             : `Governance, structure, or next steps for "${context.name}"…`
                     }
-                    disabled={isStreaming}
-                    rows={2}
+                    submitDisabled={!input.trim()}
+                    availableModels={availableModels}
+                    selectedModelId={selectedModelId ?? null}
+                    preferredModelId={preferredModelId}
+                    modelsLoading={modelsLoading}
+                    onModelChange={onModelChange}
+                    hint="Enter to send"
+                    inputAriaLabel="Impact Lens message input"
                 />
-                <div className="ws-assist-panel__footer-actions">
-                    <span className="ws-kicker">⌘ Enter to send</span>
-                    <button
-                        type="button"
-                        className="ws-btn ws-btn--primary"
-                        onClick={isStreaming ? onCancel : handleSubmit}
-                        disabled={!isStreaming && !input.trim()}
-                        title={isStreaming ? 'Stop generation' : 'Send inquiry'}
-                    >
-                        {isStreaming ? <Square size={14} /> : <Send size={14} />}
-                        {isStreaming ? 'Stop' : 'Send'}
-                    </button>
-                </div>
             </footer>
         </aside>
     );

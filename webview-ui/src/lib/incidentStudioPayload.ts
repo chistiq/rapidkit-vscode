@@ -1797,12 +1797,14 @@ export function buildIncidentChatStartPayload(input: {
   requestId: string;
   resumeConversationId: string;
   projectSelection?: IncidentProjectSelection | null;
+  scopeMode?: 'workspace' | 'project';
 }) {
   return withProjectSelection(
     {
       workspacePath: input.workspacePath,
       requestId: input.requestId,
       resumeConversationId: input.resumeConversationId,
+      scopeMode: input.scopeMode,
     },
     input.projectSelection
   );
@@ -1815,6 +1817,7 @@ export function buildIncidentChatQueryPayload(input: {
   message: string;
   modelId?: string;
   projectSelection?: IncidentProjectSelection | null;
+  scopeMode?: 'workspace' | 'project';
 }) {
   const sanitizedMessage =
     sanitizeIncidentText(input.message, 4000) || 'Provide a safe analysis summary.';
@@ -1826,6 +1829,7 @@ export function buildIncidentChatQueryPayload(input: {
       requestId: input.requestId,
       modelId: input.modelId,
       message: sanitizedMessage,
+      scopeMode: input.scopeMode,
     },
     input.projectSelection
   );
@@ -1836,11 +1840,13 @@ export function buildIncidentChatSyncWorkspacePayload(input: {
   requestId: string;
   forceRefresh?: boolean;
   projectSelection?: IncidentProjectSelection | null;
+  scopeMode?: 'workspace' | 'project';
 }) {
   return withProjectSelection(
     {
       workspacePath: input.workspacePath,
       requestId: input.requestId,
+      scopeMode: input.scopeMode,
       ...(input.forceRefresh ? { forceRefresh: true } : {}),
     },
     input.projectSelection
@@ -1887,6 +1893,7 @@ export function buildIncidentChatExecuteActionPayload(input: {
   requestId: string;
   modelId?: string;
   projectSelection?: IncidentProjectSelection | null;
+  payload?: Record<string, unknown>;
 }) {
   const execution = buildIncidentActionExecutionMetadata(input.actionType);
 
@@ -1899,6 +1906,7 @@ export function buildIncidentChatExecuteActionPayload(input: {
       modelId: input.modelId,
       requestId: input.requestId,
       execution,
+      ...(input.payload ? { payload: input.payload } : {}),
     },
     input.projectSelection
   );

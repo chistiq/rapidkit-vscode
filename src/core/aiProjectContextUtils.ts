@@ -330,7 +330,10 @@ export async function readRelevantFiles(
       'src/main.ts',
       'src/app.module.ts',
       'src/modules/index.ts',
-      'src/config/configuration.ts'
+      'src/config/configuration.ts',
+      'src/examples/examples.module.ts',
+      'src/examples/examples.controller.ts',
+      'src/examples/dto/create-note.dto.ts'
     );
   } else if (kit.startsWith('gofiber') || kit.startsWith('gogin')) {
     candidates.push(

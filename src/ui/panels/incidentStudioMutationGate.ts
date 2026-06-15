@@ -1,15 +1,18 @@
 import type { IncidentStudioTelemetryGateSlice } from './incidentStudioPolicyGateMapper';
 import { canApplyStudioMutationFromTelemetry } from './incidentStudioPolicyGateMapper';
+import {
+  deriveEnterpriseStabilizationLoopView,
+  resolveStabilizationLoopBlockReason,
+} from '../../core/incidentStudioStabilizationPolicy';
 
 export function resolveStudioMutationBlockReason(
   telemetry?: IncidentStudioTelemetryGateSlice | null
 ): string | null {
-  const enterprise = telemetry?.enterpriseStabilizationGateStatus;
-  if (enterprise?.expansionFrozen) {
-    return (
-      enterprise.freezeReason ||
-      'Enterprise stabilization expansion is frozen until gate recovery completes.'
-    );
+  const stabilizationReason = resolveStabilizationLoopBlockReason(
+    deriveEnterpriseStabilizationLoopView(telemetry)
+  );
+  if (stabilizationReason) {
+    return stabilizationReason;
   }
 
   const mutationPolicy = canApplyStudioMutationFromTelemetry(telemetry);

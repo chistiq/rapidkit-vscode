@@ -51,6 +51,9 @@ interface ContextPanelProps {
     canRunShipLoopStep?: (stepId: ShipLoopStepId) => boolean;
     observabilityView?: EnterpriseObservabilityView | null;
     phaseShipGuidance?: PhaseShipGuidance | null;
+    verifyGateBlockedReasons?: string[];
+    policyMutationBlocked?: boolean;
+    policyMutationReason?: string;
 }
 
 interface ModuleGraphItem {
@@ -242,6 +245,9 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
     canRunShipLoopStep,
     observabilityView = null,
     phaseShipGuidance = null,
+    verifyGateBlockedReasons = [],
+    policyMutationBlocked = false,
+    policyMutationReason,
 }) => {
     const [frameworkFilter, setFrameworkFilter] = useState<'all' | ModuleGraphItem['framework']>('all');
     const [severityFilter, setSeverityFilter] = useState<'all' | ModuleGraphItem['severity']>('all');
@@ -378,9 +384,16 @@ export const ContextPanel: React.FC<ContextPanelProps> = ({
     };
 
     const resolveAIActionButtonBlockReason = (operation: StudioAIActionOperation): string | null => {
-        const contractReason = resolveStudioAIActionOperationBlockReason(operation, aiActionContract);
+        const contractReason = resolveStudioAIActionOperationBlockReason(operation, aiActionContract, {
+            policyMutationBlocked:
+                policyMutationBlocked && (operation === 'apply' || operation === 'rollback'),
+            policyReason: policyMutationReason,
+        });
         if (contractReason) {
             return contractReason;
+        }
+        if (operation === 'verify' && verifyGateBlockedReasons.length > 0) {
+            return verifyGateBlockedReasons[0];
         }
         if ((operation === 'apply' || operation === 'rollback') && !actionApprovalConfirmed) {
             return 'Explicit approval is required before mutating the workspace.';

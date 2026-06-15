@@ -10,8 +10,10 @@ describe('workspacePathNavigation', () => {
     expect(resolveWorkspaceAbsolutePath('/ws', 'src/app.ts')).toBe(path.join('/ws', 'src/app.ts'));
   });
 
-  it('preserves absolute paths', () => {
-    expect(resolveWorkspaceAbsolutePath('/ws', '/abs/file.ts')).toBe('/abs/file.ts');
+  it('rejects absolute paths outside the workspace boundary', () => {
+    expect(() => resolveWorkspaceAbsolutePath('/ws', '/abs/file.ts')).toThrow(
+      /outside the active workspace boundary/
+    );
   });
 
   it('opens source files in editor mode', () => {

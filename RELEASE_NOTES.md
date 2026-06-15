@@ -25,6 +25,19 @@ Highlights:
 **npm governance pipeline** (npm `0.34.0` CLI → extension `0.35.0`)
 - `workspai.workspacePipeline`, `pipeline-last-run.json` evidence card, sidebar/dashboard/studio surfaces.
 
+**Workspace adoption and multi-stack discovery**
+- Extension adoption now calls the canonical npm contract first: `rapidkit adopt --json`.
+- If npm is unavailable, the extension writes schema-aligned fallback metadata (`project.json`, `adopt.json`, `adopt-readiness.json`, `context.json`) and updates the workspace imported/adopted project registry.
+- Adopted frontend/backend projects outside the workspace tree now remain visible across Dashboard, Sidebar, Evidence, and project-scope discovery after refresh.
+
+**Enterprise hardening** (post-audit remediation)
+- **Security**: workspace path boundary enforcement; Incident Studio inline CLI allowlist + `execa` without shell (no free `sh -c`).
+- **Dashboard**: ops chain scoped per workspace; 120s step timeout; contract dispatch failures surface `dashboardCommandFailed` instead of silent no-ops.
+- **Evidence**: strict project-doctor identity for workspace-level reports; bootstrap card always emitted.
+- **Studio**: shared stabilization policy for mutation gates; `incomingMessage` merge and project scope in standalone panel.
+- **Reliability**: coalesced evidence refresh (debounce + single follow-up); pending cards reconcile from activity completion/failure.
+- **Studio stabilization (0.35.0)**: analyze evidence resync in VNext; project-scoped chat brain + command palette open; CLI mutation gate parity for guided commands; session save queue; scope selector guards; ContextPanel AI gate parity; chat error banner; stale host-handler refs fixed.
+
 Full detail: [`releases/RELEASE_NOTES_v0.35.0.md`](releases/RELEASE_NOTES_v0.35.0.md) (includes per-commit table).
 
 Validation:

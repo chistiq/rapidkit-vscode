@@ -235,7 +235,8 @@ function buildDoctorCard(
 function projectDoctorReportMatchesScope(
   raw: Record<string, unknown>,
   projectPath?: string,
-  projectName?: string
+  projectName?: string,
+  options?: { artifactPath?: string; projectReportsDir?: string }
 ): boolean {
   const nestedProject =
     raw.project && typeof raw.project === 'object' ? (raw.project as Record<string, unknown>) : {};
@@ -252,13 +253,24 @@ function projectDoctorReportMatchesScope(
         ? nestedProject.name
         : undefined;
 
+  const artifactPath = options?.artifactPath;
+  const projectReportsDir = options?.projectReportsDir;
+  const isProjectLocalArtifact =
+    artifactPath &&
+    projectReportsDir &&
+    path.resolve(artifactPath).startsWith(path.resolve(projectReportsDir));
+
+  if (!reportProjectPath && !reportProjectName) {
+    return Boolean(isProjectLocalArtifact);
+  }
+
   if (projectPath && reportProjectPath) {
     return path.resolve(reportProjectPath) === path.resolve(projectPath);
   }
   if (projectName && reportProjectName) {
     return reportProjectName === projectName;
   }
-  return true;
+  return false;
 }
 
 async function readProjectDoctorReport(input: {
@@ -285,7 +297,12 @@ async function readProjectDoctorReport(input: {
     if (!raw) {
       continue;
     }
-    if (!projectDoctorReportMatchesScope(raw, input.projectPath, input.projectName)) {
+    if (
+      !projectDoctorReportMatchesScope(raw, input.projectPath, input.projectName, {
+        artifactPath,
+        projectReportsDir,
+      })
+    ) {
       continue;
     }
     return { raw, artifactPath, reportsDir: path.dirname(artifactPath) };
@@ -763,6 +780,15 @@ export async function buildDashboardEvidenceBundle(input?: {
   const bootstrapCard = await readBootstrapComplianceSummary(reportsDir);
   if (bootstrapCard) {
     cards.push(bootstrapCard);
+  } else {
+    cards.push(
+      missingCard(
+        'bootstrap',
+        'Bootstrap compliance',
+        'No bootstrap compliance report yet. Run Bootstrap from Operate.',
+        'workspace'
+      )
+    );
   }
 
   const autopilotRaw = await readJsonIfExists(path.join(reportsDir, 'autopilot-release.json'));

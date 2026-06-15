@@ -70,18 +70,34 @@ export function useIncidentStudioSessionPersistence({
   executionTranscripts,
 }: UseIncidentStudioSessionPersistenceOptions) {
   const [loadedSession, setLoadedSession] = useState<IncidentStudioSessionPayload | null>(null);
-  const hasLoadedRef = useRef(false);
+  const [isSessionLoaded, setIsSessionLoaded] = useState(false);
   const skipNextSaveRef = useRef(true);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSavePayloadRef = useRef<Omit<IncidentStudioSessionSavePayload, 'savedAt'> | null>(
+    null
+  );
 
   useEffect(() => {
     if (!workspacePath) {
       return;
     }
-    hasLoadedRef.current = false;
     skipNextSaveRef.current = true;
+    pendingSavePayloadRef.current = null;
+    setIsSessionLoaded(false);
     setLoadedSession(null);
     postMessage('loadIncidentStudioSession', { workspacePath });
+  }, [postMessage, workspacePath]);
+
+  const flushPendingSave = useCallback(() => {
+    const pending = pendingSavePayloadRef.current;
+    if (!pending || !workspacePath) {
+      return;
+    }
+    pendingSavePayloadRef.current = null;
+    postMessage('saveIncidentStudioSession', {
+      ...pending,
+      savedAt: new Date().toISOString(),
+    });
   }, [postMessage, workspacePath]);
 
   const handleHostMessage = useCallback(
@@ -90,16 +106,31 @@ export function useIncidentStudioSessionPersistence({
         return false;
       }
 
-      hasLoadedRef.current = true;
       skipNextSaveRef.current = true;
       setLoadedSession(normalizeSessionPayload(data, workspacePath));
+      setIsSessionLoaded(true);
+      flushPendingSave();
       return true;
     },
-    [workspacePath]
+    [flushPendingSave, workspacePath]
   );
 
   useEffect(() => {
-    if (!workspacePath || !hasLoadedRef.current) {
+    if (!workspacePath) {
+      return;
+    }
+
+    const payload: Omit<IncidentStudioSessionSavePayload, 'savedAt'> = {
+      workspacePath,
+      messages,
+      chatMessages: messages,
+      approvalAuditEvents,
+      proofEvents,
+      executionTranscripts,
+    };
+
+    if (!isSessionLoaded) {
+      pendingSavePayloadRef.current = payload;
       return;
     }
 
@@ -113,16 +144,10 @@ export function useIncidentStudioSessionPersistence({
     }
 
     saveTimerRef.current = setTimeout(() => {
-      const payload: IncidentStudioSessionSavePayload = {
-        workspacePath,
-        messages,
-        chatMessages: messages,
-        approvalAuditEvents,
-        proofEvents,
-        executionTranscripts,
+      postMessage('saveIncidentStudioSession', {
+        ...payload,
         savedAt: new Date().toISOString(),
-      };
-      postMessage('saveIncidentStudioSession', payload);
+      });
     }, SAVE_DEBOUNCE_MS);
 
     return () => {
@@ -133,6 +158,7 @@ export function useIncidentStudioSessionPersistence({
   }, [
     approvalAuditEvents,
     executionTranscripts,
+    isSessionLoaded,
     messages,
     postMessage,
     proofEvents,
@@ -142,6 +168,6 @@ export function useIncidentStudioSessionPersistence({
   return {
     loadedSession,
     handleHostMessage,
-    isSessionLoaded: hasLoadedRef.current,
+    isSessionLoaded,
   };
 }

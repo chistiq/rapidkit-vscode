@@ -70,6 +70,41 @@ describe('importedProjectsRegistry', () => {
     expect(byPath.get(path.join(workspacePath, 'api-b'))?.source).toBe('git-url');
   });
 
+  it('accepts adopted frontend project metadata from the npm registry contract', async () => {
+    const workspacePath = await createWorkspace();
+    const projectPath = path.join(os.tmpdir(), 'rk-adopted-next-app');
+
+    await upsertImportedProjectsRegistry(workspacePath, [
+      {
+        name: 'next-app',
+        path: projectPath,
+        relativePath: '../../rk-adopted-next-app',
+        relationship: 'adopted',
+        stack: 'nextjs',
+        runtime: 'node',
+        framework: 'nextjs',
+        frameworkDisplayName: 'Next.js',
+        supportTier: 'extended',
+        moduleSupport: false,
+        confidence: 'high',
+        source: 'adopted-local',
+        importedAt: '2026-06-15T10:00:00.000Z',
+      },
+    ]);
+
+    const entries = await readImportedProjectsRegistry(workspacePath);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      name: 'next-app',
+      path: projectPath,
+      relationship: 'adopted',
+      stack: 'nextjs',
+      runtime: 'node',
+      frameworkDisplayName: 'Next.js',
+      source: 'adopted-local',
+    });
+  });
+
   it('ignores malformed registry payloads safely', async () => {
     const workspacePath = await createWorkspace();
     const malformedPath = path.join(workspacePath, '.rapidkit', 'imported-projects.json');

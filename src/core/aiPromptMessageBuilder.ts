@@ -1,15 +1,16 @@
 import type { AIModalContext, AIConversationMode, ScannedProjectContext } from './aiService';
 import { getAIOutputQualityContract } from './aiOutputQuality';
+import { buildArchitectureGroundingForPromptAsync } from './aiArchitectureGrounding';
 
 /**
  * Build the user-facing message for an AI modal query.
  */
-export function buildAIModalUserMessage(
+export async function buildAIModalUserMessage(
   mode: AIConversationMode,
   question: string,
   ctx: AIModalContext,
   scanned?: ScannedProjectContext
-): string {
+): Promise<string> {
   const kitLabel = scanned?.kit ?? ctx.framework ?? ctx.type;
   const installedList = scanned?.installedModules.map((m) => m.slug).join(', ');
   const contextPacket = scanned
@@ -64,8 +65,12 @@ export function buildAIModalUserMessage(
     .filter(Boolean)
     .join('\n');
 
+  const groundingBlock = await buildArchitectureGroundingForPromptAsync(ctx, scanned);
+
   if (mode === 'debug') {
     return `${ctxHeader}
+
+${groundingBlock}
 
 Error / Issue to debug:
 ${question}
@@ -75,9 +80,11 @@ ${getAIOutputQualityContract(mode, kitLabel)}`;
 
   return `${ctxHeader}
 
+${groundingBlock}
+
 Question: ${question}
 
-Answer precisely using the project's actual kit (${kitLabel}), installed modules, and Workspai coding standards.
+Answer precisely using the project's actual kit (${kitLabel}), installed modules, scanned files, and analyze evidence.
 
 ${getAIOutputQualityContract(mode, kitLabel)}`;
 }

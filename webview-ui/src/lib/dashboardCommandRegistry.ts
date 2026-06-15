@@ -537,5 +537,5 @@ export function getDashboardCommandAffectedEvidenceCards(
 }
 
 export function shouldRefreshDashboardEvidenceAfterCommand(command: string): boolean {
-  return getDashboardCommandMeta(command)?.refreshEvidence ?? shouldTrackDashboardCommand(command);
+  return getDashboardCommandMeta(command)?.refreshEvidence === true;
 }

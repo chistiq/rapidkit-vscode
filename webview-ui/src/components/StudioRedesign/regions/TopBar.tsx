@@ -10,6 +10,7 @@ import {
 import { ThemeMode } from '../styles/themeSystem';
 import { studioClass, releasePostureToneClass } from '../styles/studioUi';
 import type { IncidentStudioDisplayMode } from '../../../lib/incidentStudioPreferences';
+import type { WorkspaceProjectOption } from '../../../lib/incidentStudioAnalysisScope';
 
 function TopBarControlGroup(props: {
     label: string;
@@ -48,6 +49,11 @@ interface TopBarProps {
     onUserModeChange: (mode: UserMode) => void;
     onThemeModeChange: (mode: ThemeMode) => void;
     onScopeChange: (scope: ScopeType) => void;
+    hasProjectSelected?: boolean;
+    selectedProjectPath?: string | null;
+    selectedProjectName?: string;
+    availableProjects?: WorkspaceProjectOption[];
+    onSelectProject?: (project: WorkspaceProjectOption) => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -68,6 +74,11 @@ export const TopBar: React.FC<TopBarProps> = ({
     onUserModeChange,
     onThemeModeChange,
     onScopeChange,
+    hasProjectSelected = false,
+    selectedProjectPath = null,
+    selectedProjectName,
+    availableProjects = [],
+    onSelectProject,
 }) => {
     void themeMode;
     void onThemeModeChange;
@@ -196,7 +207,9 @@ export const TopBar: React.FC<TopBarProps> = ({
                 >
                     <span className="studio-scope-trigger__label">Scope</span>
                     <span className="studio-scope-trigger__value">
-                        {scopeType === 'workspace' ? 'Workspace' : 'Project'}
+                        {scopeType === 'workspace'
+                            ? 'Workspace'
+                            : selectedProjectName || (hasProjectSelected ? 'Project' : 'Pick project')}
                     </span>
                     <ChevronDown
                         size={11}
@@ -222,8 +235,15 @@ export const TopBar: React.FC<TopBarProps> = ({
                                 aria-selected={scopeType === scope}
                                 onClick={() => {
                                     onScopeChange(scope);
-                                    setIsScopeOpen(false);
-                                    scopeTriggerRef.current?.focus();
+                                    if (scope === 'project' && availableProjects.length === 0) {
+                                        setIsScopeOpen(false);
+                                        scopeTriggerRef.current?.focus();
+                                        return;
+                                    }
+                                    if (scope === 'workspace') {
+                                        setIsScopeOpen(false);
+                                        scopeTriggerRef.current?.focus();
+                                    }
                                 }}
                                 onKeyDown={(event) => handleScopeOptionKeyDown(event, index, scope)}
                                 className={`studio-scope-option${scopeType === scope ? ' is-selected' : ''}`}
@@ -234,10 +254,47 @@ export const TopBar: React.FC<TopBarProps> = ({
                                 <span className="studio-scope-option__desc">
                                     {scope === 'workspace'
                                         ? 'Cross-module signals and fleet-level traceability.'
-                                        : 'Focused execution against the active module.'}
+                                        : hasProjectSelected
+                                          ? `Focused execution against ${selectedProjectName || 'the selected project'}.`
+                                          : 'Choose a project below to focus analysis on one service.'}
                                 </span>
                             </button>
                         ))}
+                        {availableProjects.length > 0 ? (
+                            <div className="studio-scope-project-list" role="group" aria-label="Projects">
+                                <div className="studio-scope-project-list__heading">Projects in workspace</div>
+                                {availableProjects.map((project) => {
+                                    const isActive =
+                                        scopeType === 'project' && selectedProjectPath === project.path;
+                                    return (
+                                        <button
+                                            key={project.path}
+                                            type="button"
+                                            className={`studio-scope-project-option${isActive ? ' is-selected' : ''}`}
+                                            onClick={() => {
+                                                onSelectProject?.(project);
+                                                onScopeChange('project');
+                                                setIsScopeOpen(false);
+                                                scopeTriggerRef.current?.focus();
+                                            }}
+                                        >
+                                            <span className="studio-scope-project-option__name">
+                                                {project.name}
+                                            </span>
+                                            {project.framework ? (
+                                                <span className="studio-scope-project-option__meta">
+                                                    {project.framework}
+                                                </span>
+                                            ) : null}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        ) : scopeType === 'project' && !hasProjectSelected ? (
+                            <div className="studio-scope-project-empty" role="note">
+                                No projects detected in this workspace yet.
+                            </div>
+                        ) : null}
                     </div>
                 )}
             </div>

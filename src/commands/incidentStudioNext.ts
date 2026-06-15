@@ -6,15 +6,20 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { Logger } from '../utils/logger';
-import { IncidentStudioPanel } from '../ui/panels/incidentStudioPanel';
+import { WelcomePanel } from '../ui/panels/welcomePanel';
 
 interface WorkspaceExplorerLike {
   getSelectedWorkspace?: () => { path: string; name?: string } | null | undefined;
 }
 
+interface ProjectExplorerLike {
+  getSelectedProject?: () => { path?: string; name?: string; type?: string } | null | undefined;
+}
+
 export async function showIncidentStudioNextCommand(
   context: vscode.ExtensionContext,
-  workspaceExplorer?: WorkspaceExplorerLike
+  workspaceExplorer?: WorkspaceExplorerLike,
+  projectExplorer?: ProjectExplorerLike
 ) {
   const logger = Logger.getInstance();
   logger.info('Incident Studio command initiated (canonical main studio path)');
@@ -27,9 +32,14 @@ export async function showIncidentStudioNextCommand(
       return;
     }
 
-    IncidentStudioPanel.createOrShow(context, {
+    const selectedProject = projectExplorer?.getSelectedProject?.();
+
+    WelcomePanel.openIncidentStudio(context, {
       workspacePath,
       workspaceName: selectedWorkspace?.name || path.basename(workspacePath),
+      projectPath: selectedProject?.path,
+      projectName: selectedProject?.name,
+      projectType: selectedProject?.type,
     });
   } catch (error) {
     logger.error('Error in showIncidentStudioNextCommand', error);

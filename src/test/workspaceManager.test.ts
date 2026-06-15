@@ -66,4 +66,58 @@ describe('WorkspaceManager (Go support)', () => {
 
     fs.rmSync(workspacePath, { recursive: true, force: true });
   });
+
+  it('includes adopted external projects from the workspace imported-projects registry', async () => {
+    const manager = WorkspaceManager.getInstance();
+    const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-workspace-'));
+    const externalProjectPath = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-next-app-'));
+
+    fs.mkdirSync(path.join(workspacePath, '.rapidkit'), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspacePath, '.rapidkit', 'imported-projects.json'),
+      JSON.stringify(
+        {
+          version: 1,
+          updatedAt: '2026-06-15T10:00:00.000Z',
+          projects: [
+            {
+              name: 'rapidkit-front',
+              path: externalProjectPath,
+              relationship: 'adopted',
+              stack: 'nextjs',
+              runtime: 'node',
+              framework: 'nextjs',
+              frameworkDisplayName: 'Next.js',
+              supportTier: 'extended',
+              moduleSupport: false,
+              confidence: 'high',
+              source: 'adopted-local',
+              importedAt: '2026-06-15T10:00:00.000Z',
+            },
+          ],
+        },
+        null,
+        2
+      )
+    );
+    fs.mkdirSync(path.join(externalProjectPath, '.rapidkit'), { recursive: true });
+    fs.writeFileSync(
+      path.join(externalProjectPath, '.rapidkit', 'project.json'),
+      JSON.stringify({ kit_name: 'adopted.nextjs' }, null, 2)
+    );
+    fs.writeFileSync(
+      path.join(externalProjectPath, 'package.json'),
+      JSON.stringify({ dependencies: { next: '^15.0.0', react: '^19.0.0' } }, null, 2)
+    );
+
+    const projects = await (manager as any).getWorkspaceProjects(workspacePath);
+
+    expect(projects).toContainEqual({
+      name: 'rapidkit-front',
+      path: externalProjectPath,
+    });
+
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+    fs.rmSync(externalProjectPath, { recursive: true, force: true });
+  });
 });

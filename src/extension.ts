@@ -28,7 +28,6 @@ import { registerProjectContextAndLogCommands } from './commands/projectContextA
 import { registerProjectLifecycleCommands } from './commands/projectLifecycle';
 import { showWelcomeCommand } from './commands/showWelcome';
 import { showIncidentStudioNextCommand } from './commands/incidentStudioNext';
-import { IncidentStudioPanel } from './ui/panels/incidentStudioPanel';
 import { registerWorkspaceSelectionCommands } from './commands/workspaceSelection';
 import { registerWorkspaceOperationsCommands } from './commands/workspaceOperations';
 import { registerInfraOperationsCommands } from './commands/infraOperations';
@@ -505,9 +504,24 @@ export async function activate(context: vscode.ExtensionContext) {
           return;
         }
 
-        IncidentStudioPanel.createOrShow(context, {
+        const selectedProject = projectExplorer?.getSelectedProject?.();
+        const resolvedProjectPath =
+          (typeof projectFromItem?.path === 'string' && projectFromItem.path) ||
+          (typeof selectedProject?.path === 'string' ? selectedProject.path : undefined);
+        const resolvedProjectName =
+          (typeof projectFromItem?.name === 'string' && projectFromItem.name) ||
+          (typeof selectedProject?.name === 'string' ? selectedProject.name : undefined);
+
+        const resolvedProjectType =
+          (typeof projectFromItem?.type === 'string' && projectFromItem.type) ||
+          (typeof selectedProject?.type === 'string' ? selectedProject.type : undefined);
+
+        WelcomePanel.openIncidentStudio(context, {
           workspacePath,
           workspaceName: workspaceName || path.basename(workspacePath),
+          projectPath: resolvedProjectPath,
+          projectName: resolvedProjectName,
+          projectType: resolvedProjectType,
         });
       }),
       vscode.commands.registerCommand('workspai.importWorkspaceShareBundle', async () => {
@@ -566,7 +580,7 @@ export async function activate(context: vscode.ExtensionContext) {
       }),
       // Canonical Incident Studio — legacy Next command aliases here for compatibility
       vscode.commands.registerCommand('workspai.incidentStudioNext', async () => {
-        await showIncidentStudioNextCommand(context, workspaceExplorer);
+        await showIncidentStudioNextCommand(context, workspaceExplorer, projectExplorer);
       })
     );
 
@@ -646,6 +660,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Set workspace explorer reference for WelcomePanel
     WelcomePanel.setWorkspaceExplorer(workspaceExplorer);
+    WelcomePanel.setProjectExplorer(projectExplorer);
     WelcomePanel.setExtensionContext(context);
 
     // Register tree views

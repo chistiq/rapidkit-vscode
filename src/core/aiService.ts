@@ -30,6 +30,8 @@ import { buildHeuristicCreationDraft } from './aiCreationHeuristic';
 import { readLanguageModelResponseText } from './languageModelResponse';
 import { buildAIModalUserMessage as buildAIModalUserMessageInternal } from './aiPromptMessageBuilder';
 import { buildWorkspaiSystemPrompt as buildWorkspaiSystemPromptInternal } from './aiSystemPromptBuilder';
+import { buildModuleListForPrompt, type LiveModuleEntry } from './aiLiveModuleCatalog';
+import { resolveWorkspacePathForGrounding } from './aiArchitectureGrounding';
 import {
   buildContextContractFromEvidence,
   validateContextContract,
@@ -815,22 +817,23 @@ export async function scanProjectContext(
   return ctx;
 }
 
+export type { LiveModuleEntry } from './aiLiveModuleCatalog';
+export { buildModuleListForPrompt } from './aiLiveModuleCatalog';
+
 async function getWorkspaceAwareLiveModules(
   workspacePath?: string
 ): Promise<LiveModuleEntry[] | null> {
   try {
     const result = await ModulesCatalogService.getInstance().getModulesCatalog(workspacePath);
-    if (result.modules.length > 0) {
-      return result.modules.map((module) => ({
-        name: module.id,
-        display_name: module.name,
-        version: module.version,
-        category: module.category,
-        description: module.description,
-        slug: module.slug,
-        tags: Array.isArray(module.tags) ? module.tags : [],
-      }));
-    }
+    return result.modules.map((module) => ({
+      name: module.id,
+      display_name: module.name,
+      version: module.version,
+      category: module.category,
+      description: module.description,
+      slug: module.slug,
+      tags: Array.isArray(module.tags) ? module.tags : [],
+    }));
   } catch {
     // The catalog service may not be initialized yet; fall back to direct CLI probing.
   }
@@ -838,17 +841,7 @@ async function getWorkspaceAwareLiveModules(
   return await fetchLiveModules();
 }
 
-// ─── Live module registry (fetched from installed rapidkit engine) ──────────
-
-interface LiveModuleEntry {
-  name: string;
-  display_name: string;
-  version: string;
-  category: string;
-  description: string;
-  slug: string;
-  tags: string[];
-}
+export { getWorkspaceAwareLiveModules };
 
 interface LiveModulesCache {
   modules: LiveModuleEntry[];
@@ -921,48 +914,6 @@ export function resetAIServiceCaches(): void {
   _workspaceModulesCache.clear();
   resetModelSelectionCache();
   _liveModulesCache = null;
-}
-
-/**
- * Build the modules section string for the SYSTEM prompt.
- * Uses live data when available, falls back to the static list.
- */
-function buildModuleListForPrompt(liveModules: LiveModuleEntry[] | null): string {
-  if (liveModules && liveModules.length > 0) {
-    // Group by category for readability
-    const byCategory: Record<string, LiveModuleEntry[]> = {};
-    for (const m of liveModules) {
-      (byCategory[m.category] ??= []).push(m);
-    }
-    const lines = Object.entries(byCategory).map(([cat, mods]) => {
-      const slugs = mods
-        .map((m) => {
-          const status = m.version ? ` v${m.version}` : '';
-          const tags =
-            Array.isArray(m.tags) && m.tags.length > 0 ? ` [${m.tags.slice(0, 3).join(', ')}]` : '';
-          return `${m.slug}${status}${tags}`;
-        })
-        .join('  ');
-      return `  ${cat.charAt(0).toUpperCase() + cat.slice(1).padEnd(16)}: ${slugs}`;
-    });
-    return `Available modules from your installed engine (use EXACT slugs, max 6, ALWAYS include free/essentials/settings):\n${lines.join('\n')}`;
-  }
-  // Static fallback
-  return (
-    `Available modules (use EXACT slugs, max 6, ALWAYS include free/essentials/settings):\n` +
-    `  Essentials:   free/essentials/settings  free/essentials/logging  free/essentials/middleware  free/essentials/deployment\n` +
-    `  Auth:         free/auth/core  free/auth/oauth  free/auth/session  free/auth/passwordless  free/auth/api_keys\n` +
-    `  Database:     free/database/db_postgres  free/database/db_mongo  free/database/db_sqlite\n` +
-    `  Cache:        free/cache/redis\n` +
-    `  Security:     free/security/cors  free/security/security_headers  free/security/rate_limiting\n` +
-    `  Observability: free/observability/core\n` +
-    `  Users:        free/users/users_core  free/users/users_profiles\n` +
-    `  Business:     free/business/storage\n` +
-    `  Billing:      free/billing/stripe_payment  free/billing/cart  free/billing/inventory\n` +
-    `  Communication: free/communication/notifications  free/communication/email\n` +
-    `  Tasks:        free/tasks/celery\n` +
-    `  AI:           free/ai/ai_assistant`
-  );
 }
 
 interface WorkspaceModulesCacheEntry {
@@ -1056,9 +1007,10 @@ function buildWorkspaceInstalledModulesSection(
 export async function buildWorkspaiSystemPrompt(
   ctx: AIModalContext,
   scanned?: ScannedProjectContext,
-  contract?: AIContextContractV1
+  contract?: AIContextContractV1,
+  liveModules?: LiveModuleEntry[] | null
 ): Promise<string> {
-  return buildWorkspaiSystemPromptInternal(ctx, scanned, contract);
+  return buildWorkspaiSystemPromptInternal(ctx, scanned, contract, liveModules);
 }
 
 // Re-export contract types for convenience
@@ -1070,12 +1022,12 @@ export { buildContextContractFromEvidence, validateContextContract } from './aiC
 /**
  * Backward-compatible export that delegates to the extracted prompt message builder.
  */
-export function buildAIModalUserMessage(
+export async function buildAIModalUserMessage(
   mode: AIConversationMode,
   question: string,
   ctx: AIModalContext,
   scanned?: ScannedProjectContext
-): string {
+): Promise<string> {
   return buildAIModalUserMessageInternal(mode, question, ctx, scanned);
 }
 
@@ -1143,6 +1095,12 @@ export async function prepareAIConversation(
 
   const sanitizedQuestion = sanitizePromptText(question, 8000);
 
+  const workspacePath =
+    resolveWorkspacePathForGrounding(ctx) ??
+    ctx.workspaceRootPath ??
+    (ctx.type === 'workspace' ? ctx.path : undefined);
+  const liveModules = await getWorkspaceAwareLiveModules(workspacePath);
+
   return {
     scanned,
     contract,
@@ -1150,7 +1108,7 @@ export async function prepareAIConversation(
     messages: [
       {
         role: 'user',
-        content: await buildWorkspaiSystemPrompt(ctx, scanned, contract),
+        content: await buildWorkspaiSystemPromptInternal(ctx, scanned, contract, liveModules),
       },
       {
         role: 'assistant',
@@ -1159,7 +1117,7 @@ export async function prepareAIConversation(
       ...historyMessages,
       {
         role: 'user',
-        content: buildAIModalUserMessageInternal(mode, sanitizedQuestion, ctx, scanned),
+        content: await buildAIModalUserMessageInternal(mode, sanitizedQuestion, ctx, scanned),
       },
     ],
   };

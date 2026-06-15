@@ -66,12 +66,14 @@ export function useIncidentStudioCliSurface({
       });
 
       if (blockReason) {
-        setLastBlockReason(blockReason);
-        setLastResult({
+        const blockedResult: IncidentCliSurfaceResult = {
           command: trimmed,
           success: false,
           error: blockReason,
-        });
+        };
+        setLastBlockReason(blockReason);
+        setLastResult(blockedResult);
+        onResult?.(blockedResult);
         return false;
       }
 

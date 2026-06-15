@@ -5,6 +5,8 @@ import * as vscode from 'vscode';
 export interface WorkspaceContext {
   workspacePath: string;
   workspaceName: string;
+  projectPath?: string;
+  projectName?: string;
 }
 
 export interface AnalyzeReport {

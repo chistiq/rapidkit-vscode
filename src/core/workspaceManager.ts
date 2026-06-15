@@ -10,6 +10,10 @@ import * as os from 'os';
 import { WorkspaiWorkspace } from '../types';
 import { MARKERS } from '../utils/constants';
 import { getRegistryDir } from '../utils/registryPath';
+import {
+  readImportedProjectsRegistry,
+  resolveImportedProjectPath,
+} from '../utils/importedProjectsRegistry';
 
 export class WorkspaceManager {
   private static instance: WorkspaceManager;
@@ -260,8 +264,28 @@ export class WorkspaceManager {
     wsPath: string
   ): Promise<Array<{ name: string; path: string }>> {
     const projects: Array<{ name: string; path: string }> = [];
+    const projectsByPath = new Map<string, { name: string; path: string }>();
+
+    const addProject = (project: { name: string; path: string }) => {
+      const normalizedPath = path.resolve(project.path);
+      projectsByPath.set(normalizedPath, {
+        name: project.name || path.basename(normalizedPath),
+        path: normalizedPath,
+      });
+    };
 
     try {
+      const importedRegistryEntries = await readImportedProjectsRegistry(wsPath);
+      for (const entry of importedRegistryEntries) {
+        const projectPath = resolveImportedProjectPath(wsPath, entry.path);
+        if (await fs.pathExists(projectPath)) {
+          addProject({
+            name: entry.name || path.basename(projectPath),
+            path: projectPath,
+          });
+        }
+      }
+
       const entries = await fs.readdir(wsPath, { withFileTypes: true });
       for (const entry of entries) {
         if (entry.isDirectory() && !entry.name.startsWith('.')) {
@@ -273,14 +297,14 @@ export class WorkspaceManager {
             (await fs.pathExists(path.join(projectPath, '.rapidkit', 'context.json')));
 
           if (hasRapidKitMarker) {
-            projects.push({
+            addProject({
               name: entry.name,
               path: projectPath,
             });
           }
           // Fallback: Check for FastAPI project
           else if (await fs.pathExists(path.join(projectPath, 'pyproject.toml'))) {
-            projects.push({
+            addProject({
               name: entry.name,
               path: projectPath,
             });
@@ -292,7 +316,7 @@ export class WorkspaceManager {
             (await fs.pathExists(path.join(projectPath, 'main.go'))) ||
             (await fs.pathExists(path.join(projectPath, 'cmd', 'main.go')))
           ) {
-            projects.push({
+            addProject({
               name: entry.name,
               path: projectPath,
             });
@@ -303,7 +327,7 @@ export class WorkspaceManager {
             (await fs.pathExists(path.join(projectPath, 'build.gradle'))) ||
             (await fs.pathExists(path.join(projectPath, 'build.gradle.kts')))
           ) {
-            projects.push({
+            addProject({
               name: entry.name,
               path: projectPath,
             });
@@ -313,7 +337,7 @@ export class WorkspaceManager {
             try {
               const pkg = await fs.readJSON(path.join(projectPath, 'package.json'));
               if (pkg.dependencies?.['@nestjs/core']) {
-                projects.push({
+                addProject({
                   name: entry.name,
                   path: projectPath,
                 });
@@ -327,6 +351,10 @@ export class WorkspaceManager {
     } catch {
       // Ignore errors
     }
+
+    projects.push(
+      ...Array.from(projectsByPath.values()).sort((a, b) => a.name.localeCompare(b.name))
+    );
 
     return projects;
   }

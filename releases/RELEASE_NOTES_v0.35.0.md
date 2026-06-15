@@ -67,6 +67,63 @@ Aligns with RapidKit npm governance shipped in **npm `0.34.0`** (independent ver
 - Incident Studio CLI matrix entry; command cheatsheet; dashboard next steps when release evidence is sparse or blocked
 - Doctor `--strict` / `--ci`, readiness 5-gate model, and autopilot analyze stage are consumed via existing stage evidence refreshed by the pipeline run
 
+### Workspace adoption and multi-stack discovery
+
+- **Canonical adopt contract**: extension adoption now delegates to the npm CLI first using `rapidkit adopt --json`, preserving the same workspace registry, project marker, adopt-readiness, and evidence contract used by terminal users.
+- **Fallback parity**: if npm is unavailable, the extension writes aligned local adoption metadata:
+  - `.rapidkit/project.json`
+  - `.rapidkit/adopt.json`
+  - `.rapidkit/adopt-readiness.json`
+  - `.rapidkit/context.json`
+  - workspace `.rapidkit/imported-projects.json`
+- **Frontend adoption**: fallback detection now covers Next.js, React, Vite, Vue, Nuxt, Remix, SvelteKit, Svelte, Angular, Astro, and Solid alongside backend stacks.
+- **External adopted project visibility**: adopted projects outside the workspace directory are resolved by workspace manager, project explorer, and welcome-panel project discovery, so Dashboard/Evidence/Sidebar stay in sync after refresh.
+- **Adopt UX**: known stacks are no longer skipped as “already supported”; adoption is the path that connects any project to the workspace intelligence and governance registry.
+
+### Enterprise hardening (post-audit remediation)
+
+Five-phase stabilization applied before marketplace **`0.35.0`** publish:
+
+#### Phase 1 — Security (P0)
+
+- **`workspacePathBoundary`**: `resolveBoundedWorkspaceAbsolutePath` rejects paths outside the active workspace and blocks shell metacharacters (`;`, `|`, `` ` ``, `$()`, `&&`, `||`).
+- **`incidentInlineCommandRunner`**: parses and allowlists RapidKit CLI roots (`doctor`, `readiness`, `pipeline`, `workspace`, `analyze`, `autopilot`, `init`, `test`, `build`, `dev`, `shell`); executes via `execa` argv arrays (venv → project `./rapidkit` → poetry → pinned `npx`) with **`shell: false`**.
+- **`incidentStudioInlineCommandBridge`**: removed free-form `sh -c` / `cmd /c` execution path.
+
+#### Phase 2 — Dashboard state (P0)
+
+- **`filterOpsChainForWorkspace`** (host) and **`filterOpsChainForActiveWorkspace`** (webview): ops chain banner only for the active workspace.
+- **`OPS_CHAIN_STEP_TIMEOUT_MS` (120s)**: chain blocks when step evidence stays `missing` beyond timeout.
+- **`blockDashboardOpsChain`**: dispatch failures block the chain with a visible reason.
+- **`_failDashboardContractCommand`**: missing workspace/project/module context posts **`dashboardCommandFailed`** to the webview instead of returning success silently.
+
+#### Phase 3 — Evidence integrity (P0)
+
+- **`projectDoctorReportMatchesScope`**: workspace-level doctor artifacts without `projectPath` / `projectName` are ignored unless the file lives under the selected project's `.rapidkit/reports` directory.
+- Bootstrap compliance card always emitted (including explicit `missing` state) so ops chain and Operate tiles have a stable anchor.
+
+#### Phase 4 — Incident Studio parity (P1)
+
+- **`incidentStudioStabilizationPolicy`**: shared enterprise stabilization loop derivation for host mutation gates (parity with webview `incidentStudioStabilizationLoop`).
+- Standalone **`incidentStudioNext`**: `incomingMessage = legacyIncomingMessage ?? chatBrain.incomingMessage`; project selection wired into CLI surface session.
+- **`incidentStudioPanel`**: injects `INCIDENT_STUDIO_PROJECT_PATH` / `INCIDENT_STUDIO_PROJECT_NAME` in panel HTML.
+
+#### Phase 5 — Reliability (P1)
+
+- **`dashboardEvidenceRefreshSchedule`**: debounced refresh (750ms) plus one 5s follow-up instead of four overlapping timers.
+- **`dashboardEvidencePending`**: pending card IDs clear when evidence resolves or activity entries reach `completed` / `failed`.
+- Removed blind **15s** pending timeout; **`dashboardCommandFailed`** clears affected pending cards immediately.
+- **`shouldRefreshDashboardEvidenceAfterCommand`**: evidence refresh is opt-in via registry `refreshEvidence: true`.
+
+#### Hardening test coverage
+
+- `workspacePathBoundary.test.ts`, `workspacePathNavigation.test.ts` (boundary rejection)
+- `incidentInlineCommandRunner.test.ts`
+- `dashboardOpsChainBridge.test.ts` (filter, timeout, block)
+- `dashboardEvidenceBridge.test.ts` (strict project-doctor identity)
+- `dashboardEvidencePending.test.ts`
+- `adoptProject.test.ts`, `importedProjectsRegistry.test.ts`, `workspaceManager.test.ts`, `welcomePanelProjectDiscovery.test.ts` (adopt contract, registry, and discovery parity)
+
 ---
 
 ## Removed / replaced (breaking for contributors)
@@ -81,6 +138,7 @@ Aligns with RapidKit npm governance shipped in **npm `0.34.0`** (independent ver
 New or expanded suites include:
 
 - `dashboardCommandRegistry.test.ts`, `dashboardEvidenceBridge.test.ts`, `dashboardOpsChainBridge.test.ts`, `dashboardActivityBridge.test.ts`
+- `workspacePathBoundary.test.ts`, `incidentInlineCommandRunner.test.ts`, `dashboardEvidencePending.test.ts`
 - `studioRedesignContracts.test.ts`, `designSystemDrift.test.ts`, `smokeStabilization.test.ts`
 - `incidentStudioShipLoopBridge.integration.test.ts`, `incidentStudioPolicyGateParity.test.ts`, `actionOutcomePanel.presentation.test.ts`
 - `aiActionContract.test.ts`, `aiProviderService.test.ts`, `platformCapabilities.test.ts` (npm verify probe)
@@ -110,4 +168,4 @@ Release posture: `enterprise-dashboard-studio-and-npm-governance-pipeline`
 | `1e1afd7` | feat(studio): enterprise loops with policy parity, session persistence, responsive layout |
 | `03512c7` | feat: Setup embedded UX, npm CLI verify, studio session loops, dashboard evidence wiring |
 
-Uncommitted follow-up: governance pipeline command, evidence card, and release-note corrections (extension `0.35.0` vs npm `0.34.0` versioning).
+Uncommitted follow-up at time of writing: governance pipeline command, evidence card, release-note corrections, and enterprise hardening (five-phase post-audit remediation).
