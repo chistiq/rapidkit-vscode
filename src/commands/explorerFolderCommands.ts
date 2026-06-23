@@ -2,6 +2,7 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
+import { findWorkspaceRootUp } from '../core/workspacePaths';
 import { adoptProjectCommand } from './adoptProject';
 import { createProjectCommand } from './createProject';
 
@@ -32,6 +33,24 @@ export async function scaffoldProjectHereCommand(folder?: string | vscode.Uri): 
   });
 }
 
+export function resolveAdoptWorkspaceRouting(input: {
+  projectPath: string;
+  workspacePath?: string;
+  useDefaultWorkspace?: boolean;
+}): { workspacePath?: string; useDefaultWorkspace: boolean } {
+  const explicitWorkspacePath = input.workspacePath?.trim() || undefined;
+  const inferredWorkspacePath =
+    explicitWorkspacePath || input.useDefaultWorkspace === true
+      ? undefined
+      : findWorkspaceRootUp(input.projectPath);
+  const resolvedWorkspacePath = explicitWorkspacePath ?? inferredWorkspacePath;
+
+  return {
+    workspacePath: resolvedWorkspacePath,
+    useDefaultWorkspace: input.useDefaultWorkspace ?? !resolvedWorkspacePath,
+  };
+}
+
 export async function adoptWithRapidkitCommand(
   folder?: string | vscode.Uri,
   options?: {
@@ -53,13 +72,19 @@ export async function adoptWithRapidkitCommand(
     return;
   }
 
+  const adoptRouting = resolveAdoptWorkspaceRouting({
+    projectPath: folderPath,
+    workspacePath: options?.workspacePath,
+    useDefaultWorkspace: options?.useDefaultWorkspace,
+  });
+
   await adoptProjectCommand({
     projectPath: folderPath,
     projectName: options?.projectName ?? path.basename(folderPath),
     projectType: options?.projectType,
-    workspacePath: options?.workspacePath,
+    workspacePath: adoptRouting.workspacePath,
     enableModules: options?.enableModules,
-    useDefaultWorkspace: options?.useDefaultWorkspace ?? !options?.workspacePath,
+    useDefaultWorkspace: adoptRouting.useDefaultWorkspace,
   });
 }
 

@@ -1,4 +1,5 @@
 import { classifyIncidentActionPolicy } from './incidentStudioPromptPolicy';
+import * as vscode from 'vscode';
 
 type IncidentActionPolicy = ReturnType<typeof classifyIncidentActionPolicy>;
 
@@ -199,5 +200,54 @@ export function deriveIncidentVerifyCommandPack(input: {
     rationale,
     commands,
     blockedReasons,
+  };
+}
+
+export function resolveIncidentRollbackRuntimePolicy(input: {
+  workspacePath?: string;
+  actionPolicy: IncidentActionPolicy;
+  rollbackApprovalToken?: unknown;
+  uiPrefs: {
+    incidentRollbackApprovalMode?: unknown;
+    incidentRollbackProtectedPaths?: unknown;
+  };
+}): {
+  approvalMode: 'never' | 'high-risk-only' | 'mutating-only' | 'always';
+  requiresManualApproval: boolean;
+  approvedByUser: boolean;
+  protectedPathPrefixes: string[];
+} {
+  const workspaceUri = input.workspacePath ? vscode.Uri.file(input.workspacePath) : undefined;
+  const config = vscode.workspace.getConfiguration('workspai', workspaceUri);
+
+  const approvalMode = normalizeIncidentRollbackApprovalMode(
+    config.get('incidentStudio.rollbackApprovalMode') ?? input.uiPrefs.incidentRollbackApprovalMode
+  );
+
+  const configProtectedPaths = normalizeIncidentRollbackProtectedPaths(
+    config.get('incidentStudio.rollbackProtectedPaths')
+  );
+  const protectedPathPrefixes =
+    configProtectedPaths.length > 0
+      ? configProtectedPaths
+      : normalizeIncidentRollbackProtectedPaths(input.uiPrefs.incidentRollbackProtectedPaths);
+
+  const requiresManualApproval =
+    approvalMode === 'always' ||
+    (approvalMode === 'high-risk-only' && input.actionPolicy.riskClass === 'high-risk-mutating') ||
+    (approvalMode === 'mutating-only' &&
+      (input.actionPolicy.riskClass === 'guarded-mutating' ||
+        input.actionPolicy.riskClass === 'high-risk-mutating'));
+
+  const approvedByUser =
+    input.rollbackApprovalToken === true ||
+    (typeof input.rollbackApprovalToken === 'string' &&
+      input.rollbackApprovalToken.trim().toLowerCase() === 'approved');
+
+  return {
+    approvalMode,
+    requiresManualApproval,
+    approvedByUser,
+    protectedPathPrefixes,
   };
 }

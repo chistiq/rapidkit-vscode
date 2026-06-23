@@ -21,6 +21,7 @@ import {
   buildWorkspaceAgentContextCliArgs,
   buildWorkspaceAgentSyncCliArgs,
 } from '../core/agentContextPack';
+import { resolveAgentSyncCliOptions } from '../core/agentSyncSettings';
 import { sendWorkspaceIntelligenceToCopilot } from '../core/sendToCopilot';
 import { ensureFreshEvidenceForAIAction } from '../core/workspaceEvidenceFreshnessGate';
 
@@ -379,8 +380,18 @@ export function registerWorkspaceIntelligenceCommands(options: {
         typeof typed?.scope === 'string' && typed.scope.trim().length > 0
           ? typed.scope.trim()
           : undefined;
+      const record =
+        item && typeof item === 'object' ? (item as Record<string, unknown>) : undefined;
+      const presetOverride = record?.preset === 'minimal' ? 'minimal' : undefined;
+      const experimentalHooksOverride = record?.experimentalHooks === true ? true : undefined;
 
-      const command = buildWorkspaceAgentSyncCliArgs({ scope });
+      const command = buildWorkspaceAgentSyncCliArgs(
+        resolveAgentSyncCliOptions({
+          scope,
+          preset: presetOverride,
+          experimentalHooks: experimentalHooksOverride,
+        })
+      );
 
       await runWorkspaceIntelligenceCommandWithProgress({
         command,

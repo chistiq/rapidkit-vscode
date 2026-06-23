@@ -28,12 +28,14 @@ function listJsonContracts(dir: string, prefix = ''): string[] {
 
 describe('shared contracts workflow (Wave A + B)', () => {
   const canonicalContractFiles = [
+    'agent-customization-pack.v1.json',
     'analyze-last-run.v1.json',
     'backend-import-stack-parity.snapshot.json',
     'cli-log-event.v1.json',
     'create-planner-capabilities.v1.json',
     'doctor-project-evidence.v1.json',
     'doctor-workspace-evidence.v1.json',
+    'extension-cli-compatibility.v1.json',
     'infra-stack.v1.json',
     'module-layout.v1.json',
     'module-support.v1.json',

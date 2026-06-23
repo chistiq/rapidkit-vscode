@@ -50,7 +50,10 @@ describe('React sidebar parity (roadmap 2.11)', () => {
 
   it('the shared React webview shell helper is used by the dashboard panel too', () => {
     const welcome = read('src/ui/panels/welcomePanel.ts');
-    expect(welcome).toContain('buildReactWebviewHtml');
-    expect(welcome).toContain("bundleName: 'webview'");
+    const htmlContent = read('src/ui/panels/welcomePanelHtmlContent.ts');
+
+    expect(welcome).toContain('buildWelcomePanelHtmlContent');
+    expect(htmlContent).toContain('buildReactWebviewHtml');
+    expect(htmlContent).toContain("bundleName: 'webview'");
   });
 });

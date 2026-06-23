@@ -1,10 +1,17 @@
 import type { DashboardEvidenceCard } from './dashboardEvidenceBridge.js';
 import { resolveDashboardCommandForEvidenceCard } from './dashboardReportRegistry.js';
 import {
+  buildAgentPackHandoffSummaryLines,
+  buildStandardAnswerContractPromptLines,
+  readAgentCustomizationPackReport,
+  summarizeAgentCustomizationPack,
+} from './agentCustomizationPack.js';
+import {
   buildWorkspaceImpactPromptSection,
   readWorkspaceImpactReport,
   type WorkspaceImpactReport,
 } from './workspaceImpactReader.js';
+import { AGENT_CUSTOMIZATION_PACK_REPORT_PATH } from './workspaceIntelligencePaths.js';
 
 function toPosixPath(absolutePath: string): string {
   return absolutePath.replace(/\\/g, '/');
@@ -133,16 +140,35 @@ export function buildEvidenceCardStudioPrompt(input: EvidenceCardAgentContextInp
   return lines.join('\n');
 }
 
+function buildAgentPackStudioSection(packLines: string[], packFileRef: string | undefined): string {
+  const lines = ['', '## Agent customization pack'];
+  if (packFileRef) {
+    lines.push(`- Pack report: ${packFileRef}`);
+  }
+  for (const entry of packLines) {
+    lines.push(`- ${entry}`);
+  }
+  lines.push('', ...buildStandardAnswerContractPromptLines());
+  return lines.join('\n');
+}
+
 export async function buildEvidenceCardStudioPromptEnriched(
   input: EvidenceCardAgentContextInput
 ): Promise<string> {
   const base = buildEvidenceCardStudioPrompt(input);
+  const agentPack = await readAgentCustomizationPackReport(input.workspacePath);
+  const agentPackSummary = agentPack ? summarizeAgentCustomizationPack(agentPack) : null;
+  const packSection = buildAgentPackStudioSection(
+    buildAgentPackHandoffSummaryLines(agentPack, agentPackSummary),
+    `#file:${input.workspacePath.replace(/\\/g, '/')}/${AGENT_CUSTOMIZATION_PACK_REPORT_PATH}`
+  );
+
   if (input.card?.id !== 'workspaceImpact') {
-    return base;
+    return [base, packSection].join('\n');
   }
 
   const report = await readWorkspaceImpactReport(input.workspacePath);
-  return [base, buildWorkspaceImpactCardStudioSection(report)].join('\n');
+  return [base, packSection, buildWorkspaceImpactCardStudioSection(report)].join('\n');
 }
 
 export function buildEvidenceCardCopilotQuestion(input: EvidenceCardAgentContextInput): string {

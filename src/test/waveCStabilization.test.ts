@@ -35,11 +35,14 @@ describe('Wave C stabilization', () => {
   });
 
   it('auto-selects sole workspace project and syncs selectedProjectPath', () => {
-    const welcomePanel = read('src/ui/panels/welcomePanel.ts');
+    const combinedWelcomePanelSource = [
+      read('src/ui/panels/welcomePanel.ts'),
+      read('src/ui/panels/welcomePanelCreationNavigationMessages.ts'),
+    ].join('\n');
     const workspaceSelection = read('src/commands/workspaceSelection.ts');
 
-    expect(welcomePanel).toContain('projects.length === 1');
-    expect(welcomePanel).toContain('setSelectedProjectPath');
+    expect(combinedWelcomePanelSource).toContain('projects.length === 1');
+    expect(combinedWelcomePanelSource).toContain('setSelectedProjectPath');
     expect(workspaceSelection).toContain('setSelectedProjectPath(project.path)');
   });
 });

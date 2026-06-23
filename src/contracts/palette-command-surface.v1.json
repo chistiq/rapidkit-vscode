@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "workspai-palette-command-surface-v1",
+  "version": 1,
+  "coreCommands": [
+    {
+      "command": "workspai.showWelcome",
+      "label": "Open Workspai Dashboard",
+      "scope": "navigation"
+    },
+    {
+      "command": "workspai.createWorkspace",
+      "label": "Create Workspace",
+      "scope": "onboarding"
+    },
+    {
+      "command": "workspai.importWorkspace",
+      "label": "Import Workspace",
+      "scope": "onboarding"
+    },
+    {
+      "command": "workspai.adoptProject",
+      "label": "Adopt Project",
+      "scope": "onboarding"
+    },
+    {
+      "command": "workspai.openCreateWithAI",
+      "label": "Create with AI",
+      "scope": "onboarding"
+    },
+    {
+      "command": "workspai.openWorkspaceAdvisor",
+      "label": "Workspace Advisor",
+      "scope": "workspace-intelligence"
+    },
+    {
+      "command": "workspai.openIncidentStudio",
+      "label": "Incident Studio",
+      "scope": "incident"
+    },
+    {
+      "command": "workspai.doctor",
+      "label": "Run Doctor",
+      "scope": "system"
+    },
+    {
+      "command": "workspai.quickSwitchWorkspace",
+      "label": "Quick Switch Workspace",
+      "scope": "navigation"
+    },
+    {
+      "command": "workspai.checkForUpdates",
+      "label": "Check for Updates",
+      "scope": "system"
+    }
+  ]
+}

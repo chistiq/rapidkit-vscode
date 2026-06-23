@@ -1,0 +1,93 @@
+/**
+ * Shared accessibility overrides for every Workspai webview bundle.
+ * Import last in dashboard and sidebar entrypoints so these rules win.
+ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  .logo,
+  .hero-icon,
+  .dashboard-live-pulse,
+  .ws-sidebar__spinner,
+  .ws-sidebar__dots span,
+  .ws-sidebar__agent-avatar.is-active .ws-sidebar__agent-avatar__ring,
+  .ws-drawer,
+  .evidence-guided-spin,
+  .catalog-skeleton-shimmer,
+  .typing-indicator,
+  .thinking-bounce,
+  .ai-create-orbit,
+  .ai-create-pulse {
+    animation: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  body::before,
+  body::after {
+    content: none !important;
+  }
+
+  .studio-glass-card,
+  .ws-card,
+  .module-card,
+  .hero-action,
+  .quick-link,
+  .feature,
+  .command-item,
+  .ws-sidebar__tile,
+  .ws-drawer-card,
+  .ws-drawer-option {
+    background: Canvas !important;
+    border-color: ButtonBorder !important;
+    box-shadow: none !important;
+  }
+
+  .ws-drawer-card.is-selected,
+  .ws-drawer-option.is-selected,
+  .ws-sidebar__tab.is-active {
+    outline: 1px solid Highlight;
+    outline-offset: 1px;
+  }
+
+  button,
+  input,
+  textarea,
+  select,
+  a[role='button'] {
+    forced-color-adjust: auto;
+    border-color: ButtonBorder;
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible,
+  a:focus-visible,
+  .ws-sidebar__tab:focus-visible,
+  .command-copy:focus-visible,
+  .ws-close:focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px;
+  }
+
+  .module-badge,
+  .ws-tag,
+  .version,
+  .dashboard-live-pulse {
+    border: 1px solid ButtonBorder;
+    background: Canvas;
+  }
+}

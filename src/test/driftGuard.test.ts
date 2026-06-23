@@ -136,6 +136,8 @@ describe('contract drift guard', () => {
     const hoverSource = read('src/providers/hoverProvider.ts');
     const wizardSource = read('src/ui/wizards/workspaceWizard.ts');
     const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
+    const recentWorkspacesSource = read('src/ui/panels/welcomePanelRecentWorkspaces.ts');
+    const combinedWelcomePanelSource = `${welcomePanelSource}\n${recentWorkspacesSource}`;
     const webviewTypesSource = read('webview-ui/src/types.ts');
     const projectSchemaSource = read('schemas/rapidkit.schema.json');
     const workspaceSchemaSource = read('schemas/rapidkitrc.schema.json');
@@ -146,7 +148,7 @@ describe('contract drift guard', () => {
       expect(completionSource).toContain(profile);
       expect(hoverSource).toContain(`\`${profile}\``);
       expect(wizardSource).toContain(`'${profile}'`);
-      expect(welcomePanelSource).toContain(`'${profile}'`);
+      expect(combinedWelcomePanelSource).toContain(`'${profile}'`);
       expect(webviewTypesSource).toContain(`'${profile}'`);
       expect(projectSchemaSource).toContain(`"${profile}"`);
       expect(workspaceSchemaSource).toContain(`"${profile}"`);
@@ -291,18 +293,23 @@ describe('contract drift guard', () => {
 
   it('keeps fail-closed unknown-scope mutation guard active for apply-patch route', () => {
     const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
+    const applyPatchSource = read('src/ui/panels/welcomePanelChatBrainApplyPatch.ts');
+    const combinedApplyPatchSource = `${welcomePanelSource}\n${applyPatchSource}`;
 
-    expect(welcomePanelSource).toContain('lastUnknownScopeMutationBlocked');
-    expect(welcomePanelSource).toContain('lastScopeKnown');
-    expect(welcomePanelSource).toContain(
+    expect(combinedApplyPatchSource).toContain('lastUnknownScopeMutationBlocked');
+    expect(combinedApplyPatchSource).toContain('lastScopeKnown');
+    expect(combinedApplyPatchSource).toContain(
       'if (conv?.lastUnknownScopeMutationBlocked || conv?.lastScopeKnown === false)'
     );
-    expect(welcomePanelSource).toContain('SCOPE_UNKNOWN_MUTATION_BLOCKED');
-    expect(welcomePanelSource).toContain('Patch apply blocked: impacted scope is unknown.');
+    expect(combinedApplyPatchSource).toContain('SCOPE_UNKNOWN_MUTATION_BLOCKED');
+    expect(combinedApplyPatchSource).toContain('Patch apply blocked: impacted scope is unknown.');
   });
 
   it('keeps workspace memory policy profile contract exposed for local-processing mode', () => {
     const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
+    const chatBrainExecuteSource = read('src/ui/panels/welcomePanelChatBrainExecuteAction.ts');
+    const incidentEvidenceSource = read('src/ui/panels/welcomePanelIncidentEvidence.ts');
+    const combinedIncidentHostSource = `${welcomePanelSource}\n${chatBrainExecuteSource}\n${incidentEvidenceSource}`;
     const memoryServiceSource = read('src/core/workspaceMemoryService.ts');
     const aiFreeFeaturesSource = read('src/commands/aiFreeFeatures.ts');
     const payloadSource = read('webview-ui/src/lib/incidentStudioPayload.ts');
@@ -314,12 +321,6 @@ describe('contract drift guard', () => {
     expect(memoryServiceSource).toContain('resolvePolicy(memory?: WorkspaceMemory)');
     expect(memoryServiceSource).toContain('Memory policy:');
 
-    expect(welcomePanelSource).toContain('policyProfile: memoryPolicy.profile');
-    expect(welcomePanelSource).toContain('sensitivity: memoryPolicy.sensitivity');
-    expect(welcomePanelSource).toContain('localProcessingMode: memoryPolicy.localProcessingMode');
-    expect(welcomePanelSource).toContain("operation: 'incident-replay-learning'");
-    expect(welcomePanelSource).toContain("mode: 'system-enrichment'");
-
     expect(aiFreeFeaturesSource).toContain("operation: 'workspace-memory-wizard'");
     expect(aiFreeFeaturesSource).toContain("mode: 'user-initiated'");
 
@@ -330,9 +331,14 @@ describe('contract drift guard', () => {
     expect(payloadSource).toContain('localProcessingMode');
     expect(payloadSource).toContain('memoryInfluenceAuditTimeline');
 
-    expect(welcomePanelSource).toContain('_buildMemoryInfluenceAuditTimeline');
-    expect(welcomePanelSource).toContain('memoryInfluenceAuditTimeline');
-    expect(welcomePanelSource).toContain('memoryEventId');
+    expect(combinedIncidentHostSource).toContain('buildMemoryInfluenceAuditTimeline');
+    expect(combinedIncidentHostSource).toContain('memoryInfluenceAuditTimeline');
+    expect(incidentEvidenceSource).toContain('memoryEventId');
+    expect(incidentEvidenceSource).toContain('policyProfile: memoryPolicy.policyProfile');
+    expect(incidentEvidenceSource).toContain('sensitivity: memoryPolicy.sensitivity');
+    expect(incidentEvidenceSource).toContain(
+      'localProcessingMode: memoryPolicy.localProcessingMode'
+    );
 
     expect(reproPackSource).toContain('MEMORY_INFLUENCE_TIMELINE_HEADING');
     expect(payloadSource).toContain('decisionArtifacts');
@@ -341,8 +347,9 @@ describe('contract drift guard', () => {
   it('keeps workspace memory writes restricted to approved contract-gated routes', () => {
     const aiFreeFeaturesSource = read('src/commands/aiFreeFeatures.ts');
     const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
+    const incidentMemoryBridgeSource = read('src/ui/panels/welcomePanelIncidentMemoryBridge.ts');
     const workspaceMemoryServiceSource = read('src/core/workspaceMemoryService.ts');
-    const combinedSource = `${aiFreeFeaturesSource}\n${welcomePanelSource}`;
+    const combinedSource = `${aiFreeFeaturesSource}\n${welcomePanelSource}\n${incidentMemoryBridgeSource}`;
 
     const writeCallMatches = combinedSource.match(/memoryService\.write\(/g) || [];
     expect(writeCallMatches.length).toBe(2);
@@ -351,9 +358,9 @@ describe('contract drift guard', () => {
     expect(aiFreeFeaturesSource).toContain("mode: 'user-initiated'");
     expect(aiFreeFeaturesSource).toContain('approvedByUser: true');
 
-    expect(welcomePanelSource).toContain("operation: 'incident-replay-learning'");
-    expect(welcomePanelSource).toContain("mode: 'system-enrichment'");
-    expect(welcomePanelSource).toContain('approvedByUser: false');
+    expect(incidentMemoryBridgeSource).toContain("operation: 'incident-replay-learning'");
+    expect(incidentMemoryBridgeSource).toContain("mode: 'system-enrichment'");
+    expect(incidentMemoryBridgeSource).toContain('approvedByUser: false');
 
     expect(workspaceMemoryServiceSource).toContain('missing access contract');
     expect(workspaceMemoryServiceSource).toContain('invalid access mode');
@@ -509,7 +516,9 @@ describe('contract drift guard', () => {
     expect(read('src/core/incidentInlineCommandRunner.ts')).toContain(
       'toPinnedRapidkitExecutionCommand(trimmed)'
     );
-    expect(read('src/ui/panels/welcomePanel.ts')).toContain('dispatchIncidentStudioInlineCommand');
+    expect(read('src/ui/panels/welcomePanelIncidentStudioMessages.ts')).toContain(
+      'dispatchIncidentStudioInlineCommand'
+    );
     expect(combined).not.toContain('rapidkit doctor --scope=workspace');
     expect(combined).not.toContain('rapidkit doctor verify --scope=');
   });
@@ -517,6 +526,14 @@ describe('contract drift guard', () => {
   it('keeps context assist stop-generation contract dormant outside the dashboard shell', () => {
     const appSource = read('webview-ui/src/App.tsx');
     const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
+    const webviewMessageDispatchSource = read(
+      'src/ui/panels/welcomePanelWebviewMessageDispatch.ts'
+    );
+    const routingSource = `${welcomePanelSource}\n${webviewMessageDispatchSource}`;
+    const aiModalQuerySource = read('src/ui/panels/welcomePanelAiModalQuery.ts');
+    const aiModalMessagesSource = read('src/ui/panels/welcomePanelAiModalMessages.ts');
+    const webviewMessagingSource = read('src/ui/panels/welcomePanelWebviewMessaging.ts');
+    const aiModalSource = `${welcomePanelSource}\n${aiModalQuerySource}\n${aiModalMessagesSource}\n${webviewMessagingSource}`;
 
     expect(appSource).not.toContain("vscode.postMessage('aiCancelQuery'");
     expect(appSource).not.toContain("case 'aiContextContract':");
@@ -530,10 +547,13 @@ describe('contract drift guard', () => {
       fs.existsSync(path.join(repoRoot, 'webview-ui/src/components/ContextAssistPanel.tsx'))
     ).toBe(false);
 
-    expect(welcomePanelSource).toContain("case 'aiCancelQuery':");
-    expect(welcomePanelSource).toContain('this._aiQueryTokenSource?.cancel();');
-    expect(welcomePanelSource).toContain('requestId: queryRequestId');
-    expect(welcomePanelSource).toContain("this._postWebviewMessage('aiStreamDone'");
+    expect(routingSource).toContain('isAiModalWebviewCommand(');
+    expect(aiModalMessagesSource).toContain("case 'aiCancelQuery':");
+    expect(aiModalMessagesSource).toContain('getAiQueryTokenSource()');
+    expect(aiModalMessagesSource).toContain('tokenSource?.cancel()');
+    expect(aiModalSource).toContain('requestId: queryRequestId');
+    expect(welcomePanelSource).toContain('postWelcomePanelAIStreamDoneOnce');
+    expect(webviewMessagingSource).toContain("'aiStreamDone'");
   });
 
   it('keeps extension-host webview output routed through the shared protocol helper', () => {
@@ -657,6 +677,8 @@ describe('contract drift guard', () => {
     const aiActionCommandPolicySource = read('src/core/aiActionCommandPolicy.ts');
     const aiActionGateSource = read('webview-ui/src/lib/incidentStudioAIActionGate.ts');
     const welcomeSource = read('src/ui/panels/welcomePanel.ts');
+    const dashboardStudioSource = read('src/ui/panels/welcomePanelDashboardStudio.ts');
+    const combinedStudioHostSource = `${welcomeSource}\n${dashboardStudioSource}`;
     const operationContractSource = read('src/contracts/aiActionOperationSurface.ts');
     const operationContractJson = read('src/contracts/ai-action-operation-surface.v1.json');
 
@@ -678,12 +700,12 @@ describe('contract drift guard', () => {
     expect(aiActionGateSource).not.toContain(
       "export type StudioAIActionOperation = 'apply' | 'verify' | 'rollback'"
     );
-    expect(welcomeSource).toContain('normalizeAIActionCommandPayload(data)');
-    expect(welcomeSource).not.toContain('data as any');
-    expect(welcomeSource).not.toContain('(data as any)');
-    expect(welcomeSource).toContain('const payload = asRecord(data) ?? {};');
-    expect(welcomeSource).toContain("readStringField(payload, 'actionId')");
-    expect(welcomeSource).toContain("readStringField(payload, 'message')");
+    expect(combinedStudioHostSource).toContain('normalizeAIActionCommandPayload(data)');
+    expect(combinedStudioHostSource).not.toContain('data as any');
+    expect(combinedStudioHostSource).not.toContain('(data as any)');
+    expect(combinedStudioHostSource).toContain('const payload = asRecord(data) ?? {};');
+    expect(combinedStudioHostSource).toContain("readStringField(payload, 'actionId')");
+    expect(combinedStudioHostSource).toContain("readStringField(payload, 'message')");
     expect(operationContractSource).toContain('normalizeAIActionCommandPayload');
     expect(operationContractJson).toContain(
       '"schemaVersion": "workspai-ai-action-operation-surface-v1"'
@@ -708,20 +730,28 @@ describe('contract drift guard', () => {
 
   it('keeps AI modal clarification gate ahead of model streaming', () => {
     const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
+    const webviewMessageDispatchSource = read(
+      'src/ui/panels/welcomePanelWebviewMessageDispatch.ts'
+    );
+    const routingSource = `${welcomePanelSource}\n${webviewMessageDispatchSource}`;
+    const aiModalQuerySource = read('src/ui/panels/welcomePanelAiModalQuery.ts');
+    const aiModalMessagesSource = read('src/ui/panels/welcomePanelAiModalMessages.ts');
+    const webviewMessagingSource = read('src/ui/panels/welcomePanelWebviewMessaging.ts');
+    const chatBrainQuerySource = read('src/ui/panels/welcomePanelChatBrainQuery.ts');
+    const aiModalSource = `${welcomePanelSource}\n${aiModalQuerySource}\n${aiModalMessagesSource}\n${webviewMessagingSource}`;
 
-    expect(welcomePanelSource).toContain('prepared.validation.clarificationNeeded');
-    expect(welcomePanelSource).toContain("trackAIModalOutcome('clarification-needed'");
-    expect(welcomePanelSource).toContain("'workspai.aimodal.clarification_gate'");
-    expect(welcomePanelSource).toContain("_postWebviewMessage('aiChunkUpdate'");
-    expect(welcomePanelSource).toContain("_postWebviewMessage('aiStreamDone'");
-    expect(welcomePanelSource).toContain("title: 'Next Safe Action'");
-    expect(welcomePanelSource).toContain('Generate verification evidence');
-    expect(welcomePanelSource).toContain('_getChatBrainPrimaryActionLabel');
+    expect(aiModalSource).toContain('prepared.validation.clarificationNeeded');
+    expect(aiModalSource).toContain("trackAIModalOutcome('clarification-needed'");
+    expect(aiModalSource).toContain("'workspai.aimodal.clarification_gate'");
+    expect(aiModalSource).toContain("postWebviewMessage('aiChunkUpdate'");
+    expect(welcomePanelSource).toContain('postWelcomePanelAIStreamDoneOnce');
+    expect(webviewMessagingSource).toContain("'aiStreamDone'");
+    expect(routingSource).toContain('tryDispatchAiModalWebviewMessage');
 
-    const clarificationIdx = welcomePanelSource.indexOf('prepared.validation.clarificationNeeded');
-    const streamStageIdx = welcomePanelSource.indexOf("currentStage = 'stream';", clarificationIdx);
-    const streamIdx = welcomePanelSource.indexOf('await streamAIResponse(', clarificationIdx);
-    const returnIdx = welcomePanelSource.indexOf('return;', clarificationIdx);
+    const clarificationIdx = aiModalSource.indexOf('prepared.validation.clarificationNeeded');
+    const streamStageIdx = aiModalSource.indexOf("currentStage = 'stream';", clarificationIdx);
+    const streamIdx = aiModalSource.indexOf('await streamAIResponse(', clarificationIdx);
+    const returnIdx = aiModalSource.indexOf('return;', clarificationIdx);
 
     expect(clarificationIdx).toBeGreaterThan(-1);
     expect(streamStageIdx).toBeGreaterThan(-1);
@@ -730,14 +760,45 @@ describe('contract drift guard', () => {
     expect(returnIdx).toBeLessThan(streamStageIdx);
     expect(returnIdx).toBeLessThan(streamIdx);
     expect(clarificationIdx).toBeLessThan(streamIdx);
+
+    const chatBrainSuggestedQuestionsSource = read(
+      'src/ui/panels/welcomePanelChatBrainSuggestedQuestions.ts'
+    );
+    const chatBrainPanelSource = `${welcomePanelSource}\n${chatBrainSuggestedQuestionsSource}`;
+
+    expect(chatBrainQuerySource).toContain('prepared.validation.clarificationNeeded');
+    expect(chatBrainQuerySource).toContain("title: 'Next Safe Action'");
+    expect(chatBrainQuerySource).toContain('Generate verification evidence');
+    expect(chatBrainSuggestedQuestionsSource).toContain('getChatBrainPrimaryActionLabel');
+    expect(chatBrainPanelSource).toContain('getChatBrainPrimaryActionLabel');
+    expect(welcomePanelSource).toContain('handleAiChatQuery');
+
+    const chatClarificationIdx = chatBrainQuerySource.indexOf(
+      'prepared.validation.clarificationNeeded'
+    );
+    const chatStreamIdx = chatBrainQuerySource.indexOf(
+      'await streamAIResponse(',
+      chatClarificationIdx
+    );
+    const chatReturnIdx = chatBrainQuerySource.indexOf('return;', chatClarificationIdx);
+
+    expect(chatClarificationIdx).toBeGreaterThan(-1);
+    expect(chatStreamIdx).toBeGreaterThan(-1);
+    expect(chatReturnIdx).toBeGreaterThan(chatClarificationIdx);
+    expect(chatReturnIdx).toBeLessThan(chatStreamIdx);
   });
 
   it('keeps incident telemetry request fail-safe fallback to null payload', () => {
     const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
+    const incidentStudioMessagesSource = read(
+      'src/ui/panels/welcomePanelIncidentStudioMessages.ts'
+    );
+    const combinedIncidentStudioSource = `${welcomePanelSource}\n${incidentStudioMessagesSource}`;
     const telemetryBridgeSource = read('src/ui/panels/incidentStudioTelemetryBridge.ts');
 
-    expect(welcomePanelSource).toContain("case 'requestIncidentStudioTelemetry':");
-    expect(welcomePanelSource).toContain('postIncidentStudioTelemetry');
+    expect(welcomePanelSource).toContain('tryDispatchIncidentStudioWebviewMessage(');
+    expect(combinedIncidentStudioSource).toContain("case 'requestIncidentStudioTelemetry':");
+    expect(combinedIncidentStudioSource).toContain('postIncidentStudioTelemetry');
     expect(telemetryBridgeSource).toContain(
       "console.warn('[IncidentStudio] telemetry refresh failed:'"
     );

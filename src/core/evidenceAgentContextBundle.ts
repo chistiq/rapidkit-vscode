@@ -3,10 +3,19 @@ import path from 'path';
 
 import type { DashboardEvidenceCard } from './dashboardEvidenceBridge.js';
 import {
+  buildAgentPackHandoffSummaryLines,
+  buildStandardAnswerContractPromptLines,
+  readAgentCustomizationPackReport,
+  summarizeAgentCustomizationPack,
+  type AgentCustomizationPackReport,
+  type AgentCustomizationPackSummary,
+} from './agentCustomizationPack.js';
+import {
   buildEvidenceCardCopilotQuestion,
   type EvidenceCardAgentContextInput,
 } from './evidenceCardAgentPrompt.js';
 import {
+  AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
   WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
   WORKSPACE_IMPACT_REPORT_PATH,
   WORKSPACE_MODEL_REPORT_PATH,
@@ -32,6 +41,8 @@ export type EvidenceAgentContextBundle = {
   attachments: EvidenceAgentAttachment[];
   missingRequired: string[];
   summaryLines: string[];
+  agentPack?: AgentCustomizationPackReport | null;
+  agentPackSummary?: AgentCustomizationPackSummary | null;
   copilotQuestion: string;
 };
 
@@ -50,6 +61,11 @@ const INTELLIGENCE_ATTACHMENTS: Array<{ relativePath: string; label: string; req
       relativePath: WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
       label: 'Agent context pack',
       required: true,
+    },
+    {
+      relativePath: AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
+      label: 'Agent customization pack',
+      required: false,
     },
     {
       relativePath: WORKSPACE_MODEL_REPORT_PATH,
@@ -132,6 +148,9 @@ export async function buildEvidenceAgentContextBundle(
     });
   }
 
+  const agentPack = await readAgentCustomizationPackReport(input.workspacePath);
+  const agentPackSummary = agentPack ? summarizeAgentCustomizationPack(agentPack) : null;
+
   const summaryLines = [
     `Workspace: ${input.workspaceName || path.basename(input.workspacePath)} (${toPosixPath(input.workspacePath)})`,
     input.projectPath
@@ -144,6 +163,7 @@ export async function buildEvidenceAgentContextBundle(
     missingRequired.length > 0
       ? `Missing intelligence: ${missingRequired.join(', ')} (run workspace context/model first)`
       : undefined,
+    ...buildAgentPackHandoffSummaryLines(agentPack, agentPackSummary),
   ].filter((line): line is string => Boolean(line));
 
   return {
@@ -155,6 +175,8 @@ export async function buildEvidenceAgentContextBundle(
     attachments,
     missingRequired,
     summaryLines,
+    agentPack,
+    agentPackSummary,
     copilotQuestion: buildEvidenceCardCopilotQuestion(input),
   };
 }
@@ -201,6 +223,7 @@ export function buildSendToCopilotPrompt(bundle: EvidenceAgentContextBundle): st
     contextLines.push('', '## stderr tail', '```', stderrTail.slice(0, 1200), '```');
   }
 
+  contextLines.push('', ...buildStandardAnswerContractPromptLines());
   contextLines.push('', bundle.copilotQuestion);
 
   return contextLines.join('\n');

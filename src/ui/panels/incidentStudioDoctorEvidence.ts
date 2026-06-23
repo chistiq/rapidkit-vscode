@@ -490,3 +490,19 @@ export async function readDoctorEvidenceSnapshot(
     return undefined;
   }
 }
+
+export function summarizeDoctorEvidenceSnapshot(snapshot: DoctorEvidenceSnapshot): {
+  healthScoreText: string;
+  generatedAt?: string;
+  passed?: number;
+  warnings?: number;
+  errors?: number;
+} {
+  return {
+    healthScoreText: `${snapshot.health.percent}% (${snapshot.health.passed} passed, ${snapshot.health.warnings} warnings, ${snapshot.health.errors} errors)`,
+    generatedAt: snapshot.generatedAt,
+    passed: snapshot.health.passed,
+    warnings: snapshot.health.warnings,
+    errors: snapshot.health.errors,
+  };
+}

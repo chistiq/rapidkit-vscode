@@ -85,6 +85,21 @@ describe('StudioRedesign contracts', () => {
       path.join(repoRoot, 'src/ui/panels/welcomePanel.ts'),
       'utf8'
     );
+    const creationNavigationMessagesSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/welcomePanelCreationNavigationMessages.ts'),
+      'utf8'
+    );
+    const combinedCreationNavigationHostSource = `${welcomeSource}\n${creationNavigationMessagesSource}`;
+    const incidentStudioMessagesSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/welcomePanelIncidentStudioMessages.ts'),
+      'utf8'
+    );
+    const combinedIncidentStudioHostSource = `${welcomeSource}\n${incidentStudioMessagesSource}`;
+    const dashboardStudioSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/welcomePanelDashboardStudio.ts'),
+      'utf8'
+    );
+    const combinedStudioHostSource = `${welcomeSource}\n${dashboardStudioSource}\n${incidentStudioMessagesSource}`;
     const redesignIndexSource = fs.readFileSync(
       path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/index.ts'),
       'utf8'
@@ -106,41 +121,44 @@ describe('StudioRedesign contracts', () => {
     expect(appSource).toContain("vscode.postMessage('openWorkspaceAdvisorTab'");
     expect(appSource).toContain("trigger: 'legacy-context-assist-handoff'");
     expect(appSource).toContain('initialQuestion: message.data?.prefillQuestion');
-    expect(welcomeSource).toContain("case 'openCreateWithAITab':");
-    expect(welcomeSource).toContain("case 'openWorkspaceAdvisorTab':");
-    expect(welcomeSource).toContain("case 'openStudioSidebarTab':");
-    expect(welcomeSource).toContain("workspai.openWorkspaceAdvisor'");
+    expect(combinedCreationNavigationHostSource).toContain("case 'openCreateWithAITab':");
+    expect(combinedCreationNavigationHostSource).toContain("case 'openWorkspaceAdvisorTab':");
+    expect(combinedCreationNavigationHostSource).toContain("case 'openStudioSidebarTab':");
+    expect(combinedCreationNavigationHostSource).toContain("workspai.openWorkspaceAdvisor'");
     expect(welcomeSource).toContain('_routeStudioToSecondarySidebar');
     expect(welcomeSource).not.toContain('_incidentPanel');
     expect(welcomeSource).not.toContain('_pendingIncidentStudioOpen');
     expect(welcomeSource).not.toContain('openIncidentStudioInNewTab');
     expect(welcomeSource).not.toContain("_postWebviewMessage('openIncidentStudio'");
     expect(welcomeSource).toContain("source: 'legacy-ai-modal-bridge'");
-    expect(welcomeSource).toContain(
-      'initialQuestion: message.data?.initialQuestion || message.data?.prefillQuestion'
+    expect(combinedCreationNavigationHostSource).toContain(
+      'initialQuestion: payload?.initialQuestion || payload?.prefillQuestion'
     );
-    expect(welcomeSource).toContain(
-      'initialTask: message.data?.initialTask || message.data?.initialQuery'
+    expect(combinedCreationNavigationHostSource).toContain(
+      'initialTask: payload?.initialTask || payload?.initialQuery'
     );
     expect(welcomeSource).not.toContain("_postWebviewMessage('openAIModal'");
-    expect(welcomeSource).toContain("case 'runStudioAction':");
-    expect(welcomeSource).toContain("case 'studioMessage':");
-    expect(welcomeSource).toContain("case 'runAIActionContractCommand':");
-    expect(welcomeSource).toContain('_handleDashboardStudioAction');
-    expect(welcomeSource).toContain('_handleDashboardStudioMessage');
-    expect(welcomeSource).toContain('_handleDashboardAIActionContractCommand');
-    expect(welcomeSource).toContain('_postDashboardStudioActionStatus');
-    expect(welcomeSource).toContain('_buildDashboardStudioActionResult');
-    expect(welcomeSource).toContain('buildStudioAIActionResult');
-    expect(welcomeSource).toContain('_postDashboardAIActionRegistry');
-    expect(welcomeSource).toContain('_runningDashboardAIActionOperation');
-    expect(welcomeSource).toContain('Another AI action operation is already running');
-    expect(welcomeSource).toContain('A Studio action is already running');
-    expect(welcomeSource).toContain('executeGovernedAIActionOperation');
-    expect(welcomeSource).toContain('publishStudioAIActionContractFromText');
-    expect(welcomeSource).toContain("'completed'");
-    expect(welcomeSource).toContain('setRunning: (nextOperation) =>');
-    expect(welcomeSource).toContain('_syncDashboardLatestAIAction');
+    expect(welcomeSource).toContain('tryDispatchIncidentStudioWebviewMessage(');
+    expect(combinedIncidentStudioHostSource).toContain("case 'runStudioAction':");
+    expect(combinedIncidentStudioHostSource).toContain("case 'studioMessage':");
+    expect(combinedIncidentStudioHostSource).toContain("case 'runAIActionContractCommand':");
+    expect(welcomeSource).not.toContain("case 'runStudioAction':");
+    expect(welcomeSource).not.toContain("case 'studioMessage':");
+    expect(combinedStudioHostSource).toContain('_handleDashboardStudioAction');
+    expect(combinedStudioHostSource).toContain('_handleDashboardStudioMessage');
+    expect(combinedStudioHostSource).toContain('_handleDashboardAIActionContractCommand');
+    expect(combinedStudioHostSource).toContain('postDashboardStudioActionStatus');
+    expect(combinedStudioHostSource).toContain('buildDashboardStudioActionResult');
+    expect(combinedStudioHostSource).toContain('buildStudioAIActionResult');
+    expect(combinedStudioHostSource).toContain('_postDashboardAIActionRegistry');
+    expect(combinedStudioHostSource).toContain('_runningDashboardAIActionOperation');
+    expect(combinedStudioHostSource).toContain('Another AI action operation is already running');
+    expect(combinedStudioHostSource).toContain('A Studio action is already running');
+    expect(combinedStudioHostSource).toContain('executeGovernedAIActionOperation');
+    expect(combinedStudioHostSource).toContain('publishStudioAIActionContractFromText');
+    expect(combinedStudioHostSource).toContain("'completed'");
+    expect(combinedStudioHostSource).toContain('setRunning: (nextOperation) =>');
+    expect(combinedStudioHostSource).toContain('_syncDashboardLatestAIAction');
     expect(redesignIndexSource).toContain('Studio lives in the secondary sidebar');
     expect(redesignIndexSource).not.toContain('./regions/');
   });
@@ -158,6 +176,16 @@ describe('StudioRedesign contracts', () => {
       path.join(repoRoot, 'src/ui/panels/welcomePanel.ts'),
       'utf8'
     );
+    const incidentStudioMessagesSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/welcomePanelIncidentStudioMessages.ts'),
+      'utf8'
+    );
+    const combinedIncidentStudioHostSource = `${welcomeSource}\n${incidentStudioMessagesSource}`;
+    const dashboardStudioSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/panels/welcomePanelDashboardStudio.ts'),
+      'utf8'
+    );
+    const combinedStudioHostSource = `${welcomeSource}\n${dashboardStudioSource}\n${incidentStudioMessagesSource}`;
     const studioStateSource = fs.readFileSync(
       path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/state/studioState.ts'),
       'utf8'
@@ -167,21 +195,21 @@ describe('StudioRedesign contracts', () => {
       'utf8'
     );
 
-    expect(welcomeSource).toContain('isStudioActionId(actionId)');
-    expect(welcomeSource).toContain('getStudioActionRegistryEntryById(studioActionId)');
-    expect(welcomeSource).toContain('actionDefinition.actionType');
-    expect(welcomeSource).toContain('actionTitle: actionDefinition?.title');
-    expect(welcomeSource).toContain('actionSummary: actionDefinition?.summary');
-    expect(welcomeSource).not.toContain("actionId === 'fix-lens'");
-    expect(welcomeSource).not.toContain("actionId === 'impact-lens'");
-    expect(welcomeSource).toContain('Unknown Studio action blocked');
-    expect(welcomeSource).toContain('_runningStudioActionId');
-    expect(welcomeSource).toContain('Another Studio action is already running');
-    expect(welcomeSource).toContain("_postWebviewMessage('studioActionStatus'");
-    expect(welcomeSource).toContain("'completed'");
-    expect(welcomeSource).toContain('result?: Record<string, unknown>');
-    expect(welcomeSource).toContain('executeGovernedAIActionOperation');
-    expect(welcomeSource).toContain('_runningDashboardAIActionOperation');
+    expect(combinedStudioHostSource).toContain('isStudioActionId(actionId)');
+    expect(combinedStudioHostSource).toContain('getStudioActionRegistryEntryById(studioActionId)');
+    expect(combinedStudioHostSource).toContain('actionDefinition.actionType');
+    expect(combinedStudioHostSource).toContain('actionTitle: actionDefinition?.title');
+    expect(combinedStudioHostSource).toContain('actionSummary: actionDefinition?.summary');
+    expect(combinedStudioHostSource).not.toContain("actionId === 'fix-lens'");
+    expect(combinedStudioHostSource).not.toContain("actionId === 'impact-lens'");
+    expect(combinedStudioHostSource).toContain('Unknown Studio action blocked');
+    expect(combinedStudioHostSource).toContain('_runningStudioActionId');
+    expect(combinedStudioHostSource).toContain('Another Studio action is already running');
+    expect(combinedStudioHostSource).toContain("postWebviewMessage('studioActionStatus'");
+    expect(combinedStudioHostSource).toContain("'completed'");
+    expect(combinedStudioHostSource).toContain('result?: Record<string, unknown>');
+    expect(combinedStudioHostSource).toContain('executeGovernedAIActionOperation');
+    expect(combinedStudioHostSource).toContain('_runningDashboardAIActionOperation');
     expect(aiActionBridgeSource).toContain('`ai-action-${operation}`');
     expect(actionBridgeSource).toContain('import type { StudioActionId }');
     expect(actionBridgeSource).toContain('actionId: StudioActionId');
@@ -189,9 +217,10 @@ describe('StudioRedesign contracts', () => {
     expect(studioStateSource).toContain('export interface StudioProofEvent');
     expect(studioStateSource).toContain("schemaVersion: 'workspai.studio.proof-event.v1'");
     expect(actionAuditSource).toContain('const proofEvent = result?.proofEvent;');
-    expect(welcomeSource).toContain('studio-action-bridge');
-    expect(welcomeSource).toContain('executeStudioActionById');
-    expect(welcomeSource).toContain("case 'requestIncidentStudioTelemetry':");
+    expect(combinedStudioHostSource).toContain('studio-action-bridge');
+    expect(combinedStudioHostSource).toContain('executeStudioActionById');
+    expect(welcomeSource).toContain('tryDispatchIncidentStudioWebviewMessage(');
+    expect(combinedIncidentStudioHostSource).toContain("case 'requestIncidentStudioTelemetry':");
     expect(welcomeSource).not.toContain(
       "case 'verify-gates':\n          await runWorkspaceAnalyze"
     );

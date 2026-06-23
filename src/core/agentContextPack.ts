@@ -1,4 +1,7 @@
-import { WORKSPACE_CONTEXT_AGENT_REPORT_PATH } from './workspaceIntelligencePaths';
+import {
+  WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
+  AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
+} from './workspaceIntelligencePaths';
 
 /** npm `workspace context --for-agent` without a slug → generic agent pack (Copilot-safe). */
 export function buildWorkspaceAgentContextCliArgs(scope?: string): string[] {
@@ -37,8 +40,9 @@ export function buildCopilotChatContextPrompt(userQuestion?: string): string {
   return [
     '@workspace',
     `#file:${WORKSPACE_CONTEXT_AGENT_REPORT_PATH}`,
+    `#file:${AGENT_CUSTOMIZATION_PACK_REPORT_PATH}`,
     '',
-    `With this workspace context, ${question}`,
+    `With this workspace context and agent customization pack, ${question}`,
   ].join('\n');
 }
 

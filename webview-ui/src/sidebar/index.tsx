@@ -6,6 +6,7 @@ import '@/styles/workspai-tokens.css';
 import '@/styles-tailwind.css';
 import '@/styles/workspai-primitives.css';
 import './sidebar.css';
+import '@/styles/workspai-a11y.css';
 
 const root = document.getElementById('root');
 if (root) {

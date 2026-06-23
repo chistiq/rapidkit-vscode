@@ -78,5 +78,7 @@ describe('evidenceCardAgentPrompt', () => {
     expect(prompt).toContain('git:AGENTS.md');
     expect(prompt).toContain('Workspace-level impact samples');
     expect(prompt).toContain('agent-sync');
+    expect(prompt).toContain('## Agent customization pack');
+    expect(prompt).toContain('## Standard answer contract');
   });
 });

@@ -106,11 +106,7 @@
   color: var(--vscode-charts-orange);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .ws-sidebar__tile {
-    transition: none;
-  }
-}
+/* prefers-reduced-motion + forced-colors: see workspai-a11y.css */
 
 /* ---- Secondary sidebar (Create / Advisor / Studio) ---- */
 
@@ -761,26 +757,6 @@
   font-size: 10px;
   font-weight: 600;
   color: var(--vscode-descriptionForeground);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ws-sidebar__spinner {
-    animation: none;
-  }
-
-  .ws-sidebar__dots span {
-    animation: none;
-    opacity: 0.85;
-  }
-
-  .ws-sidebar__agent-avatar.is-active .ws-sidebar__agent-avatar__ring {
-    animation: none;
-    opacity: 0.85;
-  }
-
-  .ws-drawer {
-    animation: none;
-  }
 }
 
 /* ---- Fixed composer + drawer stack (Cursor-style) ---- */
@@ -1659,13 +1635,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-}
-
-@media (forced-colors: active) {
-  .ws-drawer-card.is-selected,
-  .ws-drawer-option.is-selected {
-    outline: 1px solid Highlight;
-  }
 }
 
 /* ---- Secondary sidebar readability (typography + spacing only) ---- */

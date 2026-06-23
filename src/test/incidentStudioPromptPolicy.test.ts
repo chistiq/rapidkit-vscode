@@ -13,8 +13,28 @@ import {
 
 function readWelcomePanelSource(): string {
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
-  const welcomePanelPath = path.resolve(currentDir, '../ui/panels/welcomePanel.ts');
-  return readFileSync(welcomePanelPath, 'utf8');
+  const panelPaths = [
+    '../ui/panels/welcomePanel.ts',
+    '../ui/panels/welcomePanelProjectDiscoveryBindings.ts',
+  ];
+  return panelPaths
+    .map((relativePath) => readFileSync(path.resolve(currentDir, relativePath), 'utf8'))
+    .join('\n');
+}
+
+function readChatBrainInlineQuerySource(): string {
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const inlineQueryPath = path.resolve(
+    currentDir,
+    '../ui/panels/welcomePanelChatBrainInlineQuery.ts'
+  );
+  return readFileSync(inlineQueryPath, 'utf8');
+}
+
+function readIncidentWave2Source(): string {
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const wave2Path = path.resolve(currentDir, '../ui/panels/welcomePanelIncidentWave2.ts');
+  return readFileSync(wave2Path, 'utf8');
 }
 
 function readIncidentRoutingSource(): string {
@@ -141,7 +161,7 @@ describe('incidentStudioPromptPolicy', () => {
   });
 
   it('keeps inline-command prompt contract sections stable', () => {
-    const source = readWelcomePanelSource();
+    const source = readChatBrainInlineQuerySource();
 
     expect(source).toContain("if (actionType === 'inline-command')");
     expect(source).toContain('Decision Clarity Contract');
@@ -155,7 +175,7 @@ describe('incidentStudioPromptPolicy', () => {
   });
 
   it('keeps apply patch/module prompt contract sections stable', () => {
-    const source = readWelcomePanelSource();
+    const source = readChatBrainInlineQuerySource();
 
     expect(source).toContain("if (actionType === 'apply-module-gen')");
     expect(source).toContain("if (actionType === 'apply-debug-patch')");
@@ -192,7 +212,7 @@ describe('incidentStudioPromptPolicy', () => {
   it('workspace candidate block includes marker + evidence-source transparency', () => {
     const source = readWelcomePanelSource();
 
-    expect(source).toContain('welcomePanelProjectDiscovery.js');
+    expect(source).toContain('./welcomePanelProjectDiscovery');
     expect(source).toContain('buildWorkspaceProjectCandidatesBlock(');
     expect(source).toContain('WelcomePanel._workspaceExplorer');
   });
@@ -200,12 +220,12 @@ describe('incidentStudioPromptPolicy', () => {
   it('scope resolver uses doctor evidence + recursive rapidkit project discovery signals', () => {
     const source = readWelcomePanelSource();
 
-    expect(source).toContain('welcomePanelProjectDiscovery.js');
+    expect(source).toContain('./welcomePanelProjectDiscovery');
     expect(source).toContain('resolveScopedProjectForWorkspace(');
   });
 
   it('release gate verify path uses actionable verify completeness (not checklist length only)', () => {
-    const source = readWelcomePanelSource();
+    const source = readIncidentWave2Source();
 
     expect(source).toContain('const verifyCompletenessCheck = assessVerifyCompleteness');
     expect(source).toContain('const verifyPathPresent = verifyCompletenessCheck.adequate;');

@@ -303,6 +303,9 @@ describe('dashboard minimal UX guard', () => {
     const importAdopt = read('webview-ui/src/components/HomeImportAdoptHandoff.tsx');
     const app = read('webview-ui/src/App.tsx');
     const welcome = read('src/ui/panels/welcomePanel.ts');
+    const creationNavigation = read('src/ui/panels/welcomePanelCreationNavigationMessages.ts');
+    const workspaceSelection = read('src/ui/panels/welcomePanelWorkspaceSelectionMessages.ts');
+    const combinedWelcomeRoutingSource = `${welcome}\n${creationNavigation}\n${workspaceSelection}`;
     const styles = read('webview-ui/src/styles-tailwind.css');
 
     expect(handoff).toContain('Create with AI');
@@ -327,7 +330,9 @@ describe('dashboard minimal UX guard', () => {
     expect(app).toContain("trigger: 'dashboard-ai-create-project-handoff'");
     expect(app).toContain('useDefaultWorkspace: !hasWorkspace');
     expect(app).toContain('openCreateWithAITab');
-    expect(welcome).toContain('useDefaultWorkspace: message.data?.useDefaultWorkspace === true');
+    expect(combinedWelcomeRoutingSource).toContain(
+      'useDefaultWorkspace: payload?.useDefaultWorkspace === true'
+    );
     expect(read('src/extension.ts')).toContain(
       'Never bootstrap the managed default workspace before opening UI'
     );
@@ -335,8 +340,8 @@ describe('dashboard minimal UX guard', () => {
     expect(app).toContain('showScopePaths={dashboardSectionShowsScopePaths(dashboardSection)}');
     expect(app).toContain("vscode.postMessage('openWorkspaceInNewWindow'");
     expect(app).toContain("vscode.postMessage('revealWorkspaceFolder'");
-    expect(welcome).toContain("case 'openWorkspaceInNewWindow':");
-    expect(welcome).toContain("case 'revealWorkspaceFolder':");
+    expect(combinedWelcomeRoutingSource).toContain("case 'openWorkspaceInNewWindow':");
+    expect(combinedWelcomeRoutingSource).toContain("case 'revealWorkspaceFolder':");
   });
 
   it('keeps archive evidence cards readable instead of disabled pseudo-actions', () => {
@@ -492,7 +497,10 @@ describe('dashboard minimal UX guard', () => {
     expect(overview).not.toContain('Select a project from PROJECTS to unlock lifecycle actions');
     expect(overview).not.toContain('Click Project in context bar');
     expect(handoff).toContain('Primary workspace commands and governance');
+    expect(statusBar).toContain('$(rocket) Workspai');
+    expect(statusBar).toContain('$(pulse) Ready');
     expect(statusBar).toContain('Open Workspai dashboard and workspace intelligence');
+    expect(statusBar).not.toContain('🚀');
   });
 
   it('keeps guided path checklist informational instead of duplicating per-card agent actions', () => {
@@ -525,10 +533,87 @@ describe('dashboard minimal UX guard', () => {
   it('routes dashboard Studio handoffs to the secondary sidebar tab', () => {
     const app = read('webview-ui/src/App.tsx');
     const welcome = read('src/ui/panels/welcomePanel.ts');
+    const creationNavigation = read('src/ui/panels/welcomePanelCreationNavigationMessages.ts');
+    const combinedStudioRoutingSource = `${welcome}\n${creationNavigation}`;
 
     expect(app).toContain("vscode.postMessage('openStudioSidebarTab'");
     expect(app).toContain('openStudioInSidebar');
-    expect(welcome).toContain("case 'openStudioSidebarTab':");
+    expect(combinedStudioRoutingSource).toContain("case 'openStudioSidebarTab':");
     expect(welcome).toContain('_routeStudioToSecondarySidebar');
+  });
+
+  it('keeps Incident Studio out of the dashboard shell and routes through the sidebar', () => {
+    const app = read('webview-ui/src/App.tsx');
+    const redesign = read('webview-ui/src/components/StudioRedesign/index.ts');
+
+    expect(app).not.toContain('IncidentStudioVNext');
+    expect(app).not.toContain('AIIncidentStudio');
+    expect(app).not.toContain('<ContextAssistPanel');
+    expect(app).toContain('const openStudioInSidebar =');
+    expect(app).toContain("vscode.postMessage('openStudioSidebarTab'");
+    expect(app).toContain("trigger: 'dashboard-studio-handoff'");
+    expect(redesign).not.toContain('IncidentStudioVNext');
+  });
+
+  it('bridges legacy openAIModal host messages to Workspace Advisor instead of an embedded modal', () => {
+    const app = read('webview-ui/src/App.tsx');
+
+    expect(app).toContain("case 'openAIModal':");
+    expect(app).toContain("vscode.postMessage('openWorkspaceAdvisorTab'");
+    expect(app).toContain("trigger: 'legacy-context-assist-handoff'");
+    expect(app).not.toContain("vscode.postMessage('openAIModal'");
+  });
+
+  it('keeps Governance Gate as the primary Run workspace pipeline entry', () => {
+    const flow = read('webview-ui/src/components/EnterpriseDashboardFlow.tsx');
+
+    expect(flow).toContain('label="Governance Gate"');
+    expect(flow).toContain("runWorkspaceAction('workspacePipeline')");
+    expect(flow).toContain('title="rapidkit pipeline --json --strict"');
+    expect(flow).toContain('variant="primary"');
+    expect(flow.indexOf('label="Governance Gate"')).toBeLessThan(flow.indexOf('label="Doctor"'));
+  });
+
+  it('shows health and impact trends only outside guided evidence mode', () => {
+    const section = read('webview-ui/src/components/DashboardEvidenceSection.tsx');
+    const trend = read('webview-ui/src/components/DashboardTrendChart.tsx');
+    const evidenceTypes = read('webview-ui/src/lib/dashboardEvidence.ts');
+
+    expect(section).toContain("evidenceViewMode !== 'guided' ? <DashboardTrendChart");
+    expect(trend).toContain('Health and impact trend');
+    expect(trend).toContain('Governance Gate or Workspace Verify');
+    expect(evidenceTypes).toContain('policyViolations: number');
+    expect(evidenceTypes).toContain('gateHealth: number');
+  });
+
+  it('loads shared accessibility overrides on the dashboard webview bundle', () => {
+    const index = read('webview-ui/src/index.tsx');
+
+    expect(index).toContain("import '@/styles/workspai-a11y.css'");
+    expect(index.indexOf("import '@/styles/workspai-a11y.css'")).toBeGreaterThan(
+      index.indexOf("import '@/styles/responsive.css'")
+    );
+  });
+
+  it('keeps agent sync under collapsed advanced intelligence commands', () => {
+    const panel = read('webview-ui/src/components/WorkspaceIntelligencePanel.tsx');
+    const zones = read('webview-ui/src/lib/dashboardOperateZones.ts');
+
+    expect(panel).toContain("'workspaceAgentSync'");
+    expect(panel).toContain('data-default-collapsed="true"');
+    expect(panel).toContain('Advanced intelligence');
+    expect(panel).toContain('workspace agent-sync --write --refresh-context');
+    expect(zones).toContain("workspaceAgentSync: 'intelligence'");
+  });
+
+  it('uses evidence brief blocker posture instead of a separate policy panel', () => {
+    const brief = read('webview-ui/src/lib/dashboardEvidenceBrief.ts');
+    const section = read('webview-ui/src/components/DashboardEvidenceSection.tsx');
+
+    expect(brief).toContain("posture: 'blocked'");
+    expect(brief).toContain('card.blockers');
+    expect(section).toContain('<EvidenceBrief');
+    expect(section).toContain('buildDashboardEvidenceBrief');
+    expect(section).not.toContain('PolicyViolation');
   });
 });

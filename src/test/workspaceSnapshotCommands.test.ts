@@ -259,6 +259,10 @@ describe('workspace snapshot commands', () => {
     for (const command of snapshotCommands) {
       expect(contributedCommands.has(command)).toBe(true);
       expect(paletteCommands.has(command)).toBe(true);
+      const paletteEntry = (manifest.contributes?.menus?.commandPalette || []).find(
+        (item) => item.command === command
+      );
+      expect(paletteEntry?.when).toBe('false');
       expect(workspaceContextCommands.has(command)).toBe(false);
       expect(workspaceRecoveryCommands.has(command)).toBe(true);
     }

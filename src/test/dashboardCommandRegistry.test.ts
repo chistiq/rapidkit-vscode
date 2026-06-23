@@ -75,12 +75,24 @@ describe('dashboardCommandRegistry', () => {
 
   it('keeps extension-host dashboard commands backed by WelcomePanel handlers', () => {
     const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
+    const dispatchSource = read('src/ui/panels/welcomePanelWebviewMessageDispatch.ts');
+    const dashboardCommandsSource = read('src/ui/panels/welcomePanelDashboardCommands.ts');
+    const modulesCatalogSource = read('src/ui/panels/welcomePanelModulesCatalog.ts');
+    const combined = `${welcomePanelSource}\n${dispatchSource}\n${dashboardCommandsSource}\n${modulesCatalogSource}`;
+
+    expect(combined).toContain('tryDispatchDashboardContractWebviewMessage(');
+    expect(dashboardCommandsSource).toContain('resolveDashboardCommandContract(command)');
 
     for (const [command, meta] of Object.entries(DASHBOARD_COMMAND_REGISTRY)) {
       if (meta.handler !== 'extension-host') {
         continue;
       }
-      expect(welcomePanelSource, command).toContain(`case '${command}':`);
+      const contract = resolveDashboardCommandContract(command);
+      if (contract?.vscodeCommand) {
+        expect(contract.vscodeCommand, command).toMatch(/^workspai\./);
+        continue;
+      }
+      expect(combined, command).toContain(`case '${command}':`);
     }
   });
 
@@ -167,137 +179,86 @@ describe('dashboardCommandRegistry', () => {
 
   it('routes dashboard workspace and project commands through contract-aware guards', () => {
     const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
+    const dispatchSource = read('src/ui/panels/welcomePanelWebviewMessageDispatch.ts');
+    const dashboardCommandsSource = read('src/ui/panels/welcomePanelDashboardCommands.ts');
+    const combined = `${welcomePanelSource}\n${dispatchSource}\n${dashboardCommandsSource}`;
 
-    expect(welcomePanelSource).toContain('resolveDashboardCommandContract(command)');
-    expect(welcomePanelSource).toContain('_executeDashboardContractCommand(');
-    expect(welcomePanelSource).toContain('_getDashboardWorkspacePayload(');
-    expect(welcomePanelSource).toContain('_getDashboardProjectPayload(');
-    const projectActionSwitchStart = welcomePanelSource.indexOf("case 'projectTerminal':");
-    const projectActionSwitchEnd = welcomePanelSource.indexOf("case 'projectBrowser':");
-    expect(projectActionSwitchStart).toBeGreaterThanOrEqual(0);
-    expect(projectActionSwitchEnd).toBeGreaterThan(projectActionSwitchStart);
-    const projectActionSwitchSource = welcomePanelSource.slice(
-      projectActionSwitchStart,
-      projectActionSwitchEnd
-    );
+    expect(combined).toContain('resolveDashboardCommandContract(command)');
+    expect(combined).toContain('executeDashboardContractCommand(');
+    expect(combined).toContain('tryDispatchDashboardContractWebviewMessage(');
+    expect(dashboardCommandsSource).toContain('getDashboardWorkspacePayload(');
+    expect(dashboardCommandsSource).toContain('getDashboardProjectPayload(');
+    expect(welcomePanelSource).toContain('dispatchWelcomePanelWebviewMessage');
+    expect(welcomePanelSource).not.toContain("case 'projectTerminal':");
 
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceAnalyze', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceContractGraph', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceSync', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceFoundationEnsure', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceContractInspect', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceContractVerify', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceRunTest', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceRunBuild', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceRunInit', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceRunStart', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceSnapshot', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceSnapshotList', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceSnapshotInspect', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceSnapshotRestore', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceContractInit', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceArchiveInspect', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('workspaceTerminal', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('projectTest', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('projectDoctor', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('projectArchitecture', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('projectIncident', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('projectAI', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('projectRelease', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      "await this._executeDashboardContractCommand('projectImpact', message.data);"
-    );
-    expect(welcomePanelSource).toContain(
-      'await this._executeDashboardContractCommand(message.command, message.data);'
-    );
-    for (const directCommand of [
-      'workspai.workspaceAnalyze',
-      'workspai.projectDoctor',
-      'workspai.openArchitectureMap',
-      'workspai.openIncidentStudio',
-      'workspai.openWorkspaceAdvisor',
-      'workspai.aiForProject',
-      'workspai.aiReleaseReadinessCommander',
-      'workspai.aiChangeImpactLite',
-      'workspai.architectureImpactLens',
-      'workspai.workspaceContractInspect',
-      'workspai.workspaceContractVerify',
-      'workspai.workspaceRunInit',
-      'workspai.workspaceRunStart',
-      'workspai.workspaceSnapshot',
-      'workspai.workspaceSnapshotList',
-      'workspai.workspaceSnapshotInspect',
-      'workspai.workspaceSnapshotRestore',
-      'workspai.workspaceContractInit',
-      'workspai.workspaceArchiveInspect',
+    for (const command of [
+      'workspaceAnalyze',
+      'workspaceContractGraph',
+      'workspaceSync',
+      'workspaceFoundationEnsure',
+      'workspaceContractInspect',
+      'workspaceContractVerify',
+      'workspaceRunTest',
+      'workspaceRunBuild',
+      'workspaceRunInit',
+      'workspaceRunStart',
+      'workspaceSnapshot',
+      'workspaceSnapshotList',
+      'workspaceSnapshotInspect',
+      'workspaceSnapshotRestore',
+      'workspaceContractInit',
+      'workspaceArchiveInspect',
+      'workspaceTerminal',
+      'projectTest',
+      'projectDoctor',
+      'projectArchitecture',
+      'projectIncident',
+      'projectAI',
+      'projectRelease',
+      'projectImpact',
+      'moduleDiff',
     ]) {
-      expect(projectActionSwitchSource).not.toContain(
-        `await vscode.commands.executeCommand('${directCommand}'`
-      );
+      expect(resolveDashboardCommandContract(command)?.vscodeCommand).toBeTruthy();
+    }
+
+    for (const command of [
+      'workspaceAnalyze',
+      'projectTerminal',
+      'projectDoctor',
+      'projectArchitecture',
+      'moduleDiff',
+    ]) {
+      expect(welcomePanelSource).not.toContain(`case '${command}':`);
     }
   });
 
   it('keeps dashboard project scope stable across workspace refreshes', () => {
     const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
+    const dashboardCommandsSource = read('src/ui/panels/welcomePanelDashboardCommands.ts');
+    const dashboardEvidenceSource = read('src/ui/panels/welcomePanelDashboardEvidence.ts');
+    const dashboardLifecycleSource = read(
+      'src/ui/panels/welcomePanelDashboardLifecycleMessages.ts'
+    );
+    const bootstrapPayloadSource = read('src/ui/panels/welcomePanelBootstrapPayload.ts');
+    const creationNavigationSource = read(
+      'src/ui/panels/welcomePanelCreationNavigationMessages.ts'
+    );
+    const combinedDashboardHostSource = `${welcomePanelSource}\n${dashboardCommandsSource}\n${dashboardEvidenceSource}\n${dashboardLifecycleSource}\n${bootstrapPayloadSource}\n${creationNavigationSource}`;
 
     expect(welcomePanelSource).toContain('workspacePath?: string;');
     expect(welcomePanelSource).toContain('workspaceName?: string;');
-    expect(welcomePanelSource).toContain('selectedProject?.workspacePath');
-    expect(welcomePanelSource).toContain('WelcomePanel._selectedProject.workspacePath ||');
-    expect(welcomePanelSource).toContain('if (!selectedWorkspace && !fallbackWorkspacePath) {');
-    expect(welcomePanelSource).toContain(
+    expect(combinedDashboardHostSource).toContain('selectedProject?.workspacePath');
+    expect(dashboardCommandsSource).toContain('selectedProject.workspacePath ||');
+    expect(bootstrapPayloadSource).toContain('if (!selectedWorkspace && !fallbackWorkspacePath) {');
+    expect(combinedDashboardHostSource).toContain(
       'isWorkspacePathAncestor(workspacePath, selectedProject.path)'
     );
-    expect(welcomePanelSource).toContain('normalizedContext?.projectPath');
-    expect(welcomePanelSource).toContain("typeof message.data?.projectPath === 'string'");
-    expect(welcomePanelSource).toContain("typeof message.data?.projectName === 'string'");
-    expect(welcomePanelSource).toContain("reportPath: readStringField(data, 'reportPath')");
+    expect(combinedDashboardHostSource).toContain('normalizedContext?.projectPath');
+    expect(creationNavigationSource).toContain("typeof payload?.projectPath === 'string'");
+    expect(creationNavigationSource).toContain("typeof payload?.projectName === 'string'");
+    expect(combinedDashboardHostSource).toContain(
+      "reportPath: readStringField(payload, 'reportPath')"
+    );
     expect(welcomePanelSource).not.toContain(
       'selectedProject.path.startsWith(`${workspacePath}${path.sep}`)'
     );
@@ -326,6 +287,9 @@ describe('dashboardCommandRegistry', () => {
     const appSource = read('webview-ui/src/App.tsx');
     const handoffSource = read('webview-ui/src/components/HomeImportAdoptHandoff.tsx');
     const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
+    const dispatchSource = read('src/ui/panels/welcomePanelWebviewMessageDispatch.ts');
+    const dashboardCommandsSource = read('src/ui/panels/welcomePanelDashboardCommands.ts');
+    const combinedWelcomePanelSource = `${welcomePanelSource}\n${dispatchSource}`;
 
     expect(handoffSource).toContain("runHandoff('importProject')");
     expect(handoffSource).toContain("runHandoff('adoptProject')");
@@ -334,8 +298,10 @@ describe('dashboardCommandRegistry', () => {
     expect(appSource).toContain('<HomeImportAdoptHandoff');
     expect(appSource).toContain('onRunCommand={handleDashboardCommand}');
 
-    expect(welcomePanelSource).toContain("case 'importWorkspace'");
-    expect(welcomePanelSource).toContain("_executeDashboardContractCommand('importWorkspace'");
+    expect(combinedWelcomePanelSource).toContain('tryDispatchDashboardContractWebviewMessage(');
+    expect(dashboardCommandsSource).toContain(
+      'executeDashboardContractCommand(host, command, data)'
+    );
 
     const recentWorkspacesStart = appSource.indexOf('<RecentWorkspaces');
     const recentWorkspacesEnd = appSource.indexOf('</div>', recentWorkspacesStart);

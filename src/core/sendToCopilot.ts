@@ -7,6 +7,8 @@ import {
 } from './evidenceAgentContextBundle.js';
 import type { EvidenceCardAgentContextInput } from './evidenceCardAgentPrompt.js';
 import { getWorkspaiEvidenceOutputChannel } from './evidenceCommandRunner.js';
+import { AGENT_CUSTOMIZATION_PACK_REPORT_PATH } from './workspaceIntelligencePaths.js';
+import { resolveAgentSyncCliOptions } from './agentSyncSettings.js';
 
 const COPILOT_FOCUS_COMMANDS = [
   'github.copilot.openChat',
@@ -19,7 +21,7 @@ export type SendToCopilotResult = {
   openedChat: boolean;
   prefilledChat: boolean;
   ensuredAgentContext: boolean;
-  ensuredAgentIndex: boolean;
+  ensuredAgentPack: boolean;
 };
 
 export type CopilotChatOpenResult = {
@@ -79,21 +81,24 @@ async function ensureWorkspaceAgentContextReport(workspacePath: string): Promise
   }
 }
 
-async function ensureWorkspaceAgentReportsIndex(workspacePath: string): Promise<boolean> {
-  const indexPath = vscode.Uri.file(`${workspacePath}/.rapidkit/reports/INDEX.json`);
+async function ensureAgentCustomizationPack(workspacePath: string): Promise<boolean> {
+  const packPath = vscode.Uri.file(`${workspacePath}/${AGENT_CUSTOMIZATION_PACK_REPORT_PATH}`);
   try {
-    await vscode.workspace.fs.stat(indexPath);
+    await vscode.workspace.fs.stat(packPath);
     return true;
   } catch {
-    // Missing — attempt agent grounding sync.
+    // Missing — attempt enterprise agent-sync via registered command.
   }
 
   try {
+    const syncOptions = resolveAgentSyncCliOptions();
     await vscode.commands.executeCommand('workspai.workspaceAgentSync', {
       path: workspacePath,
       preferNonInteractive: true,
+      preset: syncOptions.preset,
+      experimentalHooks: syncOptions.experimentalHooks,
     });
-    await vscode.workspace.fs.stat(indexPath);
+    await vscode.workspace.fs.stat(packPath);
     return true;
   } catch {
     return false;
@@ -104,7 +109,7 @@ export async function sendEvidenceToCopilot(
   input: EvidenceCardAgentContextInput
 ): Promise<SendToCopilotResult> {
   const ensuredAgentContext = await ensureWorkspaceAgentContextReport(input.workspacePath);
-  const ensuredAgentIndex = await ensureWorkspaceAgentReportsIndex(input.workspacePath);
+  const ensuredAgentPack = await ensureAgentCustomizationPack(input.workspacePath);
   const bundle = await buildEvidenceAgentContextBundle(input);
   const prompt = buildSendToCopilotPrompt(bundle);
 
@@ -139,9 +144,9 @@ export async function sendEvidenceToCopilot(
     );
   }
 
-  if (!ensuredAgentIndex) {
+  if (!ensuredAgentPack) {
     void vscode.window.showWarningMessage(
-      'Agent reports INDEX is missing. Run Agent Grounding Sync for cross-tool hooks (AGENTS.md, Copilot, Cursor).'
+      'Agent customization pack is missing. Run Agent Grounding Sync for pack drift metadata and cross-tool hooks.'
     );
   }
 
@@ -151,7 +156,7 @@ export async function sendEvidenceToCopilot(
     openedChat,
     prefilledChat,
     ensuredAgentContext,
-    ensuredAgentIndex,
+    ensuredAgentPack,
   };
 }
 

@@ -1,4 +1,13 @@
+import fs from 'fs-extra';
+import path from 'path';
+
+import agentCustomizationPackContract from '../contracts/agent-customization-pack.v1.json';
+
 export const AGENT_CUSTOMIZATION_PACK_SCHEMA = 'rapidkit-agent-customization-pack.v1';
+
+/** Canonical section order from `agent-customization-pack.v1` — keep handoff prompts aligned with CLI. */
+export const AGENT_STANDARD_ANSWER_CONTRACT: readonly string[] =
+  agentCustomizationPackContract.standardAnswerContract;
 
 export const AGENT_CUSTOMIZATION_PACK_REPORT_PATH =
   '.rapidkit/reports/agent-customization-pack.json';
@@ -106,4 +115,63 @@ export function agentCustomizationPackStatus(
     return summary.blockers.some((entry) => entry.startsWith('Missing required')) ? 'fail' : 'warn';
   }
   return 'pass';
+}
+
+export async function readAgentCustomizationPackReport(
+  workspacePath: string
+): Promise<AgentCustomizationPackReport | null> {
+  const absolutePath = path.join(workspacePath, AGENT_CUSTOMIZATION_PACK_REPORT_PATH);
+  if (!(await fs.pathExists(absolutePath))) {
+    return null;
+  }
+  try {
+    return parseAgentCustomizationPack(await fs.readJson(absolutePath));
+  } catch {
+    return null;
+  }
+}
+
+export function buildStandardAnswerContractPromptLines(): string[] {
+  const numbered = AGENT_STANDARD_ANSWER_CONTRACT.map(
+    (section, index) => `${index + 1}. ${section}`
+  ).join('\n');
+  return [
+    '## Standard answer contract',
+    'Structure every answer using these sections in order:',
+    numbered,
+    '- Do not claim pass, ready, or healthy without cited evidence from the attached pack and reports.',
+    '- Distinguish display guidance from commands the operator should run.',
+  ];
+}
+
+export function buildAgentPackHandoffSummaryLines(
+  pack: AgentCustomizationPackReport | null,
+  summary: AgentCustomizationPackSummary | null
+): string[] {
+  if (!pack || !summary) {
+    return [
+      'Agent customization pack: missing — run Agent Grounding Sync (`rapidkit workspace agent-sync --preset enterprise --target vscode --write`).',
+    ];
+  }
+
+  const lines = [
+    `Agent pack preset: ${summary.preset}`,
+    summary.targets.length > 0 ? `Agent pack targets: ${summary.targets.join(', ')}` : undefined,
+    summary.generatedAt ? `Agent pack generated: ${summary.generatedAt}` : undefined,
+    `Agent pack outputs: ${summary.writtenOutputs}/${summary.totalOutputs} written`,
+    summary.hooksEnabled ? 'Experimental agent hooks: enabled' : undefined,
+    summary.mcpReady ? 'MCP design artifact: present' : undefined,
+  ].filter((line): line is string => Boolean(line));
+
+  if (summary.blockers.length > 0) {
+    lines.push(`Agent pack drift: ${summary.blockers.join('; ')}`);
+  } else {
+    lines.push('Agent pack drift: none');
+  }
+
+  if (Array.isArray(pack.answerContract) && pack.answerContract.length > 0) {
+    lines.push(`Pack answer contract: ${pack.answerContract.join(' → ')}`);
+  }
+
+  return lines;
 }

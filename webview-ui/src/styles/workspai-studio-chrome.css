@@ -2822,41 +2822,5 @@ body.vscode-high-contrast-light select:focus-visible {
     }
 }
 
-@media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-        animation-duration: 1ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 1ms !important;
-        scroll-behavior: auto !important;
-    }
-}
-
-@media (forced-colors: active) {
-    body::before,
-    body::after {
-        content: none;
-    }
-
-    .studio-glass-card {
-        background: Canvas;
-        border-color: ButtonBorder;
-        box-shadow: none;
-    }
-
-    button,
-    input,
-    textarea,
-    select {
-        forced-color-adjust: auto;
-        border-color: ButtonBorder;
-    }
-
-    button:focus-visible,
-    input:focus-visible,
-    textarea:focus-visible,
-    select:focus-visible {
-        outline: 2px solid Highlight;
-        outline-offset: 2px;
-    }
-}
+/* prefers-reduced-motion + forced-colors: see workspai-a11y.css (imported by webview entrypoints). */
         

@@ -6,7 +6,10 @@ import {
   buildWorkspaceAgentContextCliArgs,
   buildWorkspaceAgentSyncCliArgs,
 } from '../core/agentContextPack';
-import { WORKSPACE_CONTEXT_AGENT_REPORT_PATH } from '../core/workspaceIntelligencePaths';
+import {
+  WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
+  AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
+} from '../core/workspaceIntelligencePaths';
 
 describe('agentContextPack', () => {
   it('builds generic Copilot-safe workspace context CLI args', () => {
@@ -68,6 +71,9 @@ describe('agentContextPack', () => {
   it('builds Copilot Chat prompts with canonical report paths', () => {
     expect(buildCopilotChatContextPrompt()).toContain(
       `#file:${WORKSPACE_CONTEXT_AGENT_REPORT_PATH}`
+    );
+    expect(buildCopilotChatContextPrompt()).toContain(
+      `#file:${AGENT_CUSTOMIZATION_PACK_REPORT_PATH}`
     );
     expect(buildCopilotChatContextPrompt('debug auth')).toContain('debug auth');
     expect(buildCopilotChatModelPrompt()).toContain('#file:.rapidkit/reports/workspace-model.json');

@@ -150,13 +150,13 @@ describe('shared runtime command surface contract (extension)', () => {
     const contract = readContract();
     const createProjectModal = read('webview-ui/src/components/CreateProjectModal.tsx');
     const aiCreateModal = read('webview-ui/src/components/AICreateModal.tsx');
-    const welcomePanel = read('src/ui/panels/welcomePanel.ts');
+    const welcomePanelAiModal = read('src/ui/panels/welcomePanelAiModalMessages.ts');
     const aiService = read('src/core/aiService.ts');
     const moduleSupport = read('webview-ui/src/lib/moduleSupport.ts');
 
     expect(contract.moduleSuggestionFrameworks).toEqual(['fastapi', 'nestjs']);
     expect(createProjectModal).toContain("framework === 'fastapi' || framework === 'nestjs'");
-    expect(welcomePanel).toContain(
+    expect(welcomePanelAiModal).toContain(
       'AI module suggestions are available only for FastAPI and NestJS projects.'
     );
 

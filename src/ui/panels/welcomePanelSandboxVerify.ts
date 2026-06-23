@@ -1,4 +1,6 @@
 import type { SandboxVerifyCommand } from '../../core/sandboxSimulation';
+import { buildVerifyPackPlan, toVerifyPackCommandStrings } from '../../core/verifyPackProfiles';
+import type { ChatBrainConversation } from './welcomePanelChatBrainQuery';
 
 export function tokenizeSandboxCommand(
   commandText: string
@@ -101,4 +103,83 @@ export function toSandboxVerifyCommands(candidates: string[]): SandboxVerifyComm
   }
 
   return results;
+}
+
+export function buildSandboxVerifyCommands(input: {
+  actionType: string;
+  inlineQuery: string;
+  impactVerifyChecklist: string[];
+  assistantHistoryContent: string[];
+  projectType?: string;
+  projectPath?: string;
+}): SandboxVerifyCommand[] {
+  const candidates: string[] = [];
+
+  for (const checklistItem of input.impactVerifyChecklist) {
+    const trimmed = checklistItem.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const checklistCommandRegex = /`([^`]+)`/g;
+    let match: RegExpExecArray | null = checklistCommandRegex.exec(trimmed);
+    while (match) {
+      const commandText = (match[1] || '').trim();
+      if (commandText) {
+        candidates.push(commandText);
+      }
+      match = checklistCommandRegex.exec(trimmed);
+    }
+  }
+
+  for (const content of input.assistantHistoryContent) {
+    candidates.push(...extractVerifyCommandCandidatesFromText(content));
+  }
+
+  candidates.push(...extractVerifyCommandCandidatesFromText(input.inlineQuery));
+
+  const verifyPackPlan = buildVerifyPackPlan({
+    projectType: input.projectType,
+    projectPath: input.projectPath,
+  });
+  candidates.push(...toVerifyPackCommandStrings(verifyPackPlan));
+
+  const fallbackByActionType: Record<string, string> = {
+    'doctor-fix': 'rapidkit doctor --fix',
+    'change-impact-lite': 'rapidkit change-impact-lite',
+    'fix-preview-lite': 'rapidkit fix-preview-lite',
+  };
+  if (fallbackByActionType[input.actionType]) {
+    candidates.push(fallbackByActionType[input.actionType]);
+  }
+
+  return toSandboxVerifyCommands(candidates);
+}
+
+export function buildSandboxVerifyCommandsForConversation(input: {
+  actionType: string;
+  inlineQuery: string;
+  impactVerifyChecklist: string[];
+  conversationId?: string;
+  chatBrainConversations: Map<string, ChatBrainConversation>;
+  projectType?: string;
+  projectPath?: string;
+}): SandboxVerifyCommand[] {
+  const conversation =
+    input.conversationId && input.chatBrainConversations.has(input.conversationId)
+      ? input.chatBrainConversations.get(input.conversationId)
+      : undefined;
+  const assistantHistoryContent = (conversation?.history || [])
+    .filter((entry) => entry.role === 'assistant')
+    .slice(-3)
+    .map((entry) => entry.content);
+
+  return buildSandboxVerifyCommands({
+    actionType: input.actionType,
+    inlineQuery: input.inlineQuery,
+    impactVerifyChecklist: input.impactVerifyChecklist,
+    assistantHistoryContent,
+    projectType: input.projectType,
+    projectPath: input.projectPath,
+  });
 }

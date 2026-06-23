@@ -1265,191 +1265,69 @@
     "menus": {
       "commandPalette": [
         {
+          "command": "workspai.showWelcome"
+        },
+        {
           "command": "workspai.createWorkspace"
         },
         {
-          "command": "workspai.createProject"
+          "command": "workspai.importWorkspace"
         },
         {
-          "command": "workspai.importProject"
+          "command": "workspai.adoptProject"
         },
         {
-          "command": "workspai.openArchitectureMap"
+          "command": "workspai.openCreateWithAI"
         },
         {
-          "command": "workspai.addModule"
+          "command": "workspai.openWorkspaceAdvisor"
         },
         {
-          "command": "workspai.refreshProjects",
-          "when": "workspai:hasProjects"
-        },
-        {
-          "command": "workspai.openProjectDashboard",
-          "when": "workspai:hasProjects"
-        },
-        {
-          "command": "workspai.convertProjectToManaged",
-          "when": "workspai:hasProjects"
-        },
-        {
-          "command": "workspai.previewTemplate"
+          "command": "workspai.openIncidentStudio"
         },
         {
           "command": "workspai.doctor"
         },
         {
-          "command": "workspai.checkSystem"
+          "command": "workspai.quickSwitchWorkspace"
         },
         {
           "command": "workspai.checkForUpdates"
         },
         {
-          "command": "workspai.workspaceBootstrap"
-        },
-        {
-          "command": "workspai.workspaceSetup"
-        },
-        {
-          "command": "workspai.workspaceSync"
-        },
-        {
-          "command": "workspai.workspacePolicyShow"
-        },
-        {
-          "command": "workspai.workspaceRunStage"
-        },
-        {
-          "command": "workspai.workspaceRunInit"
-        },
-        {
-          "command": "workspai.workspaceRunTest"
-        },
-        {
-          "command": "workspai.workspaceRunBuild"
-        },
-        {
-          "command": "workspai.workspaceRunStart"
-        },
-        {
-          "command": "workspai.workspaceAutopilotRelease"
-        },
-        {
-          "command": "workspai.workspacePipeline"
-        },
-        {
-          "command": "workspai.workspaceModel"
-        },
-        {
-          "command": "workspai.workspaceIntelligenceSnapshot"
-        },
-        {
-          "command": "workspai.workspaceDiff"
-        },
-        {
-          "command": "workspai.workspaceImpact"
-        },
-        {
-          "command": "workspai.workspaceVerify"
-        },
-        {
-          "command": "workspai.workspaceImpactLens",
+          "command": "workspai.addModule",
           "when": "false"
         },
         {
-          "command": "workspai.workspaceContextAgent"
+          "command": "workspai.addWorkspace",
+          "when": "false"
         },
         {
-          "command": "workspai.workspaceIntelligenceChain"
+          "command": "workspai.adoptWithRapidkit",
+          "when": "false"
         },
         {
-          "command": "workspai.workspaceSnapshot"
+          "command": "workspai.aiChangeImpactLite",
+          "when": "false"
         },
         {
-          "command": "workspai.workspaceSnapshotCreate"
+          "command": "workspai.aiCreateProject",
+          "when": "false"
         },
         {
-          "command": "workspai.workspaceSnapshotList"
+          "command": "workspai.aiFixPreviewLite",
+          "when": "false"
         },
         {
-          "command": "workspai.workspaceSnapshotInspect"
+          "command": "workspai.aiForModule",
+          "when": "false"
         },
         {
-          "command": "workspai.workspaceSnapshotRestore"
+          "command": "workspai.aiForProject",
+          "when": "false"
         },
         {
-          "command": "workspai.workspacePolicySet"
-        },
-        {
-          "command": "workspai.exportWorkspaceShareBundle"
-        },
-        {
-          "command": "workspai.workspaceArchive"
-        },
-        {
-          "command": "workspai.workspaceArchiveInspect"
-        },
-        {
-          "command": "workspai.workspaceArchiveVerify"
-        },
-        {
-          "command": "workspai.workspaceArchiveDoctor"
-        },
-        {
-          "command": "workspai.exportVerifyPackContract"
-        },
-        {
-          "command": "workspai.workspaceContract"
-        },
-        {
-          "command": "workspai.workspaceContractInit"
-        },
-        {
-          "command": "workspai.workspaceContractInspect"
-        },
-        {
-          "command": "workspai.workspaceContractVerify"
-        },
-        {
-          "command": "workspai.workspaceContractGraph"
-        },
-        {
-          "command": "workspai.workspaceContractOpen"
-        },
-        {
-          "command": "workspai.cacheStatus"
-        },
-        {
-          "command": "workspai.cacheClear"
-        },
-        {
-          "command": "workspai.cachePrune"
-        },
-        {
-          "command": "workspai.cacheRepair"
-        },
-        {
-          "command": "workspai.mirrorStatus"
-        },
-        {
-          "command": "workspai.mirrorSync"
-        },
-        {
-          "command": "workspai.mirrorVerify"
-        },
-        {
-          "command": "workspai.mirrorRotate"
-        },
-        {
-          "command": "workspai.debugWithAI"
-        },
-        {
-          "command": "workspai.explainErrorWithAI"
-        },
-        {
-          "command": "workspai.ingestLogFile"
-        },
-        {
-          "command": "workspai.workspaceBrain",
+          "command": "workspai.aiForWorkspace",
           "when": "false"
         },
         {
@@ -1461,11 +1339,15 @@
           "when": "false"
         },
         {
-          "command": "workspai.aiFixPreviewLite",
+          "command": "workspai.aiRecipePacks",
           "when": "false"
         },
         {
-          "command": "workspai.aiChangeImpactLite",
+          "command": "workspai.aiRecordReleaseOutcomeValidation",
+          "when": "false"
+        },
+        {
+          "command": "workspai.aiReleaseReadinessCommander",
           "when": "false"
         },
         {
@@ -1473,15 +1355,227 @@
           "when": "false"
         },
         {
-          "command": "workspai.aiWorkspaceMemoryWizard",
-          "when": "false"
-        },
-        {
           "command": "workspai.aiWorkspaceCommandCenter",
           "when": "false"
         },
         {
-          "command": "workspai.aiRecipePacks",
+          "command": "workspai.aiWorkspaceMemoryWizard",
+          "when": "false"
+        },
+        {
+          "command": "workspai.architectureImpactLens",
+          "when": "false"
+        },
+        {
+          "command": "workspai.cacheClear",
+          "when": "false"
+        },
+        {
+          "command": "workspai.cachePrune",
+          "when": "false"
+        },
+        {
+          "command": "workspai.cacheRepair",
+          "when": "false"
+        },
+        {
+          "command": "workspai.cacheStatus",
+          "when": "false"
+        },
+        {
+          "command": "workspai.checkSystem",
+          "when": "false"
+        },
+        {
+          "command": "workspai.checkWorkspaceHealth",
+          "when": "false"
+        },
+        {
+          "command": "workspai.clearLogs",
+          "when": "false"
+        },
+        {
+          "command": "workspai.closeLogs",
+          "when": "false"
+        },
+        {
+          "command": "workspai.convertProjectToManaged",
+          "when": "false"
+        },
+        {
+          "command": "workspai.copyCopilotContextPrompt",
+          "when": "false"
+        },
+        {
+          "command": "workspai.copyProjectPath",
+          "when": "false"
+        },
+        {
+          "command": "workspai.copyWorkspacePath",
+          "when": "false"
+        },
+        {
+          "command": "workspai.createFastAPIProject",
+          "when": "false"
+        },
+        {
+          "command": "workspai.createNestJSProject",
+          "when": "false"
+        },
+        {
+          "command": "workspai.createProject",
+          "when": "false"
+        },
+        {
+          "command": "workspai.createSpringBootProject",
+          "when": "false"
+        },
+        {
+          "command": "workspai.debugWithAI",
+          "when": "false"
+        },
+        {
+          "command": "workspai.deleteFile",
+          "when": "false"
+        },
+        {
+          "command": "workspai.deleteProject",
+          "when": "false"
+        },
+        {
+          "command": "workspai.discoverWorkspaces",
+          "when": "false"
+        },
+        {
+          "command": "workspai.doctorEvidence.autofix",
+          "when": "false"
+        },
+        {
+          "command": "workspai.doctorEvidence.fixIssueWithAI",
+          "when": "false"
+        },
+        {
+          "command": "workspai.doctorEvidence.refresh",
+          "when": "false"
+        },
+        {
+          "command": "workspai.doctorEvidence.rerun",
+          "when": "false"
+        },
+        {
+          "command": "workspai.doctorEvidence.sendIssueToAdvisor",
+          "when": "false"
+        },
+        {
+          "command": "workspai.doctorEvidence.sendIssueToCopilot",
+          "when": "false"
+        },
+        {
+          "command": "workspai.doctorEvidence.sendIssueToStudio",
+          "when": "false"
+        },
+        {
+          "command": "workspai.editWorkspaceMemory",
+          "when": "false"
+        },
+        {
+          "command": "workspai.explainErrorWithAI",
+          "when": "false"
+        },
+        {
+          "command": "workspai.exportVerifyPackContract",
+          "when": "false"
+        },
+        {
+          "command": "workspai.exportWorkspace",
+          "when": "false"
+        },
+        {
+          "command": "workspai.exportWorkspaceShareBundle",
+          "when": "false"
+        },
+        {
+          "command": "workspai.importProject",
+          "when": "false"
+        },
+        {
+          "command": "workspai.importWorkspaceShareBundle",
+          "when": "false"
+        },
+        {
+          "command": "workspai.infra",
+          "when": "false"
+        },
+        {
+          "command": "workspai.infraDown",
+          "when": "false"
+        },
+        {
+          "command": "workspai.infraOpenCompose",
+          "when": "false"
+        },
+        {
+          "command": "workspai.infraPlan",
+          "when": "false"
+        },
+        {
+          "command": "workspai.infraStatus",
+          "when": "false"
+        },
+        {
+          "command": "workspai.infraUp",
+          "when": "false"
+        },
+        {
+          "command": "workspai.ingestLogFile",
+          "when": "false"
+        },
+        {
+          "command": "workspai.mirrorRotate",
+          "when": "false"
+        },
+        {
+          "command": "workspai.mirrorStatus",
+          "when": "false"
+        },
+        {
+          "command": "workspai.mirrorSync",
+          "when": "false"
+        },
+        {
+          "command": "workspai.mirrorVerify",
+          "when": "false"
+        },
+        {
+          "command": "workspai.moduleCheckpoint",
+          "when": "false"
+        },
+        {
+          "command": "workspai.moduleDiff",
+          "when": "false"
+        },
+        {
+          "command": "workspai.moduleMaintenance",
+          "when": "false"
+        },
+        {
+          "command": "workspai.moduleRollback",
+          "when": "false"
+        },
+        {
+          "command": "workspai.moduleUninstall",
+          "when": "false"
+        },
+        {
+          "command": "workspai.moduleUpgrade",
+          "when": "false"
+        },
+        {
+          "command": "workspai.newFile",
+          "when": "false"
+        },
+        {
+          "command": "workspai.newFolder",
           "when": "false"
         },
         {
@@ -1489,27 +1583,111 @@
           "when": "false"
         },
         {
-          "command": "workspai.showTelemetrySummary"
-        },
-        {
-          "command": "workspai.resetTelemetry"
-        },
-        {
-          "command": "workspai.showAIFeatureOnboarding"
-        },
-        {
-          "command": "workspai.showOnboardingExperimentStats"
-        },
-        {
-          "command": "workspai.aiForWorkspace",
+          "command": "workspai.openArchitectureMap",
           "when": "false"
         },
         {
-          "command": "workspai.aiForProject",
+          "command": "workspai.openDocs",
           "when": "false"
         },
         {
-          "command": "workspai.aiForModule",
+          "command": "workspai.openProjectDashboard",
+          "when": "false"
+        },
+        {
+          "command": "workspai.openProjectFolder",
+          "when": "false"
+        },
+        {
+          "command": "workspai.openSetup",
+          "when": "false"
+        },
+        {
+          "command": "workspai.openWorkspace",
+          "when": "false"
+        },
+        {
+          "command": "workspai.openWorkspaceFolder",
+          "when": "false"
+        },
+        {
+          "command": "workspai.openWorkspaceModal",
+          "when": "false"
+        },
+        {
+          "command": "workspai.previewTemplate",
+          "when": "false"
+        },
+        {
+          "command": "workspai.projectBrowser",
+          "when": "false"
+        },
+        {
+          "command": "workspai.projectBuild",
+          "when": "false"
+        },
+        {
+          "command": "workspai.projectDev",
+          "when": "false"
+        },
+        {
+          "command": "workspai.projectDoctor",
+          "when": "false"
+        },
+        {
+          "command": "workspai.projectFormat",
+          "when": "false"
+        },
+        {
+          "command": "workspai.projectInit",
+          "when": "false"
+        },
+        {
+          "command": "workspai.projectLint",
+          "when": "false"
+        },
+        {
+          "command": "workspai.projectStart",
+          "when": "false"
+        },
+        {
+          "command": "workspai.projectStop",
+          "when": "false"
+        },
+        {
+          "command": "workspai.projectTerminal",
+          "when": "false"
+        },
+        {
+          "command": "workspai.projectTest",
+          "when": "false"
+        },
+        {
+          "command": "workspai.refreshProjects",
+          "when": "false"
+        },
+        {
+          "command": "workspai.refreshWorkspaces",
+          "when": "false"
+        },
+        {
+          "command": "workspai.removeWorkspace",
+          "when": "false"
+        },
+        {
+          "command": "workspai.renameFile",
+          "when": "false"
+        },
+        {
+          "command": "workspai.resetTelemetry",
+          "when": "false"
+        },
+        {
+          "command": "workspai.revealInExplorer",
+          "when": "false"
+        },
+        {
+          "command": "workspai.scaffoldProjectHere",
           "when": "false"
         },
         {
@@ -1517,59 +1695,200 @@
           "when": "false"
         },
         {
+          "command": "workspai.selectWorkspace",
+          "when": "false"
+        },
+        {
+          "command": "workspai.showAIFeatureOnboarding",
+          "when": "false"
+        },
+        {
+          "command": "workspai.showLogs",
+          "when": "false"
+        },
+        {
           "command": "workspai.showModuleInstallModal",
           "when": "false"
         },
         {
-          "command": "workspai.infra"
+          "command": "workspai.showOnboardingExperimentStats",
+          "when": "false"
         },
         {
-          "command": "workspai.infraPlan"
+          "command": "workspai.showTelemetrySummary",
+          "when": "false"
         },
         {
-          "command": "workspai.infraUp"
+          "command": "workspai.workspaceAgentSync",
+          "when": "false"
         },
         {
-          "command": "workspai.infraDown"
+          "command": "workspai.workspaceAnalyze",
+          "when": "false"
         },
         {
-          "command": "workspai.infraStatus"
+          "command": "workspai.workspaceArchive",
+          "when": "false"
         },
         {
-          "command": "workspai.infraOpenCompose"
+          "command": "workspai.workspaceArchiveDoctor",
+          "when": "false"
         },
         {
-          "command": "workspai.workspaceFoundationEnsure"
+          "command": "workspai.workspaceArchiveInspect",
+          "when": "false"
         },
         {
-          "command": "workspai.projectBuild"
+          "command": "workspai.workspaceArchiveVerify",
+          "when": "false"
         },
         {
-          "command": "workspai.projectStart"
+          "command": "workspai.workspaceAutopilotRelease",
+          "when": "false"
         },
         {
-          "command": "workspai.projectLint"
+          "command": "workspai.workspaceBootstrap",
+          "when": "false"
         },
         {
-          "command": "workspai.projectFormat"
+          "command": "workspai.workspaceBrain",
+          "when": "false"
         },
         {
-          "command": "workspai.moduleMaintenance"
+          "command": "workspai.workspaceContextAgent",
+          "when": "false"
         },
         {
-          "command": "workspai.moduleUpgrade"
+          "command": "workspai.workspaceContract",
+          "when": "false"
         },
         {
-          "command": "workspai.moduleDiff"
+          "command": "workspai.workspaceContractGraph",
+          "when": "false"
         },
         {
-          "command": "workspai.moduleRollback"
+          "command": "workspai.workspaceContractGraph.refresh",
+          "when": "false"
         },
         {
-          "command": "workspai.moduleUninstall"
+          "command": "workspai.workspaceContractInit",
+          "when": "false"
         },
         {
-          "command": "workspai.moduleCheckpoint"
+          "command": "workspai.workspaceContractInspect",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceContractOpen",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceContractVerify",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceDiff",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceFoundationEnsure",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceImpact",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceImpactLens",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceInit",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceIntelligenceChain",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceIntelligenceSnapshot",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceModel",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspacePipeline",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspacePolicySet",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspacePolicyShow",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceReadiness",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceRunBuild",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceRunInit",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceRunStage",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceRunStart",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceRunTest",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceSetup",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceSnapshot",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceSnapshotCreate",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceSnapshotInspect",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceSnapshotList",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceSnapshotRestore",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceSync",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceTerminal",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceVerify",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -2251,6 +2570,24 @@
           "default": "warn",
           "markdownDescription": "Controls the evidence-freshness gate before AI actions (Send to Copilot, agent grounding). When the workspace intelligence evidence is stale (per the dependency-graph-aware `workspace verify` verdict or its age) or missing, Workspai can auto-refresh it, warn you, or do nothing."
         },
+        "workspai.agentSync.preset": {
+          "type": "string",
+          "enum": [
+            "minimal",
+            "enterprise"
+          ],
+          "enumDescriptions": [
+            "Generate portable grounding only (INDEX.json, AGENTS.md, pack report).",
+            "Generate the full VS Code-native pack (instructions, prompts, skills, agents, MCP design)."
+          ],
+          "default": "enterprise",
+          "markdownDescription": "Preset passed to `rapidkit workspace agent-sync` when Workspai dispatches Agent Grounding Sync or preflights Send-to-Copilot."
+        },
+        "workspai.agentSync.experimentalHooks": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "When enabled, Workspai passes `--experimental-hooks` to `rapidkit workspace agent-sync`. Hooks stay advisory and disabled by default in the CLI."
+        },
         "workspai.pythonPath": {
           "type": "string",
           "default": "python3",
@@ -2517,10 +2854,12 @@
     "test:watch": "vitest",
     "sync:shared-contracts": "node scripts/sync-import-stack-parity-snapshot.mjs",
     "check:shared-contracts": "node scripts/sync-import-stack-parity-snapshot.mjs --check",
+    "sync:palette-surface": "node scripts/sync-palette-command-surface.mjs",
+    "check:palette-surface": "node scripts/sync-palette-command-surface.mjs --check",
     "gate:contract-parity": "node scripts/sync-import-stack-parity-snapshot.mjs --check --require-canonical",
     "sync:parity-snapshot": "npm run sync:shared-contracts",
     "check:parity-snapshot": "npm run check:shared-contracts",
-    "validate:contracts": "npm run check:shared-contracts && vitest run src/test/importStackParity.snapshot.test.ts src/test/runtimeCommandSurfaceParity.test.ts src/test/contractWorkflow.test.ts src/test/npmContractSupportMatrix.test.ts",
+    "validate:contracts": "npm run check:shared-contracts && npm run check:palette-surface && vitest run src/test/importStackParity.snapshot.test.ts src/test/runtimeCommandSurfaceParity.test.ts src/test/contractWorkflow.test.ts src/test/npmContractSupportMatrix.test.ts src/test/paletteCommandSurface.test.ts",
     "test:parity-contract": "npm run validate:contracts",
     "test:claim-parity": "node scripts/check-website-extension-parity.mjs",
     "test:ai-reliability": "vitest run src/test/aiReliabilityGate.test.ts src/test/aiService.test.ts src/test/aiContextResolver.test.ts src/test/chatParticipant.test.ts src/test/driftGuard.test.ts src/test/incidentStudioPolicyGates.test.ts src/test/incidentStudioResponseValidator.test.ts src/test/incidentStudioTelemetry.test.ts src/test/studioRedesignContracts.test.ts",

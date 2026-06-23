@@ -29,6 +29,14 @@ describe('evidenceAgentContextBundle', () => {
   it('builds a send-to-copilot prompt with intelligence attachments and blockers', async () => {
     const workspacePath = await createWorkspace({
       '.rapidkit/reports/workspace-context-agent.json': { schemaVersion: 'v1' },
+      '.rapidkit/reports/agent-customization-pack.json': {
+        schemaVersion: 'rapidkit-agent-customization-pack.v1',
+        generatedAt: '2026-06-23T10:00:00.000Z',
+        preset: 'enterprise',
+        targets: ['vscode'],
+        outputInventory: [{ path: 'AGENTS.md', kind: 'grounding', status: 'written' }],
+        drift: { missingRequired: [], staleReports: [], strictViolations: [] },
+      },
       '.rapidkit/reports/doctor-last-run.json': { generatedAt: '2026-06-10T00:00:00.000Z' },
     });
 
@@ -56,6 +64,13 @@ describe('evidenceAgentContextBundle', () => {
     expect(prompt).toContain(
       `#file:${workspacePath.replace(/\\/g, '/')}/.rapidkit/reports/workspace-context-agent.json`
     );
+    expect(prompt).toContain(
+      `#file:${workspacePath.replace(/\\/g, '/')}/.rapidkit/reports/agent-customization-pack.json`
+    );
+    expect(prompt).toContain('Agent pack preset: enterprise');
+    expect(prompt).toContain('## Standard answer contract');
+    expect(prompt).toContain('1. Scope');
+    expect(prompt).toContain('7. Assumptions');
     expect(prompt).toContain('Blocker: api: lockfile drift');
     expect(prompt).toContain('ERROR: dependency mismatch');
     expect(prompt).toContain('Fix the blocked Workspai evidence issue');
@@ -76,5 +91,6 @@ describe('evidenceAgentContextBundle', () => {
     expect(bundle.copilotQuestion).toBe('What should I run next?');
     expect(prompt).toContain('What should I run next?');
     expect(prompt).not.toContain('Evidence:');
+    expect(prompt).toContain('Agent customization pack: missing');
   });
 });
