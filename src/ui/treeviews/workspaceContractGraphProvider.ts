@@ -87,7 +87,7 @@ export class WorkspaceContractGraphProvider implements vscode.TreeDataProvider<W
           command: 'workspai.quickSwitchWorkspace',
           title: 'Select Workspace',
         };
-        item.tooltip = 'Click to choose a workspace, then inspect service topology and ports.';
+        item.tooltip = 'Select a workspace, then inspect service topology and ports.';
         return [item];
       }
 

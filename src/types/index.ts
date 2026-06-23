@@ -104,19 +104,9 @@ export interface WorkspaceConfig {
 
 export interface ProjectConfig {
   name: string;
-  framework:
-    | 'fastapi'
-    | 'django'
-    | 'flask'
-    | 'nestjs'
-    | 'express'
-    | 'koa'
-    | 'go'
-    | 'springboot'
-    | 'rails'
-    | 'dotnet';
-  kit: string; // Kit name (e.g., 'fastapi.standard', 'fastapi.ddd', 'nestjs.standard', 'gofiber.standard', 'gogin.standard', 'springboot.standard', 'dotnet.webapi.clean')
-  packageManager?: string; // For NestJS: npm, yarn, pnpm
+  framework: import('../core/scaffoldKits').ScaffoldFramework;
+  kit: string;
+  packageManager?: string;
 }
 
 export interface WorkspaiConfig {

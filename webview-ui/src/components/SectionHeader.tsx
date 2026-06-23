@@ -5,7 +5,7 @@ export type SectionScope = 'workspace' | 'project' | 'catalog';
 const SCOPE_LABEL: Record<SectionScope, string> = {
   workspace: 'Workspace',
   project: 'Project',
-  catalog: 'Catalog',
+  catalog: 'Library',
 };
 
 function ScopeBadge({ scope }: { scope: SectionScope }) {

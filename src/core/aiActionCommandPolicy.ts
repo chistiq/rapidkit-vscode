@@ -1,4 +1,6 @@
-export type AIActionCommandOperation = 'apply' | 'verify' | 'rollback';
+import type { AIActionOperation as AIActionCommandOperation } from '../contracts/aiActionOperationSurface';
+
+export type { AIActionCommandOperation };
 
 export interface AIActionCommandPolicyResult {
   allowed: boolean;

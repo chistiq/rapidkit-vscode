@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "workspai-studio-action-surface-v1",
+  "version": 1,
+  "commands": {
+    "runAnalyze": "studio-action:run-analyze",
+    "terminalBridge": "studio-action:terminal-bridge",
+    "fixLens": "studio-action:fix-lens",
+    "installModule": "studio-action:install-module",
+    "impactLens": "studio-action:impact-lens",
+    "verifyGates": "studio-action:verify-gates"
+  },
+  "registry": [
+    {
+      "id": "action-analyze",
+      "title": "Analyze Workspace",
+      "shortLabel": "Analyze",
+      "command": "studio-action:run-analyze",
+      "summary": "Hydrate evidence, health, gates, and related files.",
+      "description": "Baseline health and structure evidence.",
+      "scope": "workspace",
+      "stability": "stable"
+    },
+    {
+      "id": "action-impact",
+      "title": "Workspace Advisor",
+      "shortLabel": "Impact",
+      "command": "studio-action:impact-lens",
+      "summary": "Run npm workspace snapshot -> diff -> impact for model-backed blast radius.",
+      "description": "Uses workspace-impact-last-run.json instead of AI heuristics.",
+      "scope": "workspace",
+      "stability": "analysis",
+      "actionType": "impact"
+    },
+    {
+      "id": "action-fix",
+      "title": "Governed Fix",
+      "shortLabel": "Fix",
+      "command": "studio-action:fix-lens",
+      "summary": "Generate a reviewable patch from analyze evidence for the selected scope.",
+      "description": "Prepare a user-approved fix with verify and rollback proof.",
+      "scope": "project",
+      "stability": "governed",
+      "actionType": "fix"
+    },
+    {
+      "id": "action-install-module",
+      "title": "Install Catalog Module",
+      "shortLabel": "Module",
+      "command": "studio-action:install-module",
+      "summary": "Pick and scaffold a RapidKit catalog module for the selected project.",
+      "description": "Generate module files from catalog guidance with verify path.",
+      "scope": "project",
+      "stability": "governed",
+      "actionType": "fix"
+    },
+    {
+      "id": "action-verify",
+      "title": "Verify Gates",
+      "shortLabel": "Verify",
+      "command": "studio-action:verify-gates",
+      "summary": "Run deterministic verification against current evidence.",
+      "description": "Lock the current change to a deterministic verify path.",
+      "scope": "project",
+      "stability": "stable",
+      "actionType": "verify"
+    },
+    {
+      "id": "action-terminal",
+      "title": "Terminal Bridge",
+      "shortLabel": "Terminal",
+      "command": "studio-action:terminal-bridge",
+      "summary": "Route workspace commands through the guarded bridge.",
+      "description": "Execute supported workspace commands with visible output.",
+      "scope": "workspace",
+      "stability": "stable"
+    }
+  ]
+}

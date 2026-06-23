@@ -103,6 +103,7 @@ export interface StudioActionStatus {
 export interface StudioActionResult {
   summary: string;
   proofEvent?: StudioProofEvent;
+  proof?: AIActionExecutionProofSummary;
   executionTranscript?: StudioExecutionTranscript;
   verdict?: 'ready' | 'needs-attention' | 'blocked';
   score?: number;
@@ -119,6 +120,20 @@ export interface StudioActionResult {
     info: number;
   };
   registryUpdatedAt?: string;
+}
+
+export interface AIActionExecutionProofSummary {
+  schemaVersion: 'workspai.ai-action-proof-summary.v1';
+  evidenceRequired: boolean;
+  evidencePresent: boolean;
+  evidenceSha256Present: boolean;
+  transcriptRequired: boolean;
+  transcriptCommandCount: number;
+  failedCommandCount: number;
+  rollbackProofRequired: boolean;
+  rollbackPlanPresent: boolean;
+  complete: boolean;
+  issues: string[];
 }
 
 export interface StudioProofEvent {
@@ -259,6 +274,7 @@ export interface AIActionRegistryView {
       commandCount?: number;
       failedCommandCount?: number;
       failedCommands?: string[];
+      proof?: AIActionExecutionProofSummary;
       preflight?: {
         stale: boolean;
         issues: string[];

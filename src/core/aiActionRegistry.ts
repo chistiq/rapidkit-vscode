@@ -27,11 +27,26 @@ export interface AIActionRegistryExecution {
   commandCount?: number;
   failedCommandCount?: number;
   failedCommands?: string[];
+  proof?: AIActionExecutionProofSummary;
   preflight?: {
     stale: boolean;
     issues: string[];
   };
   completedAt: string;
+}
+
+export interface AIActionExecutionProofSummary {
+  schemaVersion: 'workspai.ai-action-proof-summary.v1';
+  evidenceRequired: boolean;
+  evidencePresent: boolean;
+  evidenceSha256Present: boolean;
+  transcriptRequired: boolean;
+  transcriptCommandCount: number;
+  failedCommandCount: number;
+  rollbackProofRequired: boolean;
+  rollbackPlanPresent: boolean;
+  complete: boolean;
+  issues: string[];
 }
 
 export interface AIActionRegistryEntry {
@@ -54,6 +69,52 @@ export interface AIActionRegistry {
 }
 
 const MAX_REGISTRY_ENTRIES = 25;
+
+export function buildAIActionExecutionProofSummary(input: {
+  operation: AIActionOperation;
+  ok: boolean;
+  evidencePath?: string | null;
+  evidenceSha256?: string | null;
+  commandCount?: number;
+  failedCommandCount?: number;
+  rollbackPlan?: string[];
+}): AIActionExecutionProofSummary {
+  const commandCount = Math.max(0, input.commandCount ?? 0);
+  const failedCommandCount = Math.max(0, input.failedCommandCount ?? 0);
+  const rollbackPlanPresent = (input.rollbackPlan || []).some((command) => command.trim());
+  const rollbackProofRequired = input.operation === 'apply' || input.operation === 'rollback';
+  const issues: string[] = [];
+
+  if (!input.evidencePath) {
+    issues.push('Evidence artifact is missing.');
+  }
+  if (!input.evidenceSha256) {
+    issues.push('Evidence SHA256 is missing.');
+  }
+  if (input.ok && commandCount === 0) {
+    issues.push('Successful execution has no command transcript.');
+  }
+  if (failedCommandCount > 0) {
+    issues.push(`${failedCommandCount} command transcript step(s) failed.`);
+  }
+  if (rollbackProofRequired && !rollbackPlanPresent) {
+    issues.push('Rollback proof plan is missing for a mutating operation.');
+  }
+
+  return {
+    schemaVersion: 'workspai.ai-action-proof-summary.v1',
+    evidenceRequired: true,
+    evidencePresent: Boolean(input.evidencePath),
+    evidenceSha256Present: Boolean(input.evidenceSha256),
+    transcriptRequired: true,
+    transcriptCommandCount: commandCount,
+    failedCommandCount,
+    rollbackProofRequired,
+    rollbackPlanPresent,
+    complete: issues.length === 0,
+    issues,
+  };
+}
 
 export function getAIActionRegistryPath(workspacePath: string): string {
   return path.join(workspacePath, '.workspai', 'evidence', 'ai-actions', 'registry.json');
@@ -213,6 +274,17 @@ export async function recordAIActionExecution(
               executions: [
                 {
                   ...execution,
+                  proof:
+                    execution.proof ||
+                    buildAIActionExecutionProofSummary({
+                      operation: execution.operation,
+                      ok: execution.ok,
+                      evidencePath: execution.evidencePath,
+                      evidenceSha256: execution.evidenceSha256,
+                      commandCount: execution.commandCount,
+                      failedCommandCount: execution.failedCommandCount,
+                      rollbackPlan: entry.contract.rollbackPlan,
+                    }),
                   completedAt,
                 },
                 ...entry.executions,

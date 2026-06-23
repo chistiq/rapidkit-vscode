@@ -18,6 +18,7 @@ import {
 } from '../../core/aiActionExecutor';
 import {
   AIActionRegistry,
+  buildAIActionExecutionProofSummary,
   getLatestRunnableAIAction,
   readAIActionRegistry,
   recordAIActionContract,
@@ -90,6 +91,7 @@ export function buildStudioAIActionResult(params: {
       ? `Analyze ${report.summary.verdict} · score ${report.summary.score}`
       : params.reportError || `Studio action ${params.actionId.replace(/-/g, ' ')}`);
   const failedCommands = latestExecution?.failedCommands || [];
+  const proof = latestExecution?.proof;
   const generatedAt =
     report?.generatedAt || latestExecution?.completedAt || new Date().toISOString();
   const evidencePath =
@@ -123,6 +125,7 @@ export function buildStudioAIActionResult(params: {
       durationMs: params.executionTranscript?.durationMs,
       source: params.source || 'studio-action',
     },
+    proof,
     executionTranscript: params.executionTranscript,
     verdict: report?.summary.verdict,
     score: report?.summary.score,
@@ -275,6 +278,15 @@ export async function writeStudioAIActionEvidence(input: {
           actionId: input.actionId,
           contract: input.contract,
           result: input.result,
+          proof: buildAIActionExecutionProofSummary({
+            operation: input.result.operation,
+            ok: input.result.ok,
+            evidencePath,
+            commandCount: input.result.commands.length,
+            failedCommandCount: input.result.commands.filter((command) => command.exitCode !== 0)
+              .length,
+            rollbackPlan: input.contract.rollbackPlan,
+          }),
           redactionApplied: true,
         },
         null,
@@ -651,6 +663,15 @@ export async function executeGovernedAIActionOperation(
         .filter((command) => command.exitCode !== 0)
         .map((command) => command.command)
         .slice(0, 5),
+      proof: buildAIActionExecutionProofSummary({
+        operation: result.operation,
+        ok: result.ok,
+        evidencePath: evidence?.path,
+        evidenceSha256: evidence?.sha256,
+        commandCount: result.commands.length,
+        failedCommandCount: result.commands.filter((command) => command.exitCode !== 0).length,
+        rollbackPlan: input.activeContract.rollbackPlan,
+      }),
     });
     const commandSummary = result.commands
       .map((command) => `- ${command.exitCode === 0 ? 'PASS' : 'FAIL'} ${command.command}`)

@@ -13,7 +13,18 @@ export type AICreateProfile =
     | 'polyglot'
     | 'enterprise';
 
-export type AICreateFramework = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
+import type { ScaffoldFramework } from '@/types';
+import { defaultBootstrapProfileForFramework, isFrontendScaffoldFramework } from '@/lib/scaffoldFrameworks';
+import {
+  STACK_LANES,
+  WORKSPACE_PRESET_CATEGORIES,
+  defaultProfileForStackLane,
+  resolveProjectPlaceholder,
+  resolveWorkspacePlaceholder,
+  type CreationStackLane,
+} from '@/lib/creationPresets';
+
+export type AICreateFramework = ScaffoldFramework;
 
 export interface AICreationPlan {
     type: 'workspace' | 'project';
@@ -25,6 +36,11 @@ export interface AICreationPlan {
     projectName: string;
     suggestedModules: string[];
     description: string;
+    secondaryProject?: {
+        framework: AICreateFramework;
+        kit: string;
+        projectName: string;
+    };
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -36,12 +52,17 @@ interface AICreateModalProps {
     plan: AICreationPlan | null;
     isThinking: boolean;
     isCreating: boolean;
-    creationStage?: 'workspace_done' | null;
+    creationStage?: 'workspace_done' | 'first_project_done' | null;
     planError: string | null;
     planSource?: 'llm' | 'heuristic' | null;
     modelId?: string | null;
     onClose: () => void;
-    onPromptSubmit: (prompt: string, mode: 'workspace' | 'project', framework?: string) => void;
+    onPromptSubmit: (
+        prompt: string,
+        mode: 'workspace' | 'project',
+        framework?: string,
+        stackIntent?: CreationStackLane
+    ) => void;
     onConfirm: (plan: AICreationPlan) => void;
     onStartOver: () => void;
     onManualFallback: () => void;
@@ -72,57 +93,6 @@ interface ResolvedPresetCategory {
     options: ResolvedPresetOption[];
     maxScore: number;
 }
-
-const WORKSPACE_PRESET_CATEGORIES: PresetCategory[] = [
-    {
-        id: 'saas',
-        label: 'SaaS and commerce',
-        options: [
-            {
-                id: 'ws-saas-auth-payments',
-                text: 'SaaS product with auth + payments + database',
-                tags: ['saas', 'auth', 'payment', 'billing', 'database'],
-            },
-            {
-                id: 'ws-ecommerce',
-                text: 'E-commerce API with product catalog + orders',
-                tags: ['ecommerce', 'catalog', 'orders', 'shop', 'commerce'],
-            },
-        ],
-    },
-    {
-        id: 'core-backend',
-        label: 'Core backend',
-        options: [
-            {
-                id: 'ws-rest-users',
-                text: 'REST API backend with user management',
-                tags: ['rest', 'api', 'users', 'backend'],
-            },
-            {
-                id: 'ws-admin-rbac',
-                text: 'Admin dashboard API with role-based access',
-                tags: ['admin', 'rbac', 'roles', 'permissions', 'dashboard'],
-            },
-        ],
-    },
-    {
-        id: 'platform',
-        label: 'Platform and AI',
-        options: [
-            {
-                id: 'ws-microservice-observability',
-                text: 'Microservice with caching + observability',
-                tags: ['microservice', 'cache', 'observability', 'metrics'],
-            },
-            {
-                id: 'ws-ai-assistant',
-                text: 'AI assistant backend with LLM integration',
-                tags: ['ai', 'assistant', 'llm', 'chat', 'inference'],
-            },
-        ],
-    },
-];
 
 const PROJECT_GENERIC_PRESET_CATEGORIES: PresetCategory[] = [
     {
@@ -164,7 +134,7 @@ const PROJECT_GENERIC_PRESET_CATEGORIES: PresetCategory[] = [
     },
 ];
 
-const PROJECT_PRESET_CATEGORIES: Record<AICreateFramework, PresetCategory[]> = {
+const PROJECT_PRESET_CATEGORIES: Partial<Record<ScaffoldFramework, PresetCategory[]>> = {
     fastapi: [
         {
             id: 'fastapi-core',
@@ -346,6 +316,40 @@ const PROJECT_PRESET_CATEGORIES: Record<AICreateFramework, PresetCategory[]> = {
     ],
 };
 
+const FRONTEND_PRESET_CATEGORIES: PresetCategory[] = [
+    {
+        id: 'frontend-apps',
+        label: 'Frontend apps',
+        options: [
+            {
+                id: 'fe-dashboard',
+                text: 'Product dashboard with auth-ready routing and API integration',
+                tags: ['dashboard', 'frontend', 'react', 'auth', 'api'],
+            },
+            {
+                id: 'fe-marketing',
+                text: 'Marketing site with landing pages and content sections',
+                tags: ['marketing', 'landing', 'content', 'frontend', 'astro'],
+            },
+            {
+                id: 'fe-admin',
+                text: 'Admin console with tables, forms, and role-aware navigation',
+                tags: ['admin', 'console', 'forms', 'tables', 'frontend'],
+            },
+        ],
+    },
+];
+
+function resolveProjectPresetCategories(framework?: ScaffoldFramework): PresetCategory[] {
+  if (framework && PROJECT_PRESET_CATEGORIES[framework]) {
+    return PROJECT_PRESET_CATEGORIES[framework]!;
+  }
+  if (framework && isFrontendScaffoldFramework(framework)) {
+    return FRONTEND_PRESET_CATEGORIES;
+  }
+  return PROJECT_GENERIC_PRESET_CATEGORIES;
+}
+
 function tokenizeContextHint(raw: string): string[] {
     return raw
         .toLowerCase()
@@ -395,22 +399,34 @@ function rankPresetCategories(
         .sort((a, b) => b.maxScore - a.maxScore);
 }
 
-const PROFILE_META: Record<AICreateProfile, { icon: string; iconUri?: string; label: string }> = {
-    minimal: { icon: '⚡', label: 'Minimal' },
-    'python-only': { icon: '🐍', label: 'Python' },
-    'node-only': { icon: '🟩', label: 'Node.js' },
-    'go-only': { icon: '🔵', label: 'Go' },
+const PROFILE_META: Record<AICreateProfile, { icon: string; iconUri?: string; label: string; desc: string }> = {
+    minimal: { icon: '⚡', label: 'Minimal', desc: 'Workspace foundation' },
+    'python-only': { icon: '🐍', label: 'Python runtime', desc: 'FastAPI, data, automation' },
+    'node-only': { icon: '🟩', label: 'Node.js runtime', desc: 'Frontend, NestJS, tooling' },
+    'go-only': { icon: '🔵', label: 'Go runtime', desc: 'Go services and CLIs' },
     'java-only': {
         icon: '☕',
         iconUri: (typeof window !== 'undefined' ? (window as any).SPRINGBOOT_ICON_URI : undefined),
-        label: 'Java',
+        label: 'Java runtime',
+        desc: 'Spring Boot services',
     },
-    'dotnet-only': { icon: '.NET', label: '.NET' },
-    polyglot: { icon: '⊞', label: 'Polyglot' },
-    enterprise: { icon: '🛡️', label: 'Enterprise' },
+    'dotnet-only': { icon: '.NET', label: '.NET runtime', desc: 'ASP.NET Core services' },
+    polyglot: { icon: '⊞', label: 'Polyglot', desc: 'Mixed runtimes' },
+    enterprise: { icon: '🛡️', label: 'Enterprise', desc: 'Governance posture' },
 };
 
-const FRAMEWORK_META: Record<AICreateFramework, { icon: string; iconUri?: string; label: string }> = {
+const PROFILE_OPTIONS: AICreateProfile[] = [
+    'minimal',
+    'python-only',
+    'node-only',
+    'go-only',
+    'java-only',
+    'dotnet-only',
+    'polyglot',
+    'enterprise',
+];
+
+const FRAMEWORK_META: Partial<Record<ScaffoldFramework, { icon: string; iconUri?: string; label: string }>> = {
     fastapi: { icon: '⚡', label: 'FastAPI' },
     nestjs: { icon: '🔴', label: 'NestJS' },
     go: { icon: '🔵', label: 'Go' },
@@ -424,6 +440,17 @@ const FRAMEWORK_META: Record<AICreateFramework, { icon: string; iconUri?: string
         iconUri: (typeof window !== 'undefined' ? (window as any).DOTNET_ICON_URI : undefined),
         label: '.NET',
     },
+    nextjs: { icon: '▲', label: 'Next.js' },
+    remix: { icon: '◆', label: 'Remix' },
+    'vite-react': { icon: '⚛', label: 'Vite + React' },
+    'vite-vue': { icon: '💚', label: 'Vite + Vue' },
+    'vite-svelte': { icon: '🔥', label: 'Vite + Svelte' },
+    'vite-solid': { icon: '◼', label: 'Vite + Solid' },
+    'vite-vanilla': { icon: 'TS', label: 'Vite Vanilla' },
+    nuxt: { icon: 'ν', label: 'Nuxt' },
+    angular: { icon: 'A', label: 'Angular' },
+    astro: { icon: '✦', label: 'Astro' },
+    sveltekit: { icon: 'S', label: 'SvelteKit' },
 };
 
 const MODULE_LABELS: Record<string, string> = {
@@ -478,6 +505,11 @@ export function AICreateModal({
     const [prompt, setPrompt] = useState('');
     const [editedWorkspaceName, setEditedWorkspaceName] = useState('');
     const [editedProjectName, setEditedProjectName] = useState('');
+    const [editedCompanionProjectName, setEditedCompanionProjectName] = useState('');
+    const [editedProfile, setEditedProfile] = useState<AICreateProfile>(
+        defaultProfileForStackLane('balanced')
+    );
+    const [stackLane, setStackLane] = useState<CreationStackLane>('balanced');
     const [isMinimized, setIsMinimized] = useState(false);
     const [showAllPresets, setShowAllPresets] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -489,7 +521,7 @@ export function AICreateModal({
         describe: 'Describe what you want to build',
         quickStart: 'Quick start',
         targetWorkspace: 'Target workspace:',
-        noWorkspace: "none selected - you'll be prompted",
+        noWorkspace: "No workspace selected - you'll be prompted",
         showAll: 'Show all options',
         showLess: 'Show fewer',
         inputHint: 'Cmd+Enter or Ctrl+Enter to submit',
@@ -510,6 +542,8 @@ export function AICreateModal({
         if (plan) {
             setEditedWorkspaceName(plan.workspaceName);
             setEditedProjectName(plan.projectName);
+            setEditedCompanionProjectName(plan.secondaryProject?.projectName ?? '');
+            setEditedProfile(plan.profile);
         }
     }, [plan]);
 
@@ -524,6 +558,9 @@ export function AICreateModal({
             setPrompt('');
             setEditedWorkspaceName('');
             setEditedProjectName('');
+            setEditedCompanionProjectName('');
+            setEditedProfile(defaultProfileForStackLane('balanced'));
+            setStackLane('balanced');
             setIsMinimized(false);
             setShowAllPresets(false);
             setTimeout(() => textareaRef.current?.focus(), 150);
@@ -535,15 +572,20 @@ export function AICreateModal({
             return WORKSPACE_PRESET_CATEGORIES;
         }
         if (framework) {
-            return PROJECT_PRESET_CATEGORIES[framework];
+            return resolveProjectPresetCategories(framework);
         }
         return PROJECT_GENERIC_PRESET_CATEGORIES;
     }, [mode, framework]);
 
+    const activeFrameworkHint =
+        framework ?? STACK_LANES.find((lane) => lane.id === stackLane)?.frameworkHint;
+
     const rankedPresetCategories = useMemo(() => {
-        const contextHint = [targetWorkspaceName ?? '', framework ?? '', mode].join(' ').trim();
+        const contextHint = [targetWorkspaceName ?? '', activeFrameworkHint ?? '', stackLane, mode]
+            .join(' ')
+            .trim();
         return rankPresetCategories(basePresetCategories, contextHint);
-    }, [basePresetCategories, framework, mode, targetWorkspaceName]);
+    }, [activeFrameworkHint, basePresetCategories, mode, stackLane, targetWorkspaceName]);
 
     const presetLimit = showAllPresets ? Number.MAX_SAFE_INTEGER : 3;
     const visiblePresetCategories = rankedPresetCategories
@@ -559,7 +601,7 @@ export function AICreateModal({
 
     const handleSubmit = () => {
         if (!prompt.trim() || isThinking) { return; }
-        onPromptSubmit(prompt.trim(), mode, framework);
+        onPromptSubmit(prompt.trim(), mode, activeFrameworkHint, stackLane);
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -578,6 +620,14 @@ export function AICreateModal({
             ...plan,
             workspaceName: editedWorkspaceName.trim() || plan.workspaceName,
             projectName: editedProjectName.trim() || plan.projectName,
+            profile: mode === 'workspace' ? editedProfile : plan.profile,
+            secondaryProject: plan.secondaryProject
+                ? {
+                      ...plan.secondaryProject,
+                      projectName:
+                          editedCompanionProjectName.trim() || plan.secondaryProject.projectName,
+                  }
+                : undefined,
         });
     };
 
@@ -653,6 +703,25 @@ export function AICreateModal({
                             </div>
                         )}
 
+                        {mode === 'workspace' && (
+                            <div className="ai-create-stack-lanes">
+                                <div className="ws-kicker ai-create-stack-lanes-label">Stack focus</div>
+                                <div className="ai-create-stack-lane-grid">
+                                    {STACK_LANES.map((lane) => (
+                                        <button
+                                            key={lane.id}
+                                            type="button"
+                                            className={`modal-option-card ai-create-stack-lane ${stackLane === lane.id ? 'modal-option-card--active' : ''}`}
+                                            onClick={() => setStackLane(lane.id)}
+                                        >
+                                            <span className="modal-option-card__title">{lane.label}</span>
+                                            <span className="modal-option-card__desc">{lane.detail}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         <div className="ws-kicker ai-create-presets-label">{copy.quickStart}</div>
                         <div className="ai-create-presets">
                             {visiblePresetCategories.map((category) => (
@@ -690,8 +759,8 @@ export function AICreateModal({
                                 className="ws-field__control ai-create-textarea"
                                 placeholder={
                                     mode === 'workspace'
-                                        ? 'e.g. "E-commerce SaaS with user management, Stripe payments, and PostgreSQL"'
-                                        : 'e.g. "CRUD API with JWT auth, PostgreSQL, and clean layered architecture"'
+                                        ? resolveWorkspacePlaceholder(stackLane)
+                                        : resolveProjectPlaceholder(framework)
                                 }
                                 value={prompt}
                                 onChange={(e) => setPrompt(e.target.value)}
@@ -755,6 +824,14 @@ export function AICreateModal({
                             </EnterpriseModalNotice>
                         )}
 
+                        {mode === 'workspace' && (
+                            <EnterpriseModalNotice tone="info">
+                                {PROFILE_META[editedProfile]?.label ?? editedProfile} profile will
+                                bootstrap workspace artifacts for {FRAMEWORK_META[plan.framework]?.label ?? plan.framework}.
+                                Adjust below if you need polyglot or enterprise governance.
+                            </EnterpriseModalNotice>
+                        )}
+
                         {/* Description */}
                         <div className="ai-create-desc">
                             <Sparkles size={12} className="ai-create-desc-icon" />
@@ -794,16 +871,61 @@ export function AICreateModal({
 
                         <div className="ai-create-fields">
                             {mode === 'workspace' && (
-                                <div className="ws-field ai-create-field">
-                                    <label className="ws-field__label ai-create-field-label">Workspace name</label>
-                                    <input
-                                        type="text"
-                                        className="ws-field__control ai-create-field-input"
-                                        value={editedWorkspaceName}
-                                        onChange={(e) => setEditedWorkspaceName(e.target.value)}
-                                        spellCheck={false}
-                                    />
-                                </div>
+                                <>
+                                    <div className="ws-field ai-create-field">
+                                        <label className="ws-field__label ai-create-field-label">Workspace name</label>
+                                        <input
+                                            type="text"
+                                            className="ws-field__control ai-create-field-input"
+                                            value={editedWorkspaceName}
+                                            onChange={(e) => setEditedWorkspaceName(e.target.value)}
+                                            spellCheck={false}
+                                        />
+                                    </div>
+                                    <div className="ws-field ai-create-field">
+                                        <label className="ws-field__label ai-create-field-label">
+                                            Bootstrap profile
+                                            <button
+                                                type="button"
+                                                className="ws-btn ws-btn--ghost ai-create-profile-hint"
+                                                onClick={() =>
+                                                    setEditedProfile(
+                                                        defaultBootstrapProfileForFramework(plan.framework)
+                                                    )
+                                                }
+                                            >
+                                                Match {FRAMEWORK_META[plan.framework]?.label ?? plan.framework}
+                                            </button>
+                                        </label>
+                                        <div className="modal-option-grid modal-option-grid--profiles ai-create-profile-grid">
+                                            {PROFILE_OPTIONS.map((profileId) => {
+                                                const meta = PROFILE_META[profileId];
+                                                return (
+                                                    <button
+                                                        key={profileId}
+                                                        type="button"
+                                                        className={`modal-option-card ${editedProfile === profileId ? 'modal-option-card--active' : ''}`}
+                                                        onClick={() => setEditedProfile(profileId)}
+                                                    >
+                                                        <span className="modal-option-card__title">
+                                                            {meta.iconUri ? (
+                                                                <img
+                                                                    src={meta.iconUri}
+                                                                    alt={meta.label}
+                                                                    style={{ width: 14, height: 14, objectFit: 'contain', marginRight: 4 }}
+                                                                />
+                                                            ) : (
+                                                                `${meta.icon} `
+                                                            )}
+                                                            {meta.label}
+                                                        </span>
+                                                        <span className="modal-option-card__desc">{meta.desc}</span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </>
                             )}
                             <div className="ws-field ai-create-field">
                                 <label className="ws-field__label ai-create-field-label">
@@ -817,6 +939,24 @@ export function AICreateModal({
                                     spellCheck={false}
                                 />
                             </div>
+                            {mode === 'workspace' && plan.secondaryProject && (
+                                <div className="ws-field ai-create-field">
+                                    <label className="ws-field__label ai-create-field-label">
+                                        Companion project
+                                    </label>
+                                    <div className="ai-create-thinking-prompt">
+                                        {FRAMEWORK_META[plan.secondaryProject.framework]?.label ??
+                                            plan.secondaryProject.framework}
+                                    </div>
+                                    <input
+                                        type="text"
+                                        className="ws-field__control ai-create-field-input"
+                                        value={editedCompanionProjectName}
+                                        onChange={(e) => setEditedCompanionProjectName(e.target.value)}
+                                        spellCheck={false}
+                                    />
+                                </div>
+                            )}
                         </div>
 
                         {/* Suggested modules */}
@@ -886,7 +1026,18 @@ export function AICreateModal({
                                 <div className="ai-create-thinking-ring ai-create-thinking-ring--2" />
                                 <Loader2 size={22} className="ai-create-thinking-icon animate-spin" />
                             </div>
-                            {creationStage === 'workspace_done' ? (
+                            {creationStage === 'first_project_done' ? (
+                                <>
+                                    <div className="ai-create-thinking-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <Check size={16} style={{ color: 'var(--ws-success)' }} />
+                                        First project <strong>{plan?.projectName}</strong> created
+                                    </div>
+                                    <div className="ai-create-thinking-label" style={{ marginTop: '6px' }}>
+                                        Creating companion project{' '}
+                                        <strong>{plan?.secondaryProject?.projectName}</strong>…
+                                    </div>
+                                </>
+                            ) : creationStage === 'workspace_done' ? (
                                 <>
                                     <div className="ai-create-thinking-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                         <Check size={16} style={{ color: 'var(--ws-success)' }} />
@@ -903,6 +1054,9 @@ export function AICreateModal({
                                     </div>
                                     <div className="ai-create-thinking-prompt">
                                         {plan?.projectName ? `Project: ${plan.projectName}` : ''}
+                                        {plan?.secondaryProject
+                                            ? ` + ${plan.secondaryProject.projectName}`
+                                            : ''}
                                     </div>
                                 </>
                             )}

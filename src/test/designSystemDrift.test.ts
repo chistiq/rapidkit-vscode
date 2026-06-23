@@ -8,8 +8,8 @@ describe('Workspai design system drift', () => {
   it('loads the shared token spine before product surfaces', () => {
     const indexSource = fs.readFileSync(path.join(repoRoot, 'webview-ui/src/index.tsx'), 'utf8');
     const appSource = fs.readFileSync(path.join(repoRoot, 'webview-ui/src/App.tsx'), 'utf8');
-    const incidentSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/incidentStudioNext.tsx'),
+    const sidebarIndexSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/sidebar/index.tsx'),
       'utf8'
     );
 
@@ -26,17 +26,8 @@ describe('Workspai design system drift', () => {
     );
     expect(appSource).toContain('<WorkspaiThemeProvider themeMode={themeMode}>');
 
-    expect(incidentSource).toContain(
-      "import { WorkspaiThemeProvider } from '@/components/WorkspaiThemeProvider';"
-    );
-    expect(incidentSource).toContain("import '@/styles/workspai-tokens.css';");
-    expect(incidentSource.indexOf("import '@/styles/workspai-tokens.css';")).toBeLessThan(
-      incidentSource.indexOf("import '@/styles-tailwind.css';")
-    );
-    expect(incidentSource.indexOf("import '@/styles-tailwind.css';")).toBeLessThan(
-      incidentSource.indexOf("import '@/styles/workspai-primitives.css';")
-    );
-    expect(incidentSource).toContain('<WorkspaiThemeProvider themeMode={themeMode}>');
+    expect(sidebarIndexSource).toContain("import '@/styles/workspai-tokens.css';");
+    expect(sidebarIndexSource).toContain("import '@/styles/workspai-primitives.css';");
   });
 
   it('keeps theme detection centralized and VS Code sourced', () => {
@@ -56,13 +47,9 @@ describe('Workspai design system drift', () => {
     expect(providerSource).toContain('document.body');
   });
 
-  it('keeps Studio product UI themed via provider without local override controls', () => {
-    const wrapperSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/IncidentStudioVNext.tsx'),
-      'utf8'
-    );
-    const topbarSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/regions/TopBar.tsx'),
+  it('keeps Studio sidebar UI on the shared theme provider without local override controls', () => {
+    const sidebarSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/sidebar/SecondarySidebar.tsx'),
       'utf8'
     );
     const settingsSource = fs.readFileSync(
@@ -70,13 +57,10 @@ describe('Workspai design system drift', () => {
       'utf8'
     );
 
-    expect(wrapperSource).toContain('useWorkspaiThemeKind');
-    expect(wrapperSource).not.toContain('saveThemePreference');
-    expect(wrapperSource).not.toContain('onThemeModeChange');
-    expect(topbarSource).not.toContain('Theme mode');
-    expect(topbarSource).not.toContain('Follow VS Code theme');
-    expect(topbarSource).not.toContain('Force light theme');
-    expect(topbarSource).not.toContain('Force dark theme');
+    expect(sidebarSource).not.toContain('saveThemePreference');
+    expect(sidebarSource).not.toContain('onThemeModeChange');
+    expect(sidebarSource).not.toContain('Force light theme');
+    expect(sidebarSource).not.toContain('Force dark theme');
     expect(settingsSource).toContain('Appearance');
     expect(settingsSource).toContain('Auto — follow VS Code theme');
   });
@@ -148,10 +132,11 @@ describe('Workspai design system drift', () => {
     expect(primitivesSource).not.toMatch(/linear-gradient\(\s*135deg,\s*#/);
   });
 
-  it('uses the unified embedded host for setup, settings, and studio tabs', () => {
+  it('uses the unified embedded host for setup and settings while Studio routes to Workspai', () => {
     const appSource = fs.readFileSync(path.join(repoRoot, 'webview-ui/src/App.tsx'), 'utf8');
 
-    expect(appSource).toContain('className="ws-embedded-host"');
+    expect(appSource).toContain('className="ws-embedded-host ws-embedded-host--full"');
+    expect(appSource).toContain("vscode.postMessage('openStudioSidebarTab'");
     expect(appSource).not.toContain('setup-embedded-host');
     expect(appSource).not.toContain('studio-embedded-host');
   });
@@ -211,12 +196,12 @@ describe('Workspai design system drift', () => {
     );
 
     expect(onboardingSource).toContain('ws-onboarding-shell');
-    expect(onboardingSource).toContain('ws-onboarding-card');
+    expect(onboardingSource).toContain('fresh-install-onboarding--compact');
     expect(onboardingSource).toContain('ws-kicker');
 
     expect(overviewSource).toContain('ws-overview-shell');
-    expect(overviewSource).toContain('ws-btn ws-btn--primary');
     expect(overviewSource).toContain('ws-metric');
+    expect(overviewSource).toContain('workspace-metric--interactive');
 
     expect(evidenceSource).toContain('ws-btn ws-btn--primary');
     expect(evidenceSource).not.toContain('workspai-empty-state__action');
@@ -295,7 +280,7 @@ describe('Workspai design system drift', () => {
     expect(actionTileSource).toContain('ws-chip ws-chip--');
 
     expect(flowSource).toContain('ws-kicker enterprise-flow-kicker');
-    expect(flowSource).toContain('ws-btn ws-btn--ghost');
+    expect(flowSource).toContain('dashboard-operate-quick');
 
     expect(appSource).toMatch(/dashboardSection === 'console'[\s\S]*ws-btn ws-btn--primary/);
 
@@ -305,13 +290,9 @@ describe('Workspai design system drift', () => {
     expect(primitivesSource).toContain('.example-card.ws-card');
   });
 
-  it('unifies AI creation on EnterpriseModal and context inquire on side panel', () => {
+  it('keeps legacy context inquire off the dashboard shell', () => {
     const aiCreateSource = fs.readFileSync(
       path.join(repoRoot, 'webview-ui/src/components/AICreateModal.tsx'),
-      'utf8'
-    );
-    const assistPanelSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/ContextAssistPanel.tsx'),
       'utf8'
     );
     const assistLibSource = fs.readFileSync(
@@ -319,10 +300,6 @@ describe('Workspai design system drift', () => {
       'utf8'
     );
     const appSource = fs.readFileSync(path.join(repoRoot, 'webview-ui/src/App.tsx'), 'utf8');
-    const aiModalSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/AIModal.tsx'),
-      'utf8'
-    );
     const enterpriseModalSource = fs.readFileSync(
       path.join(repoRoot, 'webview-ui/src/components/EnterpriseModal.tsx'),
       'utf8'
@@ -336,64 +313,40 @@ describe('Workspai design system drift', () => {
     expect(aiCreateSource).not.toContain('ai-create-backdrop');
     expect(aiCreateSource).toContain('kicker="Assist"');
 
-    expect(assistPanelSource).toContain('ws-assist-panel');
-    expect(assistPanelSource).not.toContain('EnterpriseModal');
-    expect(assistPanelSource).not.toContain('ai-modal-backdrop');
-    expect(assistPanelSource).toContain('Context assist');
-    expect(assistPanelSource).toContain('Inquire');
-    expect(assistPanelSource).toContain('Incident Studio');
-    expect(assistPanelSource).not.toContain('Ask AI');
+    expect(
+      fs.existsSync(path.join(repoRoot, 'webview-ui/src/components/ContextAssistPanel.tsx'))
+    ).toBe(false);
+    expect(fs.existsSync(path.join(repoRoot, 'webview-ui/src/components/AIModal.tsx'))).toBe(false);
 
     expect(assistLibSource).toContain('getContextAssistQuickPrompts');
 
-    expect(appSource).toContain('ContextAssistPanel');
-    expect(appSource).toContain('ws-dashboard-shell--assist-open');
+    expect(appSource).not.toContain('ContextAssistPanel');
+    expect(appSource).not.toContain('ws-dashboard-shell--assist-open');
     expect(appSource).not.toContain('<AIModal');
-
-    expect(aiModalSource).not.toContain('export function AIModal');
 
     expect(enterpriseModalSource).toContain('headerActions?: ReactNode');
 
     expect(primitivesSource).toContain('.ws-assist-panel');
-    expect(primitivesSource).toContain('.ws-dashboard-shell--assist-open');
   });
 
   it('bridges Incident Studio tokens and layout to the ws-* spine', () => {
     const tokenSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/styles/designTokens.ts'),
+      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/styles/themeSystem.ts'),
       'utf8'
     );
     const studioSource = fs.readFileSync(
       path.join(repoRoot, 'webview-ui/src/styles/workspai-studio.css'),
       'utf8'
     );
-    const vnextSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/IncidentStudioVNext.tsx'),
-      'utf8'
-    );
-    const incidentEntrySource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/incidentStudioNext.tsx'),
-      'utf8'
-    );
     const indexSource = fs.readFileSync(path.join(repoRoot, 'webview-ui/src/index.tsx'), 'utf8');
 
-    expect(tokenSource).toContain("'var(--ws-surface)'");
-    expect(tokenSource).toContain("'var(--ws-accent)'");
-    expect(tokenSource).not.toContain('#6c5ce7');
-    expect(tokenSource).not.toContain('#00cfc1');
+    expect(tokenSource).toContain('ThemeMode');
+    expect(tokenSource).toContain('normalizeThemeMode');
 
     expect(studioSource).toContain('.studio-workspace-grid');
     expect(studioSource).toContain('.studio-pane-chat');
     expect(studioSource).toContain('.studio-tone-ok');
     expect(studioSource).toContain('[data-studio-viewport=');
-
-    expect(vnextSource).toContain('data-studio-viewport={viewportTier}');
-    expect(vnextSource).toContain('studioClass.workspaceGrid');
-    expect(vnextSource).not.toContain('100vh');
-
-    expect(incidentEntrySource).toContain("import '@/styles/workspai-studio.css'");
-    expect(incidentEntrySource).toContain('studio-banner studio-banner--warn');
-    expect(incidentEntrySource).not.toMatch(/style=\{\{\s*background:/);
 
     expect(indexSource).toContain("import '@/styles/workspai-studio.css'");
   });
@@ -422,7 +375,6 @@ describe('Workspai design system drift', () => {
     const hexOrRgbaPattern = /#[0-9a-fA-F]{3,8}\b|rgba\s*\(/;
     const tokenReadySurfaces = [
       'webview-ui/src/App.tsx',
-      'webview-ui/src/components/ContextAssistPanel.tsx',
       'webview-ui/src/components/EnterpriseModal.tsx',
       'webview-ui/src/components/WorkspaiSettingsPanel.tsx',
       'webview-ui/src/components/DashboardNextStepRail.tsx',
@@ -442,15 +394,8 @@ describe('Workspai design system drift', () => {
       'webview-ui/src/components/SetupExperience.tsx',
       'webview-ui/src/components/ModuleDetailsModal.tsx',
       'webview-ui/src/components/AnalyzeReportViewer.tsx',
-      'webview-ui/src/components/StudioRedesign/regions/ContextPanel.tsx',
-      'webview-ui/src/components/StudioRedesign/regions/ChatSurface.tsx',
-      'webview-ui/src/components/StudioRedesign/IncidentStudioVNext.tsx',
-      'webview-ui/src/components/StudioRedesign/regions/TopBar.tsx',
-      'webview-ui/src/components/StudioRedesign/regions/CommandRibbon.tsx',
-      'webview-ui/src/components/StudioRedesign/regions/PhaseStepper.tsx',
-      'webview-ui/src/components/StudioRedesign/regions/MissionControlHeader.tsx',
-      'webview-ui/src/components/StudioRedesign/regions/WorkspaceSidebar.tsx',
-      'webview-ui/src/components/StudioRedesign/ErrorBoundary.tsx',
+      'webview-ui/src/sidebar/SecondarySidebar.tsx',
+      'webview-ui/src/sidebar/ChatTab.tsx',
     ];
 
     for (const relativePath of tokenReadySurfaces) {
@@ -507,16 +452,8 @@ describe('Workspai design system drift', () => {
 
   it('loads studio chrome from static CSS instead of injected GlobalStyles', () => {
     const indexSource = fs.readFileSync(path.join(repoRoot, 'webview-ui/src/index.tsx'), 'utf8');
-    const incidentSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/incidentStudioNext.tsx'),
-      'utf8'
-    );
     const globalStylesSource = fs.readFileSync(
       path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/styles/globalStyles.tsx'),
-      'utf8'
-    );
-    const vnextSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/IncidentStudioVNext.tsx'),
       'utf8'
     );
     const chromeCss = fs.readFileSync(
@@ -525,137 +462,21 @@ describe('Workspai design system drift', () => {
     );
 
     expect(indexSource).toContain("import '@/styles/workspai-studio-chrome.css'");
-    expect(incidentSource).toContain("import '@/styles/workspai-studio-chrome.css'");
     expect(globalStylesSource).toContain('() => null');
-    expect(vnextSource).not.toContain('<GlobalStyles');
     expect(chromeCss).toContain('.studio-sidebar');
     expect(chromeCss).toContain('var(--ws-accent)');
     expect(chromeCss).not.toMatch(/\$\{/);
   });
 
-  it('keeps lite mode policy in shared lib with dedicated regression tests', () => {
-    const liteLibSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/lib/incidentStudioLiteMode.ts'),
-      'utf8'
-    );
-    const liteTestSource = fs.readFileSync(
-      path.join(repoRoot, 'src/test/incidentStudioLiteMode.test.ts'),
-      'utf8'
-    );
-    const stabilizationLibSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/lib/incidentStudioStabilizationClaim.ts'),
-      'utf8'
-    );
-
-    expect(liteLibSource).toContain('export function deriveLiteReleaseState');
-    expect(liteLibSource).toContain('export function deriveLitePrimaryActionPlan');
-    expect(liteLibSource).toContain('export function getLiteProofButtonLabel');
-    expect(liteTestSource).toContain("from '../../webview-ui/src/lib/incidentStudioLiteMode'");
-    expect(liteTestSource).not.toContain('AIIncidentStudio');
-    expect(stabilizationLibSource).toContain('export function buildStabilizationBlockers');
-  });
-
-  it('migrates module details and studio regions toward token utilities', () => {
+  it('migrates module details toward token utilities', () => {
     const moduleDetailsSource = fs.readFileSync(
       path.join(repoRoot, 'webview-ui/src/components/ModuleDetailsModal.tsx'),
-      'utf8'
-    );
-    const contextPanelSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/regions/ContextPanel.tsx'),
-      'utf8'
-    );
-    const chatSurfaceSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/regions/ChatSurface.tsx'),
-      'utf8'
-    );
-    const studioCss = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/styles/workspai-studio.css'),
       'utf8'
     );
     const hexOrRgbaPattern = /#[0-9a-fA-F]{3,8}\b|rgba\s*\(/;
 
     expect(moduleDetailsSource).toContain('text-[var(--ws-primary)]');
     expect(moduleDetailsSource).not.toMatch(hexOrRgbaPattern);
-
-    expect(contextPanelSource).toContain('postureToneClass');
-    expect(contextPanelSource).toContain('studioClass.postureCard');
-    expect(contextPanelSource).toContain('studioClass.postureCardProof');
-    expect(contextPanelSource).toContain('approvalToneClass');
-    expect(contextPanelSource).toContain('policyGateStateClass');
-    expect(contextPanelSource).not.toContain('colorTokens');
-
-    expect(studioCss).toContain('.studio-approval-card__metric-grid');
-    expect(studioCss).toContain('.studio-signal-row__value.studio-tone-ok');
-
-    expect(chatSurfaceSource).toContain('studioClass.chatSurface');
-    expect(chatSurfaceSource).toContain('studioClass.chevron');
-    expect(chatSurfaceSource).toContain('studioClass.decisionDeckCard');
-    expect(chatSurfaceSource).not.toContain('designTokens');
-    expect(chatSurfaceSource).not.toMatch(/style=\{\{/);
-
-    expect(studioCss).toContain('.studio-posture-card');
-    expect(studioCss).toContain('.studio-chat-surface');
-    expect(studioCss).toContain('.studio-decision-deck-card');
-    expect(studioCss).toContain('.studio-chip--fade');
-
-    const topBarSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/regions/TopBar.tsx'),
-      'utf8'
-    );
-    const commandRibbonSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/regions/CommandRibbon.tsx'),
-      'utf8'
-    );
-    const phaseStepperSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/regions/PhaseStepper.tsx'),
-      'utf8'
-    );
-    const missionControlSource = fs.readFileSync(
-      path.join(
-        repoRoot,
-        'webview-ui/src/components/StudioRedesign/regions/MissionControlHeader.tsx'
-      ),
-      'utf8'
-    );
-
-    for (const [label, source] of [
-      ['TopBar', topBarSource],
-      ['CommandRibbon', commandRibbonSource],
-      ['PhaseStepper', phaseStepperSource],
-      ['MissionControlHeader', missionControlSource],
-    ] as const) {
-      expect(source, label).not.toContain('designTokens');
-      expect(source, label).not.toMatch(/style=\{\{/);
-    }
-
-    expect(topBarSource).toContain('releasePostureToneClass');
-    expect(commandRibbonSource).toContain('postureToneClass');
-    expect(studioCss).toContain('.studio-mission-control:not(.is-embedded)');
-    expect(studioCss).toContain('.studio-release-pill.studio-tone-ok');
-    expect(studioCss).toContain('.studio-posture-chip.studio-tone-ok');
-
-    const workspaceSidebarSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/regions/WorkspaceSidebar.tsx'),
-      'utf8'
-    );
-    const errorBoundarySource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/ErrorBoundary.tsx'),
-      'utf8'
-    );
-    const vnextSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/IncidentStudioVNext.tsx'),
-      'utf8'
-    );
-
-    expect(workspaceSidebarSource).toContain('auditOutcomeToneClass');
-    expect(workspaceSidebarSource).not.toContain('designTokens');
-    expect(workspaceSidebarSource).not.toMatch(/style=\{\{/);
-    expect(errorBoundarySource).not.toContain('designTokens');
-    expect(errorBoundarySource).not.toMatch(/style=\{\{/);
-    expect(vnextSource).not.toContain('colorTokens');
-    expect(vnextSource).not.toContain('Object.assign(colorTokens');
-    expect(studioCss).toContain('.studio-error-boundary');
-    expect(studioCss).toContain('.studio-nav-item__label');
   });
 
   it('migrates analyze report viewer to token-only CSS', () => {
@@ -681,71 +502,39 @@ describe('Workspai design system drift', () => {
     expect(analyzeCss).not.toMatch(hexOrRgbaPattern);
   });
 
-  it('keeps presentation contracts in lib tests isolated from vNext production path', () => {
+  it('keeps presentation contracts in lib tests isolated from removed full Studio UI', () => {
     const contractsTestSource = fs.readFileSync(
       path.join(repoRoot, 'src/test/incidentStudioPresentationContracts.test.ts'),
-      'utf8'
-    );
-    const contextPanelInteractionSource = fs.readFileSync(
-      path.join(repoRoot, 'src/test/contextPanel.interaction.test.ts'),
-      'utf8'
-    );
-    const vnextTestSource = fs.readFileSync(
-      path.join(repoRoot, 'src/test/incidentStudioVNext.presentation.test.ts'),
-      'utf8'
-    );
-    const chatSurfaceTestSource = fs.readFileSync(
-      path.join(repoRoot, 'src/test/chatSurface.presentation.test.ts'),
-      'utf8'
-    );
-    const missionControlTestSource = fs.readFileSync(
-      path.join(repoRoot, 'src/test/missionControlHeader.presentation.test.ts'),
       'utf8'
     );
     const legacyStudioArchiveSource = fs.readFileSync(
       path.join(repoRoot, 'src/test/legacyStudioArchive.test.ts'),
       'utf8'
     );
-    const workspaceSidebarTestSource = fs.readFileSync(
-      path.join(repoRoot, 'src/test/workspaceSidebar.presentation.test.ts'),
-      'utf8'
-    );
-    const liteTestSource = fs.readFileSync(
-      path.join(repoRoot, 'src/test/incidentStudioLiteMode.test.ts'),
+    const minimalUxSource = fs.readFileSync(
+      path.join(repoRoot, 'src/test/incidentStudioMinimalUx.test.ts'),
       'utf8'
     );
 
     expect(contractsTestSource).toContain('presentation contracts (lib parity)');
     expect(contractsTestSource).not.toContain('AIIncidentStudio');
-    expect(contextPanelInteractionSource).toContain('ContextPanel');
-    expect(contextPanelInteractionSource).not.toContain('AIIncidentStudio');
-    expect(vnextTestSource).toContain('IncidentStudioVNext');
-    expect(vnextTestSource).not.toMatch(/from ['"].*AIIncidentStudio['"]/);
-    expect(chatSurfaceTestSource).toContain('ChatSurface');
-    expect(chatSurfaceTestSource).not.toContain('AIIncidentStudio');
-    expect(missionControlTestSource).toContain('MissionControlHeader');
-    expect(missionControlTestSource).not.toContain('AIIncidentStudio');
-    expect(workspaceSidebarTestSource).toContain('WorkspaceSidebar');
-    expect(workspaceSidebarTestSource).not.toContain('AIIncidentStudio');
+    expect(contractsTestSource).not.toContain('incidentStudioLiteMode');
+    expect(contractsTestSource).not.toContain('incidentStudioGuidedActions');
     expect(legacyStudioArchiveSource).toContain('archive removal');
-    expect(liteTestSource).toContain('incidentStudioLiteMode');
-    expect(liteTestSource).not.toContain('AIIncidentStudio');
+    expect(minimalUxSource).toContain('sidebar/SecondarySidebar.tsx');
+    expect(minimalUxSource).toContain('sidebar/index.tsx');
   });
 
-  it('keeps StudioRedesign barrel free of runtime designTokens exports', () => {
+  it('keeps StudioRedesign barrel free of removed full UI exports', () => {
     const indexSource = fs.readFileSync(
       path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/index.ts'),
       'utf8'
     );
-    const studioUiSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/StudioRedesign/styles/studioUi.ts'),
-      'utf8'
-    );
 
     expect(indexSource).not.toContain('./styles/designTokens');
-    expect(studioUiSource).not.toContain('colorTokens');
-    expect(studioUiSource).not.toContain('statusPillStyle');
-    expect(studioUiSource).not.toContain('cardStyle');
+    expect(indexSource).not.toContain('./regions/');
+    expect(indexSource).not.toContain('IncidentStudioVNext');
+    expect(indexSource).toContain('./state/studioActions');
   });
 
   it('verifies studio chrome CSS artifact via CI script', () => {

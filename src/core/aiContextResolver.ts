@@ -1,6 +1,10 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type { AIModalContext } from './aiService';
+import {
+  buildWorkspaceAgentContextPromptSection,
+  readWorkspaceAgentContextReport,
+} from './workspaceAgentContextReader';
 
 type WorkspaceSelection = {
   name?: string;
@@ -94,6 +98,18 @@ export async function resolvePreferredAIModalContext(
   };
 }
 
+export async function buildWorkspaceIntelligenceContextSection(
+  ctx: AIModalContext
+): Promise<string> {
+  const workspacePath = ctx.workspaceRootPath;
+  if (!workspacePath) {
+    return '';
+  }
+
+  const report = await readWorkspaceAgentContextReport(workspacePath);
+  return buildWorkspaceAgentContextPromptSection(report);
+}
+
 export function buildRapidkitCommandScopeSection(ctx: AIModalContext): string {
   const lines = ['RAPIDKIT COMMAND EXECUTION CONTEXT:'];
 
@@ -139,6 +155,12 @@ export function buildRapidkitCommandScopeSection(ctx: AIModalContext): string {
     );
   }
 
+  lines.push(
+    '- Workspace intelligence belongs at workspace root: `npx rapidkit workspace model --json --write`, `workspace snapshot`, `workspace diff --from <report>`, `workspace impact --from <report>`, `workspace context --for-agent --json --write`.'
+  );
+  lines.push(
+    '- Recovery snapshots (`rapidkit snapshot create`) are separate from intelligence snapshots (`rapidkit workspace snapshot`).'
+  );
   lines.push(
     '- Never present a workspace-root command as if it should run inside a project, and never present a project-only command as if it should run at workspace root.'
   );

@@ -4,6 +4,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  buildAIActionExecutionProofSummary,
   getAIActionRegistryPath,
   getLatestRunnableAIAction,
   readAIActionRegistry,
@@ -88,7 +89,45 @@ describe('aiActionRegistry', () => {
     expect(registry.entries[0].executions[0].commandCount).toBe(2);
     expect(registry.entries[0].executions[0].evidenceSha256).toHaveLength(64);
     expect(registry.entries[0].executions[0].evidenceSizeBytes).toBe(2048);
+    expect(registry.entries[0].executions[0].proof).toMatchObject({
+      schemaVersion: 'workspai.ai-action-proof-summary.v1',
+      evidencePresent: true,
+      evidenceSha256Present: true,
+      transcriptCommandCount: 2,
+      failedCommandCount: 0,
+      rollbackProofRequired: false,
+      complete: true,
+    });
     expect(registry.entries[0].lifecycleStatus).toBe('verified');
+  });
+
+  it('summarizes incomplete AI action execution proof', () => {
+    expect(
+      buildAIActionExecutionProofSummary({
+        operation: 'apply',
+        ok: true,
+        commandCount: 0,
+        failedCommandCount: 0,
+        rollbackPlan: [],
+      })
+    ).toEqual({
+      schemaVersion: 'workspai.ai-action-proof-summary.v1',
+      evidenceRequired: true,
+      evidencePresent: false,
+      evidenceSha256Present: false,
+      transcriptRequired: true,
+      transcriptCommandCount: 0,
+      failedCommandCount: 0,
+      rollbackProofRequired: true,
+      rollbackPlanPresent: false,
+      complete: false,
+      issues: [
+        'Evidence artifact is missing.',
+        'Evidence SHA256 is missing.',
+        'Successful execution has no command transcript.',
+        'Rollback proof plan is missing for a mutating operation.',
+      ],
+    });
   });
 
   it('returns the newest non-blocked action', async () => {

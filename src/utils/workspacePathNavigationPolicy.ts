@@ -10,10 +10,6 @@ export function resolveWorkspaceAbsolutePath(
   return resolveBoundedWorkspaceAbsolutePath(workspacePath, relativeOrAbsolutePath);
 }
 
-export function inferWorkspacePathOpenMode(resolvedPath: string): WorkspacePathOpenMode {
-  const normalized = resolvedPath.replace(/\\/g, '/').toLowerCase();
-  if (normalized.includes('/.rapidkit/reports/')) {
-    return 'reveal';
-  }
+export function inferWorkspacePathOpenMode(_resolvedPath?: string): WorkspacePathOpenMode {
   return 'editor';
 }

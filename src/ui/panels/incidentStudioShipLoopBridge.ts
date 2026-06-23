@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 
+import { createExtensionWebviewMessage } from '../../contracts/webviewProtocol';
 import type { StudioActionId } from '../../core/studioActionCommands';
 import type { WorkspaceContext } from './incidentStudioAnalyze';
 import { executeStudioActionById } from './incidentStudioActionBridge';
@@ -292,15 +293,17 @@ export async function dispatchIncidentStudioShipLoopStepMessage(
       : undefined;
 
   if (!stepId || !(stepId in SHIP_LOOP_STEP_DEFINITIONS)) {
-    await input.webview.postMessage({
-      command: 'runShipLoopStepDone',
-      data: {
-        stepId: stepId ?? 'unknown',
-        success: false,
-        error: 'Unknown ship loop step.',
-      },
-      meta: input.requestId ? { requestId: input.requestId } : undefined,
-    });
+    await input.webview.postMessage(
+      createExtensionWebviewMessage(
+        'runShipLoopStepDone',
+        {
+          stepId: stepId ?? 'unknown',
+          success: false,
+          error: 'Unknown ship loop step.',
+        },
+        input.requestId ? { requestId: input.requestId } : undefined
+      )
+    );
     return;
   }
 
@@ -317,11 +320,13 @@ export async function dispatchIncidentStudioShipLoopStepMessage(
         : {},
   });
 
-  await input.webview.postMessage({
-    command: 'runShipLoopStepDone',
-    data: result,
-    meta: input.requestId ? { requestId: input.requestId } : undefined,
-  });
+  await input.webview.postMessage(
+    createExtensionWebviewMessage(
+      'runShipLoopStepDone',
+      result,
+      input.requestId ? { requestId: input.requestId } : undefined
+    )
+  );
 }
 
 async function refreshShipLoopSurfaces(input: {

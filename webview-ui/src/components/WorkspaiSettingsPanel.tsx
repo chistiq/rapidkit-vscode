@@ -94,7 +94,7 @@ export function WorkspaiSettingsPanel({
             <Sparkles size={15} />
             <div>
               <h3>AI &amp; Models</h3>
-              <p>Default model for AIModal, Incident Studio, and background AI flows.</p>
+              <p>Default model for Create with AI, Workspace Advisor, Studio, and background AI flows.</p>
             </div>
           </div>
 

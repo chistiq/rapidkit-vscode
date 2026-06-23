@@ -13,8 +13,7 @@ describe('spring support contracts', () => {
     const coreCommandsSource = read('src/commands/coreCommands.ts');
     const createProjectSource = read('src/commands/createProject.ts');
     const projectWizardSource = read('src/ui/wizards/projectWizard.ts');
-    const rapidkitCliSource = read('src/core/rapidkitCLI.ts');
-    const enterpriseFlowSource = read('webview-ui/src/components/EnterpriseDashboardFlow.tsx');
+    const rapidkitCliSource = read('src/core/scaffoldKits.ts');
     const appSource = read('webview-ui/src/App.tsx');
 
     expect(coreCommandsSource).toContain("'workspai.createSpringBootProject'");
@@ -22,9 +21,7 @@ describe('spring support contracts', () => {
       "await createProjectCommand(selectedWorkspace?.path, 'springboot', projectName);"
     );
 
-    expect(createProjectSource).toContain(
-      "preselectedFramework?: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet'"
-    );
+    expect(createProjectSource).toContain('preselectedFramework?: ScaffoldFramework');
     expect(projectWizardSource).toContain("framework: 'springboot' as const");
     expect(projectWizardSource).toContain("framework: 'dotnet' as const");
     expect(projectWizardSource).toContain('Spring Boot');
@@ -32,13 +29,16 @@ describe('spring support contracts', () => {
 
     expect(rapidkitCliSource).toContain('springboot.standard');
     expect(rapidkitCliSource).toContain('dotnet.webapi.clean');
-    expect(rapidkitCliSource).toContain("'create',");
-    expect(rapidkitCliSource).toContain('options.kit');
 
-    expect(enterpriseFlowSource).toContain("framework: 'springboot'");
-    expect(enterpriseFlowSource).toContain("framework: 'dotnet'");
+    const scaffoldRoutingSource = read('src/core/rapidkitCLI.ts');
+    expect(scaffoldRoutingSource).toContain("'create',");
+    expect(scaffoldRoutingSource).toContain('options.kit');
+
+    const scaffoldFrameworksSource = read('webview-ui/src/lib/scaffoldFrameworks.ts');
+    expect(scaffoldFrameworksSource).toContain("framework: 'springboot'");
+    expect(scaffoldFrameworksSource).toContain("framework: 'dotnet'");
     expect(appSource).toMatch(
-      /const handleCreateProject = \(\s*projectName: string,\s*framework: AICreateFramework,\s*kitName: string\s*\) =>/
+      /const handleCreateProject = \(\s*projectName: string,\s*framework: ScaffoldFramework,\s*kitName: string\s*\) =>/
     );
   });
 
@@ -78,7 +78,9 @@ describe('spring support contracts', () => {
     expect(doctorSource).toContain("name: 'Java (JDK)'");
     expect(doctorSource).toContain("name: 'Maven'");
     expect(doctorSource).toContain("name: 'Gradle'");
+    expect(doctorSource).toContain("name: '.NET SDK'");
     expect(doctorSource).toContain('required for springboot.standard projects');
+    expect(doctorSource).toContain('required for dotnet.webapi.clean projects');
 
     expect(packageJsonSource).toContain('"command": "workspai.createSpringBootProject"');
     expect(packageJsonSource).toContain('"springboot.standard"');

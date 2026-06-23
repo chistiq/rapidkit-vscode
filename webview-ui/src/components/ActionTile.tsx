@@ -2,6 +2,8 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
 import type { DashboardEvidenceStatus } from '@/lib/dashboardEvidence';
 import { evidenceStatusLabel } from '@/lib/dashboardEvidence';
+import type { DashboardCommandActionContract } from '@/lib/dashboardCommandActionContract';
+import { CommandExecutionBadge } from '@/components/CommandExecutionBadge';
 
 export type ActionTileVariant = 'default' | 'primary' | 'danger' | 'warn' | 'builder';
 
@@ -14,6 +16,7 @@ export interface ActionTileProps extends ButtonHTMLAttributes<HTMLButtonElement>
   evidenceStatus?: DashboardEvidenceStatus;
   pending?: boolean;
   stateLabel?: string;
+  actionContract?: DashboardCommandActionContract;
 }
 
 function variantClass(variant: ActionTileVariant): string {
@@ -38,6 +41,7 @@ export function ActionTile({
   evidenceStatus,
   pending = false,
   stateLabel,
+  actionContract,
   className = '',
   type = 'button',
   disabled,
@@ -61,7 +65,14 @@ export function ActionTile({
         {icon}
       </span>
       <span className="workspai-action-tile__copy">
-        <strong>{label}</strong>
+        <strong className="workspai-action-tile__label">
+          {label}
+          <CommandExecutionBadge
+            channel={actionContract?.executionChannel}
+            compact
+            className="workspai-action-tile__exec-badge"
+          />
+        </strong>
         {detail ? <small>{detail}</small> : null}
       </span>
       {visibleStateLabel ? (
@@ -74,6 +85,13 @@ export function ActionTile({
           aria-label={`Evidence: ${evidenceStatusLabel(evidenceStatus)}`}
         >
           {evidenceStatusLabel(evidenceStatus)}
+        </span>
+      ) : null}
+      {actionContract ? (
+        <span className="workspai-action-tile__contract" aria-label="Action contract">
+          <span>{actionContract.executionScope}</span>
+          <span>{actionContract.artifactLabel}</span>
+          {actionContract.disabledReason ? <span>{actionContract.disabledReason}</span> : null}
         </span>
       ) : null}
     </button>

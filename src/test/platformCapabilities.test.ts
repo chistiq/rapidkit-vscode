@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import {
   buildNpmCliVersionVerifyCommands,
   buildNpxRapidkitArgs,
+  buildNpxRapidkitPrefix,
   buildNpxRapidkitVersionProbeArgs,
   buildRapidkitDisplayCommand,
   buildRapidkitCommand,
@@ -9,11 +10,22 @@ import {
   detectPlatformKind,
   parseNpmCliVersionOutput,
   quoteShellArg,
+  resetResolvedRapidkitNpmPackageSpecifier,
+  setResolvedRapidkitNpmPackageSpecifier,
   toDisplayRapidkitCommand,
   toPinnedRapidkitExecutionCommand,
 } from '../utils/platformCapabilities';
 
 describe('platformCapabilities', () => {
+  beforeEach(() => {
+    resetResolvedRapidkitNpmPackageSpecifier();
+  });
+
+  afterEach(() => {
+    resetResolvedRapidkitNpmPackageSpecifier();
+    delete process.env.RAPIDKIT_NPM_PACKAGE;
+  });
+
   it('detects platform kind correctly', () => {
     expect(detectPlatformKind('win32')).toBe('windows');
     expect(detectPlatformKind('linux')).toBe('linux');
@@ -51,16 +63,34 @@ describe('platformCapabilities', () => {
     expect(buildShellCommand('echo', ['a&b'], 'win32')).toBe('echo "a&b"');
   });
 
-  it('builds rapidkit commands consistently across platforms', () => {
+  it('builds rapidkit commands with unpinned npx by default', () => {
     expect(buildRapidkitCommand(['doctor', 'workspace'], 'linux')).toBe(
-      'npx --yes --package rapidkit rapidkit doctor workspace'
+      'npx --yes rapidkit doctor workspace'
     );
     expect(buildRapidkitCommand(['doctor', 'workspace'], 'win32')).toBe(
-      'npx --yes --package rapidkit rapidkit doctor workspace'
+      'npx --yes rapidkit doctor workspace'
     );
     expect(buildRapidkitCommand(['create', 'workspace', 'my folder'], 'linux')).toBe(
-      "npx --yes --package rapidkit rapidkit create workspace 'my folder'"
+      "npx --yes rapidkit create workspace 'my folder'"
     );
+  });
+
+  it('pins to a linked npm package when resolved', () => {
+    setResolvedRapidkitNpmPackageSpecifier('file:/tmp/rapidkit-npm');
+    expect(buildNpxRapidkitPrefix()).toEqual([
+      '--yes',
+      '--package',
+      'file:/tmp/rapidkit-npm',
+      'rapidkit',
+    ]);
+    expect(buildNpxRapidkitArgs(['adopt', '--help'])).toEqual([
+      '--yes',
+      '--package',
+      'file:/tmp/rapidkit-npm',
+      'rapidkit',
+      'adopt',
+      '--help',
+    ]);
   });
 
   it('builds user-facing rapidkit display commands without pinned npm wrapper noise', () => {
@@ -78,25 +108,26 @@ describe('platformCapabilities', () => {
   it('normalizes pinned execution commands for display only', () => {
     expect(
       toDisplayRapidkitCommand(
-        'Run npx --yes --package rapidkit rapidkit add module free/ai/agent_runtime'
+        'Run npx --yes --package file:/tmp/rapidkit-npm rapidkit add module free/ai/agent_runtime'
       )
     ).toBe('Run npx rapidkit add module free/ai/agent_runtime');
+    expect(toDisplayRapidkitCommand('Run npx --yes rapidkit doctor workspace')).toBe(
+      'Run npx rapidkit doctor workspace'
+    );
   });
 
-  it('normalizes simple display commands back to the pinned execution wrapper', () => {
+  it('normalizes simple display commands back to the execution wrapper', () => {
     expect(toPinnedRapidkitExecutionCommand('npx rapidkit doctor workspace')).toBe(
-      'npx --yes --package rapidkit rapidkit doctor workspace'
+      'npx --yes rapidkit doctor workspace'
     );
     expect(
       toPinnedRapidkitExecutionCommand('Run npx rapidkit add module free/ai/agent_runtime')
-    ).toBe('Run npx --yes --package rapidkit rapidkit add module free/ai/agent_runtime');
+    ).toBe('Run npx --yes rapidkit add module free/ai/agent_runtime');
   });
 
-  it('builds the pinned npx rapidkit argument contract for extension host calls', () => {
+  it('builds the unpinned npx rapidkit argument contract for extension host calls', () => {
     expect(buildNpxRapidkitArgs(['doctor', 'workspace'])).toEqual([
       '--yes',
-      '--package',
-      'rapidkit',
       'rapidkit',
       'doctor',
       'workspace',
@@ -129,20 +160,20 @@ describe('platformCapabilities', () => {
     for (const scenario of noSpaceScenarios) {
       for (const platform of platforms) {
         expect(buildRapidkitCommand(scenario, platform)).toBe(
-          `npx --yes --package rapidkit rapidkit ${scenario.join(' ')}`
+          `npx --yes rapidkit ${scenario.join(' ')}`
         );
       }
     }
 
     expect(
       buildRapidkitCommand(['workspace', 'policy', 'set', 'team name', 'strict'], 'linux')
-    ).toBe("npx --yes --package rapidkit rapidkit workspace policy set 'team name' strict");
+    ).toBe("npx --yes rapidkit workspace policy set 'team name' strict");
     expect(
       buildRapidkitCommand(['workspace', 'policy', 'set', 'team name', 'strict'], 'darwin')
-    ).toBe("npx --yes --package rapidkit rapidkit workspace policy set 'team name' strict");
+    ).toBe("npx --yes rapidkit workspace policy set 'team name' strict");
     expect(
       buildRapidkitCommand(['workspace', 'policy', 'set', 'team name', 'strict'], 'win32')
-    ).toBe('npx --yes --package rapidkit rapidkit workspace policy set "team name" strict');
+    ).toBe('npx --yes rapidkit workspace policy set "team name" strict');
   });
 
   it('quotes snapshot command arguments without changing the CLI contract', () => {
@@ -152,8 +183,7 @@ describe('platformCapabilities', () => {
         'linux'
       )
     ).toBe(
-      'npx --yes --package rapidkit rapidkit snapshot create ' +
-        `'before upgrade' --reason 'owner'"'"'s release prep'`
+      'npx --yes rapidkit snapshot create ' + `'before upgrade' --reason 'owner'"'"'s release prep'`
     );
 
     expect(
@@ -162,7 +192,7 @@ describe('platformCapabilities', () => {
         'win32'
       )
     ).toBe(
-      'npx --yes --package rapidkit rapidkit snapshot restore ' +
+      'npx --yes rapidkit snapshot restore ' +
         '"before upgrade" --force --reason "rollback & verify"'
     );
   });

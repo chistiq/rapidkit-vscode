@@ -12,9 +12,12 @@ Highlights:
 **Enterprise dashboard**
 - Close **Command → Evidence → Next Step** with host bridges, activity trail, ops chain after workspace create/clone/import, fresh-install onboarding, and Incident Studio handoff from evidence cards.
 - New surfaces: Operate/Evidence sections, `ReleaseHub`, `WorkspaceGovernancePanel`, `CommandCheatsheet`, pending-command UX across governance tiles.
+- Enterprise-minimal UX pass: Guided Evidence shows one current path, view controls use compact `Guided / Workflows / All` labels, and secondary Run commands stay collapsed behind focused primary actions.
+- **Workspai sidebar**: Workspai now contributes a standard VS Code Secondary Sidebar tab, with the Activity Bar Workspai view still available as fallback. The AI surface is intentionally minimal: `Create with AI / Workspace Advisor / Studio`, with a live vertical creation timeline for workspace/project planning, architecture questions, and deep Studio handoff.
 
 **Incident Studio**
 - Retire legacy `AIIncidentStudio` monolith; **`IncidentStudioVNext`** with ship loop, CLI surface, session persistence, AI action framework, policy/mutation gates, guided/lite/responsive Wave Y polish.
+- Studio first view is lighter: Command Ribbon is the default entry point, sidebar toolboxes are collapsed by default, audit details open only after user selection, and chat/context/sidebar regions use calmer panel chrome.
 
 **Design system**
 - Workspai token layers (`workspai-primitives`, studio chrome, analyze report CSS), theme provider, drift-guard tests, and studio CSS extraction/verify scripts.
@@ -37,13 +40,15 @@ Highlights:
 - **Studio**: shared stabilization policy for mutation gates; `incomingMessage` merge and project scope in standalone panel.
 - **Reliability**: coalesced evidence refresh (debounce + single follow-up); pending cards reconcile from activity completion/failure.
 - **Studio stabilization (0.35.0)**: analyze evidence resync in VNext; project-scoped chat brain + command palette open; CLI mutation gate parity for guided commands; session save queue; scope selector guards; ContextPanel AI gate parity; chat error banner; stale host-handler refs fixed.
+- **Release packaging**: `vscode:prepublish` now builds webview assets in production mode; VSIX package verified at `/tmp/workspai-0.35.0.vsix`.
 
 Full detail: [`releases/RELEASE_NOTES_v0.35.0.md`](releases/RELEASE_NOTES_v0.35.0.md) (includes per-commit table).
 
 Validation:
-- `npm run compile`
-- `npm run lint`
-- `vitest run`
+- `./node_modules/.bin/tsc --noEmit`
+- `./node_modules/.bin/vitest run` (208 files / 1639 tests)
+- `node scripts/release-stop-gate.mjs --skip-kpi`
+- `env PATH=/tmp:$PATH ./node_modules/.bin/vsce package --no-dependencies --out /tmp/workspai-0.35.0.vsix`
 
 Release posture: `enterprise-dashboard-studio-and-npm-governance-pipeline`
 

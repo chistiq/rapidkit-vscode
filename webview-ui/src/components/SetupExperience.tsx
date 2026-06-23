@@ -854,7 +854,7 @@ export function SetupExperience({
                 secondaryActions: [{ label: 'Verify', command: 'verifyPython' }],
             },
             {
-                key: 'core', monogram: 'WS', iconSrc: window.RAPIDKIT_ICON_URI, color: wsBrand.core,
+                key: 'core', monogram: 'RK', iconSrc: window.RAPIDKIT_ICON_URI, color: wsBrand.core,
                 title: 'RapidKit Core', subtitle: 'Python engine for scaffolding',
                 required: true, installed: Boolean(s?.coreInstalled), version: s?.coreVersion,
                 detection: s?.detections?.core,
@@ -866,7 +866,7 @@ export function SetupExperience({
                 secondaryActions: [{ label: 'Verify', command: 'verifyCore' }],
             },
             {
-                key: 'cli', monogram: 'RK', iconSrc: window.NPM_ICON_URI, color: wsBrand.cli,
+                key: 'cli', monogram: 'WS', iconSrc: window.NPM_ICON_URI, color: wsBrand.cli,
                 title: 'RapidKit CLI', subtitle: 'Node.js bridge for workspace commands',
                 required: true, installed: Boolean(s?.npmInstalled || s?.npmAvailableViaNpx), version: s?.npmVersion,
                 detection: s?.detections?.cli,

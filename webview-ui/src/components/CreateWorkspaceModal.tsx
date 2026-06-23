@@ -1,7 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, FolderPlus, Sparkles } from 'lucide-react';
 import type { WorkspaceToolStatus } from '@/types';
 import { vscode } from '@/vscode';
+import {
+  MANUAL_STACK_LANES,
+  defaultProfileForStackLane,
+  profileRequiresPythonInstallMethod,
+  recommendedProfilesForStackLane,
+  resolveDefaultWorkspaceName,
+  stackLaneGuidance,
+  type CreationStackLane,
+} from '@/lib/creationPresets';
 import { EnterpriseModal, EnterpriseModalNotice } from './EnterpriseModal';
 
 export type WorkspaceProfile =
@@ -33,14 +42,14 @@ interface CreateWorkspaceModalProps {
 }
 
 const PROFILES: { value: WorkspaceProfile; icon: string; iconUri?: string; label: string; desc: string }[] = [
-    { value: 'minimal', icon: '⚡', label: 'Minimal', desc: 'Files only' },
-    { value: 'python-only', icon: 'Py', label: 'Python', desc: 'Poetry/venv' },
-    { value: 'node-only', icon: 'JS', label: 'Node.js', desc: 'npm/NestJS' },
-    { value: 'go-only', icon: 'Go', label: 'Go', desc: 'Go runtime' },
-    { value: 'java-only', icon: 'Java', iconUri: (typeof window !== 'undefined' ? (window as any).SPRINGBOOT_ICON_URI : undefined), label: 'Java', desc: 'Spring Boot' },
-    { value: 'dotnet-only', icon: '.NET', label: '.NET', desc: 'ASP.NET Core' },
-    { value: 'polyglot', icon: 'All', label: 'Polyglot', desc: 'Py+Node+Go+Java+.NET' },
-    { value: 'enterprise', icon: 'Gov', label: 'Enterprise', desc: '+Governance' },
+    { value: 'minimal', icon: '⚡', label: 'Minimal', desc: 'Workspace foundation' },
+    { value: 'python-only', icon: 'Py', label: 'Python runtime', desc: 'FastAPI, data, automation' },
+    { value: 'node-only', icon: 'JS', label: 'Node.js runtime', desc: 'Frontend, NestJS, tooling' },
+    { value: 'go-only', icon: 'Go', label: 'Go runtime', desc: 'Go services and CLIs' },
+    { value: 'java-only', icon: 'Java', iconUri: (typeof window !== 'undefined' ? (window as any).SPRINGBOOT_ICON_URI : undefined), label: 'Java runtime', desc: 'Spring Boot services' },
+    { value: 'dotnet-only', icon: '.NET', label: '.NET runtime', desc: 'ASP.NET Core services' },
+    { value: 'polyglot', icon: 'All', label: 'Polyglot', desc: 'Multi-runtime workspace' },
+    { value: 'enterprise', icon: 'Gov', label: 'Enterprise', desc: 'Governance-ready workspace' },
 ];
 
 const INSTALL_METHODS: { value: WorkspaceInstallMethod; label: string; desc: string }[] = [
@@ -52,28 +61,68 @@ const INSTALL_METHODS: { value: WorkspaceInstallMethod; label: string; desc: str
 
 export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, toolStatus }: CreateWorkspaceModalProps) {
     const [workspaceName, setWorkspaceName] = useState('');
+    const [nameTouched, setNameTouched] = useState(false);
     const [error, setError] = useState('');
+    const [stackLane, setStackLane] = useState<CreationStackLane>('balanced');
     const [profile, setProfile] = useState<WorkspaceProfile>('minimal');
     const [installMethod, setInstallMethod] = useState<WorkspaceInstallMethod>('auto');
     const [initGit, setInitGit] = useState(true);
     const [strictPolicy, setStrictPolicy] = useState(false);
     const [depSharing, setDepSharing] = useState(false);
 
+    const suggestedWorkspaceName = useMemo(
+        () => resolveDefaultWorkspaceName(stackLane, profile),
+        [stackLane, profile]
+    );
+
+    const recommendedProfiles = useMemo(
+        () => recommendedProfilesForStackLane(stackLane),
+        [stackLane]
+    );
+
+    const orderedProfiles = useMemo(() => {
+        if (!recommendedProfiles) {
+            return PROFILES;
+        }
+        const recommended = new Set(recommendedProfiles);
+        return [
+            ...PROFILES.filter((item) => recommended.has(item.value)),
+            ...PROFILES.filter((item) => !recommended.has(item.value)),
+        ];
+    }, [recommendedProfiles]);
+
+    const handleStackLaneChange = (lane: CreationStackLane) => {
+        setStackLane(lane);
+        setProfile(defaultProfileForStackLane(lane));
+    };
+
     useEffect(() => {
         if (isOpen) {
-            setWorkspaceName('');
+            const initialName = resolveDefaultWorkspaceName('balanced', 'minimal');
+            setWorkspaceName(initialName);
+            setNameTouched(false);
             setError('');
+            setStackLane('balanced');
             setProfile('minimal');
             setInstallMethod(toolStatus?.preferredInstallMethod ?? 'auto');
             setInitGit(true);
             setStrictPolicy(false);
             setDepSharing(false);
+            validateName(initialName);
             document.body.style.overflow = 'hidden';
         } else {
             document.body.style.overflow = '';
         }
         return () => { document.body.style.overflow = ''; };
     }, [isOpen, toolStatus?.preferredInstallMethod]);
+
+    useEffect(() => {
+        if (!isOpen || nameTouched) {
+            return;
+        }
+        setWorkspaceName(suggestedWorkspaceName);
+        validateName(suggestedWorkspaceName);
+    }, [isOpen, nameTouched, suggestedWorkspaceName]);
 
     const isInstallMethodEnabled = (method: WorkspaceInstallMethod): boolean => {
         if (!toolStatus || method === 'auto') {
@@ -152,13 +201,14 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, 
     const needsJava = profile === 'java-only' || profile === 'polyglot' || profile === 'enterprise';
     const needsDotnet =
         profile === 'dotnet-only' || profile === 'polyglot' || profile === 'enterprise';
+    const showInstallMethod = profileRequiresPythonInstallMethod(profile);
     const canCreate = workspaceName.trim() && !error;
 
     return (
         <EnterpriseModal
             isOpen={isOpen}
             title="Create Workspace"
-            subtitle="Choose a governed workspace profile, runtime strategy, and policy posture."
+            subtitle="Choose your stack focus, bootstrap profile, and governance posture."
             kicker="Workspace operation"
             icon={<FolderPlus size={16} />}
             size="lg"
@@ -188,17 +238,39 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, 
             }
         >
             <div className="modal-form-grid">
+                <div className="modal-field modal-field--wide">
+                    <span>Stack focus</span>
+                    <div className="ai-create-stack-lane-grid">
+                        {MANUAL_STACK_LANES.map((lane) => (
+                            <button
+                                key={lane.id}
+                                type="button"
+                                className={`modal-option-card ai-create-stack-lane ${stackLane === lane.id ? 'modal-option-card--active' : ''}`}
+                                onClick={() => handleStackLaneChange(lane.id)}
+                            >
+                                <span className="modal-option-card__title">{lane.label}</span>
+                                <span className="modal-option-card__desc">{lane.detail}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <EnterpriseModalNotice tone="info">
+                    {stackLaneGuidance(stackLane)}
+                </EnterpriseModalNotice>
+
                 <label className="modal-field modal-field--wide">
                     <span>Workspace name</span>
                     <input
                         type="text"
                         value={workspaceName}
                         onChange={(event) => {
+                            setNameTouched(true);
                             setWorkspaceName(event.target.value);
                             validateName(event.target.value);
                         }}
                         onKeyDown={handleKeyDown}
-                        placeholder="my-awesome-workspace"
+                        placeholder={suggestedWorkspaceName}
                         autoFocus
                         spellCheck={false}
                     />
@@ -208,18 +280,31 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, 
                             {error}
                         </span>
                     ) : workspaceName ? (
-                        <span className="modal-field__hint">~/Workspai/rapidkits/{workspaceName}</span>
+                        <span className="modal-field__hint">~/rapidkit/workspaces/{workspaceName}</span>
                     ) : null}
                 </label>
 
                 <div className="modal-field modal-field--wide">
-                    <span>Bootstrap profile</span>
+                    <span>
+                        Bootstrap profile
+                        {recommendedProfiles ? (
+                            <button
+                                type="button"
+                                className="ws-btn ws-btn--ghost ai-create-profile-hint"
+                                onClick={() => setProfile(defaultProfileForStackLane(stackLane))}
+                            >
+                                Use recommended
+                            </button>
+                        ) : null}
+                    </span>
                     <div className="modal-option-grid modal-option-grid--profiles">
-                        {PROFILES.map((item) => (
+                        {orderedProfiles.map((item) => {
+                            const isRecommended = recommendedProfiles?.includes(item.value) ?? false;
+                            return (
                             <button
                                 key={item.value}
                                 type="button"
-                                className={`modal-option-card ${profile === item.value ? 'modal-option-card--active' : ''}`}
+                                className={`modal-option-card ${profile === item.value ? 'modal-option-card--active' : ''} ${isRecommended ? 'modal-option-card--recommended' : ''}`}
                                 onClick={() => setProfile(item.value)}
                             >
                                 <span className="modal-option-card__icon">
@@ -227,8 +312,10 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, 
                                 </span>
                                 <strong>{item.label}</strong>
                                 <small>{item.desc}</small>
+                                {isRecommended ? <em className="modal-option-card__badge">Recommended</em> : null}
                             </button>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
 
@@ -256,36 +343,38 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, 
                     </div>
                 )}
 
-                <div className="modal-field modal-field--wide">
-                    <span>Install method</span>
-                    <div className="modal-option-grid modal-option-grid--two">
-                        {INSTALL_METHODS.map((item) => {
-                            const enabled = isInstallMethodEnabled(item.value);
-                            const reason = getInstallMethodDisabledReason(item.value);
-                            return (
-                                <button
-                                    key={item.value}
-                                    type="button"
-                                    className={`modal-option-row ${installMethod === item.value ? 'modal-option-row--active' : ''}`}
-                                    onClick={() => enabled && setInstallMethod(item.value)}
-                                    disabled={!enabled}
-                                    title={reason ?? item.desc}
-                                >
-                                    <span className="modal-radio-dot" />
-                                    <span>
-                                        <strong>{item.label}</strong>
-                                        <small>{reason ?? item.desc}</small>
-                                    </span>
-                                </button>
-                            );
-                        })}
+                {showInstallMethod ? (
+                    <div className="modal-field modal-field--wide">
+                        <span>Install method</span>
+                        <div className="modal-option-grid modal-option-grid--two">
+                            {INSTALL_METHODS.map((item) => {
+                                const enabled = isInstallMethodEnabled(item.value);
+                                const reason = getInstallMethodDisabledReason(item.value);
+                                return (
+                                    <button
+                                        key={item.value}
+                                        type="button"
+                                        className={`modal-option-row ${installMethod === item.value ? 'modal-option-row--active' : ''}`}
+                                        onClick={() => enabled && setInstallMethod(item.value)}
+                                        disabled={!enabled}
+                                        title={reason ?? item.desc}
+                                    >
+                                        <span className="modal-radio-dot" />
+                                        <span>
+                                            <strong>{item.label}</strong>
+                                            <small>{reason ?? item.desc}</small>
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {toolStatus && (
+                            <span className="modal-field__hint">
+                                Active: {toolStatus.preferredInstallMethod} · Java {toolStatus.javaAvailable ? 'ok' : 'missing'} · Maven {toolStatus.mavenAvailable ? 'ok' : 'missing'} · Gradle {toolStatus.gradleAvailable ? 'ok' : 'missing'} · .NET {toolStatus.dotnetAvailable ? 'ok' : 'missing'}
+                            </span>
+                        )}
                     </div>
-                    {toolStatus && (
-                        <span className="modal-field__hint">
-                            Active: {toolStatus.preferredInstallMethod} · Java {toolStatus.javaAvailable ? 'ok' : 'missing'} · Maven {toolStatus.mavenAvailable ? 'ok' : 'missing'} · Gradle {toolStatus.gradleAvailable ? 'ok' : 'missing'} · .NET {toolStatus.dotnetAvailable ? 'ok' : 'missing'}
-                        </span>
-                    )}
-                </div>
+                ) : null}
 
                 <div className="modal-field modal-field--wide">
                     <span>Options</span>

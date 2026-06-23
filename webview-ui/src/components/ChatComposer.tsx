@@ -22,6 +22,7 @@ export interface ChatComposerProps {
   hint?: string;
   variant?: 'studio' | 'assist';
   inputAriaLabel?: string;
+  focusRequestToken?: number;
 }
 
 export function ChatComposer({
@@ -43,6 +44,7 @@ export function ChatComposer({
   hint,
   variant = 'studio',
   inputAriaLabel = 'Message input',
+  focusRequestToken = 0,
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -58,6 +60,14 @@ export function ChatComposer({
   useEffect(() => {
     adjustTextareaHeight();
   }, [value, adjustTextareaHeight]);
+
+  useEffect(() => {
+    if (!focusRequestToken) {
+      return;
+    }
+    textareaRef.current?.focus();
+    adjustTextareaHeight();
+  }, [focusRequestToken, adjustTextareaHeight]);
 
   const sendBlocked = submitDisabled || (!isStreaming && !value.trim()) || disabled;
   const modelLabel = resolveChatModelLabel(selectedModelId, availableModels, preferredModelId);
@@ -101,6 +111,7 @@ export function ChatComposer({
                 </span>
                 <ChevronDown size={12} aria-hidden="true" />
                 <ModelSelect
+                  variant="overlay"
                   className="ws-chat-composer__model-select"
                   value={selectedModelId}
                   models={availableModels}

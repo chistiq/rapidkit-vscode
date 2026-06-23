@@ -1,14 +1,27 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs-extra';
-import * as os from 'os';
 import * as path from 'path';
 import { WorkspaceManager } from '../core/workspaceManager';
-import { getExtensionVersion } from '../utils/constants';
 import { Logger } from '../utils/logger';
 import { upsertImportedProjectsRegistry } from '../utils/importedProjectsRegistry';
-import { writeWorkspaceMarker } from '../utils/workspaceMarker';
 import { WorkspaceUsageTracker } from '../utils/workspaceUsageTracker';
 import { evaluateWorkspaiContractRuntime } from '../core/workspaiContractRuntime';
+import {
+  describeCanonicalCliFailure,
+  isCanonicalCliFailure,
+  runCanonicalNpmImport,
+} from '../core/canonicalProjectLifecycle';
+import {
+  ensureManagedDefaultWorkspace,
+  ensureWorkspaceSkeletonViaNpm,
+  registerManagedWorkspacePath,
+} from '../core/ensureManagedDefaultWorkspace';
+import { refreshExtensionAfterNpmProjectOnboard } from '../core/npmProjectOnboardRefresh';
+import {
+  resolveManagedDefaultImportWorkspacePath,
+  resolveNewWorkspacePath,
+} from '../core/workspacePaths';
+import { resolveEnableModulesPreference } from '../core/moduleEnablementPrompt';
 import { ByopDiscoveryEngine } from '../core/byopDiscovery';
 import {
   detectProjectStackFromByopDiscovery,
@@ -61,9 +74,12 @@ interface ImportProjectCommandOptions {
 interface ImportProjectInvocationSeed {
   source?: ImportSourceType;
   droppedPaths?: string[];
+  enableModules?: boolean;
+  path?: string;
+  name?: string;
+  useDefaultWorkspace?: boolean;
 }
 
-const DEFAULT_WORKSPACE_NAME = 'default-workspace';
 const OPEN_STUDIO_ACTION = 'Open Studio';
 const VIEW_ARCHITECTURE_ACTION = 'View Architecture Map';
 const HEALTH_CHECK_ACTION = 'Run Health Check';
@@ -136,10 +152,6 @@ interface BatchImportTask {
   destinationPath: string;
 }
 
-function resolveDefaultWorkspacePath(): string {
-  return path.join(os.homedir(), 'Workspai', 'rapidkits', DEFAULT_WORKSPACE_NAME);
-}
-
 function stackLabel(stack: DetectedStack): string {
   if (stack === 'fastapi') {
     return 'FastAPI';
@@ -185,7 +197,14 @@ function toInvocationSeed(seed: unknown): ImportProjectInvocationSeed | null {
     candidate.source === 'git-url' ||
     candidate.source === 'drag-drop';
 
-  if (!sourceValid && !Array.isArray(candidate.droppedPaths)) {
+  const hasWorkspacePath = typeof candidate.path === 'string' && candidate.path.trim().length > 0;
+
+  if (
+    !sourceValid &&
+    !Array.isArray(candidate.droppedPaths) &&
+    !hasWorkspacePath &&
+    candidate.useDefaultWorkspace !== true
+  ) {
     return null;
   }
 
@@ -194,6 +213,11 @@ function toInvocationSeed(seed: unknown): ImportProjectInvocationSeed | null {
     droppedPaths: Array.isArray(candidate.droppedPaths)
       ? candidate.droppedPaths.filter((item): item is string => typeof item === 'string')
       : undefined,
+    enableModules:
+      typeof candidate.enableModules === 'boolean' ? candidate.enableModules : undefined,
+    path: hasWorkspacePath ? candidate.path?.trim() : undefined,
+    name: typeof candidate.name === 'string' ? candidate.name : undefined,
+    useDefaultWorkspace: candidate.useDefaultWorkspace === true ? true : undefined,
   };
 }
 
@@ -255,73 +279,11 @@ async function hasFileWithExtension(rootPath: string, extension: string): Promis
   }
 }
 
-async function ensureWorkspaceRegistration(workspacePath: string): Promise<WorkspaceLike | null> {
-  const manager = WorkspaceManager.getInstance();
-  await manager.loadWorkspaces();
-
-  const existing = manager.getWorkspaces().find((ws) => ws.path === workspacePath);
-  if (existing) {
-    await manager.touchWorkspace(workspacePath);
-    return existing;
-  }
-
-  return manager.addWorkspace(workspacePath);
-}
-
-async function ensureWorkspaceSkeleton(
-  workspacePath: string,
-  workspaceName: string
-): Promise<void> {
-  const nowIso = new Date().toISOString();
-  const extensionVersion = getExtensionVersion();
-
-  await fs.ensureDir(workspacePath);
-  await fs.ensureDir(path.join(workspacePath, '.rapidkit'));
-
-  const markerPath = path.join(workspacePath, '.rapidkit-workspace');
-  if (!(await fs.pathExists(markerPath))) {
-    await writeWorkspaceMarker(workspacePath, {
-      signature: 'RAPIDKIT_WORKSPACE',
-      createdBy: 'rapidkit-vscode',
-      version: extensionVersion,
-      createdAt: nowIso,
-      name: workspaceName,
-      metadata: {
-        vscode: {
-          extensionVersion,
-          createdViaExtension: true,
-          lastOpenedAt: nowIso,
-          openCount: 1,
-        },
-      },
-    });
-  }
-
-  const workspaceManifestPath = path.join(workspacePath, '.rapidkit', 'workspace.json');
-  if (!(await fs.pathExists(workspaceManifestPath))) {
-    await fs.writeJSON(
-      workspaceManifestPath,
-      {
-        name: workspaceName,
-        profile: 'minimal',
-        createdAt: nowIso,
-        createdBy: 'rapidkit-vscode-import-fallback',
-      },
-      { spaces: 2 }
-    );
-  }
-}
-
 async function ensureDefaultWorkspace(): Promise<ResolvedWorkspace> {
-  const workspacePath = resolveDefaultWorkspacePath();
-  const workspaceName = path.basename(workspacePath);
-
-  await ensureWorkspaceSkeleton(workspacePath, workspaceName);
-  await ensureWorkspaceRegistration(workspacePath);
-
+  const ensured = await ensureManagedDefaultWorkspace();
   return {
-    path: workspacePath,
-    name: workspaceName,
+    path: ensured.path,
+    name: ensured.name,
     mode: 'auto',
   };
 }
@@ -368,7 +330,7 @@ async function promptWorkspaceSelectionFromRegistry(): Promise<ResolvedWorkspace
       return null;
     }
 
-    const registered = await ensureWorkspaceRegistration(folderPath);
+    const registered = await registerManagedWorkspacePath(folderPath);
     if (!registered) {
       vscode.window.showErrorMessage(
         'Selected folder is not a valid Workspai workspace. Use Auto or New to create one.'
@@ -376,9 +338,15 @@ async function promptWorkspaceSelectionFromRegistry(): Promise<ResolvedWorkspace
       return null;
     }
 
+    const manager = WorkspaceManager.getInstance();
+    const workspace = manager.getWorkspaces().find((ws) => ws.path === folderPath);
+    if (!workspace) {
+      return null;
+    }
+
     return {
-      path: registered.path,
-      name: registered.name ?? path.basename(registered.path),
+      path: workspace.path,
+      name: workspace.name ?? path.basename(workspace.path),
       mode: 'select',
     };
   }
@@ -419,10 +387,9 @@ async function promptNewWorkspaceCreation(): Promise<ResolvedWorkspace | null> {
     return null;
   }
 
-  const workspacePath = path.join(os.homedir(), 'Workspai', 'rapidkits', workspaceName);
+  const workspacePath = resolveNewWorkspacePath(workspaceName);
 
-  await ensureWorkspaceSkeleton(workspacePath, workspaceName);
-  await ensureWorkspaceRegistration(workspacePath);
+  await ensureWorkspaceSkeletonViaNpm(workspacePath, workspaceName);
 
   return {
     path: workspacePath,
@@ -450,7 +417,7 @@ async function resolveWorkspaceDestination(
       {
         label: '$(rocket) Auto',
         description: 'Create or reuse default workspace automatically',
-        detail: `Recommended for quick start (${resolveDefaultWorkspacePath()})`,
+        detail: `Recommended for quick start (${resolveManagedDefaultImportWorkspacePath()})`,
         value: 'auto',
       },
       {
@@ -567,17 +534,18 @@ async function resolveDestinationProjectPath(
 }
 
 async function importFromFolderPath(
-  workspacePath: string,
+  workspacePath: string | undefined,
   sourcePath: string,
-  progressTitle = 'Importing project folder...'
-): Promise<ImportedProject | null> {
+  _progressTitle = 'Importing project folder...',
+  options?: { enableModules?: boolean }
+): Promise<{ project: ImportedProject; workspacePath: string } | null> {
   const sourceStats = await fs.stat(sourcePath).catch(() => null);
   if (!sourceStats || !sourceStats.isDirectory()) {
     vscode.window.showErrorMessage('Dropped path is not a folder. Drop a project directory.');
     return null;
   }
 
-  if (isSameOrInsideDirectory(workspacePath, sourcePath)) {
+  if (workspacePath && isSameOrInsideDirectory(workspacePath, sourcePath)) {
     vscode.window.showErrorMessage(
       'Import source must be outside the current workspace root. Choose an external project folder.'
     );
@@ -585,52 +553,47 @@ async function importFromFolderPath(
   }
 
   const suggestedName = path.basename(sourcePath);
-  const destinationPath = await resolveDestinationProjectPath(workspacePath, suggestedName);
-  if (!destinationPath) {
-    return null;
-  }
-
-  let destinationPrepared = false;
-  try {
-    const detection = await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: progressTitle,
-        cancellable: false,
-      },
-      async (progress) => {
-        progress.report({ increment: 20, message: 'Detecting stack...' });
-        const detected = await detectProjectStack(sourcePath);
-
-        progress.report({ increment: 50, message: 'Copying files into workspace...' });
-        destinationPrepared = true;
-        await fs.copy(sourcePath, destinationPath, {
-          overwrite: false,
-          errorOnExist: true,
-        });
-
-        progress.report({ increment: 30, message: 'Running initial workspace refresh...' });
-        return detected;
-      }
-    );
-
-    return {
-      name: path.basename(destinationPath),
-      path: destinationPath,
-      detection,
-    };
-  } catch (error) {
-    if (destinationPrepared) {
-      await fs.remove(destinationPath).catch(() => undefined);
+  let projectName = suggestedName;
+  if (workspacePath) {
+    const destinationPath = await resolveDestinationProjectPath(workspacePath, suggestedName);
+    if (!destinationPath) {
+      return null;
     }
-    throw error;
+    projectName = path.basename(destinationPath);
   }
+
+  const canonicalResult = await runCanonicalNpmImport({
+    workspacePath,
+    source: sourcePath,
+    projectName,
+    enableModules: options?.enableModules,
+  });
+  if (isCanonicalCliFailure(canonicalResult)) {
+    throw new Error(describeCanonicalCliFailure('import', canonicalResult));
+  }
+
+  const importedPath = canonicalResult.importedProject!.path!;
+  const resolvedWorkspacePath = canonicalResult.workspacePath ?? workspacePath;
+  if (!resolvedWorkspacePath) {
+    throw new Error('Import finished without workspacePath in npm JSON output.');
+  }
+
+  const detection = await detectProjectStack(importedPath);
+  return {
+    workspacePath: resolvedWorkspacePath,
+    project: {
+      name: canonicalResult.importedProject!.name ?? projectName,
+      path: importedPath,
+      detection,
+    },
+  };
 }
 
 async function importFromFolderPathWithoutProgress(
   workspacePath: string,
   sourcePath: string,
-  destinationPath: string
+  destinationPath: string,
+  options?: { enableModules?: boolean }
 ): Promise<ImportedProject | null> {
   const sourceStats = await fs.stat(sourcePath).catch(() => null);
   if (!sourceStats || !sourceStats.isDirectory()) {
@@ -641,29 +604,29 @@ async function importFromFolderPathWithoutProgress(
     return null;
   }
 
-  let destinationPrepared = false;
-  try {
-    const detection = await detectProjectStack(sourcePath);
-    destinationPrepared = true;
-    await fs.copy(sourcePath, destinationPath, {
-      overwrite: false,
-      errorOnExist: true,
-    });
-
-    return {
-      name: path.basename(destinationPath),
-      path: destinationPath,
-      detection,
-    };
-  } catch (error) {
-    if (destinationPrepared) {
-      await fs.remove(destinationPath).catch(() => undefined);
-    }
-    throw error;
+  const projectName = path.basename(destinationPath);
+  const canonicalResult = await runCanonicalNpmImport({
+    workspacePath,
+    source: sourcePath,
+    projectName,
+    enableModules: options?.enableModules,
+  });
+  if (isCanonicalCliFailure(canonicalResult)) {
+    throw new Error(describeCanonicalCliFailure('import', canonicalResult));
   }
+
+  const detection = await detectProjectStack(canonicalResult.importedProject!.path!);
+  return {
+    name: projectName,
+    path: canonicalResult.importedProject!.path!,
+    detection,
+  };
 }
 
-async function importFromLocalFolder(workspacePath: string): Promise<ImportedProject | null> {
+async function importFromLocalFolder(
+  workspacePath: string | undefined,
+  options?: { enableModules?: boolean }
+): Promise<{ project: ImportedProject; workspacePath: string } | null> {
   const picked = await vscode.window.showOpenDialog({
     canSelectFiles: false,
     canSelectFolders: true,
@@ -677,7 +640,7 @@ async function importFromLocalFolder(workspacePath: string): Promise<ImportedPro
     return null;
   }
 
-  return importFromFolderPath(workspacePath, sourcePath);
+  return importFromFolderPath(workspacePath, sourcePath, 'Importing project folder...', options);
 }
 
 async function resolveBatchDestinationProjectPath(
@@ -713,7 +676,8 @@ async function resolveBatchDestinationProjectPath(
 
 async function importFromDroppedPaths(
   workspacePath: string,
-  droppedPaths: string[]
+  droppedPaths: string[],
+  options?: { enableModules?: boolean }
 ): Promise<ImportedProject[] | null> {
   const uniquePaths = Array.from(
     new Set(droppedPaths.map((item) => item.trim()).filter((item) => item.length > 0))
@@ -739,9 +703,10 @@ async function importFromDroppedPaths(
     const imported = await importFromFolderPath(
       workspacePath,
       directoryCandidates[0],
-      'Importing dropped project folder...'
+      'Importing dropped project folder...',
+      options
     );
-    return imported ? [imported] : null;
+    return imported ? [imported.project] : null;
   }
 
   const importAllChoice = 'Import All';
@@ -791,9 +756,10 @@ async function importFromDroppedPaths(
     const imported = await importFromFolderPath(
       workspacePath,
       picked.value,
-      'Importing dropped project folder...'
+      'Importing dropped project folder...',
+      options
     );
-    return imported ? [imported] : null;
+    return imported ? [imported.project] : null;
   }
 
   const plannedImports: BatchImportTask[] = [];
@@ -847,7 +813,8 @@ async function importFromDroppedPaths(
             importedProjectsByIndex[currentIndex] = await importFromFolderPathWithoutProgress(
               workspacePath,
               task.sourcePath,
-              task.destinationPath
+              task.destinationPath,
+              options
             );
           } catch {
             importedProjectsByIndex[currentIndex] = null;
@@ -887,7 +854,10 @@ async function importFromDroppedPaths(
   return importedProjects;
 }
 
-async function importFromGitUrl(workspacePath: string): Promise<ImportedProject | null> {
+async function importFromGitUrl(
+  workspacePath: string | undefined,
+  options?: { enableModules?: boolean }
+): Promise<{ project: ImportedProject; workspacePath: string } | null> {
   const gitUrl = await vscode.window.showInputBox({
     title: 'Clone and Import Project',
     prompt: 'Repository URL',
@@ -929,47 +899,41 @@ async function importFromGitUrl(workspacePath: string): Promise<ImportedProject 
     return null;
   }
 
-  const destinationPath = await resolveDestinationProjectPath(workspacePath, overrideName);
-  if (!destinationPath) {
+  const destinationPath = workspacePath
+    ? await resolveDestinationProjectPath(workspacePath, overrideName)
+    : null;
+  if (workspacePath && !destinationPath) {
     return null;
   }
 
-  let destinationPrepared = false;
-  try {
-    const detection = await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: 'Cloning and importing project...',
-        cancellable: false,
-      },
-      async (progress) => {
-        const { execa } = await import('execa');
-
-        progress.report({ increment: 40, message: 'Cloning repository...' });
-        destinationPrepared = true;
-        await execa('git', ['clone', '--depth', '1', gitUrl.trim(), destinationPath], {
-          timeout: 120000,
-        });
-
-        progress.report({ increment: 40, message: 'Detecting stack...' });
-        const detected = await detectProjectStack(destinationPath);
-
-        progress.report({ increment: 20, message: 'Finishing import...' });
-        return detected;
-      }
-    );
-
-    return {
-      name: path.basename(destinationPath),
-      path: destinationPath,
-      detection,
-    };
-  } catch (error) {
-    if (destinationPrepared) {
-      await fs.remove(destinationPath).catch(() => undefined);
-    }
-    throw error;
+  const projectName = destinationPath
+    ? path.basename(destinationPath)
+    : normalizeProjectName(overrideName);
+  const canonicalResult = await runCanonicalNpmImport({
+    workspacePath,
+    source: gitUrl.trim(),
+    projectName,
+    git: true,
+    enableModules: options?.enableModules,
+  });
+  if (isCanonicalCliFailure(canonicalResult)) {
+    throw new Error(describeCanonicalCliFailure('import', canonicalResult));
   }
+
+  const resolvedWorkspacePath = canonicalResult.workspacePath ?? workspacePath;
+  if (!resolvedWorkspacePath) {
+    throw new Error('Import finished without workspacePath in npm JSON output.');
+  }
+
+  const detection = await detectProjectStack(canonicalResult.importedProject!.path!);
+  return {
+    workspacePath: resolvedWorkspacePath,
+    project: {
+      name: canonicalResult.importedProject!.name ?? projectName ?? suggested,
+      path: canonicalResult.importedProject!.path!,
+      detection,
+    },
+  };
 }
 
 async function chooseImportSource(): Promise<ImportSourceType | null> {
@@ -1165,7 +1129,7 @@ export async function importProjectCommand(
 
   const importSource: ImportSourceType | null = hasDroppedFolders
     ? 'drag-drop'
-    : await chooseImportSource();
+    : (invocationSeed?.source ?? (await chooseImportSource()));
   if (!importSource) {
     await trackImportLifecycleEvent({
       result: 'cancelled',
@@ -1174,7 +1138,22 @@ export async function importProjectCommand(
     return;
   }
 
-  const resolvedWorkspace = await resolveWorkspaceDestination(options);
+  let resolvedWorkspace: ResolvedWorkspace | null = null;
+  if (invocationSeed?.path && (await fs.pathExists(invocationSeed.path))) {
+    resolvedWorkspace = {
+      path: invocationSeed.path,
+      name: invocationSeed.name ?? path.basename(invocationSeed.path),
+      mode: 'selected',
+    };
+  } else if (invocationSeed?.useDefaultWorkspace) {
+    resolvedWorkspace = {
+      path: '',
+      name: 'workspai',
+      mode: 'auto',
+    };
+  } else {
+    resolvedWorkspace = await resolveWorkspaceDestination(options);
+  }
   if (!resolvedWorkspace) {
     await trackImportLifecycleEvent({
       source: importSource,
@@ -1184,39 +1163,74 @@ export async function importProjectCommand(
     return;
   }
 
+  const enableModules = await resolveEnableModulesPreference(
+    'Import project module support',
+    invocationSeed?.enableModules
+  );
+  if (enableModules === undefined) {
+    await trackImportLifecycleEvent({
+      workspacePath: resolvedWorkspace.path,
+      source: importSource,
+      workspaceResolutionMode: resolvedWorkspace.mode,
+      result: 'cancelled',
+      reason: 'module-support-selection-dismissed',
+    });
+    return;
+  }
+
+  const importOptions = { enableModules };
+
   try {
     const workspaceExplorer = options.getWorkspaceExplorer();
     workspaceExplorer?.refresh();
-    await vscode.commands.executeCommand('workspai.selectWorkspace', resolvedWorkspace.path);
+    const npmWorkspacePath = resolvedWorkspace.path || undefined;
+    if (npmWorkspacePath) {
+      await vscode.commands.executeCommand('workspai.selectWorkspace', npmWorkspacePath);
+    }
 
     let importedProjects: ImportedProject[] = [];
+    let effectiveWorkspacePath = resolvedWorkspace.path;
     if (importSource === 'local-folder') {
-      const importedProject = await importFromLocalFolder(resolvedWorkspace.path);
-      if (importedProject) {
-        importedProjects = [importedProject];
+      const imported = await importFromLocalFolder(npmWorkspacePath, importOptions);
+      if (imported) {
+        importedProjects = [imported.project];
+        effectiveWorkspacePath = imported.workspacePath;
       }
     } else if (importSource === 'git-url') {
-      const importedProject = await importFromGitUrl(resolvedWorkspace.path);
-      if (importedProject) {
-        importedProjects = [importedProject];
+      const imported = await importFromGitUrl(npmWorkspacePath, importOptions);
+      if (imported) {
+        importedProjects = [imported.project];
+        effectiveWorkspacePath = imported.workspacePath;
       }
     } else {
       importedProjects =
         (await importFromDroppedPaths(
-          resolvedWorkspace.path,
-          invocationSeed?.droppedPaths ?? []
+          npmWorkspacePath ?? effectiveWorkspacePath,
+          invocationSeed?.droppedPaths ?? [],
+          importOptions
         )) ?? [];
     }
 
     if (importedProjects.length === 0) {
       await trackImportLifecycleEvent({
-        workspacePath: resolvedWorkspace.path,
+        workspacePath: effectiveWorkspacePath || undefined,
         source: importSource,
         workspaceResolutionMode: resolvedWorkspace.mode,
         result: 'cancelled',
         reason: 'import-aborted-or-empty',
       });
       return;
+    }
+
+    if (effectiveWorkspacePath) {
+      resolvedWorkspace.path = effectiveWorkspacePath;
+      resolvedWorkspace.name = path.basename(effectiveWorkspacePath);
+      await refreshExtensionAfterNpmProjectOnboard({
+        workspacePath: effectiveWorkspacePath,
+        projectPath: importedProjects[0].path,
+        projectName: importedProjects[0].name,
+        projectType: importedProjects[0].detection.stack,
+      });
     }
 
     await persistImportedProjectsRegistry(resolvedWorkspace.path, importSource, importedProjects);
@@ -1252,6 +1266,8 @@ export async function importProjectCommand(
       result: 'failed',
       reason: 'unexpected-error',
     });
-    throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('Project import failed', error);
+    vscode.window.showErrorMessage(`Project import failed: ${message}`);
   }
 }

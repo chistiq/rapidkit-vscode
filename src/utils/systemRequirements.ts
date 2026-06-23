@@ -41,6 +41,11 @@ export interface SystemRequirementsResult {
     available: boolean;
     version?: string;
   };
+  dotnet: {
+    available: boolean;
+    version?: string;
+    meetsMinimumVersion: boolean; // SDK 8+
+  };
 }
 
 /**
@@ -72,6 +77,10 @@ export async function checkSystemRequirements(): Promise<SystemRequirementsResul
     },
     gradle: {
       available: false,
+    },
+    dotnet: {
+      available: false,
+      meetsMinimumVersion: false,
     },
   };
 
@@ -215,6 +224,39 @@ export async function checkSystemRequirements(): Promise<SystemRequirementsResul
     }
     if (!result.gradle.available) {
       logger.debug('Gradle not found (optional)');
+    }
+  }
+
+  // Check .NET SDK (optional — required for dotnet-only/polyglot workspaces)
+  {
+    const path = await import('path');
+    const dotnetRoot = process.env.DOTNET_ROOT?.trim();
+    const candidates = [
+      ...(dotnetRoot
+        ? [path.join(dotnetRoot, process.platform === 'win32' ? 'dotnet.exe' : 'dotnet')]
+        : []),
+      ...(process.platform === 'win32' ? ['C:\\Program Files\\dotnet\\dotnet.exe'] : []),
+      '/usr/bin/dotnet',
+      '/usr/local/bin/dotnet',
+      'dotnet',
+    ];
+    for (const cmd of candidates) {
+      try {
+        const dotnetResult = await run(cmd, ['--version'], { timeout: 3000, stdio: 'pipe' });
+        if (dotnetResult.exitCode === 0) {
+          const versionStr = dotnetResult.stdout?.trim().split('\n')[0]?.trim();
+          const major = versionStr ? parseInt(versionStr.split('.')[0], 10) : 0;
+          result.dotnet.available = true;
+          result.dotnet.version = versionStr || undefined;
+          result.dotnet.meetsMinimumVersion = !isNaN(major) && major >= 8;
+          break;
+        }
+      } catch {
+        // try next
+      }
+    }
+    if (!result.dotnet.available) {
+      logger.debug('.NET SDK not found (optional — required for ASP.NET Core)');
     }
   }
 

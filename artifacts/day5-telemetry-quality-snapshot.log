@@ -1,0 +1,298 @@
+[release-stop-gate] Contract/parity checks skipped by --skip-contract-checks.
+[release-stop-gate] Claim checklist result:
+{
+  "ok": false,
+  "checklistPath": "/home/rapidx/Documents/WOSP/Rapid/Front/Docs/workspai/Final/WORKSPAI_UNIFIED_FINAL_FEATURE_CHECKLIST.md",
+  "finalMaturityUnchecked": [
+    "Killer features sustain hard-gate KPI thresholds in production windows.",
+    "Chat Brain verify-first loop is reliable and release-gated.",
+    "Universal IR v1 is active with schema validation and versioning.",
+    "BYOP discovery/mapping/gap/harmonization flow is operational.",
+    "Any backend project can be imported and analyzed at least in `L0` guidance-first mode.",
+    "Capability level (`L0`/`L1`/`L2`) is visible and enforced in recommendation policy.",
+    "Unknown scope and missing verify path always block mutation-ready completion claims.",
+    "`architecture.config`, `project.mapping`, and `execution.policy` are live and enforced.",
+    "Supported and unsupported stacks both receive deterministic architecture-grade outputs.",
+    "Release automation blocks claim drift and safety regressions by default."
+  ],
+  "wave1ExitUnchecked": [
+    "B02 exit criteria passed",
+    "B04 exit criteria passed",
+    "B06 exit criteria passed",
+    "D02 exit criteria passed",
+    "D05 exit criteria passed",
+    "D06 exit criteria passed",
+    "Protocol/API contract pass rate = 100%",
+    "Killer bridge scenario pass rate >= 95%",
+    "Workspace-switch stability E2E pass rate = 100%",
+    "Verify-phase reach in E2E suite >= 80%",
+    "Parity-check failures = 0"
+  ],
+  "message": "Claim checklist has 21 unchecked gate(s)."
+}
+[release-stop-gate] Open-issue report freshness result:
+{
+  "ok": true,
+  "issueReportPath": "/home/rapidx/Documents/WOSP/Rapid/Front/rapidkit-vscode/artifacts/day5-open-issues-report.offline.json",
+  "maxAgeHours": 720,
+  "generatedAt": "2026-05-13T00:00:00.000Z",
+  "ageHours": 20.66,
+  "message": "Open-issue report freshness gate passed."
+}
+[release-stop-gate] Open-issue severity result:
+{
+  "ok": true,
+  "issueReportPath": "/home/rapidx/Documents/WOSP/Rapid/Front/rapidkit-vscode/artifacts/day5-open-issues-report.offline.json",
+  "blockedSeverities": [
+    "p0",
+    "p1"
+  ],
+  "openIssueCount": 0,
+  "blockingOpenIssues": [],
+  "message": "No blocking open issues found for configured severities."
+}
+[release-stop-gate] KPI gate result:
+{
+  "markerPath": "/home/rapidx/Documents/WOSP/Rapid/Front/rapidkit-vscode/releases/wave3-kpi-marker.json",
+  "evaluatedAt": "2026-05-13T20:39:51.776Z",
+  "thresholds": {
+    "verifyPhaseReachMin": 0,
+    "bridgeRouteCompletionMin": 0,
+    "predictivePrecisionMin": 0,
+    "falseAlarmRateMax": 100,
+    "preventedIncidentRateMin": 0,
+    "reproPackShareRateMin": 0,
+    "replayToResolutionRateMin": 0,
+    "verifyAutoRollbackSuccessRateMin": 0,
+    "falseConfidenceRateMax": 100,
+    "maxTimeToFirstConfidentActionP50Ms": 30000,
+    "minFirstActionSuccessRate": 0.6,
+    "maxReopenRateAfterSuggestedFix": 0.25,
+    "maxOverrideRateOnRecommendations": 0.35,
+    "minVerifyPathCompletionRate": 0.8,
+    "minRollbackRecoverySuccessRate": 0.7,
+    "verifyPackAutopilotReadinessRateMin": 0,
+    "firstChunkLatencyP95MaxMs": 3000,
+    "syncLatencyP95MaxMs": 2000,
+    "boardRenderLatencyP95MaxMs": 500
+  },
+  "verifyPackReadinessRollout": {
+    "mode": "enforce",
+    "thresholdEnabled": false,
+    "generatedMinForEnforcement": 20,
+    "evidenceEnoughForEnforcement": false,
+    "enforced": false,
+    "wouldPass": false
+  },
+  "releaseReadinessValidationRollout": {
+    "mode": "off",
+    "decisionAccuracyMin": 80,
+    "noGoPreventedIncidentRateMin": 70,
+    "artifactsMinForEnforcement": 10,
+    "decisionsMinForEnforcement": 5,
+    "evidenceEnoughForEnforcement": false,
+    "enforced": false,
+    "wouldPass": false
+  },
+  "releaseReadinessValidation": {
+    "telemetryEvidencePass": false,
+    "releaseReadinessDecisionAccuracyAvailable": false,
+    "noGoPreventedIncidentRateAvailable": false
+  },
+  "telemetryIntegrity": {
+    "inspectedCriticalEvents": 7,
+    "requiredFieldViolations": [],
+    "schemaDriftAlerts": [
+      {
+        "index": 10,
+        "command": "workspai.studio.verify_passed",
+        "reason": "props_missing_or_invalid"
+      },
+      {
+        "index": 11,
+        "command": "workspai.studio.verify_passed",
+        "reason": "props_missing_or_invalid"
+      },
+      {
+        "index": 12,
+        "command": "workspai.studio.verify_passed",
+        "reason": "props_missing_or_invalid"
+      },
+      {
+        "index": 13,
+        "command": "workspai.studio.verify_passed",
+        "reason": "props_missing_or_invalid"
+      },
+      {
+        "index": 14,
+        "command": "workspai.studio.verify_failed",
+        "reason": "props_missing_or_invalid"
+      },
+      {
+        "index": 15,
+        "command": "workspai.studio.verify_failed",
+        "reason": "props_missing_or_invalid"
+      },
+      {
+        "index": 16,
+        "command": "workspai.studio.verify_failed",
+        "reason": "props_missing_or_invalid"
+      }
+    ],
+    "scopeMismatchAlerts": [],
+    "observedProjectPaths": [],
+    "telemetryRequiredFieldsPass": true,
+    "telemetrySchemaDriftPass": false,
+    "telemetryScopeMismatchPass": true
+  },
+  "predictiveCalibration": {
+    "mode": "off",
+    "tightenedActive": false,
+    "productionWindows": 3,
+    "productionWindowsMinForTightening": 3,
+    "predictionShown": 10,
+    "predictionShownMinForTightening": 50,
+    "predictionOutcomes": 7,
+    "predictionOutcomesMinForTightening": 30,
+    "reasons": {
+      "canTightenByWindows": true,
+      "canTightenByEvidence": false
+    },
+    "baseThresholds": {
+      "predictivePrecisionMin": 0,
+      "falseAlarmRateMax": 100,
+      "preventedIncidentRateMin": 0
+    },
+    "tightenedThresholds": {
+      "predictivePrecisionMin": 70,
+      "falseAlarmRateMax": 30,
+      "preventedIncidentRateMin": 30
+    },
+    "appliedThresholds": {
+      "predictivePrecisionMin": 0,
+      "falseAlarmRateMax": 100,
+      "preventedIncidentRateMin": 0
+    }
+  },
+  "aggregation": {
+    "prevented_incident_rate": {
+      "key": "prevented_incident_rate",
+      "numerator": 5,
+      "denominator": 10,
+      "value": 50,
+      "unit": "percent",
+      "eventCommands": [
+        "workspai.studio.prediction_verified",
+        "workspai.studio.prediction_shown"
+      ]
+    },
+    "predictive_precision": {
+      "key": "predictive_precision",
+      "numerator": 5,
+      "denominator": 7,
+      "value": 71.43,
+      "unit": "percent",
+      "eventCommands": [
+        "workspai.studio.prediction_verified",
+        "workspai.studio.prediction_falsified"
+      ]
+    },
+    "false_alarm_rate": {
+      "key": "false_alarm_rate",
+      "numerator": 2,
+      "denominator": 7,
+      "value": 28.57,
+      "unit": "percent",
+      "eventCommands": [
+        "workspai.studio.prediction_falsified",
+        "workspai.studio.prediction_verified"
+      ]
+    }
+  },
+  "metrics": {
+    "loopStarted": 5,
+    "nextActionClicked": 0,
+    "actionExecuted": 5,
+    "verifyOutcomes": 7,
+    "verifyPassed": 4,
+    "verifyFailed": 3,
+    "verifyPhaseReach": 140,
+    "bridgeRouteCompletionRate": 100,
+    "predictionShown": 10,
+    "predictionAccepted": 7,
+    "predictionVerified": 5,
+    "predictionFalsified": 2,
+    "predictionIgnored": 3,
+    "predictivePrecision": 71.43,
+    "falseAlarmRate": 28.57,
+    "preventedIncidentRate": 50,
+    "reproPackCaptured": 4,
+    "reproPackExported": 3,
+    "reproPackImported": 2,
+    "incidentReplayReady": 2,
+    "incidentReplayMemoryEnriched": 2,
+    "reproPackShareRate": 75,
+    "replayToResolutionRate": 100,
+    "acceptanceRate": 70,
+    "verificationCoverage": 100,
+    "rollbackAttempted": 3,
+    "rollbackSucceeded": 2,
+    "verifyAutoRollbackSuccessRate": 66.67,
+    "falseConfidenceRate": 33.33,
+    "verifyPackAutopilotGenerated": 0,
+    "verifyPackAutopilotReady": 0,
+    "verifyPackAutopilotReadinessRate": null,
+    "releaseReadinessArtifactsExported": 0,
+    "goDecisionsExported": 0,
+    "noGoDecisionsExported": 0,
+    "decisionsValidated": 0,
+    "decisionsCorrect": 0,
+    "noGoDecisionsValidated": 0,
+    "noGoPreventedIncident": 0,
+    "releaseReadinessDecisionAccuracy": null,
+    "noGoPreventedIncidentRate": null,
+    "outcomeSampleCount": 5,
+    "timeToFirstConfidentActionP50Ms": 14000,
+    "firstActionSuccessRate": 0.8,
+    "reopenRateAfterSuggestedFix": 0,
+    "overrideRateOnRecommendations": 0.2,
+    "verifyPathCompletionRate": 1,
+    "rollbackRecoverySuccessRate": 1,
+    "firstChunkP95": 2100,
+    "syncP95": 1200,
+    "boardRenderP95": 350,
+    "firstChunkSampleCount": 10,
+    "syncSampleCount": 10,
+    "boardRenderSampleCount": 10
+  },
+  "gates": {
+    "verifyPhaseReachPass": true,
+    "bridgeRouteCompletionPass": true,
+    "telemetryEvidencePass": true,
+    "predictivePrecisionPass": true,
+    "falseAlarmRatePass": true,
+    "preventedIncidentRatePass": true,
+    "outcomeTelemetryEvidencePass": true,
+    "timeToFirstConfidentActionP50Pass": true,
+    "firstActionSuccessRatePass": true,
+    "reopenRateAfterSuggestedFixPass": true,
+    "overrideRateOnRecommendationsPass": true,
+    "verifyPathCompletionRatePass": true,
+    "rollbackRecoverySuccessRatePass": true,
+    "reproPackShareRatePass": true,
+    "replayToResolutionRatePass": true,
+    "verifyPackAutopilotReadinessRatePass": true,
+    "releaseReadinessValidationPass": true,
+    "rollbackTelemetryEvidencePass": true,
+    "verifyAutoRollbackSuccessRatePass": true,
+    "falseConfidenceRatePass": true,
+    "firstChunkLatencyPass": true,
+    "syncLatencyPass": true,
+    "boardRenderLatencyPass": true,
+    "telemetryRequiredFieldsPass": true,
+    "telemetrySchemaDriftPass": false,
+    "telemetryScopeMismatchPass": true,
+    "overallPass": false
+  }
+}
+[release-stop-gate] Release blocked: KPI hard-gate failed.

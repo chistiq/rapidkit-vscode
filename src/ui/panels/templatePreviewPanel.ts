@@ -4,6 +4,7 @@
  */
 
 import * as vscode from 'vscode';
+import { normalizeWebviewMessage } from '../../contracts/webviewProtocol';
 import { WorkspaiTemplate } from '../../types';
 
 export class TemplatePreviewPanel {
@@ -17,7 +18,12 @@ export class TemplatePreviewPanel {
 
     // Handle messages
     this._panel.webview.onDidReceiveMessage(
-      (message) => {
+      (rawMessage) => {
+        const message = normalizeWebviewMessage(rawMessage);
+        if (!message) {
+          return;
+        }
+
         switch (message.command) {
           case 'useTemplate':
             vscode.commands.executeCommand('workspai.createProject');
@@ -216,8 +222,20 @@ export class TemplatePreviewPanel {
     <script>
         const vscode = acquireVsCodeApi();
 
+        function postCommand(command) {
+            const message = {
+                command,
+                data: {},
+                meta: {
+                    source: 'template-preview-webview',
+                    version: 1
+                }
+            };
+            return vscode.postMessage(message);
+        }
+
         function useTemplate() {
-            vscode.postMessage({ command: 'useTemplate' });
+            postCommand('useTemplate');
         }
     </script>
 </body>

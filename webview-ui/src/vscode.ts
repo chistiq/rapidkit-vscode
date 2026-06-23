@@ -3,15 +3,21 @@
  * Handles communication between webview and extension
  */
 
+import {
+  createWebviewMessage,
+  type WebviewProtocolMeta,
+  type WebviewToExtensionMessage,
+} from '@workspai-contracts/webviewProtocol';
+
 // VS Code API type (provided by extension host)
 declare function acquireVsCodeApi(): {
-  postMessage(message: any): void;
-  getState(): any;
-  setState(state: any): void;
+  postMessage(message: WebviewToExtensionMessage): void;
+  getState(): unknown;
+  setState(state: unknown): void;
 };
 
 class VSCodeAPI {
-  private readonly vscode;
+  private readonly vscode: ReturnType<typeof acquireVsCodeApi>;
 
   constructor() {
     this.vscode = acquireVsCodeApi();
@@ -20,15 +26,26 @@ class VSCodeAPI {
   /**
    * Send message to extension
    */
-  public postMessage(command: string, data?: any) {
-    this.vscode.postMessage({ command, data });
+  public postMessage<C extends string, D = unknown>(
+    command: C,
+    data?: D,
+    meta?: WebviewProtocolMeta
+  ) {
+    this.vscode.postMessage(createWebviewMessage(command, data, meta));
+  }
+
+  /**
+   * Send a prebuilt protocol message to extension.
+   */
+  public postProtocolMessage(message: WebviewToExtensionMessage) {
+    this.vscode.postMessage(message);
   }
 
   /**
    * Get webview state
    */
   public getState<T = any>(): T | undefined {
-    return this.vscode.getState();
+    return this.vscode.getState() as T | undefined;
   }
 
   /**

@@ -49,6 +49,8 @@ export async function resolveProjectScanRoot(
 
   if (typeof projectJson?.kit_name === 'string') {
     kitName = projectJson.kit_name;
+  } else if (typeof projectJson?.kit === 'string') {
+    kitName = projectJson.kit;
   }
   if (typeof projectJson?.runtime === 'string') {
     runtime = projectJson.runtime;
@@ -193,6 +195,17 @@ export function normalizeKitName(
   | 'gogin.standard'
   | 'springboot.standard'
   | 'dotnet.webapi.clean'
+  | 'frontend.nextjs'
+  | 'frontend.remix'
+  | 'frontend.vite-react'
+  | 'frontend.vite-vue'
+  | 'frontend.vite-svelte'
+  | 'frontend.vite-solid'
+  | 'frontend.vite-vanilla'
+  | 'frontend.nuxt'
+  | 'frontend.angular'
+  | 'frontend.astro'
+  | 'frontend.sveltekit'
   | 'unknown' {
   switch (value) {
     case 'fastapi.ddd':
@@ -209,6 +222,28 @@ export function normalizeKitName(
       return 'springboot.standard';
     case 'dotnet.webapi.clean':
       return 'dotnet.webapi.clean';
+    case 'frontend.nextjs':
+      return 'frontend.nextjs';
+    case 'frontend.remix':
+      return 'frontend.remix';
+    case 'frontend.vite-react':
+      return 'frontend.vite-react';
+    case 'frontend.vite-vue':
+      return 'frontend.vite-vue';
+    case 'frontend.vite-svelte':
+      return 'frontend.vite-svelte';
+    case 'frontend.vite-solid':
+      return 'frontend.vite-solid';
+    case 'frontend.vite-vanilla':
+      return 'frontend.vite-vanilla';
+    case 'frontend.nuxt':
+      return 'frontend.nuxt';
+    case 'frontend.angular':
+      return 'frontend.angular';
+    case 'frontend.astro':
+      return 'frontend.astro';
+    case 'frontend.sveltekit':
+      return 'frontend.sveltekit';
     default:
       return 'unknown';
   }
@@ -236,6 +271,39 @@ export function normalizeFrameworkHint(
   }
   if (normalizedKit.startsWith('dotnet')) {
     return 'dotnet';
+  }
+  if (normalizedKit === 'frontend.nextjs') {
+    return 'nextjs';
+  }
+  if (normalizedKit === 'frontend.remix') {
+    return 'remix';
+  }
+  if (normalizedKit === 'frontend.vite-react') {
+    return 'vite-react';
+  }
+  if (normalizedKit === 'frontend.vite-vue') {
+    return 'vite-vue';
+  }
+  if (normalizedKit === 'frontend.vite-svelte') {
+    return 'vite-svelte';
+  }
+  if (normalizedKit === 'frontend.vite-solid') {
+    return 'vite-solid';
+  }
+  if (normalizedKit === 'frontend.vite-vanilla') {
+    return 'vite-vanilla';
+  }
+  if (normalizedKit === 'frontend.nuxt') {
+    return 'nuxt';
+  }
+  if (normalizedKit === 'frontend.angular') {
+    return 'angular';
+  }
+  if (normalizedKit === 'frontend.astro') {
+    return 'astro';
+  }
+  if (normalizedKit === 'frontend.sveltekit') {
+    return 'sveltekit';
   }
   if (resolved.runtime === 'node' || resolved.engine === 'node' || resolved.engine === 'npm') {
     return 'nestjs';

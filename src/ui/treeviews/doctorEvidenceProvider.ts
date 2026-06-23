@@ -1,13 +1,21 @@
 /**
  * Doctor Evidence Provider
- * Reads .rapidkit/reports/doctor-last-run.json from the selected workspace
- * and renders it as an inline sidebar tree — no extra CLI call needed.
+ * Reads workspace `.rapidkit/reports/doctor-last-run.json` and, when a project is
+ * selected, merges project-scoped `doctor-project-last-run.json` (probes, signals).
  */
 
 import * as vscode from 'vscode';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import { buildRapidkitDisplayCommand } from '../../utils/platformCapabilities';
+import {
+  buildDoctorIssueHandoffPayload,
+  type DoctorIssueHandoffPayload,
+} from '../../core/doctorIssueHandoff';
+import {
+  summarizePolicyViolations,
+  formatPolicyViolation,
+} from '../../core/workspacePolicyViolations';
 
 const EVIDENCE_RELOAD_DEBOUNCE_MS = 200;
 
@@ -23,13 +31,29 @@ type SystemToolCheck = SystemCheck & {
   paths?: { location: string; path: string; version: string }[];
 };
 
+export interface DoctorProbe {
+  id?: string;
+  label?: string;
+  status?: string;
+  severity?: string;
+  reason?: string;
+  recommendation?: string;
+}
+
 export interface ProjectEvidence {
   name: string;
   path: string;
   framework?: string;
+  kit?: string;
+  projectKind?: string;
   depsInstalled?: boolean;
+  modulesHealthy?: boolean;
+  hasTests?: boolean;
+  hasCodeQuality?: boolean;
+  vulnerabilities?: number;
   issues: string[];
   fixCommands?: string[];
+  probes?: DoctorProbe[];
 }
 
 interface HealthScore {
@@ -45,6 +69,8 @@ export interface DoctorEvidence {
   workspaceName: string;
   projectScanCached?: boolean;
   healthScore: HealthScore;
+  focusProjectPath?: string;
+  focusHealthScore?: HealthScore;
   system: Record<string, SystemToolCheck> & {
     versions?: {
       core?: string;
@@ -73,10 +99,17 @@ type ItemKind =
   | 'system-check'
   | 'project'
   | 'issue'
+  | 'probe-section'
+  | 'probe'
+  | 'signal'
+  | 'policy-section'
+  | 'policy-violation'
   | 'no-data'
   | 'no-workspace';
 
 export class DoctorEvidenceItem extends vscode.TreeItem {
+  public issueHandoff?: DoctorIssueHandoffPayload;
+
   constructor(
     label: string,
     public readonly kind: ItemKind,
@@ -88,6 +121,123 @@ export class DoctorEvidenceItem extends vscode.TreeItem {
   }
 }
 
+function attachDoctorIssueHandoff(
+  item: DoctorEvidenceItem,
+  input: {
+    issue: string;
+    kind: DoctorIssueHandoffPayload['kind'];
+    probe?: DoctorProbe;
+  }
+): DoctorEvidenceItem {
+  const handoff = buildDoctorIssueHandoffPayload({
+    issue: input.issue,
+    kind: input.kind,
+    evidence: item.evidenceData,
+    project: item.projectData,
+    probe: input.probe,
+  });
+  if (handoff) {
+    item.issueHandoff = handoff;
+    item.contextValue = 'doctorIssue';
+  }
+  return item;
+}
+
+function isInsideWorkspace(projectPath: string, workspacePath: string): boolean {
+  const project = path.resolve(projectPath);
+  const workspace = path.resolve(workspacePath);
+  return project === workspace || project.startsWith(`${workspace}${path.sep}`);
+}
+
+function parseHealthScore(raw: unknown): HealthScore {
+  const score =
+    raw && typeof raw === 'object'
+      ? (raw as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
+  const passed = Number(score.passed ?? 0);
+  const warnings = Number(score.warnings ?? 0);
+  const errors = Number(score.errors ?? 0);
+  const total = Number(score.total ?? passed + warnings + errors);
+  return { total, passed, warnings, errors };
+}
+
+function parseProbes(raw: unknown): DoctorProbe[] | undefined {
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  const probes = raw
+    .filter((probe): probe is Record<string, unknown> => probe && typeof probe === 'object')
+    .map((probe) => ({
+      id: typeof probe.id === 'string' ? probe.id : undefined,
+      label: typeof probe.label === 'string' ? probe.label : undefined,
+      status: typeof probe.status === 'string' ? probe.status : undefined,
+      severity: typeof probe.severity === 'string' ? probe.severity : undefined,
+      reason: typeof probe.reason === 'string' ? probe.reason : undefined,
+      recommendation: typeof probe.recommendation === 'string' ? probe.recommendation : undefined,
+    }));
+  return probes.length > 0 ? probes : undefined;
+}
+
+export function normalizeProjectEvidence(raw: unknown): ProjectEvidence | null {
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  const projectPath = typeof record.path === 'string' ? record.path : '';
+  if (!projectPath) {
+    return null;
+  }
+  const vulnerabilitiesRaw = Number(record.vulnerabilities);
+  return {
+    name: typeof record.name === 'string' ? record.name : path.basename(projectPath),
+    path: projectPath,
+    framework: typeof record.framework === 'string' ? record.framework : undefined,
+    kit: typeof record.kit === 'string' ? record.kit : undefined,
+    projectKind: typeof record.projectKind === 'string' ? record.projectKind : undefined,
+    depsInstalled: typeof record.depsInstalled === 'boolean' ? record.depsInstalled : undefined,
+    modulesHealthy: typeof record.modulesHealthy === 'boolean' ? record.modulesHealthy : undefined,
+    hasTests: typeof record.hasTests === 'boolean' ? record.hasTests : undefined,
+    hasCodeQuality: typeof record.hasCodeQuality === 'boolean' ? record.hasCodeQuality : undefined,
+    vulnerabilities: Number.isFinite(vulnerabilitiesRaw) ? vulnerabilitiesRaw : undefined,
+    issues: Array.isArray(record.issues)
+      ? record.issues.filter((issue): issue is string => typeof issue === 'string')
+      : [],
+    fixCommands: Array.isArray(record.fixCommands)
+      ? record.fixCommands.filter((cmd): cmd is string => typeof cmd === 'string')
+      : undefined,
+    probes: parseProbes(record.probes),
+  };
+}
+
+function mergeProjectEvidence(base: ProjectEvidence, rich: ProjectEvidence): ProjectEvidence {
+  return {
+    ...base,
+    ...rich,
+    issues: rich.issues.length > 0 ? rich.issues : base.issues,
+    probes: rich.probes?.length ? rich.probes : base.probes,
+    fixCommands: rich.fixCommands?.length ? rich.fixCommands : base.fixCommands,
+  };
+}
+
+function projectHasAttention(project: ProjectEvidence): boolean {
+  return (
+    project.issues.length > 0 ||
+    (project.probes?.some((probe) => probe.status === 'warn' || probe.status === 'fail') ??
+      false) ||
+    (project.vulnerabilities ?? 0) > 0
+  );
+}
+
+function probeStatusIcon(status?: string): string {
+  if (status === 'fail' || status === 'error') {
+    return '❌';
+  }
+  if (status === 'warn') {
+    return '⚠️';
+  }
+  return '✅';
+}
+
 // ─── Provider ───────────────────────────────────────────────────────────────
 
 export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvidenceItem> {
@@ -96,20 +246,24 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
   >();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  // Live resolver — called every time getChildren() runs.
-  // Falls back to the last explicitly-set path so both code paths work.
   private workspacePathResolver: () => string | null;
+  private projectPathResolver: () => string | null;
   private _overridePath: string | null = null;
   private fileWatcher?: vscode.FileSystemWatcher;
+  private verifyWatcher?: vscode.FileSystemWatcher;
   private evidence: DoctorEvidence | null = null;
+  private verifyReportRaw: Record<string, unknown> | null = null;
   private reloadTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(workspacePathResolver: () => string | null = () => null) {
+  constructor(
+    workspacePathResolver: () => string | null = () => null,
+    projectPathResolver: () => string | null = () => null
+  ) {
     this.workspacePathResolver = workspacePathResolver;
+    this.projectPathResolver = projectPathResolver;
     this.setupFileWatcher();
   }
 
-  // Still available so the workspaceSelected command can force a refresh
   setWorkspacePath(workspacePath: string | null): void {
     this._overridePath = workspacePath;
     this.reload();
@@ -120,26 +274,69 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
   }
 
   private resolvedPath(): string | null {
-    // Prefer live resolver; fall back to last explicit override
     return this.workspacePathResolver() ?? this._overridePath;
   }
 
+  private resolvedProjectPath(): string | null {
+    const workspacePath = this.resolvedPath();
+    const projectPath = this.projectPathResolver();
+    if (!workspacePath || !projectPath) {
+      return null;
+    }
+    if (!isInsideWorkspace(projectPath, workspacePath)) {
+      return null;
+    }
+    return projectPath;
+  }
+
   private async reload(): Promise<void> {
-    this.evidence = null; // invalidate cache so getChildren re-reads fresh
+    this.evidence = null;
     this.evidence = await this.readEvidence();
+    this.verifyReportRaw = await this.readVerifyReportRaw();
     this._onDidChangeTreeData.fire();
   }
 
   private setupFileWatcher(): void {
-    // Auto-refresh whenever any evidence file is written by CLI
     this.fileWatcher = vscode.workspace.createFileSystemWatcher(
-      '**/.rapidkit/reports/doctor-last-run.json',
+      '**/.rapidkit/reports/doctor-*.json',
       false,
       false,
       true
     );
     this.fileWatcher.onDidCreate(() => this.scheduleReload());
     this.fileWatcher.onDidChange(() => this.scheduleReload());
+
+    // Workspace verify drives the governance/policy section of the health tree.
+    this.verifyWatcher = vscode.workspace.createFileSystemWatcher(
+      '**/.rapidkit/reports/workspace-verify-last-run.json',
+      false,
+      false,
+      true
+    );
+    this.verifyWatcher.onDidCreate(() => this.scheduleReload());
+    this.verifyWatcher.onDidChange(() => this.scheduleReload());
+  }
+
+  private async readVerifyReportRaw(): Promise<Record<string, unknown> | null> {
+    const workspacePath = this.resolvedPath();
+    if (!workspacePath) {
+      return null;
+    }
+    const verifyPath = path.join(
+      workspacePath,
+      '.rapidkit',
+      'reports',
+      'workspace-verify-last-run.json'
+    );
+    try {
+      if (!(await fs.pathExists(verifyPath))) {
+        return null;
+      }
+      const raw = (await fs.readJSON(verifyPath)) as Record<string, unknown>;
+      return raw && typeof raw === 'object' ? raw : null;
+    } catch {
+      return null;
+    }
   }
 
   private scheduleReload(): void {
@@ -155,6 +352,7 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
 
   dispose(): void {
     this.fileWatcher?.dispose();
+    this.verifyWatcher?.dispose();
     if (this.reloadTimer) {
       clearTimeout(this.reloadTimer);
       this.reloadTimer = null;
@@ -162,30 +360,145 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
     this._onDidChangeTreeData.dispose();
   }
 
-  private evidencePath(): string | null {
-    const p = this.resolvedPath();
-    if (!p) {
-      return null;
-    }
-    return path.join(p, '.rapidkit', 'reports', 'doctor-last-run.json');
-  }
-
-  private async readEvidence(): Promise<DoctorEvidence | null> {
-    const ep = this.evidencePath();
-    if (!ep) {
-      return null;
-    }
+  private async readWorkspaceEvidence(workspacePath: string): Promise<DoctorEvidence | null> {
+    const evidencePath = path.join(workspacePath, '.rapidkit', 'reports', 'doctor-last-run.json');
     try {
-      if (!(await fs.pathExists(ep))) {
+      if (!(await fs.pathExists(evidencePath))) {
         return null;
       }
-      return (await fs.readJSON(ep)) as DoctorEvidence;
+      const raw = (await fs.readJSON(evidencePath)) as DoctorEvidence;
+      raw.projects = Array.isArray(raw.projects)
+        ? raw.projects
+            .map((project) => normalizeProjectEvidence(project))
+            .filter((project): project is ProjectEvidence => project !== null)
+        : [];
+      return raw;
     } catch {
       return null;
     }
   }
 
-  // ─── Score bar helpers ────────────────────────────────────────────────────
+  private async loadProjectDoctorRaw(
+    workspacePath: string,
+    projectPath: string
+  ): Promise<Record<string, unknown> | undefined> {
+    const candidates = [
+      path.join(projectPath, '.rapidkit', 'reports', 'doctor-project-last-run.json'),
+      path.join(workspacePath, '.rapidkit', 'reports', 'doctor-project-last-run.json'),
+    ];
+
+    for (const candidate of candidates) {
+      try {
+        if (!(await fs.pathExists(candidate))) {
+          continue;
+        }
+        const raw = (await fs.readJSON(candidate)) as Record<string, unknown>;
+        const nestedProject =
+          raw.project && typeof raw.project === 'object'
+            ? (raw.project as Record<string, unknown>)
+            : undefined;
+        const reportProjectPath =
+          typeof raw.projectPath === 'string'
+            ? raw.projectPath
+            : typeof nestedProject?.path === 'string'
+              ? nestedProject.path
+              : undefined;
+        if (reportProjectPath && path.resolve(reportProjectPath) !== path.resolve(projectPath)) {
+          continue;
+        }
+        return raw;
+      } catch {
+        continue;
+      }
+    }
+
+    return undefined;
+  }
+
+  private applyProjectDoctorEnvelope(
+    evidence: DoctorEvidence | null,
+    raw: Record<string, unknown>,
+    workspacePath: string,
+    projectPath: string
+  ): DoctorEvidence {
+    const projectRecord = normalizeProjectEvidence(raw.project);
+    if (!projectRecord) {
+      return evidence ?? this.emptyEvidence(workspacePath);
+    }
+    projectRecord.path = projectPath;
+
+    const healthScore = parseHealthScore(raw.healthScore);
+    const generatedAt =
+      typeof raw.generatedAt === 'string' ? raw.generatedAt : new Date().toISOString();
+    const system =
+      raw.system && typeof raw.system === 'object'
+        ? (raw.system as DoctorEvidence['system'])
+        : (evidence?.system ?? ({} as DoctorEvidence['system']));
+
+    if (!evidence) {
+      return {
+        generatedAt,
+        workspacePath,
+        workspaceName: path.basename(workspacePath),
+        healthScore,
+        focusProjectPath: projectPath,
+        focusHealthScore: healthScore,
+        system,
+        projects: [projectRecord],
+      };
+    }
+
+    const projects = [...evidence.projects];
+    const index = projects.findIndex(
+      (project) => path.resolve(project.path) === path.resolve(projectPath)
+    );
+    if (index >= 0) {
+      projects[index] = mergeProjectEvidence(projects[index], projectRecord);
+    } else {
+      projects.push(projectRecord);
+    }
+
+    return {
+      ...evidence,
+      projects,
+      focusProjectPath: projectPath,
+      focusHealthScore: healthScore,
+    };
+  }
+
+  private emptyEvidence(workspacePath: string): DoctorEvidence {
+    return {
+      generatedAt: new Date().toISOString(),
+      workspacePath,
+      workspaceName: path.basename(workspacePath),
+      healthScore: { total: 0, passed: 0, warnings: 0, errors: 0 },
+      system: {} as DoctorEvidence['system'],
+      projects: [],
+    };
+  }
+
+  private async readEvidence(): Promise<DoctorEvidence | null> {
+    const workspacePath = this.resolvedPath();
+    if (!workspacePath) {
+      return null;
+    }
+
+    let evidence = await this.readWorkspaceEvidence(workspacePath);
+    const selectedProjectPath = this.resolvedProjectPath();
+    if (selectedProjectPath) {
+      const projectRaw = await this.loadProjectDoctorRaw(workspacePath, selectedProjectPath);
+      if (projectRaw) {
+        evidence = this.applyProjectDoctorEnvelope(
+          evidence,
+          projectRaw,
+          workspacePath,
+          selectedProjectPath
+        );
+      }
+    }
+
+    return evidence;
+  }
 
   private scoreBar(pct: number): string {
     const filled = Math.round(pct / 10);
@@ -229,14 +542,63 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
     return labels[key] ?? key;
   }
 
-  // ─── TreeDataProvider ─────────────────────────────────────────────────────
+  private buildIssueItem(
+    issue: string,
+    evidence: DoctorEvidence | undefined,
+    project?: ProjectEvidence
+  ): DoctorEvidenceItem {
+    const item = new DoctorEvidenceItem(
+      issue,
+      'issue',
+      vscode.TreeItemCollapsibleState.None,
+      evidence,
+      project
+    );
+    item.iconPath = new vscode.ThemeIcon('circle-filled');
+    item.tooltip = issue;
+    return attachDoctorIssueHandoff(item, { issue, kind: 'issue' });
+  }
+
+  private buildSignalRows(project: ProjectEvidence): DoctorEvidenceItem[] {
+    const rows: DoctorEvidenceItem[] = [];
+    if (typeof project.hasTests === 'boolean') {
+      const item = new DoctorEvidenceItem(
+        `${project.hasTests ? '✅' : '⊘'}  Tests`,
+        'signal',
+        vscode.TreeItemCollapsibleState.None
+      );
+      item.description = project.hasTests ? 'configured' : 'not detected';
+      rows.push(item);
+    }
+    if (typeof project.hasCodeQuality === 'boolean') {
+      const label =
+        project.projectKind === 'frontend' ? 'Lint (ESLint)' : 'Code quality (Ruff/format)';
+      const item = new DoctorEvidenceItem(
+        `${project.hasCodeQuality ? '✅' : '⊘'}  ${label}`,
+        'signal',
+        vscode.TreeItemCollapsibleState.None
+      );
+      item.description = project.hasCodeQuality ? 'configured' : 'not detected';
+      rows.push(item);
+    }
+    if (typeof project.modulesHealthy === 'boolean') {
+      const label = project.projectKind === 'frontend' ? 'Source tree' : 'RapidKit modules';
+      const item = new DoctorEvidenceItem(
+        `${project.modulesHealthy ? '✅' : '⚠️'}  ${label}`,
+        'signal',
+        vscode.TreeItemCollapsibleState.None
+      );
+      item.description = project.modulesHealthy ? 'healthy' : 'needs attention';
+      rows.push(item);
+    }
+    return rows;
+  }
 
   getTreeItem(element: DoctorEvidenceItem): vscode.TreeItem {
     return element;
   }
 
   async getChildren(element?: DoctorEvidenceItem): Promise<DoctorEvidenceItem[]> {
-    // ── Root ──────────────────────────────────────────────────────────────
     if (!element) {
       if (!this.resolvedPath()) {
         const item = new DoctorEvidenceItem(
@@ -249,12 +611,12 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
           command: 'workspai.quickSwitchWorkspace',
           title: 'Select Workspace',
         };
-        item.tooltip = 'Click to choose a workspace, then run doctor for health evidence.';
+        item.tooltip = 'Select a workspace, then run doctor for health evidence.';
         return [item];
       }
 
-      // Always re-read from disk — ensures workspace switch shows fresh data
       this.evidence = await this.readEvidence();
+      this.verifyReportRaw = await this.readVerifyReportRaw();
 
       if (!this.evidence) {
         const item = new DoctorEvidenceItem(
@@ -267,34 +629,44 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
           command: 'workspai.doctorEvidence.rerun',
           title: 'Run Doctor',
         };
-        item.tooltip = `Click to run: ${buildRapidkitDisplayCommand(['doctor', 'workspace'])}`;
+        item.tooltip = `Run ${buildRapidkitDisplayCommand(['doctor', 'workspace'])}`;
         return [item];
       }
 
       const ev = this.evidence;
+      const displayScore = ev.focusHealthScore ?? ev.healthScore;
       const pct =
-        ev.healthScore.total > 0
-          ? Math.round((ev.healthScore.passed / ev.healthScore.total) * 100)
-          : 0;
+        displayScore.total > 0 ? Math.round((displayScore.passed / displayScore.total) * 100) : 0;
+      const focusedProject = ev.focusProjectPath
+        ? ev.projects.find(
+            (project) => path.resolve(project.path) === path.resolve(ev.focusProjectPath!)
+          )
+        : undefined;
 
-      // ── Summary row ───────────────────────────────────────────────────
       const summaryItem = new DoctorEvidenceItem(
         `${pct}%  ${this.scoreBar(pct)}`,
         'summary',
         vscode.TreeItemCollapsibleState.None,
         ev
       );
-      summaryItem.description = `✅ ${ev.healthScore.passed}  ⚠️ ${ev.healthScore.warnings}  ❌ ${ev.healthScore.errors}`;
+      summaryItem.description = focusedProject
+        ? `${focusedProject.name} · ✅ ${displayScore.passed}  ⚠️ ${displayScore.warnings}  ❌ ${displayScore.errors}`
+        : `✅ ${displayScore.passed}  ⚠️ ${displayScore.warnings}  ❌ ${displayScore.errors}`;
       summaryItem.iconPath = new vscode.ThemeIcon('pulse');
       summaryItem.contextValue = 'doctorSummary';
       summaryItem.tooltip = new vscode.MarkdownString(
-        `**Workspace:** ${ev.workspaceName}\n\n` +
-          `Score: **${pct}%** (${ev.healthScore.passed} passed, ` +
-          `${ev.healthScore.warnings} warnings, ${ev.healthScore.errors} errors)\n\n` +
-          (ev.projectScanCached ? '_Using cached project scan_' : '_Fresh scan_')
+        (focusedProject
+          ? `**Project focus:** ${focusedProject.name}\n\n`
+          : `**Workspace:** ${ev.workspaceName}\n\n`) +
+          `Score: **${pct}%** (${displayScore.passed} passed, ` +
+          `${displayScore.warnings} warnings, ${displayScore.errors} errors)\n\n` +
+          (ev.projectScanCached
+            ? '_Using cached project scan_'
+            : focusedProject
+              ? '_Project doctor evidence_'
+              : '_Fresh scan_')
       );
 
-      // ── Timestamp row ─────────────────────────────────────────────────
       const tsItem = new DoctorEvidenceItem(
         `Last checked: ${this.relativeTime(ev.generatedAt)}`,
         'timestamp',
@@ -302,14 +674,17 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
         ev
       );
       tsItem.iconPath = new vscode.ThemeIcon('history');
-      tsItem.description = ev.projectScanCached ? '(cached scan)' : '';
+      tsItem.description = ev.projectScanCached
+        ? '(cached scan)'
+        : focusedProject
+          ? '(project)'
+          : '';
       tsItem.tooltip = new Date(ev.generatedAt).toLocaleString();
 
-      // ── System Tools section ──────────────────────────────────────────
-      const systemKeys = Object.keys(ev.system).filter((k) => k !== 'versions');
-      const systemWarnings = systemKeys.filter((k) => ev.system[k].status !== 'ok').length;
+      const systemKeys = Object.keys(ev.system).filter((key) => key !== 'versions');
+      const systemWarnings = systemKeys.filter((key) => ev.system[key].status !== 'ok').length;
       const systemSection = new DoctorEvidenceItem(
-        `System Tools`,
+        'System Tools',
         'section',
         vscode.TreeItemCollapsibleState.Collapsed,
         ev
@@ -317,8 +692,7 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
       systemSection.description = systemWarnings > 0 ? `${systemWarnings} issue(s)` : 'all ok';
       systemSection.iconPath = new vscode.ThemeIcon('server');
 
-      // ── Projects section ──────────────────────────────────────────────
-      const projectIssues = ev.projects.filter((p) => p.issues.length > 0).length;
+      const projectAttention = ev.projects.filter((project) => projectHasAttention(project)).length;
       const projectSection = new DoctorEvidenceItem(
         `Projects (${ev.projects.length})`,
         'section',
@@ -326,13 +700,41 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
         ev
       );
       projectSection.description =
-        projectIssues > 0 ? `${projectIssues} with issues` : 'all healthy';
+        projectAttention > 0 ? `${projectAttention} need attention` : 'all healthy';
       projectSection.iconPath = new vscode.ThemeIcon('package');
 
-      return [summaryItem, tsItem, systemSection, projectSection];
+      const nodes = [summaryItem, tsItem, systemSection, projectSection];
+
+      const policy = summarizePolicyViolations(this.verifyReportRaw);
+      if (policy.violations.length > 0 || policy.blockers.length > 0) {
+        const policySection = new DoctorEvidenceItem(
+          'Governance Policy',
+          'policy-section',
+          policy.errors > 0 || policy.blockers.length > 0
+            ? vscode.TreeItemCollapsibleState.Expanded
+            : vscode.TreeItemCollapsibleState.Collapsed,
+          ev
+        );
+        const modeSuffix = policy.mode ? ` · ${policy.mode}` : '';
+        policySection.description = `${policy.errors} error(s) · ${policy.warnings} warning(s)${modeSuffix}`;
+        policySection.iconPath = new vscode.ThemeIcon(
+          policy.errors > 0 || policy.blockers.length > 0 ? 'shield' : 'warning'
+        );
+        policySection.contextValue = 'workspacePolicySection';
+        policySection.tooltip = new vscode.MarkdownString(
+          `**Governance policy** (\`workspace verify\`)\n\n` +
+            `Mode: \`${policy.mode ?? 'unknown'}\`\n\n` +
+            `${policy.errors} error(s), ${policy.warnings} warning(s).\n\n` +
+            (policy.blockers.length > 0
+              ? `Error-severity violations remain a persistent release blocker until resolved.`
+              : `Warnings do not block release but should be reviewed.`)
+        );
+        nodes.push(policySection);
+      }
+
+      return nodes;
     }
 
-    // ── System Tools children ──────────────────────────────────────────────
     if (element.kind === 'section' && element.label?.toString().startsWith('System')) {
       const ev = element.evidenceData!;
       return Object.entries(ev.system)
@@ -350,58 +752,150 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
         });
     }
 
-    // ── Projects children ──────────────────────────────────────────────────
     if (element.kind === 'section' && element.label?.toString().startsWith('Projects')) {
       const ev = element.evidenceData!;
       return ev.projects.map((project) => {
-        const hasIssues = project.issues.length > 0;
-        const icon = hasIssues ? '⚠️' : '✅';
+        const needsAttention = projectHasAttention(project);
+        const isFocused =
+          ev.focusProjectPath && path.resolve(project.path) === path.resolve(ev.focusProjectPath);
+        const icon = needsAttention ? '⚠️' : '✅';
         const item = new DoctorEvidenceItem(
-          `${icon}  ${project.name}`,
+          `${icon}  ${project.name}${isFocused ? ' (selected)' : ''}`,
           'project',
-          hasIssues
-            ? vscode.TreeItemCollapsibleState.Collapsed
+          needsAttention || isFocused
+            ? vscode.TreeItemCollapsibleState.Expanded
             : vscode.TreeItemCollapsibleState.None,
           ev,
           project
         );
-        item.description = project.framework ?? '';
-        item.tooltip = hasIssues
-          ? `${project.issues.length} issue(s): ${project.issues[0]}`
+        const descriptionParts = [project.framework ?? project.kit ?? ''];
+        if ((project.vulnerabilities ?? 0) > 0) {
+          descriptionParts.push(`${project.vulnerabilities} vuln(s)`);
+        }
+        const probeWarnings =
+          project.probes?.filter((probe) => probe.status === 'warn' || probe.status === 'fail') ??
+          [];
+        if (probeWarnings.length > 0) {
+          descriptionParts.push(`${probeWarnings.length} probe(s)`);
+        }
+        item.description = descriptionParts.filter(Boolean).join(' · ');
+        item.tooltip = needsAttention
+          ? `${project.issues.length} issue(s), ${probeWarnings.length} probe warning(s)`
           : `Healthy · ${project.framework ?? ''}`;
-        item.iconPath = new vscode.ThemeIcon(hasIssues ? 'warning' : 'pass');
+        item.iconPath = new vscode.ThemeIcon(needsAttention ? 'warning' : 'pass');
         return item;
       });
     }
 
-    // ── Project issues children ────────────────────────────────────────────
     if (element.kind === 'project' && element.projectData) {
-      return element.projectData.issues.map((issue) => {
-        const item = new DoctorEvidenceItem(issue, 'issue', vscode.TreeItemCollapsibleState.None);
-        item.iconPath = new vscode.ThemeIcon('circle-filled');
-        item.tooltip = issue;
-        item.contextValue = 'doctorIssue';
-        const evidence = element.evidenceData;
-        const versions = evidence?.system?.versions;
-        const aiContext: DoctorIssueAIContext = {
-          workspaceName: evidence?.workspaceName,
-          generatedAt: evidence?.generatedAt,
-          healthScore: evidence?.healthScore,
-          systemVersions:
-            versions && (versions.core || versions.npm)
-              ? {
-                  core: typeof versions.core === 'string' ? versions.core : undefined,
-                  npm: typeof versions.npm === 'string' ? versions.npm : undefined,
-                }
-              : undefined,
-        };
-        item.command = {
-          command: 'workspai.doctorEvidence.fixIssueWithAI',
-          title: 'Fix with AI',
-          arguments: [issue, element.projectData, aiContext],
-        };
+      const project = element.projectData;
+      const evidence = element.evidenceData;
+      const items: DoctorEvidenceItem[] = [];
+
+      items.push(...this.buildSignalRows(project));
+
+      if ((project.vulnerabilities ?? 0) > 0) {
+        const count = project.vulnerabilities ?? 0;
+        const vulnText = `${count} npm security vulnerabilit${count === 1 ? 'y' : 'ies'} reported`;
+        items.push(this.buildIssueItem(vulnText, evidence, project));
+      }
+
+      if (project.probes && project.probes.length > 0) {
+        const probeWarnings = project.probes.filter(
+          (probe) => probe.status === 'warn' || probe.status === 'fail'
+        );
+        const probeSection = new DoctorEvidenceItem(
+          'Probe checks',
+          'probe-section',
+          probeWarnings.length > 0
+            ? vscode.TreeItemCollapsibleState.Expanded
+            : vscode.TreeItemCollapsibleState.Collapsed,
+          evidence,
+          project
+        );
+        probeSection.description =
+          probeWarnings.length > 0 ? `${probeWarnings.length} need attention` : 'all pass';
+        probeSection.iconPath = new vscode.ThemeIcon(probeWarnings.length > 0 ? 'warning' : 'pass');
+        items.push(probeSection);
+      }
+
+      for (const issue of project.issues) {
+        items.push(this.buildIssueItem(issue, evidence, project));
+      }
+
+      return items;
+    }
+
+    if (element.kind === 'probe-section' && element.projectData?.probes) {
+      const evidence = element.evidenceData;
+      const project = element.projectData;
+      return element.projectData.probes.map((probe) => {
+        const label = probe.label ?? probe.id ?? 'Probe check';
+        const detail = probe.reason?.trim() || probe.recommendation?.trim() || '';
+        const item = new DoctorEvidenceItem(
+          `${probeStatusIcon(probe.status)}  ${label}`,
+          'probe',
+          vscode.TreeItemCollapsibleState.None,
+          evidence,
+          project
+        );
+        item.description = detail || (probe.status ?? '');
+        item.tooltip = detail || label;
+        if (probe.status === 'warn' || probe.status === 'fail') {
+          const issueText = detail ? `${label}: ${detail}` : label;
+          attachDoctorIssueHandoff(item, { issue: issueText, kind: 'probe', probe });
+        }
         return item;
       });
+    }
+
+    if (element.kind === 'policy-section') {
+      const evidence = element.evidenceData;
+      const policy = summarizePolicyViolations(this.verifyReportRaw);
+      const items: DoctorEvidenceItem[] = [];
+      const errorViolationLabels = new Set(
+        policy.violations
+          .filter((violation) => violation.severity === 'error')
+          .map(formatPolicyViolation)
+      );
+
+      const sorted = [...policy.violations].sort((a, b) =>
+        a.severity === b.severity ? 0 : a.severity === 'error' ? -1 : 1
+      );
+      for (const violation of sorted) {
+        const icon = violation.severity === 'error' ? '❌' : '⚠️';
+        const item = new DoctorEvidenceItem(
+          `${icon}  policy.${violation.code}`,
+          'policy-violation',
+          vscode.TreeItemCollapsibleState.None,
+          evidence
+        );
+        item.description = violation.message + (violation.target ? ` · ${violation.target}` : '');
+        item.tooltip = `${formatPolicyViolation(violation)}\n\nSource: ${violation.source} · severity: ${violation.severity}`;
+        attachDoctorIssueHandoff(item, {
+          issue: formatPolicyViolation(violation),
+          kind: 'policy-violation',
+        });
+        items.push(item);
+      }
+
+      // Surface non-policy blocking reasons (e.g. missing required evidence) too.
+      for (const reason of policy.blockers) {
+        if (errorViolationLabels.has(reason)) {
+          continue;
+        }
+        const item = new DoctorEvidenceItem(
+          `❌  ${reason}`,
+          'policy-violation',
+          vscode.TreeItemCollapsibleState.None,
+          evidence
+        );
+        item.tooltip = reason;
+        attachDoctorIssueHandoff(item, { issue: reason, kind: 'policy-violation' });
+        items.push(item);
+      }
+
+      return items;
     }
 
     return [];

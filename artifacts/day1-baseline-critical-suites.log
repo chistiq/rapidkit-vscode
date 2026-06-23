@@ -1,0 +1,44 @@
+
+> rapidkit-vscode@0.28.0 pretest
+> npm run compile && npm run lint
+
+
+> rapidkit-vscode@0.28.0 compile
+> npm run clean:dist && tsc -p ./ && npm run webview:build
+
+
+> rapidkit-vscode@0.28.0 clean:dist
+> node -e "require('fs').rmSync('dist',{recursive:true,force:true})"
+
+
+> rapidkit-vscode@0.28.0 webview:build
+> cd webview-ui && npm run build
+
+
+> rapidkit-webview-ui@0.1.0 build
+> node esbuild.js
+
+[watch] webview build started
+[watch] webview build finished
+
+> rapidkit-vscode@0.28.0 lint
+> eslint src --ext ts
+
+
+> rapidkit-vscode@0.28.0 test
+> vitest run src/test/incidentReproPackUtils.test.ts src/test/workspaceMemoryService.test.ts src/test/releaseStopGateScript.test.ts src/test/incidentStudioPayload.test.ts src/test/driftGuard.test.ts
+
+
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/home/rapidx/Documents/WOSP/Rapid/Front/rapidkit-vscode[39m
+
+ [32m✓[39m src/test/incidentReproPackUtils.test.ts [2m([22m[2m31 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m src/test/workspaceMemoryService.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 57[2mms[22m[39m
+ [32m✓[39m src/test/driftGuard.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 106[2mms[22m[39m
+ [32m✓[39m src/test/incidentStudioPayload.test.ts [2m([22m[2m34 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m src/test/releaseStopGateScript.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 270[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m      Tests [22m [1m[32m98 passed[39m[22m[90m (98)[39m
+[2m   Start at [22m 13:59:59
+[2m   Duration [22m 493ms[2m (transform 435ms, setup 0ms, import 554ms, tests 471ms, environment 1ms)[22m
+

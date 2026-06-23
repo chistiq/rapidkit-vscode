@@ -1,82 +1,133 @@
 import fs from 'fs';
 import path from 'path';
 
-const FILE_NAMES = [
-  'backend-import-stack-parity.snapshot.json',
-  'runtime-command-surface.v1.json',
+const SRC_CONTRACT_MIRROR_FILES = [
+  'create-planner-capabilities.v1.json',
+  'release-readiness.v1.json',
+  'workspace-registry.v1.json',
 ];
+
 const args = new Set(process.argv.slice(2));
 const checkOnly = args.has('--check');
+// CI gate flag: fail (instead of skip) when the canonical rapidkit-npm repo is
+// not present. Use this in a dedicated job that checks out both repos so cross-
+// repo contract drift fails the build. The default (resilient) behavior lets the
+// in-repo `validate:contracts` step run in an isolated extension checkout where
+// the sibling repo is absent — the self-contained contract tests still gate drift.
+const requireCanonical = args.has('--require-canonical');
 
 const extensionRoot = path.resolve(process.cwd());
+const npmRoot = process.env.RAPIDKIT_NPM_REPO_PATH
+  ? path.resolve(process.env.RAPIDKIT_NPM_REPO_PATH)
+  : path.resolve(extensionRoot, '..', 'rapidkit-npm');
 
-function normalizePath(value) {
-  return path.resolve(value);
-}
-
-function pickSource(fileName) {
-  const explicit = process.env.RAPIDKIT_BACKEND_IMPORT_PARITY_SNAPSHOT_SOURCE;
-  const runtimeExplicit = process.env.RAPIDKIT_RUNTIME_COMMAND_SURFACE_CONTRACT_SOURCE;
-  const extensionTarget = path.resolve(extensionRoot, 'contracts', fileName);
-  const candidates = [
-    fileName === 'backend-import-stack-parity.snapshot.json' && explicit?.trim()
-      ? normalizePath(explicit.trim())
-      : null,
-    fileName === 'runtime-command-surface.v1.json' && runtimeExplicit?.trim()
-      ? normalizePath(runtimeExplicit.trim())
-      : null,
-    path.resolve(extensionRoot, '..', 'contracts', fileName),
-    extensionTarget,
-  ].filter(Boolean);
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
+function readCanonical(fileName) {
+  const canonicalPath = path.resolve(npmRoot, 'contracts', fileName);
+  if (!fs.existsSync(canonicalPath)) {
+    console.error(`Canonical contract missing in rapidkit-npm: ${canonicalPath}`);
+    console.error(
+      'Edit rapidkit-npm/contracts/, then run: npm run sync:shared-contracts (from npm repo)'
+    );
+    process.exit(1);
   }
-
-  return null;
+  return {
+    canonicalPath,
+    content: fs.readFileSync(canonicalPath, 'utf-8'),
+  };
 }
 
-function writeTarget(targetPath, sourceContent) {
+function writeTarget(targetPath, content) {
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  fs.writeFileSync(targetPath, sourceContent, 'utf-8');
+  fs.writeFileSync(targetPath, content, 'utf-8');
 }
 
-function verifyTarget(targetPath, sourceContent) {
+function verifyTarget(targetPath, content) {
   if (!fs.existsSync(targetPath)) {
-    console.error(`Parity snapshot is missing: ${targetPath}`);
+    console.error(`Extension contract copy is missing: ${targetPath}`);
     process.exit(1);
   }
 
   const targetContent = fs.readFileSync(targetPath, 'utf-8');
-  if (targetContent !== sourceContent) {
-    console.error(`Parity snapshot is out of sync: ${targetPath}`);
+  if (targetContent !== content) {
+    console.error(`Extension contract copy is out of sync: ${targetPath}`);
+    console.error('From rapidkit-npm run: npm run sync:shared-contracts');
     process.exit(1);
   }
 }
 
-for (const fileName of FILE_NAMES) {
-  const extensionTarget = path.resolve(extensionRoot, 'contracts', fileName);
-  const sourcePath = pickSource(fileName);
-  if (!sourcePath) {
-    console.error(`No contract source found for ${fileName}.`);
-    console.error(`Expected one of: ${path.resolve(extensionRoot, '..', 'contracts', fileName)} or ${extensionTarget}`);
-    process.exit(1);
+function listJsonContracts(dir, prefix = '') {
+  if (!fs.existsSync(dir)) {
+    return [];
   }
 
-  const sourceContent = fs.readFileSync(sourcePath, 'utf-8');
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .flatMap((entry) => {
+      const relativePath = path.join(prefix, entry.name);
+      const absolutePath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        return listJsonContracts(absolutePath, relativePath);
+      }
+      return entry.isFile() && entry.name.endsWith('.json') ? [relativePath] : [];
+    })
+    .sort();
+}
+
+const npmContractsRoot = path.resolve(npmRoot, 'contracts');
+const canonicalRepoPresent = fs.existsSync(npmContractsRoot);
+
+if (!canonicalRepoPresent) {
+  const message = `Canonical rapidkit-npm contracts not found at: ${npmContractsRoot}`;
+  if (requireCanonical) {
+    console.error(message);
+    console.error(
+      'This gate requires the rapidkit-npm repo. Check it out next to rapidkit-vscode, ' +
+        'or set RAPIDKIT_NPM_REPO_PATH to its location.'
+    );
+    process.exit(1);
+  }
+  console.warn(`${message}\nSkipping cross-repo parity check (canonical repo not present).`);
+  console.warn(
+    'Self-contained contract tests still gate drift. Use --require-canonical in the dedicated CI job.'
+  );
+  process.exit(0);
+}
+
+const mirrorFiles = listJsonContracts(npmContractsRoot);
+
+if (mirrorFiles.length === 0) {
+  console.error(`No canonical JSON contracts found in rapidkit-npm: ${npmContractsRoot}`);
+  process.exit(1);
+}
+
+for (const fileName of mirrorFiles) {
+  const { canonicalPath, content } = readCanonical(fileName);
+  const extensionTarget = path.resolve(extensionRoot, 'contracts', fileName);
 
   if (checkOnly) {
-    verifyTarget(extensionTarget, sourceContent);
+    verifyTarget(extensionTarget, content);
     continue;
   }
 
-  writeTarget(extensionTarget, sourceContent);
-  console.log(`Contract synced from ${sourcePath}`);
+  writeTarget(extensionTarget, content);
+  console.log(`Contract synced from ${canonicalPath}`);
   console.log(`- extension target: ${extensionTarget}`);
 }
 
+for (const fileName of SRC_CONTRACT_MIRROR_FILES) {
+  const { canonicalPath, content } = readCanonical(fileName);
+  const extensionTarget = path.resolve(extensionRoot, 'src', 'contracts', fileName);
+
+  if (checkOnly) {
+    verifyTarget(extensionTarget, content);
+    continue;
+  }
+
+  writeTarget(extensionTarget, content);
+  console.log(`Runtime contract synced from ${canonicalPath}`);
+  console.log(`- extension src target: ${extensionTarget}`);
+}
+
 if (checkOnly) {
-  console.log('Extension parity contracts are in sync.');
+  console.log('Extension contracts match rapidkit-npm/contracts/ canonical source.');
 }

@@ -52,6 +52,20 @@ export type IncidentWorkspaceGraphSnapshot = {
     hasWorkspaceMemory: boolean;
     localProcessingMode: boolean;
     projectScoped: boolean;
+    hasAnalyzeEvidence?: boolean;
+    hasWorkspaceModel?: boolean;
+    hasWorkspaceDiff?: boolean;
+    hasWorkspaceImpact?: boolean;
+    hasWorkspaceVerify?: boolean;
+    hasAgentContext?: boolean;
+  };
+  evidenceCompleteness?: {
+    level: 'enterprise-ready' | 'operational' | 'partial' | 'degraded';
+    score: number;
+    missing: string[];
+    stale: string[];
+    recommendedNextCommand?: string;
+    summary: string;
   };
   completeness: 'fresh' | 'cached' | 'partial' | 'degraded';
   lastUpdatedAt: number;

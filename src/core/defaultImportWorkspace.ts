@@ -1,0 +1,17 @@
+export {
+  MANAGED_DEFAULT_WORKSPACE_LABEL,
+  MANAGED_DEFAULT_WORKSPACE_NAME,
+  findExistingWorkspacePath,
+  getCanonicalWorkspacesDirectory,
+  getKnownWorkspaceLocationCandidates,
+  getLegacyWorkspacesDirectory,
+  getManagedDefaultWorkspaceCandidates,
+  hasWorkspaceRootMarkers,
+  isCanonicalWorkspacePath,
+  isDefaultWorkspaceCreationPath,
+  isLegacyWorkspacePath,
+  resolveCanonicalWorkspacePath,
+  resolveDefaultWorkspacePath,
+  resolveManagedDefaultImportWorkspacePath,
+  resolveNewWorkspacePath,
+} from './workspacePaths';

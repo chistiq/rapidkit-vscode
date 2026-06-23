@@ -15,7 +15,7 @@ describe('incidentStudioVerifyPolicy', () => {
         requiresImpactReview: true,
         requiresVerifyPath: true,
       })
-    ).toBe('Impact review and verification are required before claiming success.');
+    ).toBe('Workspace Advisor review and verification are required before claiming success.');
   });
 
   it('returns a warning presentation when verification is still required', () => {
@@ -46,6 +46,21 @@ describe('incidentStudioVerifyPolicy', () => {
       tone: 'failure',
       title: 'Verification failed',
       description: 'doctor-fix - command exited with failures',
+    });
+  });
+
+  it('labels release-gate blocks separately from verification failures', () => {
+    expect(
+      getActionResultPresentation({
+        success: false,
+        outputSummary:
+          'apply-debug-patch - blocked by release gate: Affected scope is unknown while impact review is required.',
+      })
+    ).toEqual({
+      tone: 'warning',
+      title: 'Release gate blocked',
+      description:
+        'apply-debug-patch - blocked by release gate: Affected scope is unknown while impact review is required.',
     });
   });
 

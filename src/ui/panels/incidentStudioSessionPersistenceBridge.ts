@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 
+import { createExtensionWebviewMessage } from '../../contracts/webviewProtocol';
+
 export const INCIDENT_STUDIO_SESSION_KEY_PREFIX = 'rapidkit.incidentStudio.session.';
 
 export const MAX_INCIDENT_STUDIO_APPROVAL_AUDIT_EVENTS = 50;
@@ -609,8 +611,5 @@ export async function postSessionToWebview(
   context: vscode.ExtensionContext
 ): Promise<void> {
   const session = readIncidentStudioSession(context, workspacePath);
-  webview.postMessage({
-    command: 'incidentStudioSessionLoaded',
-    data: session,
-  });
+  webview.postMessage(createExtensionWebviewMessage('incidentStudioSessionLoaded', session));
 }

@@ -7,6 +7,7 @@ import {
   resolvePolicyGateBlockedReasonsFromTelemetryCore,
   type IncidentStudioTelemetryGateSliceCore,
 } from './incidentStudioTelemetryPolicyCore';
+import { classifyTelemetryBlockers } from './incidentStudioTruthModel';
 
 export type IncidentStudioTelemetryGateSlice = IncidentStudioTelemetryGateSliceCore & {
   releaseReadinessValidationKpiStatus?: {
@@ -124,7 +125,7 @@ export function resolveTelemetryStateFromTelemetry(
     return 'pending';
   }
 
-  if (hard?.gates.overallPass && stabilization?.gates.overallPass) {
+  if (hard?.gates?.overallPass && stabilization?.gates?.overallPass) {
     return 'complete';
   }
 
@@ -134,42 +135,59 @@ export function resolveTelemetryStateFromTelemetry(
 export function mergePolicyGatesFromTelemetry(
   current: PolicyGateState,
   telemetry?: IncidentStudioTelemetryGateSlice | null,
-  analyzeVerdict?: 'ready' | 'needs-attention' | 'blocked'
+  analyzeVerdict?: 'ready' | 'needs-attention' | 'blocked',
+  options?: { artifactReleaseReady?: boolean }
 ): PolicyGateState {
   const telemetryState = resolveTelemetryStateFromTelemetry(telemetry);
   const blockedReasons = resolvePolicyGateBlockedReasonsFromTelemetry(telemetry);
   const analyzeFlow = mapAnalyzeVerdictToFlowState(analyzeVerdict);
   const analyzeRelease = mapAnalyzeVerdictToReleasePosture(analyzeVerdict);
+  const artifactReleaseReady = options?.artifactReleaseReady === true;
 
-  const hardBlocked = telemetry?.studioHardGateStatus?.gates.overallPass === false;
-  const stabilizationBlocked = telemetry?.studioStabilizationKpiStatus?.gates.overallPass === false;
+  const hardBlocked = telemetry?.studioHardGateStatus?.gates?.overallPass === false;
+  const stabilizationBlocked =
+    telemetry?.studioStabilizationKpiStatus?.gates?.overallPass === false;
   const enterpriseBlocked =
     telemetry?.enterpriseStabilizationGateStatus?.last7d?.hardGatePass === false;
   const expansionFrozen = telemetry?.enterpriseStabilizationGateStatus?.expansionFrozen === true;
 
+  const classified = classifyTelemetryBlockers(blockedReasons);
+  const releaseBlocking = expansionFrozen ? [] : classified.releaseBlocking;
+  const studioLearning = classified.studioLearning;
+
   let flowState = current.flowState;
   let releasePosture = current.releasePosture;
 
-  if (
-    hardBlocked ||
-    stabilizationBlocked ||
-    enterpriseBlocked ||
-    expansionFrozen ||
+  const releaseBlocked =
     analyzeFlow === 'blocking' ||
-    blockedReasons.length > 0
-  ) {
+    releaseBlocking.length > 0 ||
+    (hardBlocked && !artifactReleaseReady) ||
+    (stabilizationBlocked && !artifactReleaseReady && releaseBlocking.length > 0) ||
+    (enterpriseBlocked && !artifactReleaseReady && releaseBlocking.length > 0);
+
+  if (releaseBlocked) {
     flowState = 'blocking';
     releasePosture = 'no-go';
+  } else if (artifactReleaseReady && analyzeVerdict === 'ready') {
+    flowState = studioLearning.length > 0 || telemetryState === 'partial' ? 'warning' : 'passing';
+    releasePosture = 'go';
   } else if (
+    studioLearning.length > 0 ||
     telemetryState === 'partial' ||
     analyzeFlow === 'warning' ||
-    telemetry?.studioStabilizationKpiStatus?.gates.routePrecisionPass === false
+    expansionFrozen ||
+    telemetry?.studioStabilizationKpiStatus?.gates?.routePrecisionPass === false
   ) {
     flowState = flowState === 'blocking' ? 'blocking' : 'warning';
-    releasePosture = releasePosture === 'go' ? 'pending' : releasePosture;
+    releasePosture =
+      analyzeVerdict === 'ready' && !releaseBlocked
+        ? 'go'
+        : releasePosture === 'go'
+          ? 'pending'
+          : releasePosture;
   } else if (
-    telemetry?.studioHardGateStatus?.gates.overallPass &&
-    telemetry?.studioStabilizationKpiStatus?.gates.overallPass &&
+    telemetry?.studioHardGateStatus?.gates?.overallPass &&
+    telemetry?.studioStabilizationKpiStatus?.gates?.overallPass &&
     analyzeFlow === 'passing'
   ) {
     flowState = 'passing';
@@ -194,10 +212,19 @@ export function mergePolicyGatesFromTelemetry(
 export function isVerifyActionBlockedByPolicyGates(input: {
   policyGates: PolicyGateState;
   verifyGateBlockedReasons?: string[];
+  artifactReleaseReady?: boolean;
 }): boolean {
+  if (input.artifactReleaseReady) {
+    return false;
+  }
+
+  const releaseBlocking = classifyTelemetryBlockers(
+    input.verifyGateBlockedReasons ?? []
+  ).releaseBlocking;
+
   return (
     input.policyGates.flowState === 'blocking' ||
     input.policyGates.telemetryState === 'stale' ||
-    (input.verifyGateBlockedReasons?.length ?? 0) > 0
+    releaseBlocking.length > 0
   );
 }

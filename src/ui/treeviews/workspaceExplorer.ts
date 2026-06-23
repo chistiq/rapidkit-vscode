@@ -395,7 +395,18 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
 
         // Not a valid Workspai workspace
         vscode.window.showErrorMessage(
-          `❌ Invalid Workspai workspace\n\nThe selected folder is not a valid Workspai workspace.\n\nA valid workspace must have:\n• .rapidkit-workspace marker file, OR\n• pyproject.toml + .venv + rapidkit script, OR\n• .rapidkit/project.json or .rapidkit/context.json`,
+          [
+            'Invalid Workspai workspace',
+            '',
+            'The selected folder is not a governed workspace root.',
+            '',
+            'A valid workspace root must include one of:',
+            '- .rapidkit/workspace.json',
+            '- .rapidkit-workspace with a Workspai/RapidKit signature',
+            '- legacy RapidKit workspace bootstrap files',
+            '',
+            'If this is a project folder, import or adopt it from an active workspace instead.',
+          ].join('\n'),
           'OK'
         );
         return undefined;
@@ -779,7 +790,27 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
 
   public async quickSwitch(): Promise<void> {
     if (this.workspaces.length === 0) {
-      vscode.window.showInformationMessage('No workspaces found. Add one first.');
+      const choice = await vscode.window.showInformationMessage(
+        'No workspaces registered yet. Use the default Workspai workspace or create one first.',
+        'Use Default Workspace',
+        'Create Workspace'
+      );
+      if (choice === 'Use Default Workspace') {
+        const { ensureManagedDefaultWorkspace } =
+          await import('../../core/ensureManagedDefaultWorkspace.js');
+        const ensured = await ensureManagedDefaultWorkspace();
+        await this.refresh();
+        const workspace = this.getWorkspaceByPath(ensured.path);
+        if (workspace) {
+          await this.selectWorkspace(workspace);
+        } else {
+          await vscode.commands.executeCommand('workspai.selectWorkspace', ensured.path);
+        }
+        return;
+      }
+      if (choice === 'Create Workspace') {
+        await vscode.commands.executeCommand('workspai.createWorkspace');
+      }
       return;
     }
 

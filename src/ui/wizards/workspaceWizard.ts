@@ -6,8 +6,8 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as os from 'os';
 import { WorkspaceConfig } from '../../types';
+import { resolveNewWorkspacePath } from '../../core/workspacePaths';
 
 const TOTAL_STEPS = 5;
 
@@ -54,31 +54,31 @@ export class WorkspaceWizard {
           value: 'minimal',
         },
         {
-          label: '$(symbol-namespace) python-only',
+          label: '$(symbol-namespace) Python runtime',
           description: 'Python + Poetry bootstrap',
           detail: 'Best for: FastAPI, Django, data science, ML pipelines',
           value: 'python-only',
         },
         {
-          label: '$(symbol-event) node-only',
+          label: '$(symbol-event) Node.js runtime',
           description: 'Node.js runtime bootstrap (no Python needed)',
           detail: 'Best for: NestJS, Express, Next.js, CLI tools',
           value: 'node-only',
         },
         {
-          label: '$(go) go-only',
+          label: '$(go) Go runtime',
           description: 'Go runtime bootstrap (no Python needed)',
           detail: 'Best for: Go services, gRPC, CLI tools, microservices',
           value: 'go-only',
         },
         {
-          label: '$(symbol-structure) java-only',
+          label: '$(symbol-structure) Java runtime',
           description: 'Java runtime bootstrap (JDK + Maven/Gradle)',
           detail: 'Best for: Spring Boot services and Java microservices',
           value: 'java-only',
         },
         {
-          label: '$(symbol-interface) dotnet-only',
+          label: '$(symbol-interface) .NET runtime',
           description: '.NET runtime bootstrap',
           detail: 'Best for: ASP.NET Core services and C# APIs',
           value: 'dotnet-only',
@@ -107,8 +107,7 @@ export class WorkspaceWizard {
     }
 
     // ── Step 3 of 5: Location ─────────────────────────────────────────────────
-    const defaultParent = path.join(os.homedir(), 'Workspai');
-    const defaultFull = path.join(defaultParent, name);
+    const defaultFull = resolveNewWorkspacePath(name);
 
     type LocationItem = vscode.QuickPickItem & { value: 'default' | 'browse' };
     const locationPick = await vscode.window.showQuickPick<LocationItem>(

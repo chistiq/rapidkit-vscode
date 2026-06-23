@@ -28,7 +28,7 @@ export class WorkspaiStatusBar implements vscode.Disposable {
             ? ` | ${this.projectCount} Project${this.projectCount > 1 ? 's' : ''}`
             : '';
         this.statusBarItem.text = `🚀 Workspai${projectText} | Ready`;
-        this.statusBarItem.tooltip = 'Click to open Workspai quick actions';
+        this.statusBarItem.tooltip = 'Open Workspai dashboard and workspace intelligence';
         this.statusBarItem.backgroundColor = undefined;
         break;
       }

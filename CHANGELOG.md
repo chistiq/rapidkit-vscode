@@ -12,7 +12,8 @@ Planned as extension **0.35.0** (after marketplace **0.34.0**). Aligns with Rapi
 ### Added
 
 * **Enterprise dashboard evidence loop**: Command → Evidence → Next Step with activity trail, outcome review, next-step rail, and contract-aware command dispatch (`dashboardCommandContracts`, `dashboardCommandRegistry`).
-* **Dashboard sections**: Overview, Operate, Evidence, Workspaces, and Console with sub-navigation, pending-command reconciliation, and project-scoped payload guards.
+* **Dashboard UX polish (v0.35)**: Studio Command Center handoff strip (Evidence · Run · Project · Home); Home Workspace Advisor entry and clickable health metrics; navigation telemetry dedup on re-selected tabs; responsive Run sub-nav scroll on narrow widths.
+* **Enterprise-minimal stabilization pass**: Evidence Guided mode now renders one current path instead of duplicating attention cards; Evidence view controls use compact `Guided / Workflows / All` labels; Studio uses a calmer panel workspace with carded chat/context/sidebar surfaces; Workspai now contributes a standard VS Code Secondary Sidebar tab plus Activity Bar fallback, with `Create with AI / Workspace Advisor / Studio` as the minimal AI surface and a live creation timeline.
 * **Evidence surfaces**: `CommandActivityPanel`, `EvidenceOutcomePanel`, `ReleaseHub`, `DashboardEvidenceSection`, governance/sparse empty states, and Incident Studio handoff from evidence cards.
 * **Governance onboarding**: fresh-install onboarding, ops-chain banner, and automatic `bootstrap → doctor → analyze` chain after workspace create, clone, import, or add.
 * **Operate & governance UI**: `EnterpriseDashboardFlow`, `WorkspaceGovernancePanel`, `ActionTile`, `SectionHeader`, `FrameworkIcon`, and `CommandCheatsheet`.
@@ -23,7 +24,7 @@ Planned as extension **0.35.0** (after marketplace **0.34.0**). Aligns with Rapi
 * **AI action framework** (host): action contract, registry, executor, safety/redaction layers, command policy, and `aiProviderService` for LLM routing.
 * **Studio policy gates**: telemetry policy core, policy gate mapper parity (host + webview), guided-mode blocks for advanced CLI, and mutation gate before fix/archive/autopilot paths.
 * **Studio CLI surface**: `incidentCliActionMatrix`, inline command bridge (pinned npm wrapper), doctor evidence bridge, repro pack and enterprise export bridges.
-* **Studio action registry**: analyze, impact lens, governed fix, verify-gates, and terminal-bridge actions with audit trail.
+* **Studio action registry**: analyze, workspace advisor, governed fix, verify-gates, and terminal-bridge actions with audit trail.
 * **Workspai design system**: token layers (`workspai-tokens`, `workspai-primitives`, studio chrome, analyze report CSS), `WorkspaiThemeProvider`, `WorkspaiEmptyState`, `WorkspaiBanner`, and contributor `DESIGN_SYSTEM.md`.
 * **Design-system CI**: drift guard tests, studio chrome CSS extract/verify scripts, and website/extension parity check script.
 * **AI creation intent**: `aiCreationHeuristic` and structured `languageModelResponse` parsing for safer create flows and module suggestions.
@@ -45,6 +46,7 @@ Planned as extension **0.35.0** (after marketplace **0.34.0**). Aligns with Rapi
 * Guided/lite/responsive studio polish (Wave Y): denser guided conversation, action outcome essentials, collapsible sections, and responsive studio chrome.
 * **Evidence refresh**: replaced multi-timer refresh storm (0 / 1.8s / 5s / 12s) with debounced coalescing (750ms + one 5s follow-up); refresh only when commands opt in via `refreshEvidence: true`.
 * **Project adoption UX**: “convert generic project” is now “adopt project into Workspai workspace”; known stacks are no longer skipped and are adopted through the same governance contract.
+* **Package build contract**: VSIX prepublish now builds webview assets in production mode so dev source maps do not enter the release package.
 
 ### Fixed
 
@@ -68,9 +70,10 @@ Planned as extension **0.35.0** (after marketplace **0.34.0**). Aligns with Rapi
 
 ### Verification
 
-* `npm run compile`
-* `npm run lint`
-* `vitest run`
+* `./node_modules/.bin/tsc --noEmit`
+* `./node_modules/.bin/vitest run` (208 files / 1639 tests)
+* `node scripts/release-stop-gate.mjs --skip-kpi`
+* `env PATH=/tmp:$PATH ./node_modules/.bin/vsce package --no-dependencies --out /tmp/workspai-0.35.0.vsix`
 
 See also: [`releases/RELEASE_NOTES_v0.35.0.md`](releases/RELEASE_NOTES_v0.35.0.md)
 

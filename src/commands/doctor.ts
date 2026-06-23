@@ -13,6 +13,11 @@ import { getPoetryVersion } from '../utils/poetryHelper';
 import { checkPythonEnvironment } from '../utils/pythonChecker';
 import { run } from '../utils/exec';
 import { WorkspaiCLI } from '../core/rapidkitCLI';
+import {
+  formatRapidkitNpmVersionLabel,
+  normalizeRapidkitNpmVersion,
+  sanitizeToolCheckMessage,
+} from '../utils/cliOutputSanitizer';
 
 const FETCH_JSON_TIMEOUT_MS = 8000;
 const MAX_FETCH_REDIRECTS = 3;
@@ -304,7 +309,7 @@ async function runSystemChecks(
 
     try {
       const direct = await run('rapidkit', ['--version'], { stdio: 'pipe', timeout: 5000 });
-      version = direct.stdout.trim();
+      version = normalizeRapidkitNpmVersion(direct.stdout);
       isGlobal = !!version;
     } catch {
       // Not globally available from extension host PATH.
@@ -318,7 +323,7 @@ async function runSystemChecks(
       throw new Error('RapidKit npm not found');
     }
 
-    let npmMessage = `v${version}`;
+    let npmMessage = formatRapidkitNpmVersionLabel(version);
     if (isGlobal) {
       npmMessage += ' (globally installed)';
     } else {
@@ -399,7 +404,9 @@ async function runSystemChecks(
   // Check Maven
   try {
     const mvnResult = await run('mvn', ['--version'], { stdio: 'pipe', timeout: 6000 });
-    const mvnRaw = (mvnResult.stdout || mvnResult.stderr || '').trim().split('\n')[0] ?? '';
+    const mvnRaw = sanitizeToolCheckMessage(
+      (mvnResult.stdout || mvnResult.stderr || '').trim().split('\n')[0] ?? ''
+    );
     const mvnVersion = mvnRaw.replace(/^Apache Maven /, '').trim();
     if (mvnResult.exitCode !== 0 || !mvnVersion) {
       throw new Error('mvn not found or returned empty version');
@@ -427,7 +434,7 @@ async function runSystemChecks(
     });
     const gradleOut = gradleResult.stdout || gradleResult.stderr || '';
     const gradleLine = gradleOut.split('\n').find((l) => l.trim().startsWith('Gradle'));
-    const gradleVersion = gradleLine?.trim() ?? '';
+    const gradleVersion = sanitizeToolCheckMessage(gradleLine?.trim() ?? '');
     if (gradleResult.exitCode !== 0 || !gradleVersion) {
       throw new Error('gradle not found or returned empty version');
     }
@@ -444,6 +451,51 @@ async function runSystemChecks(
     });
   }
 
+  progress.report({ increment: 99, message: 'Checking .NET SDK...' });
+
+  // Check .NET SDK — required for dotnet.webapi.clean scaffold/runtime
+  const dotnetRoot = process.env.DOTNET_ROOT?.trim();
+  const dotnetCandidates = [
+    ...(dotnetRoot
+      ? [path.join(dotnetRoot, process.platform === 'win32' ? 'dotnet.exe' : 'dotnet')]
+      : []),
+    ...(process.platform === 'win32' ? ['C:\\Program Files\\dotnet\\dotnet.exe'] : []),
+    '/usr/bin/dotnet',
+    '/usr/local/bin/dotnet',
+    'dotnet',
+  ];
+  let dotnetCheckMessage: string | null = null;
+  for (const dotnetExecutable of dotnetCandidates) {
+    try {
+      const dotnetResult = await run(dotnetExecutable, ['--version'], {
+        stdio: 'pipe',
+        timeout: 6000,
+      });
+      const dotnetVersion = sanitizeToolCheckMessage(
+        (dotnetResult.stdout || dotnetResult.stderr || '').trim().split('\n')[0] ?? ''
+      );
+      if (dotnetResult.exitCode === 0 && dotnetVersion) {
+        dotnetCheckMessage = dotnetVersion;
+        break;
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+  if (dotnetCheckMessage) {
+    result.checks.push({
+      name: '.NET SDK',
+      status: 'pass',
+      message: dotnetCheckMessage,
+    });
+  } else {
+    result.checks.push({
+      name: '.NET SDK',
+      status: 'warning',
+      message: 'Not found (required for dotnet.webapi.clean projects — install .NET SDK 8+)',
+    });
+  }
+
   progress.report({ increment: 100, message: 'Done!' });
 
   // Show results
@@ -452,7 +504,7 @@ async function runSystemChecks(
   for (const check of result.checks) {
     const icon = check.status === 'pass' ? '✅' : check.status === 'warning' ? '⚠' : '❌';
     // Simplify message by removing extra details
-    let message = check.message;
+    let message = sanitizeToolCheckMessage(check.message);
     // Remove parenthetical details like "(globally installed)", "(python3)", etc.
     message = message.replace(/\s*\([^)]*\)$/g, '');
     lines.push(`${icon} ${check.name}: ${message}`);

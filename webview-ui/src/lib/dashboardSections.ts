@@ -1,55 +1,67 @@
 export type DashboardSection =
   | 'overview'
+  | 'repair'
   | 'evidence'
   | 'operate'
   | 'console'
-  | 'catalog'
-  | 'workspaces';
+  | 'catalog';
 
-export const DASHBOARD_SECTIONS: ReadonlyArray<{
+export type DashboardSectionDefinition = {
   id: DashboardSection;
   label: string;
+  scope: string;
   description: string;
-}> = [
+};
+
+export const DASHBOARD_SECTIONS: ReadonlyArray<DashboardSectionDefinition> = [
   {
     id: 'overview',
-    label: 'Overview',
-    description: 'Workspace summary and quick start',
-  },
-  {
-    id: 'evidence',
-    label: 'Evidence',
-    description: 'Ops artifacts, outcomes, and release pipeline',
+    label: 'Home',
+    scope: 'status',
+    description: 'Health signals, next steps, and quick navigation',
   },
   {
     id: 'operate',
-    label: 'Operate',
-    description: 'Workspace actions, governance, and CLI reference',
+    label: 'Run',
+    scope: 'workspace',
+    description: 'Execute workspace commands — primary, build, intelligence, governance',
+  },
+  {
+    id: 'repair',
+    label: 'Repair',
+    scope: 'flow',
+    description: 'One safe path through blockers, commands, Studio, and artifacts',
+  },
+  {
+    id: 'evidence',
+    label: 'Artifacts',
+    scope: 'history',
+    description: 'Evidence artifacts, command history, and release records',
   },
   {
     id: 'console',
-    label: 'Console',
-    description: 'Project actions and module installs',
+    label: 'Project',
+    scope: 'lifecycle',
+    description: 'Dev, test, build, and release for the selected project',
   },
   {
     id: 'catalog',
-    label: 'Catalog',
-    description: 'Example workspaces and module browse',
-  },
-  {
-    id: 'workspaces',
-    label: 'Workspaces',
-    description: 'Recent workspaces and health',
+    label: 'Library',
+    scope: 'library',
+    description: 'Your workspaces, example templates, and module catalog browse',
   },
 ] as const;
 
 export function normalizeDashboardSection(value: unknown): DashboardSection {
+  if (value === 'workspaces') {
+    return 'catalog';
+  }
   if (
     value === 'evidence' ||
+    value === 'repair' ||
     value === 'operate' ||
     value === 'console' ||
-    value === 'catalog' ||
-    value === 'workspaces'
+    value === 'catalog'
   ) {
     return value;
   }
@@ -60,12 +72,29 @@ export function dashboardSectionNeedsCatalog(section: DashboardSection): boolean
   return section === 'catalog' || section === 'console';
 }
 
-const SECTION_LABELS = Object.fromEntries(
-  DASHBOARD_SECTIONS.map((section) => [section.id, section.label])
-) as Record<DashboardSection, string>;
+/** Primary tabs hide filesystem paths on the shared scope card. */
+export function dashboardSectionShowsScopePaths(section: DashboardSection): boolean {
+  return section === 'catalog';
+}
+
+const SECTION_BY_ID = Object.fromEntries(
+  DASHBOARD_SECTIONS.map((section) => [section.id, section])
+) as Record<DashboardSection, DashboardSectionDefinition>;
 
 export function dashboardSectionLabel(section: DashboardSection): string {
-  return SECTION_LABELS[section] ?? 'Overview';
+  return SECTION_BY_ID[section]?.label ?? 'Home';
+}
+
+export function dashboardSectionScope(section: DashboardSection): string | undefined {
+  return SECTION_BY_ID[section]?.scope;
+}
+
+export function dashboardSectionAriaLabel(section: DashboardSection): string {
+  const definition = SECTION_BY_ID[section];
+  if (!definition) {
+    return 'Home';
+  }
+  return `${definition.label}, ${definition.scope}`;
 }
 
 export function dashboardSectionForOpsChainStep(
@@ -74,17 +103,32 @@ export function dashboardSectionForOpsChainStep(
   if (step === 'bootstrap' || step === 'doctor') {
     return 'operate';
   }
-  return 'evidence';
+  return 'repair';
 }
 
 export function dashboardSectionForIncidentTarget(
-  target: 'doctor' | 'analyze' | 'readiness' | 'release' | undefined
+  target:
+    | 'doctor'
+    | 'analyze'
+    | 'readiness'
+    | 'release'
+    | 'impact'
+    | 'model'
+    | 'pipeline'
+    | undefined
 ): DashboardSection {
   if (target === 'doctor') {
     return 'operate';
   }
-  if (target === 'analyze' || target === 'readiness' || target === 'release') {
-    return 'evidence';
+  if (
+    target === 'analyze' ||
+    target === 'readiness' ||
+    target === 'release' ||
+    target === 'impact' ||
+    target === 'model' ||
+    target === 'pipeline'
+  ) {
+    return 'repair';
   }
-  return 'evidence';
+  return 'repair';
 }

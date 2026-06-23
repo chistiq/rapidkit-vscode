@@ -1,0 +1,2 @@
+RELEASE_NOTES.md:372:  - **Live workspace sync:** uses a live getter `() => workspaceExplorer.getSelectedWorkspace()` so the correct workspace is always used, regardless of initialization timing
+RELEASE_NOTES.md:393:- 🗂️ **Stale health data after workspace switch** — fixed by always re-reading evidence from disk in `getChildren` instead of relying on in-memory cache

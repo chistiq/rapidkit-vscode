@@ -1,0 +1,37 @@
+# Keep VSIX/npm packaging independent from .gitignore.
+# The extension runtime is bundled into dist/ and must be published.
+
+.vscode/**
+.vscode-test/**
+.git/**
+.github/**
+.husky/**
+
+src/**
+webview-ui/**
+scripts/**
+docs/**
+coverage/**
+releases/**
+artifacts/**
+
+**/*.ts
+**/*.map
+**/*.test.js
+**/*.spec.js
+**/test/**
+**/tests/**
+*.vsix
+
+tsconfig.json
+vitest.config.*
+esbuild.js
+.eslintrc.js
+.prettierrc
+pyrightconfig.json
+pytest.ini
+jest.config.*
+vsc-extension-quickstart.md
+BUILD_SUMMARY.md
+READY_TO_TEST.md
+RELEASE_NOTES_v*.md

@@ -240,7 +240,7 @@ const AI_QUICK_ACTIONS: AIQuickAction[] = [
   },
   {
     id: 'change-impact',
-    label: 'Change Impact Lite',
+    label: 'Change Advisor Lite',
     detail: 'Assess blast radius before editing',
     command: 'workspai.aiChangeImpactLite',
     category: 'Planning & Safety',
@@ -880,7 +880,7 @@ export function registerAIFreeFeatureCommands(
       const shouldGuideMemory = await shouldSuggestMemoryWizard();
 
       let targetCommand = 'workspai.aiQuickActions';
-      let routeReason = 'fallback-quick-actions';
+      let routeReason = 'fallback-studio-lite';
       let commandArgs: unknown[] = [];
 
       if (hasErrors) {
@@ -914,7 +914,7 @@ export function registerAIFreeFeatureCommands(
         'terminal-signal-in-clipboard':
           '$(terminal) Routing to Terminal Bridge — terminal output in clipboard',
         'memory-incomplete': '$(brain) Routing to Memory Wizard — workspace memory incomplete',
-        'fallback-quick-actions': '$(zap) Opening Quick Actions',
+        'fallback-studio-lite': '$(zap) Opening Workspai',
       };
       const label = routeLabels[routeReason] ?? '$(zap) Workspai AI';
       vscode.window.setStatusBarMessage(label, 4000);
@@ -932,7 +932,7 @@ export function registerAIFreeFeatureCommands(
       }));
 
       const selected = (await vscode.window.showQuickPick(picks, {
-        title: 'Workspai AI Quick Actions',
+        title: 'Workspai',
         placeHolder: 'Pick an AI workflow',
         ignoreFocusOut: true,
       })) as AIQuickPickEntry | undefined;
@@ -987,7 +987,7 @@ export function registerAIFreeFeatureCommands(
           ...invocation.telemetryProps,
         });
 
-        WelcomePanel.openIncidentStudio(context, {
+        await vscode.commands.executeCommand('workspai.openIncidentStudio', {
           workspacePath: launchTarget.workspacePath,
           workspaceName: launchTarget.workspaceName,
           projectPath: launchTarget.projectPath,
@@ -1143,7 +1143,7 @@ export function registerAIFreeFeatureCommands(
       } else if (!changeContext) {
         impactInputSource = 'manual-prompt';
         const input = await vscode.window.showInputBox({
-          title: 'Change Impact Lite',
+          title: 'Change Advisor Lite',
           prompt: 'Describe the change you are planning',
           placeHolder:
             'E.g. Replace the auth middleware, add a new DB column, extract service layer',
@@ -1179,7 +1179,7 @@ export function registerAIFreeFeatureCommands(
       });
 
       const prefillQuestion = [
-        'Change Impact Lite: assess what can break before I implement this change.',
+        'Change Advisor Lite: assess what can break before I implement this change.',
         `Planned change:\n${changeContext}`,
         'Output format: likely impacted files/modules, risk level, required test updates, and a safe rollout checklist.',
       ].join('\n\n');

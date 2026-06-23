@@ -37,7 +37,7 @@ const STEP_CARD_IDS: Record<DashboardOpsChainStep, DashboardEvidenceCard['id']> 
   readiness: 'readiness',
 };
 
-const DEFAULT_CHAIN: DashboardOpsChainStep[] = ['bootstrap', 'doctor', 'analyze'];
+const DEFAULT_CHAIN: DashboardOpsChainStep[] = ['bootstrap', 'doctor', 'analyze', 'readiness'];
 
 export function getDashboardOpsChain(
   context: vscode.ExtensionContext

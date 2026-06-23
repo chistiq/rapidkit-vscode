@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "workspai-ai-narrative-v1",
+  "workflowLoop": "Evidence → deterministic command → verify",
+  "workflowGuidance": "Run the next deterministic step from evidence, then verify before claiming completion.",
+  "dashboardNextStepsMeta": "Evidence → deterministic command → verify",
+  "incidentStudio": {
+    "label": "Incident Studio",
+    "shortLabel": "Incident",
+    "tileDetail": "Evidence-backed repair loop",
+    "workspaceTileDetail": "Evidence → command → verify",
+    "projectTileDetail": "Analyze & repair with proof",
+    "openHint": "Opens Incident Studio"
+  },
+  "aiAssistant": {
+    "label": "Workspace Advisor",
+    "shortLabel": "Advisor",
+    "commandLabel": "Workspace Advisor",
+    "tileDetail": "Workspace-aware guidance",
+    "moduleTitle": "Ask Workspace Advisor about this module",
+    "workspaceTitle": "Open Workspace Advisor for this workspace",
+    "projectTitle": "Workspace Advisor for this project"
+  },
+  "studioEmptyState": {
+    "guidedTitle": "One safe route to resolution",
+    "guidedBody": "Evidence is ready. Use the guided chips for the next deterministic step, then verify before claiming completion.",
+    "standardTitle": "Start the incident review",
+    "standardBody": "Evidence is loaded. Ask Studio to explain findings, map blast radius, or validate release gates with explicit proof."
+  },
+  "guidedChips": {
+    "nextStepDetail": "Run the primary remediation step from current evidence.",
+    "nextStepDetailWithReview": "Run the primary remediation step and review generated changes.",
+    "verifyDetail": "Run deterministic verification before claiming completion.",
+    "nextStepLabel": "Do this next",
+    "verifyLabel": "Proof this worked"
+  },
+  "liteMode": {
+    "askNextActionButton": "Get next step from evidence",
+    "runNextActionButton": "Run next evidence step",
+    "investigateBlockerButton": "Investigate blocker",
+    "proofButtonWithBlocker": "Run blocker check",
+    "proofButtonDefault": "Run verify command"
+  },
+  "aiFlowsOnboarding": {
+    "headline": "AI workflow shortcuts route to evidence-backed actions.",
+    "detail": "Fix Preview, Terminal Bridge, and Release Commander open governed flows — verify deterministic output before claiming completion."
+  }
+}

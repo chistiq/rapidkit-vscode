@@ -1,3 +1,9 @@
+import {
+  buildWorkspaceAgentContextCliArgs,
+  buildWorkspaceAgentSyncCliArgs,
+} from './agentContextPack';
+import { resolveDashboardCommandSurface } from '../contracts/dashboardCommandSurface';
+
 export type DashboardCommandScope = 'workspace' | 'project' | 'module' | 'system';
 
 export type DashboardCommandExecutionMode =
@@ -64,8 +70,15 @@ export const DASHBOARD_COMMAND_CONTRACTS = {
     scope: 'workspace',
     executionMode: 'vscode-command',
     trackActivity: true,
-    requiresWorkspace: true,
     vscodeCommand: 'workspai.importProject',
+  },
+  adoptProject: {
+    id: 'adoptProject',
+    label: 'Adopt Project',
+    scope: 'workspace',
+    executionMode: 'vscode-command',
+    trackActivity: true,
+    vscodeCommand: 'workspai.adoptProject',
   },
   quickSwitchWorkspace: {
     id: 'quickSwitchWorkspace',
@@ -246,13 +259,112 @@ export const DASHBOARD_COMMAND_CONTRACTS = {
   },
   workspacePipeline: {
     id: 'workspacePipeline',
-    label: 'Governance Pipeline',
+    label: 'Governance Gate',
     scope: 'workspace',
     executionMode: 'terminal-rapidkit',
     trackActivity: true,
     requiresWorkspace: true,
     cliArgs: ['pipeline', '--json', '--strict'],
     vscodeCommand: 'workspai.workspacePipeline',
+  },
+  workspaceModel: {
+    id: 'workspaceModel',
+    label: 'Workspace Model',
+    scope: 'workspace',
+    executionMode: 'terminal-rapidkit',
+    trackActivity: true,
+    requiresWorkspace: true,
+    cliArgs: ['workspace', 'model', '--json', '--write'],
+    vscodeCommand: 'workspai.workspaceModel',
+  },
+  workspaceIntelligenceSnapshot: {
+    id: 'workspaceIntelligenceSnapshot',
+    label: 'Intelligence Snapshot',
+    scope: 'workspace',
+    executionMode: 'terminal-rapidkit',
+    trackActivity: true,
+    requiresWorkspace: true,
+    cliArgs: ['workspace', 'snapshot', '--json'],
+    vscodeCommand: 'workspai.workspaceIntelligenceSnapshot',
+  },
+  workspaceDiff: {
+    id: 'workspaceDiff',
+    label: 'Workspace Diff',
+    scope: 'workspace',
+    executionMode: 'vscode-command',
+    trackActivity: true,
+    requiresWorkspace: true,
+    cliArgs: ['workspace', 'diff', '--json'],
+    vscodeCommand: 'workspai.workspaceDiff',
+  },
+  workspaceImpact: {
+    id: 'workspaceImpact',
+    label: 'Workspace Impact',
+    scope: 'workspace',
+    executionMode: 'vscode-command',
+    trackActivity: true,
+    requiresWorkspace: true,
+    cliArgs: ['workspace', 'impact', '--json'],
+    vscodeCommand: 'workspai.workspaceImpact',
+  },
+  workspaceVerify: {
+    id: 'workspaceVerify',
+    label: 'Workspace Verify',
+    scope: 'workspace',
+    executionMode: 'vscode-command',
+    trackActivity: true,
+    requiresWorkspace: true,
+    cliArgs: [
+      'workspace',
+      'verify',
+      '--from-impact',
+      '.rapidkit/reports/workspace-impact-last-run.json',
+      '--json',
+    ],
+    vscodeCommand: 'workspai.workspaceVerify',
+  },
+  workspaceImpactLens: {
+    id: 'workspaceImpactLens',
+    label: 'Workspace Advisor',
+    scope: 'workspace',
+    executionMode: 'vscode-command',
+    trackActivity: true,
+    requiresWorkspace: true,
+    vscodeCommand: 'workspai.openWorkspaceAdvisor',
+    payloadKind: 'workspace',
+    payloadDefaults: {
+      source: 'dashboard',
+      trigger: 'workspace_intelligence',
+    },
+  },
+  workspaceContextAgent: {
+    id: 'workspaceContextAgent',
+    label: 'Agent Context Pack',
+    scope: 'workspace',
+    executionMode: 'terminal-rapidkit',
+    trackActivity: true,
+    requiresWorkspace: true,
+    cliArgs: buildWorkspaceAgentContextCliArgs(),
+    vscodeCommand: 'workspai.workspaceContextAgent',
+  },
+  workspaceAgentSync: {
+    id: 'workspaceAgentSync',
+    label: 'Agent Grounding Sync',
+    scope: 'workspace',
+    executionMode: 'terminal-rapidkit',
+    trackActivity: true,
+    requiresWorkspace: true,
+    cliArgs: buildWorkspaceAgentSyncCliArgs(),
+    vscodeCommand: 'workspai.workspaceAgentSync',
+  },
+  workspaceIntelligenceChain: {
+    id: 'workspaceIntelligenceChain',
+    label: 'Intelligence Chain',
+    scope: 'workspace',
+    executionMode: 'vscode-command',
+    trackActivity: true,
+    requiresWorkspace: true,
+    vscodeCommand: 'workspai.workspaceIntelligenceChain',
   },
   workspaceAutopilotRelease: {
     id: 'workspaceAutopilotRelease',
@@ -275,7 +387,7 @@ export const DASHBOARD_COMMAND_CONTRACTS = {
   },
   workspaceSnapshotCreate: {
     id: 'workspaceSnapshotCreate',
-    label: 'Create Snapshot',
+    label: 'Recovery Snapshot',
     scope: 'workspace',
     executionMode: 'terminal-rapidkit',
     trackActivity: true,
@@ -285,7 +397,7 @@ export const DASHBOARD_COMMAND_CONTRACTS = {
   },
   workspaceSnapshot: {
     id: 'workspaceSnapshot',
-    label: 'Snapshot Tools',
+    label: 'Recovery Snapshot Tools',
     scope: 'workspace',
     executionMode: 'vscode-command',
     trackActivity: true,
@@ -479,7 +591,7 @@ export const DASHBOARD_COMMAND_CONTRACTS = {
   },
   projectIncident: {
     id: 'projectIncident',
-    label: 'Incident Studio',
+    label: 'Studio',
     scope: 'project',
     executionMode: 'vscode-command',
     trackActivity: true,
@@ -489,13 +601,17 @@ export const DASHBOARD_COMMAND_CONTRACTS = {
   },
   projectAI: {
     id: 'projectAI',
-    label: 'Ask AI',
+    label: 'Workspace Advisor',
     scope: 'project',
     executionMode: 'vscode-command',
     trackActivity: true,
     requiresProject: true,
-    vscodeCommand: 'workspai.aiForProject',
+    vscodeCommand: 'workspai.openWorkspaceAdvisor',
     payloadKind: 'project-context',
+    payloadDefaults: {
+      source: 'dashboard',
+      trigger: 'project_actions',
+    },
   },
   projectRelease: {
     id: 'projectRelease',
@@ -513,12 +629,12 @@ export const DASHBOARD_COMMAND_CONTRACTS = {
   },
   projectImpact: {
     id: 'projectImpact',
-    label: 'Change Impact',
+    label: 'Workspace Advisor',
     scope: 'project',
     executionMode: 'vscode-command',
     trackActivity: true,
     requiresProject: true,
-    vscodeCommand: 'workspai.aiChangeImpactLite',
+    vscodeCommand: 'workspai.openWorkspaceAdvisor',
     payloadKind: 'project-context',
     payloadDefaults: {
       source: 'dashboard',
@@ -628,6 +744,11 @@ export function getDashboardCommandActivity(command: string): {
   label: string;
   scope: DashboardCommandScope;
 } {
+  const surface = resolveDashboardCommandSurface(command);
+  if (surface) {
+    return { label: surface.label, scope: surface.scope };
+  }
+
   const contract = resolveDashboardCommandContract(command);
   if (contract) {
     return { label: contract.label, scope: contract.scope };

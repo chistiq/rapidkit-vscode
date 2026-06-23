@@ -2,7 +2,8 @@
 
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
+import { pathToFileURL } from 'url';
 
 const DEFAULT_TEST_FILES = [
   'src/test/driftGuard.test.ts',
@@ -43,10 +44,20 @@ function parseEnvBoolean(envKeys, fallback = false) {
       continue;
     }
 
-    if (normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on') {
+    if (
+      normalized === '1' ||
+      normalized === 'true' ||
+      normalized === 'yes' ||
+      normalized === 'on'
+    ) {
       return true;
     }
-    if (normalized === '0' || normalized === 'false' || normalized === 'no' || normalized === 'off') {
+    if (
+      normalized === '0' ||
+      normalized === 'false' ||
+      normalized === 'no' ||
+      normalized === 'off'
+    ) {
       return false;
     }
   }
@@ -84,7 +95,14 @@ function parseArgs(argv) {
     manifest: '',
     claimChecklistPath:
       process.env.WORKSPAI_CLAIM_CHECKLIST_PATH ||
-      path.resolve(process.cwd(), '..', 'Docs', 'workspai', 'Final', 'WORKSPAI_UNIFIED_FINAL_FEATURE_CHECKLIST.md'),
+      path.resolve(
+        process.cwd(),
+        '..',
+        'Docs',
+        'workspai',
+        'Final',
+        'WORKSPAI_UNIFIED_FINAL_FEATURE_CHECKLIST.md'
+      ),
     enforceClaimChecklist: false,
     issueReportPath: parseEnvString(
       ['WORKSPAI_OPEN_ISSUE_REPORT_PATH', 'WORKSPAI_ISSUE_REPORT_PATH'],
@@ -108,9 +126,7 @@ function parseArgs(argv) {
       false
     ),
     releaseNotesPath:
-      process.env.WORKSPAI_RELEASE_NOTES_PATH ||
-      process.env.WORKSPAI_RELEASE_NOTES_FILE ||
-      '',
+      process.env.WORKSPAI_RELEASE_NOTES_PATH || process.env.WORKSPAI_RELEASE_NOTES_FILE || '',
     enforceReleasePostureLabel: parseEnvBoolean(
       ['WORKSPAI_GATE_ENFORCE_RELEASE_POSTURE_LABEL', 'WORKSPAI_ENFORCE_RELEASE_POSTURE_LABEL'],
       false
@@ -142,7 +158,10 @@ function parseArgs(argv) {
     preventedIncidentRateMin: parseEnvNumber(['WORKSPAI_GATE_PREVENTED_INCIDENT_RATE_MIN'], 20),
     reproPackShareRateMin: parseEnvNumber(['WORKSPAI_GATE_REPRO_PACK_SHARE_RATE_MIN'], 20),
     replayToResolutionRateMin: parseEnvNumber(['WORKSPAI_GATE_REPLAY_TO_RESOLUTION_RATE_MIN'], 60),
-    verifyAutoRollbackSuccessRateMin: parseEnvNumber(['WORKSPAI_GATE_ROLLBACK_SUCCESS_RATE_MIN'], 60),
+    verifyAutoRollbackSuccessRateMin: parseEnvNumber(
+      ['WORKSPAI_GATE_ROLLBACK_SUCCESS_RATE_MIN'],
+      60
+    ),
     falseConfidenceRateMax: parseEnvNumber(['WORKSPAI_GATE_FALSE_CONFIDENCE_RATE_MAX'], 40),
     maxTimeToFirstConfidentActionP50Ms: parseEnvNumber(
       ['WORKSPAI_GATE_OUTCOME_MAX_TTFCA_P50_MS'],
@@ -223,9 +242,15 @@ function parseArgs(argv) {
       ['WORKSPAI_GATE_PREVENTED_INCIDENT_RATE_TIGHTENED_MIN'],
       30
     ),
-    firstChunkLatencyP95MaxMs: parseEnvNumber(['WORKSPAI_GATE_FIRST_CHUNK_LATENCY_P95_MAX_MS'], 3000),
+    firstChunkLatencyP95MaxMs: parseEnvNumber(
+      ['WORKSPAI_GATE_FIRST_CHUNK_LATENCY_P95_MAX_MS'],
+      3000
+    ),
     syncLatencyP95MaxMs: parseEnvNumber(['WORKSPAI_GATE_SYNC_LATENCY_P95_MAX_MS'], 2000),
-    boardRenderLatencyP95MaxMs: parseEnvNumber(['WORKSPAI_GATE_BOARD_RENDER_LATENCY_P95_MAX_MS'], 500),
+    boardRenderLatencyP95MaxMs: parseEnvNumber(
+      ['WORKSPAI_GATE_BOARD_RENDER_LATENCY_P95_MAX_MS'],
+      500
+    ),
     allowOverride: false,
     overrideOwner: process.env.WORKSPAI_GATE_OVERRIDE_OWNER || '',
     overrideReason: process.env.WORKSPAI_GATE_OVERRIDE_REASON || '',
@@ -559,13 +584,24 @@ function parseArgs(argv) {
 }
 
 function uniqueStrings(values) {
-  return Array.from(new Set(values.filter((value) => typeof value === 'string' && value.trim().length > 0)));
+  return Array.from(
+    new Set(values.filter((value) => typeof value === 'string' && value.trim().length > 0))
+  );
 }
 
 function runContractAndParityChecks(testFiles = DEFAULT_TEST_FILES) {
-  const command = ['npx vitest run', ...uniqueStrings(testFiles)].join(' ');
+  const localVitest = path.resolve(
+    process.cwd(),
+    'node_modules',
+    '.bin',
+    process.platform === 'win32' ? 'vitest.cmd' : 'vitest'
+  );
+  const command = fs.existsSync(localVitest) ? localVitest : 'npx';
+  const args = fs.existsSync(localVitest)
+    ? ['run', ...uniqueStrings(testFiles)]
+    : ['vitest', 'run', ...uniqueStrings(testFiles)];
 
-  execSync(command, { stdio: 'inherit' });
+  execFileSync(command, args, { stdio: 'inherit' });
 }
 
 function readJson(filePath) {
@@ -750,7 +786,9 @@ function buildClaimChecklistStatus(checklistPath) {
 }
 
 function normalizeSeverityCandidate(value) {
-  const raw = String(value || '').trim().toLowerCase();
+  const raw = String(value || '')
+    .trim()
+    .toLowerCase();
   if (!raw) {
     return null;
   }
@@ -843,9 +881,15 @@ function isIssueOpen(issue) {
     return issue.isOpen;
   }
 
-  const stateCandidate = String(issue.state || issue.status || '').trim().toLowerCase();
+  const stateCandidate = String(issue.state || issue.status || '')
+    .trim()
+    .toLowerCase();
   if (stateCandidate) {
-    return !(stateCandidate === 'closed' || stateCandidate === 'resolved' || stateCandidate === 'done');
+    return !(
+      stateCandidate === 'closed' ||
+      stateCandidate === 'resolved' ||
+      stateCandidate === 'done'
+    );
   }
 
   if (issue.closedAt || issue.closed_at || issue.resolvedAt || issue.resolved_at) {
@@ -872,8 +916,8 @@ function buildOpenIssueSeverityStatus(issueReportPath, blockedSeverities = ['p0'
   const issues = Array.isArray(payload)
     ? payload
     : Array.isArray(payload?.issues)
-    ? payload.issues
-    : [];
+      ? payload.issues
+      : [];
 
   const normalizedBlocked = blockedSeverities.map((item) => String(item).toLowerCase());
 
@@ -891,7 +935,9 @@ function buildOpenIssueSeverityStatus(issueReportPath, blockedSeverities = ['p0'
         state: issue.state || issue.status || null,
       };
     })
-    .filter((issue) => issue.severity && normalizedBlocked.includes(String(issue.severity).toLowerCase()));
+    .filter(
+      (issue) => issue.severity && normalizedBlocked.includes(String(issue.severity).toLowerCase())
+    );
 
   const openIssueCount = issues.filter((issue) => isIssueOpen(issue)).length;
 
@@ -1307,10 +1353,7 @@ function buildPredictionAggregation({ predictionShown, predictionVerified, predi
       denominator: predictionShown,
       value: percent(predictionVerified, predictionShown),
       unit: 'percent',
-      eventCommands: [
-        'workspai.studio.prediction_verified',
-        'workspai.studio.prediction_shown',
-      ],
+      eventCommands: ['workspai.studio.prediction_verified', 'workspai.studio.prediction_shown'],
     },
     predictive_precision: {
       key: 'predictive_precision',
@@ -1368,8 +1411,7 @@ function resolvePredictiveCalibration({ baseThresholds, calibrationOptions, coun
   const canTightenByEvidence =
     counts.predictionShown >= predictionShownMinForTightening &&
     counts.predictionOutcomes >= predictionOutcomesMinForTightening;
-  const tightenedActive =
-    mode === 'production' && canTightenByWindows && canTightenByEvidence;
+  const tightenedActive = mode === 'production' && canTightenByWindows && canTightenByEvidence;
 
   const effectiveThresholds = {
     ...baseThresholds,
@@ -1477,7 +1519,12 @@ function appendOverrideLog(record) {
 }
 
 function validateManifestEntry(entry) {
-  return entry && typeof entry === 'object' && typeof entry.path === 'string' && typeof entry.contains === 'string';
+  return (
+    entry &&
+    typeof entry === 'object' &&
+    typeof entry.path === 'string' &&
+    typeof entry.contains === 'string'
+  );
 }
 
 function buildManifestStatus(manifestPath) {
@@ -1497,7 +1544,9 @@ function buildManifestStatus(manifestPath) {
   const requiredVitestTests = Array.isArray(manifest?.requiredVitestTests)
     ? manifest.requiredVitestTests
     : [];
-  const requiredContents = Array.isArray(manifest?.requiredContents) ? manifest.requiredContents : [];
+  const requiredContents = Array.isArray(manifest?.requiredContents)
+    ? manifest.requiredContents
+    : [];
 
   const missingFiles = uniqueStrings([...requiredFiles, ...requiredVitestTests]).filter(
     (relativePath) => !fs.existsSync(path.resolve(process.cwd(), relativePath))
@@ -1519,7 +1568,10 @@ function buildManifestStatus(manifestPath) {
   const malformedContentEntries = requiredContents.filter((entry) => !validateManifestEntry(entry));
 
   return {
-    ok: missingFiles.length === 0 && missingContents.length === 0 && malformedContentEntries.length === 0,
+    ok:
+      missingFiles.length === 0 &&
+      missingContents.length === 0 &&
+      malformedContentEntries.length === 0,
     manifestPath: resolvedManifestPath,
     name: typeof manifest?.name === 'string' ? manifest.name : path.basename(resolvedManifestPath),
     missingFiles,
@@ -1688,7 +1740,7 @@ function buildKpiGateStatus(markerPath, thresholds, calibrationOptions) {
       : null;
   const falseConfidenceRate =
     verifyFailed > 0
-      ? Number(Math.max(0, (verifyFailed - rollbackSucceeded) / verifyFailed * 100).toFixed(2))
+      ? Number(Math.max(0, ((verifyFailed - rollbackSucceeded) / verifyFailed) * 100).toFixed(2))
       : null;
   const bridgeRouteCompletionRate =
     loopStarted > 0 ? Number(((actionExecuted / loopStarted) * 100).toFixed(2)) : null;
@@ -1701,11 +1753,12 @@ function buildKpiGateStatus(markerPath, thresholds, calibrationOptions) {
   });
   const markerProductionWindows = Number(telemetry?.productionWindows);
   const effectiveProductionWindows =
-    Number.isFinite(calibrationOptions.productionWindows) && calibrationOptions.productionWindows > 0
+    Number.isFinite(calibrationOptions.productionWindows) &&
+    calibrationOptions.productionWindows > 0
       ? calibrationOptions.productionWindows
       : Number.isFinite(markerProductionWindows)
-      ? markerProductionWindows
-      : 0;
+        ? markerProductionWindows
+        : 0;
   const predictiveCalibration = resolvePredictiveCalibration({
     baseThresholds: thresholds,
     calibrationOptions: {
@@ -1724,7 +1777,9 @@ function buildKpiGateStatus(markerPath, thresholds, calibrationOptions) {
   const acceptanceRate =
     predictionShown > 0 ? Number(((predictionAccepted / predictionShown) * 100).toFixed(2)) : null;
   const verificationCoverage =
-    predictionAccepted > 0 ? Number(((predictionOutcomes / predictionAccepted) * 100).toFixed(2)) : null;
+    predictionAccepted > 0
+      ? Number(((predictionOutcomes / predictionAccepted) * 100).toFixed(2))
+      : null;
 
   const reproPackShareRate = percent(reproPackExported, reproPackCaptured);
   const replayToResolutionRate = percent(incidentReplayMemoryEnriched, reproPackImported);
@@ -1764,18 +1819,18 @@ function buildKpiGateStatus(markerPath, thresholds, calibrationOptions) {
     sortedTimeToFirstConfidentActionSamples.length === 0
       ? null
       : sortedTimeToFirstConfidentActionSamples.length % 2 === 1
-      ? sortedTimeToFirstConfidentActionSamples[
-          Math.floor(sortedTimeToFirstConfidentActionSamples.length / 2)
-        ]
-      : Math.round(
-          (sortedTimeToFirstConfidentActionSamples[
-            sortedTimeToFirstConfidentActionSamples.length / 2 - 1
-          ] +
-            sortedTimeToFirstConfidentActionSamples[
-              sortedTimeToFirstConfidentActionSamples.length / 2
-            ]) /
-            2
-        );
+        ? sortedTimeToFirstConfidentActionSamples[
+            Math.floor(sortedTimeToFirstConfidentActionSamples.length / 2)
+          ]
+        : Math.round(
+            (sortedTimeToFirstConfidentActionSamples[
+              sortedTimeToFirstConfidentActionSamples.length / 2 - 1
+            ] +
+              sortedTimeToFirstConfidentActionSamples[
+                sortedTimeToFirstConfidentActionSamples.length / 2
+              ]) /
+              2
+          );
 
   const firstActionSuccessRate = ratio(
     outcomeRecords.filter((record) => record.firstActionSucceeded).length,
@@ -1910,7 +1965,9 @@ function buildKpiGateStatus(markerPath, thresholds, calibrationOptions) {
     releaseReadinessValidationMode === 'enforce' ||
     (releaseReadinessValidationMode === 'auto' && releaseReadinessEvidenceEnoughForEnforcement);
   const releaseReadinessValidationWouldPass =
-    (releaseReadinessArtifactsExported > 0 || decisionsValidated > 0 || noGoDecisionsExported > 0) &&
+    (releaseReadinessArtifactsExported > 0 ||
+      decisionsValidated > 0 ||
+      noGoDecisionsExported > 0) &&
     decisionsValidated > 0 &&
     noGoDecisionsValidated > 0 &&
     releaseReadinessDecisionAccuracy !== null &&
@@ -1925,26 +1982,35 @@ function buildKpiGateStatus(markerPath, thresholds, calibrationOptions) {
     (releaseReadinessValidationMode === 'enforce' && releaseReadinessValidationWouldPass);
 
   // D04: performance SLO — compute P95 from latency samples stored in the marker
-  const latencySamplesRaw = Array.isArray(telemetry?.latencySamples) ? telemetry.latencySamples : [];
+  const latencySamplesRaw = Array.isArray(telemetry?.latencySamples)
+    ? telemetry.latencySamples
+    : [];
   const latencySamples = latencySamplesRaw.filter(
     (s) => s && typeof s === 'object' && typeof s.event === 'string' && typeof s.ms === 'number'
   );
   const computeP95 = (values) => {
-    if (values.length === 0) { return null; }
+    if (values.length === 0) {
+      return null;
+    }
     const sorted = [...values].sort((a, b) => a - b);
     const idx = Math.ceil(sorted.length * 0.95) - 1;
     return sorted[Math.max(0, idx)];
   };
-  const firstChunkMs = latencySamples.filter((s) => s.event === 'workspai.perf.first_chunk_latency').map((s) => s.ms);
-  const syncMs = latencySamples.filter((s) => s.event === 'workspai.perf.sync_latency').map((s) => s.ms);
-  const boardRenderMs = latencySamples.filter((s) => s.event === 'workspai.perf.board_render_latency').map((s) => s.ms);
+  const firstChunkMs = latencySamples
+    .filter((s) => s.event === 'workspai.perf.first_chunk_latency')
+    .map((s) => s.ms);
+  const syncMs = latencySamples
+    .filter((s) => s.event === 'workspai.perf.sync_latency')
+    .map((s) => s.ms);
+  const boardRenderMs = latencySamples
+    .filter((s) => s.event === 'workspai.perf.board_render_latency')
+    .map((s) => s.ms);
   const firstChunkP95 = computeP95(firstChunkMs);
   const syncP95 = computeP95(syncMs);
   const boardRenderP95 = computeP95(boardRenderMs);
   const firstChunkLatencyPass =
     firstChunkP95 === null || firstChunkP95 <= effectiveThresholds.firstChunkLatencyP95MaxMs;
-  const syncLatencyPass =
-    syncP95 === null || syncP95 <= effectiveThresholds.syncLatencyP95MaxMs;
+  const syncLatencyPass = syncP95 === null || syncP95 <= effectiveThresholds.syncLatencyP95MaxMs;
   const boardRenderLatencyPass =
     boardRenderP95 === null || boardRenderP95 <= effectiveThresholds.boardRenderLatencyP95MaxMs;
 
@@ -1956,11 +2022,13 @@ function buildKpiGateStatus(markerPath, thresholds, calibrationOptions) {
       bridgeRouteCompletionRate >= effectiveThresholds.bridgeRouteCompletionMin,
     telemetryEvidencePass: loopStarted > 0,
     predictivePrecisionPass:
-      predictivePrecision !== null && predictivePrecision >= effectiveThresholds.predictivePrecisionMin,
+      predictivePrecision !== null &&
+      predictivePrecision >= effectiveThresholds.predictivePrecisionMin,
     falseAlarmRatePass:
       falseAlarmRate !== null && falseAlarmRate <= effectiveThresholds.falseAlarmRateMax,
     preventedIncidentRatePass:
-      preventedIncidentRate !== null && preventedIncidentRate >= effectiveThresholds.preventedIncidentRateMin,
+      preventedIncidentRate !== null &&
+      preventedIncidentRate >= effectiveThresholds.preventedIncidentRateMin,
     outcomeTelemetryEvidencePass,
     timeToFirstConfidentActionP50Pass,
     firstActionSuccessRatePass,
@@ -2007,7 +2075,9 @@ function buildKpiGateStatus(markerPath, thresholds, calibrationOptions) {
     },
     releaseReadinessValidation: {
       telemetryEvidencePass:
-        releaseReadinessArtifactsExported > 0 || decisionsValidated > 0 || noGoDecisionsExported > 0,
+        releaseReadinessArtifactsExported > 0 ||
+        decisionsValidated > 0 ||
+        noGoDecisionsExported > 0,
       releaseReadinessDecisionAccuracyAvailable: decisionsValidated > 0,
       noGoPreventedIncidentRateAvailable: noGoDecisionsValidated > 0,
     },
@@ -2134,9 +2204,7 @@ function main() {
     console.log(JSON.stringify(verifyPackContractStatus, null, 2));
 
     if (!verifyPackContractStatus.ok) {
-      console.error(
-        `[release-stop-gate] Release blocked: ${verifyPackContractStatus.message}`
-      );
+      console.error(`[release-stop-gate] Release blocked: ${verifyPackContractStatus.message}`);
       process.exit(1);
     }
   }
@@ -2147,9 +2215,7 @@ function main() {
     console.log(JSON.stringify(commanderStatus, null, 2));
 
     if (!commanderStatus.ok) {
-      console.error(
-        `[release-stop-gate] Release blocked: ${commanderStatus.message}`
-      );
+      console.error(`[release-stop-gate] Release blocked: ${commanderStatus.message}`);
       process.exit(1);
     }
   }
@@ -2160,9 +2226,7 @@ function main() {
     console.log(JSON.stringify(claimChecklistStatus, null, 2));
 
     if (options.enforceClaimChecklist && !claimChecklistStatus.ok) {
-      console.error(
-        `[release-stop-gate] Release blocked: ${claimChecklistStatus.message}`
-      );
+      console.error(`[release-stop-gate] Release blocked: ${claimChecklistStatus.message}`);
       process.exit(1);
     }
   }
@@ -2275,25 +2339,25 @@ function main() {
   const gateStatus = buildKpiGateStatus(
     markerPath,
     {
-    verifyPhaseReachMin: options.verifyPhaseReachMin,
-    bridgeRouteCompletionMin: options.bridgeRouteCompletionMin,
-    predictivePrecisionMin: options.predictivePrecisionMin,
-    falseAlarmRateMax: options.falseAlarmRateMax,
-    preventedIncidentRateMin: options.preventedIncidentRateMin,
-    reproPackShareRateMin: options.reproPackShareRateMin,
-    replayToResolutionRateMin: options.replayToResolutionRateMin,
-    verifyAutoRollbackSuccessRateMin: options.verifyAutoRollbackSuccessRateMin,
-    falseConfidenceRateMax: options.falseConfidenceRateMax,
-    maxTimeToFirstConfidentActionP50Ms: options.maxTimeToFirstConfidentActionP50Ms,
-    minFirstActionSuccessRate: options.minFirstActionSuccessRate,
-    maxReopenRateAfterSuggestedFix: options.maxReopenRateAfterSuggestedFix,
-    maxOverrideRateOnRecommendations: options.maxOverrideRateOnRecommendations,
-    minVerifyPathCompletionRate: options.minVerifyPathCompletionRate,
-    minRollbackRecoverySuccessRate: options.minRollbackRecoverySuccessRate,
-    verifyPackAutopilotReadinessRateMin: options.verifyPackAutopilotReadinessRateMin,
-    firstChunkLatencyP95MaxMs: options.firstChunkLatencyP95MaxMs,
-    syncLatencyP95MaxMs: options.syncLatencyP95MaxMs,
-    boardRenderLatencyP95MaxMs: options.boardRenderLatencyP95MaxMs,
+      verifyPhaseReachMin: options.verifyPhaseReachMin,
+      bridgeRouteCompletionMin: options.bridgeRouteCompletionMin,
+      predictivePrecisionMin: options.predictivePrecisionMin,
+      falseAlarmRateMax: options.falseAlarmRateMax,
+      preventedIncidentRateMin: options.preventedIncidentRateMin,
+      reproPackShareRateMin: options.reproPackShareRateMin,
+      replayToResolutionRateMin: options.replayToResolutionRateMin,
+      verifyAutoRollbackSuccessRateMin: options.verifyAutoRollbackSuccessRateMin,
+      falseConfidenceRateMax: options.falseConfidenceRateMax,
+      maxTimeToFirstConfidentActionP50Ms: options.maxTimeToFirstConfidentActionP50Ms,
+      minFirstActionSuccessRate: options.minFirstActionSuccessRate,
+      maxReopenRateAfterSuggestedFix: options.maxReopenRateAfterSuggestedFix,
+      maxOverrideRateOnRecommendations: options.maxOverrideRateOnRecommendations,
+      minVerifyPathCompletionRate: options.minVerifyPathCompletionRate,
+      minRollbackRecoverySuccessRate: options.minRollbackRecoverySuccessRate,
+      verifyPackAutopilotReadinessRateMin: options.verifyPackAutopilotReadinessRateMin,
+      firstChunkLatencyP95MaxMs: options.firstChunkLatencyP95MaxMs,
+      syncLatencyP95MaxMs: options.syncLatencyP95MaxMs,
+      boardRenderLatencyP95MaxMs: options.boardRenderLatencyP95MaxMs,
     },
     {
       predictiveCalibrationMode: options.predictiveCalibrationMode,
@@ -2375,4 +2439,13 @@ function main() {
   console.log('[release-stop-gate] All release stop conditions passed.');
 }
 
-main();
+export {
+  buildKpiGateStatus,
+  buildOpenIssueReportFreshnessStatus,
+  buildOpenIssueSeverityStatus,
+  buildReleaseClaimSafetyStatus,
+};
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

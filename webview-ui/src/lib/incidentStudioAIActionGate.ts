@@ -1,7 +1,8 @@
 import type { AIActionContractView } from '@/components/StudioRedesign/state/studioState';
 import { buildStudioActionApprovalGate } from '@/components/StudioRedesign/state/studioActionApproval';
+import type { AIActionOperation as StudioAIActionOperation } from '../../../src/contracts/aiActionOperationSurface';
 
-export type StudioAIActionOperation = 'apply' | 'verify' | 'rollback';
+export type { StudioAIActionOperation };
 
 export function resolveStudioAIActionOperationBlockReason(
   operation: StudioAIActionOperation,

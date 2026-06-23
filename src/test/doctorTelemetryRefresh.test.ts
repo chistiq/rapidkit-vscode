@@ -70,6 +70,8 @@ describe('doctorTelemetryRefresh', () => {
     expect(onRefresh).toHaveBeenCalledWith({
       workspacePath: '/tmp/third',
       reportPath: thirdReport,
+      cardIds: ['doctor'],
+      refreshMode: 'patch',
     });
 
     controller.dispose();
@@ -106,6 +108,8 @@ describe('doctorTelemetryRefresh', () => {
     expect(onRefresh).toHaveBeenCalledWith({
       workspacePath: '/tmp/demo',
       reportPath: '/tmp/demo/.rapidkit/reports/doctor-last-run.json',
+      cardIds: ['doctor'],
+      refreshMode: 'patch',
     });
     expect(onError).toHaveBeenCalledTimes(1);
     expect(onError).toHaveBeenCalledWith(refreshError);

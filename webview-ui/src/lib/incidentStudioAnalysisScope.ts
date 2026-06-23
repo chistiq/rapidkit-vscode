@@ -137,7 +137,7 @@ export function toWorkspaceProjectOption(
   };
 }
 
-/** Shared analysis context shape for Impact Lens + Studio chat brain host. */
+/** Shared analysis context shape for Workspace Advisor + Studio chat brain host. */
 export function buildSharedAnalysisContext(input: {
   workspacePath?: string | null;
   workspaceName?: string;

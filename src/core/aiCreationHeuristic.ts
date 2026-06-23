@@ -1,25 +1,17 @@
-type AICreateFramework = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
-type AICreateProfile =
-  | 'minimal'
-  | 'python-only'
-  | 'node-only'
-  | 'go-only'
-  | 'java-only'
-  | 'dotnet-only'
-  | 'polyglot'
-  | 'enterprise';
+import {
+  defaultKitForFramework,
+  inferCreationNames,
+  inferFrameworkFromCreationPrompt,
+  inferPolyglotCompanionProject,
+  inferWorkspaceProfileFromCreationPrompt,
+  type AICreateProfile,
+  type CreationStackIntent,
+} from './creationStackIntent';
+import { isFrontendScaffoldFramework, type ScaffoldFramework } from './scaffoldKits';
 
 type HeuristicModuleRule = {
   slug: string;
   keywords: string[];
-};
-
-const FRAMEWORK_KEYWORDS: Record<AICreateFramework, string[]> = {
-  nestjs: ['nestjs', 'nest.js', 'nest js', 'typescript', 'typeorm', 'node.js', 'node '],
-  fastapi: ['fastapi', 'python', 'uvicorn', 'pydantic', 'django'],
-  go: [' golang', ' go ', 'gin ', 'fiber ', 'go.mod', 'go service', 'go api'],
-  springboot: ['spring boot', 'springboot', 'spring', 'java', 'kotlin', 'maven', 'gradle'],
-  dotnet: ['dotnet', '.net', 'csharp', 'c#', 'asp.net', 'web api'],
 };
 
 const MODULE_RULES: HeuristicModuleRule[] = [
@@ -43,77 +35,13 @@ const MODULE_RULES: HeuristicModuleRule[] = [
   { slug: 'free/essentials/logging', keywords: ['logging', 'observability', 'metrics', 'tracing'] },
 ];
 
-function defaultProfileForFramework(framework: AICreateFramework): AICreateProfile {
-  if (framework === 'nestjs') {
-    return 'node-only';
-  }
-  if (framework === 'go') {
-    return 'go-only';
-  }
-  if (framework === 'springboot') {
-    return 'java-only';
-  }
-  if (framework === 'dotnet') {
-    return 'polyglot';
-  }
-  return 'python-only';
-}
-
-function defaultKitForFramework(framework: AICreateFramework, promptLower: string): string {
-  if (framework === 'nestjs') {
-    return 'nestjs.standard';
-  }
-  if (framework === 'go') {
-    return promptLower.includes('gin') ? 'gogin.standard' : 'gofiber.standard';
-  }
-  if (framework === 'springboot') {
-    return 'springboot.standard';
-  }
-  if (framework === 'dotnet') {
-    return 'dotnet.webapi.clean';
-  }
+function inferSuggestedModules(promptLower: string, framework: ScaffoldFramework): string[] {
   if (
-    promptLower.includes('ddd') ||
-    promptLower.includes('clean arch') ||
-    promptLower.includes('domain driven') ||
-    promptLower.includes('layered')
+    framework === 'go' ||
+    framework === 'springboot' ||
+    framework === 'dotnet' ||
+    isFrontendScaffoldFramework(framework)
   ) {
-    return 'fastapi.ddd';
-  }
-  return 'fastapi.standard';
-}
-
-function inferFrameworkFromPrompt(promptLower: string, frameworkHint?: string): AICreateFramework {
-  if (
-    frameworkHint === 'fastapi' ||
-    frameworkHint === 'nestjs' ||
-    frameworkHint === 'go' ||
-    frameworkHint === 'springboot' ||
-    frameworkHint === 'dotnet'
-  ) {
-    return frameworkHint;
-  }
-
-  let bestFramework: AICreateFramework = 'fastapi';
-  let bestScore = 0;
-
-  for (const [framework, keywords] of Object.entries(FRAMEWORK_KEYWORDS) as Array<
-    [AICreateFramework, string[]]
-  >) {
-    const score = keywords.reduce((acc, keyword) => {
-      return acc + (promptLower.includes(keyword) ? 1 : 0);
-    }, 0);
-    if (score > bestScore) {
-      bestScore = score;
-      bestFramework = framework;
-    }
-  }
-
-  return bestFramework;
-}
-
-function inferSuggestedModules(promptLower: string, framework: AICreateFramework): string[] {
-  if (framework === 'go' || framework === 'springboot' || framework === 'dotnet') {
     return [];
   }
 
@@ -135,72 +63,46 @@ function inferSuggestedModules(promptLower: string, framework: AICreateFramework
   return [...modules].slice(0, 6);
 }
 
-function inferNames(
-  prompt: string,
-  framework: AICreateFramework
-): {
-  workspaceName: string;
-  projectName: string;
-} {
-  const tokens = prompt
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, ' ')
-    .split(/\s+/)
-    .filter((token) => token.length > 2)
-    .filter(
-      (token) =>
-        ![
-          'with',
-          'and',
-          'the',
-          'for',
-          'api',
-          'service',
-          'backend',
-          'create',
-          'build',
-          'project',
-          'workspace',
-        ].includes(token)
-    );
-
-  const base =
-    tokens.slice(0, 2).join('-') || (framework === 'nestjs' ? 'node-platform' : 'product-platform');
-  return {
-    workspaceName: base,
-    projectName: `${tokens[0] || 'product'}-api`,
-  };
-}
-
 export function buildHeuristicCreationDraft(
   prompt: string,
   mode: 'workspace' | 'project',
-  frameworkHint?: string
+  frameworkHint?: string,
+  stackIntent?: CreationStackIntent
 ): {
   type: 'workspace' | 'project';
   workspaceName: string;
   profile: AICreateProfile;
   installMethod: 'auto';
-  framework: AICreateFramework;
+  framework: ScaffoldFramework;
   kit: string;
   projectName: string;
   suggestedModules: string[];
   description: string;
+  secondaryProject?: {
+    framework: ScaffoldFramework;
+    kit: string;
+    projectName: string;
+  };
 } {
   const trimmedPrompt = prompt.trim();
   const promptLower = trimmedPrompt.toLowerCase();
-  const framework = inferFrameworkFromPrompt(promptLower, frameworkHint);
-  const names = inferNames(trimmedPrompt, framework);
+  const framework = inferFrameworkFromCreationPrompt(promptLower, frameworkHint, stackIntent);
+  const names = inferCreationNames(trimmedPrompt, framework);
+  const secondaryProject =
+    mode === 'workspace'
+      ? inferPolyglotCompanionProject(trimmedPrompt, framework, stackIntent)
+      : undefined;
 
   return {
     type: mode,
     workspaceName: names.workspaceName,
-    profile: defaultProfileForFramework(framework),
+    profile: inferWorkspaceProfileFromCreationPrompt(framework, promptLower, stackIntent),
     installMethod: 'auto',
     framework,
     kit: defaultKitForFramework(framework, promptLower),
     projectName: names.projectName,
     suggestedModules: inferSuggestedModules(promptLower, framework),
     description: trimmedPrompt.slice(0, 240),
+    secondaryProject,
   };
 }

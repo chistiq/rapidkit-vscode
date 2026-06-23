@@ -1,13 +1,11 @@
 /**
- * StudioRedesign - Main export
+ * Studio contracts shared by host/webview bridges and sidebar flows.
+ * Full Incident Studio dashboard UI has been removed — Studio lives in the secondary sidebar.
  */
 
-export { IncidentStudioVNext } from './IncidentStudioVNext';
 export * from './state/studioState';
-export { MissionControlHeader } from './regions/MissionControlHeader';
-export { TopBar } from './regions/TopBar';
-export { ActivityBar } from './regions/ActivityBar';
-export { PhaseStepper } from './regions/PhaseStepper';
-export { WorkspaceSidebar } from './regions/WorkspaceSidebar';
-export { ContextPanel } from './regions/ContextPanel';
-export { ChatSurface } from './regions/ChatSurface';
+export * from './state/studioActions';
+export { buildStudioPosture } from './state/studioPosture';
+export { buildStudioActionAuditTimeline } from './state/studioActionAudit';
+export { buildStudioActionApprovalGate } from './state/studioActionApproval';
+export { normalizeThemeMode, type ThemeMode } from './styles/themeSystem';

@@ -7,6 +7,7 @@ import {
 } from './welcomePanelIncidentPolicy';
 import {
   getIncidentStudioDisplayMode,
+  normalizeEvidenceViewMode,
   normalizeIncidentStudioDisplayMode,
   normalizeIncidentUserMode,
   type IncidentStudioDisplayMode,
@@ -23,7 +24,8 @@ export type IncidentStudioUiPreferences = {
   incidentPrimaryCtaExperimentVariant: 'single' | 'multi';
   incidentRollbackApprovalMode: 'never' | 'high-risk-only' | 'mutating-only' | 'always';
   incidentRollbackProtectedPaths: string[];
-  dashboardSection: 'overview' | 'evidence' | 'operate' | 'console' | 'catalog' | 'workspaces';
+  dashboardSection: 'overview' | 'repair' | 'evidence' | 'operate' | 'console' | 'catalog';
+  dashboardEvidenceViewMode: 'guided' | 'balanced' | 'expanded';
 };
 
 export function readIncidentStudioUiPreferences(
@@ -52,13 +54,16 @@ export function readIncidentStudioUiPreferences(
       prefs?.incidentRollbackProtectedPaths
     ),
     dashboardSection:
-      prefs?.dashboardSection === 'evidence' ||
-      prefs?.dashboardSection === 'operate' ||
-      prefs?.dashboardSection === 'console' ||
-      prefs?.dashboardSection === 'catalog' ||
       prefs?.dashboardSection === 'workspaces'
-        ? prefs.dashboardSection
-        : 'overview',
+        ? 'catalog'
+        : prefs?.dashboardSection === 'repair' ||
+            prefs?.dashboardSection === 'evidence' ||
+            prefs?.dashboardSection === 'operate' ||
+            prefs?.dashboardSection === 'console' ||
+            prefs?.dashboardSection === 'catalog'
+          ? prefs.dashboardSection
+          : 'overview',
+    dashboardEvidenceViewMode: normalizeEvidenceViewMode(prefs?.dashboardEvidenceViewMode),
   };
 }
 

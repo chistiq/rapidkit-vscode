@@ -137,20 +137,34 @@ export class WorkspaiArchitectureCodeLensProvider implements vscode.CodeLensProv
         seed: summary.seedText,
         source: 'code-lens',
         trigger: 'architecture-lens',
+        scope: selectedProject?.name ? `project:${selectedProject.name}` : undefined,
+        workspace: workspacePath
+          ? {
+              path: workspacePath,
+              name: selectedWorkspace?.name,
+            }
+          : undefined,
+        project: selectedProject?.path
+          ? {
+              path: selectedProject.path,
+              name: selectedProject.name,
+              type: selectedProject.type,
+            }
+          : undefined,
       },
     ];
 
     return [
       new vscode.CodeLens(lensRange, {
         title: summary.title,
-        command: 'workspai.aiChangeImpactLite',
-        tooltip: 'Open Workspai Change Impact Lite with graph-backed architecture context',
+        command: 'workspai.architectureImpactLens',
+        tooltip: 'Run npm Workspace Advisor with graph-backed project scope',
         arguments: commandArguments,
       }),
       new vscode.CodeLens(lensRange, {
         title: summary.auxiliaryTitle,
         command: 'workspai.aiChangeImpactLite',
-        tooltip: 'Review scope and confidence before applying a risky change',
+        tooltip: 'Optional AI review with architecture graph seed context',
         arguments: commandArguments,
       }),
     ];

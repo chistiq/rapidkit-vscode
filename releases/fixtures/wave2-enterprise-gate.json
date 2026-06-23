@@ -1,0 +1,37 @@
+{
+    "enterpriseStabilizationGateStatus": {
+        "workspacePath": "/tmp/wave2-fixture",
+        "evaluatedAt": "2026-05-08T00:00:00.000Z",
+        "last7d": {
+            "window": "last7d",
+            "windowStartAt": "2026-05-01T00:00:00.000Z",
+            "windowEndAt": "2026-05-08T00:00:00.000Z",
+            "routePrecisionPass": true,
+            "verifyPathCompletionPass": true,
+            "falseConfidencePass": true,
+            "rollbackRecoveryPass": true,
+            "repeatVerifiedResolutionPass": true,
+            "reproPackSharePass": true,
+            "releaseReadinessEvidencePass": true,
+            "hardGatePass": true,
+            "overallPass": true
+        },
+        "last30d": {
+            "window": "last30d",
+            "windowStartAt": "2026-04-08T00:00:00.000Z",
+            "windowEndAt": "2026-05-08T00:00:00.000Z",
+            "routePrecisionPass": true,
+            "verifyPathCompletionPass": true,
+            "falseConfidencePass": true,
+            "rollbackRecoveryPass": true,
+            "repeatVerifiedResolutionPass": true,
+            "reproPackSharePass": true,
+            "releaseReadinessEvidencePass": true,
+            "hardGatePass": true,
+            "overallPass": true
+        },
+        "consecutiveWindowsPass": 2,
+        "expansionFrozen": false,
+        "freezeReason": null
+    }
+}

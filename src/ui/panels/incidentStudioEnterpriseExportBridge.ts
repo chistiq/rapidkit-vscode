@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 
+import { createExtensionWebviewMessage } from '../../contracts/webviewProtocol';
 import { buildVerifyPackOutputContract } from '../../core/verifyPackContract';
 import { WorkspaceUsageTracker } from '../../utils/workspaceUsageTracker';
 
@@ -16,15 +17,17 @@ function postExportProgress(
     return;
   }
 
-  replyWebview.postMessage({
-    command: 'aiChatActionProgress',
-    data: {
-      stage,
-      progress: 100,
-      note,
-    },
-    meta: { requestId, version: 'v1' },
-  });
+  replyWebview.postMessage(
+    createExtensionWebviewMessage(
+      'aiChatActionProgress',
+      {
+        stage,
+        progress: 100,
+        note,
+      },
+      { requestId, version: 'v1' }
+    )
+  );
 }
 
 function redactText(value: string | undefined): string | undefined {

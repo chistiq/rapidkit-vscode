@@ -38,8 +38,8 @@
   display: flex;
   flex: 1;
   overflow: hidden;
-  gap: 0;
-  padding: 0;
+  gap: 10px;
+  padding: 10px;
   min-height: 0;
 }
 
@@ -55,7 +55,6 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  margin-left: -1px;
 }
 
 .studio-pane-context {
@@ -64,7 +63,6 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  margin-left: -1px;
 }
 
 .studio-pane-sidebar > *,
@@ -85,7 +83,7 @@
 }
 
 .studio-pane-chat--adjacent {
-  margin-left: -1px;
+  margin-left: 0;
 }
 
 /* Layout contract — see data-studio-layout on .studio-workspace-grid */
@@ -103,23 +101,23 @@
 .studio-workspace-grid[data-studio-layout='full'] {
   grid-template-columns:
     42px
-    minmax(0, 1fr)
-    minmax(0, 1fr)
-    var(--studio-chat-column);
+    minmax(220px, 0.72fr)
+    minmax(360px, 1.35fr)
+    minmax(360px, 1.15fr);
 }
 
 .studio-workspace-grid[data-studio-layout='sidebar-chat'] {
   grid-template-columns:
     42px
-    minmax(200px, 0.95fr)
-    minmax(280px, 1.05fr);
+    minmax(220px, 0.72fr)
+    minmax(420px, 1.45fr);
 }
 
 .studio-workspace-grid[data-studio-layout='context-chat'] {
   grid-template-columns:
     42px
-    minmax(200px, 0.95fr)
-    minmax(280px, 1.05fr);
+    minmax(420px, 1.35fr)
+    minmax(380px, 1.05fr);
 }
 
 .studio-workspace-grid[data-studio-layout='chat-focus'] {
@@ -331,6 +329,36 @@
   flex-shrink: 0;
 }
 
+.studio-action-board {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--ws-space-sm);
+  padding: 10px 14px;
+  border-top: 1px solid var(--ws-border-subtle);
+  background: color-mix(in srgb, var(--ws-surface-raised) 72%, transparent);
+  flex-shrink: 0;
+}
+
+.studio-action-board__head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.studio-action-board__summary {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ws-text-muted);
+  word-break: break-word;
+}
+
+.studio-action-board .studio-suggestion-row {
+  flex-wrap: wrap;
+}
+
 .studio-action-outcome {
   display: flex;
   flex-direction: column;
@@ -501,13 +529,11 @@
 .studio-chat-surface {
   display: flex;
   flex-direction: column;
-  background: transparent;
+  background: color-mix(in srgb, var(--ws-surface-raised) 82%, transparent);
   height: 100%;
   width: 100%;
-  border: none;
-  border-left: 1px solid var(--ws-border-subtle);
-  border-right: 1px solid var(--ws-border-subtle);
-  border-radius: 0;
+  border: 1px solid var(--ws-border-subtle);
+  border-radius: 8px;
   overflow: hidden;
   position: relative;
   animation: studioEnterUp 360ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both;

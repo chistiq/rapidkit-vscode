@@ -7,16 +7,20 @@ const {
   showWarningMessageMock,
   showInformationMessageMock,
   showErrorMessageMock,
+  showQuickPickMock,
   executeCommandMock,
   trackCommandEventMock,
   runMock,
+  refreshAfterOnboardMock,
 } = vi.hoisted(() => ({
   showWarningMessageMock: vi.fn(),
   showInformationMessageMock: vi.fn(),
   showErrorMessageMock: vi.fn(),
+  showQuickPickMock: vi.fn(),
   executeCommandMock: vi.fn(),
   trackCommandEventMock: vi.fn(),
   runMock: vi.fn(),
+  refreshAfterOnboardMock: vi.fn(),
 }));
 
 vi.mock('vscode', () => ({
@@ -24,6 +28,7 @@ vi.mock('vscode', () => ({
     showWarningMessage: showWarningMessageMock,
     showInformationMessage: showInformationMessageMock,
     showErrorMessage: showErrorMessageMock,
+    showQuickPick: showQuickPickMock,
     withProgress: async (
       _options: unknown,
       task: (progress: { report: (value: unknown) => void }) => Promise<unknown>
@@ -56,6 +61,23 @@ vi.mock('../utils/constants', () => ({
   getExtensionVersion: () => '0.35.0',
 }));
 
+vi.mock('../utils/platformCapabilities', () => ({
+  buildNpxRapidkitArgs: (args: string[] = []) => ['--yes', 'rapidkit', ...args],
+  warmRapidkitNpmPackageResolution: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../core/rapidkitCliCapabilities', () => ({
+  gateAdoptCli: vi.fn().mockResolvedValue(true),
+}));
+
+vi.mock('../core/moduleEnablementPrompt', () => ({
+  resolveEnableModulesPreference: vi.fn().mockResolvedValue(false),
+}));
+
+vi.mock('../core/npmProjectOnboardRefresh', () => ({
+  refreshExtensionAfterNpmProjectOnboard: refreshAfterOnboardMock,
+}));
+
 vi.mock('../utils/workspaceUsageTracker', () => ({
   WorkspaceUsageTracker: {
     getInstance: () => ({
@@ -67,41 +89,27 @@ vi.mock('../utils/workspaceUsageTracker', () => ({
 import { adoptProjectCommand } from '../commands/adoptProject';
 
 describe('adoptProjectCommand', () => {
-  const tempRoots: string[] = [];
-
   beforeEach(() => {
     vi.clearAllMocks();
-    executeCommandMock.mockImplementation(async (command: string) => {
-      if (command === 'workspai.getSelectedWorkspace') {
-        return { path: '/tmp/workspace' };
-      }
-      return undefined;
-    });
-    runMock.mockResolvedValue({ stdout: '', stderr: '', exitCode: 1 });
   });
 
   afterEach(async () => {
-    await Promise.all(tempRoots.map((dirPath) => fs.remove(dirPath)));
-    tempRoots.length = 0;
+    // no-op
   });
 
-  async function createTempProject(projectName = 'demo-project') {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'rk-adopt-'));
-    tempRoots.push(root);
-
-    const workspacePath = path.join(root, 'workspace');
-    const projectPath = path.join(root, 'external', projectName);
-
-    await fs.ensureDir(workspacePath);
-    await fs.writeFile(path.join(workspacePath, '.rapidkit-workspace'), 'workspace\n');
+  async function createTempProject(name = 'frontend-app'): Promise<{
+    workspacePath: string;
+    projectPath: string;
+    projectName: string;
+  }> {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'ws-adopt-'));
+    const projectPath = path.join(workspacePath, name);
     await fs.ensureDir(projectPath);
-    await fs.writeFile(path.join(projectPath, 'README.md'), '# demo\n');
-
-    return { root, workspacePath, projectPath, projectName };
+    return { workspacePath, projectPath, projectName: name };
   }
 
-  it('delegates adoption to the canonical npm CLI contract first', async () => {
-    const { workspacePath, projectPath, projectName } = await createTempProject('web-app');
+  it('delegates adopt to npm CLI without forcing --workspace on fresh install', async () => {
+    const { projectPath, projectName } = await createTempProject('frontend-app');
 
     await fs.writeJSON(path.join(projectPath, 'package.json'), {
       name: projectName,
@@ -112,16 +120,15 @@ describe('adoptProjectCommand', () => {
       },
     });
 
-    showWarningMessageMock.mockResolvedValue('Adopt');
     runMock.mockResolvedValue({
       stdout: JSON.stringify({
-        workspacePath,
-        workspaceResolution: 'explicit',
-        dryRun: false,
+        workspacePath: '/home/user/rapidkit/workspaces/workspai',
+        workspaceResolution: 'default-auto',
+        defaultWorkspaceCreated: true,
         adoptedProject: {
           name: projectName,
           path: projectPath,
-          relativePath: path.relative(workspacePath, projectPath),
+          relativePath: projectName,
           relationship: 'adopted',
           stack: 'nextjs',
           runtime: 'node',
@@ -138,10 +145,61 @@ describe('adoptProjectCommand', () => {
     });
 
     const ok = await adoptProjectCommand({
+      projectPath,
+      projectName,
+      useDefaultWorkspace: true,
+    });
+
+    expect(ok).toBe(true);
+    expect(runMock).toHaveBeenCalledWith(
+      'npx',
+      ['--yes', 'rapidkit', 'adopt', projectPath, '--json', '--name', projectName],
+      expect.objectContaining({
+        cwd: projectPath,
+        timeout: 120_000,
+      })
+    );
+    expect(refreshAfterOnboardMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspacePath: '/home/user/rapidkit/workspaces/workspai',
+        projectPath,
+        projectName,
+      })
+    );
+    expect(trackCommandEventMock).toHaveBeenCalledWith(
+      'workspai.convertProjectToManaged',
+      '/home/user/rapidkit/workspaces/workspai',
+      expect.objectContaining({
+        result: 'success',
+        projectName,
+        adoptionEngine: 'rapidkit-npm',
+      })
+    );
+  });
+
+  it('passes explicit workspace when provided', async () => {
+    const { workspacePath, projectPath, projectName } = await createTempProject();
+
+    runMock.mockResolvedValue({
+      stdout: JSON.stringify({
+        workspacePath,
+        adoptedProject: {
+          name: projectName,
+          path: projectPath,
+          framework: 'unknown',
+          stack: 'unknown',
+          runtime: 'unknown',
+        },
+      }),
+      stderr: '',
+      exitCode: 0,
+    });
+
+    const ok = await adoptProjectCommand({
       workspacePath,
       projectPath,
       projectName,
-      projectType: 'nextjs',
+      useDefaultWorkspace: false,
     });
 
     expect(ok).toBe(true);
@@ -149,126 +207,38 @@ describe('adoptProjectCommand', () => {
       'npx',
       [
         '--yes',
-        '--package',
-        'rapidkit',
         'rapidkit',
         'adopt',
         projectPath,
+        '--json',
         '--workspace',
         workspacePath,
         '--name',
         projectName,
-        '--json',
       ],
-      expect.objectContaining({
-        cwd: workspacePath,
-        timeout: 120_000,
-      })
-    );
-    expect(executeCommandMock).toHaveBeenCalledWith('workspai.refreshProjects');
-    expect(executeCommandMock).toHaveBeenCalledWith('workspai.refreshWorkspaces');
-    expect(trackCommandEventMock).toHaveBeenCalledWith(
-      'workspai.convertProjectToManaged',
-      workspacePath,
-      expect.objectContaining({
-        result: 'success',
-        projectName,
-        detectedType: 'nextjs',
-        runtime: 'node',
-        adoptionEngine: 'rapidkit-npm',
-      })
+      expect.any(Object)
     );
   });
 
-  it('falls back to aligned local adoption metadata when npm CLI is unavailable', async () => {
-    const { workspacePath, projectPath, projectName } = await createTempProject('frontend-app');
+  it('fails closed when npm adopt fails', async () => {
+    const { projectPath, projectName } = await createTempProject();
 
-    await fs.writeJSON(path.join(projectPath, 'package.json'), {
-      name: projectName,
-      version: '1.0.0',
-      dependencies: {
-        next: '^15.0.0',
-        react: '^19.0.0',
-      },
-    });
-
-    showWarningMessageMock.mockResolvedValue('Adopt');
     runMock.mockResolvedValue({ stdout: 'npx failed', stderr: 'offline', exitCode: 1 });
 
     const ok = await adoptProjectCommand({
-      workspacePath,
       projectPath,
       projectName,
-      projectType: 'unknown',
-    });
-
-    expect(ok).toBe(true);
-
-    const rapidkitDir = path.join(projectPath, '.rapidkit');
-    const projectJson = await fs.readJSON(path.join(rapidkitDir, 'project.json'));
-    const adoptJson = await fs.readJSON(path.join(rapidkitDir, 'adopt.json'));
-    const readinessJson = await fs.readJSON(path.join(rapidkitDir, 'adopt-readiness.json'));
-    const registryJson = await fs.readJSON(
-      path.join(workspacePath, '.rapidkit', 'imported-projects.json')
-    );
-
-    expect(projectJson.kit_name).toBe('adopted.nextjs');
-    expect(projectJson.framework).toBe('nextjs');
-    expect(projectJson.runtime).toBe('node');
-    expect(projectJson.project_kind).toBe('frontend');
-    expect(adoptJson.detection.framework).toBe('nextjs');
-    expect(readinessJson.status).toBe('observed');
-    expect(registryJson.projects).toEqual([
-      expect.objectContaining({
-        name: projectName,
-        path: projectPath,
-        relationship: 'adopted',
-        stack: 'nextjs',
-        runtime: 'node',
-        framework: 'nextjs',
-        source: 'adopted-local',
-      }),
-    ]);
-    expect(trackCommandEventMock).toHaveBeenCalledWith(
-      'workspai.convertProjectToManaged',
-      workspacePath,
-      expect.objectContaining({
-        result: 'success',
-        projectName,
-        detectedType: 'nextjs',
-        adoptionEngine: 'extension-fallback',
-      })
-    );
-  });
-
-  it('does not write markers when user cancels confirmation', async () => {
-    const { workspacePath, projectPath, projectName } = await createTempProject();
-
-    showWarningMessageMock.mockResolvedValue('Cancel');
-
-    const ok = await adoptProjectCommand({
-      workspacePath,
-      projectPath,
-      projectName,
-      projectType: 'unknown',
+      useDefaultWorkspace: true,
     });
 
     expect(ok).toBe(false);
-    expect(await fs.pathExists(path.join(projectPath, '.rapidkit', 'project.json'))).toBe(false);
-    expect(runMock).not.toHaveBeenCalled();
-
-    expect(trackCommandEventMock).toHaveBeenCalledWith(
-      'workspai.convertProjectToManaged',
-      workspacePath,
-      expect.objectContaining({
-        result: 'cancelled',
-        projectName,
-      })
+    expect(showErrorMessageMock).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to adopt project')
     );
   });
 
   it('returns early when project is already managed', async () => {
-    const { workspacePath, projectPath, projectName } = await createTempProject();
+    const { projectPath, projectName } = await createTempProject();
 
     await fs.ensureDir(path.join(projectPath, '.rapidkit'));
     await fs.writeJSON(path.join(projectPath, '.rapidkit', 'project.json'), {
@@ -277,24 +247,15 @@ describe('adoptProjectCommand', () => {
     });
 
     const ok = await adoptProjectCommand({
-      workspacePath,
       projectPath,
       projectName,
-      projectType: 'unknown',
+      useDefaultWorkspace: true,
     });
 
     expect(ok).toBe(false);
     expect(runMock).not.toHaveBeenCalled();
     expect(showInformationMessageMock).toHaveBeenCalledWith(
       `Project "${projectName}" is already managed by Workspai.`
-    );
-    expect(trackCommandEventMock).toHaveBeenCalledWith(
-      'workspai.convertProjectToManaged',
-      workspacePath,
-      expect.objectContaining({
-        result: 'already-managed',
-        projectName,
-      })
     );
   });
 });

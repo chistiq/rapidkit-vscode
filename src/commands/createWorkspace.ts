@@ -6,7 +6,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs-extra';
 import * as path from 'path';
-import * as os from 'os';
 import { WorkspaceWizard } from '../ui/wizards/workspaceWizard';
 import { Logger } from '../utils/logger';
 import { parseRapidKitError, formatErrorMessage, logDetailedError } from '../utils/errorParser';
@@ -18,6 +17,11 @@ import { WelcomePanel } from '../ui/panels/welcomePanel';
 import { isPoetryInstalledCached } from '../utils/poetryHelper';
 import { checkPythonEnvironmentCached } from '../utils/pythonChecker';
 import { runCommandsInTerminal, runShellCommandInTerminal } from '../utils/terminalExecutor';
+import {
+  isDefaultWorkspaceCreationPath,
+  hasWorkspaceRootMarkers,
+  resolveNewWorkspacePath,
+} from '../core/workspacePaths';
 
 type InstallMethod = 'poetry' | 'venv' | 'pipx' | 'auto';
 type BootstrapProfile = NonNullable<CreateWorkspaceOptions['profile']>;
@@ -39,6 +43,10 @@ type WorkspaceModalConfig = {
   installMethod?: InstallMethod;
   policyMode?: PolicyMode;
   dependencySharing?: DependencySharing;
+  /** Assist / chained flows: show toast without blocking on user dismissal. */
+  suppressPostCreatePrompt?: boolean;
+  /** Chat-first flows: keep VS Code notifications quiet and report progress in the caller UI. */
+  silent?: boolean;
 };
 
 type WorkspaceCreationConfig = {
@@ -49,6 +57,8 @@ type WorkspaceCreationConfig = {
   installMethod?: InstallMethod;
   policyMode?: PolicyMode;
   dependencySharing?: DependencySharing;
+  suppressPostCreatePrompt?: boolean;
+  silent?: boolean;
 };
 
 function isWorkspaceModalConfig(value: unknown): value is WorkspaceModalConfig {
@@ -302,23 +312,23 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
       if (isWorkspaceModalConfig(workspaceName)) {
         // Full config object sent from the webview modal
         logger.info('Using full config from webview modal:', workspaceName.name);
-        const defaultPath = path.join(os.homedir(), 'Workspai', 'rapidkits');
         config = {
           name: workspaceName.name,
-          path: path.join(defaultPath, workspaceName.name),
+          path: resolveNewWorkspacePath(workspaceName.name),
           initGit: workspaceName.initGit !== undefined ? workspaceName.initGit : true,
           profile: workspaceName.profile || 'minimal',
           installMethod: workspaceName.installMethod || 'auto',
           policyMode: workspaceName.policyMode || 'warn',
           dependencySharing: workspaceName.dependencySharing || 'isolated',
+          suppressPostCreatePrompt: workspaceName.suppressPostCreatePrompt === true,
+          silent: workspaceName.silent === true,
         };
       } else {
         // Legacy: plain name string (from command palette or internal calls)
         logger.info('Using provided workspace name:', workspaceName);
-        const defaultPath = path.join(os.homedir(), 'Workspai', 'rapidkits');
         config = {
           name: workspaceName as string,
-          path: path.join(defaultPath, workspaceName as string),
+          path: resolveNewWorkspacePath(workspaceName as string),
           initGit: true,
         };
       }
@@ -387,399 +397,383 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
       );
     }
 
-    // Execute with progress
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: 'Creating Workspai workspace',
-        cancellable: false,
-      },
-      async (progress) => {
-        progress.report({
-          increment: 0,
-          message: 'Initializing... (First time setup may take 30-60 seconds)',
-        });
+    const runCreateWorkspace = async (
+      progress: Pick<vscode.Progress<{ increment?: number; message?: string }>, 'report'>
+    ) => {
+      progress.report({
+        increment: 0,
+        message: 'Initializing... (First time setup may take 30-60 seconds)',
+      });
 
-        try {
-          const cli = new WorkspaiCLI();
+      try {
+        const cli = new WorkspaiCLI();
 
-          progress.report({ increment: 10, message: 'Preparing workspace directory...' });
+        progress.report({ increment: 10, message: 'Preparing workspace directory...' });
 
-          // Don't create the workspace directory here - let npm package handle it
-          // Only ensure parent directory exists so npm package can create the workspace
-          const parentDir = path.dirname(config.path);
-          await fs.ensureDir(parentDir);
-          logger.info('Parent directory ensured:', parentDir);
+        // Don't create the workspace directory here - let npm package handle it
+        // Only ensure parent directory exists so npm package can create the workspace
+        const parentDir = path.dirname(config.path);
+        await fs.ensureDir(parentDir);
+        logger.info('Parent directory ensured:', parentDir);
 
-          // Pre-flight: detect partial/broken workspace (dir exists but no marker).
-          // A partial workspace would cause the CLI to fail with "already exists" without
-          // creating a valid workspace — give the user a clear choice.
-          const dirAlreadyExists = await fs.pathExists(config.path);
-          const markerAlreadyExists = await fs.pathExists(
-            path.join(config.path, '.rapidkit-workspace')
+        // Pre-flight: detect partial/broken workspace (dir exists but no marker).
+        // A partial workspace would cause the CLI to fail with "already exists" without
+        // creating a valid workspace — give the user a clear choice.
+        const dirAlreadyExists = await fs.pathExists(config.path);
+        const markerAlreadyExists = hasWorkspaceRootMarkers(config.path);
+        if (dirAlreadyExists && !markerAlreadyExists) {
+          const choice = await vscode.window.showWarningMessage(
+            `⚠️ Directory "${config.name}" already exists but is not a valid Workspai workspace.\n\n` +
+              `This may be a partial or failed previous creation.\n\n` +
+              `What would you like to do?`,
+            { modal: true },
+            'Replace (delete & recreate)',
+            'Cancel'
           );
-          if (dirAlreadyExists && !markerAlreadyExists) {
-            const choice = await vscode.window.showWarningMessage(
-              `⚠️ Directory "${config.name}" already exists but is not a valid Workspai workspace.\n\n` +
-                `This may be a partial or failed previous creation.\n\n` +
-                `What would you like to do?`,
-              { modal: true },
-              'Replace (delete & recreate)',
-              'Cancel'
+          if (choice === 'Replace (delete & recreate)') {
+            await fs.remove(config.path);
+            logger.info(`Removed partial directory: ${config.path}`);
+          } else {
+            logger.info('User cancelled workspace creation at partial-dir prompt');
+            return;
+          }
+        }
+
+        const isDefaultLocation = isDefaultWorkspaceCreationPath(config.path, config.name);
+
+        if (isDefaultLocation) {
+          // Use npm package directly for default location
+          progress.report({
+            increment: 20,
+            message: 'Setting up RapidKit CLI (downloading if needed)...',
+          });
+
+          // Idempotency: if the workspace marker already exists (prior run or
+          // Windows 'directory already exists' false-positive), skip the CLI
+          // call entirely and treat this as a silent success.
+          const workspacePreexists = hasWorkspaceRootMarkers(config.path);
+          if (workspacePreexists) {
+            logger.info(
+              `Workspace "${config.name}" already exists — skipping CLI creation (idempotent)`
             );
-            if (choice === 'Replace (delete & recreate)') {
-              await fs.remove(config.path);
-              logger.info(`Removed partial directory: ${config.path}`);
+          }
+          const createResult = workspacePreexists
+            ? { exitCode: 0, stdout: '', stderr: '' }
+            : await cli.createWorkspace({
+                name: config.name,
+                parentPath: path.dirname(config.path),
+                skipGit: !config.initGit,
+                installMethod: chosenInstallMethod,
+                profile: config.profile,
+              });
+
+          // Check if creation was successful
+          if (createResult.exitCode !== 0) {
+            // Log detailed error information
+            logDetailedError(
+              createResult.stderr || '',
+              createResult.stdout || '',
+              createResult.exitCode
+            );
+
+            // Parse error for user-friendly message
+            const parsedError = parseRapidKitError(
+              createResult.stderr || '',
+              createResult.stdout || ''
+            );
+
+            if (parsedError.canFallback) {
+              logger.warn(`Workspace creation failed: ${parsedError.type} - offering fallback`);
+
+              // Show informative message with fallback options
+              const actions = ['View Details'];
+              if (parsedError.type === 'core_missing') {
+                actions.unshift('Create Basic Workspace', 'Use Demo Mode');
+              } else if (parsedError.canRetry) {
+                actions.unshift('Retry');
+              }
+              actions.push('Cancel');
+
+              const choice = await vscode.window.showWarningMessage(
+                `⚠️ ${parsedError.title}\n\n${parsedError.message}\n\n` +
+                  `⚠️ Fallback Option Available:\n` +
+                  `• Creates basic workspace structure (marker + README)\n` +
+                  `• Does NOT include Poetry setup or CLI tools\n` +
+                  `• You'll need to install rapidkit npm package to create projects`,
+                { modal: true },
+                ...actions
+              );
+
+              if (choice === 'Create Basic Workspace') {
+                // Create basic workspace structure manually
+                await createBasicWorkspace(config.path, config.name, config.initGit);
+                logger.info('Basic workspace created as fallback');
+
+                // Show post-creation notification with action items
+                const installAction = 'Install npm Package';
+                const openReadme = 'Open README';
+                const selected = await vscode.window.showWarningMessage(
+                  `⚠️ Basic Workspace Created\n\n` +
+                    `This is a minimal workspace. To create projects:\n\n` +
+                    `1️⃣ Install: npm install -g rapidkit\n` +
+                    `2️⃣ Create projects with Extension commands\n\n` +
+                    `⚠️ Note: Some features require rapidkit-core (not yet on PyPI)`,
+                  installAction,
+                  openReadme,
+                  'OK'
+                );
+
+                if (selected === installAction) {
+                  // Open terminal with install command
+                  runShellCommandInTerminal({
+                    name: 'Install RapidKit',
+                    command: 'npm',
+                    args: ['install', '-g', 'rapidkit'],
+                  });
+                } else if (selected === openReadme) {
+                  const readmePath = path.join(config.path, 'README.md');
+                  const doc = await vscode.workspace.openTextDocument(readmePath);
+                  await vscode.window.showTextDocument(doc);
+                }
+
+                // Don't throw, continue to finalization
+              } else if (choice === 'Use Demo Mode') {
+                vscode.window.showInformationMessage(
+                  '💡 Demo Mode\n\n' +
+                    'You can create standalone projects without a workspace using the npm package.\n\n' +
+                    'Use "Workspai: Create Project" from the command palette to get started.'
+                );
+                return;
+              } else if (choice === 'Retry') {
+                // Retry the same operation
+                return createWorkspaceCommand();
+              } else if (choice === 'View Details') {
+                // Show detailed error in output panel
+                const output = vscode.window.createOutputChannel('Workspai Error');
+                output.clear();
+                output.appendLine(`# ${parsedError.title}\n`);
+                output.appendLine(parsedError.message);
+                output.appendLine(`\n## Suggestions\n${parsedError.suggestion}`);
+                output.appendLine(`\n## Technical Details\n`);
+                output.appendLine(`Exit Code: ${createResult.exitCode}`);
+                if (createResult.stderr) {
+                  output.appendLine(`\nSTDERR:\n${createResult.stderr}`);
+                }
+                if (createResult.stdout) {
+                  output.appendLine(`\nSTDOUT:\n${createResult.stdout}`);
+                }
+                output.show();
+                return;
+              } else {
+                throw new Error('Workspace creation cancelled');
+              }
             } else {
-              logger.info('User cancelled workspace creation at partial-dir prompt');
-              return;
+              // Non-recoverable error
+              throw new Error(formatErrorMessage(parsedError));
             }
           }
+        } else {
+          // For custom paths, create directly in the target directory
+          // IMPORTANT: Don't create in default location and move - this breaks virtualenv shebangs!
+          progress.report({
+            increment: 20,
+            message: 'Setting up RapidKit CLI (downloading if needed)...',
+          });
 
-          // Check if it's a default location (~/Workspai/rapidkits/<name>)
-          const homeDir = os.homedir();
-          const defaultWorkspacePath = path.join(homeDir, 'Workspai', 'rapidkits', config.name);
-          const isDefaultLocation = config.path === defaultWorkspacePath;
+          const createResult = await cli.createWorkspace({
+            name: config.name,
+            parentPath: path.dirname(config.path), // Use actual parent path, not default
+            skipGit: !config.initGit,
+            installMethod: chosenInstallMethod,
+            profile: config.profile,
+          });
 
-          if (isDefaultLocation) {
-            // Use npm package directly for default location
-            progress.report({
-              increment: 20,
-              message: 'Setting up RapidKit CLI (downloading if needed)...',
-            });
-
-            // Idempotency: if the workspace marker already exists (prior run or
-            // Windows 'directory already exists' false-positive), skip the CLI
-            // call entirely and treat this as a silent success.
-            const preexistingMarker = path.join(config.path, '.rapidkit-workspace');
-            const workspacePreexists = await fs.pathExists(preexistingMarker);
-            if (workspacePreexists) {
+          // Check if creation was successful
+          if (createResult.exitCode !== 0) {
+            // Idempotency: same pre-flight check for custom paths.
+            if (hasWorkspaceRootMarkers(config.path)) {
               logger.info(
-                `Workspace "${config.name}" already exists — skipping CLI creation (idempotent)`
+                `Workspace "${config.name}" already exists at custom path — idempotent success`
               );
-            }
-            const createResult = workspacePreexists
-              ? { exitCode: 0, stdout: '', stderr: '' }
-              : await cli.createWorkspace({
-                  name: config.name,
-                  parentPath: path.dirname(config.path),
-                  skipGit: !config.initGit,
-                  installMethod: chosenInstallMethod,
-                  profile: config.profile,
-                });
+            } else {
+              const stderr = createResult.stderr || createResult.stdout || '';
+              logger.error('Workspace creation failed', {
+                exitCode: createResult.exitCode,
+                stderr,
+              });
 
-            // Check if creation was successful
-            if (createResult.exitCode !== 0) {
-              // Log detailed error information
-              logDetailedError(
-                createResult.stderr || '',
-                createResult.stdout || '',
-                createResult.exitCode
-              );
-
-              // Parse error for user-friendly message
-              const parsedError = parseRapidKitError(
-                createResult.stderr || '',
-                createResult.stdout || ''
-              );
-
-              if (parsedError.canFallback) {
-                logger.warn(`Workspace creation failed: ${parsedError.type} - offering fallback`);
-
-                // Show informative message with fallback options
-                const actions = ['View Details'];
-                if (parsedError.type === 'core_missing') {
-                  actions.unshift('Create Basic Workspace', 'Use Demo Mode');
-                } else if (parsedError.canRetry) {
-                  actions.unshift('Retry');
-                }
-                actions.push('Cancel');
-
-                const choice = await vscode.window.showWarningMessage(
-                  `⚠️ ${parsedError.title}\n\n${parsedError.message}\n\n` +
-                    `⚠️ Fallback Option Available:\n` +
-                    `• Creates basic workspace structure (marker + README)\n` +
-                    `• Does NOT include Poetry setup or CLI tools\n` +
-                    `• You'll need to install rapidkit npm package to create projects`,
-                  { modal: true },
-                  ...actions
-                );
-
-                if (choice === 'Create Basic Workspace') {
-                  // Create basic workspace structure manually
-                  await createBasicWorkspace(config.path, config.name, config.initGit);
-                  logger.info('Basic workspace created as fallback');
-
-                  // Show post-creation notification with action items
-                  const installAction = 'Install npm Package';
-                  const openReadme = 'Open README';
-                  const selected = await vscode.window.showWarningMessage(
-                    `⚠️ Basic Workspace Created\n\n` +
-                      `This is a minimal workspace. To create projects:\n\n` +
-                      `1️⃣ Install: npm install -g rapidkit\n` +
-                      `2️⃣ Create projects with Extension commands\n\n` +
-                      `⚠️ Note: Some features require rapidkit-core (not yet on PyPI)`,
-                    installAction,
-                    openReadme,
-                    'OK'
-                  );
-
-                  if (selected === installAction) {
-                    // Open terminal with install command
-                    runShellCommandInTerminal({
-                      name: 'Install RapidKit',
-                      command: 'npm',
-                      args: ['install', '-g', 'rapidkit'],
-                    });
-                  } else if (selected === openReadme) {
-                    const readmePath = path.join(config.path, 'README.md');
-                    const doc = await vscode.workspace.openTextDocument(readmePath);
-                    await vscode.window.showTextDocument(doc);
-                  }
-
-                  // Don't throw, continue to finalization
-                } else if (choice === 'Use Demo Mode') {
-                  vscode.window.showInformationMessage(
-                    '💡 Demo Mode\n\n' +
-                      'You can create standalone projects without a workspace using the npm package.\n\n' +
-                      'Use "Workspai: Create Project" from the command palette to get started.'
-                  );
-                  return;
-                } else if (choice === 'Retry') {
-                  // Retry the same operation
-                  return createWorkspaceCommand();
-                } else if (choice === 'View Details') {
-                  // Show detailed error in output panel
-                  const output = vscode.window.createOutputChannel('Workspai Error');
-                  output.clear();
-                  output.appendLine(`# ${parsedError.title}\n`);
-                  output.appendLine(parsedError.message);
-                  output.appendLine(`\n## Suggestions\n${parsedError.suggestion}`);
-                  output.appendLine(`\n## Technical Details\n`);
-                  output.appendLine(`Exit Code: ${createResult.exitCode}`);
-                  if (createResult.stderr) {
-                    output.appendLine(`\nSTDERR:\n${createResult.stderr}`);
-                  }
-                  if (createResult.stdout) {
-                    output.appendLine(`\nSTDOUT:\n${createResult.stdout}`);
-                  }
-                  output.show();
-                  return;
-                } else {
-                  throw new Error('Workspace creation cancelled');
-                }
-              } else {
-                // Non-recoverable error
-                throw new Error(formatErrorMessage(parsedError));
-              }
-            }
-          } else {
-            // For custom paths, create directly in the target directory
-            // IMPORTANT: Don't create in default location and move - this breaks virtualenv shebangs!
-            progress.report({
-              increment: 20,
-              message: 'Setting up RapidKit CLI (downloading if needed)...',
-            });
-
-            const createResult = await cli.createWorkspace({
-              name: config.name,
-              parentPath: path.dirname(config.path), // Use actual parent path, not default
-              skipGit: !config.initGit,
-              installMethod: chosenInstallMethod,
-              profile: config.profile,
-            });
-
-            // Check if creation was successful
-            if (createResult.exitCode !== 0) {
-              // Idempotency: same pre-flight check for custom paths.
-              const customMarker = path.join(config.path, '.rapidkit-workspace');
-              if (await fs.pathExists(customMarker)) {
-                logger.info(
-                  `Workspace "${config.name}" already exists at custom path — idempotent success`
-                );
-              } else {
-                const stderr = createResult.stderr || createResult.stdout || '';
-                logger.error('Workspace creation failed', {
-                  exitCode: createResult.exitCode,
-                  stderr,
-                });
-
-                throw new Error(`Workspace creation failed: ${stderr || 'Unknown error'}`);
-              }
-            }
-
-            logger.info('Workspace created directly at custom path (no move needed)');
-          }
-
-          logger.info('Workspace creation via npm package completed');
-
-          progress.report({ increment: 50, message: 'Finalizing workspace...' });
-
-          // Note: We skip detailed validation here because:
-          // 1. npm package already validates during creation
-          // 2. Poetry venvs may not be immediately ready for inspection
-          // 3. The marker file existence is sufficient proof of successful creation
-
-          logger.info('Workspace creation successful (validation skipped - npm handles it)');
-
-          progress.report({ increment: 65, message: 'Verifying workspace...' });
-
-          // Verify workspace was created
-          const workspaceExists = await fs.pathExists(config.path);
-          if (!workspaceExists) {
-            throw new Error(`Workspace directory not created at ${config.path}`);
-          }
-
-          // Check for workspace marker (.rapidkit directory)
-          const rapidkitDir = path.join(config.path, '.rapidkit');
-          const rapidkitDirExists = await fs.pathExists(rapidkitDir);
-
-          if (!rapidkitDirExists) {
-            logger.warn('Workspace created but .rapidkit directory not found');
-          }
-
-          // Apply wizard-specified policy mode and dependency sharing to .rapidkit files
-          // using canonical npm/CLI keys:
-          // - mode
-          // - dependency_sharing_mode
-          if (rapidkitDirExists) {
-            try {
-              const policiesPath = path.join(rapidkitDir, 'policies.yml');
-              const effectiveMode = config.policyMode === 'strict' ? 'strict' : 'warn';
-              const effectiveDependencySharingMode =
-                config.dependencySharing === 'shared' ? 'shared-runtime-caches' : 'isolated';
-
-              if (await fs.pathExists(policiesPath)) {
-                let content = await fs.readFile(policiesPath, 'utf-8');
-
-                if (/^\s*mode:\s*(warn|strict)\s*$/m.test(content)) {
-                  content = content.replace(
-                    /^\s*mode:\s*(warn|strict)\s*$/m,
-                    `mode: ${effectiveMode}`
-                  );
-                } else {
-                  content += `\nmode: ${effectiveMode}`;
-                }
-
-                if (/^\s*dependency_sharing_mode:\s*[a-zA-Z-]+\s*$/m.test(content)) {
-                  content = content.replace(
-                    /^\s*dependency_sharing_mode:\s*[a-zA-Z-]+\s*$/m,
-                    `dependency_sharing_mode: ${effectiveDependencySharingMode}`
-                  );
-                } else {
-                  content += `\ndependency_sharing_mode: ${effectiveDependencySharingMode}`;
-                }
-
-                if (!content.endsWith('\n')) {
-                  content += '\n';
-                }
-
-                await fs.writeFile(policiesPath, content, 'utf-8');
-              } else {
-                await fs.writeFile(
-                  policiesPath,
-                  [
-                    'version: "1.0"',
-                    `mode: ${effectiveMode}`,
-                    `dependency_sharing_mode: ${effectiveDependencySharingMode}`,
-                    'rules:',
-                    '  enforce_workspace_marker: true',
-                    '  enforce_toolchain_lock: false',
-                    '  disallow_untrusted_tool_sources: false',
-                    '',
-                  ].join('\n'),
-                  'utf-8'
-                );
-              }
-
-              logger.info(
-                `Policy settings written: mode=${effectiveMode}, dependency_sharing_mode=${effectiveDependencySharingMode}`
-              );
-            } catch (writeErr) {
-              logger.warn('Could not write extra wizard options to .rapidkit files', writeErr);
-              // Non-fatal: workspace is still fully usable
+              throw new Error(`Workspace creation failed: ${stderr || 'Unknown error'}`);
             }
           }
 
-          // Verify workspace marker exists (created by npm package)
-          const markerPath = path.join(config.path, '.rapidkit-workspace');
-          if (!(await fs.pathExists(markerPath))) {
-            logger.warn('Workspace marker not found - npm package should have created it');
-          } else {
-            // Add VS Code metadata to the marker
-            const { getExtensionVersion } = await import('../utils/constants.js');
-            await updateWorkspaceMetadata(config.path, {
-              vscode: {
-                extensionVersion: getExtensionVersion(),
-                createdViaExtension: true,
-                lastOpenedAt: new Date().toISOString(),
-                openCount: 1,
-              },
-            });
-            logger.info('Workspace marker verified and VS Code metadata added');
-          }
+          logger.info('Workspace created directly at custom path (no move needed)');
+        }
 
-          progress.report({ increment: 80, message: 'Registering workspace...' });
+        logger.info('Workspace creation via npm package completed');
 
-          // Add workspace to manager
-          const workspaceManager = WorkspaceManager.getInstance();
-          await workspaceManager.addWorkspace(config.path);
+        progress.report({ increment: 50, message: 'Finalizing workspace...' });
 
-          progress.report({ increment: 90, message: 'Refreshing views...' });
+        // Note: We skip detailed validation here because:
+        // 1. npm package already validates during creation
+        // 2. Poetry venvs may not be immediately ready for inspection
+        // 3. The marker file existence is sufficient proof of successful creation
 
-          // Wait for file system sync
-          await new Promise((resolve) => setTimeout(resolve, 500));
+        logger.info('Workspace creation successful (validation skipped - npm handles it)');
 
-          // Refresh workspace explorer
-          await vscode.commands.executeCommand('workspai.refreshWorkspaces');
+        progress.report({ increment: 65, message: 'Verifying workspace...' });
 
-          progress.report({ increment: 100, message: 'Complete!' });
+        // Verify workspace was created
+        const workspaceExists = await fs.pathExists(config.path);
+        if (!workspaceExists) {
+          throw new Error(`Workspace directory not created at ${config.path}`);
+        }
 
-          // Check if this was a fallback workspace
-          const fallbackMarkerPath = path.join(config.path, '.rapidkit-workspace');
-          let isFallback = false;
+        // Check for workspace marker (.rapidkit directory)
+        const rapidkitDir = path.join(config.path, '.rapidkit');
+        const rapidkitDirExists = await fs.pathExists(rapidkitDir);
+
+        if (!rapidkitDirExists) {
+          logger.warn('Workspace created but .rapidkit directory not found');
+        }
+
+        // Apply wizard-specified policy mode and dependency sharing to .rapidkit files
+        // using canonical npm/CLI keys:
+        // - mode
+        // - dependency_sharing_mode
+        if (rapidkitDirExists) {
           try {
-            const markerData = await fs.readJSON(fallbackMarkerPath);
-            isFallback = markerData.fallbackMode === true;
-          } catch {
-            // Marker doesn't exist or invalid
+            const policiesPath = path.join(rapidkitDir, 'policies.yml');
+            const effectiveMode = config.policyMode === 'strict' ? 'strict' : 'warn';
+            const effectiveDependencySharingMode =
+              config.dependencySharing === 'shared' ? 'shared-runtime-caches' : 'isolated';
+
+            if (await fs.pathExists(policiesPath)) {
+              let content = await fs.readFile(policiesPath, 'utf-8');
+
+              if (/^\s*mode:\s*(warn|strict)\s*$/m.test(content)) {
+                content = content.replace(
+                  /^\s*mode:\s*(warn|strict)\s*$/m,
+                  `mode: ${effectiveMode}`
+                );
+              } else {
+                content += `\nmode: ${effectiveMode}`;
+              }
+
+              if (/^\s*dependency_sharing_mode:\s*[a-zA-Z-]+\s*$/m.test(content)) {
+                content = content.replace(
+                  /^\s*dependency_sharing_mode:\s*[a-zA-Z-]+\s*$/m,
+                  `dependency_sharing_mode: ${effectiveDependencySharingMode}`
+                );
+              } else {
+                content += `\ndependency_sharing_mode: ${effectiveDependencySharingMode}`;
+              }
+
+              if (!content.endsWith('\n')) {
+                content += '\n';
+              }
+
+              await fs.writeFile(policiesPath, content, 'utf-8');
+            } else {
+              await fs.writeFile(
+                policiesPath,
+                [
+                  'version: "1.0"',
+                  `mode: ${effectiveMode}`,
+                  `dependency_sharing_mode: ${effectiveDependencySharingMode}`,
+                  'rules:',
+                  '  enforce_workspace_marker: true',
+                  '  enforce_toolchain_lock: false',
+                  '  disallow_untrusted_tool_sources: false',
+                  '',
+                ].join('\n'),
+                'utf-8'
+              );
+            }
+
+            logger.info(
+              `Policy settings written: mode=${effectiveMode}, dependency_sharing_mode=${effectiveDependencySharingMode}`
+            );
+          } catch (writeErr) {
+            logger.warn('Could not write extra wizard options to .rapidkit files', writeErr);
+            // Non-fatal: workspace is still fully usable
           }
+        }
 
-          // Show success message with appropriate actions
-          const openAction = 'Open Workspace';
-          const docsAction = 'View Docs';
-          const installNpmAction = isFallback ? 'Install npm Package' : null;
+        // Verify workspace marker exists (created by npm package)
+        if (!hasWorkspaceRootMarkers(config.path)) {
+          logger.warn('Workspace marker not found - npm package should have created it');
+        } else {
+          // Add VS Code metadata to the marker
+          const { getExtensionVersion } = await import('../utils/constants.js');
+          await updateWorkspaceMetadata(config.path, {
+            vscode: {
+              extensionVersion: getExtensionVersion(),
+              createdViaExtension: true,
+              lastOpenedAt: new Date().toISOString(),
+              openCount: 1,
+            },
+          });
+          logger.info('Workspace marker verified and VS Code metadata added');
+        }
 
-          const actions = [openAction, docsAction];
-          if (installNpmAction) {
-            actions.unshift(installNpmAction);
-          }
-          actions.push('Close');
+        progress.report({ increment: 80, message: 'Registering workspace...' });
 
-          let message =
-            `✅ Workspace "${config.name}" created successfully!\n\n` +
-            `📁 Location: ${config.path}\n`;
+        // Add workspace to manager
+        const workspaceManager = WorkspaceManager.getInstance();
+        await workspaceManager.addWorkspace(config.path);
 
-          if (isFallback) {
-            message +=
-              `\n⚠️ Note: This is a basic workspace (fallback mode)\n` +
-              `To create projects, install: npm install -g rapidkit\n` +
-              `See README.md for full setup instructions`;
-          } else {
-            message += `💡 Tip: Add projects with \`rapidkit create\` or use Extension commands`;
-          }
+        progress.report({ increment: 90, message: 'Refreshing views...' });
 
-          const selected = await vscode.window.showInformationMessage(message, ...actions);
+        // Wait for file system sync
+        await new Promise((resolve) => setTimeout(resolve, 500));
 
+        // Refresh workspace explorer
+        await vscode.commands.executeCommand('workspai.refreshWorkspaces');
+
+        progress.report({ increment: 100, message: 'Complete!' });
+
+        // Check if this was a fallback workspace
+        const fallbackMarkerPath = path.join(config.path, '.rapidkit-workspace');
+        let isFallback = false;
+        try {
+          const markerData = await fs.readJSON(fallbackMarkerPath);
+          isFallback = markerData.fallbackMode === true;
+        } catch {
+          // Marker doesn't exist or invalid
+        }
+
+        // Show success message with appropriate actions
+        const openAction = 'Open Workspace';
+        const docsAction = 'View Docs';
+        const installNpmAction = isFallback ? 'Install npm Package' : null;
+
+        const actions = [openAction, docsAction];
+        if (installNpmAction) {
+          actions.unshift(installNpmAction);
+        }
+        actions.push('Close');
+
+        let message =
+          `✅ Workspace "${config.name}" created successfully!\n\n` +
+          `📁 Location: ${config.path}\n`;
+
+        if (isFallback) {
+          message +=
+            `\n⚠️ Note: This is a basic workspace (fallback mode)\n` +
+            `To create projects, install: npm install -g rapidkit\n` +
+            `See README.md for full setup instructions`;
+        } else {
+          message += `💡 Tip: Add projects with \`rapidkit create\` or use Extension commands`;
+        }
+
+        const handlePostCreateSelection = async (selected: string | undefined) => {
           if (selected === 'Install npm Package') {
-            // Open terminal with install command
             runShellCommandInTerminal({
               name: 'Install RapidKit',
               command: 'npm',
               args: ['install', '-g', 'rapidkit'],
             });
 
-            // Also open README for reference
             const readmePath = path.join(config.path, 'README.md');
             if (await fs.pathExists(readmePath)) {
               const doc = await vscode.workspace.openTextDocument(readmePath);
@@ -793,41 +787,71 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
           } else if (selected === docsAction) {
             await vscode.env.openExternal(vscode.Uri.parse('https://www.workspai.com/docs'));
           }
+        };
 
-          // Refresh welcome page if it's open and start governance onboarding chain
-          const context = (globalThis as { extensionContext?: vscode.ExtensionContext })
-            .extensionContext;
-          if (context) {
-            void WelcomePanel.notifyWorkspaceGovernanceChain(
-              config.path,
-              config.name,
-              'create',
-              context
-            );
-          } else {
-            WelcomePanel.refreshRecentWorkspaces();
-          }
-        } catch (error) {
-          logger.error('Failed to create workspace', error);
+        if (config.silent) {
+          // Caller owns progress UX, for example the Workspai chat tab.
+        } else if (config.suppressPostCreatePrompt) {
+          void vscode.window
+            .showInformationMessage(message, ...actions)
+            .then((selected) => handlePostCreateSelection(selected));
+        } else {
+          const selected = await vscode.window.showInformationMessage(message, ...actions);
+          await handlePostCreateSelection(selected);
+        }
 
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          const helpAction = 'Get Help';
-          const selected = await vscode.window.showErrorMessage(
-            `Failed to create workspace: ${errorMessage}`,
-            helpAction,
-            'Close'
+        // Refresh welcome page if it's open and start governance onboarding chain
+        const context = (globalThis as { extensionContext?: vscode.ExtensionContext })
+          .extensionContext;
+        if (context) {
+          void WelcomePanel.notifyWorkspaceGovernanceChain(
+            config.path,
+            config.name,
+            'create',
+            context
           );
+        } else {
+          WelcomePanel.refreshRecentWorkspaces();
+        }
+      } catch (error) {
+        logger.error('Failed to create workspace', error);
 
-          if (selected === helpAction) {
-            await vscode.env.openExternal(
-              vscode.Uri.parse('https://www.workspai.com/docs/troubleshooting')
-            );
-          }
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (config.silent) {
+          throw error instanceof Error ? error : new Error(errorMessage);
+        }
+        const helpAction = 'Get Help';
+        const selected = await vscode.window.showErrorMessage(
+          `Failed to create workspace: ${errorMessage}`,
+          helpAction,
+          'Close'
+        );
+
+        if (selected === helpAction) {
+          await vscode.env.openExternal(
+            vscode.Uri.parse('https://www.workspai.com/docs/troubleshooting')
+          );
         }
       }
-    );
+    };
+
+    if (config.silent) {
+      await runCreateWorkspace({ report: () => undefined });
+    } else {
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'Creating Workspai workspace',
+          cancellable: false,
+        },
+        runCreateWorkspace
+      );
+    }
   } catch (error) {
     logger.error('Error in createWorkspaceCommand', error);
+    if (typeof workspaceName === 'object' && workspaceName?.silent === true) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
     vscode.window.showErrorMessage(
       `Error: ${error instanceof Error ? error.message : String(error)}`
     );

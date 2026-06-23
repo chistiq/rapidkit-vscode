@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import path from 'path';
 
+import { createExtensionWebviewMessage } from '../../contracts/webviewProtocol';
 import {
   execRapidkitExecutionPlan,
   resolveRapidkitExecutionPlan,
@@ -360,9 +361,10 @@ export async function postIncidentInlineCommandResult(
   result: RunIncidentInlineCommandResult,
   requestId?: string
 ): Promise<void> {
-  webview.postMessage({
-    command: 'runIncidentInlineCommandDone',
-    data: result,
-    meta: { requestId, version: 'v1' },
-  });
+  webview.postMessage(
+    createExtensionWebviewMessage('runIncidentInlineCommandDone', result, {
+      requestId,
+      version: 'v1',
+    })
+  );
 }

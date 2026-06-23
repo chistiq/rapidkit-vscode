@@ -1,10 +1,11 @@
 import * as path from 'path';
 import { isDangerousAIActionCommand, validateAIActionCommandPolicy } from './aiActionCommandPolicy';
+import type { AIActionOperation } from '../contracts/aiActionOperationSurface';
 
 export type AIActionType = 'fix' | 'impact' | 'verify';
 export type AIActionRiskLevel = 'low' | 'medium' | 'high';
 export type AIActionValidationStatus = 'valid' | 'blocked' | 'needs-review';
-export type AIActionOperation = 'apply' | 'verify' | 'rollback';
+export type { AIActionOperation };
 
 export interface AIActionPatch {
   relativePath: string;

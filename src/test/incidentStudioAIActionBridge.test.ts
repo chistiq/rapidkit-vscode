@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('vscode', () => ({
   window: {
@@ -17,12 +20,22 @@ import {
   buildStudioAIActionResult,
   formatAIActionRegistryWebviewPayload,
   persistStudioAIActionContractFromText,
+  writeStudioAIActionEvidence,
 } from '../ui/panels/incidentStudioAIActionBridge';
 import { normalizeAIActionContract } from '../core/aiActionContract';
 
 describe('incidentStudioAIActionBridge', () => {
+  let workspacePath = '';
+
+  beforeEach(async () => {
+    workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-ai-action-bridge-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(workspacePath, { recursive: true, force: true });
+  });
+
   it('persists and validates a strict action contract from assistant text', async () => {
-    const workspacePath = '/tmp/workspai-ai-action-bridge';
     const contract = normalizeAIActionContract({
       schemaVersion: 'workspai.ai-action.v1',
       actionType: 'fix',
@@ -85,5 +98,57 @@ describe('incidentStudioAIActionBridge', () => {
     expect(registryPayload.updatedAt).toBe('2026-06-10T12:00:00.000Z');
     expect(actionResult.summary).toContain('Verify blocked');
     expect(contractMessage.provider).toBe('chat-brain');
+  });
+
+  it('writes AI action evidence with proof summary', async () => {
+    const contract = normalizeAIActionContract({
+      schemaVersion: 'workspai.ai-action.v1',
+      actionType: 'verify',
+      summary: 'Verify gates',
+      riskLevel: 'low',
+      affectedFiles: ['package.json'],
+      proposedCommands: [],
+      proposedPatches: [],
+      verificationCommands: ['npm test'],
+      rollbackPlan: [],
+      confidence: 0.9,
+      requiresApproval: true,
+    })!;
+
+    const evidence = await writeStudioAIActionEvidence({
+      workspacePath,
+      workspaceName: 'Test Workspace',
+      actionId: 'action-verify',
+      contract,
+      result: {
+        operation: 'verify',
+        ok: true,
+        summary: 'verify completed successfully.',
+        commands: [
+          {
+            command: 'npm test',
+            exitCode: 0,
+            stdout: 'ok',
+            stderr: '',
+            startedAt: '2026-06-19T00:00:00.000Z',
+            completedAt: '2026-06-19T00:00:01.000Z',
+            durationMs: 1000,
+            cwd: workspacePath,
+          },
+        ],
+      },
+    });
+
+    expect(evidence?.sha256).toHaveLength(64);
+    const raw = JSON.parse(await fs.readFile(evidence!.path, 'utf8'));
+    expect(raw.proof).toMatchObject({
+      schemaVersion: 'workspai.ai-action-proof-summary.v1',
+      evidencePresent: true,
+      transcriptCommandCount: 1,
+      failedCommandCount: 0,
+      rollbackProofRequired: false,
+      rollbackPlanPresent: false,
+    });
+    expect(raw.redactionApplied).toBe(true);
   });
 });

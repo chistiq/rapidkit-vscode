@@ -5,6 +5,7 @@ import type {
 
 import type { IncidentStudioTelemetryGateSlice } from './incidentStudioPolicyGateMapper';
 import { isVerifyActionBlockedByPolicyGates } from './incidentStudioPolicyGateMapper';
+import { classifyTelemetryBlockers, isArtifactReleaseReady } from './incidentStudioTruthModel';
 
 export type ShipLoopEvidenceStatus = 'pass' | 'warn' | 'fail' | 'missing';
 
@@ -74,10 +75,44 @@ function resolveVerifyStepState(input: {
   telemetry?: IncidentStudioTelemetryGateSlice | null;
   studioEvidence?: ShipLoopStudioEvidenceSlice | null;
   verifyGateBlockedReasons?: string[];
+  shipEvidence?: { cards?: ShipLoopEvidenceCard[] } | null;
+  verifyArtifactPassed?: boolean;
 }): { state: ShipLoopStepState; blockers: string[] } {
-  const blockedReasons = input.verifyGateBlockedReasons ?? [];
-  if (blockedReasons.length > 0) {
-    return { state: 'blocked', blockers: blockedReasons };
+  const allReasons = input.verifyGateBlockedReasons ?? [];
+  const { releaseBlocking, studioLearning } = classifyTelemetryBlockers(allReasons);
+  const artifactReleaseReady = isArtifactReleaseReady({
+    shipEvidence: input.shipEvidence,
+    studioEvidence: input.studioEvidence,
+    verifyArtifactPassed: input.verifyArtifactPassed,
+  });
+
+  if (input.verifyArtifactPassed === false) {
+    return {
+      state: 'fail',
+      blockers:
+        releaseBlocking.length > 0 ? releaseBlocking : ['Workspace verify artifact did not pass.'],
+    };
+  }
+
+  if (artifactReleaseReady || input.verifyArtifactPassed === true) {
+    if (studioLearning.length > 0) {
+      return {
+        state: 'warn',
+        blockers: [`Studio operator path (optional): ${studioLearning.slice(0, 2).join('; ')}`],
+      };
+    }
+    return { state: 'pass', blockers: [] };
+  }
+
+  if (releaseBlocking.length > 0) {
+    return { state: 'blocked', blockers: releaseBlocking };
+  }
+
+  if (studioLearning.length > 0) {
+    return {
+      state: 'warn',
+      blockers: [`Improve Studio operator metrics: ${studioLearning[0]}`],
+    };
   }
 
   const hardPass = input.telemetry?.studioHardGateStatus?.gates?.overallPass;
@@ -86,8 +121,8 @@ function resolveVerifyStepState(input: {
   }
   if (hardPass === false) {
     return {
-      state: 'fail',
-      blockers: ['Telemetry hard gates did not pass the latest verify window.'],
+      state: 'warn',
+      blockers: ['Studio operator-path hard gates are still learning.'],
     };
   }
 
@@ -109,6 +144,7 @@ export function deriveEnterpriseShipLoopView(input: {
   policyGates?: PolicyGateState;
   releasePosture?: ReleaseGatePosture;
   verifyGateBlockedReasons?: string[];
+  verifyArtifactPassed?: boolean;
 }): EnterpriseShipLoopView {
   const cards = input.shipEvidence?.cards ?? [];
   const analyzeCard = cardForId(cards, 'analyze');
@@ -124,16 +160,28 @@ export function deriveEnterpriseShipLoopView(input: {
         ? 'warn'
         : 'missing');
 
-  const verifyResolved = resolveVerifyStepState(input);
+  const verifyResolved = resolveVerifyStepState({
+    telemetry: input.telemetry,
+    studioEvidence: input.studioEvidence,
+    verifyGateBlockedReasons: input.verifyGateBlockedReasons,
+    shipEvidence: input.shipEvidence,
+    verifyArtifactPassed: input.verifyArtifactPassed,
+  });
   const readinessStatus = readinessCard?.status ?? 'missing';
   const archiveStatus = archiveCard?.status ?? 'missing';
   const autopilotStatus = autopilotCard?.status ?? 'missing';
+  const artifactReleaseReady = isArtifactReleaseReady({
+    shipEvidence: input.shipEvidence,
+    studioEvidence: input.studioEvidence,
+    verifyArtifactPassed: input.verifyArtifactPassed,
+  });
 
+  const verifyGreenEnough = verifyResolved.state === 'pass' || verifyResolved.state === 'warn';
   const releaseReady =
     isStageGreenEnough(analyzeStatus) &&
     isStageGreenEnough(readinessStatus) &&
-    verifyResolved.state !== 'fail' &&
-    verifyResolved.state !== 'blocked';
+    verifyGreenEnough &&
+    verifyResolved.state !== 'fail';
 
   const steps: EnterpriseShipLoopStepView[] = [
     {
@@ -156,8 +204,9 @@ export function deriveEnterpriseShipLoopView(input: {
           ? !isVerifyActionBlockedByPolicyGates({
               policyGates: input.policyGates,
               verifyGateBlockedReasons: input.verifyGateBlockedReasons,
+              artifactReleaseReady,
             })
-          : (input.verifyGateBlockedReasons?.length ?? 0) === 0,
+          : verifyResolved.state !== 'blocked' && verifyResolved.state !== 'fail',
       runLabel: verifyResolved.state === 'missing' ? 'Verify gates' : 'Re-verify',
     },
     {
@@ -182,11 +231,21 @@ export function deriveEnterpriseShipLoopView(input: {
       id: 'autopilot-release',
       label: 'Autopilot release',
       detail: autopilotCard?.summary || 'Fleet autopilot release gate execution',
-      state: releaseReady ? (autopilotStatus === 'missing' ? 'warn' : autopilotStatus) : 'blocked',
-      blockers: releaseReady
-        ? (autopilotCard?.blockers ?? [])
-        : ['Complete analyze, verify, and readiness first.'],
-      runnable: releaseReady,
+      state:
+        autopilotStatus === 'pass'
+          ? 'pass'
+          : releaseReady
+            ? autopilotStatus === 'missing'
+              ? 'warn'
+              : autopilotStatus
+            : 'blocked',
+      blockers:
+        autopilotStatus === 'pass'
+          ? []
+          : releaseReady
+            ? (autopilotCard?.blockers ?? [])
+            : ['Complete analyze, verify, and readiness first.'],
+      runnable: releaseReady || autopilotStatus === 'pass',
       runLabel: autopilotStatus === 'missing' ? 'Release' : 'Refresh release',
     },
   ];

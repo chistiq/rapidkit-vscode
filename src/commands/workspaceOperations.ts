@@ -8,6 +8,7 @@ import {
 import { evaluateWorkspaiContractRuntime } from '../core/workspaiContractRuntime';
 import { exportVerifyPackContractToWorkspace } from '../core/verifyPackContractExporter';
 import { runWorkspaceHygieneProbes } from '../core/workspaceHygieneProbes';
+import { runGovernanceGate } from '../core/governanceGate';
 
 type WorkspaceExplorerLike = {
   getSelectedWorkspace?: () => { path: string; name?: string } | null | undefined;
@@ -23,6 +24,11 @@ type WorkspaceCommandItem = {
   mode?: unknown;
   preferredAction?: unknown;
   json?: unknown;
+  preferExistingProfile?: unknown;
+  forceProfilePrompt?: unknown;
+  preferProfileSetupRuntimes?: unknown;
+  setupRuntime?: unknown;
+  profile?: unknown;
 };
 
 type WorkspaceTarget = {
@@ -58,6 +64,100 @@ type WorkspaceSnapshotAction = 'create' | 'list' | 'inspect' | 'restore';
 type WorkspaceContractAction = 'init' | 'inspect' | 'verify' | 'graph' | 'open';
 
 type ProfileQuickPickItem = vscode.QuickPickItem & { value: WorkspaceBootstrapProfile };
+
+const WORKSPACE_BOOTSTRAP_PROFILE_OPTIONS: ProfileQuickPickItem[] = [
+  {
+    label: '$(zap) minimal',
+    description: 'Foundation artifacts only (fastest)',
+    value: 'minimal',
+  },
+  {
+    label: '$(symbol-namespace) Python runtime',
+    description: 'Python + Poetry bootstrap',
+    value: 'python-only',
+  },
+  {
+    label: '$(symbol-event) Node.js runtime',
+    description: 'Node.js runtime bootstrap (no Python needed)',
+    value: 'node-only',
+  },
+  {
+    label: '$(go) Go runtime',
+    description: 'Go runtime bootstrap (no Python needed)',
+    value: 'go-only',
+  },
+  {
+    label: '$(symbol-class) Java runtime',
+    description: 'Java + Spring Boot runtime bootstrap',
+    value: 'java-only',
+  },
+  {
+    label: '$(symbol-interface) .NET runtime',
+    description: '.NET runtime bootstrap for ASP.NET Core services',
+    value: 'dotnet-only',
+  },
+  {
+    label: '$(layers) polyglot',
+    description: 'Python + Node + Go + Java + .NET — multi-runtime workspace',
+    value: 'polyglot',
+  },
+  {
+    label: '$(shield) enterprise',
+    description: 'Polyglot + .NET + governance + Sigstore verification',
+    value: 'enterprise',
+  },
+];
+
+const WORKSPACE_BOOTSTRAP_PROFILES = new Set(
+  WORKSPACE_BOOTSTRAP_PROFILE_OPTIONS.map((option) => option.value)
+);
+
+const PROFILE_SETUP_RUNTIMES: Record<WorkspaceBootstrapProfile, string[]> = {
+  minimal: [],
+  'python-only': ['python'],
+  'node-only': ['node'],
+  'go-only': ['go'],
+  'java-only': ['java'],
+  'dotnet-only': ['dotnet'],
+  polyglot: ['python', 'node', 'go', 'java', 'dotnet'],
+  enterprise: ['python', 'node', 'go', 'java', 'dotnet'],
+};
+
+async function readWorkspaceBootstrapProfile(
+  workspacePath: string
+): Promise<WorkspaceBootstrapProfile | undefined> {
+  const manifestPath = path.join(workspacePath, '.rapidkit', 'workspace.json');
+  try {
+    const fsBootstrap = await import('fs-extra');
+    if (!(await fsBootstrap.default.pathExists(manifestPath))) {
+      return undefined;
+    }
+    const manifest = await fsBootstrap.default.readJSON(manifestPath);
+    const profile = manifest?.profile;
+    if (
+      typeof profile === 'string' &&
+      WORKSPACE_BOOTSTRAP_PROFILES.has(profile as WorkspaceBootstrapProfile)
+    ) {
+      return profile as WorkspaceBootstrapProfile;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function readBootstrapProfileHint(
+  item?: WorkspaceCommandItem
+): WorkspaceBootstrapProfile | undefined {
+  const profile = item?.profile;
+  if (
+    typeof profile === 'string' &&
+    WORKSPACE_BOOTSTRAP_PROFILES.has(profile as WorkspaceBootstrapProfile)
+  ) {
+    return profile as WorkspaceBootstrapProfile;
+  }
+  return undefined;
+}
 type RuntimeQuickPickItem = vscode.QuickPickItem & {
   value: 'python' | 'node' | 'go' | 'java' | 'dotnet';
 };
@@ -420,16 +520,24 @@ function resolveWorkspaceTarget(
 
   const itemWorkspacePath = getWorkspaceItemPath(item);
   const itemWorkspaceName = getWorkspaceItemName(item);
+  const selectedPath = selectedWorkspace?.path;
 
   const workspacePath =
-    typeof itemWorkspacePath === 'string' && itemWorkspacePath.length > 0
-      ? itemWorkspacePath
-      : selectedWorkspace?.path;
+    selectedPath &&
+    itemWorkspacePath &&
+    itemWorkspacePath.length > 0 &&
+    itemWorkspacePath !== selectedPath
+      ? selectedPath
+      : typeof itemWorkspacePath === 'string' && itemWorkspacePath.length > 0
+        ? itemWorkspacePath
+        : selectedPath;
 
   const workspaceName =
-    typeof itemWorkspaceName === 'string' && itemWorkspaceName.length > 0
-      ? itemWorkspaceName
-      : selectedWorkspace?.name;
+    workspacePath === selectedPath
+      ? (selectedWorkspace?.name ?? itemWorkspaceName)
+      : typeof itemWorkspaceName === 'string' && itemWorkspaceName.length > 0
+        ? itemWorkspaceName
+        : selectedWorkspace?.name;
 
   return { workspacePath, workspaceName };
 }
@@ -941,56 +1049,48 @@ export function registerWorkspaceOperationsCommands(options: {
         return;
       }
       const wsName = workspaceName || path.basename(workspacePath);
-      const profile = await vscode.window.showQuickPick<ProfileQuickPickItem>(
-        [
+      const commandItem = asWorkspaceCommandItem(item);
+      const existingProfile = await readWorkspaceBootstrapProfile(workspacePath);
+      const profileHint = readBootstrapProfileHint(commandItem);
+      const forceProfilePrompt = commandItem?.forceProfilePrompt === true;
+
+      let selectedProfile: WorkspaceBootstrapProfile | undefined;
+
+      if (forceProfilePrompt) {
+        const profile = await vscode.window.showQuickPick<ProfileQuickPickItem>(
+          WORKSPACE_BOOTSTRAP_PROFILE_OPTIONS,
           {
-            label: '$(zap) minimal',
-            description: 'Foundation artifacts only (fastest)',
-            value: 'minimal',
-          },
-          {
-            label: '$(symbol-namespace) python-only',
-            description: 'Python + Poetry bootstrap',
-            value: 'python-only',
-          },
-          {
-            label: '$(symbol-event) node-only',
-            description: 'Node.js runtime bootstrap (no Python needed)',
-            value: 'node-only',
-          },
-          {
-            label: '$(go) go-only',
-            description: 'Go runtime bootstrap (no Python needed)',
-            value: 'go-only',
-          },
-          {
-            label: '$(symbol-class) java-only',
-            description: 'Java + Spring Boot runtime bootstrap',
-            value: 'java-only',
-          },
-          {
-            label: '$(symbol-interface) dotnet-only',
-            description: '.NET runtime bootstrap for ASP.NET Core services',
-            value: 'dotnet-only',
-          },
-          {
-            label: '$(layers) polyglot',
-            description: 'Python + Node + Go + Java + .NET — multi-runtime workspace',
-            value: 'polyglot',
-          },
-          {
-            label: '$(shield) enterprise',
-            description: 'Polyglot + .NET + governance + Sigstore verification',
-            value: 'enterprise',
-          },
-        ],
-        {
-          placeHolder: 'Select a bootstrap profile',
-          title: `Bootstrap Workspace: ${wsName}`,
-          ignoreFocusOut: true,
+            placeHolder: existingProfile
+              ? `Current profile: ${existingProfile} — select to change`
+              : 'Select a bootstrap profile',
+            title: `Bootstrap Workspace: ${wsName}`,
+            ignoreFocusOut: true,
+          }
+        );
+        if (!profile) {
+          return;
         }
-      );
-      if (!profile) {
+        selectedProfile = profile.value;
+      } else if (existingProfile) {
+        selectedProfile = existingProfile;
+      } else if (profileHint) {
+        selectedProfile = profileHint;
+      } else {
+        const profile = await vscode.window.showQuickPick<ProfileQuickPickItem>(
+          WORKSPACE_BOOTSTRAP_PROFILE_OPTIONS,
+          {
+            placeHolder: 'Select a bootstrap profile',
+            title: `Bootstrap Workspace: ${wsName}`,
+            ignoreFocusOut: true,
+          }
+        );
+        if (!profile) {
+          return;
+        }
+        selectedProfile = profile.value;
+      }
+
+      if (!selectedProfile) {
         return;
       }
 
@@ -999,7 +1099,7 @@ export function registerWorkspaceOperationsCommands(options: {
         const fsBootstrap = await import('fs-extra');
         if (await fsBootstrap.default.pathExists(manifestPath)) {
           const manifest = await fsBootstrap.default.readJSON(manifestPath);
-          manifest.profile = profile.value;
+          manifest.profile = selectedProfile;
           await fsBootstrap.default.writeJSON(manifestPath, manifest, { spaces: 2 });
         }
       } catch (error) {
@@ -1015,7 +1115,7 @@ export function registerWorkspaceOperationsCommands(options: {
       runRapidkitCommandsInTerminal({
         name: `Workspai: Bootstrap — ${wsName}`,
         cwd: workspacePath,
-        commands: [['bootstrap', '--profile', profile.value]],
+        commands: [['bootstrap', '--profile', selectedProfile]],
       });
     }),
 
@@ -1029,6 +1129,39 @@ export function registerWorkspaceOperationsCommands(options: {
         return;
       }
       const wsName = workspaceName || path.basename(workspacePath);
+      const commandItem = asWorkspaceCommandItem(item);
+      const preferProfileSetupRuntimes = commandItem?.preferProfileSetupRuntimes === true;
+      const directSetupRuntime =
+        typeof commandItem?.setupRuntime === 'string' ? commandItem.setupRuntime.trim() : '';
+
+      if (preferProfileSetupRuntimes) {
+        const profile = await readWorkspaceBootstrapProfile(workspacePath);
+        const runtimes = profile ? PROFILE_SETUP_RUNTIMES[profile] : [];
+        if (runtimes.length > 0) {
+          runRapidkitCommandsInTerminal({
+            name: `Workspai: Setup — ${wsName}`,
+            cwd: workspacePath,
+            env: {
+              RAPIDKIT_ENABLE_RUNTIME_ADAPTERS: '1',
+            },
+            commands: runtimes.map((runtime) => ['setup', runtime]),
+          });
+          return;
+        }
+      }
+
+      if (directSetupRuntime) {
+        runRapidkitCommandsInTerminal({
+          name: `Workspai: Setup — ${wsName}`,
+          cwd: workspacePath,
+          env: {
+            RAPIDKIT_ENABLE_RUNTIME_ADAPTERS: '1',
+          },
+          commands: [['setup', directSetupRuntime]],
+        });
+        return;
+      }
+
       const runtime = await vscode.window.showQuickPick<RuntimeQuickPickItem>(
         [
           {
@@ -1252,11 +1385,9 @@ export function registerWorkspaceOperationsCommands(options: {
       }
 
       const wsName = workspaceName || path.basename(workspacePath);
-      runRapidkitCommandsInTerminal({
-        name: `Workspai: Governance Pipeline — ${wsName}`,
-        cwd: workspacePath,
-        commands: [['pipeline', '--json', '--strict']],
-      });
+      // Single Governance Gate entrypoint: streamed `pipeline --json --strict`
+      // with a definitive pass/blocked verdict (roadmap item 2.6).
+      await runGovernanceGate({ workspacePath, workspaceName: wsName });
     }),
 
     vscode.commands.registerCommand('workspai.workspaceRunStage', async (item?: unknown) => {
@@ -1758,9 +1889,32 @@ export function registerWorkspaceOperationsCommands(options: {
               .reverse();
 
             if (complianceFiles.length === 0) {
-              vscode.window.showInformationMessage(
-                'No bootstrap-compliance reports found.\n\nRun "Bootstrap Workspace" to generate one.'
+              const manifestPath = path.join(workspacePath, '.rapidkit', 'workspace.json');
+              let profileHint = '';
+              try {
+                if (await fsCompat.default.pathExists(manifestPath)) {
+                  const manifest = (await fsCompat.default.readJSON(manifestPath)) as Record<
+                    string,
+                    unknown
+                  >;
+                  const profile =
+                    typeof manifest.profile === 'string' ? manifest.profile.trim() : '';
+                  if (profile) {
+                    profileHint = `\n\nProfile "${profile}" was saved at create. Run Bootstrap once to generate the compliance report.`;
+                  }
+                }
+              } catch {
+                // ignore manifest read errors
+              }
+              const choice = await vscode.window.showInformationMessage(
+                `No bootstrap-compliance report yet.${profileHint}\n\nRun "Bootstrap Workspace" to generate one.`,
+                'Bootstrap Now'
               );
+              if (choice === 'Bootstrap Now') {
+                vscode.commands.executeCommand('workspai.workspaceBootstrap', {
+                  workspace: { path: workspacePath },
+                });
+              }
               break;
             }
 

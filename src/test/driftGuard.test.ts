@@ -375,16 +375,19 @@ describe('contract drift guard', () => {
     expect(lifecycleSource).toContain("commands: [['init'], ['dev']]");
 
     expect(lifecycleSource).toContain("commands: [['dev', '--allow-global-runtime']]");
-    expect(lifecycleSource).toContain("commands: [['dev', '--port', String(port)]]");
-    expect(lifecycleSource).toContain("commands: [['dev']]");
+    expect(lifecycleSource).toContain("['dev', '--port', String(input.port)]");
+    expect(lifecycleSource).toContain(": [['dev']]");
 
-    expect(lifecycleSource).toContain("commands: ['npm run start:dev']");
-    expect(lifecycleSource).toContain('PORT: String(port)');
+    expect(lifecycleSource).toContain('isFrontendScaffoldFramework');
+    expect(lifecycleSource).toContain('PORT: String(input.port)');
 
+    expect(lifecycleSource).not.toContain("commands: ['npm run start:dev']");
     expect(lifecycleSource).not.toContain('PORT=${port} npm run start:dev');
     expect(lifecycleSource).not.toContain('PORT=${port} npx rapidkit dev');
     expect(lifecycleSource).not.toContain('PORT=$PORT npx rapidkit dev');
     expect(lifecycleSource).not.toContain('npx rapidkit init && npx rapidkit dev');
+    expect(lifecycleSource).toContain('gateProjectLifecycleCommand');
+    expect(read('src/core/projectCapabilityContext.ts')).toContain('workspai:projectSupportsInit');
   });
 
   it('keeps workspace operations on command-array contracts', () => {
@@ -419,8 +422,12 @@ describe('contract drift guard', () => {
 
     expect(operationsSource).toContain("commands: [['doctor', 'workspace']]");
     expect(operationsSource).toContain("commands: [['doctor', 'workspace', '--fix']]");
-    expect(operationsSource).toContain("commands: [['pipeline', '--json', '--strict']]");
     expect(operationsSource).toContain("commands: [['readiness', '--json']]");
+
+    // The Governance Gate (roadmap 2.6) runs `pipeline --json --strict` through the
+    // streaming runner rather than a terminal, so its args contract lives here.
+    const governanceGateSource = read('src/core/governanceGate.ts');
+    expect(governanceGateSource).toContain("command: ['pipeline', '--json', '--strict']");
 
     expect(operationsSource).not.toContain('npx rapidkit cache status');
     expect(operationsSource).not.toContain('npx rapidkit mirror status');
@@ -491,17 +498,14 @@ describe('contract drift guard', () => {
       'webview-ui/src/components/InstallModuleModal.tsx',
       'webview-ui/src/components/ModuleBrowser.tsx',
       'webview-ui/src/components/ModuleDetailsModal.tsx',
-      'webview-ui/src/components/StudioRedesign/regions/ChatSurface.tsx',
-      'webview-ui/src/components/StudioRedesign/regions/WorkspaceSidebar.tsx',
       'webview-ui/src/lib/commandCheatsheet.ts',
-      'webview-ui/src/lib/incidentCliActionMatrix.ts',
+      'webview-ui/src/sidebar/SecondarySidebar.tsx',
     ];
     const combined = userFacingSources.map((file) => read(file)).join('\n');
 
     expect(combined).not.toContain('npx --yes --package rapidkit rapidkit');
-    expect(read('src/utils/platformCapabilities.ts')).toContain(
-      "['--yes', '--package', 'rapidkit', 'rapidkit', ...args]"
-    );
+    expect(read('src/utils/platformCapabilities.ts')).toContain('buildNpxRapidkitPrefix');
+    expect(read('src/utils/platformCapabilities.ts')).toContain("return ['--yes', 'rapidkit']");
     expect(read('src/core/incidentInlineCommandRunner.ts')).toContain(
       'toPinnedRapidkitExecutionCommand(trimmed)'
     );
@@ -510,35 +514,196 @@ describe('contract drift guard', () => {
     expect(combined).not.toContain('rapidkit doctor verify --scope=');
   });
 
-  it('keeps context assist stop-generation contract aligned across webview and panel', () => {
+  it('keeps context assist stop-generation contract dormant outside the dashboard shell', () => {
     const appSource = read('webview-ui/src/App.tsx');
-    const assistPanelSource = read('webview-ui/src/components/ContextAssistPanel.tsx');
     const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
 
-    expect(appSource).toContain(
-      "vscode.postMessage('aiCancelQuery', { requestId: aiRequestIdRef.current });"
-    );
-    expect(appSource).toContain('context: ctx,');
-    expect(appSource).toContain('requestId,');
-    expect(appSource).toContain("case 'aiContextContract':");
-    expect(appSource).toContain('contextContract={aiContextContract}');
-    expect(appSource).toContain('history: historyForRequest,');
-    expect(appSource).toContain('onCancel={handleAICancelQuery}');
-    expect(appSource).toContain('<ContextAssistPanel');
-
-    expect(assistPanelSource).toContain('ContextAssistContractSummary');
-    expect(assistPanelSource).toContain('ws-assist-panel__contract');
-    expect(assistPanelSource).toContain('Evidence {contextContract.evidence_confidence}');
-    expect(assistPanelSource).toContain('onCancel: () => void;');
-    expect(assistPanelSource).toContain('onStop={onCancel}');
-    expect(assistPanelSource).toContain('<ChatComposer');
+    expect(appSource).not.toContain("vscode.postMessage('aiCancelQuery'");
+    expect(appSource).not.toContain("case 'aiContextContract':");
+    expect(appSource).not.toContain("case 'aiChunkUpdate':");
+    expect(appSource).not.toContain("case 'aiStreamDone':");
+    expect(appSource).not.toContain('contextContract={aiContextContract}');
+    expect(appSource).not.toContain('onCancel={handleAICancelQuery}');
+    expect(appSource).not.toContain('<ContextAssistPanel');
+    expect(appSource).not.toContain('import { ContextAssistPanel }');
+    expect(
+      fs.existsSync(path.join(repoRoot, 'webview-ui/src/components/ContextAssistPanel.tsx'))
+    ).toBe(false);
 
     expect(welcomePanelSource).toContain("case 'aiCancelQuery':");
     expect(welcomePanelSource).toContain('this._aiQueryTokenSource?.cancel();');
     expect(welcomePanelSource).toContain('requestId: queryRequestId');
-    expect(welcomePanelSource).toContain(
-      "this._panel.webview.postMessage({ command: 'aiStreamDone' });"
+    expect(welcomePanelSource).toContain("this._postWebviewMessage('aiStreamDone'");
+  });
+
+  it('keeps extension-host webview output routed through the shared protocol helper', () => {
+    const sourceFiles = collectProjectFiles(repoRoot).filter(
+      (file) => file.startsWith('src/') && file.endsWith('.ts') && !file.startsWith('src/test/')
     );
+
+    const directObjectPosts: string[] = [];
+    const directObjectPostRegex = /(?:\w+\.)?webview\.postMessage\(\s*{/;
+
+    for (const relPath of sourceFiles) {
+      const source = read(relPath);
+      if (directObjectPostRegex.test(source)) {
+        directObjectPosts.push(relPath);
+      }
+    }
+
+    if (directObjectPosts.length > 0) {
+      throw new Error(
+        `Direct extension-host webview.postMessage object payloads must use createExtensionWebviewMessage/_postWebviewMessage:\n${directObjectPosts.join(
+          '\n'
+        )}`
+      );
+    }
+
+    expect(read('src/ui/panels/welcomePanel.ts')).toContain('_postWebviewMessage');
+    expect(read('src/contracts/webviewProtocol.ts')).toContain('createExtensionWebviewMessage');
+  });
+
+  it('keeps legacy inline webviews protocol enveloped and normalized', () => {
+    // templatePreviewPanel is the only remaining raw-HTML inline webview. The
+    // sidebar (actionsWebviewProvider) was migrated to the React stack (roadmap
+    // 2.11) and is now covered by the React outbound-wrapper guard below.
+    const source = read('src/ui/panels/templatePreviewPanel.ts');
+
+    expect(source).toContain('normalizeWebviewMessage(rawMessage)');
+    expect(source).not.toMatch(/\bvscode\.postMessage\(\s*{/);
+    expect(source).toContain('command,');
+    expect(source).toContain('data: {},');
+    expect(source).toContain('version: 1');
+    expect(source).toContain("source: 'template-preview-webview'");
+  });
+
+  it('keeps the React sidebar provider on the enveloped, normalized protocol', () => {
+    const source = read('src/ui/webviews/actionsWebviewProvider.ts');
+
+    // Inbound messages are normalized; outbound goes through the shared envelope.
+    expect(source).toContain('normalizeWebviewMessage(rawMessage)');
+    expect(source).toContain('createExtensionWebviewMessage(command, data');
+    expect(source).not.toMatch(/\bvscode\.postMessage\(\s*{/);
+    expect(source).toContain("source: 'workspai-secondary-sidebar'");
+  });
+
+  it('keeps React webview outbound messages behind the shared vscode wrapper', () => {
+    const sourceFiles = collectProjectFiles(path.join(repoRoot, 'webview-ui/src')).filter(
+      (file) => (file.endsWith('.ts') || file.endsWith('.tsx')) && file !== 'vscode.ts'
+    );
+
+    const directApiUsers: string[] = [];
+    const rawObjectPosts: string[] = [];
+    const rawObjectPostRegex = /\bvscode\.postMessage\(\s*{/;
+
+    for (const relPath of sourceFiles) {
+      const repoRelPath = `webview-ui/src/${relPath}`;
+      const source = read(repoRelPath);
+
+      if (source.includes('acquireVsCodeApi')) {
+        directApiUsers.push(repoRelPath);
+      }
+
+      if (rawObjectPostRegex.test(source)) {
+        rawObjectPosts.push(repoRelPath);
+      }
+    }
+
+    if (directApiUsers.length > 0 || rawObjectPosts.length > 0) {
+      throw new Error(
+        [
+          'React webview outbound messages must use webview-ui/src/vscode.ts.',
+          directApiUsers.length > 0
+            ? `Direct acquireVsCodeApi users:\n${directApiUsers.join('\n')}`
+            : '',
+          rawObjectPosts.length > 0
+            ? `Raw vscode.postMessage object payloads:\n${rawObjectPosts.join('\n')}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+      );
+    }
+
+    const wrapperSource = read('webview-ui/src/vscode.ts');
+    expect(wrapperSource).toContain('createWebviewMessage(command, data, meta)');
+    expect(wrapperSource).toContain('postProtocolMessage(message: WebviewToExtensionMessage)');
+  });
+
+  it('keeps Studio action registry sourced from the shared contract', () => {
+    const hostBridgeSource = read('src/core/studioActionCommands.ts');
+    const webviewBridgeSource = read(
+      'webview-ui/src/components/StudioRedesign/state/studioActions.ts'
+    );
+    const contractSource = read('src/contracts/studioActionSurface.ts');
+    const contractJson = read('src/contracts/studio-action-surface.v1.json');
+
+    expect(hostBridgeSource).toContain("from '../contracts/studioActionSurface'");
+    expect(webviewBridgeSource).toContain(
+      "from '../../../../../src/contracts/studioActionSurface'"
+    );
+    expect(hostBridgeSource).not.toContain('STUDIO_ACTION_REGISTRY: readonly');
+    expect(webviewBridgeSource).not.toContain('STUDIO_ACTION_REGISTRY: readonly');
+    expect(hostBridgeSource).not.toContain('Hydrate evidence, health, gates');
+    expect(webviewBridgeSource).not.toContain('Hydrate evidence, health, gates');
+    expect(contractSource).toContain(
+      "import surfaceContract from './studio-action-surface.v1.json'"
+    );
+    expect(contractJson).toContain('"schemaVersion": "workspai-studio-action-surface-v1"');
+  });
+
+  it('keeps AI action operations sourced from the shared operation contract', () => {
+    const aiActionContractSource = read('src/core/aiActionContract.ts');
+    const aiActionCommandPolicySource = read('src/core/aiActionCommandPolicy.ts');
+    const aiActionGateSource = read('webview-ui/src/lib/incidentStudioAIActionGate.ts');
+    const welcomeSource = read('src/ui/panels/welcomePanel.ts');
+    const operationContractSource = read('src/contracts/aiActionOperationSurface.ts');
+    const operationContractJson = read('src/contracts/ai-action-operation-surface.v1.json');
+
+    expect(aiActionContractSource).toContain(
+      "import type { AIActionOperation } from '../contracts/aiActionOperationSurface'"
+    );
+    expect(aiActionCommandPolicySource).toContain(
+      "import type { AIActionOperation as AIActionCommandOperation } from '../contracts/aiActionOperationSurface'"
+    );
+    expect(aiActionGateSource).toContain(
+      "import type { AIActionOperation as StudioAIActionOperation } from '../../../src/contracts/aiActionOperationSurface'"
+    );
+    expect(aiActionContractSource).not.toContain(
+      "export type AIActionOperation = 'apply' | 'verify' | 'rollback'"
+    );
+    expect(aiActionCommandPolicySource).not.toContain(
+      "export type AIActionCommandOperation = 'apply' | 'verify' | 'rollback'"
+    );
+    expect(aiActionGateSource).not.toContain(
+      "export type StudioAIActionOperation = 'apply' | 'verify' | 'rollback'"
+    );
+    expect(welcomeSource).toContain('normalizeAIActionCommandPayload(data)');
+    expect(welcomeSource).not.toContain('data as any');
+    expect(welcomeSource).not.toContain('(data as any)');
+    expect(welcomeSource).toContain('const payload = asRecord(data) ?? {};');
+    expect(welcomeSource).toContain("readStringField(payload, 'actionId')");
+    expect(welcomeSource).toContain("readStringField(payload, 'message')");
+    expect(operationContractSource).toContain('normalizeAIActionCommandPayload');
+    expect(operationContractJson).toContain(
+      '"schemaVersion": "workspai-ai-action-operation-surface-v1"'
+    );
+  });
+
+  it('keeps AI action executions proof-backed', () => {
+    const registrySource = read('src/core/aiActionRegistry.ts');
+    const bridgeSource = read('src/ui/panels/incidentStudioAIActionBridge.ts');
+    const payloadSource = read('webview-ui/src/lib/incidentStudioPayload.ts');
+
+    expect(registrySource).toContain('workspai.ai-action-proof-summary.v1');
+    expect(registrySource).toContain('buildAIActionExecutionProofSummary');
+    expect(registrySource).toContain('execution.proof ||');
+    expect(bridgeSource).toContain('buildAIActionExecutionProofSummary');
+    expect(bridgeSource).toContain('proof: buildAIActionExecutionProofSummary');
+    expect(bridgeSource).toContain('redactionApplied: true');
+    expect(payloadSource).toContain('normalizeAIActionProofSummary(record.proof)');
+    expect(payloadSource).toContain('normalizeStudioProofEvent(record.proofEvent)');
+    expect(payloadSource).toContain("schemaVersion !== 'workspai.ai-action-proof-summary.v1'");
   });
 
   it('keeps AI modal clarification gate ahead of model streaming', () => {
@@ -547,8 +712,8 @@ describe('contract drift guard', () => {
     expect(welcomePanelSource).toContain('prepared.validation.clarificationNeeded');
     expect(welcomePanelSource).toContain("trackAIModalOutcome('clarification-needed'");
     expect(welcomePanelSource).toContain("'workspai.aimodal.clarification_gate'");
-    expect(welcomePanelSource).toContain("command: 'aiChunkUpdate'");
-    expect(welcomePanelSource).toContain("command: 'aiStreamDone'");
+    expect(welcomePanelSource).toContain("_postWebviewMessage('aiChunkUpdate'");
+    expect(welcomePanelSource).toContain("_postWebviewMessage('aiStreamDone'");
     expect(welcomePanelSource).toContain("title: 'Next Safe Action'");
     expect(welcomePanelSource).toContain('Generate verification evidence');
     expect(welcomePanelSource).toContain('_getChatBrainPrimaryActionLabel');
@@ -576,7 +741,8 @@ describe('contract drift guard', () => {
     expect(telemetryBridgeSource).toContain(
       "console.warn('[IncidentStudio] telemetry refresh failed:'"
     );
-    expect(telemetryBridgeSource).toContain("command: 'incidentStudioTelemetry'");
-    expect(telemetryBridgeSource).toContain('data: null');
+    expect(telemetryBridgeSource).toContain(
+      "createExtensionWebviewMessage('incidentStudioTelemetry', null)"
+    );
   });
 });

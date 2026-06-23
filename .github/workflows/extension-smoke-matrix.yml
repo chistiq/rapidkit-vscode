@@ -7,6 +7,35 @@ on:
     branches: [main]
 
 jobs:
+  contract-parity-gate:
+    name: Contract parity gate (cross-repo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout extension
+        uses: actions/checkout@v4
+
+      - name: Checkout canonical rapidkit-npm contracts
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/rapidkit-npm
+          path: rapidkit-npm-canonical
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Enforce cross-repo contract parity (fails build on drift)
+        env:
+          RAPIDKIT_NPM_REPO_PATH: ${{ github.workspace }}/rapidkit-npm-canonical
+        run: npm run gate:contract-parity
+
   smoke:
     name: Smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

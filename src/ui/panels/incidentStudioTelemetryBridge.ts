@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 
+import { createExtensionWebviewMessage } from '../../contracts/webviewProtocol';
 import { WorkspaceUsageTracker } from '../../utils/workspaceUsageTracker';
 import {
   buildIncidentStudioTelemetryFromCache,
@@ -113,16 +114,10 @@ export async function postIncidentStudioTelemetry(
 ): Promise<void> {
   try {
     const telemetryData = await resolveIncidentStudioTelemetry(options);
-    webview.postMessage({
-      command: 'incidentStudioTelemetry',
-      data: telemetryData,
-    });
+    webview.postMessage(createExtensionWebviewMessage('incidentStudioTelemetry', telemetryData));
   } catch (error) {
     console.warn('[IncidentStudio] telemetry refresh failed:', error);
-    webview.postMessage({
-      command: 'incidentStudioTelemetry',
-      data: null,
-    });
+    webview.postMessage(createExtensionWebviewMessage('incidentStudioTelemetry', null));
   }
 }
 
@@ -131,10 +126,12 @@ export function postIncidentStudioUiPreferences(
   context: vscode.ExtensionContext,
   workspacePath?: string
 ): void {
-  webview.postMessage({
-    command: 'uiPreferences',
-    data: readIncidentStudioUiPreferences(context, { workspacePath }),
-  });
+  webview.postMessage(
+    createExtensionWebviewMessage(
+      'uiPreferences',
+      readIncidentStudioUiPreferences(context, { workspacePath })
+    )
+  );
 }
 
 export async function handleIncidentStudioSetUiPreference(
@@ -148,8 +145,5 @@ export async function handleIncidentStudioSetUiPreference(
   }
 ): Promise<void> {
   const result = await setIncidentStudioUiPreference(context, key, value, options);
-  webview.postMessage({
-    command: 'uiPreferences',
-    data: result.preferences,
-  });
+  webview.postMessage(createExtensionWebviewMessage('uiPreferences', result.preferences));
 }

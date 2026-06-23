@@ -1,7 +1,9 @@
 .vscode/**
 .vscode-test/**
 .gitignore
+.npmignore
 .yarnrc
+*.vsix
 vsc-extension-quickstart.md
 **/tsconfig.json
 **/.eslintrc.json
@@ -44,6 +46,7 @@ esbuild.js
 # Exclude development/testing artifacts
 .husky/**
 coverage/**
+artifacts/**
 releases/**
 scripts/**
 

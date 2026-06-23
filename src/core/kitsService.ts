@@ -8,6 +8,11 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 import { run } from '../utils/exec';
 import { buildNpxRapidkitArgs } from '../utils/platformCapabilities';
+import {
+  FRONTEND_SCAFFOLD_KITS,
+  type FrontendScaffoldFramework,
+  type ScaffoldFramework,
+} from './scaffoldKits';
 
 export interface Kit {
   name: string;
@@ -152,9 +157,7 @@ export class KitsService {
   /**
    * Get kits by category
    */
-  async getKitsByCategory(
-    category: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet'
-  ): Promise<Kit[]> {
+  async getKitsByCategory(category: ScaffoldFramework | string): Promise<Kit[]> {
     const allKits = await this.getKits();
     return allKits.filter((kit) => kit.category === category);
   }
@@ -255,6 +258,14 @@ export class KitsService {
         description:
           'Clean architecture .NET Web API starter aligned with RapidKit workspace contracts.',
       },
+      ...FRONTEND_SCAFFOLD_KITS.map((definition) => ({
+        name: definition.kitId,
+        display_name: definition.displayName,
+        category: definition.framework as FrontendScaffoldFramework,
+        version: '0.1.0',
+        tags: definition.tags,
+        description: definition.description,
+      })),
     ];
   }
 }

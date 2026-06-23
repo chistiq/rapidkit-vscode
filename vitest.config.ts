@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'webview-ui/src'),
+      '@workspai-contracts': path.resolve(__dirname, 'src/contracts'),
     },
   },
   test: {

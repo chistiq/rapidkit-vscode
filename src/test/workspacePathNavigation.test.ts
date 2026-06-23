@@ -20,8 +20,8 @@ describe('workspacePathNavigation', () => {
     expect(inferWorkspacePathOpenMode('/ws/src/auth/service.ts')).toBe('editor');
   });
 
-  it('reveals rapidkit report artifacts in reveal mode', () => {
-    expect(inferWorkspacePathOpenMode('/ws/.rapidkit/reports/doctor.json')).toBe('reveal');
-    expect(inferWorkspacePathOpenMode('/ws\\.rapidkit\\reports\\readiness.json')).toBe('reveal');
+  it('opens rapidkit report artifacts in the editor inside the extension', () => {
+    expect(inferWorkspacePathOpenMode('/ws/.rapidkit/reports/doctor.json')).toBe('editor');
+    expect(inferWorkspacePathOpenMode('/ws\\.rapidkit\\reports\\readiness.json')).toBe('editor');
   });
 });

@@ -5,6 +5,7 @@ import {
   HardDrive,
   Network,
   RefreshCw,
+  Rocket,
   Scale,
   Server,
   ShieldCheck,
@@ -13,7 +14,8 @@ import {
 } from 'lucide-react';
 import type { DashboardEvidenceCardId } from '@/lib/dashboardCommandRegistry';
 import type { DashboardEvidencePayload } from '@/lib/dashboardEvidence';
-import { findEvidenceCard } from '@/lib/dashboardEvidence';
+import { findEvidenceCard, isBootstrapPendingCard } from '@/lib/dashboardEvidence';
+import { buildDashboardCommandActionContract } from '@/lib/dashboardCommandActionContract';
 import type { WorkspaceStatus } from '@/types';
 import { ActionTile, ActionTileGrid } from './ActionTile';
 import { ColumnHeader } from './SectionHeader';
@@ -28,8 +30,8 @@ interface WorkspaceGovernancePanelProps {
   onFoundationEnsure: () => void;
   onContractInspect: () => void;
   onContractVerify: () => void;
-  onPipeline: () => void;
   onReadiness: () => void;
+  onAutopilotRelease: () => void;
   onMirrorStatus: () => void;
   onMirrorSync: () => void;
   onCacheStatus: () => void;
@@ -43,7 +45,10 @@ function governanceDetail(
   fallback: string
 ): string {
   const card = findEvidenceCard(evidence, cardId);
-  if (!card || card.status === 'missing') {
+  if (!card) {
+    return fallback;
+  }
+  if (card.status === 'missing' && !isBootstrapPendingCard(card)) {
     return fallback;
   }
   return card.summary;
@@ -59,8 +64,8 @@ export function WorkspaceGovernancePanel({
   onFoundationEnsure,
   onContractInspect,
   onContractVerify,
-  onPipeline,
   onReadiness,
+  onAutopilotRelease,
   onMirrorStatus,
   onMirrorSync,
   onCacheStatus,
@@ -68,64 +73,50 @@ export function WorkspaceGovernancePanel({
   onInfra,
 }: WorkspaceGovernancePanelProps) {
   const hasWorkspace = Boolean(workspaceStatus.hasWorkspace && workspaceStatus.workspacePath);
-  const scopeLabel = workspaceStatus.workspaceName || 'Workspace governance';
   const isPending = (cardId: DashboardEvidenceCardId) => pendingCardIds.includes(cardId);
+  const commandContract = (
+    command: Parameters<typeof buildDashboardCommandActionContract>[0],
+    disabledReason?: string
+  ) => buildDashboardCommandActionContract(command, { evidence, disabledReason });
   const bootstrapCard = findEvidenceCard(evidence, 'bootstrap');
-  const doctorCard = findEvidenceCard(evidence, 'doctor');
+  const setupCard = findEvidenceCard(evidence, 'setup');
   const workspaceSyncCard = findEvidenceCard(evidence, 'workspaceSync');
   const foundationCard = findEvidenceCard(evidence, 'foundation');
   const contractCard = findEvidenceCard(evidence, 'contract');
-  const pipelineCard = findEvidenceCard(evidence, 'pipeline');
   const readinessCard = findEvidenceCard(evidence, 'readiness');
+  const autopilotCard = findEvidenceCard(evidence, 'autopilot');
   const mirrorCard = findEvidenceCard(evidence, 'mirror');
   const cacheCard = findEvidenceCard(evidence, 'cache');
   const policyCard = findEvidenceCard(evidence, 'policy');
   const infraCard = findEvidenceCard(evidence, 'infra');
 
   return (
-    <section className="workspace-governance-panel section">
+    <section
+      id="dashboard-operate-governance"
+      className="workspace-governance-panel section dashboard-operate-zone"
+    >
       <ColumnHeader
         title="Governance"
-        subtitle={hasWorkspace ? scopeLabel : 'Select a workspace to unlock'}
+        subtitle="Bootstrap, sync, contracts, readiness, and release gates"
         scope="workspace"
       />
-      <ActionTileGrid layout="governance">
+      <ActionTileGrid layout="auto">
         <ActionTile
           variant="primary"
           fullWidth
-          icon={<Server size={15} />}
-          label="Governance Pipeline"
-          detail={governanceDetail(
-            evidence,
-            'pipeline',
-            'Sync → doctor → analyze → readiness → autopilot'
-          )}
-          evidenceStatus={pipelineCard?.status}
-          pending={isPending('pipeline')}
-          stateLabel={isPending('pipeline') ? 'Running pipeline' : undefined}
-          onClick={onPipeline}
-          disabled={!hasWorkspace}
-          title="rapidkit pipeline --json --strict"
-        />
-        <ActionTile
           icon={<Sparkles size={15} />}
           label="Bootstrap"
           detail={governanceDetail(evidence, 'bootstrap', 'Profile compliance')}
           evidenceStatus={bootstrapCard?.status}
+          stateLabel={isBootstrapPendingCard(bootstrapCard) ? 'Pending' : undefined}
           pending={isPending('bootstrap')}
           onClick={onBootstrap}
           disabled={!hasWorkspace}
+          actionContract={commandContract(
+            'workspaceBootstrap',
+            !hasWorkspace ? 'Select a workspace' : undefined
+          )}
           title="rapidkit bootstrap"
-        />
-        <ActionTile
-          icon={<Wrench size={15} />}
-          label="Setup"
-          detail={governanceDetail(evidence, 'doctor', 'Runtime toolchains')}
-          evidenceStatus={doctorCard?.status}
-          pending={isPending('doctor')}
-          onClick={onSetup}
-          disabled={!hasWorkspace}
-          title="rapidkit setup"
         />
         <ActionTile
           icon={<RefreshCw size={15} />}
@@ -136,18 +127,11 @@ export function WorkspaceGovernancePanel({
           stateLabel={isPending('workspaceSync') ? 'Syncing' : undefined}
           onClick={onWorkspaceSync}
           disabled={!hasWorkspace}
+          actionContract={commandContract(
+            'workspaceSync',
+            !hasWorkspace ? 'Select a workspace' : undefined
+          )}
           title="rapidkit workspace sync"
-        />
-        <ActionTile
-          icon={<FileCheck2 size={15} />}
-          label="Foundation"
-          detail={governanceDetail(evidence, 'foundation', 'Ensure marker, policy, toolchain')}
-          evidenceStatus={foundationCard?.status}
-          pending={isPending('foundation')}
-          stateLabel={isPending('foundation') ? 'Ensuring' : undefined}
-          onClick={onFoundationEnsure}
-          disabled={!hasWorkspace}
-          title="rapidkit workspace foundation ensure"
         />
         <ActionTile
           icon={<Network size={15} />}
@@ -158,18 +142,11 @@ export function WorkspaceGovernancePanel({
           stateLabel={isPending('contract') ? 'Inspecting' : undefined}
           onClick={onContractInspect}
           disabled={!hasWorkspace}
+          actionContract={commandContract(
+            'workspaceContractInspect',
+            !hasWorkspace ? 'Select a workspace' : undefined
+          )}
           title="rapidkit workspace contract inspect"
-        />
-        <ActionTile
-          icon={<ClipboardCheck size={15} />}
-          label="Verify Contract"
-          detail="Strict contract validation"
-          evidenceStatus={contractCard?.status}
-          pending={isPending('contract')}
-          stateLabel={isPending('contract') ? 'Verifying' : undefined}
-          onClick={onContractVerify}
-          disabled={!hasWorkspace}
-          title="rapidkit workspace contract verify --strict"
         />
         <ActionTile
           icon={<ShieldCheck size={15} />}
@@ -179,59 +156,154 @@ export function WorkspaceGovernancePanel({
           pending={isPending('readiness')}
           onClick={onReadiness}
           disabled={!hasWorkspace}
+          actionContract={commandContract(
+            'workspaceReadiness',
+            !hasWorkspace ? 'Select a workspace' : undefined
+          )}
           title="rapidkit readiness"
         />
         <ActionTile
-          icon={<Database size={15} />}
-          label="Mirror"
-          detail={governanceDetail(evidence, 'mirror', 'Replication status')}
-          evidenceStatus={mirrorCard?.status}
-          pending={isPending('mirror')}
-          onClick={onMirrorStatus}
+          icon={<Rocket size={15} />}
+          label="Autopilot Release"
+          detail={governanceDetail(evidence, 'autopilot', 'Release gate evidence')}
+          evidenceStatus={autopilotCard?.status}
+          pending={isPending('autopilot')}
+          onClick={onAutopilotRelease}
           disabled={!hasWorkspace}
-          title="rapidkit mirror status"
-        />
-        <ActionTile
-          icon={<RefreshCw size={15} />}
-          label="Mirror Sync"
-          detail="Refresh mirror"
-          pending={isPending('mirror')}
-          stateLabel={isPending('mirror') ? 'Syncing' : undefined}
-          onClick={onMirrorSync}
-          disabled={!hasWorkspace}
-          title="rapidkit mirror sync"
-        />
-        <ActionTile
-          icon={<HardDrive size={15} />}
-          label="Cache"
-          detail={governanceDetail(evidence, 'cache', 'Package cache')}
-          evidenceStatus={cacheCard?.status}
-          pending={isPending('cache')}
-          onClick={onCacheStatus}
-          disabled={!hasWorkspace}
-          title="rapidkit cache status"
-        />
-        <ActionTile
-          icon={<Scale size={15} />}
-          label="Policy"
-          detail={governanceDetail(evidence, 'policy', 'Governance rules')}
-          evidenceStatus={policyCard?.status}
-          pending={isPending('policy')}
-          onClick={onPolicy}
-          disabled={!hasWorkspace}
-          title="rapidkit workspace policy show"
-        />
-        <ActionTile
-          icon={<Server size={15} />}
-          label="Infra"
-          detail={governanceDetail(evidence, 'infra', 'Sidecar compose')}
-          evidenceStatus={infraCard?.status}
-          pending={isPending('infra')}
-          onClick={onInfra}
-          disabled={!hasWorkspace}
-          title="rapidkit infra"
+          actionContract={commandContract(
+            'workspaceAutopilotRelease',
+            !hasWorkspace ? 'Select a workspace' : undefined
+          )}
+          title="rapidkit autopilot release"
         />
       </ActionTileGrid>
+      <details
+        className="enterprise-flow-accordion enterprise-flow-secondary workspace-governance-panel__advanced"
+        data-default-collapsed="true"
+      >
+        <summary className="enterprise-flow-accordion__summary enterprise-flow-secondary__summary">
+          <span>Advanced governance</span>
+          <small>Setup, foundation, mirror, cache, policy, infra</small>
+        </summary>
+        <div className="enterprise-flow-accordion__body">
+          <ActionTileGrid layout="auto">
+            <ActionTile
+              icon={<Wrench size={15} />}
+              label="Setup"
+              detail={governanceDetail(evidence, 'setup', 'Pin Node/Python runtimes')}
+              evidenceStatus={setupCard?.status}
+              pending={isPending('setup')}
+              onClick={onSetup}
+              disabled={!hasWorkspace}
+              actionContract={commandContract(
+                'workspaceSetup',
+                !hasWorkspace ? 'Select a workspace' : undefined
+              )}
+              title="rapidkit setup"
+            />
+            <ActionTile
+              icon={<FileCheck2 size={15} />}
+              label="Foundation"
+              detail={governanceDetail(evidence, 'foundation', 'Ensure marker, policy, toolchain')}
+              evidenceStatus={foundationCard?.status}
+              pending={isPending('foundation')}
+              stateLabel={isPending('foundation') ? 'Ensuring' : undefined}
+              onClick={onFoundationEnsure}
+              disabled={!hasWorkspace}
+              actionContract={commandContract(
+                'workspaceFoundationEnsure',
+                !hasWorkspace ? 'Select a workspace' : undefined
+              )}
+              title="rapidkit workspace foundation ensure"
+            />
+            <ActionTile
+              icon={<ClipboardCheck size={15} />}
+              label="Verify Contract"
+              detail="Strict contract validation"
+              evidenceStatus={contractCard?.status}
+              pending={isPending('contract')}
+              stateLabel={isPending('contract') ? 'Verifying' : undefined}
+              onClick={onContractVerify}
+              disabled={!hasWorkspace}
+              actionContract={commandContract(
+                'workspaceContractVerify',
+                !hasWorkspace ? 'Select a workspace' : undefined
+              )}
+              title="rapidkit workspace contract verify --strict"
+            />
+            <ActionTile
+              icon={<Database size={15} />}
+              label="Mirror"
+              detail={governanceDetail(evidence, 'mirror', 'Replication status')}
+              evidenceStatus={mirrorCard?.status}
+              pending={isPending('mirror')}
+              onClick={onMirrorStatus}
+              disabled={!hasWorkspace}
+              actionContract={commandContract(
+                'mirrorStatus',
+                !hasWorkspace ? 'Select a workspace' : undefined
+              )}
+              title="rapidkit mirror status"
+            />
+            <ActionTile
+              icon={<RefreshCw size={15} />}
+              label="Mirror Sync"
+              detail="Refresh mirror"
+              pending={isPending('mirror')}
+              stateLabel={isPending('mirror') ? 'Syncing' : undefined}
+              onClick={onMirrorSync}
+              disabled={!hasWorkspace}
+              actionContract={commandContract(
+                'mirrorSync',
+                !hasWorkspace ? 'Select a workspace' : undefined
+              )}
+              title="rapidkit mirror sync"
+            />
+            <ActionTile
+              icon={<HardDrive size={15} />}
+              label="Cache"
+              detail={governanceDetail(evidence, 'cache', 'Package cache')}
+              evidenceStatus={cacheCard?.status}
+              pending={isPending('cache')}
+              onClick={onCacheStatus}
+              disabled={!hasWorkspace}
+              actionContract={commandContract(
+                'cacheStatus',
+                !hasWorkspace ? 'Select a workspace' : undefined
+              )}
+              title="rapidkit cache status"
+            />
+            <ActionTile
+              icon={<Scale size={15} />}
+              label="Policy"
+              detail={governanceDetail(evidence, 'policy', 'Governance rules')}
+              evidenceStatus={policyCard?.status}
+              pending={isPending('policy')}
+              onClick={onPolicy}
+              disabled={!hasWorkspace}
+              actionContract={commandContract(
+                'workspacePolicyShow',
+                !hasWorkspace ? 'Select a workspace' : undefined
+              )}
+              title="rapidkit workspace policy show"
+            />
+            <ActionTile
+              icon={<Server size={15} />}
+              label="Infra"
+              detail={governanceDetail(evidence, 'infra', 'Sidecar compose')}
+              evidenceStatus={infraCard?.status}
+              pending={isPending('infra')}
+              onClick={onInfra}
+              disabled={!hasWorkspace}
+              actionContract={commandContract(
+                'workspaceInfra',
+                !hasWorkspace ? 'Select a workspace' : undefined
+              )}
+              title="rapidkit infra"
+            />
+          </ActionTileGrid>
+        </div>
+      </details>
     </section>
   );
 }

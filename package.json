@@ -1,7 +1,7 @@
 {
   "name": "rapidkit-vscode",
-  "displayName": "Workspai",
-  "description": "The AI workspace for backend teams. Build backend systems with AI that knows your workspace, generate projects and modules from intent, debug with full context, and ship faster — all inside VS Code. FastAPI, NestJS, Spring Boot, Go/Fiber, Go/Gin, and .NET Web API.",
+  "displayName": "Workspai – Workspace Intelligence",
+  "description": "Workspace Intelligence for VS Code. Adopt, import, scaffold, diagnose, verify, and govern polyglot workspaces with shared evidence for developers, CI, and AI agents.",
   "version": "0.35.0",
   "publisher": "rapidkit",
   "icon": "media/icons/icon.png",
@@ -20,9 +20,12 @@
   },
   "categories": [
     "AI",
+    "Chat",
+    "Debuggers",
+    "Testing",
     "Programming Languages",
-    "Snippets",
     "Machine Learning",
+    "Snippets",
     "Other"
   ],
   "keywords": [
@@ -46,7 +49,15 @@
     "rest api",
     "code generation",
     "boilerplate",
-    "monorepo"
+    "monorepo",
+    "workspace intelligence",
+    "polyglot",
+    "fullstack",
+    "frontend",
+    "nextjs",
+    "react",
+    "vue",
+    "angular"
   ],
   "repository": {
     "type": "git",
@@ -67,7 +78,7 @@
         "id": "workspai.assistant",
         "name": "workspai",
         "fullName": "Workspai AI",
-        "description": "Ask questions or debug your Workspai/RapidKit backend project with full workspace context.",
+        "description": "Ask questions, debug, and plan across your Workspai/RapidKit workspace with shared context for humans and AI.",
         "isSticky": true,
         "commands": [
           {
@@ -77,6 +88,70 @@
           {
             "name": "debug",
             "description": "Debug errors and diagnostics with full project context and get a structured fix."
+          }
+        ]
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "workspai.gettingStarted",
+        "title": "Get Started with Workspai",
+        "description": "Build a shared, evidence-backed understanding of your workspace for humans and AI — model, health, and agent grounding.",
+        "steps": [
+          {
+            "id": "workspai.walkthrough.openDashboard",
+            "title": "Open the Workspai dashboard",
+            "description": "Open the Workspai dashboard to see workspace health, evidence, and the governance gate in one place.\n[Open Workspai](command:workspai.showWelcome)",
+            "media": {
+              "markdown": "walkthroughs/open-dashboard.md"
+            },
+            "completionEvents": [
+              "onCommand:workspai.showWelcome"
+            ]
+          },
+          {
+            "id": "workspai.walkthrough.selectWorkspace",
+            "title": "Create or select a workspace",
+            "description": "Point Workspai at a workspace. You can create a new one or adopt an existing project.\n[Create Workspace](command:workspai.createWorkspace)",
+            "media": {
+              "markdown": "walkthroughs/select-workspace.md"
+            },
+            "completionEvents": [
+              "onContext:workspai.workspaceSelected"
+            ]
+          },
+          {
+            "id": "workspai.walkthrough.firstModel",
+            "title": "Generate your first workspace model",
+            "description": "Build the workspace model — the dependency-graph-aware map that powers impact, verify, and AI grounding.\n[Generate Workspace Model](command:workspai.workspaceModel)",
+            "media": {
+              "markdown": "walkthroughs/first-model.md"
+            },
+            "completionEvents": [
+              "onContext:workspai:hasWorkspaceModel"
+            ]
+          },
+          {
+            "id": "workspai.walkthrough.doctorGreen",
+            "title": "Run Doctor until it is green",
+            "description": "Run the workspace doctor and resolve issues until health is green (zero errors and warnings).\n[Run Doctor](command:workspai.doctorEvidence.rerun)",
+            "media": {
+              "markdown": "walkthroughs/doctor-green.md"
+            },
+            "completionEvents": [
+              "onContext:workspai:doctorGreen"
+            ]
+          },
+          {
+            "id": "workspai.walkthrough.agentSync",
+            "title": "Sync agent grounding",
+            "description": "Write the shared grounding (AGENTS.md + reports index) so Copilot, Cursor, and other agents use the same evidence you do.\n[Sync Agent Grounding](command:workspai.workspaceAgentSync)",
+            "media": {
+              "markdown": "walkthroughs/agent-sync.md"
+            },
+            "completionEvents": [
+              "onContext:workspai:agentGroundingSynced"
+            ]
           }
         ]
       }
@@ -95,10 +170,28 @@
         "icon": "$(new-folder)"
       },
       {
+        "command": "workspai.scaffoldProjectHere",
+        "title": "Scaffold Project Here…",
+        "category": "Workspai",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "workspai.adoptWithRapidkit",
+        "title": "Adopt with RapidKit",
+        "category": "Workspai",
+        "icon": "$(link)"
+      },
+      {
         "command": "workspai.importProject",
         "title": "Import Project",
         "category": "Workspai",
         "icon": "$(repo-pull)"
+      },
+      {
+        "command": "workspai.adoptProject",
+        "title": "Adopt Project",
+        "category": "Workspai",
+        "icon": "$(link)"
       },
       {
         "command": "workspai.openArchitectureMap",
@@ -227,6 +320,24 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "workspai.doctorEvidence.sendIssueToAdvisor",
+        "title": "Send to Workspace Advisor",
+        "category": "Workspai",
+        "icon": "$(telescope)"
+      },
+      {
+        "command": "workspai.doctorEvidence.sendIssueToStudio",
+        "title": "Send to Studio",
+        "category": "Workspai",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "workspai.doctorEvidence.sendIssueToCopilot",
+        "title": "Send to Copilot",
+        "category": "Workspai",
+        "icon": "$(send)"
+      },
+      {
         "command": "workspai.doctorEvidence.fixIssueWithAI",
         "title": "Fix Issue with AI",
         "category": "Workspai",
@@ -258,9 +369,75 @@
       },
       {
         "command": "workspai.workspacePipeline",
-        "title": "Governance Pipeline",
+        "title": "Governance Gate",
         "category": "Workspai",
-        "icon": "$(server-process)"
+        "icon": "$(shield)"
+      },
+      {
+        "command": "workspai.workspaceModel",
+        "title": "Workspace Model",
+        "category": "Workspai",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "workspai.workspaceIntelligenceSnapshot",
+        "title": "Intelligence Snapshot",
+        "category": "Workspai",
+        "icon": "$(history)"
+      },
+      {
+        "command": "workspai.workspaceDiff",
+        "title": "Workspace Diff",
+        "category": "Workspai",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "workspai.workspaceImpact",
+        "title": "Workspace Impact",
+        "category": "Workspai",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "workspai.workspaceVerify",
+        "title": "Workspace Verify",
+        "category": "Workspai",
+        "icon": "$(verified)"
+      },
+      {
+        "command": "workspai.workspaceImpactLens",
+        "title": "Workspace Advisor",
+        "category": "Workspai",
+        "icon": "$(telescope)"
+      },
+      {
+        "command": "workspai.architectureImpactLens",
+        "title": "Architecture Workspace Advisor",
+        "category": "Workspai",
+        "icon": "$(telescope)"
+      },
+      {
+        "command": "workspai.workspaceContextAgent",
+        "title": "Agent Context Pack",
+        "category": "Workspai",
+        "icon": "$(hubot)"
+      },
+      {
+        "command": "workspai.workspaceAgentSync",
+        "title": "Agent Grounding Sync",
+        "category": "Workspai",
+        "icon": "$(files)"
+      },
+      {
+        "command": "workspai.copyCopilotContextPrompt",
+        "title": "Send Workspace to Copilot",
+        "category": "Workspai",
+        "icon": "$(send)"
+      },
+      {
+        "command": "workspai.workspaceIntelligenceChain",
+        "title": "Intelligence Chain",
+        "category": "Workspai",
+        "icon": "$(sparkle)"
       },
       {
         "command": "workspai.workspaceRunInit",
@@ -294,31 +471,31 @@
       },
       {
         "command": "workspai.workspaceSnapshot",
-        "title": "Workspace Snapshots",
+        "title": "Recovery Snapshots",
         "category": "Workspai",
         "icon": "$(history)"
       },
       {
         "command": "workspai.workspaceSnapshotCreate",
-        "title": "Snapshot: Create",
+        "title": "Recovery Snapshot: Create",
         "category": "Workspai",
         "icon": "$(add)"
       },
       {
         "command": "workspai.workspaceSnapshotList",
-        "title": "Snapshot: List",
+        "title": "Recovery Snapshot: List",
         "category": "Workspai",
         "icon": "$(list-tree)"
       },
       {
         "command": "workspai.workspaceSnapshotInspect",
-        "title": "Snapshot: Inspect",
+        "title": "Recovery Snapshot: Inspect",
         "category": "Workspai",
         "icon": "$(search)"
       },
       {
         "command": "workspai.workspaceSnapshotRestore",
-        "title": "Snapshot: Restore",
+        "title": "Recovery Snapshot: Restore",
         "category": "Workspai",
         "icon": "$(history)"
       },
@@ -354,9 +531,9 @@
       },
       {
         "command": "workspai.convertProjectToManaged",
-        "title": "Convert Generic Project to Managed Workspai",
+        "title": "Adopt with RapidKit",
         "category": "Workspai",
-        "icon": "$(shield)"
+        "icon": "$(link)"
       },
       {
         "command": "workspai.discoverWorkspaces",
@@ -635,6 +812,12 @@
         "icon": "$(tools)"
       },
       {
+        "command": "workspai.workspaceSync",
+        "title": "Workspace Sync",
+        "category": "Workspai",
+        "icon": "$(sync)"
+      },
+      {
         "command": "workspai.cacheStatus",
         "title": "Cache: Status",
         "category": "Workspai",
@@ -684,7 +867,7 @@
       },
       {
         "command": "workspai.debugWithAI",
-        "title": "AI Assistant",
+        "title": "Debug with Workspai",
         "category": "Workspai",
         "icon": "$(sparkle)"
       },
@@ -696,7 +879,7 @@
       },
       {
         "command": "workspai.ingestLogFile",
-        "title": "Ingest Log File into Incident Studio",
+        "title": "Ingest Log File into Studio",
         "category": "Workspai AI",
         "icon": "$(file-text)"
       },
@@ -708,7 +891,7 @@
       },
       {
         "command": "workspai.aiQuickActions",
-        "title": "AI Quick Actions",
+        "title": "AI Essentials",
         "category": "Workspai",
         "icon": "$(list-tree)"
       },
@@ -756,21 +939,33 @@
       },
       {
         "command": "workspai.aiForWorkspace",
-        "title": "AI Assistant (Workspace)",
+        "title": "Open Workspace Advisor",
         "category": "Workspai",
-        "icon": "$(sparkle)"
+        "icon": "$(comment-discussion)"
       },
       {
         "command": "workspai.aiForProject",
-        "title": "AI Assistant (Project)",
+        "title": "Open Workspace Advisor",
+        "category": "Workspai",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "workspai.openIncidentStudio",
+        "title": "Open Studio",
         "category": "Workspai",
         "icon": "$(sparkle)"
       },
       {
-        "command": "workspai.openIncidentStudio",
-        "title": "Analyze in Incident Studio",
+        "command": "workspai.openCreateWithAI",
+        "title": "Open Create with AI",
         "category": "Workspai",
-        "icon": "$(sparkle)"
+        "icon": "$(add)"
+      },
+      {
+        "command": "workspai.openWorkspaceAdvisor",
+        "title": "Open Workspace Advisor",
+        "category": "Workspai",
+        "icon": "$(comment-discussion)"
       },
       {
         "command": "workspai.aiForModule",
@@ -783,6 +978,12 @@
         "title": "Create Workspace with AI",
         "category": "Workspai",
         "icon": "$(sparkle)"
+      },
+      {
+        "command": "workspai.openWorkspaceModal",
+        "title": "Create Workspace",
+        "category": "Workspai",
+        "icon": "$(new-folder)"
       },
       {
         "command": "workspai.selectProject",
@@ -918,16 +1119,32 @@
           "title": "Workspai",
           "icon": "media/icons/icon-128.png"
         }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "workspai-native-sidebar",
+          "title": "Workspai",
+          "icon": "media/icons/icon-128.png"
+        }
       ]
     },
     "views": {
+      "workspai-native-sidebar": [
+        {
+          "type": "webview",
+          "id": "workspaiSecondarySidebar",
+          "name": "Workspai",
+          "icon": "media/icons/icon-128.png",
+          "contextualTitle": "Workspai"
+        }
+      ],
       "rapidkit-explorer": [
         {
           "type": "webview",
           "id": "rapidkitActionsWebview",
           "name": "Quick Actions",
           "icon": "media/icons/icon-128.png",
-          "contextualTitle": "Quick Actions"
+          "contextualTitle": "Workspai Quick Actions"
         },
         {
           "id": "rapidkitWorkspaces",
@@ -966,16 +1183,16 @@
     "viewsWelcome": [
       {
         "view": "rapidkitWorkspaces",
-        "contents": "No Workspai workspaces found.\n\nUse the Actions panel above to create your first workspace."
+        "contents": "No Workspai workspaces found.\n\nUse Quick Actions above to create your first workspace."
       },
       {
         "view": "rapidkitProjects",
-        "contents": "No workspace selected.\n\nSelect a workspace from the Workspaces panel or use Actions to create projects.",
+        "contents": "No workspace selected.\n\nSelect a workspace from the Workspaces panel or use Quick Actions to create projects.",
         "when": "!workspai.workspaceSelected"
       },
       {
         "view": "rapidkitProjects",
-        "contents": "No projects found in this workspace.\n\nUse the Actions panel to create your first project.",
+        "contents": "No projects found in this workspace.\n\nUse Quick Actions to create your first project.",
         "when": "workspai.workspaceSelected && workspai:noProjects"
       },
       {
@@ -989,6 +1206,11 @@
         "when": "workspai:projectSelected"
       },
       {
+        "view": "rapidkitDoctorEvidence",
+        "contents": "No workspace selected.\n\nSelect a workspace, then run **Doctor** from Workspai or the toolbar to populate workspace health evidence.",
+        "when": "!workspai.workspaceSelected"
+      },
+      {
         "view": "rapidkitWorkspaceContractGraph",
         "contents": "No workspace selected.\n\nSelect a workspace to inspect service topology, ports, APIs, dependencies, and events.",
         "when": "!workspai.workspaceSelected"
@@ -997,7 +1219,7 @@
     "submenus": [
       {
         "id": "workspai.workspace.ai",
-        "label": "AI & Insights"
+        "label": "Workspai Actions"
       },
       {
         "id": "workspai.workspace.run",
@@ -1006,6 +1228,10 @@
       {
         "id": "workspai.workspace.recovery",
         "label": "Snapshots & Recovery"
+      },
+      {
+        "id": "workspai.workspace.intelligence",
+        "label": "Workspace Intelligence"
       },
       {
         "id": "workspai.workspace.contract",
@@ -1084,6 +1310,9 @@
           "command": "workspai.workspaceSetup"
         },
         {
+          "command": "workspai.workspaceSync"
+        },
+        {
           "command": "workspai.workspacePolicyShow"
         },
         {
@@ -1106,6 +1335,31 @@
         },
         {
           "command": "workspai.workspacePipeline"
+        },
+        {
+          "command": "workspai.workspaceModel"
+        },
+        {
+          "command": "workspai.workspaceIntelligenceSnapshot"
+        },
+        {
+          "command": "workspai.workspaceDiff"
+        },
+        {
+          "command": "workspai.workspaceImpact"
+        },
+        {
+          "command": "workspai.workspaceVerify"
+        },
+        {
+          "command": "workspai.workspaceImpactLens",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceContextAgent"
+        },
+        {
+          "command": "workspai.workspaceIntelligenceChain"
         },
         {
           "command": "workspai.workspaceSnapshot"
@@ -1195,34 +1449,44 @@
           "command": "workspai.ingestLogFile"
         },
         {
-          "command": "workspai.workspaceBrain"
+          "command": "workspai.workspaceBrain",
+          "when": "false"
         },
         {
-          "command": "workspai.aiOrchestrate"
+          "command": "workspai.aiOrchestrate",
+          "when": "false"
         },
         {
-          "command": "workspai.aiQuickActions"
+          "command": "workspai.aiQuickActions",
+          "when": "false"
         },
         {
-          "command": "workspai.aiFixPreviewLite"
+          "command": "workspai.aiFixPreviewLite",
+          "when": "false"
         },
         {
-          "command": "workspai.aiChangeImpactLite"
+          "command": "workspai.aiChangeImpactLite",
+          "when": "false"
         },
         {
-          "command": "workspai.aiTerminalBridge"
+          "command": "workspai.aiTerminalBridge",
+          "when": "false"
         },
         {
-          "command": "workspai.aiWorkspaceMemoryWizard"
+          "command": "workspai.aiWorkspaceMemoryWizard",
+          "when": "false"
         },
         {
-          "command": "workspai.aiWorkspaceCommandCenter"
+          "command": "workspai.aiWorkspaceCommandCenter",
+          "when": "false"
         },
         {
-          "command": "workspai.aiRecipePacks"
+          "command": "workspai.aiRecipePacks",
+          "when": "false"
         },
         {
-          "command": "workspai.openAICreateWorkspace"
+          "command": "workspai.openAICreateWorkspace",
+          "when": "false"
         },
         {
           "command": "workspai.showTelemetrySummary"
@@ -1392,9 +1656,19 @@
       ],
       "view/item/context": [
         {
-          "command": "workspai.doctorEvidence.fixIssueWithAI",
+          "command": "workspai.doctorEvidence.sendIssueToAdvisor",
           "when": "view == rapidkitDoctorEvidence && viewItem == doctorIssue",
           "group": "inline@1"
+        },
+        {
+          "command": "workspai.doctorEvidence.sendIssueToStudio",
+          "when": "view == rapidkitDoctorEvidence && viewItem == doctorIssue",
+          "group": "inline@2"
+        },
+        {
+          "command": "workspai.doctorEvidence.sendIssueToCopilot",
+          "when": "view == rapidkitDoctorEvidence && viewItem == doctorIssue",
+          "group": "inline@3"
         },
         {
           "command": "workspai.openIncidentStudio",
@@ -1452,6 +1726,11 @@
           "group": "workspace@3"
         },
         {
+          "submenu": "workspai.workspace.intelligence",
+          "when": "view == rapidkitWorkspaces && viewItem == workspace",
+          "group": "workspace@3.5"
+        },
+        {
           "submenu": "workspai.workspace.contract",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
           "group": "workspace@4"
@@ -1488,7 +1767,7 @@
         },
         {
           "command": "workspai.addModule",
-          "when": "view == rapidkitProjects && viewItem == project",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/ && workspai:projectSupportsModules",
           "group": "project@1"
         },
         {
@@ -1522,12 +1801,12 @@
           "group": "inline@0"
         },
         {
-          "command": "workspai.openIncidentStudio",
+          "command": "workspai.openWorkspaceAdvisor",
           "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
           "group": "ai_studio@1"
         },
         {
-          "command": "workspai.aiForProject",
+          "command": "workspai.openCreateWithAI",
           "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
           "group": "ai_studio@2"
         },
@@ -1537,33 +1816,18 @@
           "group": "ai_studio@3"
         },
         {
-          "command": "workspai.aiReleaseReadinessCommander",
-          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
-          "group": "ai_studio@4"
-        },
-        {
-          "command": "workspai.aiChangeImpactLite",
-          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
-          "group": "ai_studio@5"
-        },
-        {
-          "command": "workspai.aiQuickActions",
-          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
-          "group": "ai_studio@6"
-        },
-        {
           "command": "workspai.projectTerminal",
           "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
           "group": "inline@1"
         },
         {
           "command": "workspai.projectInit",
-          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/ && workspai:projectSupportsInit",
           "group": "inline@2"
         },
         {
           "command": "workspai.projectDev",
-          "when": "view == rapidkitProjects && viewItem == project",
+          "when": "view == rapidkitProjects && viewItem == project && workspai:projectSupportsDev",
           "group": "inline@3"
         },
         {
@@ -1573,7 +1837,7 @@
         },
         {
           "command": "workspai.projectTest",
-          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/ && workspai:projectSupportsTest",
           "group": "inline@4"
         },
         {
@@ -1583,27 +1847,27 @@
         },
         {
           "command": "workspai.projectBuild",
-          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/ && workspai:projectSupportsBuild",
           "group": "lifecycle@1"
         },
         {
           "command": "workspai.projectStart",
-          "when": "view == rapidkitProjects && viewItem == project",
+          "when": "view == rapidkitProjects && viewItem == project && workspai:projectSupportsStart",
           "group": "lifecycle@2"
         },
         {
           "command": "workspai.projectLint",
-          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/ && workspai:projectSupportsLint",
           "group": "lifecycle@3"
         },
         {
           "command": "workspai.projectFormat",
-          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/ && workspai:projectSupportsFormat",
           "group": "lifecycle@4"
         },
         {
           "submenu": "workspai.project.modules",
-          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/ && workspai:projectSupportsModules",
           "group": "lifecycle@5"
         },
         {
@@ -1644,43 +1908,36 @@
       ],
       "explorer/context": [
         {
-          "command": "workspai.createProject",
+          "command": "workspai.scaffoldProjectHere",
           "when": "explorerResourceIsFolder",
           "group": "rapidkit@1"
+        },
+        {
+          "command": "workspai.adoptWithRapidkit",
+          "when": "explorerResourceIsFolder",
+          "group": "rapidkit@2"
         }
       ],
       "workspai.workspace.ai": [
         {
-          "command": "workspai.openIncidentStudio",
+          "command": "workspai.openCreateWithAI",
           "group": "ai@1"
         },
         {
-          "command": "workspai.aiForWorkspace",
+          "command": "workspai.openWorkspaceAdvisor",
           "group": "ai@2"
         },
         {
-          "command": "workspai.openArchitectureMap",
+          "command": "workspai.openIncidentStudio",
           "group": "ai@3"
         },
         {
-          "command": "workspai.aiReleaseReadinessCommander",
+          "command": "workspai.copyCopilotContextPrompt",
           "group": "ai@4"
         },
         {
-          "command": "workspai.aiQuickActions",
+          "command": "workspai.workspaceAgentSync",
           "group": "ai@5"
-        },
-        {
-          "command": "workspai.aiWorkspaceCommandCenter",
-          "group": "ai@6"
-        },
-        {
-          "command": "workspai.editWorkspaceMemory",
-          "group": "memory@1"
-        },
-        {
-          "command": "workspai.aiWorkspaceMemoryWizard",
-          "group": "memory@2"
         }
       ],
       "workspai.workspace.run": [
@@ -1693,12 +1950,16 @@
           "group": "ops@2"
         },
         {
-          "command": "workspai.workspaceInit",
+          "command": "workspai.workspaceSync",
           "group": "ops@3"
         },
         {
-          "command": "workspai.workspaceFoundationEnsure",
+          "command": "workspai.workspaceInit",
           "group": "ops@4"
+        },
+        {
+          "command": "workspai.workspaceFoundationEnsure",
+          "group": "ops@5"
         },
         {
           "command": "workspai.workspaceRunStage",
@@ -1783,6 +2044,48 @@
           "group": "archive@5"
         }
       ],
+      "workspai.workspace.intelligence": [
+        {
+          "command": "workspai.workspaceIntelligenceChain",
+          "group": "intelligence@1"
+        },
+        {
+          "command": "workspai.workspaceModel",
+          "group": "intelligence@2"
+        },
+        {
+          "command": "workspai.workspaceIntelligenceSnapshot",
+          "group": "intelligence@3"
+        },
+        {
+          "command": "workspai.workspaceDiff",
+          "group": "intelligence@4"
+        },
+        {
+          "command": "workspai.workspaceImpact",
+          "group": "intelligence@5"
+        },
+        {
+          "command": "workspai.workspaceVerify",
+          "group": "intelligence@6"
+        },
+        {
+          "command": "workspai.openWorkspaceAdvisor",
+          "group": "intelligence@7"
+        },
+        {
+          "command": "workspai.workspaceContextAgent",
+          "group": "intelligence@8"
+        },
+        {
+          "command": "workspai.workspaceAgentSync",
+          "group": "intelligence@9"
+        },
+        {
+          "command": "workspai.copyCopilotContextPrompt",
+          "group": "intelligence@10"
+        }
+      ],
       "workspai.workspace.contract": [
         {
           "command": "workspai.workspaceContract",
@@ -1810,6 +2113,10 @@
         }
       ],
       "workspai.workspace.governance": [
+        {
+          "command": "workspai.workspaceSync",
+          "group": "sync@1"
+        },
         {
           "command": "workspai.workspacePipeline",
           "group": "pipeline@1"
@@ -1929,6 +2236,21 @@
     "configuration": {
       "title": "Workspai",
       "properties": {
+        "workspai.evidenceFreshnessGate": {
+          "type": "string",
+          "enum": [
+            "auto-refresh",
+            "warn",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Silently refresh workspace intelligence before AI actions when the evidence is stale or missing.",
+            "Warn before AI actions when the evidence is stale or missing, with an option to refresh.",
+            "Never gate AI actions on evidence freshness."
+          ],
+          "default": "warn",
+          "markdownDescription": "Controls the evidence-freshness gate before AI actions (Send to Copilot, agent grounding). When the workspace intelligence evidence is stale (per the dependency-graph-aware `workspace verify` verdict or its age) or missing, Workspai can auto-refresh it, warn you, or do nothing."
+        },
         "workspai.pythonPath": {
           "type": "string",
           "default": "python3",
@@ -1945,7 +2267,18 @@
             "gofiber.standard",
             "gogin.standard",
             "springboot.standard",
-            "dotnet.webapi.clean"
+            "dotnet.webapi.clean",
+            "frontend.nextjs",
+            "frontend.remix",
+            "frontend.vite-react",
+            "frontend.vite-vue",
+            "frontend.vite-svelte",
+            "frontend.vite-solid",
+            "frontend.vite-vanilla",
+            "frontend.nuxt",
+            "frontend.angular",
+            "frontend.astro",
+            "frontend.sveltekit"
           ],
           "enumDescriptions": [
             "FastAPI with standard features",
@@ -1954,7 +2287,18 @@
             "Go/Fiber with standard features",
             "Go/Gin with standard features",
             "Spring Boot with standard features",
-            ".NET Web API with clean architecture"
+            ".NET Web API with clean architecture",
+            "Next.js via official create-next-app",
+            "Remix via official create-remix",
+            "Vite + React TypeScript starter",
+            "Vite + Vue TypeScript starter",
+            "Vite + Svelte TypeScript starter",
+            "Vite + Solid TypeScript starter",
+            "Vite vanilla TypeScript starter",
+            "Nuxt via official nuxi init",
+            "Angular via official @angular/cli",
+            "Astro via official create astro",
+            "SvelteKit via official sv create"
           ],
           "description": "Default kit for new projects"
         },
@@ -1972,6 +2316,16 @@
           "type": "boolean",
           "default": true,
           "description": "Show in-product onboarding tips for new Workspai AI and telemetry features"
+        },
+        "workspai.analytics.optIn": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Share **anonymous, aggregated** retention and cohort metrics with Workspai (time-to-first-value, command run counts — never code, file paths, or names). Off by default. This is additionally gated by VS Code's global `telemetry.telemetryLevel` setting: if you have telemetry disabled, nothing is sent regardless of this option. Local usage telemetry for your own dashboard is unaffected."
+        },
+        "workspai.analytics.consentPromptShown": {
+          "type": "boolean",
+          "default": false,
+          "description": "Internal: whether the one-time analytics consent prompt has been shown."
         },
         "workspai.templatePreview": {
           "type": "boolean",
@@ -2048,7 +2402,7 @@
             "Force Workspai webviews to use the light palette",
             "Force Workspai webviews to use the dark palette"
           ],
-          "description": "Appearance mode for Workspai dashboard, setup, settings, and Incident Studio webviews.",
+          "description": "Appearance mode for Workspai dashboard, setup, settings, and Studio webviews.",
           "scope": "window"
         },
         "workspai.aiProvider": {
@@ -2144,7 +2498,7 @@
   "scripts": {
     "vscode:prepublish": "npm run build",
     "clean:dist": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "npm run clean:dist && npm run esbuild-base -- --production && cd webview-ui && npm run build",
+    "build": "npm run clean:dist && npm run esbuild-base -- --production && npm run webview:build:production",
     "compile": "npm run clean:dist && tsc -p ./ && npm run webview:build",
     "watch": "tsc -watch -p ./",
     "esbuild-base": "node esbuild.js",
@@ -2152,6 +2506,7 @@
     "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
     "webview:install": "cd webview-ui && npm install",
     "webview:build": "cd webview-ui && npm run build",
+    "webview:build:production": "cd webview-ui && npm run build -- --production",
     "webview:watch": "cd webview-ui && npm run watch",
     "dev": "concurrently \"npm run esbuild-watch\" \"npm run webview:watch\"",
     "pretest": "npm run compile && npm run lint",
@@ -2160,9 +2515,13 @@
     "lint:fix": "eslint src --ext ts --fix",
     "test": "vitest run",
     "test:watch": "vitest",
-    "sync:parity-snapshot": "node scripts/sync-import-stack-parity-snapshot.mjs",
-    "check:parity-snapshot": "node scripts/sync-import-stack-parity-snapshot.mjs --check",
-    "test:parity-contract": "npm run sync:parity-snapshot && vitest run src/test/importStackParity.snapshot.test.ts",
+    "sync:shared-contracts": "node scripts/sync-import-stack-parity-snapshot.mjs",
+    "check:shared-contracts": "node scripts/sync-import-stack-parity-snapshot.mjs --check",
+    "gate:contract-parity": "node scripts/sync-import-stack-parity-snapshot.mjs --check --require-canonical",
+    "sync:parity-snapshot": "npm run sync:shared-contracts",
+    "check:parity-snapshot": "npm run check:shared-contracts",
+    "validate:contracts": "npm run check:shared-contracts && vitest run src/test/importStackParity.snapshot.test.ts src/test/runtimeCommandSurfaceParity.test.ts src/test/contractWorkflow.test.ts src/test/npmContractSupportMatrix.test.ts",
+    "test:parity-contract": "npm run validate:contracts",
     "test:claim-parity": "node scripts/check-website-extension-parity.mjs",
     "test:ai-reliability": "vitest run src/test/aiReliabilityGate.test.ts src/test/aiService.test.ts src/test/aiContextResolver.test.ts src/test/chatParticipant.test.ts src/test/driftGuard.test.ts src/test/incidentStudioPolicyGates.test.ts src/test/incidentStudioResponseValidator.test.ts src/test/incidentStudioTelemetry.test.ts src/test/studioRedesignContracts.test.ts",
     "stabilization:debt-budget": "node scripts/stabilization-debt-budget.mjs",

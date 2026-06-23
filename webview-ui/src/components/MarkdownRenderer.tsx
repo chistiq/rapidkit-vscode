@@ -12,6 +12,8 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
+import { Copy, Play } from 'lucide-react';
+import { normalizeStudioRunnableCommand } from '@/lib/studioCommandActions';
 
 // ─── Inline tokens ────────────────────────────────────────────────────────────
 
@@ -199,9 +201,16 @@ function parseBlocks(markdown: string): Block[] {
 interface MarkdownRendererProps {
     content: string;
     isStreaming?: boolean;
+    onCopyCommand?: (command: string) => void;
+    onRunCommand?: (command: string) => void;
 }
 
-export function MarkdownRenderer({ content, isStreaming }: MarkdownRendererProps) {
+export function MarkdownRenderer({
+    content,
+    isStreaming,
+    onCopyCommand,
+    onRunCommand,
+}: MarkdownRendererProps) {
     // During streaming we render the raw `content` prop directly — zero internal
     // state, zero RAF, zero useMemo.  Every time the parent re-renders with a new
     // chunk, this component immediately paints it.
@@ -238,15 +247,50 @@ export function MarkdownRenderer({ content, isStreaming }: MarkdownRendererProps
                 if (block.level === 2) {return <h2 key={idx} className={cls}>{renderInline(block.text, keyPfx)}</h2>;}
                 return <h3 key={idx} className={cls}>{renderInline(block.text, keyPfx)}</h3>;
             }
-            case 'codeblock':
+            case 'codeblock': {
+                const codeText = block.lines.join('\n');
+                const runnableCommand = normalizeStudioRunnableCommand(codeText);
+                const showActions =
+                    Boolean(runnableCommand) && Boolean(onCopyCommand || onRunCommand);
                 return (
                     <div key={idx} className="md-code-block">
-                        {block.lang && (
-                            <div className="md-code-lang">{block.lang}</div>
-                        )}
-                        <pre className="md-code-pre"><code>{block.lines.join('\n')}</code></pre>
+                        <div className="md-code-block__head">
+                            {block.lang ? (
+                                <div className="md-code-lang">{block.lang}</div>
+                            ) : (
+                                <div className="md-code-lang">command</div>
+                            )}
+                            {showActions && runnableCommand ? (
+                                <div className="md-code-block__actions">
+                                    {onCopyCommand ? (
+                                        <button
+                                            type="button"
+                                            className="md-code-action"
+                                            onClick={() => onCopyCommand(runnableCommand)}
+                                            title="Copy command"
+                                            aria-label="Copy command"
+                                        >
+                                            <Copy size={12} />
+                                        </button>
+                                    ) : null}
+                                    {onRunCommand ? (
+                                        <button
+                                            type="button"
+                                            className="md-code-action md-code-action--run"
+                                            onClick={() => onRunCommand(runnableCommand)}
+                                            title="Run command"
+                                            aria-label="Run command"
+                                        >
+                                            <Play size={12} />
+                                        </button>
+                                    ) : null}
+                                </div>
+                            ) : null}
+                        </div>
+                        <pre className="md-code-pre"><code>{codeText}</code></pre>
                     </div>
                 );
+            }
             case 'ul':
                 return (
                     <ul key={idx} className="md-ul">

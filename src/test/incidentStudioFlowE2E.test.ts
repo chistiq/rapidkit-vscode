@@ -234,7 +234,7 @@ describe('incidentStudioFlowE2E', () => {
     expect(policy.requiresVerifyPath).toBe(true);
 
     expect(getBoardActionGuardHint(policy)).toBe(
-      'Impact review and verification are required before claiming success.'
+      'Workspace Advisor review and verification are required before claiming success.'
     );
 
     const verifyPending = normalizeIncidentActionResultPayload({

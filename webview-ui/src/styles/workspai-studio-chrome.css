@@ -248,7 +248,9 @@ button, input, textarea, select {
     min-width: 0;
     height: 100%;
     overflow: hidden;
-    border-right: 1px solid var(--ws-border-subtle);
+    border: 1px solid var(--ws-border-subtle);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--ws-surface-raised) 78%, transparent);
 }
 
 .studio-sidebar__scroll {
@@ -1150,7 +1152,9 @@ button, input, textarea, select {
     height: 100%;
     overflow-y: auto;
     overflow-x: hidden;
-    border-left: 1px solid var(--ws-border-subtle);
+    border: 1px solid var(--ws-border-subtle);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--ws-surface-raised) 78%, transparent);
 }
 
 .studio-context-panel .studio-context-section,
@@ -1385,9 +1389,51 @@ button, input, textarea, select {
     border-bottom: none !important;
 }
 
+.studio-dashboard-handoff {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px 8px;
+    border-top: 1px solid color-mix(in srgb, var(--ws-border-subtle) 55%, transparent);
+}
+
+.studio-dashboard-handoff__label {
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ws-text-muted);
+    white-space: nowrap;
+}
+
+.studio-dashboard-handoff__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.studio-dashboard-handoff__link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border: 1px solid var(--ws-border-subtle);
+    border-radius: var(--ws-radius-sm);
+    background: color-mix(in srgb, var(--ws-surface) 82%, transparent);
+    color: var(--ws-text-muted);
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.studio-dashboard-handoff__link:hover {
+    border-color: color-mix(in srgb, var(--ws-accent) 35%, var(--ws-border-subtle));
+    color: var(--ws-text);
+}
+
 .studio-context-section {
     padding: 10px 12px;
-    border-bottom: 1px solid var(--ws-border-subtle);
+    border-bottom: 1px solid color-mix(in srgb, var(--ws-border-subtle) 72%, transparent);
 }
 
 .studio-context-section .studio-section-label {
@@ -2002,6 +2048,94 @@ button, input, textarea, select {
     align-items: center;
     gap: 6px;
     flex-wrap: wrap;
+}
+
+.studio-message__body .md-body {
+    font-size: 12.5px;
+}
+
+.studio-thinking-bubble__body {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0;
+}
+
+.studio-command-bar {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--ws-border-subtle);
+    background: color-mix(in srgb, var(--ws-surface-raised) 92%, transparent);
+}
+
+.studio-command-bar.is-compact {
+    padding: 6px 8px;
+}
+
+.studio-command-bar__text {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 11px;
+    line-height: 1.5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--ws-text);
+}
+
+.studio-command-bar__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.studio-command-bar__actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 28px;
+    padding: 0 8px;
+    font-size: 11px;
+}
+
+.studio-action-outcome__summary {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--ws-text);
+}
+
+.studio-action-outcome__meta {
+    margin: 6px 0 0;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--ws-text-subtle);
+}
+
+.studio-action-outcome__commands {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.studio-action-outcome__collapse-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: inherit;
+    text-align: left;
 }
 
 .studio-link-btn {

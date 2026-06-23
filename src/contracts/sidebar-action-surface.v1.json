@@ -1,0 +1,210 @@
+{
+  "schemaVersion": "workspai-sidebar-action-surface-v1",
+  "version": 1,
+  "actions": {
+    "aiQuickActions": {
+      "id": "aiQuickActions",
+      "label": "AI essentials",
+      "scope": "ai",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.aiQuickActions",
+      "trackActivity": true
+    },
+    "workspaceBrain": {
+      "id": "workspaceBrain",
+      "label": "Workspace brain",
+      "scope": "ai",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.workspaceBrain",
+      "trackActivity": true
+    },
+    "workspaceAdvisor": {
+      "id": "workspaceAdvisor",
+      "label": "Workspace Advisor",
+      "scope": "workspace-intelligence",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.openWorkspaceAdvisor",
+      "trackActivity": true,
+      "payloadDefaults": {
+        "source": "sidebar-quick-actions",
+        "trigger": "quick-actions-advisor",
+        "prefillQuestion": "What should I know about this workspace before making changes?"
+      }
+    },
+    "impactLensShareCode": {
+      "id": "impactLensShareCode",
+      "label": "Workspace Advisor: share code",
+      "scope": "workspace-intelligence",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.workspaceBrain",
+      "trackActivity": true,
+      "payloadDefaults": {
+        "source": "workspai-secondary-sidebar",
+        "trigger": "impact-lens-share-code",
+        "prefillQuestion": "What is the best way to share code between projects in this workspace?"
+      }
+    },
+    "impactLensSharedDatabase": {
+      "id": "impactLensSharedDatabase",
+      "label": "Workspace Advisor: shared database",
+      "scope": "workspace-intelligence",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.workspaceBrain",
+      "trackActivity": true,
+      "payloadDefaults": {
+        "source": "workspai-secondary-sidebar",
+        "trigger": "impact-lens-shared-database",
+        "prefillQuestion": "How should I set up a shared database for all projects?"
+      }
+    },
+    "impactLensDeploymentStrategy": {
+      "id": "impactLensDeploymentStrategy",
+      "label": "Workspace Advisor: deployment strategy",
+      "scope": "workspace-intelligence",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.workspaceBrain",
+      "trackActivity": true,
+      "payloadDefaults": {
+        "source": "workspai-secondary-sidebar",
+        "trigger": "impact-lens-deployment-strategy",
+        "prefillQuestion": "What deployment strategy fits a multi-project Workspai workspace?"
+      }
+    },
+    "createWithAI": {
+      "id": "createWithAI",
+      "label": "Create workspace with AI",
+      "scope": "onboarding",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.openCreateWithAI",
+      "trackActivity": true
+    },
+    "createProjectWithAI": {
+      "id": "createProjectWithAI",
+      "label": "Create project with AI",
+      "scope": "onboarding",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.aiCreateProject",
+      "trackActivity": true
+    },
+    "openWorkspaceModal": {
+      "id": "openWorkspaceModal",
+      "label": "New workspace",
+      "scope": "onboarding",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.openWorkspaceModal",
+      "trackActivity": true
+    },
+    "showTelemetry": {
+      "id": "showTelemetry",
+      "label": "Telemetry",
+      "scope": "governance",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.showTelemetrySummary",
+      "trackActivity": true
+    },
+    "resetTelemetry": {
+      "id": "resetTelemetry",
+      "label": "Reset telemetry",
+      "scope": "governance",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.resetTelemetry",
+      "trackActivity": true
+    },
+    "showOnboarding": {
+      "id": "showOnboarding",
+      "label": "AI onboarding",
+      "scope": "onboarding",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.showAIFeatureOnboarding",
+      "trackActivity": true
+    },
+    "showOnboardingStats": {
+      "id": "showOnboardingStats",
+      "label": "Onboarding stats",
+      "scope": "governance",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.showOnboardingExperimentStats",
+      "trackActivity": true
+    },
+    "doctor": {
+      "id": "doctor",
+      "label": "Doctor",
+      "scope": "system",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.doctor",
+      "trackActivity": true
+    },
+    "showLogs": {
+      "id": "showLogs",
+      "label": "Logs",
+      "scope": "system",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.showLogs",
+      "trackActivity": true
+    },
+    "openDocs": {
+      "id": "openDocs",
+      "label": "Docs",
+      "scope": "education",
+      "handler": "external-url",
+      "externalUrl": "https://www.workspai.com/docs",
+      "trackActivity": false
+    },
+    "openWelcome": {
+      "id": "openWelcome",
+      "label": "Dashboard",
+      "scope": "navigation",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.showWelcome",
+      "trackActivity": true
+    },
+    "incidentStudioNext": {
+      "id": "incidentStudioNext",
+      "label": "Studio",
+      "scope": "incident",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.openIncidentStudio",
+      "trackActivity": true
+    },
+    "openStudioFromChat": {
+      "id": "openStudioFromChat",
+      "label": "Open Studio from chat",
+      "scope": "incident",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.openIncidentStudio",
+      "trackActivity": true,
+      "payloadDefaults": {
+        "source": "sidebar-studio-lite",
+        "trigger": "chat-open-studio"
+      }
+    },
+    "releaseReadinessCommander": {
+      "id": "releaseReadinessCommander",
+      "label": "Release readiness",
+      "scope": "governance",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.aiReleaseReadinessCommander",
+      "trackActivity": true,
+      "payloadDefaults": {
+        "source": "sidebar-quick-actions",
+        "trigger": "release-readiness-commander"
+      }
+    },
+    "agentGroundingSync": {
+      "id": "agentGroundingSync",
+      "label": "Agent grounding",
+      "scope": "workspace-intelligence",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.workspaceAgentSync",
+      "trackActivity": true
+    },
+    "sendWorkspaceToCopilot": {
+      "id": "sendWorkspaceToCopilot",
+      "label": "Send to Copilot",
+      "scope": "workspace-intelligence",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.copyCopilotContextPrompt",
+      "trackActivity": true
+    }
+  }
+}

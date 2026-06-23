@@ -1,14 +1,27 @@
+import { useState } from 'react';
 import { AlertCircle, ArrowRight, Dot, Sparkles } from 'lucide-react';
 import type { DashboardEvidenceCard, DashboardNextStep } from '@/lib/dashboardEvidence';
+import type { DashboardEvidencePayload } from '@/lib/dashboardEvidence';
+import { buildDashboardCommandActionContract } from '@/lib/dashboardCommandActionContract';
 import { dashboardSectionLabel, type DashboardSection } from '@/lib/dashboardSections';
+import type { DashboardOperateZone } from '@/lib/dashboardOperateZones';
+import {
+  WORKSPAI_DASHBOARD_NEXT_STEPS_META,
+  WORKSPAI_INCIDENT_STUDIO_OPEN_HINT,
+} from '@/lib/workspaiAiNarrative';
 
 interface DashboardNextStepRailProps {
   steps: DashboardNextStep[];
-  onNavigateSection: (section: DashboardSection) => void;
+  evidence?: DashboardEvidencePayload | null;
+  onNavigateSection: (
+    section: DashboardSection,
+    options?: { operateZone?: DashboardOperateZone }
+  ) => void;
   onRunCommand: (command: string, data?: Record<string, unknown>) => void;
   onOpenIncidentStudio?: (
     target: NonNullable<DashboardEvidenceCard['incidentStudioTarget']>
   ) => void;
+  maxVisible?: number;
 }
 
 const priorityIcon = {
@@ -25,10 +38,10 @@ function stepActionHint(step: DashboardNextStep): string | null {
     return step.commandLabel ? `Runs ${step.commandLabel}` : 'Runs command';
   }
   if (step.incidentStudioTarget) {
-    return 'Opens Incident Studio';
+    return WORKSPAI_INCIDENT_STUDIO_OPEN_HINT;
   }
   if (step.section) {
-    return 'Opens tab';
+    return step.operateZone ? 'Opens Run section' : 'Opens tab';
   }
   return null;
 }
@@ -38,28 +51,36 @@ export function DashboardNextStepRail({
   onNavigateSection,
   onRunCommand,
   onOpenIncidentStudio,
+  maxVisible = 3,
+  evidence,
 }: DashboardNextStepRailProps) {
+  const [expanded, setExpanded] = useState(false);
   if (steps.length === 0) {
     return null;
   }
+  const visibleSteps = expanded ? steps : steps.slice(0, maxVisible);
+  const hiddenCount = Math.max(0, steps.length - visibleSteps.length);
 
   return (
     <section className="dashboard-next-step-rail" aria-label="Recommended next steps">
       <div className="dashboard-next-step-rail__head">
         <span className="dashboard-next-step-rail__title">Next steps</span>
         <span className="ws-kicker dashboard-next-step-rail__meta">
-          Context-aware workflow guidance
+          {WORKSPAI_DASHBOARD_NEXT_STEPS_META}
         </span>
       </div>
       <div className="dashboard-next-step-rail__list">
-        {steps.map((step) => {
+        {visibleSteps.map((step) => {
           const Icon = priorityIcon[step.priority];
           const sectionLabel = step.section ? dashboardSectionLabel(step.section) : null;
           const actionHint = stepActionHint(step);
+          const actionContract = step.command
+            ? buildDashboardCommandActionContract(step.command, { evidence })
+            : undefined;
 
           const handleClick = () => {
             if (step.section) {
-              onNavigateSection(step.section);
+              onNavigateSection(step.section, { operateZone: step.operateZone });
             }
             if (step.command) {
               onRunCommand(step.command, step.commandData);
@@ -92,12 +113,34 @@ export function DashboardNextStepRail({
                 {actionHint ? (
                   <span className="dashboard-next-step-rail__action-hint">{actionHint}</span>
                 ) : null}
+                {actionContract ? (
+                  <span className="dashboard-next-step-rail__contract" aria-label="Action contract">
+                    <span>{actionContract.executionScope}</span>
+                    <span>{actionContract.artifactLabel}</span>
+                  </span>
+                ) : null}
               </span>
               <ArrowRight size={12} aria-hidden="true" />
             </button>
           );
         })}
       </div>
+      {hiddenCount > 0 || expanded ? (
+        <div className="dashboard-next-step-rail__footer">
+          <span>
+            {expanded
+              ? `${steps.length} recommendations shown`
+              : `${hiddenCount} more recommendation${hiddenCount === 1 ? '' : 's'} hidden`}
+          </span>
+          <button
+            type="button"
+            className="ws-btn ws-btn--ghost"
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? 'Show less' : 'Show all'}
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }

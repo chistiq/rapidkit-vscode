@@ -1,0 +1,32 @@
+{
+  "version": "1",
+  "cardIds": [
+    "doctor",
+    "projectDoctor",
+    "pipeline",
+    "analyze",
+    "readiness",
+    "bootstrap",
+    "workspaceSync",
+    "foundation",
+    "contract",
+    "autopilot",
+    "workspaceRun",
+    "setup",
+    "importReadiness",
+    "snapshot",
+    "workspaceModel",
+    "intelligenceSnapshot",
+    "workspaceDiff",
+    "workspaceImpact",
+    "workspaceVerify",
+    "workspaceContextAgent",
+    "agentGrounding",
+    "share",
+    "archive",
+    "mirror",
+    "cache",
+    "policy",
+    "infra"
+  ]
+}

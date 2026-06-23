@@ -1,0 +1,446 @@
+{
+    "signature": "RAPIDKIT_WORKSPACE",
+    "createdBy": "rapidkit-vscode",
+    "version": "0.22.0",
+    "createdAt": "2026-05-04T00:00:00.000Z",
+    "name": "wave3-kpi-fixture",
+    "metadata": {
+        "custom": {
+            "workspaiTelemetry": {
+                "recentEvents": [
+                    {
+                        "command": "workspai.studio.loop_started",
+                        "at": "2026-04-28T10:00:00.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.loop_started",
+                        "at": "2026-04-28T10:00:01.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.loop_started",
+                        "at": "2026-04-28T10:00:02.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.loop_started",
+                        "at": "2026-04-28T10:00:03.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.loop_started",
+                        "at": "2026-04-28T10:00:04.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.action_executed",
+                        "at": "2026-04-28T10:01:00.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.action_executed",
+                        "at": "2026-04-28T10:01:01.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.action_executed",
+                        "at": "2026-04-28T10:01:02.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.action_executed",
+                        "at": "2026-04-28T10:01:03.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.action_executed",
+                        "at": "2026-04-28T10:01:04.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.verify_passed",
+                        "at": "2026-04-28T10:02:00.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.verify_passed",
+                        "at": "2026-04-28T10:02:01.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.verify_passed",
+                        "at": "2026-04-28T10:02:02.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.verify_passed",
+                        "at": "2026-04-28T10:02:03.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.verify_failed",
+                        "at": "2026-04-28T10:02:04.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.verify_failed",
+                        "at": "2026-04-28T10:02:05.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.verify_failed",
+                        "at": "2026-04-28T10:02:06.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.rollback_attempted",
+                        "at": "2026-04-28T10:02:07.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.rollback_attempted",
+                        "at": "2026-04-28T10:02:08.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.rollback_attempted",
+                        "at": "2026-04-28T10:02:09.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.rollback_succeeded",
+                        "at": "2026-04-28T10:02:10.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.rollback_succeeded",
+                        "at": "2026-04-28T10:02:11.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_shown",
+                        "at": "2026-04-28T10:03:00.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_shown",
+                        "at": "2026-04-28T10:03:01.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_shown",
+                        "at": "2026-04-28T10:03:02.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_shown",
+                        "at": "2026-04-28T10:03:03.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_shown",
+                        "at": "2026-04-28T10:03:04.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_shown",
+                        "at": "2026-04-28T10:03:05.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_shown",
+                        "at": "2026-04-28T10:03:06.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_shown",
+                        "at": "2026-04-28T10:03:07.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_shown",
+                        "at": "2026-04-28T10:03:08.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_shown",
+                        "at": "2026-04-28T10:03:09.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_accepted",
+                        "at": "2026-04-28T10:04:00.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_accepted",
+                        "at": "2026-04-28T10:04:01.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_accepted",
+                        "at": "2026-04-28T10:04:02.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_accepted",
+                        "at": "2026-04-28T10:04:03.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_accepted",
+                        "at": "2026-04-28T10:04:04.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_accepted",
+                        "at": "2026-04-28T10:04:05.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_accepted",
+                        "at": "2026-04-28T10:04:06.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_verified",
+                        "at": "2026-04-28T10:05:00.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_verified",
+                        "at": "2026-04-28T10:05:01.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_verified",
+                        "at": "2026-04-28T10:05:02.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_verified",
+                        "at": "2026-04-28T10:05:03.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_verified",
+                        "at": "2026-04-28T10:05:04.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_falsified",
+                        "at": "2026-04-28T10:06:00.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.prediction_falsified",
+                        "at": "2026-04-28T10:06:01.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.incident_repro_pack_captured",
+                        "at": "2026-04-28T10:07:00.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.incident_repro_pack_captured",
+                        "at": "2026-04-28T10:07:01.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.incident_repro_pack_captured",
+                        "at": "2026-04-28T10:07:02.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.incident_repro_pack_captured",
+                        "at": "2026-04-28T10:07:03.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.incident_repro_pack_exported",
+                        "at": "2026-04-28T10:07:10.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.incident_repro_pack_exported",
+                        "at": "2026-04-28T10:07:11.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.incident_repro_pack_exported",
+                        "at": "2026-04-28T10:07:12.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.incident_repro_pack_imported",
+                        "at": "2026-04-28T10:07:20.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.incident_repro_pack_imported",
+                        "at": "2026-04-28T10:07:21.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.incident_replay_ready",
+                        "at": "2026-04-28T10:07:22.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.incident_replay_ready",
+                        "at": "2026-04-28T10:07:23.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.incident_replay_memory_enriched",
+                        "at": "2026-04-28T10:07:30.000Z"
+                    },
+                    {
+                        "command": "workspai.studio.incident_replay_memory_enriched",
+                        "at": "2026-04-28T10:07:31.000Z"
+                    }
+                ],
+                "productionWindows": 3,
+                "latencySamples": [
+                    {
+                        "event": "workspai.perf.first_chunk_latency",
+                        "ms": 800,
+                        "at": "2026-04-28T10:10:00.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.first_chunk_latency",
+                        "ms": 950,
+                        "at": "2026-04-28T10:10:01.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.first_chunk_latency",
+                        "ms": 1100,
+                        "at": "2026-04-28T10:10:02.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.first_chunk_latency",
+                        "ms": 1250,
+                        "at": "2026-04-28T10:10:03.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.first_chunk_latency",
+                        "ms": 1400,
+                        "at": "2026-04-28T10:10:04.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.first_chunk_latency",
+                        "ms": 1550,
+                        "at": "2026-04-28T10:10:05.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.first_chunk_latency",
+                        "ms": 1700,
+                        "at": "2026-04-28T10:10:06.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.first_chunk_latency",
+                        "ms": 1850,
+                        "at": "2026-04-28T10:10:07.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.first_chunk_latency",
+                        "ms": 2000,
+                        "at": "2026-04-28T10:10:08.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.first_chunk_latency",
+                        "ms": 2100,
+                        "at": "2026-04-28T10:10:09.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.sync_latency",
+                        "ms": 300,
+                        "at": "2026-04-28T10:11:00.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.sync_latency",
+                        "ms": 400,
+                        "at": "2026-04-28T10:11:01.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.sync_latency",
+                        "ms": 500,
+                        "at": "2026-04-28T10:11:02.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.sync_latency",
+                        "ms": 600,
+                        "at": "2026-04-28T10:11:03.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.sync_latency",
+                        "ms": 700,
+                        "at": "2026-04-28T10:11:04.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.sync_latency",
+                        "ms": 800,
+                        "at": "2026-04-28T10:11:05.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.sync_latency",
+                        "ms": 900,
+                        "at": "2026-04-28T10:11:06.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.sync_latency",
+                        "ms": 1000,
+                        "at": "2026-04-28T10:11:07.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.sync_latency",
+                        "ms": 1100,
+                        "at": "2026-04-28T10:11:08.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.sync_latency",
+                        "ms": 1200,
+                        "at": "2026-04-28T10:11:09.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.board_render_latency",
+                        "ms": 80,
+                        "at": "2026-04-28T10:12:00.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.board_render_latency",
+                        "ms": 110,
+                        "at": "2026-04-28T10:12:01.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.board_render_latency",
+                        "ms": 140,
+                        "at": "2026-04-28T10:12:02.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.board_render_latency",
+                        "ms": 170,
+                        "at": "2026-04-28T10:12:03.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.board_render_latency",
+                        "ms": 200,
+                        "at": "2026-04-28T10:12:04.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.board_render_latency",
+                        "ms": 230,
+                        "at": "2026-04-28T10:12:05.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.board_render_latency",
+                        "ms": 260,
+                        "at": "2026-04-28T10:12:06.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.board_render_latency",
+                        "ms": 290,
+                        "at": "2026-04-28T10:12:07.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.board_render_latency",
+                        "ms": 320,
+                        "at": "2026-04-28T10:12:08.000Z"
+                    },
+                    {
+                        "event": "workspai.perf.board_render_latency",
+                        "ms": 350,
+                        "at": "2026-04-28T10:12:09.000Z"
+                    }
+                ],
+                "outcomeRecords": [
+                    {
+                        "timeToFirstConfidentActionMs": 12000,
+                        "firstActionSucceeded": true,
+                        "reopenedAfterSuggestedFix": false,
+                        "recommendationOverridden": false,
+                        "mutatingActionReachedVerify": true,
+                        "rollbackAttemptResult": true
+                    },
+                    {
+                        "timeToFirstConfidentActionMs": 18000,
+                        "firstActionSucceeded": true,
+                        "reopenedAfterSuggestedFix": false,
+                        "recommendationOverridden": false,
+                        "mutatingActionReachedVerify": true,
+                        "rollbackAttemptResult": true
+                    },
+                    {
+                        "timeToFirstConfidentActionMs": 22000,
+                        "firstActionSucceeded": false,
+                        "reopenedAfterSuggestedFix": false,
+                        "recommendationOverridden": false,
+                        "mutatingActionReachedVerify": true,
+                        "rollbackAttemptResult": true
+                    },
+                    {
+                        "timeToFirstConfidentActionMs": 14000,
+                        "firstActionSucceeded": true,
+                        "reopenedAfterSuggestedFix": false,
+                        "recommendationOverridden": true,
+                        "mutatingActionReachedVerify": true,
+                        "rollbackAttemptResult": null
+                    },
+                    {
+                        "timeToFirstConfidentActionMs": 9000,
+                        "firstActionSucceeded": true,
+                        "reopenedAfterSuggestedFix": false,
+                        "recommendationOverridden": false,
+                        "mutatingActionReachedVerify": null,
+                        "rollbackAttemptResult": null
+                    }
+                ]
+            }
+        }
+    }
+}

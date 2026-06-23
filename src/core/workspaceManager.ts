@@ -9,6 +9,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { WorkspaiWorkspace } from '../types';
 import { MARKERS } from '../utils/constants';
+import { hasWorkspaceRootMarkers } from './workspacePaths';
 import { getRegistryDir } from '../utils/registryPath';
 import {
   readImportedProjectsRegistry,
@@ -166,7 +167,8 @@ export class WorkspaceManager {
 
     // Check common dev directories
     const commonDirs = [
-      path.join(os.homedir(), 'Workspai', 'rapidkits'), // Workspai default location
+      path.join(os.homedir(), 'rapidkit', 'workspaces'),
+      path.join(os.homedir(), 'Workspai', 'rapidkits'), // legacy Workspai location
       path.join(os.homedir(), 'RapidKit'), // legacy npm package default location
       path.join(os.homedir(), 'RapidKit', 'rapidkits'), // legacy npm package nested location
       path.join(os.homedir(), 'Projects'),
@@ -211,26 +213,30 @@ export class WorkspaceManager {
       return false;
     }
 
-    // Check for .rapidkit-workspace marker file (created by npm package or extension)
-    const markerPath = path.join(wsPath, '.rapidkit-workspace');
-    if (await fs.pathExists(markerPath)) {
-      // Verify marker file content has valid signature
-      try {
-        const marker = await fs.readJSON(markerPath);
-        // Accept both Extension and npm package signatures
-        return (
-          marker.signature === MARKERS.WORKSPACE_SIGNATURE || // Current unified format
-          marker.signature === MARKERS.WORKSPACE_SIGNATURE_LEGACY || // Legacy Extension format
-          marker.signature === 'rapidkit-vscode' || // Very old legacy
-          (marker.createdBy &&
-            (marker.createdBy === MARKERS.CREATED_BY_NPM ||
-              marker.createdBy === MARKERS.CREATED_BY_VSCODE))
-        );
-      } catch (error) {
-        // Log error but don't crash - marker file might be corrupted
-        console.warn('Warning: Failed to read marker file at:', markerPath, error);
-        return false;
+    // Check for workspace root markers (.rapidkit-workspace or .rapidkit/workspace.json)
+    if (hasWorkspaceRootMarkers(wsPath)) {
+      const markerPath = path.join(wsPath, '.rapidkit-workspace');
+      if (await fs.pathExists(markerPath)) {
+        // Verify marker file content has valid signature
+        try {
+          const marker = await fs.readJSON(markerPath);
+          // Accept both Extension and npm package signatures
+          return (
+            marker.signature === MARKERS.WORKSPACE_SIGNATURE || // Current unified format
+            marker.signature === MARKERS.WORKSPACE_SIGNATURE_LEGACY || // Legacy Extension format
+            marker.signature === 'rapidkit-vscode' || // Very old legacy
+            (marker.createdBy &&
+              (marker.createdBy === MARKERS.CREATED_BY_NPM ||
+                marker.createdBy === MARKERS.CREATED_BY_VSCODE))
+          );
+        } catch (error) {
+          // Log error but don't crash - marker file might be corrupted
+          console.warn('Warning: Failed to read marker file at:', markerPath, error);
+          return false;
+        }
       }
+
+      return true;
     }
 
     // Check for workspace structure created by npm package:
@@ -241,15 +247,6 @@ export class WorkspaceManager {
 
     if (hasPyproject && hasVenv && hasRapidkitScript) {
       // This looks like a workspace created by npm package
-      return true;
-    }
-
-    // Check for RapidKit project metadata (created by RapidKit core / kits)
-    // This is for projects, not workspaces, but kept for backward compatibility
-    const rapidkitDir = path.join(wsPath, '.rapidkit');
-    const projectJson = path.join(rapidkitDir, 'project.json');
-    const contextJson = path.join(rapidkitDir, 'context.json');
-    if ((await fs.pathExists(projectJson)) || (await fs.pathExists(contextJson))) {
       return true;
     }
 

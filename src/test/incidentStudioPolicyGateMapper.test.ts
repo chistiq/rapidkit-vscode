@@ -1,88 +1,111 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  canApplyStudioMutationFromTelemetry,
-  evaluatePolicyGateEnforcementFromTelemetry,
-  mapTelemetryToPolicyGateStatus,
+  isVerifyActionBlockedByPolicyGates,
+  mergePolicyGatesFromTelemetry,
   resolvePolicyGateBlockedReasonsFromTelemetry,
-} from '../ui/panels/incidentStudioPolicyGateMapper';
+} from '../../webview-ui/src/lib/incidentStudioPolicyGateMapper';
 
-describe('incidentStudioPolicyGateMapper', () => {
-  it('maps telemetry hard gates into enforceable policy gate status', () => {
-    const status = mapTelemetryToPolicyGateStatus({
-      studioHardGateStatus: {
-        gates: {
-          verifyPhaseReachPass: true,
-          bridgeRouteCompletionPass: true,
-          overallPass: true,
-        },
+describe('incidentStudioPolicyGateMapper (webview)', () => {
+  it('merges telemetry failures into blocking policy gate state', () => {
+    const merged = mergePolicyGatesFromTelemetry(
+      {
+        flowState: 'passing',
+        telemetryState: 'complete',
+        releasePosture: 'go',
       },
-      studioStabilizationKpiStatus: {
-        gates: {
-          overallPass: true,
-          verifyPathCompletionRatePass: true,
-          falseConfidenceRatePass: true,
-          rollbackRecoverySuccessRatePass: true,
-        },
-      },
-    });
-
-    expect(status?.overallPass).toBe(true);
-    expect(
-      evaluatePolicyGateEnforcementFromTelemetry({
+      {
         studioHardGateStatus: {
-          gates: {
-            verifyPhaseReachPass: true,
-            bridgeRouteCompletionPass: true,
-            overallPass: true,
-          },
-        },
-        studioStabilizationKpiStatus: {
-          gates: {
-            overallPass: true,
-            verifyPathCompletionRatePass: true,
-            falseConfidenceRatePass: true,
-            rollbackRecoverySuccessRatePass: true,
-          },
-        },
-      }).canCompleteVerify
-    ).toBe(true);
-  });
-
-  it('blocks verify completion when hard gate metrics fail', () => {
-    const enforcement = evaluatePolicyGateEnforcementFromTelemetry({
-      studioHardGateStatus: {
-        gates: {
-          verifyPhaseReachPass: false,
-          bridgeRouteCompletionPass: true,
-          overallPass: false,
-        },
-      },
-    });
-
-    expect(enforcement.canCompleteVerify).toBe(false);
-    expect(
-      resolvePolicyGateBlockedReasonsFromTelemetry({
-        studioHardGateStatus: {
+          windowEndAt: '2026-06-10T12:00:00.000Z',
           gates: {
             verifyPhaseReachPass: false,
             bridgeRouteCompletionPass: true,
             overallPass: false,
           },
         },
-      })
-    ).toContain('Verify phase reach < minimum threshold');
+      },
+      'needs-attention'
+    );
+
+    expect(merged.flowState).toBe('blocking');
+    expect(merged.releasePosture).toBe('no-go');
+    expect(merged.telemetryState).toBe('partial');
   });
 
-  it('blocks mutating actions when enterprise stabilization is frozen', () => {
-    const decision = canApplyStudioMutationFromTelemetry({
-      enterpriseStabilizationGateStatus: {
-        expansionFrozen: true,
-        freezeReason: 'Consecutive windows failed',
+  it('marks telemetry stale when enterprise expansion is frozen', () => {
+    const merged = mergePolicyGatesFromTelemetry(
+      {
+        flowState: 'warning',
+        telemetryState: 'partial',
+        releasePosture: 'pending',
       },
-    });
+      {
+        enterpriseStabilizationGateStatus: {
+          expansionFrozen: true,
+          freezeReason: 'Hard gate regression',
+        },
+      }
+    );
 
-    expect(decision.allowed).toBe(false);
-    expect(decision.reason).toContain('Consecutive windows failed');
+    expect(merged.telemetryState).toBe('stale');
+    expect(merged.flowState).toBe('warning');
+    expect(
+      resolvePolicyGateBlockedReasonsFromTelemetry({
+        enterpriseStabilizationGateStatus: {
+          expansionFrozen: true,
+          freezeReason: 'Hard gate regression',
+        },
+      })
+    ).toContain('Hard gate regression');
+  });
+
+  it('keeps release posture go when artifacts are approved despite learning KPIs', () => {
+    const merged = mergePolicyGatesFromTelemetry(
+      {
+        flowState: 'passing',
+        telemetryState: 'complete',
+        releasePosture: 'go',
+      },
+      {
+        studioHardGateStatus: {
+          gates: {
+            verifyPhaseReachPass: false,
+            bridgeRouteCompletionPass: false,
+            overallPass: false,
+          },
+        },
+      },
+      'ready',
+      { artifactReleaseReady: true }
+    );
+
+    expect(merged.releasePosture).toBe('go');
+    expect(merged.flowState).toBe('warning');
+  });
+
+  it('blocks verify actions when policy gates are blocking', () => {
+    expect(
+      isVerifyActionBlockedByPolicyGates({
+        policyGates: {
+          flowState: 'blocking',
+          telemetryState: 'partial',
+          releasePosture: 'no-go',
+        },
+      })
+    ).toBe(true);
+  });
+
+  it('does not block verify when artifacts are release-ready', () => {
+    expect(
+      isVerifyActionBlockedByPolicyGates({
+        policyGates: {
+          flowState: 'warning',
+          telemetryState: 'partial',
+          releasePosture: 'go',
+        },
+        verifyGateBlockedReasons: ['Bridge route completion < minimum threshold'],
+        artifactReleaseReady: true,
+      })
+    ).toBe(false);
   });
 });

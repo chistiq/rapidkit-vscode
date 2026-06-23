@@ -102,6 +102,7 @@ import {
   resetAIServiceCaches,
   selectModelWithPreference,
   streamAIResponse,
+  UnsupportedCreationStackError,
 } from '../core/aiService';
 import * as vscode from 'vscode';
 
@@ -641,6 +642,125 @@ describe('aiService', () => {
     const systemPrompt = sendRequestMock.mock.calls[0]?.[0]?.[0]?.content ?? '';
     expect(systemPrompt).toContain('pro/billing/invoices');
     expect(systemPrompt).toContain('v2.3.0');
+  });
+
+  it('does not translate explicit PHP Laravel creation requests into NestJS', async () => {
+    await expect(
+      parseCreationIntent(
+        'I want a PHP Laravel workspace for project management',
+        'workspace',
+        undefined,
+        tempProjectPath
+      )
+    ).rejects.toMatchObject({
+      name: 'UnsupportedCreationStackError',
+      stackLabel: 'Laravel',
+      capability: {
+        lane: 'external-create-adopt',
+        resolved: 'laravel',
+        canExecuteCreate: false,
+        fallbackLane: 'adopt-only',
+      },
+    });
+
+    expect(mockSelectChatModels).not.toHaveBeenCalled();
+  });
+
+  it('does not translate WordPress creation requests into native scaffolds', async () => {
+    await expect(
+      parseCreationIntent(
+        'Create a WordPress site for an editorial team',
+        'workspace',
+        undefined,
+        tempProjectPath
+      )
+    ).rejects.toMatchObject({
+      name: 'UnsupportedCreationStackError',
+      stackLabel: 'WordPress',
+      capability: {
+        lane: 'external-create-adopt',
+        resolved: 'wordpress-site',
+        canExecuteCreate: false,
+        fallbackLane: 'adopt-only',
+      },
+    });
+
+    expect(mockSelectChatModels).not.toHaveBeenCalled();
+  });
+
+  it('does not translate generic PHP creation requests into native scaffolds', async () => {
+    await expect(
+      parseCreationIntent('Create a PHP workspace', 'workspace', undefined, tempProjectPath)
+    ).rejects.toMatchObject({
+      name: 'UnsupportedCreationStackError',
+      stackLabel: 'PHP',
+      capability: {
+        lane: 'adopt-only',
+        resolved: 'php',
+        canExecuteCreate: false,
+      },
+    });
+
+    expect(mockSelectChatModels).not.toHaveBeenCalled();
+  });
+
+  it('does not override an ambiguous product-domain model plan without stack evidence', async () => {
+    const { plan, planSource } = await parseCreationIntent(
+      'Build a workspace for a clothing store',
+      'workspace',
+      undefined,
+      tempProjectPath,
+      undefined,
+      async () => ({
+        modelId: 'test-model',
+        text: JSON.stringify({
+          workspaceName: 'clothing-store',
+          profile: 'python-only',
+          installMethod: 'auto',
+          framework: 'fastapi',
+          kit: 'fastapi.standard',
+          projectName: 'clothing-api',
+          suggestedModules: ['free/essentials/settings', 'free/database/db_postgres'],
+          description: 'Clothing store backend.',
+        }),
+      })
+    );
+
+    expect(planSource).toBe('llm');
+    expect(plan.profile).toBe('python-only');
+    expect(plan.framework).toBe('fastapi');
+    expect(plan.secondaryProject).toBeUndefined();
+  });
+
+  it('adds a stable frontend companion when full-stack intent is explicit and the model omits it', async () => {
+    const { plan, planSource } = await parseCreationIntent(
+      'Build a full-stack clothing store with an API connected to a frontend',
+      'workspace',
+      undefined,
+      tempProjectPath,
+      undefined,
+      async () => ({
+        modelId: 'test-model',
+        text: JSON.stringify({
+          workspaceName: 'clothing-store',
+          profile: 'polyglot',
+          installMethod: 'auto',
+          framework: 'fastapi',
+          kit: 'fastapi.standard',
+          projectName: 'clothing-api',
+          suggestedModules: ['free/essentials/settings', 'free/database/db_postgres'],
+          description: 'Clothing store platform.',
+        }),
+      }),
+      'polyglot'
+    );
+
+    expect(planSource).toBe('llm');
+    expect(plan.profile).toBe('polyglot');
+    expect(plan.framework).toBe('fastapi');
+    expect(plan.secondaryProject?.framework).toBe('nextjs');
+    expect(plan.secondaryProject?.kit).toBe('frontend.nextjs');
+    expect(plan.secondaryProject?.projectName).toMatch(/-app$/);
   });
 
   it('injects workspace-installed module signals into AI creation prompt', async () => {

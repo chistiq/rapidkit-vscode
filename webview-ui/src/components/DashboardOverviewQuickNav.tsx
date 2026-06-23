@@ -1,49 +1,61 @@
-import { ArrowRight, ClipboardCheck, Settings2 } from 'lucide-react';
+import { ArrowRight, Play, Wrench } from 'lucide-react';
 import type { DashboardSection } from '@/lib/dashboardSections';
 
 interface DashboardOverviewQuickNavProps {
-    evidenceAttentionCount: number;
-    operateAttentionCount: number;
-    onNavigate: (section: DashboardSection) => void;
+  evidenceAttentionCount: number;
+  operateAttentionCount: number;
+  onNavigate: (section: DashboardSection) => void;
 }
 
 export function DashboardOverviewQuickNav({
-    evidenceAttentionCount,
-    operateAttentionCount,
-    onNavigate,
+  evidenceAttentionCount,
+  operateAttentionCount,
+  onNavigate,
 }: DashboardOverviewQuickNavProps) {
-    return (
-        <nav className="dashboard-overview-quick-nav" aria-label="Dashboard quick navigation">
+  const repairAction = {
+    section: 'repair' as const,
+    icon: Wrench,
+    title: 'Repair workspace',
+    detail: 'Fix blockers with evidence, Studio, and Copilot',
+    badge: evidenceAttentionCount > 0 ? evidenceAttentionCount : null,
+  };
+  const runAction = {
+    section: 'operate' as const,
+    icon: Play,
+    title: 'Run workspace',
+    detail: 'Refresh governance, intelligence, and release evidence',
+    badge: operateAttentionCount > 0 ? operateAttentionCount : null,
+  };
+  const actions = evidenceAttentionCount > 0 ? [repairAction, runAction] : [runAction, repairAction];
+
+  return (
+    <nav className="home-next-actions" aria-label="Workspace next actions">
+      <span className="home-next-actions__label">Next actions</span>
+      <div className="home-next-actions__row">
+        {actions.map((action, index) => {
+          const ActionIcon = action.icon;
+          return (
             <button
-                type="button"
-                className="dashboard-overview-quick-nav__item"
-                onClick={() => onNavigate('evidence')}
+              key={action.section}
+              type="button"
+              className={`home-create-handoff__action home-next-actions__item${index === 0 ? ' home-create-handoff__action--primary' : ''}`}
+              onClick={() => onNavigate(action.section)}
             >
-                <ClipboardCheck size={14} aria-hidden="true" />
-                <span className="dashboard-overview-quick-nav__copy">
-                    <strong>Evidence & Release</strong>
-                    <small>Artifacts, outcomes, readiness pipeline</small>
-                </span>
-                {evidenceAttentionCount > 0 ? (
-                    <span className="dashboard-overview-quick-nav__badge">{evidenceAttentionCount}</span>
-                ) : null}
-                <ArrowRight size={12} aria-hidden="true" />
+              <ActionIcon size={15} aria-hidden="true" />
+              <span>
+                <strong>
+                  {action.title}
+                  {action.badge ? (
+                    <span className="home-next-actions__badge">{action.badge}</span>
+                  ) : null}
+                </strong>
+                <small>{action.detail}</small>
+              </span>
+              <ArrowRight size={13} aria-hidden="true" className="home-create-handoff__chevron" />
             </button>
-            <button
-                type="button"
-                className="dashboard-overview-quick-nav__item"
-                onClick={() => onNavigate('operate')}
-            >
-                <Settings2 size={14} aria-hidden="true" />
-                <span className="dashboard-overview-quick-nav__copy">
-                    <strong>Operate & Governance</strong>
-                    <small>Doctor, graph, bootstrap, mirror, infra</small>
-                </span>
-                {operateAttentionCount > 0 ? (
-                    <span className="dashboard-overview-quick-nav__badge">{operateAttentionCount}</span>
-                ) : null}
-                <ArrowRight size={12} aria-hidden="true" />
-            </button>
-        </nav>
-    );
+          );
+        })}
+      </div>
+    </nav>
+  );
 }

@@ -1,3 +1,14 @@
+#!/usr/bin/env sh
+
+# Shared contracts (canonical: rapidkit-npm/contracts/)
+echo "📋 Validating shared contracts..."
+npm run validate:contracts || {
+	echo "❌ Extension contracts out of sync with rapidkit-npm/contracts/."
+	echo "   From rapidkit-npm: npm run sync:shared-contracts"
+	echo "   Then commit contracts/ in both repos."
+	exit 1
+}
+
 if [ "${SYNC_MODULES-}" = "1" ]; then
 	npm run sync:modules
 	git add src/data/modules.ts

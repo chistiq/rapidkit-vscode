@@ -1,25 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
 const repoRoot = path.resolve(__dirname, '..', '..');
-const releaseStopGateScriptPath = path.join(repoRoot, 'scripts', 'release-stop-gate.mjs');
-
-function releaseStopGateEnv() {
-  const env = { ...process.env };
-
-  // Keep the child process isolated from Vitest/coverage worker hooks so these
-  // script-level tests exercise the release gate as a normal Node CLI.
-  delete env.NODE_OPTIONS;
-  delete env.VITEST;
-  delete env.VITEST_POOL_ID;
-  delete env.VITEST_WORKER_ID;
-  delete env.VITEST_TEST_NAME;
-
-  return env;
-}
+import {
+  buildKpiGateStatus,
+  buildOpenIssueReportFreshnessStatus,
+  buildOpenIssueSeverityStatus,
+  buildReleaseClaimSafetyStatus,
+} from '../../scripts/release-stop-gate.mjs';
 
 function buildRecentEvent(
   command: string,
@@ -135,18 +125,6 @@ describe('release-stop-gate open-issue freshness hardening', () => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  function runReleaseStopGate(extraArgs: string[]) {
-    return spawnSync(
-      process.execPath,
-      [releaseStopGateScriptPath, '--skip-contract-checks', '--skip-kpi', ...extraArgs],
-      {
-        cwd: repoRoot,
-        encoding: 'utf-8',
-        env: releaseStopGateEnv(),
-      }
-    );
-  }
-
   it('passes enforce-open-issues when report is fresh and has no blocking severities', () => {
     const issueReportPath = path.join(tempRoot, 'open-issues-fresh.json');
     fs.writeFileSync(
@@ -168,17 +146,13 @@ describe('release-stop-gate open-issue freshness hardening', () => {
       )
     );
 
-    const result = runReleaseStopGate([
-      '--issue-report',
-      issueReportPath,
-      '--enforce-open-issues',
-      '--issue-report-max-age-hours',
-      '24',
-    ]);
+    const freshness = buildOpenIssueReportFreshnessStatus(issueReportPath, 24);
+    const severity = buildOpenIssueSeverityStatus(issueReportPath, ['p0', 'p1']);
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain('Open-issue report freshness result');
-    expect(result.stdout).toContain('Open-issue severity result');
+    expect(freshness.ok).toBe(true);
+    expect(freshness.message).toContain('freshness gate passed');
+    expect(severity.ok).toBe(true);
+    expect(severity.message).toContain('No blocking open issues');
   });
 
   it('blocks enforce-open-issues when report generatedAt is missing', () => {
@@ -194,16 +168,10 @@ describe('release-stop-gate open-issue freshness hardening', () => {
       )
     );
 
-    const result = runReleaseStopGate([
-      '--issue-report',
-      issueReportPath,
-      '--enforce-open-issues',
-      '--issue-report-max-age-hours',
-      '24',
-    ]);
+    const result = buildOpenIssueReportFreshnessStatus(issueReportPath, 24);
 
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('generatedAt is missing or invalid');
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('generatedAt is missing or invalid');
   });
 
   it('blocks enforce-open-issues when report is stale beyond max age', () => {
@@ -222,17 +190,49 @@ describe('release-stop-gate open-issue freshness hardening', () => {
       )
     );
 
-    const result = runReleaseStopGate([
-      '--issue-report',
-      issueReportPath,
-      '--enforce-open-issues',
-      '--issue-report-max-age-hours',
-      '2',
-    ]);
+    const result = buildOpenIssueReportFreshnessStatus(issueReportPath, 2);
 
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('report age');
-    expect(result.stderr).toContain('exceeds max 2h');
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('report age');
+    expect(result.message).toContain('exceeds max 2h');
+  });
+});
+
+describe('release-stop-gate local toolchain hardening', () => {
+  it('runs contract checks through the local Vitest binary before falling back to npx', () => {
+    const source = fs.readFileSync(path.join(repoRoot, 'scripts/release-stop-gate.mjs'), 'utf8');
+
+    expect(source).toContain('path.resolve(');
+    expect(source).toContain("'node_modules'");
+    expect(source).toContain("'.bin'");
+    expect(source).toContain("'vitest'");
+    expect(source).toContain("command = fs.existsSync(localVitest) ? localVitest : 'npx'");
+    expect(source).toContain("execFileSync(command, args, { stdio: 'inherit' })");
+    expect(source).not.toContain("'npx vitest run'");
+  });
+});
+
+describe('extension package build contract', () => {
+  it('builds webview assets in production mode before VSIX packaging', () => {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+    const scripts = packageJson.scripts ?? {};
+
+    expect(scripts['vscode:prepublish']).toBe('npm run build');
+    expect(scripts.build).toContain('npm run esbuild-base -- --production');
+    expect(scripts.build).toContain('npm run webview:build:production');
+    expect(scripts['webview:build:production']).toContain('npm run build -- --production');
+    expect(scripts.build).not.toContain('cd webview-ui && npm run build"');
+  });
+});
+
+describe('extension marketplace metadata contract', () => {
+  it('keeps public positioning aligned with Workspace Intelligence', () => {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+
+    expect(packageJson.displayName).toBe('Workspai – Workspace Intelligence');
+    expect(packageJson.description).toContain('Workspace Intelligence for VS Code.');
+    expect(packageJson.description).toContain('developers, CI, and AI agents');
+    expect(packageJson.description).not.toContain('Workspace intelligence for VS Code.');
   });
 });
 
@@ -253,39 +253,34 @@ describe('release-stop-gate telemetry integrity hardening', () => {
     return markerPath;
   }
 
-  function runReleaseStopGateForMarker(markerPath: string) {
-    return spawnSync(
-      process.execPath,
-      [
-        releaseStopGateScriptPath,
-        '--skip-contract-checks',
-        '--marker',
-        markerPath,
-        '--verify-min',
-        '0',
-        '--bridge-min',
-        '0',
-        '--predictive-precision-min',
-        '0',
-        '--false-alarm-max',
-        '100',
-        '--prevented-rate-min',
-        '0',
-        '--repro-pack-share-min',
-        '0',
-        '--replay-resolution-min',
-        '0',
-        '--rollback-success-min',
-        '0',
-        '--false-confidence-max',
-        '100',
-        '--release-readiness-validation-mode',
-        'off',
-      ],
+  function buildGateStatusForMarker(markerPath: string) {
+    return buildKpiGateStatus(
+      markerPath,
       {
-        cwd: repoRoot,
-        encoding: 'utf-8',
-        env: releaseStopGateEnv(),
+        verifyPhaseReachMin: 0,
+        bridgeRouteCompletionMin: 0,
+        predictivePrecisionMin: 0,
+        falseAlarmRateMax: 100,
+        preventedIncidentRateMin: 0,
+        reproPackShareRateMin: 0,
+        replayToResolutionRateMin: 0,
+        verifyAutoRollbackSuccessRateMin: 0,
+        falseConfidenceRateMax: 100,
+        maxTimeToFirstConfidentActionP50Ms: Number.POSITIVE_INFINITY,
+        minFirstActionSuccessRate: 0,
+        maxReopenRateAfterSuggestedFix: 100,
+        maxOverrideRateOnRecommendations: 100,
+        minVerifyPathCompletionRate: 0,
+        minRollbackRecoverySuccessRate: 0,
+        verifyPackAutopilotReadinessRateMin: 0,
+        firstChunkLatencyP95MaxMs: Number.POSITIVE_INFINITY,
+        syncLatencyP95MaxMs: Number.POSITIVE_INFINITY,
+        boardRenderLatencyP95MaxMs: Number.POSITIVE_INFINITY,
+      },
+      {
+        predictiveCalibrationMode: 'off',
+        verifyPackAutopilotReadinessMode: 'off',
+        releaseReadinessValidationMode: 'off',
       }
     );
   }
@@ -293,12 +288,11 @@ describe('release-stop-gate telemetry integrity hardening', () => {
   it('passes when verify/release telemetry required fields are present and scope is consistent', () => {
     const markerPath = writeMarker('kpi-pass.json', buildBaseRecentEvents('/workspace/app'));
 
-    const result = runReleaseStopGateForMarker(markerPath);
+    const result = buildGateStatusForMarker(markerPath);
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain('"telemetryRequiredFieldsPass": true');
-    expect(result.stdout).toContain('"telemetrySchemaDriftPass": true');
-    expect(result.stdout).toContain('"telemetryScopeMismatchPass": true');
+    expect(result.gates.telemetryRequiredFieldsPass).toBe(true);
+    expect(result.gates.telemetrySchemaDriftPass).toBe(true);
+    expect(result.gates.telemetryScopeMismatchPass).toBe(true);
   });
 
   it('blocks when verify/release telemetry required fields are missing', () => {
@@ -315,11 +309,10 @@ describe('release-stop-gate telemetry integrity hardening', () => {
     }
 
     const markerPath = writeMarker('kpi-missing-required-field.json', events);
-    const result = runReleaseStopGateForMarker(markerPath);
+    const result = buildGateStatusForMarker(markerPath);
 
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain('"telemetryRequiredFieldsPass": false');
-    expect(result.stderr).toContain('Release blocked: KPI hard-gate failed');
+    expect(result.gates.telemetryRequiredFieldsPass).toBe(false);
+    expect(result.gates.overallPass).toBe(false);
   });
 
   it('blocks when telemetry scope mismatch is detected across critical events', () => {
@@ -336,12 +329,15 @@ describe('release-stop-gate telemetry integrity hardening', () => {
     }
 
     const markerPath = writeMarker('kpi-scope-mismatch.json', events);
-    const result = runReleaseStopGateForMarker(markerPath);
+    const result = buildGateStatusForMarker(markerPath);
 
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain('"telemetryScopeMismatchPass": false');
-    expect(result.stdout).toContain('multiple_project_paths_observed');
-    expect(result.stderr).toContain('Release blocked: KPI hard-gate failed');
+    expect(result.gates.telemetryScopeMismatchPass).toBe(false);
+    expect(result.telemetryIntegrity.scopeMismatchAlerts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reason: 'multiple_project_paths_observed' }),
+      ])
+    );
+    expect(result.gates.overallPass).toBe(false);
   });
 });
 
@@ -356,18 +352,6 @@ describe('release-stop-gate release notes claim safety', () => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  function runReleaseStopGate(extraArgs: string[]) {
-    return spawnSync(
-      process.execPath,
-      [releaseStopGateScriptPath, '--skip-contract-checks', '--skip-kpi', ...extraArgs],
-      {
-        cwd: repoRoot,
-        encoding: 'utf-8',
-        env: releaseStopGateEnv(),
-      }
-    );
-  }
-
   it('passes enforce-claim-safety when release notes avoid high-risk over-claims', () => {
     const releaseNotesPath = path.join(tempRoot, 'release-notes-safe.md');
     fs.writeFileSync(
@@ -381,15 +365,9 @@ describe('release-stop-gate release notes claim safety', () => {
       ].join('\n')
     );
 
-    const result = runReleaseStopGate([
-      '--release-notes',
-      releaseNotesPath,
-      '--enforce-claim-safety',
-    ]);
+    const result = buildReleaseClaimSafetyStatus(releaseNotesPath);
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain('Release notes claim-safety result');
-    expect(result.stdout).toContain('"ok": true');
+    expect(result.ok).toBe(true);
   });
 
   it('blocks enforce-claim-safety when release notes imply autonomous code mutation', () => {
@@ -404,15 +382,12 @@ describe('release-stop-gate release notes claim safety', () => {
       ].join('\n')
     );
 
-    const result = runReleaseStopGate([
-      '--release-notes',
-      releaseNotesPath,
-      '--enforce-claim-safety',
-    ]);
+    const result = buildReleaseClaimSafetyStatus(releaseNotesPath);
 
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain('Release notes claim-safety result');
-    expect(result.stdout).toContain('autonomous_mutation_claim');
-    expect(result.stderr).toContain('Release blocked: Release notes claim-safety failed');
+    expect(result.ok).toBe(false);
+    expect(result.findings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ ruleId: 'autonomous_mutation_claim' })])
+    );
+    expect(result.message).toContain('Release notes claim-safety failed');
   });
 });

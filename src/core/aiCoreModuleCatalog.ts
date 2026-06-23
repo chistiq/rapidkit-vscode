@@ -2,16 +2,12 @@
  * Canonical Workspai module architecture contract for AI grounding.
  *
  * Distilled once from the RapidKit platform spec (kit-registry + module catalog design).
- * NOT read from the user's filesystem, NOT from a developer checkout of rapidkit-core,
- * and NOT a dump of the full module registry — only the patterns the model must follow
- * when the active project uses a module-capable kit.
+ * Module-capable kits are pinned in contracts/module-support.v1.json.
  */
 
-export const MODULE_CAPABLE_KIT_IDS = [
-  'fastapi.standard',
-  'fastapi.ddd',
-  'nestjs.standard',
-] as const;
+import { MODULE_CAPABLE_KIT_IDS } from './moduleSupportContract';
+
+export { MODULE_CAPABLE_KIT_IDS };
 
 export type ModuleCapableKitId = (typeof MODULE_CAPABLE_KIT_IDS)[number];
 
@@ -137,7 +133,9 @@ export function buildCatalogModuleArchitectureContract(
   ];
 
   const kitBlock =
-    kitId === 'nestjs.standard' ? buildNestJsModuleContract() : buildFastApiModuleContract(kitId);
+    kitId === 'nestjs.standard'
+      ? buildNestJsModuleContract()
+      : buildFastApiModuleContract(kitId as 'fastapi.standard' | 'fastapi.ddd');
 
   const lines = [...shared, '', kitBlock];
 

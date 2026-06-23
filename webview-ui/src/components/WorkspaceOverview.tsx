@@ -1,153 +1,117 @@
+import { AlertCircle, ClipboardCheck, Shield } from 'lucide-react';
 import {
-  Activity,
-  Boxes,
-  CheckCircle2,
-  Download,
-  GitBranch,
-  Layers,
-  Loader2,
-  Package,
-  Rocket,
-  Shield,
-  Sparkles,
-} from 'lucide-react';
-import type { ModuleData, WorkspaceStatus } from '@/types';
+  formatHomeEvidenceDetail,
+  formatHomeGovernanceDetail,
+  homeEvidenceMetricValue,
+  homeGovernanceMetricValue,
+  type DashboardEvidencePayload,
+} from '@/lib/dashboardEvidence';
+import type { WorkspaceStatus } from '@/types';
 
 interface WorkspaceOverviewProps {
-  workspaceName?: string;
-  workspaceProfile?: string;
   workspaceStatus: WorkspaceStatus;
-  moduleCount: number;
-  templateCount: number;
-  recentWorkspaceCount: number;
-  modules: ModuleData[];
-  isCreatingWorkspace?: boolean;
-  onCreateWorkspace: () => void;
-  onImportWorkspace: () => void;
-}
-
-function formatValue(value: string | number | undefined | null, fallback = 'Not selected') {
-  if (value === undefined || value === null || value === '') {
-    return fallback;
-  }
-  return String(value);
+  evidence?: DashboardEvidencePayload | null;
+  evidenceAttentionCount?: number;
+  operateAttentionCount?: number;
+  onOpenEvidence?: () => void;
+  onOpenRunGovernance?: () => void;
 }
 
 export function WorkspaceOverview({
-  workspaceName,
-  workspaceProfile,
   workspaceStatus,
-  moduleCount,
-  templateCount,
-  recentWorkspaceCount,
-  modules,
-  isCreatingWorkspace = false,
-  onCreateWorkspace,
-  onImportWorkspace,
+  evidence = null,
+  evidenceAttentionCount = 0,
+  operateAttentionCount = 0,
+  onOpenEvidence,
+  onOpenRunGovernance,
 }: WorkspaceOverviewProps) {
-  const installedCount = workspaceStatus.installedModules?.length ?? 0;
-  const stableModuleCount = modules.filter((module) => module.status !== 'experimental').length;
   const hasWorkspace = Boolean(workspaceStatus.hasWorkspace && workspaceStatus.workspacePath);
-  const hasProject = Boolean(workspaceStatus.hasProjectSelected && workspaceStatus.projectPath);
+
+  const evidenceValue = homeEvidenceMetricValue(evidence, evidenceAttentionCount);
+  const governanceValue = homeGovernanceMetricValue(evidence, operateAttentionCount, hasWorkspace);
+  const ttfvLabel = evidence?.onboarding?.ttfvLabel ?? null;
 
   const metrics = [
     {
-      label: 'Workspace',
-      value: hasWorkspace ? formatValue(workspaceName) : 'Not selected',
-      detail: workspaceProfile || 'profile pending',
-      icon: Activity,
-      state: hasWorkspace ? 'ready' : 'idle',
-    },
-    {
-      label: 'Project scope',
-      value: hasProject ? formatValue(workspaceStatus.projectName, 'Selected') : 'No project',
-      detail: workspaceStatus.projectType || 'select from sidebar',
-      icon: GitBranch,
-      state: hasProject ? 'ready' : 'idle',
-    },
-    {
-      label: 'Modules',
-      value: `${installedCount}/${moduleCount}`,
-      detail: `${stableModuleCount} production-ready`,
-      icon: Package,
-      state: installedCount > 0 ? 'ready' : 'idle',
-    },
-    {
-      label: 'Catalog',
-      value: `${templateCount} templates`,
-      detail: `${recentWorkspaceCount} recent workspaces`,
-      icon: Boxes,
-      state: templateCount > 0 ? 'ready' : 'idle',
+      label: 'Workspace repair',
+      value: evidenceValue,
+      detail: formatHomeEvidenceDetail(evidence),
+      icon: ClipboardCheck,
+      state:
+        evidenceAttentionCount > 0
+          ? 'attention'
+          : evidenceValue === 'Healthy'
+            ? 'ready'
+            : hasWorkspace
+              ? 'idle'
+              : 'idle',
+      onClick: onOpenEvidence,
     },
     {
       label: 'Governance',
-      value: hasWorkspace ? 'Available' : 'Locked',
-      detail: 'doctor, graph, archive, release',
-      icon: Shield,
-      state: hasWorkspace ? 'ready' : 'idle',
+      value: governanceValue,
+      detail: formatHomeGovernanceDetail(evidence),
+      icon: operateAttentionCount > 0 ? AlertCircle : Shield,
+      state: operateAttentionCount > 0 ? 'attention' : hasWorkspace ? 'ready' : 'idle',
+      onClick: onOpenRunGovernance,
     },
   ];
 
   return (
-    <section className="ws-overview-shell workspace-overview" aria-label="Workspace overview">
+    <section className="ws-overview-shell workspace-overview" aria-label="Home health and status">
       <div className="workspace-overview-title">
         <div className="workspace-overview-heading">
-          <CheckCircle2 size={14} />
-          <span>Workspace Operations Console</span>
+          <Shield size={14} />
+          <span>Workspace command summary</span>
           <small>
-            {hasWorkspace ? 'Ready for governed operations' : 'Choose a workspace to begin'}
+            {hasWorkspace
+              ? 'Workspace-first signals with project attribution when needed'
+              : 'Open a workspace to unlock governed operations'}
           </small>
-        </div>
-        <div className="workspace-overview-actions">
-          <button
-            type="button"
-            className="ws-btn ws-btn--primary workspace-overview-actions__create-ai"
-            onClick={isCreatingWorkspace ? undefined : onCreateWorkspace}
-            aria-busy={isCreatingWorkspace}
-            title="Plan and create a new workspace with AI guidance"
-          >
-            {isCreatingWorkspace ? (
-              <Loader2 className="spinning" size={14} aria-hidden="true" />
-            ) : (
-              <Sparkles size={14} aria-hidden="true" />
-            )}
-            Create with AI
-          </button>
-          <button
-            type="button"
-            className="ws-btn ws-btn--ghost workspace-overview-actions__import"
-            onClick={onImportWorkspace}
-            title="Import an existing workspace"
-          >
-            <Download size={14} aria-hidden="true" />
-            Import
-          </button>
+          {ttfvLabel ? (
+            <small className="workspace-overview-ttfv" aria-label="Time to first value">
+              Time to first value: {ttfvLabel}
+            </small>
+          ) : null}
         </div>
       </div>
-      <div className="workspace-overview-grid">
+
+      <div className="workspace-overview-grid" data-metric-count={metrics.length}>
         {metrics.map((metric) => {
           const Icon = metric.icon;
-          return (
-            <div
-              key={metric.label}
-              className={`ws-metric workspace-metric workspace-metric--${metric.state}`}
-            >
+          const interactive = Boolean(metric.onClick);
+          const className = `ws-metric workspace-metric workspace-metric--${metric.state}${interactive ? ' workspace-metric--interactive' : ''}`;
+          const content = (
+            <>
               <Icon size={15} />
               <span>
                 <small>{metric.label}</small>
                 <strong>{metric.value}</strong>
                 <em>{metric.detail}</em>
               </span>
+            </>
+          );
+
+          if (interactive) {
+            return (
+              <button
+                key={metric.label}
+                type="button"
+                className={className}
+                onClick={metric.onClick}
+                title={`Open ${metric.label}`}
+              >
+                {content}
+              </button>
+            );
+          }
+
+          return (
+            <div key={metric.label} className={className}>
+              {content}
             </div>
           );
         })}
-      </div>
-      <div className="workspace-overview-note">
-        <Layers size={13} />
-        <span>
-          Primary flow: select workspace, validate health, inspect contract graph, run tests, share
-          archive, then release.
-        </span>
       </div>
     </section>
   );

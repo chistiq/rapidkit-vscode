@@ -7,13 +7,16 @@ import * as vscode from 'vscode';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import { WorkspaiProject, WorkspaiWorkspace } from '../../types';
-import { runningServers } from '../../extension';
+import { runningServers } from '../../core/runningServers';
+import { clearProjectCapabilityContext } from '../../core/projectCapabilityContext';
 import { detectProjectStackFromSignals } from '../../commands/importProjectUtils';
 import {
   readImportedProjectsRegistry,
   resolveImportedProjectPath,
   type ImportedProjectRegistryEntry,
 } from '../../utils/importedProjectsRegistry';
+
+const TREE_REFRESH_DEBOUNCE_MS = 48;
 
 // Store extension path for icons
 let extensionPath: string = '';
@@ -160,6 +163,40 @@ function stackFromKitName(kitName?: string): WorkspaiProject['type'] {
 
   const normalized = kitName.toLowerCase();
 
+  if (normalized === 'frontend.nextjs') {
+    return 'nextjs';
+  }
+  if (normalized === 'frontend.remix') {
+    return 'remix';
+  }
+  if (normalized === 'frontend.vite-react') {
+    return 'react';
+  }
+  if (normalized === 'frontend.vite-vue') {
+    return 'vue';
+  }
+  if (normalized === 'frontend.vite-svelte') {
+    return 'svelte';
+  }
+  if (normalized === 'frontend.vite-solid') {
+    return 'solid';
+  }
+  if (normalized === 'frontend.vite-vanilla') {
+    return 'vite';
+  }
+  if (normalized === 'frontend.nuxt') {
+    return 'nuxt';
+  }
+  if (normalized === 'frontend.angular') {
+    return 'angular';
+  }
+  if (normalized === 'frontend.astro') {
+    return 'astro';
+  }
+  if (normalized === 'frontend.sveltekit') {
+    return 'sveltekit';
+  }
+
   if (normalized.startsWith('adopted.nextjs') || normalized.startsWith('nextjs.')) {
     return 'nextjs';
   }
@@ -253,6 +290,28 @@ function frameworkIconFileName(type: WorkspaiProject['type']): string | undefine
       return 'go.svg';
     case 'dotnet':
       return 'dotnet.svg';
+    case 'nextjs':
+      return 'nextjs.svg';
+    case 'nuxt':
+      return 'nuxt.svg';
+    case 'remix':
+      return 'remix.svg';
+    case 'angular':
+      return 'angular.svg';
+    case 'astro':
+      return 'astro.svg';
+    case 'sveltekit':
+      return 'sveltekit.svg';
+    case 'react':
+      return 'vite-react.svg';
+    case 'vite':
+      return 'vite-vanilla.svg';
+    case 'vue':
+      return 'vite-vue.svg';
+    case 'svelte':
+      return 'vite-svelte.svg';
+    case 'solid':
+      return 'vite-solid.svg';
     default:
       return undefined;
   }
@@ -269,6 +328,8 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
   private selectedProject: WorkspaiProject | null = null;
   private _projectsLoaded = false;
   private _projectsLoadInProgress = false;
+  private _projectListSignature = '';
+  private _treeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     // NOTE: 'workspai.workspaceSelected' is registered once in extension.ts
@@ -283,14 +344,40 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
   refresh(): void {
     // Clear cached project list so next render triggers a fresh background load
     this._projectsLoaded = false;
-    this._onDidChangeTreeData.fire();
+    this._projectListSignature = '';
+    this._scheduleTreeRefresh();
+  }
+
+  private _scheduleTreeRefresh(): void {
+    if (this._treeRefreshTimer) {
+      clearTimeout(this._treeRefreshTimer);
+    }
+
+    this._treeRefreshTimer = setTimeout(() => {
+      this._treeRefreshTimer = null;
+      this._onDidChangeTreeData.fire();
+    }, TREE_REFRESH_DEBOUNCE_MS);
+  }
+
+  private _projectPathsSignature(projects: WorkspaiProject[]): string {
+    return projects
+      .map((project) => project.path)
+      .sort()
+      .join('|');
   }
 
   setWorkspace(workspace: WorkspaiWorkspace | null): void {
+    const nextPath = workspace?.path ?? null;
+    const currentPath = this.selectedWorkspace?.path ?? null;
+    if (nextPath === currentPath) {
+      return;
+    }
+
     this.selectedWorkspace = workspace;
 
     // Reset project cache so next render triggers a fresh load for the new workspace
     this._projectsLoaded = false;
+    this._projectListSignature = '';
     this.projects = [];
 
     // Clear selected project when workspace changes
@@ -317,10 +404,19 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
   }
 
   setSelectedProject(project: WorkspaiProject | null): void {
+    const nextPath = project?.path ?? null;
+    const currentPath = this.selectedProject?.path ?? null;
+    if (nextPath === currentPath) {
+      return;
+    }
+
     this.selectedProject = project;
     // Update context for UI elements that depend on selection
     vscode.commands.executeCommand('setContext', 'workspai:projectSelected', project !== null);
-    this._onDidChangeTreeData.fire();
+    if (!project) {
+      void clearProjectCapabilityContext();
+    }
+    this._scheduleTreeRefresh();
   }
 
   getSelectedProject(): WorkspaiProject | null {
@@ -433,7 +529,11 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
         this._projectsLoaded = true;
         this._projectsLoadInProgress = false;
         await this.updateProjectsContext();
-        this._onDidChangeTreeData.fire();
+        const signature = this._projectPathsSignature(this.projects);
+        if (signature !== this._projectListSignature) {
+          this._projectListSignature = signature;
+          this._scheduleTreeRefresh();
+        }
       })
       .catch(() => {
         this._projectsLoadInProgress = false;

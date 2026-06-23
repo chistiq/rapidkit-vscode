@@ -45,7 +45,7 @@ async function main() {
   const ctx = await esbuild.context({
     entryPoints: {
       webview: 'src/index.tsx',
-      'incident-studio-next': 'src/incidentStudioNext.tsx',
+      sidebar: 'src/sidebar/index.tsx',
     },
     bundle: true,
     format: 'iife',
@@ -60,6 +60,7 @@ async function main() {
     // Path aliases
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@workspai-contracts': path.resolve(__dirname, '../src/contracts'),
     },
     
     // JSX configuration for React

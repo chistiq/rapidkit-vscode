@@ -41,6 +41,10 @@ vi.mock('../utils/poetryHelper', () => ({
   detectPythonVirtualenv: vi.fn().mockResolvedValue({ exists: true }),
 }));
 
+vi.mock('../core/projectLifecycleGate', () => ({
+  gateProjectLifecycleCommand: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock('../ui/panels/welcomePanel', () => ({
   WelcomePanel: { currentPanel: undefined, updateWithProject: vi.fn() },
 }));

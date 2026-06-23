@@ -11,7 +11,7 @@ export function Header({ version: _version, variant = 'default' }: HeaderProps) 
         <h1>
           <span className="rapid">workspai</span>
         </h1>
-        <p className="tagline">AI workspace command center for backend teams.</p>
+        <p className="tagline">Workspace Intelligence for software systems.</p>
       </div>
       {/* <span className="version">v{version}</span> */}
     </div>

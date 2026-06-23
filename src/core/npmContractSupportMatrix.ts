@@ -1,0 +1,166 @@
+export type NpmContractSupportMode =
+  | 'runtime-consumed'
+  | 'evidence-consumed'
+  | 'schema-guarded'
+  | 'mirrored-reserved';
+
+export type NpmContractSupportEntry = {
+  contractPath: string;
+  mode: NpmContractSupportMode;
+  extensionSurface: string;
+  usage: string;
+};
+
+export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
+  {
+    contractPath: 'extension-cli-compatibility.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'CLI version gate and contract compatibility floor',
+    usage:
+      'Pins MIN_RAPIDKIT_CLI_VERSION to the npm release this extension was verified against; includes bundled contract schema versions.',
+  },
+  {
+    contractPath: 'agent-customization-pack.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Agent Customization Pack card, walkthrough agent-sync step, Copilot handoff',
+    usage:
+      'Reads agent-customization-pack.json for preset/target inventory, drift state, hooks/MCP metadata, and dispatches enterprise agent-sync CLI args.',
+  },
+  {
+    contractPath: 'analyze-last-run.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Dashboard evidence, Studio handoff, AI architecture grounding',
+    usage: 'Reads analyze-last-run.json blockers, score, warnings, and artifact paths.',
+  },
+  {
+    contractPath: 'backend-import-stack-parity.snapshot.json',
+    mode: 'schema-guarded',
+    extensionSurface: 'Runtime parity and import-stack guardrails',
+    usage: 'Guards supported backend import stacks against npm canonical parity.',
+  },
+  {
+    contractPath: 'cli-log-event.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Terminal/evidence telemetry compatibility',
+    usage:
+      'Evidence terminals request RAPIDKIT_LOG_FORMAT=json and validate CLI log events for evidence refresh routing.',
+  },
+  {
+    contractPath: 'create-planner-capabilities.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Create with AI and manual create',
+    usage: 'Drives native create, external create-adopt, and adopt-only capability decisions.',
+  },
+  {
+    contractPath: 'doctor-project-evidence.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Project health evidence and Project lifecycle',
+    usage: 'Reads project doctor evidence for blockers, warnings, health, and capability status.',
+  },
+  {
+    contractPath: 'doctor-workspace-evidence.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Workspace health evidence and repair flow',
+    usage: 'Reads workspace doctor evidence for primary blockers and next safe actions.',
+  },
+  {
+    contractPath: 'infra-stack.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Dashboard evidence and Studio operations',
+    usage: 'Frames infra readiness, service presence, and infra blockers when reports exist.',
+  },
+  {
+    contractPath: 'module-layout.v1.json',
+    mode: 'schema-guarded',
+    extensionSurface: 'Module browser and module support guardrails',
+    usage: 'Keeps module layout assumptions aligned with npm module scaffolding.',
+  },
+  {
+    contractPath: 'module-support.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Library and Project lifecycle',
+    usage:
+      'Controls module-capable kits, unsupported frameworks, install readiness, and disabled reasons.',
+  },
+  {
+    contractPath: 'pipeline-last-run.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Governance pipeline evidence and repair flow',
+    usage: 'Reads pipeline pass/fail/warn evidence and routes blockers to deterministic commands.',
+  },
+  {
+    contractPath: 'release-readiness.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Readiness evidence, Studio release action, and src contract mirror',
+    usage: 'Guards release readiness outcomes and Go/No-Go evidence paths.',
+  },
+  {
+    contractPath: 'runtime-command-surface.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Commands, kit choices, lifecycle actions, and create planner parity',
+    usage:
+      'Pins scaffold kits, lifecycle command support, module support, and create planner capability lanes.',
+  },
+  {
+    contractPath: 'workspace-intelligence/workspace-context.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Agent context, Copilot handoff, Workspace Advisor, Studio',
+    usage: 'Reads workspace-context-agent.json as shared agent context and safe command evidence.',
+  },
+  {
+    contractPath: 'workspace-intelligence/workspace-dependency-graph.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Workspace atlas graph view, Advisor, Studio blast-radius',
+    usage:
+      'Reads the dependency graph embedded in workspace-model.json (nodes, typed edges, integrity) for blast-radius and impact navigation.',
+  },
+  {
+    contractPath: 'workspace-intelligence/workspace-impact.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Workspace Advisor, Studio, impact verification',
+    usage: 'Reads workspace-impact-last-run.json for affected projects, risk, and verify path.',
+  },
+  {
+    contractPath: 'workspace-intelligence/workspace-model-diff.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Workspace diff evidence and impact chain',
+    usage: 'Reads workspace-model-diff-last-run.json as the source for impact analysis.',
+  },
+  {
+    contractPath: 'workspace-intelligence/workspace-model-snapshot.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Workspace model baseline and diff chain',
+    usage: 'Reads workspace-model-snapshot.json as the stable baseline for workspace diff.',
+  },
+  {
+    contractPath: 'workspace-intelligence/workspace-model.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Workspace atlas, Advisor, Studio, Copilot context',
+    usage: 'Reads workspace-model.json as the canonical workspace architecture atlas.',
+  },
+  {
+    contractPath: 'workspace-intelligence/workspace-verify.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Workspace verify evidence and repair verification',
+    usage: 'Reads workspace-verify-last-run.json to verify impact and gate results.',
+  },
+  {
+    contractPath: 'workspace-registry.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Workspace/project sidebar scope and src contract mirror',
+    usage:
+      'Reads workspace-registry.v1.json for project discovery, scope summary, and sidebar state.',
+  },
+  {
+    contractPath: 'workspace-run-last.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Run workspace evidence and repair flow',
+    usage: 'Reads workspace-run-last.json aggregate stage evidence for init/test/build blockers.',
+  },
+];
+
+export function getNpmContractSupportEntry(
+  contractPath: string
+): NpmContractSupportEntry | undefined {
+  return NPM_CONTRACT_SUPPORT_MATRIX.find((entry) => entry.contractPath === contractPath);
+}

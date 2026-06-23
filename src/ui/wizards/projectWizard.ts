@@ -5,11 +5,13 @@
 
 import * as vscode from 'vscode';
 import { ProjectConfig } from '../../types';
+import type { ScaffoldFramework } from '../../core/scaffoldKits';
+import { FRONTEND_SCAFFOLD_KITS } from '../../core/scaffoldKits';
 import { KitsService } from '../../core/kitsService';
 
 export class ProjectWizard {
   async show(
-    preselectedFramework?: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet',
+    preselectedFramework?: ScaffoldFramework,
     prefilledName?: string,
     preselectedKit?: string
   ): Promise<ProjectConfig | undefined> {
@@ -46,7 +48,7 @@ export class ProjectWizard {
     }
 
     // Step 2: Choose framework (skip if preselected)
-    let framework: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
+    let framework: ScaffoldFramework;
 
     if (preselectedFramework) {
       framework = preselectedFramework;
@@ -82,6 +84,12 @@ export class ProjectWizard {
           detail: 'Clean architecture Web API service',
           framework: 'dotnet' as const,
         },
+        ...FRONTEND_SCAFFOLD_KITS.map((definition) => ({
+          label: `$(browser) ${definition.displayName}`,
+          description: 'Official frontend generator',
+          detail: definition.description,
+          framework: definition.framework,
+        })),
       ];
 
       const selectedFramework = await vscode.window.showQuickPick(frameworkItems, {

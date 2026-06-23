@@ -22,6 +22,13 @@ vi.mock('vscode', () => ({
 
 import { WorkspaceUsageTracker } from '../utils/workspaceUsageTracker';
 import { readWorkspaceMarker } from '../utils/workspaceMarker';
+import { SIDEBAR_ACTION_SURFACE } from '../contracts/sidebarActionSurface';
+
+const repoRoot = path.resolve(__dirname, '..', '..');
+
+function read(relativePath: string): string {
+  return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
+}
 
 function createWorkspaceMarker(
   workspacePath: string,
@@ -1632,6 +1639,73 @@ describe('workspaceUsageTracker telemetry stability', () => {
     // Should not crash stabilization KPI when event not in its direct loop
     const stabilization = await tracker.getStudioStabilizationKpiStatus(workspacePath, 'all', {});
     expect(stabilization).not.toBeNull();
+  });
+
+  it('sidebar action events follow the sidebar action surface tracking contract', async () => {
+    const workspacePath = path.join(tempRoot, 'ws-sidebar-actions');
+    createWorkspaceMarker(workspacePath);
+
+    const tracker = WorkspaceUsageTracker.getInstance();
+    const trackedSidebarActions = Object.values(SIDEBAR_ACTION_SURFACE).filter(
+      (action) => action.trackActivity
+    );
+    const untrackedSidebarActions = Object.values(SIDEBAR_ACTION_SURFACE).filter(
+      (action) => !action.trackActivity
+    );
+
+    for (const action of trackedSidebarActions) {
+      await tracker.trackCommandEvent(`workspai.sidebar.${action.id}`, workspacePath, {
+        surface: 'sidebar-actions-webview',
+        actionId: action.id,
+        scope: action.scope,
+        handler: action.handler,
+      });
+    }
+    for (const action of untrackedSidebarActions) {
+      await tracker.trackCommandEvent(`workspai.sidebar.${action.id}`, workspacePath, {
+        surface: 'sidebar-actions-webview',
+        actionId: action.id,
+        scope: action.scope,
+        handler: action.handler,
+      });
+    }
+
+    const summary = await tracker.getCommandTelemetrySummary(workspacePath, 'all');
+    expect(summary?.surfaceBreakdown.actionEvents).toBe(trackedSidebarActions.length);
+    expect(summary?.surfaceBreakdown.askEvents).toBe(0);
+    expect(summary?.surfaceBreakdown.bySurface.find((entry) => entry.surface === 'action')).toEqual(
+      {
+        surface: 'action',
+        count: trackedSidebarActions.length,
+        share: Number(
+          (
+            (trackedSidebarActions.length / Object.keys(SIDEBAR_ACTION_SURFACE).length) *
+            100
+          ).toFixed(2)
+        ),
+      }
+    );
+    expect(summary?.surfaceBreakdown.bySurface.find((entry) => entry.surface === 'other')).toEqual({
+      surface: 'other',
+      count: untrackedSidebarActions.length,
+      share: Number(
+        (
+          (untrackedSidebarActions.length / Object.keys(SIDEBAR_ACTION_SURFACE).length) *
+          100
+        ).toFixed(2)
+      ),
+    });
+  });
+
+  it('classifies sidebar telemetry from the sidebar action contract instead of a manual regex', () => {
+    const source = read('src/utils/workspaceUsageTracker.ts');
+
+    expect(source).toContain(
+      "import { SIDEBAR_ACTION_SURFACE } from '../contracts/sidebarActionSurface'"
+    );
+    expect(source).toContain('private isTrackedSidebarTelemetryCommand');
+    expect(source).toContain('action?.trackActivity === true');
+    expect(source).not.toContain('^workspai\\.sidebar\\.');
   });
 
   it('verifiedOutcomeLoopStatus computes loopStarted and verifiedOutcomeRate from ctaVariantBreakdown', async () => {

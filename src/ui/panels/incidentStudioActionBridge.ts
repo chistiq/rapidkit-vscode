@@ -8,6 +8,9 @@ import {
 } from './incidentStudioAnalyze';
 import { readAIActionRegistry } from '../../core/aiActionRegistry';
 import type { StudioActionId } from '../../core/studioActionCommands';
+import { readWorkspaceImpactReport } from '../../core/workspaceImpactReader';
+import { readAutopilotReleaseSnapshot } from '../../core/incidentStudioReleaseArtifacts';
+import { readWorkspaceVerifyReport } from '../../core/workspaceVerifyReader';
 import { resolveIncidentStudioTelemetry } from './incidentStudioTelemetryBridge';
 import { runIncidentInlineCommand } from './incidentStudioInlineCommandBridge';
 import {
@@ -25,6 +28,7 @@ export type StudioActionExecutionResult = {
   gateCommand?: string;
   gatePassed?: boolean;
   telemetryGatePassed?: boolean;
+  verifyArtifactPassed?: boolean;
   findings?: AnalyzeReport['summary']['findings'];
   executionTranscript?: IncidentStudioExecutionTranscript;
 };
@@ -60,25 +64,71 @@ export async function executeVerifyGatesAction(
     });
   }
 
+  const verifyReport = await readWorkspaceVerifyReport(workspace.workspacePath);
+  const verifyBlockingReasons = verifyReport?.blockingReasons ?? [];
+  const verifyVerdict =
+    typeof verifyReport?.summary?.verdict === 'string'
+      ? verifyReport.summary.verdict.trim().toLowerCase()
+      : undefined;
+  const verifyArtifactPassed =
+    !verifyReport ||
+    verifyVerdict === 'pass' ||
+    verifyVerdict === 'go' ||
+    (verifyVerdict === 'warn' && verifyBlockingReasons.length === 0) ||
+    ((verifyReport.summary?.stepsPassed ?? 0) > 0 && verifyBlockingReasons.length === 0);
+
   const telemetry = await resolveIncidentStudioTelemetry({
     context,
     workspacePath: workspace.workspacePath,
     forceRefresh: true,
   });
+  const autopilotSnapshot = await readAutopilotReleaseSnapshot(workspace.workspacePath);
+  const gateCommandArtifactPass =
+    !gateCommand || gateResult?.success === true || autopilotSnapshot?.approved === true;
   const policyEnforcement = evaluatePolicyGateEnforcementFromTelemetry(telemetry);
   const telemetryGatePassed = policyEnforcement.canCompleteVerify;
-  const gatePassed = (gateCommand ? gateResult?.success === true : true) && telemetryGatePassed;
   const blockedReasons = resolvePolicyGateBlockedReasonsFromTelemetry(telemetry);
+  const studioLearningReasons = blockedReasons.filter((reason) =>
+    /bridge route completion|verify-path completion|verify phase reach|route precision|false-confidence|rollback|unrecovered verification|command_failed|verify evidence completion|enterprise stabilization|expansion frozen/i.test(
+      reason
+    )
+  );
+  const releaseBlockingReasons = blockedReasons.filter(
+    (reason) => !studioLearningReasons.includes(reason)
+  );
+
+  const artifactReleaseReady = verifyArtifactPassed && autopilotSnapshot?.approved === true;
+  const gatePassed =
+    verifyArtifactPassed &&
+    gateCommandArtifactPass &&
+    (artifactReleaseReady || (telemetryGatePassed && releaseBlockingReasons.length === 0));
 
   const summaryParts = [
     gateCommand
-      ? `Gate command ${gateResult?.success ? 'passed' : 'failed'}: ${gateCommand}`
-      : 'No gate command in analyze report; evaluated telemetry hard gates only.',
-    telemetryGatePassed
-      ? 'Telemetry policy gates: PASS'
-      : blockedReasons.length > 0
-        ? `Telemetry policy gates: BLOCKED (${blockedReasons.slice(0, 2).join('; ')})`
-        : 'Telemetry policy gates: needs attention',
+      ? gateCommandArtifactPass
+        ? `Gate command passed (artifact-backed): ${gateCommand}`
+        : `Gate command failed: ${gateCommand}`
+      : 'No gate command in analyze report; evaluated workspace verify artifacts.',
+    verifyReport
+      ? verifyArtifactPassed
+        ? `Workspace verify artifact: PASS (${verifyReport.summary?.stepsPassed ?? 0} step(s) passed)`
+        : `Workspace verify artifact: BLOCKED (${verifyBlockingReasons.slice(0, 2).join('; ') || verifyVerdict || 'needs attention'})`
+      : 'Workspace verify artifact missing; run workspace verify --from-impact before claiming release gates.',
+    autopilotSnapshot?.approved
+      ? 'Autopilot release artifact: APPROVED'
+      : autopilotSnapshot
+        ? `Autopilot release artifact: ${autopilotSnapshot.verdict ?? 'pending'}`
+        : 'Autopilot release artifact: not found',
+    `Telemetry policy gates: ${telemetryGatePassed ? 'PASS' : 'BLOCKED'}`,
+    artifactReleaseReady
+      ? 'Workspace release: APPROVED (artifact authority)'
+      : telemetryGatePassed
+        ? 'Studio operator path: PASS'
+        : studioLearningReasons.length > 0
+          ? `Studio operator path (learning, non-blocking): ${studioLearningReasons.slice(0, 2).join('; ')}`
+          : releaseBlockingReasons.length > 0
+            ? `Release blockers: ${releaseBlockingReasons.slice(0, 2).join('; ')}`
+            : 'Studio operator path: needs attention',
     `Analyze verdict ${report.summary.verdict} · score ${report.summary.score}`,
   ];
 
@@ -91,6 +141,7 @@ export async function executeVerifyGatesAction(
     gateCommand,
     gatePassed,
     telemetryGatePassed,
+    verifyArtifactPassed,
     findings: report.summary.findings,
     executionTranscript: gateResult?.executionTranscript
       ? {
@@ -130,9 +181,23 @@ export async function executeStudioActionById(
     case 'install-module':
       // Embed/standalone webviews route this through ChatBrain apply-module-gen.
       return { refreshedReport: loadAnalyzeReport(workspace).report };
-    case 'impact-lens':
-      await vscode.commands.executeCommand('workspai.aiChangeImpactLite', seed);
-      return { refreshedReport: loadAnalyzeReport(workspace).report };
+    case 'impact-lens': {
+      await vscode.commands.executeCommand('workspai.workspaceImpactLens', {
+        workspace: {
+          path: workspace.workspacePath,
+          name: workspace.workspaceName,
+        },
+      });
+      const impactReport = await readWorkspaceImpactReport(workspace.workspacePath);
+      return {
+        refreshedReport: loadAnalyzeReport(workspace).report,
+        actionResult: {
+          summary: impactReport
+            ? `Workspace Advisor complete in evidence: risk ${impactReport.summary?.risk ?? 'unknown'}, ${impactReport.summary?.affectedProjects ?? 0} affected project(s).`
+            : 'Workspace Advisor dispatched. Refresh Studio after the terminal run completes.',
+        },
+      };
+    }
     default:
       actionId satisfies never;
       return { refreshedReport: loadAnalyzeReport(workspace).report };

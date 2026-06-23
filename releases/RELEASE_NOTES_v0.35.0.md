@@ -17,8 +17,10 @@ This note covers **nine local commits** ahead of `origin/main` plus the in-progr
 - **Command → Evidence → Next Step** closed loop with host-side bridges:
   - `dashboardActivityBridge`, `dashboardEvidenceBridge`, `dashboardOpsChainBridge`, `dashboardReportRegistry`
   - Contract-aware dispatch via `dashboardCommandContracts` and webview `dashboardCommandRegistry`
-- **Dashboard sections** (Overview, Operate, Evidence, Workspaces, Console) with `DashboardSubNav`, pending-command reconciliation, and project-scoped payload guards.
+- **Dashboard sections** (Home, Evidence, Run, Project, Library) with sticky context bar, Run sub-navigation (Primary · Build · Share · Intelligence · Governance · CLI), pending-command reconciliation, and project-scoped payload guards. Legacy `Workspaces` tab merged into Library; Studio handoff strip links back to Command Center sections.
 - **Evidence UX**: `CommandActivityPanel`, `EvidenceOutcomePanel`, `ReleaseHub`, `DashboardEvidenceSection`, `DashboardNextStepRail`, sparse/missing evidence empty states.
+- **Enterprise-minimal evidence pass**: Guided mode now shows the brief and one current path only; attention inbox and full command history move to Workflows/All; view labels are compact (`Guided / Workflows / All`).
+- **Workspai sidebar**: Workspai now contributes a standard VS Code Secondary Sidebar tab, with the Activity Bar view still available as fallback. The sidebar starts with `Create with AI / Workspace Advisor / Studio`; Create with AI includes a live vertical creation timeline before workspace/project handoff.
 - **Governance onboarding**: `FreshInstallOnboarding`, `OpsChainBanner`, automatic ops chain (`bootstrap → doctor → analyze`) after create / clone / import / add workspace.
 - **Operate surface**: `EnterpriseDashboardFlow`, `WorkspaceGovernancePanel`, `ActionTile` / `SectionHeader` / `FrameworkIcon`, `CommandCheatsheet` (replaces removed `CommandReference`).
 - **Settings bridge**: `WorkspaiSettingsPanel` + `workspaiSettingsBridge` for embedded settings aligned with dashboard tokens.
@@ -36,6 +38,7 @@ This note covers **nine local commits** ahead of `origin/main` plus the in-progr
 - **CLI surface**: `incidentCliActionMatrix`, `CliSurfaceSection`, inline command bridge with pinned npm wrapper, doctor evidence bridge, repro pack and enterprise export bridges.
 - **Studio actions**: `studioActionCommands` registry (analyze, impact, fix, verify-gates, terminal-bridge) with audit trail and approval posture.
 - **Guided / lite / responsive polish** (Wave Y): denser guided conversation, action outcome essentials, enterprise empty states, collapsible sections, responsive studio chrome.
+- **Studio first-view simplification**: Command Ribbon is the default action entry point; sidebar Action Matrix, CLI, Capability Map, and Action Audit details stay collapsed until opened; audit inspector is selection-driven instead of auto-expanded; chat, context, and sidebar regions now read as a calmer panel workspace.
 
 ### Workspai design system migration
 
@@ -114,6 +117,7 @@ Five-phase stabilization applied before marketplace **`0.35.0`** publish:
 - **`dashboardEvidencePending`**: pending card IDs clear when evidence resolves or activity entries reach `completed` / `failed`.
 - Removed blind **15s** pending timeout; **`dashboardCommandFailed`** clears affected pending cards immediately.
 - **`shouldRefreshDashboardEvidenceAfterCommand`**: evidence refresh is opt-in via registry `refreshEvidence: true`.
+- **VSIX packaging**: prepublish now calls `webview:build:production`, keeping dev source maps out of the release artifact and fixing `vsce package` tree generation.
 
 #### Hardening test coverage
 
@@ -145,9 +149,10 @@ New or expanded suites include:
 - `workspaiSettingsBridge.test.ts`, `welcomePanelTelemetryWorkspace.test.ts`
 
 ```bash
-npm run compile
-npm run lint
-vitest run
+./node_modules/.bin/tsc --noEmit
+./node_modules/.bin/vitest run
+node scripts/release-stop-gate.mjs --skip-kpi
+env PATH=/tmp:$PATH ./node_modules/.bin/vsce package --no-dependencies --out /tmp/workspai-0.35.0.vsix
 ```
 
 Release posture: `enterprise-dashboard-studio-and-npm-governance-pipeline`

@@ -316,6 +316,41 @@ export type MultiFilePatchResult = {
 export type NormalizedIncidentActionResultPayload = {
   success: boolean;
   outputSummary?: string;
+  summary?: string;
+  proof?: {
+    schemaVersion: 'workspai.ai-action-proof-summary.v1';
+    evidenceRequired: boolean;
+    evidencePresent: boolean;
+    evidenceSha256Present: boolean;
+    transcriptRequired: boolean;
+    transcriptCommandCount: number;
+    failedCommandCount: number;
+    rollbackProofRequired: boolean;
+    rollbackPlanPresent: boolean;
+    complete: boolean;
+    issues: string[];
+  };
+  proofEvent?: {
+    schemaVersion: 'workspai.studio.proof-event.v1';
+    actionId: string;
+    actionTitle?: string;
+    status: 'started' | 'completed' | 'failed';
+    summary: string;
+    generatedAt: string;
+    evidencePath?: string | null;
+    evidenceSha256?: string | null;
+    commandCount?: number;
+    failedCommandCount?: number;
+    executionTranscriptId?: string;
+    durationMs?: number;
+    source?: 'studio-action' | 'ai-action' | 'ship-loop' | 'inline-command';
+  };
+  evidencePath?: string | null;
+  evidenceSha256?: string | null;
+  evidenceSizeBytes?: number | null;
+  commandCount?: number;
+  failedCommandCount?: number;
+  failedCommands?: string[];
   verificationRequired?: boolean;
   verifyPolicy?: IncidentVerifyPolicy;
   evidence?: IncidentActionEvidence;
@@ -329,7 +364,71 @@ export type NormalizedIncidentActionResultPayload = {
   contractRuntimeEvidence?: IncidentContractRuntimeEvidence;
   verifyCommandPack?: IncidentVerifyCommandPack;
   decisionClarity?: IncidentDecisionClarityContract;
+  phase?: IncidentPhase;
 };
+
+export type IncidentPhase = 'detect' | 'diagnose' | 'plan' | 'verify' | 'learn';
+
+function normalizeAIActionProofSummary(
+  value: unknown
+): NormalizedIncidentActionResultPayload['proof'] {
+  const record = asRecord(value);
+  const schemaVersion = cleanText(record.schemaVersion);
+  if (schemaVersion !== 'workspai.ai-action-proof-summary.v1') {
+    return undefined;
+  }
+
+  return {
+    schemaVersion: 'workspai.ai-action-proof-summary.v1',
+    evidenceRequired: asBoolean(record.evidenceRequired, true),
+    evidencePresent: asBoolean(record.evidencePresent, false),
+    evidenceSha256Present: asBoolean(record.evidenceSha256Present, false),
+    transcriptRequired: asBoolean(record.transcriptRequired, true),
+    transcriptCommandCount: Math.max(0, Math.floor(asNumber(record.transcriptCommandCount, 0))),
+    failedCommandCount: Math.max(0, Math.floor(asNumber(record.failedCommandCount, 0))),
+    rollbackProofRequired: asBoolean(record.rollbackProofRequired, false),
+    rollbackPlanPresent: asBoolean(record.rollbackPlanPresent, false),
+    complete: asBoolean(record.complete, false),
+    issues: sanitizeStringArray(record.issues, 240, 8),
+  };
+}
+
+function normalizeStudioProofEvent(
+  value: unknown
+): NormalizedIncidentActionResultPayload['proofEvent'] {
+  const record = asRecord(value);
+  const schemaVersion = cleanText(record.schemaVersion);
+  if (schemaVersion !== 'workspai.studio.proof-event.v1') {
+    return undefined;
+  }
+
+  const rawStatus = cleanText(record.status)?.toLowerCase();
+  const rawSource = cleanText(record.source)?.toLowerCase();
+  return {
+    schemaVersion: 'workspai.studio.proof-event.v1',
+    actionId: cleanText(record.actionId) || 'unknown-action',
+    actionTitle: sanitizeIncidentText(record.actionTitle, 120),
+    status:
+      rawStatus === 'started' || rawStatus === 'completed' || rawStatus === 'failed'
+        ? rawStatus
+        : 'failed',
+    summary: sanitizeIncidentText(record.summary, 500) || 'Proof event recorded.',
+    generatedAt: cleanText(record.generatedAt) || new Date().toISOString(),
+    evidencePath: cleanText(record.evidencePath) || null,
+    evidenceSha256: cleanText(record.evidenceSha256) || null,
+    commandCount: asOptionalNumber(record.commandCount),
+    failedCommandCount: asOptionalNumber(record.failedCommandCount),
+    executionTranscriptId: cleanText(record.executionTranscriptId),
+    durationMs: asOptionalNumber(record.durationMs),
+    source:
+      rawSource === 'studio-action' ||
+      rawSource === 'ai-action' ||
+      rawSource === 'ship-loop' ||
+      rawSource === 'inline-command'
+        ? rawSource
+        : 'studio-action',
+  };
+}
 
 export type NormalizedIncidentActionProgressPayload = {
   stage: string;
@@ -340,6 +439,7 @@ export type NormalizedIncidentActionProgressPayload = {
 export type NormalizedIncidentDonePayload = {
   modelId?: string;
   finalText?: string;
+  phase?: IncidentPhase;
 };
 
 export type IncidentSystemGraphNodeType =
@@ -506,6 +606,7 @@ export type NormalizedIncidentStudioOpen = {
   workspacePath: string;
   workspaceName: string;
   initialQuery?: string;
+  composerHandoff?: 'prefill' | 'submit';
   projectSelection: IncidentProjectSelection | null;
   preferredDisplayMode?: 'lite' | 'full';
   preferredArchitectureLensView?: 'tree' | 'dependency' | 'runtime';
@@ -1335,6 +1436,11 @@ export function normalizeIncidentActionResultPayload(
   // Fall back to local reconstruction only when the host didn't include the field
   // (older extension version, or an early-exit code path that skips the full build).
   const hostDecisionClarity = normalizeIncidentDecisionClarityContract(record.decisionClarity);
+  const proof = normalizeAIActionProofSummary(record.proof);
+  const proofEvent = normalizeStudioProofEvent(record.proofEvent);
+  const evidenceSha256 = cleanText(record.evidenceSha256);
+  const evidencePath = cleanText(record.evidencePath);
+  const failedCommands = sanitizeStringArray(record.failedCommands, 240, 8);
   const decisionClarity =
     hostDecisionClarity ??
     buildIncidentDecisionClarityContract({
@@ -1349,6 +1455,15 @@ export function normalizeIncidentActionResultPayload(
   return {
     success: Boolean(record.success),
     outputSummary: sanitizeIncidentText(record.outputSummary, 1200),
+    summary: sanitizeIncidentText(record.summary, 1200),
+    proof,
+    proofEvent,
+    evidencePath: evidencePath || undefined,
+    evidenceSha256: evidenceSha256 || undefined,
+    evidenceSizeBytes: asOptionalNumber(record.evidenceSizeBytes),
+    commandCount: asOptionalNumber(record.commandCount),
+    failedCommandCount: asOptionalNumber(record.failedCommandCount),
+    failedCommands: failedCommands.length > 0 ? failedCommands : undefined,
     verificationRequired: asOptionalBoolean(record.verificationRequired),
     verifyPolicy: hasVerifyPolicyField ? verifyPolicy : undefined,
     evidence: hasEvidenceField ? evidence : undefined,
@@ -1363,6 +1478,16 @@ export function normalizeIncidentActionResultPayload(
     contractRuntimeEvidence: hasContractRuntimeField ? contractRuntimeEvidence : undefined,
     verifyCommandPack: hasVerifyCommandPackField ? verifyCommandPack : undefined,
     decisionClarity,
+    phase: (() => {
+      const phaseRaw = sanitizeIncidentText(record.phase, 20)?.toLowerCase();
+      return phaseRaw === 'detect' ||
+        phaseRaw === 'diagnose' ||
+        phaseRaw === 'plan' ||
+        phaseRaw === 'verify' ||
+        phaseRaw === 'learn'
+        ? (phaseRaw as IncidentPhase)
+        : undefined;
+    })(),
   };
 }
 
@@ -1381,9 +1506,19 @@ export function normalizeIncidentActionProgressPayload(
 
 export function normalizeIncidentDonePayload(value: unknown): NormalizedIncidentDonePayload {
   const record = asRecord(value);
+  const phaseRaw = sanitizeIncidentText(record.phase, 20)?.toLowerCase();
+  const phase =
+    phaseRaw === 'detect' ||
+    phaseRaw === 'diagnose' ||
+    phaseRaw === 'plan' ||
+    phaseRaw === 'verify' ||
+    phaseRaw === 'learn'
+      ? (phaseRaw as IncidentPhase)
+      : undefined;
   return {
     modelId: sanitizeIncidentText(record.modelId, 120),
     finalText: sanitizeIncidentText(record.finalText, 24000),
+    phase,
   };
 }
 
@@ -1761,6 +1896,11 @@ export function normalizeIncomingIncidentStudioOpen(
 
   const workspaceName = sanitizeIncidentText(message.workspaceName, 200) || workspacePath;
   const initialQuery = sanitizeIncidentText(message.initialQuery, 4000);
+  const rawComposerHandoff = cleanText(message.composerHandoff);
+  const composerHandoff =
+    rawComposerHandoff === 'prefill' || rawComposerHandoff === 'submit'
+      ? rawComposerHandoff
+      : undefined;
   const rawPreferredDisplayMode = cleanText(message.preferredDisplayMode);
   const rawPreferredArchitectureLensView = cleanText(message.preferredArchitectureLensView);
   const preferredDisplayMode =
@@ -1786,6 +1926,7 @@ export function normalizeIncomingIncidentStudioOpen(
     workspacePath,
     workspaceName,
     initialQuery,
+    composerHandoff,
     projectSelection,
     preferredDisplayMode,
     preferredArchitectureLensView,

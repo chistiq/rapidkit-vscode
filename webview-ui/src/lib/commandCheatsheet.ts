@@ -38,6 +38,18 @@ export const COMMAND_CHEATSHEET_GROUPS: CommandCheatsheetGroup[] = [
       { label: 'Mirror sync', command: 'rapidkit mirror sync', scope: 'workspace' },
       { label: 'Cache status', command: 'rapidkit cache status', scope: 'workspace' },
       { label: 'Infra plan', command: 'rapidkit infra plan', scope: 'workspace' },
+      {
+        label: 'Agent grounding sync',
+        command:
+          'rapidkit workspace agent-sync --write --refresh-context --preset enterprise --target vscode --json',
+        scope: 'workspace',
+        note: 'INDEX.json + AGENTS.md + Copilot/Cursor/Claude hooks',
+      },
+      {
+        label: 'Agent context pack',
+        command: 'rapidkit workspace context --for-agent --json --write',
+        scope: 'workspace',
+      },
     ],
   },
   {

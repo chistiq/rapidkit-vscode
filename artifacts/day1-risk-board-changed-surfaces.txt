@@ -1,0 +1,9 @@
+.github/workflows/extension-smoke-matrix.yml
+.gitignore
+scripts/export-open-issues-report.mjs
+scripts/release-stop-gate.mjs
+src/core/workspaceMemoryService.ts
+src/test/driftGuard.test.ts
+src/test/incidentReproPackUtils.test.ts
+src/test/workspaceMemoryService.test.ts
+src/ui/panels/incidentReproPackUtils.ts

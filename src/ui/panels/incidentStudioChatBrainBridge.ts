@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+
+import { createExtensionWebviewMessage } from '../../contracts/webviewProtocol';
 import { WelcomePanel } from './welcomePanel';
 
 export const INCIDENT_STUDIO_CHAT_BRAIN_COMMANDS = [
@@ -60,19 +62,21 @@ export async function dispatchIncidentStudioChatBrainMessage(
 
   const host = await ensureIncidentStudioChatBrainHost(context);
   if (!host) {
-    replyWebview.postMessage({
-      command: 'aiChatError',
-      data: {
-        conversationId:
-          typeof (data as { conversationId?: unknown })?.conversationId === 'string'
-            ? (data as { conversationId: string }).conversationId
-            : '',
-        code: 'CHAT_BRAIN_HOST_UNAVAILABLE',
-        message: 'Incident Studio chat brain is still initializing. Retry the query in a moment.',
-        retryable: true,
-      },
-      meta: { requestId, version: 'v1' },
-    });
+    replyWebview.postMessage(
+      createExtensionWebviewMessage(
+        'aiChatError',
+        {
+          conversationId:
+            typeof (data as { conversationId?: unknown })?.conversationId === 'string'
+              ? (data as { conversationId: string }).conversationId
+              : '',
+          code: 'CHAT_BRAIN_HOST_UNAVAILABLE',
+          message: 'Incident Studio chat brain is still initializing. Retry the query in a moment.',
+          retryable: true,
+        },
+        { requestId, version: 'v1' }
+      )
+    );
     return {
       handled: true,
       error: 'Chat brain host unavailable',

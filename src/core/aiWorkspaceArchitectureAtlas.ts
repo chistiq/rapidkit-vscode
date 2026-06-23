@@ -3,6 +3,12 @@ import * as path from 'path';
 import type { AIModalContext, ScannedProjectContext } from './aiService';
 import type { AnalyzeEvidenceSlice, AnalyzeProjectEvidenceSlice } from './aiArchitectureGrounding';
 import {
+  readWorkspaceModelReport,
+  resolveWorkspaceModelProjectAbsolutePath,
+  workspaceModelProjectToAtlasFingerprint,
+  workspaceModelToAnalyzeEvidenceSlice,
+} from './workspaceModelReader';
+import {
   buildPlatformTeachingIndex,
   resolveActiveKitId,
   resolveKitId,
@@ -36,6 +42,7 @@ export type WorkspaceArchitectureAtlas = {
   projects: ProjectArchitectureFingerprint[];
   crossProjectModules: Array<{ slug: string; projects: string[] }>;
   activeProjectPath?: string;
+  canonicalSource?: 'workspace-model.v1' | 'analyze+disk';
 };
 
 const MAX_PROJECTS_SCANNED = 10;
@@ -153,6 +160,39 @@ function deriveRuntimeFromKit(kit: string): { runtime: string; framework: string
   if (resolved === 'dotnet.webapi.clean') {
     return { runtime: 'dotnet', framework: 'dotnet' };
   }
+  if (resolved === 'frontend.nextjs') {
+    return { runtime: 'node', framework: 'nextjs' };
+  }
+  if (resolved === 'frontend.remix') {
+    return { runtime: 'node', framework: 'remix' };
+  }
+  if (resolved === 'frontend.vite-react') {
+    return { runtime: 'node', framework: 'vite-react' };
+  }
+  if (resolved === 'frontend.vite-vue') {
+    return { runtime: 'node', framework: 'vite-vue' };
+  }
+  if (resolved === 'frontend.vite-svelte') {
+    return { runtime: 'node', framework: 'vite-svelte' };
+  }
+  if (resolved === 'frontend.vite-solid') {
+    return { runtime: 'node', framework: 'vite-solid' };
+  }
+  if (resolved === 'frontend.vite-vanilla') {
+    return { runtime: 'node', framework: 'vite-vanilla' };
+  }
+  if (resolved === 'frontend.nuxt') {
+    return { runtime: 'node', framework: 'nuxt' };
+  }
+  if (resolved === 'frontend.angular') {
+    return { runtime: 'node', framework: 'angular' };
+  }
+  if (resolved === 'frontend.astro') {
+    return { runtime: 'node', framework: 'astro' };
+  }
+  if (resolved === 'frontend.sveltekit') {
+    return { runtime: 'node', framework: 'sveltekit' };
+  }
   return { runtime: 'unknown', framework: kit || 'unknown' };
 }
 
@@ -168,11 +208,13 @@ export function scanProjectArchitectureFingerprint(
   const name = path.basename(resolvedPath);
   const projectJson = readJsonFile<{
     kit_name?: string;
+    kit?: string;
+    framework?: string;
     runtime?: string;
     module_support?: boolean;
   }>(path.join(resolvedPath, '.rapidkit', 'project.json'));
 
-  let kit = projectJson?.kit_name?.trim() || 'unknown';
+  let kit = projectJson?.kit_name?.trim() || projectJson?.kit?.trim() || 'unknown';
   if (kit === 'unknown' && analyzeSlice) {
     kit = analyzeSlice.framework !== 'unknown' ? analyzeSlice.framework : kit;
   }
@@ -235,9 +277,16 @@ export function scanProjectArchitectureFingerprint(
 
 async function discoverProjectPaths(
   workspacePath: string,
-  analyze?: AnalyzeEvidenceSlice | null
+  analyze?: AnalyzeEvidenceSlice | null,
+  modelProjectPaths?: string[]
 ): Promise<string[]> {
   const discovered = new Set<string>();
+
+  for (const projectPath of modelProjectPaths ?? []) {
+    if (projectPath.trim()) {
+      discovered.add(path.resolve(projectPath.trim()));
+    }
+  }
 
   for (const project of analyze?.projects ?? []) {
     if (project.path?.trim()) {
@@ -305,21 +354,37 @@ export async function buildWorkspaceArchitectureAtlas(
   }
 
   const root = path.resolve(workspacePath.trim());
-  const projectPaths = await discoverProjectPaths(root, analyze);
+  const workspaceModel = await readWorkspaceModelReport(root);
+  const canonicalAnalyze =
+    workspaceModel && (workspaceModel.projects?.length ?? 0) > 0
+      ? workspaceModelToAnalyzeEvidenceSlice(root, workspaceModel)
+      : (analyze ?? null);
+  const modelProjectPaths = (workspaceModel?.projects ?? []).map((project) =>
+    resolveWorkspaceModelProjectAbsolutePath(root, project)
+  );
+
+  const projectPaths = await discoverProjectPaths(root, canonicalAnalyze, modelProjectPaths);
 
   const analyzeByPath = new Map<string, AnalyzeProjectEvidenceSlice>();
-  for (const project of analyze?.projects ?? []) {
+  for (const project of canonicalAnalyze?.projects ?? []) {
     if (project.path?.trim()) {
       analyzeByPath.set(path.resolve(project.path.trim()), project);
     }
   }
 
+  const modelByPath = new Map(
+    (workspaceModel?.projects ?? []).map((project) => [
+      resolveWorkspaceModelProjectAbsolutePath(root, project),
+      project,
+    ])
+  );
+
   const projects: ProjectArchitectureFingerprint[] = [];
   for (const projectPath of projectPaths) {
-    const fingerprint = scanProjectArchitectureFingerprint(
-      projectPath,
-      analyzeByPath.get(projectPath) ?? null
-    );
+    const modelProject = modelByPath.get(projectPath);
+    const fingerprint = modelProject
+      ? workspaceModelProjectToAtlasFingerprint(root, modelProject)
+      : scanProjectArchitectureFingerprint(projectPath, analyzeByPath.get(projectPath) ?? null);
     if (fingerprint) {
       projects.push(fingerprint);
     }
@@ -345,6 +410,10 @@ export async function buildWorkspaceArchitectureAtlas(
     activeProjectPath: activeProjectPath?.trim()
       ? path.resolve(activeProjectPath.trim())
       : undefined,
+    canonicalSource:
+      workspaceModel && (workspaceModel.projects?.length ?? 0) > 0
+        ? 'workspace-model.v1'
+        : 'analyze+disk',
   };
 }
 
@@ -368,7 +437,9 @@ export function buildWorkspaceArchitectureAtlasBlock(
   const normalizedActive = activePath ? path.resolve(activePath) : undefined;
 
   const lines: string[] = [
-    'WORKSPACE ARCHITECTURE ATLAS (dynamic — authoritative project inventory):',
+    atlas.canonicalSource === 'workspace-model.v1'
+      ? 'WORKSPACE ARCHITECTURE ATLAS (canonical source: workspace-model.v1):'
+      : 'WORKSPACE ARCHITECTURE ATLAS (dynamic — authoritative project inventory):',
     `- Workspace: ${atlas.workspacePath}`,
     `- Projects discovered: ${atlas.projectCount}${atlas.isPolyglot ? ' (polyglot workspace)' : ''}`,
   ];

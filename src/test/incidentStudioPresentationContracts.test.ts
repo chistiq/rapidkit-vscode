@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  deriveLitePrimaryActionPlan,
-  deriveLiteReleaseState,
-  getLiteProofButtonLabel,
-} from '../../webview-ui/src/lib/incidentStudioLiteMode';
 import { deriveStabilizationEnterpriseClaim } from '../../webview-ui/src/lib/incidentStudioStabilizationClaim';
 import type { IncidentStudioStabilizationKpiStatus } from '../../webview-ui/src/lib/incidentStudioPayload';
 import {
@@ -15,10 +10,6 @@ import {
   getReleaseSignalLabel,
   resolveVerificationClaimGuard,
 } from '../../webview-ui/src/lib/incidentStudioVerifyPolicy';
-import {
-  buildGuidedIntentChips,
-  resolveGuidedIntentChipsFromStudioContext,
-} from '../../webview-ui/src/lib/incidentStudioGuidedActions';
 import { enforceVerifyCompletionGates } from '../ui/panels/incidentStudioPolicyGates';
 import {
   buildReplayQueryFromIncidentReproPack,
@@ -92,27 +83,6 @@ const stabilizationFixture: IncidentStudioStabilizationKpiStatus = {
 };
 
 describe('Incident Studio presentation contracts (lib parity)', () => {
-  it('lite mode: HOLD parity and blocker investigation CTA for advisory stabilization blockers', () => {
-    const claim = deriveStabilizationEnterpriseClaim({ status: stabilizationFixture });
-    const liteState = deriveLiteReleaseState({
-      releaseDecision: undefined,
-      hardBlockerCount: 0,
-      advisoryBlockerCount: claim.normalizedBlockers.length,
-    });
-    const topBlocker = claim.normalizedBlockers[0] ?? null;
-    const plan = deriveLitePrimaryActionPlan({
-      topBlocker,
-      primaryActionLabel: 'Validate deployment impact',
-      primaryActionSource: 'chatBrainBoard.actions[0]',
-      fallbackQuery: 'Ask AI for the single safest next step',
-    });
-
-    expect(liteState.label).toBe('HOLD');
-    expect(liteState.summary).toBe('Hold: 2 stabilization signals need review');
-    expect(plan.buttonLabel).toBe('Investigate blocker');
-    expect(getLiteProofButtonLabel(Boolean(topBlocker))).toBe('Run blocker check');
-  });
-
   it('stabilization KPI: HOLD claim when advisory blockers fail even if overallPass remains true', () => {
     const claim = deriveStabilizationEnterpriseClaim({ status: stabilizationFixture });
 
@@ -133,56 +103,6 @@ describe('Incident Studio presentation contracts (lib parity)', () => {
     );
     expect(guidance).not.toBe('npm run test:integration');
     expect(evidenceLine).toBe('Evidence: doctor-evidence | system-graph');
-  });
-
-  it('guided mode: deterministic next + verify chips only (max two)', () => {
-    const chips = buildGuidedIntentChips({
-      primaryBoardAction: {
-        label: 'Patch failing contract test',
-        command: 'rapidkit add module auth',
-      },
-      verifyCommandPackRequired: 'rapidkit doctor workspace',
-      isProjectAnalysisScope: false,
-    });
-
-    expect(chips.some((chip) => chip.label === 'Proof this worked')).toBe(true);
-    expect(chips.length).toBeLessThanOrEqual(2);
-    expect(chips.filter((chip) => chip.isPrimary).length).toBe(1);
-  });
-
-  it('resolveGuidedIntentChipsFromStudioContext merges board action and verify pack', () => {
-    const chips = resolveGuidedIntentChipsFromStudioContext({
-      scopeType: 'project',
-      primaryBoardAction: {
-        label: 'Patch failing contract test',
-        command: 'rapidkit add module auth',
-      },
-      actionResult: {
-        success: true,
-        decisionClarity: {
-          situation: 'Contract drift',
-          reason: 'Schema mismatch',
-          impactScope: ['src/auth.ts'],
-          risk: { confidenceBand: 'high', confidence: 80, mutating: true },
-          nextStep: 'npm run test:integration',
-          verifyPlan: ['npm run test:integration'],
-          rollbackPlan: 'git checkout src/auth.ts',
-          evidenceLinks: [],
-          requiredMissingFields: [],
-          mutationReady: true,
-        },
-        verifyCommandPack: {
-          qualityScore: 90,
-          readiness: 'ready',
-          rationale: 'Deterministic verify pack',
-          blockedReasons: [],
-          commands: [{ command: 'rapidkit doctor project', required: true }],
-        },
-      },
-    });
-
-    expect(chips[0]?.label).toBe('Patch failing contract test');
-    expect(chips.some((chip) => chip.label === 'Proof this worked')).toBe(true);
   });
 
   it('suppresses Verification passed claim when latest release evidence is NO-GO', () => {

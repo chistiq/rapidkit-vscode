@@ -204,7 +204,7 @@ export class WorkspaiArchitectureInlineDecorationController implements vscode.Di
     });
 
     const hover = new vscode.MarkdownString(
-      `**${model.label}**\n\n${model.detail}\n\nUse the Workspai Architecture CodeLens above to open Change Impact Lite with graph-backed context.`
+      `**${model.label}**\n\n${model.detail}\n\nUse the Workspai Architecture CodeLens above to open Change Advisor Lite with graph-backed context.`
     );
     hover.isTrusted = false;
 

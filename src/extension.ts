@@ -5,6 +5,21 @@
 
 import * as vscode from 'vscode';
 import path from 'path';
+import { runningServers } from './core/runningServers';
+import {
+  resolveWorkspacePathForEvidenceTerminal,
+  shouldRefreshEvidenceOnTerminalClose,
+} from './core/workspaceIntelligenceRuntime';
+import { setWorkspaceEvidenceRefreshHandler } from './core/workspaceIntelligenceProgressRunner';
+import { presentCliVersionGate } from './core/cliVersionGate';
+import { syncWalkthroughEvidenceContext } from './core/walkthroughEvidenceContext';
+import { ensureInstalledAt } from './core/ttfvBridge';
+import {
+  registerTelemetryEnablementListener,
+  showAnalyticsConsentPrompt,
+} from './core/analyticsConsent';
+import { captureRetentionAnalytics } from './core/retentionAnalytics';
+import { registerModuleExplorerReload } from './core/moduleExplorerRuntime';
 import { ActionsWebviewProvider } from './ui/webviews/actionsWebviewProvider';
 import { WorkspaceExplorerProvider } from './ui/treeviews/workspaceExplorer';
 import {
@@ -12,16 +27,20 @@ import {
   ProjectTreeItem,
   setExtensionPath,
 } from './ui/treeviews/projectExplorer';
-import { setSelectedProjectPath } from './core/selectedProject';
+import { getSelectedProjectPath, setSelectedProjectPath } from './core/selectedProject';
 import { ModuleExplorerProvider } from './ui/treeviews/moduleExplorer';
+import { DoctorEvidenceProvider } from './ui/treeviews/doctorEvidenceProvider';
 import {
-  DoctorEvidenceProvider,
-  type DoctorIssueAIContext,
-  type ProjectEvidence,
-} from './ui/treeviews/doctorEvidenceProvider';
+  buildDoctorIssueAdvisorQuestion,
+  buildDoctorIssueCopilotQuestion,
+  buildDoctorIssueStudioPrompt,
+  resolveDoctorIssueHandoff,
+} from './core/doctorIssueHandoff';
+import { sendEvidenceToCopilot } from './core/sendToCopilot';
 import { WorkspaceContractGraphProvider } from './ui/treeviews/workspaceContractGraphProvider';
 import { checkAndNotifyUpdates } from './utils/updateChecker';
 // templateExplorer removed in v0.4.3 (redundant with npm package)
+import { registerExplorerFolderCommands } from './commands/explorerFolderCommands';
 import { registerCoreCommands } from './commands/coreCommands';
 import { registerFileManagementCommands } from './commands/fileManagement';
 import { registerProjectContextAndLogCommands } from './commands/projectContextAndLogs';
@@ -30,6 +49,7 @@ import { showWelcomeCommand } from './commands/showWelcome';
 import { showIncidentStudioNextCommand } from './commands/incidentStudioNext';
 import { registerWorkspaceSelectionCommands } from './commands/workspaceSelection';
 import { registerWorkspaceOperationsCommands } from './commands/workspaceOperations';
+import { registerWorkspaceIntelligenceCommands } from './commands/workspaceIntelligence';
 import { registerInfraOperationsCommands } from './commands/infraOperations';
 import { registerModuleMaintenanceCommands } from './commands/moduleMaintenance';
 import { WorkspaiStatusBar } from './ui/statusBar';
@@ -42,6 +62,10 @@ import { WorkspaiArchitectureInlineDecorationController } from './providers/arch
 import { WorkspaiCompletionProvider } from './providers/completionProvider';
 import { WorkspaiHoverProvider } from './providers/hoverProvider';
 import { WorkspaceUsageTracker } from './utils/workspaceUsageTracker';
+import {
+  WORKSPAI_AI_FLOWS_ONBOARDING_DETAIL,
+  WORKSPAI_AI_FLOWS_ONBOARDING_HEADLINE,
+} from './core/workspaiAiNarrative';
 import { WelcomePanel } from './ui/panels/welcomePanel';
 import { ModulesCatalogService } from './core/modulesCatalogService';
 import { runRapidkitCommandsInTerminal } from './utils/terminalExecutor';
@@ -61,6 +85,7 @@ import { WorkspaiWorkspace } from './types';
 
 let statusBar: WorkspaiStatusBar;
 let actionsWebviewProvider: ActionsWebviewProvider;
+let secondaryActionsWebviewProvider: ActionsWebviewProvider;
 let workspaceExplorer: WorkspaceExplorerProvider;
 let projectExplorer: ProjectExplorerProvider;
 let moduleExplorer: ModuleExplorerProvider;
@@ -123,7 +148,138 @@ function asAIContextItem(value: unknown): AIContextItem | undefined {
   if (!value || typeof value !== 'object') {
     return undefined;
   }
-  return value as AIContextItem;
+  const record = value as Record<string, unknown>;
+  const nested = value as AIContextItem;
+  if (nested.workspace || nested.project || nested.module) {
+    return nested;
+  }
+  const projectPath = typeof record.projectPath === 'string' ? record.projectPath : undefined;
+  const projectName = typeof record.projectName === 'string' ? record.projectName : undefined;
+  const projectType = typeof record.projectType === 'string' ? record.projectType : undefined;
+  const flatPath = typeof record.path === 'string' ? record.path : undefined;
+  const flatName = typeof record.name === 'string' ? record.name : undefined;
+  const workspacePath =
+    typeof record.workspacePath === 'string'
+      ? record.workspacePath
+      : !projectPath && !projectName && !projectType
+        ? flatPath
+        : undefined;
+  const workspaceName =
+    typeof record.workspaceName === 'string'
+      ? record.workspaceName
+      : !projectPath && !projectName && !projectType
+        ? flatName
+        : undefined;
+  if (!workspacePath && !workspaceName && !projectPath && !projectName) {
+    return nested;
+  }
+  return {
+    workspace:
+      workspacePath || workspaceName
+        ? {
+            name: workspaceName,
+            path: workspacePath,
+          }
+        : undefined,
+    project:
+      projectPath || projectName
+        ? {
+            name: projectName,
+            path: projectPath,
+            type: projectType,
+            workspacePath,
+          }
+        : undefined,
+  };
+}
+
+function revealWorkspaceAdvisorForScope(input: {
+  workspace?: AIContextWorkspace | null;
+  project?: AIContextProject | null;
+  initialQuestion?: string;
+  source?: string;
+  trigger?: string;
+}): void {
+  void secondaryActionsWebviewProvider?.revealSecondaryTab('impact', {
+    workspace: input.workspace
+      ? {
+          name: input.workspace.name,
+          path: input.workspace.path,
+          workspaceRootPath: input.workspace.path,
+        }
+      : null,
+    project: input.project
+      ? {
+          name: input.project.name,
+          path: input.project.path,
+          type: input.project.type,
+          workspacePath: input.project.workspacePath,
+        }
+      : null,
+    initialQuestion: input.initialQuestion,
+    source: input.source ?? 'extension-command',
+    trigger: input.trigger ?? 'workspace-advisor',
+  });
+}
+
+function revealStudioForScope(input: {
+  workspace?: AIContextWorkspace | null;
+  project?: AIContextProject | null;
+  initialTask?: string;
+  composerHandoff?: 'prefill' | 'submit';
+  studioMode?: 'investigate' | 'verify' | 'prepare';
+  source?: string;
+  trigger?: string;
+}): void {
+  void secondaryActionsWebviewProvider?.revealSecondaryTab('studio', {
+    workspace: input.workspace
+      ? {
+          name: input.workspace.name,
+          path: input.workspace.path,
+          workspaceRootPath: input.workspace.path,
+        }
+      : null,
+    project: input.project
+      ? {
+          name: input.project.name,
+          path: input.project.path,
+          type: input.project.type,
+          workspacePath: input.project.workspacePath,
+        }
+      : null,
+    initialTask: input.initialTask,
+    composerHandoff: input.composerHandoff,
+    studioMode: input.studioMode,
+    source: input.source ?? 'extension-command',
+    trigger: input.trigger ?? 'studio',
+  });
+}
+
+function buildSecondaryScopePayload(input: {
+  workspace?: AIContextWorkspace | null;
+  project?: AIContextProject | null;
+  source?: string;
+  trigger?: string;
+}): Record<string, unknown> {
+  return {
+    workspace: input.workspace
+      ? {
+          name: input.workspace.name,
+          path: input.workspace.path,
+          workspaceRootPath: input.workspace.path,
+        }
+      : null,
+    project: input.project
+      ? {
+          name: input.project.name,
+          path: input.project.path,
+          type: input.project.type,
+          workspacePath: input.project.workspacePath,
+        }
+      : null,
+    source: input.source ?? 'extension-command',
+    trigger: input.trigger ?? 'secondary-tab',
+  };
 }
 
 function asWorkspaiWorkspace(value: unknown): WorkspaiWorkspace | null {
@@ -163,8 +319,7 @@ function parseUriListToFsPaths(uriList: string): string[] {
     .filter((value): value is string => typeof value === 'string' && value.length > 0);
 }
 
-// Track running dev servers per project (exported for ProjectExplorer)
-export const runningServers: Map<string, vscode.Terminal> = new Map();
+// Track running dev servers per project (see core/runningServers.ts)
 
 async function getFollowupToastVariant(
   context: vscode.ExtensionContext
@@ -205,11 +360,12 @@ async function showAIFeatureOnboarding(
   const quickStartAction = 'Open AI Flows now';
 
   const message =
-    'New AI workflow shortcuts are available:\n\n' +
+    `${WORKSPAI_AI_FLOWS_ONBOARDING_HEADLINE}\n\n` +
+    `${WORKSPAI_AI_FLOWS_ONBOARDING_DETAIL}\n\n` +
     '• AI Flows: smart routing into debug, planning, or memory actions\n' +
     '• Telemetry: usage snapshot with 24h/7d/all filters\n' +
     '• Reset Data: clear telemetry for current workspace\n\n' +
-    'You can access these from Quick Actions, Command Palette, and workspace/project context menus.';
+    'You can access these from Workspai, Command Palette, and workspace/project context menus.';
 
   await WorkspaceUsageTracker.getInstance().trackCommandEvent(
     'workspai.onboarding.primary.shown',
@@ -363,6 +519,15 @@ export async function activate(context: vscode.ExtensionContext) {
   const logger = Logger.getInstance();
   logger.info('🚀 Workspai extension is activating...');
 
+  // Record first-ever activation timestamp for Time-to-First-Value (roadmap 2.9).
+  void ensureInstalledAt(context);
+
+  // Re-evaluate effective analytics opt-in when VS Code telemetry toggles (roadmap 2.10).
+  registerTelemetryEnablementListener(context);
+
+  const { warmRapidkitNpmPackageResolution } = await import('./utils/platformCapabilities.js');
+  void warmRapidkitNpmPackageResolution();
+
   // Store context globally for access from commands
   (globalThis as { extensionContext?: vscode.ExtensionContext }).extensionContext = context;
 
@@ -391,6 +556,10 @@ export async function activate(context: vscode.ExtensionContext) {
         getWorkspaceExplorer: () => workspaceExplorer,
         context,
       }),
+      ...registerWorkspaceIntelligenceCommands({
+        logger,
+        getWorkspaceExplorer: () => workspaceExplorer,
+      }),
       ...registerInfraOperationsCommands({
         logger,
         getWorkspaceExplorer: () => workspaceExplorer,
@@ -400,6 +569,7 @@ export async function activate(context: vscode.ExtensionContext) {
         getProjectExplorer: () => projectExplorer,
       }),
       ...registerProjectContextAndLogCommands(),
+      ...registerExplorerFolderCommands(),
       ...registerProjectLifecycleCommands({
         logger,
         runningServers,
@@ -429,10 +599,10 @@ export async function activate(context: vscode.ExtensionContext) {
           vscode.window.showWarningMessage('Select a workspace first.');
           return;
         }
-        WelcomePanel.showAIModal(context, {
-          type: 'workspace',
-          name: ws.name,
-          path: ws.path,
+        revealWorkspaceAdvisorForScope({
+          workspace: ws,
+          source: 'activitybar',
+          trigger: 'ai-for-workspace',
         });
       }),
       // Edit / create workspace memory — opens .rapidkit/workspace-memory.json
@@ -462,11 +632,17 @@ export async function activate(context: vscode.ExtensionContext) {
           vscode.window.showWarningMessage('Select a project first.');
           return;
         }
-        WelcomePanel.showAIModal(context, {
-          type: 'project',
-          name: project.name,
-          path: project.path,
-          framework: project.type,
+        const ws = contextItem?.workspace || workspaceExplorer?.getSelectedWorkspace();
+        revealWorkspaceAdvisorForScope({
+          workspace: ws,
+          project: {
+            name: project.name,
+            path: project.path,
+            type: project.type,
+            workspacePath: project.workspacePath || ws?.path,
+          },
+          source: 'activitybar',
+          trigger: 'ai-for-project',
         });
       }),
       vscode.commands.registerCommand('workspai.aiForModule', (item?: unknown) => {
@@ -484,45 +660,111 @@ export async function activate(context: vscode.ExtensionContext) {
       }),
       vscode.commands.registerCommand('workspai.openIncidentStudio', (item?: unknown) => {
         const contextItem = asAIContextItem(item);
-        const workspaceFromItem = contextItem?.workspace;
-        const projectFromItem = contextItem?.project;
-
-        const selectedWorkspace = workspaceExplorer?.getSelectedWorkspace();
-
-        const workspacePath =
-          (typeof workspaceFromItem?.path === 'string' && workspaceFromItem.path) ||
-          (typeof projectFromItem?.workspacePath === 'string' && projectFromItem.workspacePath) ||
-          (typeof selectedWorkspace?.path === 'string' && selectedWorkspace.path);
-
-        const workspaceName =
-          (typeof workspaceFromItem?.name === 'string' && workspaceFromItem.name) ||
-          (typeof selectedWorkspace?.name === 'string' && selectedWorkspace.name) ||
-          (typeof projectFromItem?.name === 'string' ? projectFromItem.name : undefined);
-
-        if (!workspacePath) {
-          vscode.window.showWarningMessage('Select a workspace first.');
-          return;
-        }
-
-        const selectedProject = projectExplorer?.getSelectedProject?.();
-        const resolvedProjectPath =
-          (typeof projectFromItem?.path === 'string' && projectFromItem.path) ||
-          (typeof selectedProject?.path === 'string' ? selectedProject.path : undefined);
-        const resolvedProjectName =
-          (typeof projectFromItem?.name === 'string' && projectFromItem.name) ||
-          (typeof selectedProject?.name === 'string' ? selectedProject.name : undefined);
-
-        const resolvedProjectType =
-          (typeof projectFromItem?.type === 'string' && projectFromItem.type) ||
-          (typeof selectedProject?.type === 'string' ? selectedProject.type : undefined);
-
-        WelcomePanel.openIncidentStudio(context, {
-          workspacePath,
-          workspaceName: workspaceName || path.basename(workspacePath),
-          projectPath: resolvedProjectPath,
-          projectName: resolvedProjectName,
-          projectType: resolvedProjectType,
+        const record = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+        const initialTask =
+          typeof record.initialTask === 'string'
+            ? record.initialTask
+            : typeof record.initialQuery === 'string'
+              ? record.initialQuery
+              : typeof record.task === 'string'
+                ? record.task
+                : undefined;
+        const composerHandoff =
+          record.composerHandoff === 'prefill' || record.composerHandoff === 'submit'
+            ? record.composerHandoff
+            : undefined;
+        const studioMode =
+          record.studioMode === 'verify' || record.studioMode === 'prepare'
+            ? record.studioMode
+            : record.studioMode === 'investigate'
+              ? 'investigate'
+              : undefined;
+        const project = contextItem?.project || projectExplorer?.getSelectedProject();
+        const ws = contextItem?.workspace || workspaceExplorer?.getSelectedWorkspace();
+        revealStudioForScope({
+          workspace: ws,
+          project: project
+            ? {
+                name: project.name,
+                path: project.path,
+                type: project.type,
+                workspacePath: project.workspacePath || ws?.path,
+              }
+            : null,
+          initialTask,
+          composerHandoff,
+          studioMode,
+          source: typeof record.source === 'string' ? record.source : 'activitybar',
+          trigger: typeof record.trigger === 'string' ? record.trigger : 'open-studio',
         });
+      }),
+      vscode.commands.registerCommand('workspai.openCreateWithAI', (item?: unknown) => {
+        const contextItem = asAIContextItem(item);
+        const record = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+        const ws = contextItem?.workspace || workspaceExplorer?.getSelectedWorkspace();
+        const project = contextItem?.project || projectExplorer?.getSelectedProject();
+        const createMode =
+          record.mode === 'project' || record.mode === 'workspace'
+            ? (record.mode as 'project' | 'workspace')
+            : undefined;
+
+        // Never bootstrap the managed default workspace before opening UI — creation
+        // handlers call ensureManagedDefaultWorkspace() when the user confirms.
+        void secondaryActionsWebviewProvider?.revealSecondaryTab('create', {
+          ...buildSecondaryScopePayload({
+            workspace: ws,
+            project: project
+              ? {
+                  name: project.name,
+                  path: project.path,
+                  type: project.type,
+                  workspacePath: project.workspacePath || ws?.path,
+                }
+              : null,
+            source: typeof record.source === 'string' ? record.source : 'activitybar',
+            trigger: typeof record.trigger === 'string' ? record.trigger : 'open-create-with-ai',
+          }),
+          createMode,
+          useDefaultWorkspace: record.useDefaultWorkspace === true,
+        });
+      }),
+      vscode.commands.registerCommand('workspai.openWorkspaceAdvisor', (item?: unknown) => {
+        const contextItem = asAIContextItem(item);
+        const record = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+        const initialQuestion =
+          typeof record.initialQuestion === 'string'
+            ? record.initialQuestion
+            : typeof record.prefillQuestion === 'string'
+              ? record.prefillQuestion
+              : undefined;
+        const ws = contextItem?.workspace || workspaceExplorer?.getSelectedWorkspace();
+        const project = contextItem?.project || projectExplorer?.getSelectedProject();
+        revealWorkspaceAdvisorForScope({
+          workspace: ws,
+          project: project
+            ? {
+                name: project.name,
+                path: project.path,
+                type: project.type,
+                workspacePath: project.workspacePath || ws?.path,
+              }
+            : null,
+          initialQuestion,
+          source: typeof record.source === 'string' ? record.source : 'activitybar',
+          trigger: typeof record.trigger === 'string' ? record.trigger : 'open-workspace-advisor',
+        });
+      }),
+      vscode.commands.registerCommand('workspai.openDashboardSection', (item?: unknown) => {
+        const record = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+        const section =
+          record.section === 'repair' ||
+          record.section === 'evidence' ||
+          record.section === 'operate' ||
+          record.section === 'console' ||
+          record.section === 'catalog'
+            ? record.section
+            : 'overview';
+        WelcomePanel.openDashboardSectionTab(context, section);
       }),
       vscode.commands.registerCommand('workspai.importWorkspaceShareBundle', async () => {
         const picked = await vscode.window.showOpenDialog({
@@ -562,9 +804,9 @@ export async function activate(context: vscode.ExtensionContext) {
           vscode.window.showErrorMessage(`Failed to import workspace share bundle: ${message}`);
         }
       }),
-      // AI-powered workspace creation — triggered from sidebar Quick Actions panel
+      // AI-powered workspace creation — triggered from the sidebar Workspai panel
       vscode.commands.registerCommand('workspai.openAICreateWorkspace', () => {
-        WelcomePanel.openAICreateModal(context, 'workspace');
+        void secondaryActionsWebviewProvider?.revealSecondaryTab('create');
       }),
       // AI-powered project creation — triggered from Projects panel title button
       vscode.commands.registerCommand('workspai.aiCreateProject', () => {
@@ -588,7 +830,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Listen for terminal close events to update running servers
     context.subscriptions.push(
-      vscode.window.onDidCloseTerminal((closedTerminal) => {
+      vscode.window.onDidCloseTerminal(async (closedTerminal) => {
         // Find and remove from runningServers
         for (const [projectPath, terminal] of runningServers.entries()) {
           if (terminal === closedTerminal) {
@@ -599,8 +841,68 @@ export async function activate(context: vscode.ExtensionContext) {
             break;
           }
         }
+
+        if (!shouldRefreshEvidenceOnTerminalClose(closedTerminal)) {
+          return;
+        }
+
+        const workspacePath =
+          resolveWorkspacePathForEvidenceTerminal(closedTerminal) ??
+          workspaceExplorer?.getSelectedWorkspace()?.path;
+        if (!workspacePath) {
+          return;
+        }
+
+        logger.info(`Refreshing workspace evidence after terminal close: ${closedTerminal.name}`);
+        doctorEvidenceExplorer?.refresh();
+        workspaceContractGraphExplorer?.refresh();
+        await WelcomePanel.refreshDashboardForWorkspacePath(workspacePath);
+        await syncWalkthroughEvidenceContext(workspacePath, {
+          context,
+          extensionVersion: context.extension.packageJSON.version,
+        });
       })
     );
+
+    // Refresh the same evidence surfaces after a streamed (programmatic)
+    // workspace intelligence run completes — the cli-log-event.v1 driven path
+    // (roadmap 2.2) does not open a terminal, so it triggers refresh directly.
+    setWorkspaceEvidenceRefreshHandler(async (workspacePath) => {
+      logger.info(
+        `Refreshing workspace evidence after streamed intelligence run: ${workspacePath}`
+      );
+      doctorEvidenceExplorer?.refresh();
+      workspaceContractGraphExplorer?.refresh();
+      await WelcomePanel.refreshDashboardForWorkspacePath(workspacePath);
+      await syncWalkthroughEvidenceContext(workspacePath, {
+        context,
+        extensionVersion: context.extension.packageJSON.version,
+      });
+    });
+    context.subscriptions.push({ dispose: () => setWorkspaceEvidenceRefreshHandler(undefined) });
+
+    // Runtime CLI version gate (roadmap 2.3): in the background, detect the
+    // linked rapidkit CLI version and warn (once) with an "Update CLI" action if
+    // it is older than the minimum the extension is verified against.
+    void runOptionalActivationLane(logger, 'cli-version-gate', async () => {
+      const cwd =
+        workspaceExplorer?.getSelectedWorkspace()?.path ??
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      await presentCliVersionGate({ cwd });
+    });
+
+    // Seed the evidence-driven Getting Started walkthrough (roadmap 2.7) so its
+    // checklist reflects existing artifacts on activation.
+    void runOptionalActivationLane(logger, 'walkthrough-evidence-context', async () => {
+      const cwd =
+        workspaceExplorer?.getSelectedWorkspace()?.path ??
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ??
+        null;
+      await syncWalkthroughEvidenceContext(cwd, {
+        context,
+        extensionVersion: context.extension.packageJSON.version,
+      });
+    });
 
     // Initialize configuration manager
     logger.info('Step 2: Initializing configuration manager...');
@@ -638,12 +940,28 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Initialize tree view providers
     logger.info('Step 5: Initializing tree view providers...');
-    actionsWebviewProvider = new ActionsWebviewProvider(context.extensionUri);
+    actionsWebviewProvider = new ActionsWebviewProvider(
+      context.extensionUri,
+      'activitybar',
+      context
+    );
+    secondaryActionsWebviewProvider = new ActionsWebviewProvider(
+      context.extensionUri,
+      'secondary-sidebar',
+      context
+    );
     workspaceExplorer = new WorkspaceExplorerProvider();
     projectExplorer = new ProjectExplorerProvider();
     moduleExplorer = new ModuleExplorerProvider();
+    registerModuleExplorerReload(() => moduleExplorer.reloadModuleStates());
     doctorEvidenceExplorer = new DoctorEvidenceProvider(
-      () => workspaceExplorer?.getSelectedWorkspace()?.path ?? null
+      () => workspaceExplorer?.getSelectedWorkspace()?.path ?? null,
+      () => {
+        const project = projectExplorer?.getSelectedProject();
+        return typeof project?.path === 'string'
+          ? project.path
+          : (getSelectedProjectPath() ?? null);
+      }
     );
     workspaceContractGraphExplorer = new WorkspaceContractGraphProvider(
       () => workspaceExplorer?.getSelectedWorkspace()?.path ?? null
@@ -666,7 +984,14 @@ export async function activate(context: vscode.ExtensionContext) {
     // Register tree views
     logger.info('Step 6: Registering tree views...');
     context.subscriptions.push(
-      vscode.window.registerWebviewViewProvider('rapidkitActionsWebview', actionsWebviewProvider),
+      vscode.window.registerWebviewViewProvider(
+        ActionsWebviewProvider.viewType,
+        actionsWebviewProvider
+      ),
+      vscode.window.registerWebviewViewProvider(
+        ActionsWebviewProvider.secondaryViewType,
+        secondaryActionsWebviewProvider
+      ),
       vscode.window.registerTreeDataProvider('rapidkitWorkspaces', workspaceExplorer)
     );
     const projectsDropController: vscode.TreeDragAndDropController<ProjectTreeItem> = {
@@ -700,23 +1025,46 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(projectsTreeView);
     projectsTreeView.onDidChangeSelection((e) => {
       const item = e.selection[0];
-      if (item && item instanceof ProjectTreeItem && item.project?.path) {
+      if (
+        item &&
+        item instanceof ProjectTreeItem &&
+        item.project?.path &&
+        (item.contextValue === 'project' || item.contextValue === 'project-running')
+      ) {
         setSelectedProjectPath(item.project.path);
-        // Update Module Explorer to show installed modules for this project
         moduleExplorer.setProjectPath(item.project.path, item.project.type);
+        secondaryActionsWebviewProvider?.refreshScope();
+        void WelcomePanel.syncProjectSelectionFromSidebar(item.project);
       }
     });
     context.subscriptions.push(
-      vscode.window.registerTreeDataProvider('rapidkitModules', moduleExplorer),
-      vscode.window.registerTreeDataProvider('rapidkitDoctorEvidence', doctorEvidenceExplorer),
-      vscode.window.registerTreeDataProvider(
-        'rapidkitWorkspaceContractGraph',
-        workspaceContractGraphExplorer
-      ),
+      vscode.window.registerTreeDataProvider('rapidkitModules', moduleExplorer)
+    );
+    try {
+      context.subscriptions.push(
+        vscode.window.registerTreeDataProvider('rapidkitDoctorEvidence', doctorEvidenceExplorer)
+      );
+    } catch (error) {
+      logger.error('Failed to register Workspace Health tree provider', error);
+    }
+    try {
+      context.subscriptions.push(
+        vscode.window.registerTreeDataProvider(
+          'rapidkitWorkspaceContractGraph',
+          workspaceContractGraphExplorer
+        )
+      );
+    } catch (error) {
+      logger.error('Failed to register Contract Graph tree provider', error);
+    }
+    context.subscriptions.push(
       // Refresh evidence panel whenever workspace tree changes (fires right after selectedWorkspace is updated)
       workspaceExplorer.onDidChangeTreeData(() => {
         doctorEvidenceExplorer.refresh();
         workspaceContractGraphExplorer.refresh();
+      }),
+      projectExplorer.onDidChangeTreeData(() => {
+        doctorEvidenceExplorer.refresh();
       })
     );
 
@@ -755,57 +1103,93 @@ export async function activate(context: vscode.ExtensionContext) {
         // File watcher on doctor-last-run.json triggers refresh automatically
       }),
       vscode.commands.registerCommand(
-        'workspai.doctorEvidence.fixIssueWithAI',
-        async (issue: string, project: ProjectEvidence, aiContext?: DoctorIssueAIContext) => {
-          if (!issue) {
+        'workspai.doctorEvidence.sendIssueToAdvisor',
+        async (item?: unknown) => {
+          const handoff = resolveDoctorIssueHandoff(item);
+          if (!handoff) {
             return;
           }
-          const framework = project?.framework ?? 'unknown';
-          const projectName = project?.name ?? 'project';
-          const structuredContext = {
-            issue,
-            project: {
-              name: projectName,
-              path: project?.path,
-              framework,
-              depsInstalled: project?.depsInstalled,
-              fixCommands: project?.fixCommands ?? [],
-            },
+          revealWorkspaceAdvisorForScope({
             workspace: {
-              name: aiContext?.workspaceName,
-              generatedAt: aiContext?.generatedAt,
-              healthScore: aiContext?.healthScore,
-              versions: aiContext?.systemVersions,
+              name: handoff.workspaceName,
+              path: handoff.workspacePath,
             },
-          };
-          const prefillQuestion = [
-            `Project: ${projectName} (${framework})`,
-            `Issue detected by Workspai Doctor:`,
-            issue,
-            project?.fixCommands?.length
-              ? `Suggested fix commands:\n${project.fixCommands.map((c) => `  ${c}`).join('\n')}`
-              : '',
-            `Doctor evidence (structured JSON):\n${JSON.stringify(structuredContext, null, 2)}`,
-          ]
-            .filter(Boolean)
-            .join('\n');
-
-          WelcomePanel.showAIModal(context, {
-            type: 'project',
-            name: projectName,
-            path: project?.path,
-            framework: framework === 'unknown' ? undefined : framework,
-            prefillQuestion,
-            prefillMode: 'debug',
+            project: handoff.project
+              ? {
+                  name: handoff.project.name,
+                  path: handoff.project.path,
+                  type: handoff.project.framework,
+                  workspacePath: handoff.workspacePath,
+                }
+              : null,
+            initialQuestion: buildDoctorIssueAdvisorQuestion(handoff),
+            source: 'workspace-health',
+            trigger: 'doctor-issue-advisor',
           });
+        }
+      ),
+      vscode.commands.registerCommand(
+        'workspai.doctorEvidence.sendIssueToStudio',
+        async (item?: unknown) => {
+          const handoff = resolveDoctorIssueHandoff(item);
+          if (!handoff) {
+            return;
+          }
+          revealStudioForScope({
+            workspace: {
+              name: handoff.workspaceName,
+              path: handoff.workspacePath,
+            },
+            project: handoff.project
+              ? {
+                  name: handoff.project.name,
+                  path: handoff.project.path,
+                  type: handoff.project.framework,
+                  workspacePath: handoff.workspacePath,
+                }
+              : null,
+            initialTask: buildDoctorIssueStudioPrompt(handoff),
+            composerHandoff: 'prefill',
+            studioMode: 'investigate',
+            source: 'workspace-health',
+            trigger: 'doctor-issue-studio',
+          });
+        }
+      ),
+      vscode.commands.registerCommand(
+        'workspai.doctorEvidence.sendIssueToCopilot',
+        async (item?: unknown) => {
+          const handoff = resolveDoctorIssueHandoff(item);
+          if (!handoff) {
+            return;
+          }
+          await sendEvidenceToCopilot({
+            workspacePath: handoff.workspacePath,
+            workspaceName: handoff.workspaceName,
+            projectPath: handoff.project?.path,
+            projectName: handoff.project?.name,
+            userQuestion: buildDoctorIssueCopilotQuestion(handoff),
+          });
+        }
+      ),
+      vscode.commands.registerCommand(
+        'workspai.doctorEvidence.fixIssueWithAI',
+        async (item?: unknown) => {
+          await vscode.commands.executeCommand('workspai.doctorEvidence.sendIssueToAdvisor', item);
         }
       ),
       // Refresh evidence panel whenever workspace selection changes
       vscode.commands.registerCommand('workspai.workspaceSelected', async (workspace: unknown) => {
-        projectExplorer?.setWorkspace(asWorkspaiWorkspace(workspace));
+        const selectedWorkspace = asWorkspaiWorkspace(workspace);
+        projectExplorer?.setWorkspace(selectedWorkspace);
         doctorEvidenceExplorer.refresh();
         workspaceContractGraphExplorer.refresh();
+        secondaryActionsWebviewProvider?.refreshScope();
         await WelcomePanel.refreshDashboardForWorkspaceSelection();
+        await syncWalkthroughEvidenceContext(selectedWorkspace?.path ?? null, {
+          context,
+          extensionVersion: context.extension.packageJSON.version,
+        });
       })
     );
 
@@ -910,11 +1294,20 @@ export async function activate(context: vscode.ExtensionContext) {
         const usageTracker = WorkspaceUsageTracker.getInstance();
         await usageTracker.initialize();
 
-        // Step 12: Show AI feature onboarding tips (once per version unless forced)
-        logger.info('Step 12: Checking AI onboarding tips...');
-        await showAIFeatureOnboarding(context);
-
         logger.info('✅ Workspai extension initialized successfully!');
+
+        // Non-blocking: onboarding toast should not delay activation completion.
+        void showAIFeatureOnboarding(context);
+
+        // Optional, opt-in retention analytics (roadmap 2.10). One-time consent
+        // prompt (privacy-first, default off); capture a local anonymous cohort
+        // snapshot only when explicitly opted in.
+        void runOptionalActivationLane(logger, 'retention-analytics', async () => {
+          await showAnalyticsConsentPrompt();
+          await captureRetentionAnalytics(context, {
+            extensionVersion: context.extension.packageJSON.version,
+          });
+        });
 
         registerProjectRefreshWatchers(context, config, () => {
           projectExplorer.refresh();
@@ -928,12 +1321,6 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.window.showErrorMessage(
       `Failed to activate Workspai extension: ${error instanceof Error ? error.message : String(error)}`
     );
-  }
-}
-
-export async function refreshModuleExplorerStates(): Promise<void> {
-  if (moduleExplorer) {
-    await moduleExplorer.reloadModuleStates();
   }
 }
 

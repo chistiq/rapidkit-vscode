@@ -26,7 +26,20 @@ import {
   selectModelAuto,
   selectModelWithPreference as selectModelWithPreferenceInternal,
 } from './aiModelSelection';
+import {
+  frontendKitIdForFramework,
+  isBackendScaffoldFramework,
+  isFrontendScaffoldFramework,
+  type ScaffoldKitId,
+  type ScaffoldFramework,
+} from './scaffoldKits';
+import {
+  resolveCreateCapabilityFromPrompt,
+  type CreatePlannerCapability,
+} from '../contracts/createPlannerCapabilities';
 import { buildHeuristicCreationDraft } from './aiCreationHeuristic';
+import { inferPolyglotCompanionProject } from './creationStackIntent';
+import { getCanonicalWorkspacesDirectory } from './workspacePaths';
 import { readLanguageModelResponseText } from './languageModelResponse';
 import { buildAIModalUserMessage as buildAIModalUserMessageInternal } from './aiPromptMessageBuilder';
 import { buildWorkspaiSystemPrompt as buildWorkspaiSystemPromptInternal } from './aiSystemPromptBuilder';
@@ -300,7 +313,6 @@ export async function askAI(
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 
 export interface AIModalContext {
   type: 'workspace' | 'project' | 'module';
@@ -324,15 +336,7 @@ interface AIWorkspaceHealthSummary {
 }
 
 // ─── Kit types detected at runtime ─────────────────────────────────────────
-export type RapidKitType =
-  | 'fastapi.ddd'
-  | 'fastapi.standard'
-  | 'nestjs.standard'
-  | 'gofiber.standard'
-  | 'gogin.standard'
-  | 'springboot.standard'
-  | 'dotnet.webapi.clean'
-  | 'unknown';
+export type RapidKitType = ScaffoldKitId | 'unknown';
 
 export interface InstalledModule {
   slug: string;
@@ -856,8 +860,7 @@ const LIVE_MODULES_TTL_MS = 5 * 60 * 1000; // 5 minutes
  * Try to fetch the live module list from the installed rapidkit engine.
  * Strategy:
  *   1. Try the locally installed `rapidkit` binary (fastest, no network).
- *   2. Fall back to the pinned npm wrapper (`npx --yes --package rapidkit rapidkit`)
- *      so local rapidkit/rapidkit.cmd launchers cannot shadow the package command.
+ *   2. Fall back to `npx --yes rapidkit` via buildNpxRapidkitArgs
  * Returns `null` when rapidkit is not installed or the command fails.
  * Results are cached for `LIVE_MODULES_TTL_MS` to avoid overhead.
  */
@@ -1146,7 +1149,7 @@ export type AICreateProfile =
   | 'dotnet-only'
   | 'polyglot'
   | 'enterprise';
-export type AICreateFramework = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
+export type AICreateFramework = ScaffoldFramework;
 
 export interface AICreationPlan {
   type: 'workspace' | 'project';
@@ -1158,6 +1161,25 @@ export interface AICreationPlan {
   projectName: string;
   suggestedModules: string[];
   description: string;
+  secondaryProject?: {
+    framework: AICreateFramework;
+    kit: string;
+    projectName: string;
+  };
+}
+
+export class UnsupportedCreationStackError extends Error {
+  readonly stackLabel: string;
+  readonly capability?: CreatePlannerCapability;
+
+  constructor(stackLabel: string, capability?: CreatePlannerCapability) {
+    super(
+      `${stackLabel} is not available as a native RapidKit scaffold yet. Create an empty governed workspace, then add or adopt your ${stackLabel} project so Workspai can index it, generate workspace intelligence, and keep agents aligned.`
+    );
+    this.name = 'UnsupportedCreationStackError';
+    this.stackLabel = stackLabel;
+    this.capability = capability;
+  }
 }
 
 const VALID_PROFILES = new Set<AICreateProfile>([
@@ -1178,12 +1200,23 @@ const VALID_INSTALL_METHODS = new Set<AICreationPlan['installMethod']>([
   'pipx',
 ]);
 
-const FRAMEWORK_TO_KITS: Record<AICreateFramework, string[]> = {
+const FRAMEWORK_TO_KITS: Record<ScaffoldFramework, string[]> = {
   fastapi: ['fastapi.standard', 'fastapi.ddd'],
   nestjs: ['nestjs.standard'],
   go: ['gofiber.standard', 'gogin.standard'],
   springboot: ['springboot.standard'],
   dotnet: ['dotnet.webapi.clean'],
+  nextjs: ['frontend.nextjs'],
+  remix: ['frontend.remix'],
+  'vite-react': ['frontend.vite-react'],
+  'vite-vue': ['frontend.vite-vue'],
+  'vite-svelte': ['frontend.vite-svelte'],
+  'vite-solid': ['frontend.vite-solid'],
+  'vite-vanilla': ['frontend.vite-vanilla'],
+  nuxt: ['frontend.nuxt'],
+  angular: ['frontend.angular'],
+  astro: ['frontend.astro'],
+  sveltekit: ['frontend.sveltekit'],
 };
 
 const STATIC_MODULE_SLUGS = new Set<string>([
@@ -1237,8 +1270,8 @@ function extractJSON(text: string): string {
 /**
  * Map a framework string to the default profile.
  */
-function defaultProfile(fw: string): AICreateProfile {
-  if (fw === 'nestjs') {
+function defaultProfile(fw: ScaffoldFramework): AICreateProfile {
+  if (isFrontendScaffoldFramework(fw) || fw === 'nestjs') {
     return 'node-only';
   }
   if (fw === 'go') {
@@ -1248,22 +1281,19 @@ function defaultProfile(fw: string): AICreateProfile {
     return 'java-only';
   }
   if (fw === 'dotnet') {
-    return 'polyglot';
+    return 'dotnet-only';
   }
   return 'python-only';
 }
 
-function isCreateFramework(value: unknown): value is AICreateFramework {
+function isCreateFramework(value: unknown): value is ScaffoldFramework {
   return (
-    value === 'fastapi' ||
-    value === 'nestjs' ||
-    value === 'go' ||
-    value === 'springboot' ||
-    value === 'dotnet'
+    typeof value === 'string' &&
+    (isBackendScaffoldFramework(value) || isFrontendScaffoldFramework(value))
   );
 }
 
-function normalizeCreationFramework(value: unknown, frameworkHint?: string): AICreateFramework {
+function normalizeCreationFramework(value: unknown, frameworkHint?: string): ScaffoldFramework {
   if (isCreateFramework(value)) {
     return value;
   }
@@ -1273,7 +1303,10 @@ function normalizeCreationFramework(value: unknown, frameworkHint?: string): AIC
   return 'fastapi';
 }
 
-function defaultKitForFramework(framework: AICreateFramework): string {
+function defaultKitForFramework(framework: ScaffoldFramework): string {
+  if (isFrontendScaffoldFramework(framework)) {
+    return frontendKitIdForFramework(framework);
+  }
   if (framework === 'nestjs') {
     return 'nestjs.standard';
   }
@@ -1289,18 +1322,54 @@ function defaultKitForFramework(framework: AICreateFramework): string {
   return 'fastapi.standard';
 }
 
-function normalizeCreationKit(kit: unknown, framework: AICreateFramework): string {
+function labelCreatePlannerCapability(capability: CreatePlannerCapability): string {
+  const resolved = capability.resolved ?? capability.requested;
+  const labels: Record<string, string> = {
+    'wordpress-site': 'WordPress',
+    'wordpress-block': 'WordPress block',
+    laravel: 'Laravel',
+    symfony: 'Symfony',
+    rails: 'Rails',
+    php: 'PHP',
+    ruby: 'Ruby',
+    rust: 'Rust',
+    elixir: 'Elixir',
+    clojure: 'Clojure',
+    scala: 'Scala',
+    kotlin: 'Kotlin',
+  };
+
+  return labels[resolved] ?? labels[capability.requested] ?? resolved;
+}
+
+function detectUnsupportedCreationStack(
+  prompt: string,
+  frameworkHint?: string
+): CreatePlannerCapability | null {
+  const capability = resolveCreateCapabilityFromPrompt(prompt, frameworkHint);
+  if (capability && !capability.canExecuteCreate) {
+    return capability;
+  }
+
+  return null;
+}
+
+function normalizeCreationKit(kit: unknown, framework: ScaffoldFramework): string {
   if (typeof kit === 'string' && FRAMEWORK_TO_KITS[framework].includes(kit)) {
     return kit;
   }
   return defaultKitForFramework(framework);
 }
 
-function normalizeCreationProfile(profile: unknown, framework: AICreateFramework): AICreateProfile {
+function normalizeCreationProfile(profile: unknown, framework: ScaffoldFramework): AICreateProfile {
   if (typeof profile === 'string' && VALID_PROFILES.has(profile as AICreateProfile)) {
     return profile as AICreateProfile;
   }
   return defaultProfile(framework);
+}
+
+export function resolveCreationProfile(profile: unknown, framework: unknown): AICreateProfile {
+  return normalizeCreationProfile(profile, normalizeCreationFramework(framework));
 }
 
 function normalizeInstallMethod(value: unknown): AICreationPlan['installMethod'] {
@@ -1313,13 +1382,45 @@ function normalizeInstallMethod(value: unknown): AICreationPlan['installMethod']
   return 'auto';
 }
 
+function normalizeSecondaryProject(
+  raw: unknown,
+  prompt: string,
+  primaryFramework: ScaffoldFramework,
+  stackIntent?: import('./creationStackIntent').CreationStackIntent
+): AICreationPlan['secondaryProject'] | undefined {
+  const heuristicFallback = () =>
+    inferPolyglotCompanionProject(prompt, primaryFramework, stackIntent);
+
+  if (!raw || typeof raw !== 'object') {
+    return heuristicFallback();
+  }
+
+  const record = raw as Record<string, unknown>;
+  const framework = normalizeCreationFramework(record.framework, undefined);
+  const kit = normalizeCreationKit(record.kit, framework);
+  const projectName = sanitizeKebab(
+    typeof record.projectName === 'string' ? record.projectName : 'companion-project'
+  );
+
+  if (framework === primaryFramework) {
+    return heuristicFallback();
+  }
+
+  return { framework, kit, projectName };
+}
+
 function normalizeSuggestedModules(
   modules: unknown,
   liveModules: LiveModuleEntry[] | null,
-  framework?: AICreateFramework
+  framework?: ScaffoldFramework
 ): string[] {
-  // Go, Spring Boot, and .NET kits do not support the RapidKit module marketplace.
-  if (framework === 'go' || framework === 'springboot' || framework === 'dotnet') {
+  // Go, Spring Boot, .NET, and frontend kits do not support the RapidKit module marketplace.
+  if (
+    framework === 'go' ||
+    framework === 'springboot' ||
+    framework === 'dotnet' ||
+    (framework && isFrontendScaffoldFramework(framework))
+  ) {
     return [];
   }
 
@@ -1413,9 +1514,18 @@ export async function parseCreationIntent(
   textProvider?: (
     messages: AIMessage[],
     token?: vscode.CancellationToken
-  ) => Promise<{ text: string; modelId: string }>
+  ) => Promise<{ text: string; modelId: string }>,
+  stackIntent?: import('./creationStackIntent').CreationStackIntent
 ): Promise<{ plan: AICreationPlan; modelId: string; planSource: 'llm' | 'heuristic' }> {
   const logger = Logger.getInstance();
+  const unsupportedCapability = detectUnsupportedCreationStack(prompt, frameworkHint);
+  if (unsupportedCapability) {
+    throw new UnsupportedCreationStackError(
+      labelCreatePlannerCapability(unsupportedCapability),
+      unsupportedCapability
+    );
+  }
+
   const liveModules = await getWorkspaceAwareLiveModules(workspacePath);
   const modulesSection = buildModuleListForPrompt(liveModules);
   const installedElsewhere = await collectWorkspaceInstalledModules(workspacePath);
@@ -1426,22 +1536,31 @@ export async function parseCreationIntent(
 Available workspace profiles:
   "minimal"      — files only, no runtime
   "python-only"  — Python backend (FastAPI)
-  "node-only"    — Node.js backend (NestJS)
+  "node-only"    — Node.js backend or frontend apps
   "go-only"      — Go backend
   "java-only"    — Java backend (Spring Boot)
+  "dotnet-only"  — .NET backend
   "polyglot"     — mixed Python + Node + Go + Java
   "enterprise"   — multi-team governance
 
-Available frameworks: "fastapi" | "nestjs" | "go" | "springboot" | "dotnet"
+Available frameworks:
+  Backend: "fastapi" | "nestjs" | "go" | "springboot" | "dotnet"
+  Frontend: "nextjs" | "remix" | "vite-react" | "vite-vue" | "vite-svelte" | "vite-solid" | "vite-vanilla" | "nuxt" | "angular" | "astro" | "sveltekit"
+
+Unsupported native scaffolds:
+  PHP / Laravel / Symfony, Ruby / Rails, and Rust are NOT native create targets yet.
+  Never translate these requests into NestJS, FastAPI, Go, Java, .NET, or frontend kits.
+  If the user explicitly asks for an unsupported stack, the host will stop the create flow and guide them to create/adopt/import instead.
 
 Available kits (use EXACT names):
   "fastapi.standard"  — FastAPI flat structure (default for Python)
   "fastapi.ddd"       — FastAPI clean-architecture DDD (use for complex/layered/domain-driven)
-  "nestjs.standard"   — NestJS feature module (default for Node)
+  "nestjs.standard"   — NestJS feature module (default for Node backend)
   "gofiber.standard"  — Go + Fiber v2 HTTP (fast, minimal)
   "gogin.standard"    — Go + Gin HTTP (classic REST)
   "springboot.standard" — Spring Boot service (default for Java)
   "dotnet.webapi.clean" — .NET Web API clean architecture service (default for C#)
+  "frontend.nextjs" | "frontend.remix" | "frontend.vite-react" | "frontend.vite-vue" | "frontend.vite-svelte" | "frontend.vite-solid" | "frontend.vite-vanilla" | "frontend.nuxt" | "frontend.angular" | "frontend.astro" | "frontend.sveltekit"
 
 ${modulesSection}
 
@@ -1455,28 +1574,47 @@ Required JSON schema (return EXACTLY this):
   "workspaceName": "<kebab-case, 2-30 chars, reflects the product>",
   "profile": "<one of the profiles above>",
   "installMethod": "auto",
-  "framework": "<fastapi|nestjs|go>",
+  "framework": "<framework id>",
   "kit": "<kit name>",
   "projectName": "<kebab-case service name, e.g. product-api>",
   "suggestedModules": ["<slug>", ...],
-  "description": "<one sentence describing what this project does>"
+  "description": "<one sentence describing what this project does>",
+  "secondaryProject": {
+    "framework": "<companion framework id>",
+    "kit": "<companion kit name>",
+    "projectName": "<kebab-case companion name>"
+  }
 }
 
 Rules:
 - For fastapi/nestjs, ALWAYS include "free/essentials/settings" in suggestedModules
-- For go/springboot, set suggestedModules to []
+- For go/springboot/dotnet/frontend frameworks, set suggestedModules to []
 - Use fastapi.ddd kit when: DDD / clean-arch / domain / layered / complex mentioned
-- Use enterprise profile when: enterprise / governance / multi-team / compliance mentioned
-- Profile follows framework unless polyglot / enterprise
+- Use polyglot profile when: full-stack / polyglot / frontend+backend / multiple runtimes mentioned
+- Choose the smallest accurate stack from the user's wording; do not blindly convert product-domain requests into full-stack
+- Use frontend-only when the user asks for UI, dashboard, website, frontend, landing pages, or client app without backend/API needs
+- Use backend-only when the user asks for API, backend, service, database, integration service, or automation without UI/client needs
+- Use polyglot profile when both a user-facing app and backend/API/data workflow are requested or clearly implied
+- For polyglot / full-stack workspace mode, include secondaryProject with the companion stack (frontend + API)
+- Omit secondaryProject when only one runtime is needed
+- Use enterprise profile when: enterprise / compliance / multi-team / audit mentioned WITHOUT full-stack intent
+- Frontend frameworks (nextjs, vite-*, nuxt, angular, astro, sveltekit, remix) → profile node-only, kit frontend.*, projectName ends with -app
+- Backend APIs → projectName ends with -api (or -service for go/springboot/dotnet)
+- Profile follows framework unless polyglot / enterprise intent is explicit
 - Include db module when: database / postgres / mongo / store / persist mentioned
 - Include auth module when: auth / user / login / jwt / oauth / session mentioned
 - Include redis when: cache / redis / session / rate-limit mentioned
 - workspaceName reflects the product domain (e.g. "invoice-tracker", "ecommerce-platform")
-- projectName is the first microservice name (e.g. "product-api", "auth-service")`;
+- projectName is the first project in the workspace (e.g. "product-api", "marketing-app", "billing-service")`;
 
-  const USER = frameworkHint
-    ? `Framework: ${frameworkHint}\nMode: ${mode}\nDescription: ${prompt}`
-    : `Mode: ${mode}\nDescription: ${prompt}`;
+  const USER = [
+    frameworkHint ? `Framework: ${frameworkHint}` : '',
+    stackIntent && stackIntent !== 'balanced' ? `Stack intent: ${stackIntent}` : '',
+    `Mode: ${mode}`,
+    `Description: ${prompt}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
 
   let rawText = '';
   let modelId = 'heuristic';
@@ -1520,22 +1658,28 @@ Rules:
       parsed = JSON.parse(extractJSON(rawText));
     } catch {
       logger.warn('[AI] Creation intent JSON parse failed, using heuristic planner');
-      parsed = buildHeuristicCreationDraft(prompt, mode, frameworkHint);
+      parsed = buildHeuristicCreationDraft(prompt, mode, frameworkHint, stackIntent);
       planSource = 'heuristic';
     }
   } else {
     logger.warn('[AI] Creation intent LLM returned empty text, using heuristic planner');
-    parsed = buildHeuristicCreationDraft(prompt, mode, frameworkHint);
+    parsed = buildHeuristicCreationDraft(prompt, mode, frameworkHint, stackIntent);
     planSource = 'heuristic';
   }
 
   const fw = normalizeCreationFramework(parsed.framework, frameworkHint);
   const rawName = addWspSuffix(sanitizeKebab(parsed.workspaceName ?? 'my-workspace'));
   const uniqueName = await resolveUniqueWorkspaceName(rawName);
+  const heuristicDraft = buildHeuristicCreationDraft(prompt, mode, frameworkHint, stackIntent);
+  const heuristicProfile = heuristicDraft.profile;
+  const companionStackIntent = stackIntent;
   const plan: AICreationPlan = {
     type: mode,
     workspaceName: uniqueName,
-    profile: normalizeCreationProfile(parsed.profile, fw),
+    profile:
+      mode === 'workspace'
+        ? normalizeCreationProfile(parsed.profile ?? heuristicProfile, fw)
+        : normalizeCreationProfile(parsed.profile, fw),
     installMethod: normalizeInstallMethod(parsed.installMethod),
     framework: fw,
     kit: normalizeCreationKit(parsed.kit, fw),
@@ -1545,6 +1689,10 @@ Rules:
       typeof parsed.description === 'string' && parsed.description.trim()
         ? parsed.description.trim().slice(0, 240)
         : prompt.trim().slice(0, 240),
+    secondaryProject:
+      mode === 'workspace'
+        ? normalizeSecondaryProject(parsed.secondaryProject, prompt, fw, companionStackIntent)
+        : undefined,
   };
 
   return { plan, modelId, planSource };
@@ -1552,11 +1700,11 @@ Rules:
 
 /**
  * Resolve a unique workspace name by checking if the default installation
- * directory (~Workspai/rapidkits/<name>) already exists on disk.
+ * directory (~/rapidkit/workspaces/<name>) already exists on disk.
  * If it does, append -2, -3, ... until a free slot is found.
  */
 async function resolveUniqueWorkspaceName(name: string): Promise<string> {
-  const base = path.join(os.homedir(), 'Workspai', 'rapidkits');
+  const base = getCanonicalWorkspacesDirectory();
   let candidate = name;
   let counter = 2;
   // Safety cap: stop after 99 attempts to avoid infinite loop.

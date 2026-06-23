@@ -29,10 +29,13 @@ import {
 import type { ModuleData, CategoryInfo, WorkspaceStatus, ModulesCatalogMeta } from '@/types';
 import { catalogShowsFallbackBanner } from '@/lib/dashboardCatalogLoad';
 import { getProjectFrameworkLabel, isUnsupportedModuleProjectType } from '@/lib/moduleSupport';
+import { WORKSPAI_AI_ASSISTANT_MODULE_TITLE } from '@/lib/workspaiAiNarrative';
 import { ProjectActions } from './ProjectActions';
 import { WorkspaiEmptyState } from './WorkspaiEmptyState';
 import { SectionHeader } from './SectionHeader';
 import { buildRapidkitDisplayCommand } from '../lib/rapidkitCommandText';
+import type { DashboardScopeDescriptor } from '@/lib/dashboardScope';
+import { dashboardScopeDetail, dashboardScopeLabel } from '@/lib/dashboardScope';
 
 // Icon mapping based on category
 const categoryIcons: Record<string, any> = {
@@ -54,6 +57,7 @@ interface ModuleBrowserProps {
   modules: ModuleData[];
   catalogMeta?: ModulesCatalogMeta | null;
   workspaceStatus: WorkspaceStatus;
+  scope: DashboardScopeDescriptor;
   categoryInfo: CategoryInfo;
   onRefresh: () => void;
   onInstall: (module: ModuleData) => void;
@@ -80,12 +84,14 @@ interface ModuleBrowserProps {
   surface?: 'console' | 'catalog';
   /** When false, ProjectActions must be rendered by the parent (Console tab). */
   includeProjectActions?: boolean;
+  onCopyText?: (text: string) => void;
 }
 
 export function ModuleBrowser({
   modules,
   catalogMeta,
   workspaceStatus,
+  scope,
   categoryInfo: _categoryInfo,
   onRefresh,
   onInstall,
@@ -110,6 +116,7 @@ export function ModuleBrowser({
   modulesDisabled = false,
   surface = 'console',
   includeProjectActions = true,
+  onCopyText,
 }: ModuleBrowserProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -123,7 +130,11 @@ export function ModuleBrowser({
   const hasProjectSelected = workspaceStatus.hasProjectSelected === true;
   const isCatalogSurface = surface === 'catalog';
   const unsupportedProject =
-    modulesDisabled || isUnsupportedModuleProjectType(workspaceStatus.projectType);
+    modulesDisabled ||
+    isUnsupportedModuleProjectType(
+      workspaceStatus.projectType,
+      workspaceStatus.projectCapabilities
+    );
   const unsupportedFrameworkLabel = getProjectFrameworkLabel(workspaceStatus.projectType);
   const canInstall = hasProjectSelected && !unsupportedProject;
   const showModuleControls =
@@ -132,9 +143,13 @@ export function ModuleBrowser({
     modules.length > 0 && (isCatalogSurface || (hasProjectSelected && !unsupportedProject));
 
   const installBlockedReason = !hasProjectSelected
-    ? 'Select a FastAPI or NestJS project in Console to install modules'
+    ? 'Select a project in the Project tab to install modules'
     : unsupportedProject
-      ? `Module installs are not supported for ${unsupportedFrameworkLabel} projects yet`
+      ? workspaceStatus.projectCapabilities?.available
+        ? workspaceStatus.projectCapabilities.frameworkDisplayName
+          ? `Module installs are not supported for ${workspaceStatus.projectCapabilities.frameworkDisplayName} projects`
+          : 'Module installs are not supported for this project'
+        : `Module installs are not supported for ${unsupportedFrameworkLabel} projects yet`
       : undefined;
 
   // Get unique categories
@@ -219,7 +234,10 @@ export function ModuleBrowser({
     });
   }, [moduleRows, moduleView, searchQuery, selectedCategory]);
 
-  const visibleRows = showAllModules ? filteredRows : filteredRows.slice(0, 16);
+  const defaultVisibleModuleCount = isCatalogSurface ? 8 : 10;
+  const visibleRows = showAllModules
+    ? filteredRows
+    : filteredRows.slice(0, defaultVisibleModuleCount);
   const hiddenModuleCount = filteredRows.length - visibleRows.length;
   const selectedProjectName =
     workspaceStatus.projectName || workspaceStatus.projectType || 'Selected project';
@@ -233,7 +251,7 @@ export function ModuleBrowser({
 
   const handleCopyCommand = (moduleId: string, slug: string) => {
     const command = buildRapidkitDisplayCommand(['add', 'module', slug]);
-    navigator.clipboard.writeText(command);
+    onCopyText?.(command);
     setCopiedModuleId(moduleId);
     setTimeout(() => setCopiedModuleId(null), 2000);
   };
@@ -286,6 +304,38 @@ export function ModuleBrowser({
         }
       />
 
+      <section className="module-browser-summary" aria-label="Library summary">
+        <div className="module-browser-summary__scope">
+          <span className="ws-kicker">{isCatalogSurface ? 'Library scope' : 'Project scope'}</span>
+          <strong>{isCatalogSurface ? 'RapidKit modules' : dashboardScopeLabel(scope)}</strong>
+          <small>
+            {isCatalogSurface
+              ? 'Browse modules and starter surfaces before installing into a supported project'
+              : dashboardScopeDetail(scope) || selectedProjectMeta}
+          </small>
+        </div>
+        <div className="module-browser-summary__stats" aria-label="Module inventory">
+          <span>
+            <strong>{moduleRows.length}</strong>
+            modules
+          </span>
+          <span>
+            <strong>{moduleViewCounts.installed}</strong>
+            installed
+          </span>
+          <span>
+            <strong>{moduleViewCounts.updates}</strong>
+            updates
+          </span>
+        </div>
+        <div className="module-browser-summary__state">
+          <span>{canInstall ? 'Ready to install' : 'Browse mode'}</span>
+          <strong>
+            {canInstall ? selectedProjectName : installBlockedReason || 'Select a project'}
+          </strong>
+        </div>
+      </section>
+
       {catalogMeta?.rapidkitCoreVersion || catalogShowsFallbackBanner(catalogMeta?.source) ? (
         <div
           className={`module-catalog-runtime-banner${
@@ -321,7 +371,7 @@ export function ModuleBrowser({
             <div className="warning-desc">
               The catalog below lists Workspai modules built for <strong>FastAPI</strong> and{' '}
               <strong>NestJS</strong> projects. Browse freely here; install or update from the{' '}
-              <strong>Console</strong> tab with a supported project selected.
+              <strong>Project</strong> tab with a supported project selected.
             </div>
           </div>
         </div>
@@ -366,7 +416,8 @@ export function ModuleBrowser({
             <div className="warning-title">No Project Selected</div>
             <div className="warning-desc">
               Select a FastAPI or NestJS project from the <strong>PROJECTS</strong> panel in the
-              sidebar to install modules, or create a new supported project.
+              sidebar to install modules. Frontend and extended backend kits do not use the RapidKit
+              module marketplace.
             </div>
           </div>
         </div>
@@ -390,6 +441,7 @@ export function ModuleBrowser({
         onProjectBuild && (
           <ProjectActions
             workspaceStatus={workspaceStatus}
+            scope={scope}
             onTerminal={onProjectTerminal}
             onInit={onProjectInit}
             onDev={onProjectDev}
@@ -575,7 +627,7 @@ export function ModuleBrowser({
                       <button
                         className="ws-btn ws-btn--ghost ws-btn--icon module-action-btn module-ai-btn"
                         onClick={() => onAI(module)}
-                        title="Ask AI about this module"
+                        title={WORKSPAI_AI_ASSISTANT_MODULE_TITLE}
                       >
                         <Sparkles size={14} aria-hidden="true" />
                       </button>

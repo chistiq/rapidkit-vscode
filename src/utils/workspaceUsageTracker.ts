@@ -13,6 +13,7 @@ import {
 } from './workspaceMarker';
 import { getExtensionVersion } from './constants';
 import { WorkspaceManager } from '../core/workspaceManager';
+import { SIDEBAR_ACTION_SURFACE } from '../contracts/sidebarActionSurface';
 
 export interface CommandTelemetrySummary {
   workspacePath: string;
@@ -1314,6 +1315,10 @@ export class WorkspaceUsageTracker {
   }
 
   private getTelemetrySurface(command: string): TelemetrySurface {
+    if (this.isTrackedSidebarTelemetryCommand(command)) {
+      return 'action';
+    }
+
     for (const rule of TELEMETRY_SURFACE_ALLOWLIST) {
       if (rule.pattern.test(command)) {
         return rule.surface;
@@ -1337,6 +1342,19 @@ export class WorkspaceUsageTracker {
     }
 
     return 'other';
+  }
+
+  private isTrackedSidebarTelemetryCommand(command: string): boolean {
+    const prefix = 'workspai.sidebar.';
+    if (!command.startsWith(prefix)) {
+      return false;
+    }
+
+    const actionId = command.slice(prefix.length);
+    const action = (
+      SIDEBAR_ACTION_SURFACE as Record<string, { trackActivity?: boolean } | undefined>
+    )[actionId];
+    return action?.trackActivity === true;
   }
 
   private buildSurfaceBreakdown(

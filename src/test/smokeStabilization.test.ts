@@ -50,8 +50,10 @@ describe('smoke: dashboard section navigation', () => {
       await import('../../webview-ui/src/lib/dashboardSections');
 
     expect(normalizeDashboardSection('catalog')).toBe('catalog');
+    expect(normalizeDashboardSection('workspaces')).toBe('catalog');
     expect(normalizeDashboardSection('invalid')).toBe('overview');
     expect(normalizeDashboardSection('evidence')).toBe('evidence');
+    expect(normalizeDashboardSection('repair')).toBe('repair');
     expect(normalizeDashboardSection('operate')).toBe('operate');
     expect(dashboardSectionNeedsCatalog('console')).toBe(true);
     expect(dashboardSectionNeedsCatalog('overview')).toBe(false);
@@ -61,13 +63,54 @@ describe('smoke: dashboard section navigation', () => {
       dashboardSectionForOpsChainStep,
       dashboardSectionForIncidentTarget,
       dashboardSectionLabel,
+      dashboardSectionScope,
     } = await import('../../webview-ui/src/lib/dashboardSections');
 
     expect(dashboardSectionForOpsChainStep('doctor')).toBe('operate');
-    expect(dashboardSectionForOpsChainStep('analyze')).toBe('evidence');
+    expect(dashboardSectionForOpsChainStep('analyze')).toBe('repair');
     expect(dashboardSectionForIncidentTarget('doctor')).toBe('operate');
-    expect(dashboardSectionForIncidentTarget('release')).toBe('evidence');
-    expect(dashboardSectionLabel('operate')).toBe('Operate');
+    expect(dashboardSectionForIncidentTarget('release')).toBe('repair');
+    expect(dashboardSectionLabel('operate')).toBe('Run');
+    expect(dashboardSectionScope('console')).toBe('lifecycle');
+  });
+
+  it('formats home health summaries from evidence cards', async () => {
+    const {
+      formatHomeEvidenceDetail,
+      formatHomeGovernanceDetail,
+      homeEvidenceMetricValue,
+      homeGovernanceMetricValue,
+    } = await import('../../webview-ui/src/lib/dashboardEvidence');
+
+    const evidence = {
+      cards: [
+        {
+          id: 'doctor',
+          label: 'Doctor',
+          status: 'pass',
+          summary: 'All checks passed',
+          scope: 'workspace',
+        },
+        {
+          id: 'pipeline',
+          label: 'Pipeline',
+          status: 'warn',
+          summary: 'Readiness gate pending',
+          scope: 'workspace',
+        },
+      ],
+      activity: [],
+      onboarding: {
+        isFreshInstall: false,
+        recentWorkspaceCount: 1,
+        hasActiveWorkspace: true,
+      },
+    };
+
+    expect(homeEvidenceMetricValue(evidence, 0)).toBe('Healthy');
+    expect(formatHomeEvidenceDetail(evidence)).toContain('Doctor: All checks passed');
+    expect(homeGovernanceMetricValue(evidence, 0, true)).toBe('Attention');
+    expect(formatHomeGovernanceDetail(evidence)).toContain('Pipeline: Readiness gate pending');
   });
 });
 
@@ -79,8 +122,10 @@ describe('smoke: module framework support', () => {
     expect(isModuleInstallSupported('fastapi', true)).toBe(true);
     expect(isModuleInstallSupported('nestjs', true)).toBe(true);
     expect(isModuleInstallSupported('go', true)).toBe(false);
+    expect(isModuleInstallSupported('nextjs', true)).toBe(false);
     expect(isModuleInstallSupported('fastapi', false)).toBe(false);
     expect(isUnsupportedModuleProjectType('dotnet')).toBe(true);
+    expect(isUnsupportedModuleProjectType('remix')).toBe(true);
     expect(getProjectFrameworkLabel('springboot')).toBe('Spring Boot');
   });
 });
@@ -213,7 +258,7 @@ describe('smoke: dashboard next steps', () => {
     });
 
     expect(steps[0]?.id).toBe('analyze-blockers');
-    expect(steps[0]?.section).toBe('evidence');
+    expect(steps[0]?.section).toBe('repair');
   });
 
   it('counts actionable evidence attention from outcome cards', async () => {
@@ -293,7 +338,7 @@ describe('smoke: dashboard next steps', () => {
       },
     });
 
-    expect(analyzeBlocked[0]?.section).toBe('evidence');
+    expect(analyzeBlocked[0]?.section).toBe('repair');
   });
 
   it('counts operate attention from governance cards and workspace hints', async () => {
@@ -367,20 +412,44 @@ describe('smoke: dashboard catalog load truthfulness', () => {
 
 describe('smoke: dashboard command dispatch', () => {
   it('tracks activity for operational dashboard commands only', async () => {
-    const { buildDashboardDispatchMessages } =
+    const { buildDashboardCommandPayload, buildDashboardDispatchMessages } =
       await import('../../webview-ui/src/lib/dashboardDispatch');
 
     expect(buildDashboardDispatchMessages('openSetup')).toEqual([{ command: 'openSetup' }]);
     expect(buildDashboardDispatchMessages('projectDoctor')).toEqual([
       {
         command: 'trackDashboardCommand',
-        data: { command: 'projectDoctor', affectedEvidenceCardIds: ['projectDoctor'] },
+        data: {
+          command: 'projectDoctor',
+          affectedEvidenceCardIds: ['projectDoctor', 'importReadiness'],
+        },
       },
       { command: 'projectDoctor', data: undefined },
     ]);
     expect(buildDashboardDispatchMessages('refreshModules', { path: '/tmp/ws' })).toEqual([
       { command: 'refreshModules', data: { path: '/tmp/ws' } },
     ]);
+
+    expect(
+      buildDashboardCommandPayload(
+        'importProject',
+        { useDefaultWorkspace: true, trigger: 'dashboard-import-handoff' },
+        { path: '/stale/ws', workspacePath: '/stale/ws' },
+        '/stale/ws'
+      )
+    ).toEqual({
+      useDefaultWorkspace: true,
+      trigger: 'dashboard-import-handoff',
+    });
+
+    expect(
+      buildDashboardCommandPayload(
+        'workspaceAnalyze',
+        undefined,
+        { path: '/active/ws', workspacePath: '/active/ws' },
+        '/active/ws'
+      ).workspacePath
+    ).toBe('/active/ws');
   });
 });
 

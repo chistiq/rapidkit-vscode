@@ -46,5 +46,12 @@ export async function openWorkspacePath(input: {
   }
 
   const document = await vscode.workspace.openTextDocument(uri);
-  await vscode.window.showTextDocument(document, { preview: true, preserveFocus: false });
+  const isReportArtifact = resolvedPath
+    .replace(/\\/g, '/')
+    .toLowerCase()
+    .includes('/.rapidkit/reports/');
+  await vscode.window.showTextDocument(document, {
+    preview: !isReportArtifact,
+    preserveFocus: false,
+  });
 }

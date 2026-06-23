@@ -1,19 +1,24 @@
-import { Settings2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowRight, Settings2 } from 'lucide-react';
 import { CommandCheatsheet } from '@/components/CommandCheatsheet';
+import { DashboardOperateSubNav } from '@/components/DashboardOperateSubNav';
 import { EnterpriseDashboardFlow } from '@/components/EnterpriseDashboardFlow';
 import { WorkspaiEmptyState } from '@/components/WorkspaiEmptyState';
 import { WorkspaceGovernancePanel } from '@/components/WorkspaceGovernancePanel';
+import { WorkspaceIntelligencePanel } from '@/components/WorkspaceIntelligencePanel';
 import type { DashboardEvidencePayload } from '@/lib/dashboardEvidence';
 import type { DashboardEvidenceCardId } from '@/lib/dashboardCommandRegistry';
+import type { DashboardOperateZone } from '@/lib/dashboardOperateZones';
 import type { DashboardSection } from '@/lib/dashboardSections';
-import type { WorkspaceStatus } from '@/types';
+import type { DashboardScopeDescriptor } from '@/lib/dashboardScope';
+import { dashboardScopeDetail, dashboardScopeLabel } from '@/lib/dashboardScope';
+import type { ScaffoldFramework, WorkspaceStatus } from '@/types';
 
-type Framework = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
+type Framework = ScaffoldFramework;
 
 interface DashboardOperateSectionProps {
   hasWorkspace: boolean;
-  workspaceName?: string;
-  workspaceProfile?: string;
+  scope: DashboardScopeDescriptor;
   workspaceStatus: WorkspaceStatus;
   evidence: DashboardEvidencePayload | null;
   pendingCardIds?: DashboardEvidenceCardId[];
@@ -27,6 +32,7 @@ interface DashboardOperateSectionProps {
   onRunTerminalBridge: () => void;
   onOpenIncidentStudio: () => void;
   onNavigateSection: (section: DashboardSection) => void;
+  onOperateZoneSelect?: (zone: DashboardOperateZone) => void;
   onCreateWorkspace: () => void;
   onBootstrap: () => void;
   onSetup: () => void;
@@ -34,19 +40,30 @@ interface DashboardOperateSectionProps {
   onFoundationEnsure: () => void;
   onContractInspect: () => void;
   onContractVerify: () => void;
-  onPipeline: () => void;
   onReadiness: () => void;
+  onAutopilotRelease: () => void;
   onMirrorStatus: () => void;
   onMirrorSync: () => void;
   onCacheStatus: () => void;
   onPolicy: () => void;
   onInfra: () => void;
+  onWorkspaceModel: () => void;
+  onIntelligenceSnapshot: () => void;
+  onWorkspaceDiff: () => void;
+  onWorkspaceImpact: () => void;
+  onWorkspaceContextAgent: () => void;
+  onWorkspaceAgentSync?: () => void;
+  onWorkspaceVerify: () => void;
+  onIntelligenceChain: () => void;
+  onSendWorkspaceToCopilot?: () => void;
+  onCopyText?: (text: string) => void;
+  requestedOperateZone?: DashboardOperateZone | null;
+  onRequestedOperateZoneConsumed?: () => void;
 }
 
 export function DashboardOperateSection({
   hasWorkspace,
-  workspaceName,
-  workspaceProfile,
+  scope,
   workspaceStatus,
   evidence,
   pendingCardIds = [],
@@ -60,6 +77,7 @@ export function DashboardOperateSection({
   onRunTerminalBridge,
   onOpenIncidentStudio,
   onNavigateSection,
+  onOperateZoneSelect,
   onCreateWorkspace,
   onBootstrap,
   onSetup,
@@ -67,23 +85,64 @@ export function DashboardOperateSection({
   onFoundationEnsure,
   onContractInspect,
   onContractVerify,
-  onPipeline,
   onReadiness,
+  onAutopilotRelease,
   onMirrorStatus,
   onMirrorSync,
   onCacheStatus,
   onPolicy,
   onInfra,
+  onWorkspaceModel,
+  onIntelligenceSnapshot,
+  onWorkspaceDiff,
+  onWorkspaceImpact,
+  onWorkspaceContextAgent,
+  onWorkspaceAgentSync,
+  onWorkspaceVerify,
+  onIntelligenceChain,
+  onSendWorkspaceToCopilot,
+  onCopyText,
+  requestedOperateZone = null,
+  onRequestedOperateZoneConsumed,
 }: DashboardOperateSectionProps) {
+  const [activeZone, setActiveZone] = useState<DashboardOperateZone>('quick');
+
+  const activeZoneLabel =
+    activeZone === 'quick'
+      ? 'Primary commands'
+      : activeZone === 'build'
+        ? 'Create project'
+        : activeZone === 'share'
+          ? 'Share and AI'
+          : activeZone === 'intelligence'
+            ? 'Workspace intelligence'
+            : activeZone === 'governance'
+              ? 'Governance'
+              : 'CLI reference';
+  const workspaceLabel = scope.workspace.active ? dashboardScopeLabel(scope) : 'No workspace';
+
+  useEffect(() => {
+    if (!requestedOperateZone || !hasWorkspace) {
+      return;
+    }
+    setActiveZone(requestedOperateZone);
+    onRequestedOperateZoneConsumed?.();
+  }, [requestedOperateZone, hasWorkspace, onRequestedOperateZoneConsumed]);
+
+  const handleZoneSelect = (zone: DashboardOperateZone) => {
+    setActiveZone(zone);
+    onOperateZoneSelect?.(zone);
+  };
+
   return (
     <div className="dashboard-operate-layout">
       {!hasWorkspace ? (
         <WorkspaiEmptyState
           icon={<Settings2 size={18} />}
-          title="Select a workspace to operate"
+          title="Select a workspace to run commands"
           description={
             <>
-              Operate actions need an active workspace — doctor, bootstrap, project builders, and
+              Run actions need an active workspace — doctor, bootstrap, project builders, and
               governance tiles unlock after selection.
             </>
           }
@@ -92,56 +151,101 @@ export function DashboardOperateSection({
               <button
                 type="button"
                 className="ws-btn ws-btn--primary"
-                onClick={() => onNavigateSection('workspaces')}
+                onClick={() => onNavigateSection('catalog')}
               >
-                Open Workspaces
+                Open Library
               </button>
               <button type="button" className="ws-btn" onClick={onCreateWorkspace}>
-                Create workspace
+                + Create workspace
               </button>
             </>
           }
         />
       ) : (
         <>
-          <EnterpriseDashboardFlow
-            workspaceName={workspaceName}
-            workspaceProfile={workspaceProfile}
-            workspaceStatus={workspaceStatus}
-            selectedFramework={selectedFramework}
-            onSelectFramework={onSelectFramework}
-            onOpenProjectBuilder={onOpenProjectBuilder}
-            onOpenManualProject={onOpenManualProject}
-            onRunWorkspaceCommand={onRunWorkspaceCommand}
-            onRunFixPreview={onRunFixPreview}
-            onRunChangeImpact={onRunChangeImpact}
-            onRunTerminalBridge={onRunTerminalBridge}
-            onOpenIncidentStudio={onOpenIncidentStudio}
-            pendingCardIds={pendingCardIds}
-          />
+          <section className="dashboard-operate-summary" aria-label="Run workspace summary">
+            <div className="dashboard-operate-summary__scope">
+              <span className="ws-kicker">Run workspace</span>
+              <strong>{workspaceLabel}</strong>
+              <small>{dashboardScopeDetail(scope, { showPaths: false })}</small>
+            </div>
+            <div className="dashboard-operate-summary__state">
+              <span>Current</span>
+              <strong>{activeZoneLabel}</strong>
+            </div>
+            <div className="dashboard-operate-summary__actions">
+              <button type="button" className="ws-btn" onClick={() => onNavigateSection('repair')}>
+                <ArrowRight size={13} aria-hidden="true" />
+                Open Repair
+              </button>
+            </div>
+          </section>
 
-          <WorkspaceGovernancePanel
-            workspaceStatus={workspaceStatus}
-            evidence={evidence}
-            pendingCardIds={pendingCardIds}
-            onBootstrap={onBootstrap}
-            onSetup={onSetup}
-            onWorkspaceSync={onWorkspaceSync}
-            onFoundationEnsure={onFoundationEnsure}
-            onContractInspect={onContractInspect}
-            onContractVerify={onContractVerify}
-            onPipeline={onPipeline}
-            onReadiness={onReadiness}
-            onMirrorStatus={onMirrorStatus}
-            onMirrorSync={onMirrorSync}
-            onCacheStatus={onCacheStatus}
-            onPolicy={onPolicy}
-            onInfra={onInfra}
-          />
+          <DashboardOperateSubNav activeZone={activeZone} onZoneSelect={handleZoneSelect} />
+
+          {activeZone === 'quick' || activeZone === 'build' || activeZone === 'share' ? (
+            <EnterpriseDashboardFlow
+              workspaceStatus={workspaceStatus}
+              evidence={evidence}
+              selectedFramework={selectedFramework}
+              onSelectFramework={onSelectFramework}
+              onOpenProjectBuilder={onOpenProjectBuilder}
+              onOpenManualProject={onOpenManualProject}
+              onRunWorkspaceCommand={onRunWorkspaceCommand}
+              onRunFixPreview={onRunFixPreview}
+              onRunChangeImpact={onRunChangeImpact}
+              onRunTerminalBridge={onRunTerminalBridge}
+              onOpenIncidentStudio={onOpenIncidentStudio}
+              pendingCardIds={pendingCardIds}
+              activeOperateZone={activeZone}
+            />
+          ) : null}
+
+          {activeZone === 'intelligence' ? (
+            <WorkspaceIntelligencePanel
+              workspaceStatus={workspaceStatus}
+              evidence={evidence}
+              pendingCardIds={pendingCardIds}
+              onWorkspaceModel={onWorkspaceModel}
+              onIntelligenceSnapshot={onIntelligenceSnapshot}
+              onWorkspaceDiff={onWorkspaceDiff}
+              onWorkspaceImpact={onWorkspaceImpact}
+              onWorkspaceContextAgent={onWorkspaceContextAgent}
+              onWorkspaceAgentSync={onWorkspaceAgentSync}
+              onWorkspaceVerify={onWorkspaceVerify}
+              onRunFullChain={onIntelligenceChain}
+              onSendWorkspaceToCopilot={onSendWorkspaceToCopilot}
+            />
+          ) : null}
+
+          {activeZone === 'governance' ? (
+            <WorkspaceGovernancePanel
+              workspaceStatus={workspaceStatus}
+              evidence={evidence}
+              pendingCardIds={pendingCardIds}
+              onBootstrap={onBootstrap}
+              onSetup={onSetup}
+              onWorkspaceSync={onWorkspaceSync}
+              onFoundationEnsure={onFoundationEnsure}
+              onContractInspect={onContractInspect}
+              onContractVerify={onContractVerify}
+              onReadiness={onReadiness}
+              onAutopilotRelease={onAutopilotRelease}
+              onMirrorStatus={onMirrorStatus}
+              onMirrorSync={onMirrorSync}
+              onCacheStatus={onCacheStatus}
+              onPolicy={onPolicy}
+              onInfra={onInfra}
+            />
+          ) : null}
         </>
       )}
 
-      <CommandCheatsheet />
+      {hasWorkspace && activeZone === 'cli' ? (
+        <div id="dashboard-operate-cli" className="dashboard-operate-zone dashboard-operate-cli">
+          <CommandCheatsheet onCopyText={onCopyText} />
+        </div>
+      ) : null}
     </div>
   );
 }

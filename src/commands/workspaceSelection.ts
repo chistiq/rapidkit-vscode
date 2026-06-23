@@ -6,6 +6,7 @@ import { ModulesCatalogService } from '../core/modulesCatalogService';
 import { CoreVersionService } from '../core/coreVersionService';
 import { resolveCatalogWorkspaceRoot } from '../utils/coreRuntimeResolver';
 import { WelcomePanel } from '../ui/panels/welcomePanel';
+import { setSelectedProjectPath } from '../core/selectedProject';
 import { openWorkspace, openWorkspaceFolder, copyWorkspacePath } from './workspaceContextMenu';
 import { openTerminal } from '../utils/terminalExecutor';
 import {
@@ -446,7 +447,6 @@ export function registerWorkspaceSelectionCommands(options: {
       }
 
       const workspaceExplorer = getWorkspaceExplorer();
-      const projectExplorer = getProjectExplorer();
 
       if (workspaceExplorer) {
         const selectedWorkspace = workspaceExplorer.getWorkspaceByPath(workspacePath);
@@ -455,13 +455,6 @@ export function registerWorkspaceSelectionCommands(options: {
         } else {
           logger.warn('Workspace not found for path:', workspacePath);
           vscode.window.showWarningMessage('Workspace not found');
-        }
-      }
-
-      if (projectExplorer && workspaceExplorer) {
-        const selectedWorkspace = workspaceExplorer.getWorkspaceByPath(workspacePath);
-        if (selectedWorkspace) {
-          projectExplorer.setWorkspace(selectedWorkspace);
         }
       }
 
@@ -478,9 +471,6 @@ export function registerWorkspaceSelectionCommands(options: {
           isRecoverable: true,
         });
       }
-
-      await vscode.commands.executeCommand('setContext', 'workspai.workspaceSelected', true);
-      await vscode.commands.executeCommand('setContext', 'workspai:noProjects', false);
 
       if (WelcomePanel.currentPanel) {
         await WelcomePanel.refreshWorkspaceStatus();
@@ -596,6 +586,7 @@ export function registerWorkspaceSelectionCommands(options: {
 
       if (project?.path && projectExplorer) {
         projectExplorer.setSelectedProject(project);
+        setSelectedProjectPath(project.path);
         logger.info('Project selected:', project.name);
 
         const workspacePathFromProject =

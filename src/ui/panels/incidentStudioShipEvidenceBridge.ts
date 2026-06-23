@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 
+import { createExtensionWebviewMessage } from '../../contracts/webviewProtocol';
 import {
   buildDashboardEvidenceBundle,
   type DashboardEvidenceCard,
@@ -60,10 +61,12 @@ export async function postIncidentStudioShipEvidence(
   }
 ): Promise<IncidentStudioShipEvidencePayload> {
   const payload = await resolveIncidentStudioShipEvidence(input);
-  await webview.postMessage({
-    command: 'incidentStudioShipEvidence',
-    data: payload,
-    meta: input.requestId ? { requestId: input.requestId } : undefined,
-  });
+  await webview.postMessage(
+    createExtensionWebviewMessage(
+      'incidentStudioShipEvidence',
+      payload,
+      input.requestId ? { requestId: input.requestId } : undefined
+    )
+  );
   return payload;
 }

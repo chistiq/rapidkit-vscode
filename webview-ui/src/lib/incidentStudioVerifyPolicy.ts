@@ -22,13 +22,13 @@ export type IncidentStudioActionResultPresentation = {
 
 export function getBoardActionGuardHint(action: IncidentStudioBoardActionPolicy): string | null {
   if (action.requiresImpactReview && action.requiresVerifyPath) {
-    return 'Impact review and verification are required before claiming success.';
+    return 'Workspace Advisor review and verification are required before claiming success.';
   }
   if (action.requiresVerifyPath) {
     return 'Verification is required before claiming success.';
   }
   if (action.requiresImpactReview) {
-    return 'Review impact before applying this action.';
+    return 'Review the affected scope before applying this action.';
   }
   return null;
 }
@@ -196,6 +196,26 @@ export function getPhaseNextAction(
   }
 }
 
+function isReleaseGateBlockedSummary(outputSummary?: string): boolean {
+  const summary = outputSummary?.trim() ?? '';
+  if (!summary) {
+    return false;
+  }
+
+  return /blocked by release gate|blocked by decision clarity contract|release gate blocked/i.test(
+    summary
+  );
+}
+
+function isDecisionClarityBlockedSummary(outputSummary?: string): boolean {
+  const summary = outputSummary?.trim() ?? '';
+  if (!summary) {
+    return false;
+  }
+
+  return /decision clarity contract/i.test(summary);
+}
+
 export function getActionResultPresentation(
   result: IncidentStudioActionResultPolicy
 ): IncidentStudioActionResultPresentation {
@@ -214,6 +234,26 @@ export function getActionResultPresentation(
       tone: 'success',
       title: 'Verification passed',
       description: result.outputSummary || 'Action completed successfully and result was returned.',
+    };
+  }
+
+  if (isReleaseGateBlockedSummary(result.outputSummary)) {
+    return {
+      tone: 'warning',
+      title: 'Release gate blocked',
+      description:
+        result.outputSummary ||
+        'The action was blocked by release governance gates before apply or verification could complete.',
+    };
+  }
+
+  if (isDecisionClarityBlockedSummary(result.outputSummary)) {
+    return {
+      tone: 'warning',
+      title: 'Action contract incomplete',
+      description:
+        result.outputSummary ||
+        'The action was blocked because required decision-clarity fields are still missing.',
     };
   }
 
@@ -258,18 +298,35 @@ export function resolveVerificationClaimGuard(input: {
   releaseDecision?: 'go' | 'no-go';
   verifyGateBlockedReasons: string[];
   verifyPackBlockedReasons: string[];
+  artifactReleaseReady?: boolean;
 }): VerificationClaimGuard {
   const hasNoGoDecision = input.releaseDecision === 'no-go';
-  const verifyGateBlockingReason = input.verifyGateBlockedReasons[0] ?? null;
+  const releaseBlockingReason =
+    input.verifyGateBlockedReasons.find(
+      (reason) =>
+        !/bridge route completion|verify-path completion|verify phase reach|route precision|false-confidence|rollback|unrecovered verification|command_failed|verify evidence completion|enterprise stabilization|expansion frozen/i.test(
+          reason
+        )
+    ) ?? null;
+  const verifyCompletionBlockingReason =
+    input.verifyGateBlockedReasons.find((reason) =>
+      /bridge route completion|verify-path completion|verify phase reach|verify evidence completion/i.test(
+        reason
+      )
+    ) ?? null;
   const verifyPackBlockingReason = input.verifyPackBlockedReasons[0]?.trim() || null;
 
   const reason = hasNoGoDecision
     ? 'Release readiness evidence is currently NO-GO. Resolve blockers before claiming verification success.'
-    : verifyGateBlockingReason
-      ? `Verification gates are still blocking completion: ${verifyGateBlockingReason}`
-      : verifyPackBlockingReason
-        ? `Verify pack has unresolved blockers: ${verifyPackBlockingReason}`
-        : null;
+    : input.artifactReleaseReady
+      ? null
+      : releaseBlockingReason
+        ? `Verification gates are still blocking completion: ${releaseBlockingReason}`
+        : verifyCompletionBlockingReason
+          ? `Verification gates are still blocking completion: ${verifyCompletionBlockingReason}`
+          : verifyPackBlockingReason
+            ? `Verify pack has unresolved blockers: ${verifyPackBlockingReason}`
+            : null;
 
   return {
     blocked: Boolean(reason),

@@ -1,3 +1,9 @@
+import {
+  buildAgentGroundingSyncCliSnippet,
+  buildIntelligenceChainCliSnippet,
+  WORKSPACE_IMPACT_REPORT_PATH,
+} from './workspaceIntelligencePaths';
+
 export type IncidentCliActionScope = 'workspace' | 'project';
 
 export type IncidentCliActionEntry = {
@@ -91,6 +97,52 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     detail: 'Refresh workspace project inventory from filesystem state.',
     command: 'npx rapidkit workspace sync',
     stability: 'advanced',
+  },
+  {
+    id: 'workspace-intelligence-chain',
+    scope: 'workspace',
+    label: 'Run intelligence chain',
+    detail:
+      'Model → snapshot → diff → advisor → verify → agent context with workspace intelligence reports.',
+    command: buildIntelligenceChainCliSnippet(),
+    stability: 'advanced',
+    actionTypes: ['workspace-intelligence-chain'],
+  },
+  {
+    id: 'workspace-agent-grounding-sync',
+    scope: 'workspace',
+    label: 'Agent grounding sync',
+    detail: 'Write INDEX.json, AGENTS.md, and Copilot/Cursor/Claude hooks from workspace evidence.',
+    command: buildAgentGroundingSyncCliSnippet(),
+    stability: 'stable',
+    actionTypes: ['workspace-agent-sync', 'agent-grounding'],
+  },
+  {
+    id: 'workspace-context-agent-json',
+    scope: 'workspace',
+    label: 'Agent context pack',
+    detail: 'Write workspace-context-agent.json for Workspai AI and Copilot Chat #file attachment.',
+    command: 'npx rapidkit workspace context --for-agent --json --write',
+    stability: 'advanced',
+    actionTypes: ['workspace-context-agent', 'agent-context'],
+  },
+  {
+    id: 'workspace-verify-json',
+    scope: 'workspace',
+    label: 'Workspace verify',
+    detail: 'Evaluate Workspace Advisor verification evidence from workspace-impact-last-run.json.',
+    command: `npx rapidkit workspace verify --from-impact ${WORKSPACE_IMPACT_REPORT_PATH} --json`,
+    stability: 'stable',
+    actionTypes: ['workspace-verify', 'verify-pack-autopilot'],
+  },
+  {
+    id: 'workspace-model-json',
+    scope: 'workspace',
+    label: 'Workspace model',
+    detail: 'Canonical workspace project graph and command surface artifact.',
+    command: 'npx rapidkit workspace model --json --write',
+    stability: 'advanced',
+    actionTypes: ['workspace-model'],
   },
   {
     id: 'workspace-run-init',

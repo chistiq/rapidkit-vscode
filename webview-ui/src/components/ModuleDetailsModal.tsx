@@ -159,7 +159,7 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
               </h3>
               <div className="bg-[var(--vscode-textCodeBlock-background)] border border-[var(--vscode-panel-border)] rounded-lg p-4">
                 <code className="text-sm text-[var(--vscode-foreground)] font-mono">
-                  {buildRapidkitDisplayCommand(['add', 'module', module.slug])}
+                  {buildRapidkitDisplayCommand(['add', 'module', module.slug ?? module.id])}
                 </code>
               </div>
             </section>

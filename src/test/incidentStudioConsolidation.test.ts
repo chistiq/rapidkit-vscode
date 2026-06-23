@@ -1,14 +1,17 @@
-import fs from 'fs';
-import path from 'path';
 import { describe, expect, it, vi } from 'vitest';
 
-const { openIncidentStudioMock, showWarningMessageMock, showErrorMessageMock } = vi.hoisted(() => ({
-  openIncidentStudioMock: vi.fn(),
-  showWarningMessageMock: vi.fn(),
-  showErrorMessageMock: vi.fn(),
-}));
+const { executeCommandMock, openIncidentStudioMock, showWarningMessageMock, showErrorMessageMock } =
+  vi.hoisted(() => ({
+    executeCommandMock: vi.fn(),
+    openIncidentStudioMock: vi.fn(),
+    showWarningMessageMock: vi.fn(),
+    showErrorMessageMock: vi.fn(),
+  }));
 
 vi.mock('vscode', () => ({
+  commands: {
+    executeCommand: executeCommandMock,
+  },
   window: {
     showWarningMessage: showWarningMessageMock,
     showErrorMessage: showErrorMessageMock,
@@ -33,7 +36,8 @@ vi.mock('../utils/logger', () => ({
 import { showIncidentStudioNextCommand } from '../commands/incidentStudioNext';
 
 describe('incident studio consolidation', () => {
-  it('routes incidentStudioNext to dashboard embed via WelcomePanel.openIncidentStudio', async () => {
+  it('routes incidentStudioNext to the Workspai sidebar Studio command', async () => {
+    executeCommandMock.mockReset();
     openIncidentStudioMock.mockReset();
     showWarningMessageMock.mockReset();
     showErrorMessageMock.mockReset();
@@ -42,8 +46,8 @@ describe('incident studio consolidation', () => {
       getSelectedWorkspace: () => ({ path: '/tmp/demo-ws', name: 'demo-ws' }),
     });
 
-    expect(openIncidentStudioMock).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(executeCommandMock).toHaveBeenCalledWith(
+      'workspai.openIncidentStudio',
       expect.objectContaining({
         workspacePath: '/tmp/demo-ws',
         workspaceName: 'demo-ws',
@@ -55,6 +59,7 @@ describe('incident studio consolidation', () => {
 
   it('asks for workspace selection when no workspace is selected', async () => {
     openIncidentStudioMock.mockReset();
+    executeCommandMock.mockReset();
     showWarningMessageMock.mockReset();
     showErrorMessageMock.mockReset();
 
@@ -63,18 +68,8 @@ describe('incident studio consolidation', () => {
     });
 
     expect(showWarningMessageMock).toHaveBeenCalledWith('Select a workspace first.');
+    expect(executeCommandMock).not.toHaveBeenCalled();
     expect(openIncidentStudioMock).not.toHaveBeenCalled();
     expect(showErrorMessageMock).not.toHaveBeenCalled();
-  });
-});
-
-describe('studio feature flags', () => {
-  it('defaults to vNext for the production Studio path', () => {
-    const source = fs.readFileSync(
-      path.resolve(__dirname, '../../webview-ui/src/lib/studioFeatureFlags.ts'),
-      'utf8'
-    );
-    expect(source).toContain("return 'vnext'");
-    expect(source).not.toMatch(/\/\/[^\n]*return 'legacy'/);
   });
 });

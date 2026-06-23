@@ -52,11 +52,11 @@ export class WorkspaiHoverProvider implements vscode.HoverProvider {
         '**Profile**\n\nProject complexity profile.\n\n' +
           'Supported values:\n' +
           '- `minimal` - Basic structure\n' +
-          '- `python-only` - Python-focused dependencies\n' +
-          '- `node-only` - Node.js-focused dependencies\n' +
-          '- `go-only` - Go-focused dependencies\n' +
-          '- `java-only` - Java-focused dependencies\n' +
-          '- `dotnet-only` - .NET-focused dependencies\n' +
+          '- `python-only` - Python runtime dependencies\n' +
+          '- `node-only` - Node.js runtime dependencies\n' +
+          '- `go-only` - Go runtime dependencies\n' +
+          '- `java-only` - Java runtime dependencies\n' +
+          '- `dotnet-only` - .NET runtime dependencies\n' +
           '- `polyglot` - Multi-runtime dependencies\n' +
           '- `enterprise` - Full enterprise setup'
       ),

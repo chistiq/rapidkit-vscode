@@ -29,8 +29,7 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
     framework: 'fastapi',
     moduleSupport: true,
     stability: 'stable',
-    createCommand:
-      'npx rapidkit create project fastapi.ddd <name> [--output <dir>] [--install-essentials]',
+    createCommand: 'npx rapidkit create project fastapi.ddd <name> [--output <dir>] [--yes]',
     layout: `  src/
     app/
       config/            ← Pydantic-settings config loader (__init__.py)
@@ -75,8 +74,7 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
     framework: 'fastapi',
     moduleSupport: true,
     stability: 'stable',
-    createCommand:
-      'npx rapidkit create project fastapi.standard <name> [--output <dir>] [--install-essentials]',
+    createCommand: 'npx rapidkit create project fastapi.standard <name> [--output <dir>] [--yes]',
     layout: `  src/
     modules/free/        ← Installed RapidKit modules (main feature code lives here)
     routing/             ← Root router; src/routing/__init__.py re-exports api_router
@@ -89,7 +87,7 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
   • Example routes: src/routing/examples.py, health: src/routing/health.py
   • Catalog modules: src/modules/free/{category}/{name}/ registered via src/routing/
   • Settings: src/modules/free/essentials/settings/settings.py → get_settings()
-  • Create may auto-install essentials (settings, logging, deployment) via --install-essentials`,
+  • After create, run \`npx rapidkit init\` in the project directory when dependencies are needed`,
     injectionPoints: [
       'src/main.py → # <<<inject:imports>>> | # <<<inject:startup>>> | # <<<inject:shutdown>>> | # <<<inject:routes>>>',
       'src/routing/__init__.py → # <<<inject:router-imports>>> | # <<<inject:router-mount>>>',
@@ -104,8 +102,7 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
     framework: 'nestjs',
     moduleSupport: true,
     stability: 'stable',
-    createCommand:
-      'npx rapidkit create project nestjs.standard <name> [--output <dir>] [--install-essentials]',
+    createCommand: 'npx rapidkit create project nestjs.standard <name> [--output <dir>] [--yes]',
     layout: `  src/
     app.module.ts        ← Root module; imports ConfigModule.forRoot({ isGlobal: true })
     app.controller.ts / app.service.ts
@@ -260,7 +257,35 @@ const KIT_ALIASES: Record<string, string> = {
   csharp: 'dotnet.webapi.clean',
   'go.fiber': 'gofiber.standard',
   'go.gin': 'gogin.standard',
+  nextjs: 'frontend.nextjs',
+  'next.js': 'frontend.nextjs',
+  remix: 'frontend.remix',
+  'react-router': 'frontend.remix',
+  react: 'frontend.vite-react',
+  vite: 'frontend.vite-vanilla',
+  'vite-react': 'frontend.vite-react',
+  vue: 'frontend.vite-vue',
+  svelte: 'frontend.vite-svelte',
+  solid: 'frontend.vite-solid',
+  nuxt: 'frontend.nuxt',
+  angular: 'frontend.angular',
+  astro: 'frontend.astro',
+  sveltekit: 'frontend.sveltekit',
 };
+
+const FRONTEND_KIT_IDS = new Set([
+  'frontend.nextjs',
+  'frontend.remix',
+  'frontend.vite-react',
+  'frontend.vite-vue',
+  'frontend.vite-svelte',
+  'frontend.vite-solid',
+  'frontend.vite-vanilla',
+  'frontend.nuxt',
+  'frontend.angular',
+  'frontend.astro',
+  'frontend.sveltekit',
+]);
 
 export function resolveKitId(value?: string | null): string | null {
   if (!value?.trim()) {
@@ -272,6 +297,9 @@ export function resolveKitId(value?: string | null): string | null {
   }
   if (KIT_ALIASES[normalized]) {
     return KIT_ALIASES[normalized];
+  }
+  if (FRONTEND_KIT_IDS.has(normalized)) {
+    return normalized;
   }
   if (normalized.startsWith('fastapi')) {
     return normalized.includes('ddd') ? 'fastapi.ddd' : 'fastapi.standard';

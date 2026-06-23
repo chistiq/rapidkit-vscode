@@ -185,7 +185,7 @@ export function registerAIDebuggerCommand(context: vscode.ExtensionContext): vsc
         .join('\n');
 
       if (workspacePath) {
-        WelcomePanel.openIncidentStudio(context, {
+        await vscode.commands.executeCommand('workspai.openIncidentStudio', {
           workspacePath,
           workspaceName: baseContext.name,
           projectPath: baseContext.path,

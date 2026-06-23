@@ -34,6 +34,10 @@ export interface StudioActionAuditEvent {
   commandCount?: number;
   failedCommandCount?: number;
   failedCommands?: string[];
+  proofComplete?: boolean;
+  proofIssues?: string[];
+  rollbackProofRequired?: boolean;
+  rollbackPlanPresent?: boolean;
   transcriptId?: string;
   durationMs?: number;
   canRevealEvidence: boolean;
@@ -174,6 +178,10 @@ export function buildStudioActionAuditTimeline(params: {
       commandCount: result?.commandCount,
       failedCommandCount: result?.failedCommandCount,
       failedCommands: result?.failedCommands,
+      proofComplete: result?.proof?.complete,
+      proofIssues: result?.proof?.issues,
+      rollbackProofRequired: result?.proof?.rollbackProofRequired,
+      rollbackPlanPresent: result?.proof?.rollbackPlanPresent,
       transcriptId: proofEvent?.executionTranscriptId || result?.executionTranscript?.id,
       durationMs: proofEvent?.durationMs || result?.executionTranscript?.durationMs,
       canRevealEvidence: Boolean(proofEvent?.evidencePath || result?.evidencePath),
@@ -246,6 +254,10 @@ export function buildStudioActionAuditTimeline(params: {
         commandCount: execution.commandCount,
         failedCommandCount: execution.failedCommandCount,
         failedCommands: execution.failedCommands,
+        proofComplete: execution.proof?.complete,
+        proofIssues: execution.proof?.issues,
+        rollbackProofRequired: execution.proof?.rollbackProofRequired,
+        rollbackPlanPresent: execution.proof?.rollbackPlanPresent,
         canRevealEvidence: Boolean(execution.evidencePath),
       });
     }

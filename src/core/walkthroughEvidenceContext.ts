@@ -1,0 +1,141 @@
+import * as vscode from 'vscode';
+import * as fs from 'fs-extra';
+import * as path from 'path';
+
+import {
+  AGENT_REPORTS_INDEX_PATH,
+  AGENTS_MD_PATH,
+  AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
+  WORKSPACE_MODEL_REPORT_PATH,
+} from './workspaceIntelligencePaths';
+import {
+  evaluateAgentCustomizationPackSynced,
+  parseAgentCustomizationPack,
+} from './agentCustomizationPack';
+import { recordTtfvIfNeeded } from './ttfvBridge';
+
+/**
+ * Evidence-driven Getting Started walkthrough (roadmap item 2.7). Each checklist
+ * step is marked done only when its underlying `.rapidkit/reports/` artifact
+ * exists (and, for doctor, is green) — not merely when the user clicks "Run".
+ * Completion is surfaced to VS Code via `setContext` keys consumed by the
+ * walkthrough `completionEvents` (`onContext:...`).
+ */
+export const WALKTHROUGH_HAS_MODEL_CONTEXT = 'workspai:hasWorkspaceModel';
+export const WALKTHROUGH_DOCTOR_GREEN_CONTEXT = 'workspai:doctorGreen';
+export const WALKTHROUGH_AGENT_SYNC_CONTEXT = 'workspai:agentGroundingSynced';
+
+export interface WalkthroughEvidenceState {
+  hasWorkspaceModel: boolean;
+  doctorGreen: boolean;
+  agentGroundingSynced: boolean;
+}
+
+const EMPTY_STATE: WalkthroughEvidenceState = {
+  hasWorkspaceModel: false,
+  doctorGreen: false,
+  agentGroundingSynced: false,
+};
+
+/**
+ * Pure: a doctor run is "green" only when its health score reports zero errors
+ * and zero warnings (warnings-only is amber, not green).
+ */
+export function evaluateDoctorGreen(report: unknown): boolean {
+  if (!report || typeof report !== 'object') {
+    return false;
+  }
+  const healthScore = (report as Record<string, unknown>).healthScore;
+  if (!healthScore || typeof healthScore !== 'object') {
+    return false;
+  }
+  const score = healthScore as Record<string, unknown>;
+  const total = Number(score.total ?? 0);
+  const errors = Number(score.errors ?? 0);
+  const warnings = Number(score.warnings ?? 0);
+  return total > 0 && errors === 0 && warnings === 0;
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    return await fs.pathExists(filePath);
+  } catch {
+    return false;
+  }
+}
+
+async function readJsonSafe(filePath: string): Promise<unknown> {
+  try {
+    if (!(await fs.pathExists(filePath))) {
+      return null;
+    }
+    return await fs.readJSON(filePath);
+  } catch {
+    return null;
+  }
+}
+
+/** Resolve the walkthrough checklist state from on-disk evidence. */
+export async function resolveWalkthroughEvidenceState(
+  workspacePath: string | null | undefined
+): Promise<WalkthroughEvidenceState> {
+  if (!workspacePath) {
+    return { ...EMPTY_STATE };
+  }
+
+  const [hasWorkspaceModel, doctorReport, hasIndex, hasAgentsMd, packRaw] = await Promise.all([
+    fileExists(path.join(workspacePath, WORKSPACE_MODEL_REPORT_PATH)),
+    readJsonSafe(path.join(workspacePath, '.rapidkit', 'reports', 'doctor-last-run.json')),
+    fileExists(path.join(workspacePath, AGENT_REPORTS_INDEX_PATH)),
+    fileExists(path.join(workspacePath, AGENTS_MD_PATH)),
+    readJsonSafe(path.join(workspacePath, AGENT_CUSTOMIZATION_PACK_REPORT_PATH)),
+  ]);
+
+  const pack = parseAgentCustomizationPack(packRaw);
+
+  return {
+    hasWorkspaceModel,
+    doctorGreen: evaluateDoctorGreen(doctorReport),
+    agentGroundingSynced: evaluateAgentCustomizationPackSynced(pack, {
+      hasIndex,
+      hasAgentsMd,
+    }),
+  };
+}
+
+/**
+ * Resolve and publish the walkthrough completion context keys. Safe to call from
+ * any evidence refresh path; missing workspace clears all steps.
+ *
+ * When `options.context` is supplied, also attempts a one-time TTFV record
+ * (roadmap item 2.9) from on-disk `.rapidkit/reports/` artifacts.
+ */
+export async function syncWalkthroughEvidenceContext(
+  workspacePath: string | null | undefined,
+  options?: { context?: vscode.ExtensionContext; extensionVersion?: string }
+): Promise<WalkthroughEvidenceState> {
+  const state = await resolveWalkthroughEvidenceState(workspacePath);
+  await Promise.all([
+    vscode.commands.executeCommand(
+      'setContext',
+      WALKTHROUGH_HAS_MODEL_CONTEXT,
+      state.hasWorkspaceModel
+    ),
+    vscode.commands.executeCommand(
+      'setContext',
+      WALKTHROUGH_DOCTOR_GREEN_CONTEXT,
+      state.doctorGreen
+    ),
+    vscode.commands.executeCommand(
+      'setContext',
+      WALKTHROUGH_AGENT_SYNC_CONTEXT,
+      state.agentGroundingSynced
+    ),
+  ]);
+  if (options?.context) {
+    await recordTtfvIfNeeded(options.context, workspacePath, {
+      extensionVersion: options.extensionVersion,
+    });
+  }
+  return state;
+}

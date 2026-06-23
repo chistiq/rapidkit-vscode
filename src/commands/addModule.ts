@@ -17,8 +17,10 @@ import { ModulesCatalogService } from '../core/modulesCatalogService';
 import { getSelectedProjectPath } from '../core/selectedProject';
 import { checkPythonEnvironment, getPythonErrorMessage } from '../utils/pythonChecker';
 import { findWorkspaceRoot } from '../utils/findWorkspace';
-import { refreshModuleExplorerStates } from '../extension';
+import { refreshModuleExplorerStates } from '../core/moduleExplorerRuntime';
 import { MODULES } from '../data/modules';
+import { invalidateAndRefreshProjectCapabilities } from '../core/projectCapabilityContext';
+import { gateModuleMutationCommand } from '../core/projectLifecycleGate';
 
 const NO_PROJECT_MESSAGE =
   '⚠️ No project selected!\n\n' +
@@ -61,6 +63,11 @@ export async function addModuleCommand(
       if (action === '🔍 Open Projects Panel') {
         await vscode.commands.executeCommand('rapidkitProjects.focus');
       }
+      return;
+    }
+
+    const projectName = path.basename(projectPath);
+    if (!(await gateModuleMutationCommand(projectPath, projectName))) {
       return;
     }
 
@@ -226,7 +233,10 @@ export async function addModuleCommand(
 
           // Refresh Welcome Panel to update installed modules list
           const { WelcomePanel } = await import('../ui/panels/welcomePanel.js');
-          await WelcomePanel.refreshWorkspaceStatus();
+          await invalidateAndRefreshProjectCapabilities({
+            projectPath: projectPath!,
+          });
+          await WelcomePanel.refreshWorkspaceStatus({ forceCapabilityRefresh: true });
 
           if (selected === viewDocsAction) {
             await vscode.env.openExternal(

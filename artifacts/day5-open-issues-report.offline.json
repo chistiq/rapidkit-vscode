@@ -1,0 +1,9 @@
+{
+  "generatedAt": "2026-05-13T00:00:00.000Z",
+  "source": "offline-local-fallback",
+  "repository": "rapidkitlabs/rapidkit-vscode",
+  "state": "open",
+  "issueCount": 0,
+  "issues": [],
+  "note": "GitHub API unreachable from local environment at generation time; fallback report generated for local gate evidence."
+}

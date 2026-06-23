@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 
+import { createExtensionWebviewMessage } from '../../contracts/webviewProtocol';
 import type { WorkspaceContext } from './incidentStudioAnalyze';
 import { executeStudioActionById } from './incidentStudioActionBridge';
 import { refreshIncidentStudioShipLoopSurfaces } from './incidentStudioShipLoopBridge';
@@ -55,17 +56,19 @@ export async function runPostPatchShipLoopRefresh(
     }
   }
 
-  await input.webview.postMessage({
-    command: 'shipLoopPatchReverifyHint',
-    data: {
-      suggestedStep: 'verify-gates',
-      verifySuccess,
-      verifySummary,
-      message:
-        verifySuccess === false
-          ? 'Patch applied, but automatic verify-gates failed. Review evidence before release.'
-          : 'Patch applied. Ship loop evidence and verify gates were refreshed.',
-    },
-    meta: input.requestId ? { requestId: input.requestId } : undefined,
-  });
+  await input.webview.postMessage(
+    createExtensionWebviewMessage(
+      'shipLoopPatchReverifyHint',
+      {
+        suggestedStep: 'verify-gates',
+        verifySuccess,
+        verifySummary,
+        message:
+          verifySuccess === false
+            ? 'Patch applied, but automatic verify-gates failed. Review evidence before release.'
+            : 'Patch applied. Ship loop evidence and verify gates were refreshed.',
+      },
+      input.requestId ? { requestId: input.requestId } : undefined
+    )
+  );
 }

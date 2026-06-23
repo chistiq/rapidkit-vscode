@@ -3,7 +3,6 @@ import * as path from 'path';
 import { Logger } from '../utils/logger';
 import { CommandTelemetryTimeWindow, WorkspaceUsageTracker } from '../utils/workspaceUsageTracker';
 import { openProjectFolder, copyProjectPath, deleteProject } from './projectContextMenu';
-import { adoptProjectCommand } from './adoptProject';
 
 type ProjectNode = {
   path?: string;
@@ -84,11 +83,11 @@ export function registerProjectContextAndLogCommands(): vscode.Disposable[] {
         return;
       }
 
-      await adoptProjectCommand({
-        projectPath,
+      const { adoptWithRapidkitCommand } = await import('./explorerFolderCommands.js');
+      await adoptWithRapidkitCommand(projectPath, {
+        workspacePath: project?.workspacePath,
         projectName: project?.name,
         projectType: project?.type,
-        workspacePath: project?.workspacePath,
       });
     }),
 
@@ -129,7 +128,7 @@ export function registerProjectContextAndLogCommands(): vscode.Disposable[] {
           return;
         }
 
-        await vscode.commands.executeCommand('workspai.openIncidentStudio', {
+        const projectPayload = {
           workspace: {
             path: workspacePath,
             name:
@@ -142,6 +141,13 @@ export function registerProjectContextAndLogCommands(): vscode.Disposable[] {
             type: projectType,
             workspacePath,
           },
+        };
+
+        await vscode.commands.executeCommand('workspai.selectProject', projectPayload);
+        await vscode.commands.executeCommand('workspai.openDashboardSection', {
+          ...projectPayload,
+          section: 'console',
+          source: 'project-context-menu',
         });
       }
     ),

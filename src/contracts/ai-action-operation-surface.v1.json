@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "workspai-ai-action-operation-surface-v1",
+  "version": 1,
+  "operations": {
+    "apply": {
+      "id": "apply",
+      "label": "Apply",
+      "mutatesWorkspace": true,
+      "requiresApproval": true,
+      "statusActionPrefix": "ai-action-apply"
+    },
+    "verify": {
+      "id": "verify",
+      "label": "Verify",
+      "mutatesWorkspace": false,
+      "requiresApproval": false,
+      "statusActionPrefix": "ai-action-verify"
+    },
+    "rollback": {
+      "id": "rollback",
+      "label": "Rollback",
+      "mutatesWorkspace": true,
+      "requiresApproval": true,
+      "statusActionPrefix": "ai-action-rollback"
+    }
+  }
+}

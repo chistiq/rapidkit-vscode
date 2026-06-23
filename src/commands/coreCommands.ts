@@ -179,7 +179,7 @@ export function registerCoreCommands(options: {
       }
 
       if (projectPath && projectName) {
-        WelcomePanel.openIncidentStudio(context, {
+        await vscode.commands.executeCommand('workspai.openIncidentStudio', {
           workspacePath,
           workspaceName,
           projectPath,
@@ -194,7 +194,7 @@ export function registerCoreCommands(options: {
         return;
       }
 
-      WelcomePanel.openIncidentStudio(context, {
+      await vscode.commands.executeCommand('workspai.openIncidentStudio', {
         workspacePath,
         workspaceName: workspaceName ?? 'Workspace',
         preferredDisplayMode: 'full',

@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   registeredCommands,
   importProjectCommandMock,
+  executeCommandMock,
   openIncidentStudioMock,
   showErrorMessageMock,
 } = vi.hoisted(() => ({
   registeredCommands: new Map<string, (...args: unknown[]) => unknown>(),
   importProjectCommandMock: vi.fn(),
+  executeCommandMock: vi.fn(),
   openIncidentStudioMock: vi.fn(),
   showErrorMessageMock: vi.fn(),
 }));
@@ -18,7 +20,7 @@ vi.mock('vscode', () => ({
       registeredCommands.set(id, handler);
       return { dispose: vi.fn() };
     },
-    executeCommand: vi.fn(),
+    executeCommand: executeCommandMock,
   },
   window: {
     showInformationMessage: vi.fn(),
@@ -166,8 +168,8 @@ describe('coreCommands importProject seed forwarding', () => {
 
     await handler?.();
 
-    expect(openIncidentStudioMock).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(executeCommandMock).toHaveBeenCalledWith(
+      'workspai.openIncidentStudio',
       expect.objectContaining({
         workspacePath: '/tmp/ws',
         workspaceName: 'Workspace Alpha',

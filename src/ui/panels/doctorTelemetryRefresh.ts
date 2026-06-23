@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import type { DashboardEvidenceCardId } from '../../contracts/dashboardEvidenceCards.js';
+import { resolveReportBinding } from '../../core/dashboardReportRegistry.js';
+
 const WORKSPACE_DOCTOR_SUFFIX = `${path.sep}.rapidkit${path.sep}reports${path.sep}doctor-last-run.json`;
 const PROJECT_DOCTOR_SUFFIX = `${path.sep}.rapidkit${path.sep}reports${path.sep}doctor-project-last-run.json`;
 
@@ -63,6 +66,9 @@ export type DashboardEvidenceRefreshContext = {
   projectPath?: string;
   projectName?: string;
   reportPath?: string;
+  cardIds?: DashboardEvidenceCardId[];
+  refreshMode?: 'full' | 'patch';
+  requestId?: number;
 };
 
 type TimerHandle = ReturnType<typeof setTimeout>;
@@ -86,10 +92,17 @@ export function createDoctorTelemetryRefreshController(
 
   return {
     schedule(filePath?: string) {
+      const binding = filePath ? resolveReportBinding(filePath) : undefined;
       const context: DashboardEvidenceRefreshContext | undefined = filePath
         ? {
             reportPath: filePath,
             workspacePath: extractWorkspacePathFromReportPath(filePath),
+            ...(binding?.cardId
+              ? {
+                  cardIds: [binding.cardId as DashboardEvidenceCardId],
+                  refreshMode: 'patch' as const,
+                }
+              : {}),
           }
         : undefined;
 

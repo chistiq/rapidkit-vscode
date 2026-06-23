@@ -1,4 +1,10 @@
 import * as vscode from 'vscode';
+import {
+  shouldRequestCliLogEventsForRapidkitTerminal,
+  shouldTrackRapidkitEvidenceTerminal,
+  trackWorkspaceEvidenceTerminal,
+  withCliLogEventEnv,
+} from '../core/evidenceTerminalTracker';
 import { buildRapidkitCommand, buildShellCommand, quoteShellArg } from './platformCapabilities';
 import { resolveCoreRuntime } from './coreRuntimeResolver';
 
@@ -50,12 +56,20 @@ export function runRapidkitCommandsInTerminal(options: {
   commands: string[][];
 }): vscode.Terminal {
   const builtCommands = options.commands.map((args) => buildRapidkitCommand(args));
-  return runCommandsInTerminal({
+  const shouldTrackEvidence = Boolean(options.cwd) && shouldTrackRapidkitEvidenceTerminal(options);
+  const shouldRequestCliLogEvents = shouldRequestCliLogEventsForRapidkitTerminal(options);
+  const terminal = runCommandsInTerminal({
     name: options.name,
     cwd: options.cwd,
-    env: options.env,
+    env: withCliLogEventEnv(options.env, shouldRequestCliLogEvents),
     commands: builtCommands,
   });
+
+  if (options.cwd && shouldTrackEvidence) {
+    trackWorkspaceEvidenceTerminal(terminal, options.cwd);
+  }
+
+  return terminal;
 }
 
 export function buildCoreRapidkitShellCommand(executable: string, args: string[]): string {

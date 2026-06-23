@@ -51,7 +51,8 @@
     --ws-space-md: 12px;
     --ws-space-lg: 16px;
     --ws-space-xl: 24px;
-    --ws-font-ui: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+    --ws-font-ui: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif);
+    --ws-font-mono: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
     --ws-font-size: var(--vscode-font-size, 13px);
 
     /* Compatibility aliases for gradual migration. */

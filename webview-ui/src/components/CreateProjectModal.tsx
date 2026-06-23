@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Loader2, Package, Sparkles } from 'lucide-react';
 import { vscode } from '@/vscode';
-import type { Kit, WorkspaceToolStatus } from '@/types';
+import type { Kit, ScaffoldFramework, WorkspaceToolStatus } from '@/types';
+import { isFrontendScaffoldFramework } from '@/lib/scaffoldFrameworks';
 import { EnterpriseModal, EnterpriseModalNotice, EnterpriseModalSection } from './EnterpriseModal';
 
-type ProjectFramework = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
+type ProjectFramework = ScaffoldFramework;
 
 interface CreateProjectModalProps {
     isOpen: boolean;
@@ -58,6 +59,72 @@ const FRAMEWORK_INFO: Record<ProjectFramework, {
         description: 'Create a clean architecture .NET Web API inside the selected workspace.',
         placeholder: 'dotnet-api',
     },
+    nextjs: {
+        title: 'Next.js Project',
+        subtitle: 'React framework',
+        description: 'Create a Next.js app with the official create-next-app generator.',
+        placeholder: 'my-next-app',
+    },
+    remix: {
+        title: 'Remix Project',
+        subtitle: 'React framework',
+        description: 'Create a Remix app with the official create-remix generator.',
+        placeholder: 'my-remix-app',
+    },
+    'vite-react': {
+        title: 'Vite + React Project',
+        subtitle: 'Frontend starter',
+        description: 'Create a Vite React TypeScript app inside the workspace.',
+        placeholder: 'my-react-app',
+    },
+    'vite-vue': {
+        title: 'Vite + Vue Project',
+        subtitle: 'Frontend starter',
+        description: 'Create a Vite Vue TypeScript app inside the workspace.',
+        placeholder: 'my-vue-app',
+    },
+    'vite-svelte': {
+        title: 'Vite + Svelte Project',
+        subtitle: 'Frontend starter',
+        description: 'Create a Vite Svelte TypeScript app inside the workspace.',
+        placeholder: 'my-svelte-app',
+    },
+    'vite-solid': {
+        title: 'Vite + Solid Project',
+        subtitle: 'Frontend starter',
+        description: 'Create a Vite Solid TypeScript app inside the workspace.',
+        placeholder: 'my-solid-app',
+    },
+    'vite-vanilla': {
+        title: 'Vite Vanilla Project',
+        subtitle: 'Frontend starter',
+        description: 'Create a Vite vanilla TypeScript app inside the workspace.',
+        placeholder: 'my-vite-app',
+    },
+    nuxt: {
+        title: 'Nuxt Project',
+        subtitle: 'Vue framework',
+        description: 'Create a Nuxt app with the official nuxi init generator.',
+        placeholder: 'my-nuxt-app',
+    },
+    angular: {
+        title: 'Angular Project',
+        subtitle: 'TypeScript framework',
+        description: 'Create an Angular app with the official Angular CLI.',
+        placeholder: 'my-angular-app',
+    },
+    astro: {
+        title: 'Astro Project',
+        subtitle: 'Content framework',
+        description: 'Create an Astro app with the official create astro generator.',
+        placeholder: 'my-astro-app',
+    },
+    sveltekit: {
+        title: 'SvelteKit Project',
+        subtitle: 'Svelte framework',
+        description: 'Create a SvelteKit app with the official sv create generator.',
+        placeholder: 'my-sveltekit-app',
+    },
 };
 
 export function CreateProjectModal({ isOpen, framework, availableKits, onClose, onCreate, onSwitchToAI, toolStatus }: CreateProjectModalProps) {
@@ -71,10 +138,12 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
     const suggestTimeoutRef = useRef<number | null>(null);
 
     const frameworkKits = availableKits.filter((kit) => kit.category === framework);
+    const isFrontendFramework = isFrontendScaffoldFramework(framework);
+    const resolvedKit = isFrontendFramework ? `frontend.${framework}` : selectedKit;
     const selectedKitData = frameworkKits.find((kit) => kit.name === selectedKit);
     const info = FRAMEWORK_INFO[framework];
     const supportsModuleSuggestions = framework === 'fastapi' || framework === 'nestjs';
-    const canCreate = projectName.trim() && !error && selectedKit;
+    const canCreate = projectName.trim() && !error && resolvedKit;
 
     useEffect(() => {
         if (isOpen) {
@@ -84,7 +153,11 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
             setAiSuggestError('');
             setAiSuggestLoading(false);
             const kits = availableKits.filter((kit) => kit.category === framework);
-            setSelectedKit(kits.length > 0 ? kits[0].name : '');
+            if (isFrontendScaffoldFramework(framework)) {
+                setSelectedKit(`frontend.${framework}`);
+            } else {
+                setSelectedKit(kits.length > 0 ? kits[0].name : '');
+            }
         }
     }, [isOpen, framework, availableKits]);
 
@@ -122,8 +195,8 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
     };
 
     const handleCreate = () => {
-        if (validateName(projectName) && selectedKit) {
-            onCreate(projectName, framework, selectedKit);
+        if (validateName(projectName) && resolvedKit) {
+            onCreate(projectName, framework, resolvedKit);
             onClose();
         }
     };
@@ -200,7 +273,7 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
             onClose={onClose}
             footer={
                 <>
-                    {onSwitchToAI && (
+                    {onSwitchToAI && ['fastapi', 'nestjs', 'go', 'springboot', 'dotnet'].includes(framework) && (
                         <button type="button" className="enterprise-button enterprise-button--ghost" onClick={onSwitchToAI}>
                             <Sparkles size={13} />
                             Use AI instead
@@ -279,26 +352,49 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
 
                 <label className="modal-field modal-field--wide">
                     <span>Kit template</span>
-                    <select
-                        id="kit-select"
-                        value={selectedKit}
-                        onChange={(event) => setSelectedKit(event.target.value)}
-                    >
-                        {frameworkKits.length === 0 && <option value="">Loading kits...</option>}
-                        {frameworkKits.map((kit) => (
-                            <option key={kit.name} value={kit.name}>
-                                {kit.display_name} {kit.tags && kit.tags.length > 0 ? `- ${kit.tags.join(', ')}` : ''}
-                            </option>
-                        ))}
-                    </select>
-                    {frameworkKits.length === 0 ? (
-                        <span className="modal-field__hint">
-                            Fetching kits for {framework}.{' '}
-                            <button type="button" className="modal-inline-link" onClick={handleRetryKits}>Retry</button>
-                        </span>
-                    ) : selectedKitData ? (
-                        <span className="modal-field__hint">{selectedKitData.description}</span>
-                    ) : null}
+                    {isFrontendFramework ? (
+                        <EnterpriseModalNotice tone="info">
+                            <Package size={14} />
+                            <span>
+                                Uses RapidKit npm <code>create frontend {framework}</code> with the
+                                official upstream generator (no RapidKit kit catalog entry).
+                            </span>
+                        </EnterpriseModalNotice>
+                    ) : (
+                        <>
+                            <select
+                                id="kit-select"
+                                value={selectedKit}
+                                onChange={(event) => setSelectedKit(event.target.value)}
+                            >
+                                {frameworkKits.length === 0 && (
+                                    <option value="">Loading kits...</option>
+                                )}
+                                {frameworkKits.map((kit) => (
+                                    <option key={kit.name} value={kit.name}>
+                                        {kit.display_name}{' '}
+                                        {kit.tags && kit.tags.length > 0
+                                            ? `- ${kit.tags.join(', ')}`
+                                            : ''}
+                                    </option>
+                                ))}
+                            </select>
+                            {frameworkKits.length === 0 ? (
+                                <span className="modal-field__hint">
+                                    Fetching kits for {framework}.{' '}
+                                    <button
+                                        type="button"
+                                        className="modal-inline-link"
+                                        onClick={handleRetryKits}
+                                    >
+                                        Retry
+                                    </button>
+                                </span>
+                            ) : selectedKitData ? (
+                                <span className="modal-field__hint">{selectedKitData.description}</span>
+                            ) : null}
+                        </>
+                    )}
                 </label>
 
                 <EnterpriseModalSection title="Name policy" meta="Project scope">

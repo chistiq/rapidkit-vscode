@@ -1,0 +1,155 @@
+import { describe, expect, it } from 'vitest';
+import { buildDashboardEvidenceActionContract } from '@/lib/dashboardActionContract';
+import { DASHBOARD_EVIDENCE_CARD_IDS } from '../contracts/dashboardEvidenceCards';
+import type { DashboardEvidenceCard } from '@/lib/dashboardEvidence';
+
+describe('dashboard action contract', () => {
+  it('describes command, artifact, Studio, and Copilot handoff for actionable cards', () => {
+    const card: DashboardEvidenceCard = {
+      id: 'doctor',
+      label: 'Workspace Doctor',
+      status: 'warn',
+      summary: '1 warning',
+      scope: 'workspace',
+      artifactPath: '/tmp/ws/.rapidkit/reports/doctor-last-run.json',
+    };
+
+    const contract = buildDashboardEvidenceActionContract(card, {
+      workspace: { path: '/tmp/ws', name: 'ws' },
+    });
+
+    expect(contract.cardId).toBe('doctor');
+    expect(contract.cardScope).toBe('workspace');
+    expect(contract.commandState).toBe('ready');
+    expect(contract.commandAction?.command).toBe('checkWorkspaceHealth');
+    expect(contract.commandLabel).toBe('Workspace Doctor');
+    expect(contract.artifactState).toBe('ready');
+    expect(contract.artifactLabel).toBe('doctor-last-run.json');
+    expect(contract.studioLabel).toBe('Studio: doctor');
+    expect(contract.copilotLabel).toBe('Copilot: workspace evidence pack');
+    expect(contract.studioPayload).toMatchObject({
+      workspacePath: '/tmp/ws',
+      workspaceName: 'ws',
+      card: {
+        id: 'doctor',
+        label: 'Workspace Doctor',
+        scope: 'workspace',
+        artifactPath: '/tmp/ws/.rapidkit/reports/doctor-last-run.json',
+      },
+      actionContext: {
+        source: 'dashboard-evidence',
+        cardId: 'doctor',
+        cardScope: 'workspace',
+        command: 'checkWorkspaceHealth',
+        commandLabel: 'Workspace Doctor',
+        commandScope: 'workspace',
+        artifactPath: '/tmp/ws/.rapidkit/reports/doctor-last-run.json',
+        artifactState: 'ready',
+        studioTarget: {
+          target: 'doctor',
+          cardId: 'doctor',
+          scope: 'workspace',
+        },
+      },
+    });
+    expect(contract.studioPayload).toEqual(contract.copilotPayload);
+    expect(contract.copilotPayload).not.toHaveProperty('projectPath');
+  });
+
+  it('keeps project-scoped handoffs explicit without leaking project scope into workspace cards', () => {
+    const projectCard: DashboardEvidenceCard = {
+      id: 'projectDoctor',
+      label: 'Project Doctor',
+      status: 'fail',
+      summary: 'Project doctor failed',
+      scope: 'project',
+      artifactPath: '/tmp/ws/app/.rapidkit/reports/doctor-last-run.json',
+    };
+    const workspaceCard: DashboardEvidenceCard = {
+      id: 'workspaceImpact',
+      label: 'Workspace Impact',
+      status: 'warn',
+      summary: 'Risk high',
+      scope: 'workspace',
+    };
+
+    const projectContract = buildDashboardEvidenceActionContract(projectCard, {
+      workspace: { path: '/tmp/ws', name: 'ws' },
+      project: { path: '/tmp/ws/app', name: 'app' },
+    });
+    const workspaceContract = buildDashboardEvidenceActionContract(workspaceCard, {
+      workspace: { path: '/tmp/ws', name: 'ws' },
+      project: { path: '/tmp/ws/app', name: 'app' },
+    });
+
+    expect(projectContract.copilotPayload).toMatchObject({
+      workspacePath: '/tmp/ws',
+      projectPath: '/tmp/ws/app',
+      projectName: 'app',
+      actionContext: {
+        cardScope: 'project',
+        command: 'projectDoctor',
+        commandScope: 'project',
+      },
+    });
+    expect(workspaceContract.copilotPayload).toMatchObject({
+      workspacePath: '/tmp/ws',
+      actionContext: {
+        cardScope: 'workspace',
+        command: 'workspaceImpact',
+        commandScope: 'workspace',
+      },
+    });
+    expect(workspaceContract.copilotPayload).not.toHaveProperty('projectPath');
+    expect(workspaceContract.copilotPayload).not.toHaveProperty('projectName');
+  });
+
+  it('explains pending command and artifact state for unmapped cards', () => {
+    const card: DashboardEvidenceCard = {
+      id: 'unknown-card' as DashboardEvidenceCard['id'],
+      label: 'Custom Check',
+      status: 'missing',
+      summary: 'No command mapped',
+      scope: 'project',
+    };
+
+    const contract = buildDashboardEvidenceActionContract(card);
+
+    expect(contract.commandState).toBe('pending');
+    expect(contract.commandLabel).toBe('No deterministic command');
+    expect(contract.disabledReason).toContain('No deterministic command');
+    expect(contract.artifactState).toBe('pending');
+    expect(contract.artifactLabel).toBe('Artifact pending');
+    expect(contract.copilotLabel).toBe('Copilot: project evidence pack');
+    expect(contract.copilotPayload.actionContext.artifactState).toBe('pending');
+  });
+
+  it('keeps every official evidence card wired to command, Studio, Copilot, and artifact state', () => {
+    for (const cardId of DASHBOARD_EVIDENCE_CARD_IDS) {
+      const card: DashboardEvidenceCard = {
+        id: cardId,
+        label: `Card ${cardId}`,
+        status: 'warn',
+        summary: `Synthetic summary for ${cardId}`,
+        scope: cardId === 'projectDoctor' || cardId === 'importReadiness' ? 'project' : 'workspace',
+        artifactPath: `/tmp/ws/.rapidkit/reports/${cardId}.json`,
+      };
+
+      const contract = buildDashboardEvidenceActionContract(card, {
+        workspace: { path: '/tmp/ws', name: 'ws' },
+        project: { path: '/tmp/ws/app', name: 'app' },
+      });
+
+      expect(contract.commandState, cardId).toBe('ready');
+      expect(contract.commandAction?.command, cardId).toBeTruthy();
+      expect(contract.commandAction?.label, cardId).toBeTruthy();
+      expect(contract.artifactState, cardId).toBe('ready');
+      expect(contract.artifactLabel, cardId).toBe(`${cardId}.json`);
+      expect(contract.studioTarget?.target, cardId).toBeTruthy();
+      expect(contract.studioPayload.actionContext.studioTarget?.cardId, cardId).toBe(cardId);
+      expect(contract.copilotPayload.actionContext.command, cardId).toBe(
+        contract.commandAction?.command
+      );
+    }
+  });
+});

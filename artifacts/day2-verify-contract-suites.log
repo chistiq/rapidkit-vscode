@@ -1,0 +1,42 @@
+
+> rapidkit-vscode@0.28.0 pretest
+> npm run compile && npm run lint
+
+
+> rapidkit-vscode@0.28.0 compile
+> npm run clean:dist && tsc -p ./ && npm run webview:build
+
+
+> rapidkit-vscode@0.28.0 clean:dist
+> node -e "require('fs').rmSync('dist',{recursive:true,force:true})"
+
+
+> rapidkit-vscode@0.28.0 webview:build
+> cd webview-ui && npm run build
+
+
+> rapidkit-webview-ui@0.1.0 build
+> node esbuild.js
+
+[watch] webview build started
+[watch] webview build finished
+
+> rapidkit-vscode@0.28.0 lint
+> eslint src --ext ts
+
+
+> rapidkit-vscode@0.28.0 test
+> vitest run src/test/incidentStudioPayload.test.ts src/test/incidentStudioPromptPolicy.test.ts src/test/driftGuard.test.ts
+
+
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/home/rapidx/Documents/WOSP/Rapid/Front/rapidkit-vscode[39m
+
+ [32m✓[39m src/test/incidentStudioPromptPolicy.test.ts [2m([22m[2m27 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m src/test/driftGuard.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 76[2mms[22m[39m
+ [32m✓[39m src/test/incidentStudioPayload.test.ts [2m([22m[2m34 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m76 passed[39m[22m[90m (76)[39m
+[2m   Start at [22m 14:00:11
+[2m   Duration [22m 283ms[2m (transform 289ms, setup 0ms, import 342ms, tests 115ms, environment 0ms)[22m
+

@@ -6,6 +6,7 @@ interface OpsChainBannerProps {
     chain: DashboardOpsChainState;
     onDismiss: () => void;
     onViewEvidence?: () => void;
+    continueLabel?: string;
 }
 
 function chainTriggerLabel(triggeredBy: DashboardOpsChainState['triggeredBy']): string {
@@ -38,7 +39,7 @@ function stepMetaChipClass(completed: boolean, current: boolean, blocked: boolea
     return 'ws-chip ws-chip--muted';
 }
 
-export function OpsChainBanner({ chain, onDismiss, onViewEvidence }: OpsChainBannerProps) {
+export function OpsChainBanner({ chain, onDismiss, onViewEvidence, continueLabel }: OpsChainBannerProps) {
     return (
         <section
             className={`ops-chain-banner ops-chain-banner--${chain.status}`}
@@ -118,7 +119,7 @@ export function OpsChainBanner({ chain, onDismiss, onViewEvidence }: OpsChainBan
                         className="ws-btn ws-btn--ghost ops-chain-banner__link"
                         onClick={onViewEvidence}
                     >
-                        Open Evidence tab
+                        {continueLabel ?? 'Continue governance chain'}
                         <ArrowRight size={12} aria-hidden="true" />
                     </button>
                 </p>

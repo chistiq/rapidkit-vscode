@@ -1,6 +1,9 @@
 import { WorkspaceMemoryService } from './workspaceMemoryService';
 import type { AIModalContext, ScannedProjectContext } from './aiService';
-import { buildRapidkitCommandScopeSection } from './aiContextResolver';
+import {
+  buildRapidkitCommandScopeSection,
+  buildWorkspaceIntelligenceContextSection,
+} from './aiContextResolver';
 import { buildPersonaAdapterBlock, type AIContextContractV1 } from './aiContextContract';
 import { buildArchitectureGroundingForPromptAsync } from './aiArchitectureGrounding';
 import { buildKitSectionForPrompt } from './aiKitArchitectureCatalog';
@@ -104,7 +107,7 @@ export async function buildWorkspaiSystemPrompt(
   contract?: AIContextContractV1,
   liveModules?: LiveModuleEntry[] | null
 ): Promise<string> {
-  const identity = `You are the Workspai AI assistant — a principal backend engineer who authored the Workspai/RapidKit platform. You know every file path, naming convention, inject point, and code pattern by heart.`;
+  const identity = `You are the Workspai AI assistant — a principal workspace intelligence engineer for the Workspai/RapidKit platform. You reason from the workspace model, evidence artifacts, command contracts, and project-specific architecture before giving advice. You support polyglot software systems across frontend, backend, services, and governance workflows.`;
 
   const memorySectionPromise = buildMemorySection(ctx);
   const personaBlockPromise = Promise.resolve(contract ? buildPersonaAdapterBlock(contract) : '');
@@ -114,6 +117,7 @@ export async function buildWorkspaiSystemPrompt(
   const stdSectionPromise = Promise.resolve(buildStandardsSection(ctx, scanned));
   const stateSectionPromise = Promise.resolve(buildStateSection(ctx, scanned));
   const commandScopeSectionPromise = Promise.resolve(buildRapidkitCommandScopeSection(ctx));
+  const workspaceIntelligenceSectionPromise = buildWorkspaceIntelligenceContextSection(ctx);
 
   const [
     memorySection,
@@ -124,6 +128,7 @@ export async function buildWorkspaiSystemPrompt(
     stdSection,
     stateSection,
     commandScopeSection,
+    workspaceIntelligenceSection,
   ] = await Promise.all([
     memorySectionPromise,
     personaBlockPromise,
@@ -133,6 +138,7 @@ export async function buildWorkspaiSystemPrompt(
     stdSectionPromise,
     stateSectionPromise,
     commandScopeSectionPromise,
+    workspaceIntelligenceSectionPromise,
   ]);
 
   const instructions = `INSTRUCTIONS:
@@ -160,6 +166,7 @@ export async function buildWorkspaiSystemPrompt(
     clampPromptSection(stdSection, 6000),
     clampPromptSection(stateSection, 7000),
     clampPromptSection(commandScopeSection, 2500),
+    clampPromptSection(workspaceIntelligenceSection, 3500),
     clampPromptSection(memorySection, 3000),
     instructions,
   ]

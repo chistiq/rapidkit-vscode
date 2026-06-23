@@ -1,28 +1,25 @@
 import type { DashboardSection } from './dashboardSections';
+import type { DashboardOperateZone } from './dashboardOperateZones';
 import type { DashboardCommand, DashboardCommandScope } from './dashboardCommandRegistry';
+import type { DashboardEvidenceCardId } from '@workspai-contracts/dashboardEvidenceCards';
+
+export type { DashboardEvidenceCardId };
 
 export type DashboardEvidenceStatus = 'pass' | 'warn' | 'fail' | 'missing';
 
 export type DashboardEvidenceScope = 'workspace' | 'project';
 
-export type DashboardEvidenceCardId =
-  | 'doctor'
-  | 'projectDoctor'
-  | 'pipeline'
-  | 'analyze'
-  | 'readiness'
-  | 'bootstrap'
-  | 'workspaceSync'
-  | 'foundation'
-  | 'contract'
-  | 'autopilot'
-  | 'snapshot'
-  | 'share'
-  | 'archive'
-  | 'mirror'
-  | 'cache'
-  | 'policy'
-  | 'infra';
+export type DashboardEvidenceFreshnessStatus = 'fresh' | 'aging' | 'stale' | 'unknown';
+
+export type DashboardEvidenceFreshness = {
+  status: DashboardEvidenceFreshnessStatus;
+  label: string;
+  detail: string;
+  ageMs?: number;
+};
+
+const EVIDENCE_AGING_AFTER_MS = 6 * 60 * 60 * 1000;
+const EVIDENCE_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 export type DashboardEvidenceCard = {
   id: DashboardEvidenceCardId;
@@ -34,7 +31,14 @@ export type DashboardEvidenceCard = {
   artifactPath?: string;
   metrics?: Record<string, number | string>;
   blockers?: string[];
-  incidentStudioTarget?: 'doctor' | 'analyze' | 'readiness' | 'release';
+  incidentStudioTarget?:
+    | 'doctor'
+    | 'analyze'
+    | 'readiness'
+    | 'release'
+    | 'impact'
+    | 'model'
+    | 'pipeline';
 };
 
 export type DashboardActivityEntry = {
@@ -79,6 +83,37 @@ export type DashboardOnboardingState = {
   isFreshInstall: boolean;
   recentWorkspaceCount: number;
   hasActiveWorkspace: boolean;
+  /** Human-friendly Time-to-First-Value label once the first artifact is produced (roadmap 2.9). */
+  ttfvLabel?: string | null;
+};
+
+export type DashboardEvidenceRefreshMode = 'full' | 'patch';
+
+/**
+ * 30-day health/impact trend (roadmap item 2.8), sourced from the CLI-written
+ * `workspace-intelligence-history.json` ring buffer. Each point corresponds to a
+ * `workspace verify` run; gate health and impact risk are normalized to 0–100.
+ */
+export type DashboardTrendPoint = {
+  generatedAt: string;
+  gateHealth: number;
+  impactRisk: number;
+  affectedProjects: number;
+  gatePassed: boolean;
+  blockingReasons: number;
+  policyViolations: number;
+  verdict: string;
+  risk: string;
+};
+
+export type DashboardTrendSummary = {
+  windowDays: number;
+  points: DashboardTrendPoint[];
+  latest: DashboardTrendPoint | null;
+  gateHealthDelta: number | null;
+  impactRiskDelta: number | null;
+  gatePassRate: number;
+  totalRuns: number;
 };
 
 export type DashboardEvidencePayload = {
@@ -89,6 +124,10 @@ export type DashboardEvidencePayload = {
   activity: DashboardActivityEntry[];
   opsChain?: DashboardOpsChainState | null;
   onboarding: DashboardOnboardingState;
+  trend?: DashboardTrendSummary | null;
+  requestId?: number;
+  refreshMode?: DashboardEvidenceRefreshMode;
+  patchCardIds?: DashboardEvidenceCardId[];
 };
 
 export function findEvidenceCard(
@@ -124,18 +163,100 @@ export function evidenceStatusLabel(status: DashboardEvidenceStatus): string {
   }
 }
 
+export function isBootstrapPendingCard(card: DashboardEvidenceCard | undefined): boolean {
+  return card?.id === 'bootstrap' && Number(card.metrics?.pendingBootstrap ?? 0) === 1;
+}
+
+export function evidenceCardStatusLabel(card: DashboardEvidenceCard): string {
+  if (isBootstrapPendingCard(card)) {
+    return 'Pending';
+  }
+  return evidenceStatusLabel(card.status);
+}
+
+function formatEvidenceAge(ageMs: number): string {
+  const safeAgeMs = Math.max(0, ageMs);
+  const minutes = Math.floor(safeAgeMs / (60 * 1000));
+  if (minutes < 1) {
+    return 'just now';
+  }
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) {
+    return `${hours}h ago`;
+  }
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+export function resolveEvidenceFreshness(
+  card: DashboardEvidenceCard,
+  nowMs = Date.now()
+): DashboardEvidenceFreshness {
+  if (card.status === 'missing') {
+    return {
+      status: 'unknown',
+      label: 'No artifact',
+      detail: 'Run the matching command to create evidence.',
+    };
+  }
+
+  if (!card.generatedAt) {
+    return {
+      status: 'unknown',
+      label: 'No timestamp',
+      detail: 'Artifact exists, but freshness cannot be verified.',
+    };
+  }
+
+  const generatedMs = Date.parse(card.generatedAt);
+  if (!Number.isFinite(generatedMs)) {
+    return {
+      status: 'unknown',
+      label: 'Invalid timestamp',
+      detail: 'Artifact timestamp could not be parsed.',
+    };
+  }
+
+  const ageMs = Math.max(0, nowMs - generatedMs);
+  const detail = `Updated ${formatEvidenceAge(ageMs)}`;
+
+  if (ageMs >= EVIDENCE_STALE_AFTER_MS) {
+    return { status: 'stale', label: 'Stale', detail, ageMs };
+  }
+  if (ageMs >= EVIDENCE_AGING_AFTER_MS) {
+    return { status: 'aging', label: 'Aging', detail, ageMs };
+  }
+  return { status: 'fresh', label: 'Fresh', detail, ageMs };
+}
+
+export function evidenceNeedsFreshnessAttention(
+  card: DashboardEvidenceCard,
+  nowMs = Date.now()
+): boolean {
+  return card.status !== 'missing' && resolveEvidenceFreshness(card, nowMs).status === 'stale';
+}
+
 export function outcomeCards(
-  payload: DashboardEvidencePayload | null | undefined
+  payload: DashboardEvidencePayload | null | undefined,
+  nowMs = Date.now()
 ): DashboardEvidenceCard[] {
   return (payload?.cards ?? []).filter(
-    (card) => card.status === 'fail' || card.status === 'warn' || (card.blockers?.length ?? 0) > 0
+    (card) =>
+      card.status === 'fail' ||
+      card.status === 'warn' ||
+      (card.blockers?.length ?? 0) > 0 ||
+      evidenceNeedsFreshnessAttention(card, nowMs)
   );
 }
 
 export function countEvidenceAttention(
-  payload: DashboardEvidencePayload | null | undefined
+  payload: DashboardEvidencePayload | null | undefined,
+  nowMs = Date.now()
 ): number {
-  return outcomeCards(payload).length;
+  return outcomeCards(payload, nowMs).length;
 }
 
 export function evidenceIsSparse(
@@ -156,6 +277,8 @@ export function evidenceIsSparse(
 const OPERATE_EVIDENCE_CARD_IDS: DashboardEvidenceCardId[] = [
   'doctor',
   'bootstrap',
+  'setup',
+  'readiness',
   'workspaceSync',
   'foundation',
   'contract',
@@ -197,6 +320,122 @@ export function countOperateAttention(input: {
   return count;
 }
 
+function compactEvidenceSummary(card: DashboardEvidenceCard | undefined, fallback: string): string {
+  if (!card) {
+    return fallback;
+  }
+  const summary = card.summary?.trim();
+  if (summary && (card.status !== 'missing' || isBootstrapPendingCard(card))) {
+    return summary.length > 48 ? `${summary.slice(0, 47)}…` : summary;
+  }
+  if (card.status === 'missing') {
+    return fallback;
+  }
+  return evidenceCardStatusLabel(card);
+}
+
+export function formatHomeEvidenceDetail(
+  evidence: DashboardEvidencePayload | null | undefined
+): string {
+  const doctor = findEvidenceCard(evidence, 'doctor');
+  const analyze = findEvidenceCard(evidence, 'analyze');
+  const readiness = findEvidenceCard(evidence, 'readiness');
+  const workspaceRun = findEvidenceCard(evidence, 'workspaceRun');
+  const parts = [
+    doctor ? `Doctor: ${compactEvidenceSummary(doctor, evidenceStatusLabel(doctor.status))}` : null,
+    analyze
+      ? `Analyze: ${compactEvidenceSummary(analyze, evidenceStatusLabel(analyze.status))}`
+      : null,
+    readiness
+      ? `Readiness: ${compactEvidenceSummary(readiness, evidenceStatusLabel(readiness.status))}`
+      : null,
+    workspaceRun && workspaceRun.status !== 'missing'
+      ? `Run: ${compactEvidenceSummary(workspaceRun, evidenceStatusLabel(workspaceRun.status))}`
+      : null,
+  ].filter((part): part is string => Boolean(part));
+
+  if (parts.length === 0) {
+    return 'Run doctor from the Run tab to populate artifacts';
+  }
+  return parts.join(' · ');
+}
+
+export function formatHomeGovernanceDetail(
+  evidence: DashboardEvidencePayload | null | undefined
+): string {
+  const pipeline = findEvidenceCard(evidence, 'pipeline');
+  const bootstrap = findEvidenceCard(evidence, 'bootstrap');
+  const setup = findEvidenceCard(evidence, 'setup');
+  const mirror = findEvidenceCard(evidence, 'mirror');
+  const parts = [
+    pipeline
+      ? `Pipeline: ${compactEvidenceSummary(pipeline, evidenceStatusLabel(pipeline.status))}`
+      : null,
+    bootstrap
+      ? `Bootstrap: ${compactEvidenceSummary(bootstrap, evidenceStatusLabel(bootstrap.status))}`
+      : null,
+    setup && setup.status !== 'missing'
+      ? `Setup: ${compactEvidenceSummary(setup, evidenceStatusLabel(setup.status))}`
+      : null,
+    mirror ? `Mirror: ${compactEvidenceSummary(mirror, evidenceStatusLabel(mirror.status))}` : null,
+  ].filter((part): part is string => Boolean(part));
+
+  if (parts.length === 0) {
+    return 'Bootstrap and sync from Run → Governance';
+  }
+  return parts.join(' · ');
+}
+
+export function homeEvidenceMetricValue(
+  evidence: DashboardEvidencePayload | null | undefined,
+  attentionCount: number
+): string {
+  if (attentionCount > 0) {
+    return `${attentionCount} need attention`;
+  }
+  const doctor = findEvidenceCard(evidence, 'doctor');
+  if (!doctor || doctor.status === 'missing') {
+    return 'No artifacts yet';
+  }
+  if (doctor.status === 'pass') {
+    return 'Healthy';
+  }
+  return evidenceStatusLabel(doctor.status);
+}
+
+export function homeGovernanceMetricValue(
+  evidence: DashboardEvidencePayload | null | undefined,
+  attentionCount: number,
+  hasWorkspace: boolean
+): string {
+  if (!hasWorkspace) {
+    return 'Locked';
+  }
+  if (attentionCount > 0) {
+    return `${attentionCount} need attention`;
+  }
+  const pipeline = findEvidenceCard(evidence, 'pipeline');
+  const bootstrap = findEvidenceCard(evidence, 'bootstrap');
+  const setup = findEvidenceCard(evidence, 'setup');
+  if (
+    bootstrap?.status === 'fail' ||
+    setup?.status === 'fail' ||
+    bootstrap?.status === 'warn' ||
+    setup?.status === 'warn'
+  ) {
+    return evidenceStatusLabel(
+      bootstrap?.status === 'fail' || setup?.status === 'fail' ? 'fail' : 'warn'
+    );
+  }
+  if (!pipeline || pipeline.status === 'missing') {
+    return 'Ready';
+  }
+  if (pipeline.status === 'pass') {
+    return 'Pipeline green';
+  }
+  return evidenceStatusLabel(pipeline.status);
+}
+
 export type DashboardNextStepPriority = 'critical' | 'recommended' | 'optional';
 
 export type DashboardNextStep = {
@@ -205,6 +444,7 @@ export type DashboardNextStep = {
   detail: string;
   priority: DashboardNextStepPriority;
   section?: DashboardSection;
+  operateZone?: DashboardOperateZone;
   command?: DashboardCommand;
   commandLabel?: string;
   commandScope?: DashboardCommandScope;

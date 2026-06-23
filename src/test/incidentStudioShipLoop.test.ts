@@ -38,7 +38,7 @@ describe('incidentStudioShipLoop', () => {
     expect(view.steps.find((step) => step.id === 'autopilot-release')?.runnable).toBe(true);
   });
 
-  it('blocks verify step when policy verify reasons are present', () => {
+  it('blocks verify step when release blockers are present', () => {
     const view = deriveEnterpriseShipLoopView({
       studioEvidence: { verdict: 'ready', generatedAt: '2026-06-10T12:00:00.000Z' },
       shipEvidence: {
@@ -51,6 +51,25 @@ describe('incidentStudioShipLoop', () => {
     expect(verifyStep?.state).toBe('blocked');
     expect(verifyStep?.runnable).toBe(false);
     expect(view.nextStepId).toBe('verify-gates');
+  });
+
+  it('warns instead of blocking verify when only studio learning KPIs fail but artifacts pass', () => {
+    const view = deriveEnterpriseShipLoopView({
+      studioEvidence: { verdict: 'ready', generatedAt: '2026-06-10T12:00:00.000Z' },
+      shipEvidence: {
+        cards: [
+          { id: 'analyze', status: 'pass' },
+          { id: 'readiness', status: 'pass' },
+          { id: 'autopilot', status: 'pass' },
+        ],
+      },
+      verifyGateBlockedReasons: ['Bridge route completion < minimum threshold'],
+      verifyArtifactPassed: true,
+    });
+
+    const verifyStep = view.steps.find((step) => step.id === 'verify-gates');
+    expect(verifyStep?.state).toBe('warn');
+    expect(view.releaseReady).toBe(true);
   });
 
   it('blocks mutating ship loop steps when stabilization is frozen', () => {

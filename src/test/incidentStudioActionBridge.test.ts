@@ -19,10 +19,19 @@ vi.mock('../ui/panels/incidentStudioInlineCommandBridge', () => ({
   runIncidentInlineCommand: vi.fn(),
 }));
 
-import { executeVerifyGatesAction } from '../ui/panels/incidentStudioActionBridge';
+vi.mock('../core/workspaceImpactReader', () => ({
+  readWorkspaceImpactReport: vi.fn(),
+}));
+
+import {
+  executeStudioActionById,
+  executeVerifyGatesAction,
+} from '../ui/panels/incidentStudioActionBridge';
 import { loadAnalyzeReport } from '../ui/panels/incidentStudioAnalyze';
+import { readWorkspaceImpactReport } from '../core/workspaceImpactReader';
 import { resolveIncidentStudioTelemetry } from '../ui/panels/incidentStudioTelemetryBridge';
 import { runIncidentInlineCommand } from '../ui/panels/incidentStudioInlineCommandBridge';
+import * as vscode from 'vscode';
 
 describe('incidentStudioActionBridge', () => {
   beforeEach(() => {
@@ -98,5 +107,31 @@ describe('incidentStudioActionBridge', () => {
     expect(result.gatePassed).toBe(true);
     expect(result.gateCommand).toBe('make release-gate');
     expect(result.summary).toContain('Telemetry policy gates: PASS');
+  });
+
+  it('routes impact-lens through npm workspace impact instead of AI lite', async () => {
+    vi.mocked(loadAnalyzeReport).mockReturnValue({ report: null, error: null });
+    vi.mocked(readWorkspaceImpactReport).mockResolvedValue({
+      summary: { risk: 'medium', affectedProjects: 1 },
+      agentBrief: { headline: 'Workspace impact risk: medium.' },
+    });
+
+    const result = await executeStudioActionById(
+      {} as never,
+      {
+        workspacePath: '/tmp/demo',
+        workspaceName: 'demo',
+      },
+      'impact-lens',
+      {}
+    );
+
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('workspai.workspaceImpactLens', {
+      workspace: {
+        path: '/tmp/demo',
+        name: 'demo',
+      },
+    });
+    expect(result.actionResult?.summary).toContain('risk medium');
   });
 });

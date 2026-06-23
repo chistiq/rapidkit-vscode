@@ -173,6 +173,17 @@ export interface WorkspaceStatus {
   installedModules?: { slug: string; version: string; display_name: string }[];
   isRunning?: boolean;
   runningPort?: number;
+  projectCapabilities?: {
+    available: boolean;
+    runtime?: string;
+    framework?: string;
+    frameworkDisplayName?: string;
+    moduleSupport?: boolean;
+    fleetStages?: string[];
+    supportedCommands?: string[];
+    unsupportedCommands?: string[];
+    commandMap?: Record<string, { status: string; reason?: string; fleetEligible?: boolean }>;
+  };
   seq?: number;
 }
 
@@ -206,3 +217,20 @@ export interface Kit {
   modules?: string[];
   description: string;
 }
+
+export type BackendScaffoldFramework = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
+
+export type FrontendScaffoldFramework =
+  | 'nextjs'
+  | 'remix'
+  | 'vite-react'
+  | 'vite-vue'
+  | 'vite-svelte'
+  | 'vite-solid'
+  | 'vite-vanilla'
+  | 'nuxt'
+  | 'angular'
+  | 'astro'
+  | 'sveltekit';
+
+export type ScaffoldFramework = BackendScaffoldFramework | FrontendScaffoldFramework;

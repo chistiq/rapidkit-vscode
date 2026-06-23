@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import type { Workspace } from '@/types';
+import { WORKSPAI_AI_ASSISTANT_WORKSPACE_TITLE } from '@/lib/workspaiAiNarrative';
 import { WorkspaiEmptyState } from './WorkspaiEmptyState';
 import { SectionHeader } from './SectionHeader';
 
@@ -292,7 +293,7 @@ export function RecentWorkspaces({
                               e.stopPropagation();
                               onAI(workspace);
                             }}
-                            title="Ask AI about this workspace"
+                            title={WORKSPAI_AI_ASSISTANT_WORKSPACE_TITLE}
                             aria-label={`AI actions for ${workspace.name}`}
                           >
                             <Sparkles size={12} />

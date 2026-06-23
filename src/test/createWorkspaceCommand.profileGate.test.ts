@@ -212,7 +212,7 @@ describe('createWorkspaceCommand profile-aware Python gating', () => {
   });
 
   it('does not show Python warning for Python-free profile and proceeds with workspace flow', async () => {
-    const configPath = '/home/test/Workspai/rapidkits/ws-node';
+    const configPath = '/home/test/rapidkit/workspaces/ws-node';
     const markerPath = `${configPath}/.rapidkit-workspace`;
     const pathCallCounts = new Map<string, number>();
 

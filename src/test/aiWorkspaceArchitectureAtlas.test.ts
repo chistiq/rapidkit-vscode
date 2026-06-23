@@ -76,6 +76,29 @@ describe('aiWorkspaceArchitectureAtlas', () => {
     expect(fingerprint?.hasExamplesDir).toBe(true);
   });
 
+  it('scans frontend scaffold projects from project.json without degrading to unknown', () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-next-'));
+    tempDirs.push(project);
+    fs.mkdirSync(path.join(project, '.rapidkit'), { recursive: true });
+    fs.mkdirSync(path.join(project, 'src', 'app'), { recursive: true });
+    fs.writeFileSync(
+      path.join(project, '.rapidkit', 'project.json'),
+      JSON.stringify({
+        kit_name: 'frontend.nextjs',
+        runtime: 'node',
+        framework: 'nextjs',
+        module_support: false,
+      })
+    );
+    fs.writeFileSync(path.join(project, 'next.config.ts'), 'export default {};');
+
+    const fingerprint = scanProjectArchitectureFingerprint(project);
+    expect(fingerprint?.kit).toBe('frontend.nextjs');
+    expect(fingerprint?.runtime).toBe('node');
+    expect(fingerprint?.framework).toBe('nextjs');
+    expect(fingerprint?.hasRapidKitMarker).toBe(true);
+  });
+
   it('builds polyglot workspace atlas from multiple projects', async () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-ws-'));
     tempDirs.push(workspace);
@@ -103,5 +126,37 @@ describe('aiWorkspaceArchitectureAtlas', () => {
     expect(atlas?.isPolyglot).toBe(true);
     expect(atlas?.kitIds).toContain('nestjs.standard');
     expect(atlas?.kitIds).toContain('fastapi.standard');
+  });
+
+  it('prefers workspace-model.json as canonical atlas source when present', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-canonical-'));
+    tempDirs.push(workspace);
+    const reportsDir = path.join(workspace, '.rapidkit', 'reports');
+    fs.mkdirSync(reportsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(reportsDir, 'workspace-model.json'),
+      JSON.stringify({
+        schemaVersion: 'workspace-model.v1',
+        summary: { projectCount: 1 },
+        projects: [
+          {
+            name: 'admin-api',
+            path: 'admin-api',
+            runtime: 'node',
+            framework: 'nestjs',
+            kit: 'nestjs.standard',
+            moduleSupport: true,
+            importantFiles: ['src/main.ts'],
+            commands: { fleetStages: ['test'] },
+          },
+        ],
+      })
+    );
+
+    const atlas = await buildWorkspaceArchitectureAtlas(workspace);
+    expect(atlas?.canonicalSource).toBe('workspace-model.v1');
+    expect(atlas?.projectCount).toBe(1);
+    expect(atlas?.projects[0]?.source).toBe('merged');
+    expect(atlas?.projects[0]?.kit).toBe('nestjs.standard');
   });
 });

@@ -1,14 +1,27 @@
-export type FrameworkKind = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
+import type { BackendScaffoldFramework, FrontendScaffoldFramework, ScaffoldFramework } from '@/types';
 
-const FRAMEWORK_MONOGRAM: Record<FrameworkKind, string> = {
+export type FrameworkKind = ScaffoldFramework;
+
+const FRAMEWORK_MONOGRAM: Record<string, string> = {
   fastapi: 'Py',
   nestjs: 'TS',
   go: 'Go',
   springboot: 'JVM',
   dotnet: '.NET',
+  nextjs: 'Nx',
+  remix: 'Rx',
+  'vite-react': 'VR',
+  'vite-vue': 'VV',
+  'vite-svelte': 'VS',
+  'vite-solid': 'Sd',
+  'vite-vanilla': 'Vt',
+  nuxt: 'Nu',
+  angular: 'Ng',
+  astro: 'As',
+  sveltekit: 'SK',
 };
 
-function readFrameworkIconUri(framework: FrameworkKind): string | undefined {
+function readFrameworkIconUri(framework: BackendScaffoldFramework): string | undefined {
   if (typeof window === 'undefined') {
     return undefined;
   }
@@ -37,14 +50,18 @@ function readFrameworkIconUri(framework: FrameworkKind): string | undefined {
   }
 }
 
+function isBackendFramework(framework: ScaffoldFramework): framework is BackendScaffoldFramework {
+  return ['fastapi', 'nestjs', 'go', 'springboot', 'dotnet'].includes(framework);
+}
+
 interface FrameworkIconProps {
-  framework: FrameworkKind;
+  framework: ScaffoldFramework;
   size?: number;
   className?: string;
 }
 
 export function FrameworkIcon({ framework, size = 16, className }: FrameworkIconProps) {
-  const iconUri = readFrameworkIconUri(framework);
+  const iconUri = isBackendFramework(framework) ? readFrameworkIconUri(framework) : undefined;
 
   if (iconUri) {
     return (
@@ -61,7 +78,7 @@ export function FrameworkIcon({ framework, size = 16, className }: FrameworkIcon
 
   return (
     <span className={`enterprise-framework-monogram${className ? ` ${className}` : ''}`}>
-      {FRAMEWORK_MONOGRAM[framework]}
+      {FRAMEWORK_MONOGRAM[framework] ?? 'FE'}
     </span>
   );
 }

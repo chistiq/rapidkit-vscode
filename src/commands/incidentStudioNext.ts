@@ -1,12 +1,9 @@
 /**
- * Incident Studio (Next) Command — consolidated to canonical main studio path.
- * The separate preview panel is deprecated; this command opens production Incident Studio.
+ * Studio command — redirects to the canonical Workspai sidebar Studio tab.
  */
 
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { Logger } from '../utils/logger';
-import { WelcomePanel } from '../ui/panels/welcomePanel';
 
 interface WorkspaceExplorerLike {
   getSelectedWorkspace?: () => { path: string; name?: string } | null | undefined;
@@ -17,7 +14,7 @@ interface ProjectExplorerLike {
 }
 
 export async function showIncidentStudioNextCommand(
-  context: vscode.ExtensionContext,
+  _context: vscode.ExtensionContext,
   workspaceExplorer?: WorkspaceExplorerLike,
   projectExplorer?: ProjectExplorerLike
 ) {
@@ -34,9 +31,9 @@ export async function showIncidentStudioNextCommand(
 
     const selectedProject = projectExplorer?.getSelectedProject?.();
 
-    WelcomePanel.openIncidentStudio(context, {
+    await vscode.commands.executeCommand('workspai.openIncidentStudio', {
       workspacePath,
-      workspaceName: selectedWorkspace?.name || path.basename(workspacePath),
+      workspaceName: selectedWorkspace?.name,
       projectPath: selectedProject?.path,
       projectName: selectedProject?.name,
       projectType: selectedProject?.type,

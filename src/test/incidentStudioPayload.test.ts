@@ -45,6 +45,7 @@ describe('incidentStudioPayload', () => {
       workspacePath: '/tmp/wsp',
       workspaceName: 'Demo Workspace',
       initialQuery: 'analyze launch blockers',
+      composerHandoff: undefined,
       projectSelection: {
         path: '/tmp/wsp/orders-api',
         name: 'Orders API',
@@ -68,10 +69,22 @@ describe('incidentStudioPayload', () => {
       workspacePath: '/tmp/wsp',
       workspaceName: '/tmp/wsp',
       initialQuery: undefined,
+      composerHandoff: undefined,
       projectSelection: null,
       preferredDisplayMode: undefined,
       preferredArchitectureLensView: undefined,
     });
+  });
+
+  it('normalizes composerHandoff for evidence prefill handoffs', () => {
+    const normalized = normalizeIncomingIncidentStudioOpen({
+      workspacePath: '/tmp/wsp',
+      initialQuery: 'Fix pipeline blockers',
+      composerHandoff: 'prefill',
+    });
+
+    expect(normalized?.composerHandoff).toBe('prefill');
+    expect(normalized?.initialQuery).toBe('Fix pipeline blockers');
   });
 
   it('drops unsupported Incident Studio preferences', () => {
@@ -1347,6 +1360,74 @@ describe('incidentStudioPayload', () => {
       rollbackPathPresent: false,
       confidenceSufficient: false,
       blockedReasons: [],
+    });
+  });
+
+  it('preserves AI action proof metadata for latest outcome presentation', () => {
+    const normalized = normalizeIncidentActionResultPayload({
+      success: true,
+      summary: 'AI action verify completed successfully.',
+      outputSummary: 'AI action verify completed successfully.',
+      proof: {
+        schemaVersion: 'workspai.ai-action-proof-summary.v1',
+        evidenceRequired: true,
+        evidencePresent: true,
+        evidenceSha256Present: true,
+        transcriptRequired: true,
+        transcriptCommandCount: 2,
+        failedCommandCount: 0,
+        rollbackProofRequired: true,
+        rollbackPlanPresent: true,
+        complete: true,
+        issues: ['ignored duplicate?', 'kept for display'],
+      },
+      proofEvent: {
+        schemaVersion: 'workspai.studio.proof-event.v1',
+        actionId: 'ai-action-verify',
+        status: 'completed',
+        summary: 'Verify completed.',
+        generatedAt: '2026-06-19T00:00:00.000Z',
+        evidencePath: '/tmp/evidence.json',
+        evidenceSha256: 'a'.repeat(64),
+        commandCount: 2,
+        failedCommandCount: 0,
+        source: 'ai-action',
+      },
+      evidencePath: '/tmp/evidence.json',
+      evidenceSha256: 'a'.repeat(64),
+      evidenceSizeBytes: 2048,
+      commandCount: 2,
+      failedCommandCount: 0,
+      failedCommands: ['npm test'],
+    });
+
+    expect(normalized.proof).toMatchObject({
+      schemaVersion: 'workspai.ai-action-proof-summary.v1',
+      evidencePresent: true,
+      transcriptCommandCount: 2,
+      rollbackProofRequired: true,
+      complete: true,
+    });
+    expect(normalized.proofEvent).toMatchObject({
+      schemaVersion: 'workspai.studio.proof-event.v1',
+      actionId: 'ai-action-verify',
+      status: 'completed',
+      evidenceSha256: 'a'.repeat(64),
+      commandCount: 2,
+      source: 'ai-action',
+    });
+    expect(normalized.evidenceSha256).toBe('a'.repeat(64));
+    expect(normalized.failedCommands).toEqual(['npm test']);
+
+    expect(
+      normalizeIncidentActionResultPayload({
+        success: true,
+        proof: { schemaVersion: 'wrong' },
+        proofEvent: { schemaVersion: 'wrong' },
+      })
+    ).toMatchObject({
+      proof: undefined,
+      proofEvent: undefined,
     });
   });
 });

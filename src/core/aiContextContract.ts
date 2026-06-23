@@ -299,8 +299,16 @@ export function buildContextContractFromEvidence(
   // ── Project ──────────────────────────────────────────────────────────────
   let project: AIContextContractV1['project'] = undefined;
   if (ctx.type === 'project' || scanned) {
-    const framework = scanned?.runtime ?? scanned?.engine ?? ctx.framework;
-    const kit = scanned?.kit !== 'unknown' ? scanned?.kit : ctx.framework;
+    const cleanEvidenceValue = (value: string | null | undefined): string | undefined => {
+      const trimmed = typeof value === 'string' ? value.trim() : '';
+      return trimmed && trimmed !== 'unknown' ? trimmed : undefined;
+    };
+    const scannedKit = cleanEvidenceValue(scanned?.kit);
+    const ctxFramework = cleanEvidenceValue(ctx.framework);
+    const scannedRuntime = cleanEvidenceValue(scanned?.runtime);
+    const scannedEngine = cleanEvidenceValue(scanned?.engine);
+    const framework = ctxFramework ?? scannedKit ?? scannedRuntime ?? scannedEngine;
+    const kit = scannedKit ?? ctxFramework;
     const moduleSupported = frameworkSupportsModules(framework, kit);
 
     project = {

@@ -1,11 +1,14 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
+import { isFrontendScaffoldFramework } from '../core/scaffoldKits';
 import { detectPythonVirtualenv } from '../utils/poetryHelper';
+import { getSelectedProjectPath } from '../core/selectedProject';
 import { WelcomePanel } from '../ui/panels/welcomePanel';
 import { Logger } from '../utils/logger';
+import { gateProjectLifecycleCommand } from '../core/projectLifecycleGate';
 import {
   interruptTerminal,
   openTerminal,
-  runCommandsInTerminal,
   runRapidkitCommandsInTerminal,
 } from '../utils/terminalExecutor';
 
@@ -22,7 +25,20 @@ async function hasCommandAvailable(command: string): Promise<boolean> {
 
 type ProjectExplorerLike = {
   refresh: () => void;
+  getSelectedProject?: () => {
+    path: string;
+    name: string;
+    type: string;
+  } | null;
 };
+
+let projectExplorerGetter: (() => ProjectExplorerLike | undefined) | undefined;
+
+function warnMissingProjectSelection(commandLabel: string): void {
+  vscode.window.showWarningMessage(
+    `${commandLabel} needs a selected project. Pick one in the Projects sidebar or Dashboard.`
+  );
+}
 
 type ProjectCommandItem = {
   project?: {
@@ -44,9 +60,25 @@ type ProjectCommandTarget = {
 function resolveProjectCommandTarget(item: unknown): ProjectCommandTarget {
   const typed = item && typeof item === 'object' ? (item as ProjectCommandItem) : undefined;
 
-  const projectPathCandidate = typed?.project?.path ?? typed?.projectPath;
-  const projectNameCandidate = typed?.project?.name;
-  const projectTypeCandidate = typed?.project?.type;
+  let projectPathCandidate = typed?.project?.path ?? typed?.projectPath;
+  let projectNameCandidate = typed?.project?.name;
+  let projectTypeCandidate = typed?.project?.type;
+
+  if (typeof projectPathCandidate !== 'string' || projectPathCandidate.trim().length === 0) {
+    const explorerProject = projectExplorerGetter?.()?.getSelectedProject?.();
+    if (explorerProject?.path) {
+      projectPathCandidate = explorerProject.path;
+      projectNameCandidate = explorerProject.name;
+      projectTypeCandidate = explorerProject.type;
+    } else {
+      const fallbackPath = getSelectedProjectPath();
+      if (fallbackPath) {
+        projectPathCandidate = fallbackPath;
+        projectNameCandidate = path.basename(fallbackPath);
+      }
+    }
+  }
+
   const preferredActionCandidate = typed?.preferredAction;
 
   return {
@@ -69,395 +101,456 @@ function resolveProjectCommandTarget(item: unknown): ProjectCommandTarget {
   };
 }
 
+function resolveDefaultDevPort(projectType: string): number {
+  if (projectType === 'springboot') {
+    return 8080;
+  }
+  if (projectType === 'fastapi') {
+    return 8000;
+  }
+  if (projectType === 'go' || isFrontendScaffoldFramework(projectType)) {
+    return 3000;
+  }
+  if (projectType === 'nestjs') {
+    return 8000;
+  }
+  return 3000;
+}
+
+function usesRapidkitDevCommand(projectType: string): boolean {
+  return (
+    projectType === 'fastapi' ||
+    projectType === 'go' ||
+    projectType === 'springboot' ||
+    projectType === 'nestjs' ||
+    projectType === 'dotnet' ||
+    isFrontendScaffoldFramework(projectType)
+  );
+}
+
+function startRapidkitDevTerminal(input: {
+  projectName: string;
+  projectPath: string;
+  port: number;
+  defaultPort: number;
+  withPortEnv?: boolean;
+  withDevPortFlag?: boolean;
+  startedMessage: string;
+}): vscode.Terminal {
+  const env =
+    input.withPortEnv && input.port !== input.defaultPort
+      ? { PORT: String(input.port) }
+      : undefined;
+  const commands =
+    input.withDevPortFlag && input.port !== input.defaultPort
+      ? [['dev', '--port', String(input.port)]]
+      : [['dev']];
+
+  const terminal = runRapidkitCommandsInTerminal({
+    name: `🚀 ${input.projectName} [:${input.port}]`,
+    cwd: input.projectPath,
+    env,
+    commands,
+  });
+
+  if (input.port !== input.defaultPort) {
+    vscode.window.showInformationMessage(
+      `▶️ Started on port ${input.port} (${input.defaultPort} was busy)`
+    );
+  } else {
+    vscode.window.showInformationMessage(input.startedMessage);
+  }
+
+  return terminal;
+}
+
 export function registerProjectLifecycleCommands(options: {
   logger: Logger;
   runningServers: Map<string, vscode.Terminal>;
   getProjectExplorer: () => ProjectExplorerLike | undefined;
 }): vscode.Disposable[] {
   const { logger, runningServers, getProjectExplorer } = options;
+  projectExplorerGetter = getProjectExplorer;
 
   return [
     vscode.commands.registerCommand('workspai.projectTerminal', async (item: unknown) => {
       const { projectPath, projectName } = resolveProjectCommandTarget(item);
-      if (projectPath) {
-        openTerminal({
-          name: `Workspai: ${projectName}`,
-          cwd: projectPath,
-        });
-        logger.info(`Opened terminal for project: ${projectPath}`);
+      if (!projectPath) {
+        warnMissingProjectSelection('Project Terminal');
+        return;
       }
+      openTerminal({
+        name: `Workspai: ${projectName}`,
+        cwd: projectPath,
+      });
+      logger.info(`Opened terminal for project: ${projectPath}`);
     }),
 
     vscode.commands.registerCommand('workspai.projectInit', async (item: unknown) => {
       const { projectPath, projectName, projectType } = resolveProjectCommandTarget(item);
 
-      if (projectPath) {
-        runRapidkitCommandsInTerminal({
-          name: `📦 ${projectName} [init]`,
-          cwd: projectPath,
-          commands: [['init']],
-        });
-
-        if (projectType === 'springboot') {
-          vscode.window.showInformationMessage(
-            `Running rapidkit init for ${projectName}. This step can be quiet. It prepares the project, but Spring Boot still needs a Maven/Gradle wrapper or system Maven/Gradle before rapidkit dev can start.`
-          );
-        }
-
-        logger.info(`Running init for project: ${projectPath}`);
+      if (!projectPath) {
+        warnMissingProjectSelection('Project Init');
+        return;
       }
+
+      if (!(await gateProjectLifecycleCommand(projectPath, 'init', projectName))) {
+        return;
+      }
+
+      runRapidkitCommandsInTerminal({
+        name: `📦 ${projectName} [init]`,
+        cwd: projectPath,
+        commands: [['init']],
+      });
+
+      if (projectType === 'springboot') {
+        vscode.window.showInformationMessage(
+          `Running rapidkit init for ${projectName}. This step can be quiet. It prepares the project, but Spring Boot still needs a Maven/Gradle wrapper or system Maven/Gradle before rapidkit dev can start.`
+        );
+      }
+
+      logger.info(`Running init for project: ${projectPath}`);
     }),
 
     vscode.commands.registerCommand('workspai.projectDev', async (item: unknown) => {
       const { projectPath, projectName, projectType } = resolveProjectCommandTarget(item);
 
-      if (projectPath) {
-        const fs = await import('fs');
-        const path = await import('path');
+      if (!projectPath) {
+        warnMissingProjectSelection('Project Dev');
+        return;
+      }
 
-        const isFastAPI = projectType === 'fastapi';
-        const isGoProject = projectType === 'go';
-        const isSpringBootProject = projectType === 'springboot';
+      if (!(await gateProjectLifecycleCommand(projectPath, 'dev', projectName))) {
+        return;
+      }
 
-        let isInitialized = false;
-        let missingText = '';
-        let springHasWrapper = false;
-        let springHasSystemBuildTool = false;
+      const fs = await import('fs');
 
-        if (isFastAPI) {
-          const venvInfo = await detectPythonVirtualenv(projectPath);
-          isInitialized = venvInfo.exists;
-          missingText = venvInfo.exists ? '' : 'virtualenv (.venv or Poetry cache)';
-        } else if (isGoProject) {
-          const goSumPath = path.join(projectPath, 'go.sum');
-          isInitialized = fs.existsSync(goSumPath);
-          missingText = 'go.sum (run go mod tidy)';
-        } else if (isSpringBootProject) {
-          const hasMaven = fs.existsSync(path.join(projectPath, 'mvnw'));
-          const hasGradle =
-            fs.existsSync(path.join(projectPath, 'gradlew')) ||
-            fs.existsSync(path.join(projectPath, 'gradlew.bat'));
-          const hasSystemMaven = await hasCommandAvailable('mvn');
-          const hasSystemGradle = await hasCommandAvailable('gradle');
+      const isFastAPI = projectType === 'fastapi';
+      const isGoProject = projectType === 'go';
+      const isSpringBootProject = projectType === 'springboot';
 
-          springHasWrapper = hasMaven || hasGradle;
-          springHasSystemBuildTool = hasSystemMaven || hasSystemGradle;
-          isInitialized = springHasWrapper || springHasSystemBuildTool;
-          missingText = 'Maven/Gradle wrapper or system Maven/Gradle';
-        } else if (!isSpringBootProject) {
-          const checkPath = path.join(projectPath, 'node_modules');
-          isInitialized = fs.existsSync(checkPath);
-          missingText = 'node_modules';
+      let isInitialized = false;
+      let missingText = '';
+      let springHasWrapper = false;
+      let springHasSystemBuildTool = false;
+
+      if (isFastAPI) {
+        const venvInfo = await detectPythonVirtualenv(projectPath);
+        isInitialized = venvInfo.exists;
+        missingText = venvInfo.exists ? '' : 'virtualenv (.venv or Poetry cache)';
+      } else if (isGoProject) {
+        const goSumPath = path.join(projectPath, 'go.sum');
+        isInitialized = fs.existsSync(goSumPath);
+        missingText = 'go.sum (run go mod tidy)';
+      } else if (isSpringBootProject) {
+        const hasMaven = fs.existsSync(path.join(projectPath, 'mvnw'));
+        const hasGradle =
+          fs.existsSync(path.join(projectPath, 'gradlew')) ||
+          fs.existsSync(path.join(projectPath, 'gradlew.bat'));
+        const hasSystemMaven = await hasCommandAvailable('mvn');
+        const hasSystemGradle = await hasCommandAvailable('gradle');
+
+        springHasWrapper = hasMaven || hasGradle;
+        springHasSystemBuildTool = hasSystemMaven || hasSystemGradle;
+        isInitialized = springHasWrapper || springHasSystemBuildTool;
+        missingText = 'Maven/Gradle wrapper or system Maven/Gradle';
+      } else if (!isSpringBootProject) {
+        const checkPath = path.join(projectPath, 'node_modules');
+        isInitialized = fs.existsSync(checkPath);
+        missingText = 'node_modules';
+      }
+
+      if (isSpringBootProject && !springHasWrapper && !springHasSystemBuildTool) {
+        const choice = await vscode.window.showWarningMessage(
+          `Project "${projectName}" cannot start yet. No Maven/Gradle wrapper was found in the project, and no system Maven/Gradle was detected. rapidkit init may be quiet, but rapidkit dev will still fail until one of those build tools is available.`,
+          'Run Init Only',
+          'Open Setup Panel',
+          'Cancel'
+        );
+
+        if (choice === 'Run Init Only') {
+          runRapidkitCommandsInTerminal({
+            name: `📦 ${projectName} [init]`,
+            cwd: projectPath,
+            commands: [['init']],
+          });
+          vscode.window.showInformationMessage(
+            `rapidkit init started for ${projectName}. After it finishes, add Maven/Gradle or generate the wrapper, then run dev again.`
+          );
+        } else if (choice === 'Open Setup Panel') {
+          vscode.commands.executeCommand('workspai.openSetup');
         }
 
-        if (isSpringBootProject && !springHasWrapper && !springHasSystemBuildTool) {
-          const choice = await vscode.window.showWarningMessage(
-            `Project "${projectName}" cannot start yet. No Maven/Gradle wrapper was found in the project, and no system Maven/Gradle was detected. rapidkit init may be quiet, but rapidkit dev will still fail until one of those build tools is available.`,
-            'Run Init Only',
+        return;
+      }
+
+      // Java pre-flight: check JDK availability before starting Spring Boot
+      if (isSpringBootProject) {
+        const os = await import('os');
+        const javaHome = process.env.JAVA_HOME?.trim();
+        const javaExe = process.platform === 'win32' ? 'java.exe' : 'java';
+        const javaCandidates = [
+          'java',
+          ...(javaHome ? [path.join(javaHome, 'bin', javaExe)] : []),
+          `/usr/lib/jvm/temurin-21/bin/${javaExe}`,
+          `/usr/lib/jvm/java-21-openjdk-amd64/bin/${javaExe}`,
+          `/usr/lib/jvm/java-17-openjdk-amd64/bin/${javaExe}`,
+          path.join(os.homedir(), '.sdkman', 'candidates', 'java', 'current', 'bin', javaExe),
+        ];
+
+        let javaFound = false;
+        for (const candidate of javaCandidates) {
+          try {
+            const { execa } = await import('execa');
+            const result = await execa(candidate, ['-version'], { timeout: 3000, reject: false });
+            if (result.exitCode === 0) {
+              javaFound = true;
+              break;
+            }
+          } catch {
+            // try next
+          }
+        }
+
+        if (!javaFound) {
+          const choice = await vscode.window.showErrorMessage(
+            `☕ Java (JDK) not found — required to start "${projectName}" (Spring Boot).`,
             'Open Setup Panel',
             'Cancel'
           );
-
-          if (choice === 'Run Init Only') {
-            runRapidkitCommandsInTerminal({
-              name: `📦 ${projectName} [init]`,
-              cwd: projectPath,
-              commands: [['init']],
-            });
-            vscode.window.showInformationMessage(
-              `rapidkit init started for ${projectName}. After it finishes, add Maven/Gradle or generate the wrapper, then run dev again.`
-            );
-          } else if (choice === 'Open Setup Panel') {
+          if (choice === 'Open Setup Panel') {
             vscode.commands.executeCommand('workspai.openSetup');
           }
-
           return;
         }
+      }
 
-        // Java pre-flight: check JDK availability before starting Spring Boot
-        if (isSpringBootProject) {
-          const os = await import('os');
-          const javaHome = process.env.JAVA_HOME?.trim();
-          const javaExe = process.platform === 'win32' ? 'java.exe' : 'java';
-          const javaCandidates = [
-            'java',
-            ...(javaHome ? [path.join(javaHome, 'bin', javaExe)] : []),
-            `/usr/lib/jvm/temurin-21/bin/${javaExe}`,
-            `/usr/lib/jvm/java-21-openjdk-amd64/bin/${javaExe}`,
-            `/usr/lib/jvm/java-17-openjdk-amd64/bin/${javaExe}`,
-            path.join(os.homedir(), '.sdkman', 'candidates', 'java', 'current', 'bin', javaExe),
-          ];
-
-          let javaFound = false;
-          for (const candidate of javaCandidates) {
-            try {
-              const { execa } = await import('execa');
-              const result = await execa(candidate, ['-version'], { timeout: 3000, reject: false });
-              if (result.exitCode === 0) {
-                javaFound = true;
-                break;
-              }
-            } catch {
-              // try next
-            }
-          }
-
-          if (!javaFound) {
-            const choice = await vscode.window.showErrorMessage(
-              `☕ Java (JDK) not found — required to start "${projectName}" (Spring Boot).`,
-              'Open Setup Panel',
+      if (!isInitialized) {
+        const action = isFastAPI
+          ? await vscode.window.showWarningMessage(
+              `Project "${projectName}" is not initialized (${missingText} not found)`,
+              'Initialize & Start',
+              'Start Anyway',
+              'Cancel'
+            )
+          : await vscode.window.showWarningMessage(
+              `Project "${projectName}" is not initialized (${missingText} not found)`,
+              'Initialize & Start',
               'Cancel'
             );
-            if (choice === 'Open Setup Panel') {
-              vscode.commands.executeCommand('workspai.openSetup');
-            }
-            return;
-          }
-        }
 
-        if (!isInitialized) {
-          const action = isFastAPI
-            ? await vscode.window.showWarningMessage(
-                `Project "${projectName}" is not initialized (${missingText} not found)`,
-                'Initialize & Start',
-                'Start Anyway',
-                'Cancel'
-              )
-            : await vscode.window.showWarningMessage(
-                `Project "${projectName}" is not initialized (${missingText} not found)`,
-                'Initialize & Start',
-                'Cancel'
-              );
-
-          if (action === 'Initialize & Start') {
-            const terminal = runRapidkitCommandsInTerminal({
-              name: `🔧 ${projectName} [init → dev]`,
-              cwd: projectPath,
-              commands: [['init'], ['dev']],
-            });
-
-            runningServers.set(projectPath, terminal);
-            getProjectExplorer()?.refresh();
-
-            if (WelcomePanel.currentPanel) {
-              WelcomePanel.updateWithProject(projectPath, projectName);
-            }
-
-            vscode.window.showInformationMessage(`🔧 Initializing ${projectName}...`);
-            logger.info(`Init + Dev for ${projectType} project: ${projectPath}`);
-            return;
-          } else if (action === 'Start Anyway' && isFastAPI) {
-            const terminal = runRapidkitCommandsInTerminal({
-              name: `🚀 ${projectName} [:8000]`,
-              cwd: projectPath,
-              commands: [['dev', '--allow-global-runtime']],
-            });
-
-            runningServers.set(projectPath, terminal);
-            getProjectExplorer()?.refresh();
-
-            if (WelcomePanel.currentPanel) {
-              WelcomePanel.updateWithProject(projectPath, projectName);
-            }
-
-            logger.info(`Dev (global runtime) for project: ${projectPath}`);
-            return;
-          } else {
-            return;
-          }
-        }
-
-        const net = await import('net');
-        const defaultPort = isSpringBootProject ? 8080 : isGoProject ? 3000 : 8000;
-        let port = defaultPort;
-
-        const MAX_PORT_SCAN_ATTEMPTS = 50;
-
-        const canBindPort = (candidatePort: number): Promise<boolean> => {
-          return new Promise((resolve) => {
-            const server = net.createServer();
-            server.once('error', () => {
-              resolve(false);
-            });
-            server.listen(candidatePort, '0.0.0.0', () => {
-              server.close(() => resolve(true));
-            });
+        if (action === 'Initialize & Start') {
+          const terminal = runRapidkitCommandsInTerminal({
+            name: `🔧 ${projectName} [init → dev]`,
+            cwd: projectPath,
+            commands: [['init'], ['dev']],
           });
-        };
 
-        const findAvailablePort = async (startPort: number): Promise<number> => {
-          for (let i = 0; i < MAX_PORT_SCAN_ATTEMPTS; i += 1) {
-            const candidatePort = startPort + i;
-            if (await canBindPort(candidatePort)) {
-              return candidatePort;
-            }
-          }
-
-          throw new Error(
-            `No available port found after ${MAX_PORT_SCAN_ATTEMPTS} attempts from ${startPort}`
-          );
-        };
-
-        try {
-          port = await findAvailablePort(defaultPort);
-        } catch {
-          vscode.window.showWarningMessage(
-            `Could not find an open port near ${defaultPort}; starting with default port.`
-          );
-          port = defaultPort;
-        }
-
-        let terminal: vscode.Terminal;
-
-        if (isFastAPI) {
-          if (port !== defaultPort) {
-            terminal = runRapidkitCommandsInTerminal({
-              name: `🚀 ${projectName} [:${port}]`,
-              cwd: projectPath,
-              commands: [['dev', '--port', String(port)]],
-            });
-            vscode.window.showInformationMessage(
-              `▶️ Started on port ${port} (${defaultPort} was busy)`
-            );
-          } else {
-            terminal = runRapidkitCommandsInTerminal({
-              name: `🚀 ${projectName} [:${port}]`,
-              cwd: projectPath,
-              commands: [['dev']],
-            });
-            vscode.window.showInformationMessage(`▶️ Started FastAPI server on port ${port}`);
-          }
-        } else if (isGoProject) {
-          if (port !== defaultPort) {
-            terminal = runRapidkitCommandsInTerminal({
-              name: `🚀 ${projectName} [:${port}]`,
-              cwd: projectPath,
-              env: {
-                PORT: String(port),
-              },
-              commands: [['dev']],
-            });
-            vscode.window.showInformationMessage(
-              `▶️ Started on port ${port} (${defaultPort} was busy)`
-            );
-          } else {
-            terminal = runRapidkitCommandsInTerminal({
-              name: `🚀 ${projectName} [:${port}]`,
-              cwd: projectPath,
-              commands: [['dev']],
-            });
-            vscode.window.showInformationMessage(`▶️ Started Go server on port ${port}`);
-          }
-        } else if (isSpringBootProject) {
-          if (port !== defaultPort) {
-            terminal = runRapidkitCommandsInTerminal({
-              name: `🚀 ${projectName} [:${port}]`,
-              cwd: projectPath,
-              env: {
-                PORT: String(port),
-              },
-              commands: [['dev']],
-            });
-            vscode.window.showInformationMessage(
-              `▶️ Started on port ${port} (${defaultPort} was busy)`
-            );
-          } else {
-            terminal = runRapidkitCommandsInTerminal({
-              name: `🚀 ${projectName} [:${port}]`,
-              cwd: projectPath,
-              commands: [['dev']],
-            });
-            vscode.window.showInformationMessage(`▶️ Started Spring Boot server on port ${port}`);
-          }
-        } else {
-          if (port !== defaultPort) {
-            terminal = runCommandsInTerminal({
-              name: `🚀 ${projectName} [:${port}]`,
-              cwd: projectPath,
-              env: {
-                PORT: String(port),
-              },
-              commands: ['npm run start:dev'],
-            });
-            vscode.window.showInformationMessage(
-              `▶️ Started on port ${port} (${defaultPort} was busy)`
-            );
-          } else {
-            terminal = runCommandsInTerminal({
-              name: `🚀 ${projectName} [:${port}]`,
-              cwd: projectPath,
-              commands: ['npm run start:dev'],
-            });
-            vscode.window.showInformationMessage(`▶️ Started NestJS server on port ${port}`);
-          }
-        }
-
-        runningServers.set(projectPath, terminal);
-        getProjectExplorer()?.refresh();
-
-        if (WelcomePanel.currentPanel) {
-          WelcomePanel.updateWithProject(projectPath, projectName);
-        }
-
-        logger.info(
-          `Running ${projectType} dev server for project: ${projectPath} on port ${port}`
-        );
-      }
-    }),
-
-    vscode.commands.registerCommand('workspai.projectStop', async (item: unknown) => {
-      const { projectPath, projectName } = resolveProjectCommandTarget(item);
-      if (projectPath) {
-        const existingTerminal = runningServers.get(projectPath);
-        if (existingTerminal) {
-          interruptTerminal(existingTerminal);
-          existingTerminal.show();
-          vscode.window.showInformationMessage(`⏹️ Stopped server for ${projectName}`);
-
-          runningServers.delete(projectPath);
+          runningServers.set(projectPath, terminal);
           getProjectExplorer()?.refresh();
 
           if (WelcomePanel.currentPanel) {
             WelcomePanel.updateWithProject(projectPath, projectName);
           }
 
-          logger.info(`Stopped dev server for: ${projectPath}`);
+          vscode.window.showInformationMessage(`🔧 Initializing ${projectName}...`);
+          logger.info(`Init + Dev for ${projectType} project: ${projectPath}`);
+          return;
+        } else if (action === 'Start Anyway' && isFastAPI) {
+          const terminal = runRapidkitCommandsInTerminal({
+            name: `🚀 ${projectName} [:8000]`,
+            cwd: projectPath,
+            commands: [['dev', '--allow-global-runtime']],
+          });
+
+          runningServers.set(projectPath, terminal);
+          getProjectExplorer()?.refresh();
+
+          if (WelcomePanel.currentPanel) {
+            WelcomePanel.updateWithProject(projectPath, projectName);
+          }
+
+          logger.info(`Dev (global runtime) for project: ${projectPath}`);
+          return;
+        } else {
+          return;
         }
+      }
+
+      const net = await import('net');
+      const defaultPort = resolveDefaultDevPort(projectType);
+      let port = defaultPort;
+
+      const MAX_PORT_SCAN_ATTEMPTS = 50;
+
+      const canBindPort = (candidatePort: number): Promise<boolean> => {
+        return new Promise((resolve) => {
+          const server = net.createServer();
+          server.once('error', () => {
+            resolve(false);
+          });
+          server.listen(candidatePort, '0.0.0.0', () => {
+            server.close(() => resolve(true));
+          });
+        });
+      };
+
+      const findAvailablePort = async (startPort: number): Promise<number> => {
+        for (let i = 0; i < MAX_PORT_SCAN_ATTEMPTS; i += 1) {
+          const candidatePort = startPort + i;
+          if (await canBindPort(candidatePort)) {
+            return candidatePort;
+          }
+        }
+
+        throw new Error(
+          `No available port found after ${MAX_PORT_SCAN_ATTEMPTS} attempts from ${startPort}`
+        );
+      };
+
+      try {
+        port = await findAvailablePort(defaultPort);
+      } catch {
+        vscode.window.showWarningMessage(
+          `Could not find an open port near ${defaultPort}; starting with default port.`
+        );
+        port = defaultPort;
+      }
+
+      let terminal: vscode.Terminal;
+
+      if (isFastAPI) {
+        terminal = startRapidkitDevTerminal({
+          projectName,
+          projectPath,
+          port,
+          defaultPort,
+          withDevPortFlag: true,
+          startedMessage: `▶️ Started FastAPI server on port ${port}`,
+        });
+      } else if (isGoProject) {
+        terminal = startRapidkitDevTerminal({
+          projectName,
+          projectPath,
+          port,
+          defaultPort,
+          withPortEnv: true,
+          startedMessage: `▶️ Started Go server on port ${port}`,
+        });
+      } else if (isSpringBootProject) {
+        terminal = startRapidkitDevTerminal({
+          projectName,
+          projectPath,
+          port,
+          defaultPort,
+          withPortEnv: true,
+          startedMessage: `▶️ Started Spring Boot server on port ${port}`,
+        });
+      } else if (usesRapidkitDevCommand(projectType)) {
+        terminal = startRapidkitDevTerminal({
+          projectName,
+          projectPath,
+          port,
+          defaultPort,
+          withPortEnv: projectType === 'nestjs' || isFrontendScaffoldFramework(projectType),
+          startedMessage: `▶️ Started dev server for ${projectName}`,
+        });
+      } else {
+        terminal = startRapidkitDevTerminal({
+          projectName,
+          projectPath,
+          port,
+          defaultPort,
+          startedMessage: `▶️ Started dev server for ${projectName}`,
+        });
+      }
+
+      runningServers.set(projectPath, terminal);
+      getProjectExplorer()?.refresh();
+
+      if (WelcomePanel.currentPanel) {
+        WelcomePanel.updateWithProject(projectPath, projectName);
+      }
+
+      logger.info(`Running ${projectType} dev server for project: ${projectPath} on port ${port}`);
+    }),
+
+    vscode.commands.registerCommand('workspai.projectStop', async (item: unknown) => {
+      const { projectPath, projectName } = resolveProjectCommandTarget(item);
+      if (!projectPath) {
+        warnMissingProjectSelection('Project Stop');
+        return;
+      }
+      const existingTerminal = runningServers.get(projectPath);
+      if (existingTerminal) {
+        interruptTerminal(existingTerminal);
+        existingTerminal.show();
+        vscode.window.showInformationMessage(`⏹️ Stopped server for ${projectName}`);
+
+        runningServers.delete(projectPath);
+        getProjectExplorer()?.refresh();
+
+        if (WelcomePanel.currentPanel) {
+          WelcomePanel.updateWithProject(projectPath, projectName);
+        }
+
+        logger.info(`Stopped dev server for: ${projectPath}`);
       }
     }),
 
     vscode.commands.registerCommand('workspai.projectTest', async (item: unknown) => {
       const { projectPath, projectName } = resolveProjectCommandTarget(item);
 
-      if (projectPath) {
-        runRapidkitCommandsInTerminal({
-          name: `🧪 ${projectName} [test]`,
-          cwd: projectPath,
-          commands: [['test']],
-        });
-
-        logger.info(`Running tests for project: ${projectPath}`);
+      if (!projectPath) {
+        warnMissingProjectSelection('Project Test');
+        return;
       }
+
+      if (!(await gateProjectLifecycleCommand(projectPath, 'test', projectName))) {
+        return;
+      }
+
+      runRapidkitCommandsInTerminal({
+        name: `🧪 ${projectName} [test]`,
+        cwd: projectPath,
+        commands: [['test']],
+      });
+
+      logger.info(`Running tests for project: ${projectPath}`);
     }),
 
     vscode.commands.registerCommand('workspai.projectBuild', async (item: unknown) => {
       const { projectPath, projectName } = resolveProjectCommandTarget(item);
 
-      if (projectPath) {
-        runRapidkitCommandsInTerminal({
-          name: `🏗️ ${projectName} [build]`,
-          cwd: projectPath,
-          commands: [['build']],
-        });
-
-        logger.info(`Running build for project: ${projectPath}`);
+      if (!projectPath) {
+        warnMissingProjectSelection('Project Build');
+        return;
       }
+
+      if (!(await gateProjectLifecycleCommand(projectPath, 'build', projectName))) {
+        return;
+      }
+
+      runRapidkitCommandsInTerminal({
+        name: `🏗️ ${projectName} [build]`,
+        cwd: projectPath,
+        commands: [['build']],
+      });
+
+      logger.info(`Running build for project: ${projectPath}`);
     }),
 
     vscode.commands.registerCommand('workspai.projectStart', async (item: unknown) => {
       const { projectPath, projectName } = resolveProjectCommandTarget(item);
 
       if (!projectPath) {
+        warnMissingProjectSelection('Project Start');
+        return;
+      }
+
+      if (!(await gateProjectLifecycleCommand(projectPath, 'start', projectName))) {
         return;
       }
 
@@ -490,29 +583,43 @@ export function registerProjectLifecycleCommands(options: {
     vscode.commands.registerCommand('workspai.projectLint', async (item: unknown) => {
       const { projectPath, projectName } = resolveProjectCommandTarget(item);
 
-      if (projectPath) {
-        runRapidkitCommandsInTerminal({
-          name: `🔍 ${projectName} [lint]`,
-          cwd: projectPath,
-          commands: [['lint']],
-        });
-
-        logger.info(`Running lint for project: ${projectPath}`);
+      if (!projectPath) {
+        warnMissingProjectSelection('Project Lint');
+        return;
       }
+
+      if (!(await gateProjectLifecycleCommand(projectPath, 'lint', projectName))) {
+        return;
+      }
+
+      runRapidkitCommandsInTerminal({
+        name: `🔍 ${projectName} [lint]`,
+        cwd: projectPath,
+        commands: [['lint']],
+      });
+
+      logger.info(`Running lint for project: ${projectPath}`);
     }),
 
     vscode.commands.registerCommand('workspai.projectFormat', async (item: unknown) => {
       const { projectPath, projectName } = resolveProjectCommandTarget(item);
 
-      if (projectPath) {
-        runRapidkitCommandsInTerminal({
-          name: `✨ ${projectName} [format]`,
-          cwd: projectPath,
-          commands: [['format']],
-        });
-
-        logger.info(`Running format for project: ${projectPath}`);
+      if (!projectPath) {
+        warnMissingProjectSelection('Project Format');
+        return;
       }
+
+      if (!(await gateProjectLifecycleCommand(projectPath, 'format', projectName))) {
+        return;
+      }
+
+      runRapidkitCommandsInTerminal({
+        name: `✨ ${projectName} [format]`,
+        cwd: projectPath,
+        commands: [['format']],
+      });
+
+      logger.info(`Running format for project: ${projectPath}`);
     }),
 
     vscode.commands.registerCommand('workspai.projectDoctor', async (item: unknown) => {
