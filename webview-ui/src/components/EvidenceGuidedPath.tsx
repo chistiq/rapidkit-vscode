@@ -445,6 +445,8 @@ function GuidedStepSlide({
                   canRun={false}
                   canRefresh={false}
                   compact
+                  copyCommandText={actionContract.commandAction?.command}
+                  onAdvancedInspect={onShowEvidenceOutput}
                   artifactLabel={actionContract.artifactLabel}
                   artifactPath={actionContract.artifactPath}
                   artifactState={actionContract.artifactState}
@@ -479,6 +481,8 @@ function GuidedStepSlide({
                 pending={pending}
                 canRun={false}
                 onRefresh={onRefreshEvidenceCard}
+                copyCommandText={primaryContract?.commandAction?.command}
+                onAdvancedInspect={onShowEvidenceOutput}
                 artifactLabel={primaryContract?.artifactLabel}
                 artifactPath={primaryContract?.artifactPath}
                 artifactState={primaryContract?.artifactState}

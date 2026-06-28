@@ -1,6 +1,7 @@
 import type { DashboardCommandExecutionChannel } from '@workspai-contracts/dashboardCommandExecutionChannel';
 import { resolveDashboardCommandExecutionChannel } from '@workspai-contracts/dashboardCommandExecutionChannel';
 import type { DashboardEvidenceCard, DashboardEvidencePayload } from './dashboardEvidence';
+import { isCorruptArtifactCard } from './dashboardEvidence';
 import type { EvidenceWorkspaceContext } from './dashboardEvidenceDirectRun';
 import {
   buildIncidentStudioEvidenceOpen,
@@ -22,9 +23,15 @@ export interface DashboardEvidenceActionContract {
   studioTarget?: ReturnType<typeof buildIncidentStudioEvidenceOpen>;
   studioLabel: string;
   copilotLabel: string;
+  primaryAction: DashboardEvidencePrimaryAction;
   studioPayload: DashboardEvidenceAgentPayload;
   copilotPayload: DashboardEvidenceAgentPayload;
 }
+
+export type DashboardEvidencePrimaryAction =
+  | { type: 'run'; label: string }
+  | { type: 'studio'; label: string }
+  | { type: 'done'; label: string };
 
 export type DashboardEvidenceAgentCard = Pick<
   DashboardEvidenceCard,
@@ -103,6 +110,32 @@ function buildEvidenceAgentPayload(
   };
 }
 
+function resolvePrimaryEvidenceAction(input: {
+  card: DashboardEvidenceCard;
+  commandAction?: DashboardEvidenceCommandAction;
+  studioTarget?: ReturnType<typeof buildIncidentStudioEvidenceOpen>;
+}): DashboardEvidencePrimaryAction {
+  if (input.card.status === 'pass') {
+    return { type: 'done', label: 'Done' };
+  }
+  if (isCorruptArtifactCard(input.card) && input.commandAction) {
+    return { type: 'run', label: input.commandAction.label };
+  }
+  if (input.card.status === 'missing' && input.commandAction) {
+    return { type: 'run', label: input.commandAction.label || 'Run once' };
+  }
+  if ((input.card.status === 'fail' || input.card.status === 'warn') && input.studioTarget) {
+    return {
+      type: 'studio',
+      label: input.card.status === 'fail' ? 'Fix in Studio' : 'Open in Studio',
+    };
+  }
+  if (input.commandAction) {
+    return { type: 'run', label: input.commandAction.label };
+  }
+  return { type: 'studio', label: input.studioTarget ? 'Open in Studio' : 'Review' };
+}
+
 export function buildDashboardEvidenceActionContract(
   card: DashboardEvidenceCard,
   options?: {
@@ -115,6 +148,7 @@ export function buildDashboardEvidenceActionContract(
   const studioTarget = buildIncidentStudioEvidenceOpen(card);
   const artifactReady = Boolean(card.artifactPath?.trim());
   const artifactState = artifactReady ? 'ready' : 'pending';
+  const corruptArtifact = isCorruptArtifactCard(card);
   const payload = buildEvidenceAgentPayload(card, {
     workspace: options?.workspace,
     project: {
@@ -139,11 +173,16 @@ export function buildDashboardEvidenceActionContract(
     commandState: commandAction ? 'ready' : 'pending',
     disabledReason: commandAction ? undefined : 'No deterministic command is mapped for this card.',
     artifactPath: card.artifactPath,
-    artifactLabel: artifactLabel(card.artifactPath),
+    artifactLabel: corruptArtifact
+      ? `Corrupt artifact: ${artifactLabel(card.artifactPath)}`
+      : Number(card.metrics?.derivedArtifact ?? 0) > 0
+        ? `Derived: ${artifactLabel(card.artifactPath)}`
+        : artifactLabel(card.artifactPath),
     artifactState,
     studioTarget,
     studioLabel: studioTarget ? `Studio: ${studioTarget.target}` : 'Studio: scope review',
     copilotLabel: `Copilot: ${card.scope} evidence pack`,
+    primaryAction: resolvePrimaryEvidenceAction({ card, commandAction, studioTarget }),
     studioPayload: payload,
     copilotPayload: payload,
   };

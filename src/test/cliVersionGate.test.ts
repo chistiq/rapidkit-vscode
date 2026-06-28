@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('vscode', () => ({
-  window: { showWarningMessage: vi.fn(), createTerminal: vi.fn() },
+  window: { showWarningMessage: vi.fn(), showErrorMessage: vi.fn(), createTerminal: vi.fn() },
   commands: { executeCommand: vi.fn() },
 }));
 
@@ -13,8 +13,13 @@ vi.mock('../core/runtimeCommandSurface', () => ({
 }));
 
 import { run } from '../utils/exec';
-import { decideCliVersionGate, resolveLinkedCliVersion } from '../core/cliVersionGate';
+import {
+  decideCliVersionGate,
+  gateCompatibleCliVersion,
+  resolveLinkedCliVersion,
+} from '../core/cliVersionGate';
 import { assessCliVersion } from '../core/cliVersionPolicy';
+import * as vscode from 'vscode';
 
 const mockedRun = vi.mocked(run);
 
@@ -74,5 +79,34 @@ describe('decideCliVersionGate', () => {
   it('warns for an undetectable (missing) version', () => {
     const missing = assessCliVersion(null);
     expect(decideCliVersionGate(missing, { alreadyWarned: false }).shouldWarn).toBe(true);
+  });
+});
+
+describe('gateCompatibleCliVersion', () => {
+  beforeEach(() => {
+    mockedRun.mockReset();
+    fetchRuntimeCommandSurface.mockReset();
+    vi.mocked(vscode.window.showErrorMessage).mockReset();
+    vi.mocked(vscode.commands.executeCommand).mockReset();
+  });
+
+  it('allows compatible enterprise workflows', async () => {
+    fetchRuntimeCommandSurface.mockResolvedValueOnce({ version: '0.99.0' });
+    await expect(
+      gateCompatibleCliVersion({ cwd: '/tmp/ws', featureLabel: 'Dashboard Evidence' })
+    ).resolves.toBe(true);
+    expect(vscode.window.showErrorMessage).not.toHaveBeenCalled();
+  });
+
+  it('blocks below-minimum enterprise workflows without a continue option', async () => {
+    fetchRuntimeCommandSurface.mockResolvedValueOnce({ version: '0.1.0' });
+    await expect(
+      gateCompatibleCliVersion({ cwd: '/tmp/ws', featureLabel: 'Dashboard Evidence' })
+    ).resolves.toBe(false);
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+      expect.stringContaining('Dashboard Evidence is blocked'),
+      'Update CLI',
+      'Open Setup Recovery'
+    );
   });
 });

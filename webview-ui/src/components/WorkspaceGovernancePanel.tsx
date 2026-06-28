@@ -32,8 +32,7 @@ interface WorkspaceGovernancePanelProps {
   onContractVerify: () => void;
   onReadiness: () => void;
   onAutopilotRelease: () => void;
-  onMirrorStatus: () => void;
-  onMirrorSync: () => void;
+  onMirrorOps: () => void;
   onCacheStatus: () => void;
   onPolicy: () => void;
   onInfra: () => void;
@@ -66,8 +65,7 @@ export function WorkspaceGovernancePanel({
   onContractVerify,
   onReadiness,
   onAutopilotRelease,
-  onMirrorStatus,
-  onMirrorSync,
+  onMirrorOps,
   onCacheStatus,
   onPolicy,
   onInfra,
@@ -233,31 +231,21 @@ export function WorkspaceGovernancePanel({
             />
             <ActionTile
               icon={<Database size={15} />}
-              label="Mirror"
-              detail={governanceDetail(evidence, 'mirror', 'Replication status')}
+              label="Mirror Operations"
+              detail={governanceDetail(
+                evidence,
+                'mirror',
+                'Status · sync · verify · rotate'
+              )}
               evidenceStatus={mirrorCard?.status}
               pending={isPending('mirror')}
-              onClick={onMirrorStatus}
+              onClick={onMirrorOps}
               disabled={!hasWorkspace}
               actionContract={commandContract(
-                'mirrorStatus',
+                'mirrorOps',
                 !hasWorkspace ? 'Select a workspace' : undefined
               )}
-              title="rapidkit mirror status"
-            />
-            <ActionTile
-              icon={<RefreshCw size={15} />}
-              label="Mirror Sync"
-              detail="Refresh mirror"
-              pending={isPending('mirror')}
-              stateLabel={isPending('mirror') ? 'Syncing' : undefined}
-              onClick={onMirrorSync}
-              disabled={!hasWorkspace}
-              actionContract={commandContract(
-                'mirrorSync',
-                !hasWorkspace ? 'Select a workspace' : undefined
-              )}
-              title="rapidkit mirror sync"
+              title="rapidkit mirror status | sync | verify | rotate"
             />
             <ActionTile
               icon={<HardDrive size={15} />}

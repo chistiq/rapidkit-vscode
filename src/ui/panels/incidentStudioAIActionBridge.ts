@@ -39,6 +39,7 @@ import {
   getStudioActionRegistryEntryById,
   isStudioActionId,
 } from '../../core/studioActionCommands';
+import { gateRapidkitCommandsInStudioAction } from '../../core/rapidkitEnterpriseCliGate';
 import type { IncidentStudioExecutionTranscript } from './incidentStudioSessionPersistenceBridge';
 
 export type StudioAIActionEvidenceMetadata = {
@@ -371,6 +372,19 @@ export type ExecuteGovernedAIActionCallbacks = {
   refreshStabilizationLoop?: () => Promise<void>;
 };
 
+function getCommandsForAIActionOperation(
+  contract: AIActionContract,
+  operation: AIActionOperation
+): readonly string[] {
+  if (operation === 'apply') {
+    return [...contract.proposedCommands, ...contract.verificationCommands];
+  }
+  if (operation === 'verify') {
+    return contract.verificationCommands;
+  }
+  return contract.rollbackPlan;
+}
+
 export async function executeGovernedAIActionOperation(
   context: vscode.ExtensionContext,
   input: ExecuteGovernedAIActionInput,
@@ -630,6 +644,36 @@ export async function executeGovernedAIActionOperation(
         );
         return;
       }
+    }
+
+    const cliGate = await gateRapidkitCommandsInStudioAction({
+      commands: getCommandsForAIActionOperation(input.activeContract, operation),
+      cwd: workspacePath,
+      featureLabel: `AI action ${operation}`,
+    });
+    if (!cliGate.allowed) {
+      callbacks.postActionStatus(
+        statusActionId,
+        'failed',
+        cliGate.error,
+        buildStudioAIActionResult({
+          actionId: statusActionId,
+          workspacePath,
+          report: loadAnalyzeReport({
+            workspacePath,
+            workspaceName: workspaceName ?? workspacePath,
+          }).report,
+          fallbackSummary: cliGate.error,
+          status: 'failed',
+          gatePassed: false,
+          source: 'ai-action',
+        })
+      );
+      callbacks.postAssistantMessage(
+        [`AI action ${operation}: BLOCKED`, cliGate.error].join('\n'),
+        'cli-capability-gate'
+      );
+      return;
     }
 
     const result = await runAIActionContractOperation(input.activeContract, {

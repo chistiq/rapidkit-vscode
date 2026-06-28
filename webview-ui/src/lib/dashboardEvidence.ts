@@ -31,6 +31,7 @@ export type DashboardEvidenceCard = {
   artifactPath?: string;
   metrics?: Record<string, number | string>;
   blockers?: string[];
+  detailSections?: Array<{ id: string; title: string; body: string }>;
   incidentStudioTarget?:
     | 'doctor'
     | 'analyze'
@@ -153,13 +154,13 @@ export function releaseHubStageStatus(
 export function evidenceStatusLabel(status: DashboardEvidenceStatus): string {
   switch (status) {
     case 'pass':
-      return 'Green';
+      return 'Passed';
     case 'warn':
       return 'Attention';
     case 'fail':
       return 'Blocked';
     default:
-      return 'No evidence';
+      return 'Missing';
   }
 }
 
@@ -167,9 +168,16 @@ export function isBootstrapPendingCard(card: DashboardEvidenceCard | undefined):
   return card?.id === 'bootstrap' && Number(card.metrics?.pendingBootstrap ?? 0) === 1;
 }
 
+export function isCorruptArtifactCard(card: DashboardEvidenceCard | undefined): boolean {
+  return Number(card?.metrics?.corruptArtifact ?? 0) > 0;
+}
+
 export function evidenceCardStatusLabel(card: DashboardEvidenceCard): string {
+  if (isCorruptArtifactCard(card)) {
+    return 'Corrupt';
+  }
   if (isBootstrapPendingCard(card)) {
-    return 'Pending';
+    return 'Running';
   }
   return evidenceStatusLabel(card.status);
 }
@@ -200,6 +208,19 @@ export function resolveEvidenceFreshness(
       status: 'unknown',
       label: 'No artifact',
       detail: 'Run the matching command to create evidence.',
+    };
+  }
+
+  if (Number(card.metrics?.staleEvidence ?? 0) > 0) {
+    const detail =
+      typeof card.metrics?.staleEvidenceDetail === 'string' &&
+      card.metrics.staleEvidenceDetail.trim().length > 0
+        ? card.metrics.staleEvidenceDetail
+        : 'A referenced verification artifact is stale relative to newer workspace evidence.';
+    return {
+      status: 'stale',
+      label: 'Stale evidence',
+      detail,
     };
   }
 
@@ -428,10 +449,10 @@ export function homeGovernanceMetricValue(
     );
   }
   if (!pipeline || pipeline.status === 'missing') {
-    return 'Ready';
+    return 'Missing';
   }
   if (pipeline.status === 'pass') {
-    return 'Pipeline green';
+    return 'Pipeline passed';
   }
   return evidenceStatusLabel(pipeline.status);
 }

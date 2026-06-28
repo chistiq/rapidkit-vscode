@@ -374,6 +374,44 @@ export async function buildWorkspaceArchiveManifest(input: {
   };
 }
 
+export type WorkspaceShipHandoffManifestRecord = WorkspaceArchiveManifest & {
+  generatedAt: string;
+  summary: string;
+  exportArchivePath?: string;
+};
+
+/** Persist ship-handoff manifest on the workspace so the Archive evidence card can refresh. */
+export async function persistWorkspaceShipHandoffManifest(input: {
+  workspacePath: string;
+  workspaceName: string;
+  manifest?: WorkspaceArchiveManifest;
+  exportArchivePath?: string;
+  exportedAt?: string;
+}): Promise<string> {
+  const manifest =
+    input.manifest ??
+    (await buildWorkspaceArchiveManifest({
+      workspacePath: input.workspacePath,
+      workspaceName: input.workspaceName,
+      exportedAt: input.exportedAt,
+    }));
+  const generatedAt = manifest.exportedAt;
+  const fileCount = manifest.files.length;
+  const summary = input.exportArchivePath
+    ? `${fileCount} file(s) · exported to ${path.basename(input.exportArchivePath)}`
+    : `${fileCount} file(s) · ship handoff manifest ready`;
+  const record: WorkspaceShipHandoffManifestRecord = {
+    ...manifest,
+    generatedAt,
+    summary,
+    ...(input.exportArchivePath ? { exportArchivePath: input.exportArchivePath } : {}),
+  };
+  const manifestPath = path.join(input.workspacePath, WORKSPACE_ARCHIVE_MANIFEST_PATH);
+  await fs.ensureDir(path.dirname(manifestPath));
+  await fs.writeJson(manifestPath, record, { spaces: 2 });
+  return manifestPath;
+}
+
 async function findWorkspaceRoot(extractRoot: string): Promise<string> {
   const rootMarkerPath = path.join(extractRoot, '.rapidkit-workspace');
   if (await fs.pathExists(rootMarkerPath)) {

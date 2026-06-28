@@ -120,6 +120,43 @@ describe('dashboard minimal UX guard', () => {
     expect(prefsBridge).toContain("prefs?.dashboardSection === 'repair'");
   });
 
+  it('keeps Home as the default overview while showing status summary before secondary navigation', () => {
+    const app = read('webview-ui/src/App.tsx');
+    const sections = read('webview-ui/src/lib/dashboardSections.ts');
+    const overview = read('webview-ui/src/components/WorkspaceOverview.tsx');
+
+    expect(sections).toContain("label: 'Home'");
+    expect(sections).toContain('Workspace status, create/import handoffs, and next action summary');
+    expect(overview).toContain('Workspace status summary');
+    expect(app).toContain('const renderDashboardRepairFlow = () =>');
+    expect(app).not.toContain("renderDashboardRepairFlow('status')");
+    expect(app).toContain(
+      "dashboardSection === 'overview' && (!hasActiveWorkspace || isFreshInstall)"
+    );
+    expect(app).toContain('{renderDashboardRepairFlow()}');
+    expect(app.indexOf('<WorkspaceOverview')).toBeLessThan(
+      app.indexOf('<DashboardOverviewQuickNav')
+    );
+  });
+
+  it('keeps Dashboard and Studio status language aligned to enterprise posture labels', () => {
+    const dashboardEvidence = read('webview-ui/src/lib/dashboardEvidence.ts');
+    const scaffoldEvidence = read('webview-ui/src/lib/dashboardScaffoldEvidence.ts');
+    const studioChrome = read('webview-ui/src/sidebar/StudioBlockerChrome.tsx');
+    const shipLoop = read('webview-ui/src/sidebar/StudioShipLoopStepper.tsx');
+
+    expect(dashboardEvidence).toContain("return 'Passed'");
+    expect(dashboardEvidence).toContain("return 'Missing'");
+    expect(dashboardEvidence).not.toContain("return 'Green'");
+    expect(dashboardEvidence).not.toContain("return 'No evidence'");
+    expect(scaffoldEvidence).toContain("return 'Expected before first project'");
+    expect(studioChrome).toContain("idle: 'Blocked'");
+    expect(studioChrome).toContain("diagnosing: 'Running'");
+    expect(studioChrome).toContain("'fix-applied': 'Awaiting verify'");
+    expect(shipLoop).toContain("pass: 'Passed'");
+    expect(shipLoop).toContain('All core steps passed');
+  });
+
   it('keeps dashboard section tabs sticky while scrolling long repair content', () => {
     const app = read('webview-ui/src/App.tsx');
     const styles = read('webview-ui/src/styles-tailwind.css');
@@ -190,7 +227,11 @@ describe('dashboard minimal UX guard', () => {
     expect(actions).toContain('artifactLabel?: string');
     expect(actions).toContain('No evidence artifact exists yet');
     expect(actions).toContain('artifactState ===');
+    expect(actions).toContain('primaryAction?: DashboardEvidencePrimaryAction');
+    expect(actions).toContain('evidence-card-actions__overflow');
+    expect(actions).toContain('evidence-card-actions__menu-item');
     expect(repair).toContain('artifactLabel={actionContract.artifactLabel}');
+    expect(repair).toContain('primaryAction={actionContract.primaryAction}');
     expect(guided).toContain('artifactLabel={actionContract.artifactLabel}');
     expect(outcome).toContain('artifactLabel={actionContract.artifactLabel}');
     expect(activity).toContain('artifactLabel={actionContract.artifactLabel}');
@@ -278,6 +319,12 @@ describe('dashboard minimal UX guard', () => {
     );
     expect(operateSection).toContain('activeOperateZone={activeZone}');
     expect(operateSection).toContain("activeZone === 'intelligence'");
+    expect(operateSection).toContain('onWorkspaceWhy={onWorkspaceWhy}');
+    expect(operateSection).toContain('onWorkspaceTrace={onWorkspaceTrace}');
+    expect(operateSection).toContain('onWorkspaceWatch={onWorkspaceWatch}');
+    expect(operateSection).toContain('onWorkspaceMcp={onWorkspaceMcp}');
+    expect(operateSection).toContain('onWorkspaceImpactLens={onWorkspaceImpactLens}');
+    expect(operateSection).toContain('onRunImpactLensCli={onRunImpactLensCli}');
     expect(operateSection).toContain("activeZone === 'governance'");
     expect(operateSection).toContain("activeZone === 'cli'");
     expect(operateSubNav).toContain("zone.id !== 'build'");
@@ -457,10 +504,21 @@ describe('dashboard minimal UX guard', () => {
 
   it('positions fresh install onboarding around workspace intelligence value', () => {
     const source = read('webview-ui/src/components/FreshInstallOnboarding.tsx');
+    const app = read('webview-ui/src/App.tsx');
 
-    expect(source).toContain('Welcome to Workspai');
+    expect(source).toContain('Setup recovery');
+    expect(source).toContain('Workspace Intelligence is not ready yet');
+    expect(source).toContain('Open Setup Recovery');
+    expect(source).toContain('Advanced start options');
+    expect(source).toContain('install compatible CLI');
+    expect(source).toContain('link local npm package');
+    expect(source).toContain('select workspace');
+    expect(source).toContain('run first model');
+    expect(source).toContain('run doctor');
+    expect(source).toContain('run agent-sync');
     expect(source).toContain('Create with AI');
-    expect(source).toContain('sidebar Create tab');
+    expect(app).toContain('onOpenSetup={openSetupInDashboard}');
+    expect(app).toContain('onCreateWithAI={handleOpenAICreateWorkspace}');
   });
 
   it('keeps dashboard identity aligned with the Workspace Intelligence product promise', () => {
@@ -493,7 +551,7 @@ describe('dashboard minimal UX guard', () => {
     expect(read('webview-ui/src/components/DashboardOperateSection.tsx')).toContain(
       'scope: DashboardScopeDescriptor'
     );
-    expect(overview).toContain('Workspace command summary');
+    expect(overview).toContain('Workspace status summary');
     expect(overview).not.toContain('Select a project from PROJECTS to unlock lifecycle actions');
     expect(overview).not.toContain('Click Project in context bar');
     expect(handoff).toContain('Primary workspace commands and governance');
@@ -595,6 +653,17 @@ describe('dashboard minimal UX guard', () => {
     );
   });
 
+  it('renders intelligence detail accordions as styled cards', () => {
+    const panel = read('webview-ui/src/components/WorkspaceIntelligencePanel.tsx');
+    const accordion = read('webview-ui/src/components/IntelligenceDetailAccordion.tsx');
+    const styles = read('webview-ui/src/styles/workspai-primitives.css');
+
+    expect(panel).toContain('IntelligenceDetailAccordion');
+    expect(accordion).toContain('workspace-intelligence-detail-card');
+    expect(styles).toContain('.workspace-intelligence-detail-card__section');
+    expect(panel).not.toContain('workspace-intelligence-explain-sections');
+  });
+
   it('keeps agent sync under collapsed advanced intelligence commands', () => {
     const panel = read('webview-ui/src/components/WorkspaceIntelligencePanel.tsx');
     const zones = read('webview-ui/src/lib/dashboardOperateZones.ts');
@@ -611,9 +680,24 @@ describe('dashboard minimal UX guard', () => {
     const section = read('webview-ui/src/components/DashboardEvidenceSection.tsx');
 
     expect(brief).toContain("posture: 'blocked'");
-    expect(brief).toContain('card.blockers');
+    expect(brief).toContain('cardCountsAsReleaseBlocker');
     expect(section).toContain('<EvidenceBrief');
     expect(section).toContain('buildDashboardEvidenceBrief');
     expect(section).not.toContain('PolicyViolation');
+  });
+
+  it('keeps sidebar fix-then-verify CTA without re-run command loop prompts', () => {
+    const sidebar = read('webview-ui/src/sidebar/SecondarySidebar.tsx');
+    const chrome = read('webview-ui/src/sidebar/StudioBlockerChrome.tsx');
+    const fixPrompt = read('src/core/sidebarStudioFixPrompt.ts');
+    const app = read('webview-ui/src/App.tsx');
+
+    expect(sidebar).toContain("'verify-handoff'");
+    expect(sidebar).toContain('sidebarStudioFixApplied');
+    expect(chrome).toContain('awaiting-verify');
+    expect(chrome).toContain('Run verify');
+    expect(fixPrompt).toContain('Do NOT recommend re-running');
+    expect(app).toContain('repair-flow-studio-handoff');
+    expect(app).toContain('artifacts-inbox-studio-handoff');
   });
 });

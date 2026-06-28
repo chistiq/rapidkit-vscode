@@ -30,11 +30,23 @@ describe('workspaceIntelligencePaths', () => {
       '.rapidkit/reports/workspace-impact-last-run.json',
       '.rapidkit/reports/workspace-verify-last-run.json',
       '.rapidkit/reports/workspace-context-agent.json',
+      '.rapidkit/reports/workspace-skills-index.json',
+      '.rapidkit/reports/workspace-explain-last-run.json',
+      '.rapidkit/reports/workspace-why-last-run.json',
+      '.rapidkit/reports/workspace-trace-last-run.json',
+      '.rapidkit/reports/workspace-contract-verify-last-run.json',
     ]);
   });
 
   it('ships workspace intelligence schemas in parity with rapidkit-npm', async () => {
-    for (const fileName of workspaceIntelligenceContractFiles) {
+    const phase4Contracts = [
+      'workspace-explain.v1.json',
+      'workspace-skills-index.v1.json',
+      'workspace-operational-skill.v1.json',
+      'agent-action-outcome.v1.json',
+      'workspace-intelligence-history.v1.json',
+    ];
+    for (const fileName of [...workspaceIntelligenceContractFiles, ...phase4Contracts]) {
       const extensionContract = path.resolve(
         __dirname,
         '../../contracts/workspace-intelligence',

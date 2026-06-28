@@ -119,12 +119,15 @@ export function EvidenceOutcomePanel({
                   pending={isPending}
                   canRun={Boolean(runAction)}
                   showAgentActions={needsAgentAttention}
+                  primaryAction={actionContract.primaryAction}
+                  copyCommandText={runAction?.command}
                   onRun={
                     runAction
                       ? () => onRunCommand(runAction.command, runAction.commandData)
                       : undefined
                   }
                   onRefresh={onRefreshEvidenceCard}
+                  onAdvancedInspect={onShowEvidenceOutput}
                   artifactLabel={actionContract.artifactLabel}
                   artifactPath={actionContract.artifactPath}
                   artifactState={actionContract.artifactState}

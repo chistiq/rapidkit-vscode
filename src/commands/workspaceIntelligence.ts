@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 
 import { Logger } from '../utils/logger';
 import { gateWorkspaceIntelligenceCli } from '../core/rapidkitCliCapabilities';
-import { presentCliVersionGate } from '../core/cliVersionGate';
+import { gateCompatibleCliVersion } from '../core/cliVersionGate';
 import {
   dispatchWorkspaceImpactLens,
   dispatchWorkspaceIntelligenceChain,
@@ -35,6 +35,7 @@ type WorkspaceCommandItem = {
   name?: unknown;
   from?: unknown;
   scope?: unknown;
+  target?: unknown;
 };
 
 type WorkspaceTarget = {
@@ -137,9 +138,10 @@ async function requireWorkspaceIntelligenceCli(
   featureLabel: string,
   workspacePath: string
 ): Promise<boolean> {
-  // Surface a CLI version mismatch banner (once per session) before gating on
-  // capabilities, so users on an older CLI get an actionable "Update CLI" path.
-  await presentCliVersionGate({ cwd: workspacePath });
+  const versionAllowed = await gateCompatibleCliVersion({ cwd: workspacePath, featureLabel });
+  if (!versionAllowed) {
+    return false;
+  }
   return gateWorkspaceIntelligenceCli(featureLabel, { cwd: workspacePath });
 }
 
@@ -456,6 +458,84 @@ export function registerWorkspaceIntelligenceCommands(options: {
         featureLabel: 'Workspace Verify',
       });
       logger.info(`Workspace verify dispatched for ${target.workspacePath}`);
+    }),
+
+    vscode.commands.registerCommand('workspai.workspaceExplain', async (item?: unknown) => {
+      const workspaceExplorer = getWorkspaceExplorer();
+      const target = requireWorkspaceTarget(item, workspaceExplorer);
+      if (!target) {
+        return;
+      }
+
+      if (!(await requireWorkspaceIntelligenceCli('Workspace Explain', target.workspacePath))) {
+        return;
+      }
+
+      const typed = asWorkspaceCommandItem(item);
+      const explainTarget =
+        typeof typed?.target === 'string' && typed.target.trim().length > 0
+          ? typed.target.trim()
+          : 'release-blocked';
+
+      await runWorkspaceIntelligenceCommandWithProgress({
+        command: ['workspace', 'explain', explainTarget, '--json', '--write'],
+        cwd: target.workspacePath,
+        title: `Workspace Explain — ${target.workspaceName}`,
+        featureLabel: 'Workspace Explain',
+      });
+      logger.info(`Workspace explain dispatched for ${target.workspacePath}`);
+    }),
+
+    vscode.commands.registerCommand('workspai.workspaceWhy', async (item?: unknown) => {
+      const workspaceExplorer = getWorkspaceExplorer();
+      const target = requireWorkspaceTarget(item, workspaceExplorer);
+      if (!target) {
+        return;
+      }
+
+      if (!(await requireWorkspaceIntelligenceCli('Workspace Why', target.workspacePath))) {
+        return;
+      }
+
+      const typed = asWorkspaceCommandItem(item);
+      const explainTarget =
+        typeof typed?.target === 'string' && typed.target.trim().length > 0
+          ? typed.target.trim()
+          : 'release-blocked';
+
+      await runWorkspaceIntelligenceCommandWithProgress({
+        command: ['workspace', 'why', explainTarget, '--json', '--write'],
+        cwd: target.workspacePath,
+        title: `Workspace Why — ${target.workspaceName}`,
+        featureLabel: 'Workspace Why',
+      });
+      logger.info(`Workspace why dispatched for ${target.workspacePath}`);
+    }),
+
+    vscode.commands.registerCommand('workspai.workspaceTrace', async (item?: unknown) => {
+      const workspaceExplorer = getWorkspaceExplorer();
+      const target = requireWorkspaceTarget(item, workspaceExplorer);
+      if (!target) {
+        return;
+      }
+
+      if (!(await requireWorkspaceIntelligenceCli('Workspace Trace', target.workspacePath))) {
+        return;
+      }
+
+      const typed = asWorkspaceCommandItem(item);
+      const fromRef =
+        typeof typed?.from === 'string' && typed.from.trim().length > 0
+          ? typed.from.trim()
+          : WORKSPACE_MODEL_DIFF_REPORT_PATH;
+
+      await runWorkspaceIntelligenceCommandWithProgress({
+        command: ['workspace', 'trace', '--from', `trace:${fromRef}`, '--json', '--write'],
+        cwd: target.workspacePath,
+        title: `Workspace Trace — ${target.workspaceName}`,
+        featureLabel: 'Workspace Trace',
+      });
+      logger.info(`Workspace trace dispatched for ${target.workspacePath}`);
     }),
 
     vscode.commands.registerCommand('workspai.workspaceImpactLens', async (item?: unknown) => {

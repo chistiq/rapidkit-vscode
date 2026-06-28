@@ -1,10 +1,25 @@
 import * as path from 'path';
 import * as fs from 'fs-extra';
+import * as os from 'os';
 
 export type PlatformKind = 'windows' | 'linux' | 'macos' | 'other';
 
+export type RapidkitExecutionSpec = {
+  command: string;
+  args: string[];
+  displayCommand: string;
+  shell: boolean;
+};
+
+export type PackageRunnerInvocation = {
+  command: string;
+  prefixArgs: string[];
+};
+
 /** Cached npm package specifier from global link / env. Undefined = not warmed yet. */
 let resolvedPackageSpecifier: string | null | undefined;
+
+const PACKAGE_RUNNER_COMMANDS = new Set(['npx', 'npm', 'yarn', 'pnpm']);
 
 export function detectPlatformKind(platform: NodeJS.Platform = process.platform): PlatformKind {
   if (platform === 'win32') {
@@ -52,6 +67,87 @@ export function buildShellCommand(
     ...args.map((arg) => quoteShellArg(arg, platform)),
   ];
   return parts.join(' ');
+}
+
+function packageRunnerCliBasename(command: string): string {
+  return command === 'npx' ? 'npx-cli.js' : 'npm-cli.js';
+}
+
+function npmExecPathCandidate(command: string, env: NodeJS.ProcessEnv): string | null {
+  const execPath = env.npm_execpath;
+  if (!execPath) {
+    return null;
+  }
+
+  const basename = path.basename(execPath).toLowerCase();
+  if (command === 'npx' && basename !== 'npx-cli.js') {
+    const sibling = path.join(path.dirname(execPath), 'npx-cli.js');
+    return fs.existsSync(sibling) ? sibling : null;
+  }
+  if (command === 'npm' && basename === 'npx-cli.js') {
+    const sibling = path.join(path.dirname(execPath), 'npm-cli.js');
+    return fs.existsSync(sibling) ? sibling : null;
+  }
+  return fs.existsSync(execPath) ? execPath : null;
+}
+
+function wellKnownPackageRunnerCliCandidates(command: string): string[] {
+  if (command !== 'npm' && command !== 'npx') {
+    return [];
+  }
+
+  const cli = packageRunnerCliBasename(command);
+  const nodeBinDir = path.dirname(process.execPath);
+  const prefix = path.dirname(nodeBinDir);
+
+  return [
+    path.join(prefix, 'lib', 'node_modules', 'npm', 'bin', cli),
+    path.join(prefix, 'lib64', 'node_modules', 'npm', 'bin', cli),
+    path.join('/usr', 'lib', 'node_modules', 'npm', 'bin', cli),
+    path.join('/usr', 'local', 'lib', 'node_modules', 'npm', 'bin', cli),
+    path.join('/usr', 'share', 'nodejs', 'npm', 'bin', cli),
+  ];
+}
+
+export function resolvePackageRunnerInvocation(
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env
+): PackageRunnerInvocation {
+  const normalized = command.trim();
+  if (!PACKAGE_RUNNER_COMMANDS.has(normalized)) {
+    return { command: normalized, prefixArgs: [] };
+  }
+
+  const nodeBinDir = path.dirname(process.execPath);
+  const extension = isWindowsPlatform(platform) ? '.cmd' : '';
+  const candidates = [
+    path.join(nodeBinDir, `${normalized}${extension}`),
+    path.join(nodeBinDir, normalized),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return { command: candidate, prefixArgs: [] };
+    }
+  }
+
+  const npmExecPath = npmExecPathCandidate(normalized, env);
+  if (npmExecPath) {
+    return { command: process.execPath, prefixArgs: [npmExecPath] };
+  }
+
+  for (const candidate of wellKnownPackageRunnerCliCandidates(normalized)) {
+    if (fs.existsSync(candidate)) {
+      return { command: process.execPath, prefixArgs: [candidate] };
+    }
+  }
+
+  if (normalized === 'npm') {
+    return { command: 'corepack', prefixArgs: ['npm'] };
+  }
+
+  return { command: normalized, prefixArgs: [] };
 }
 
 export function setResolvedRapidkitNpmPackageSpecifier(specifier: string | null | undefined): void {
@@ -174,6 +270,57 @@ export function toPinnedRapidkitExecutionCommand(command: string): string {
 
 export function buildNpxRapidkitArgs(args: string[] = []): string[] {
   return [...buildNpxRapidkitPrefix(), ...args];
+}
+
+/**
+ * Canonical subprocess contract for extension-host RapidKit execution.
+ *
+ * Callers pass only RapidKit CLI args (`['workspace', 'verify', ...]`); this
+ * function supplies the npm wrapper, display-safe command text, and the
+ * platform shell mode in one place so enterprise paths do not rebuild npx
+ * invocations ad hoc.
+ */
+export function buildRapidkitExecutionSpec(
+  args: string[] = [],
+  platform: NodeJS.Platform = process.platform
+): RapidkitExecutionSpec {
+  const invocation = resolvePackageRunnerInvocation('npx', platform);
+  return {
+    command: invocation.command,
+    args: [...invocation.prefixArgs, ...buildNpxRapidkitArgs(args)],
+    displayCommand: buildRapidkitDisplayCommand(args, platform),
+    shell: isWindowsPlatform(platform),
+  };
+}
+
+/** Ensure subprocesses spawned from the extension host can find npx/npm (nvm, fnm, etc.). */
+export function augmentPathWithNodeBin(
+  pathEnv?: string,
+  platform: NodeJS.Platform = process.platform
+): string {
+  const delimiter = isWindowsPlatform(platform) ? ';' : ':';
+  const nodeBin = path.dirname(process.execPath);
+  const parts = (pathEnv ?? process.env.PATH ?? '').split(delimiter).filter(Boolean);
+  if (!parts.includes(nodeBin)) {
+    parts.unshift(nodeBin);
+  }
+  return parts.join(delimiter);
+}
+
+/** Env for extension-host package runner subprocesses. */
+export function buildPackageRunnerSubprocessEnv(
+  baseEnv: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...baseEnv,
+    PATH: augmentPathWithNodeBin(baseEnv.PATH, platform),
+    COREPACK_HOME: baseEnv.COREPACK_HOME ?? path.join(os.tmpdir(), 'rapidkit-corepack'),
+  };
+
+  delete env.npm_config_package;
+  delete env.npm_config__package;
+  return env;
 }
 
 /** Non-pinned npx args for npm CLI version probes (Setup verify / status). */

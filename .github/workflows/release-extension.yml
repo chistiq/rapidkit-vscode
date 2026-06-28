@@ -1,0 +1,90 @@
+name: release-extension
+
+on:
+  workflow_dispatch:
+    inputs:
+      smoke_run_id:
+        description: 'Successful extension-smoke-matrix run id that uploaded the VSIX artifact'
+        required: true
+        type: string
+      commit_sha:
+        description: 'Commit SHA tested by extension-smoke-matrix and used in the VSIX artifact name'
+        required: true
+        type: string
+      rapidkit_npm_version:
+        description: 'Published rapidkit npm version required by this extension release'
+        required: true
+        default: '0.41.0'
+        type: string
+      publish_target:
+        description: 'Use dry-run to verify gates without publishing'
+        required: true
+        default: 'dry-run'
+        type: choice
+        options:
+          - dry-run
+          - marketplace
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: release-extension-${{ inputs.commit_sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish-from-inspected-vsix:
+    name: Publish from inspected VSIX artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify target rapidkit npm package is published
+        run: npm view rapidkit@${{ inputs.rapidkit_npm_version }} version
+
+      - name: Download inspected VSIX artifact from smoke matrix
+        uses: actions/download-artifact@v4
+        with:
+          name: workspai-vsix-${{ inputs.commit_sha }}
+          run-id: ${{ inputs.smoke_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: .
+
+      - name: Re-inspect downloaded VSIX
+        run: npm run smoke:vsix-artifact
+
+      - name: Guard publish provenance
+        env:
+          WORKSPAI_EXPECTED_COMMIT_SHA: ${{ inputs.commit_sha }}
+          WORKSPAI_VSIX_ARTIFACT_NAME: workspai-vsix-${{ inputs.commit_sha }}
+        run: npm run publish:guard
+
+      - name: Publish to VS Code Marketplace
+        if: inputs.publish_target == 'marketplace'
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          WORKSPAI_EXPECTED_COMMIT_SHA: ${{ inputs.commit_sha }}
+          WORKSPAI_VSIX_ARTIFACT_NAME: workspai-vsix-${{ inputs.commit_sha }}
+        run: npm run publish:ci
+
+      - name: Dry-run summary
+        if: inputs.publish_target == 'dry-run'
+        run: |
+          echo "Dry-run complete. VSIX artifact passed provenance and content gates."
+          echo "Commit: ${{ inputs.commit_sha }}"
+          echo "Artifact: workspai-vsix-${{ inputs.commit_sha }}"

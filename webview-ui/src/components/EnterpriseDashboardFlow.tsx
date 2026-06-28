@@ -87,6 +87,16 @@ export function EnterpriseDashboardFlow({
 }: EnterpriseDashboardFlowProps) {
   const hasWorkspace = Boolean(workspaceStatus.hasWorkspace && workspaceStatus.workspacePath);
   const workspaceRunCard = findEvidenceCard(evidence, 'workspaceRun');
+  const archiveCard = findEvidenceCard(evidence, 'archive');
+  const workspaceModelCard = findEvidenceCard(evidence, 'workspaceModel');
+  const fleetProjectNames =
+    typeof workspaceModelCard?.metrics?.projectNames === 'string'
+      ? workspaceModelCard.metrics.projectNames
+          .split(',')
+          .map((name) => name.trim())
+          .filter(Boolean)
+      : [];
+  const [fleetScope, setFleetScope] = useState<'all' | string>('all');
   const isPending = (cardId: DashboardEvidenceCardId) => pendingCardIds.includes(cardId);
   const commandContract = (command: DashboardCommand, disabledReason?: string) =>
     buildDashboardCommandActionContract(command, { evidence, disabledReason });
@@ -120,11 +130,18 @@ export function EnterpriseDashboardFlow({
       requestWorkspaceSwitch();
       return;
     }
+    const scopePayload =
+      fleetScope === 'all'
+        ? {}
+        : {
+            scope: fleetScope.startsWith('project:') ? fleetScope : `project:${fleetScope}`,
+          };
+    const payload = { ...scopePayload, ...(data ?? {}) };
     if (onRunWorkspaceCommand) {
-      onRunWorkspaceCommand(command, data);
+      onRunWorkspaceCommand(command, payload);
       return;
     }
-    vscode.postMessage(command, data);
+    vscode.postMessage(command, payload);
   };
 
   const openOnboardingModal = (mode: ProjectOnboardingMode) => {
@@ -253,6 +270,23 @@ export function EnterpriseDashboardFlow({
               <small>Init, test, build, start, terminal</small>
             </summary>
             <div className="enterprise-flow-accordion__body">
+              {fleetProjectNames.length > 0 ? (
+                <label className="enterprise-flow-fleet-scope">
+                  <span>Fleet scope</span>
+                  <select
+                    value={fleetScope}
+                    onChange={(event) => setFleetScope(event.target.value)}
+                    aria-label="Fleet run project scope"
+                  >
+                    <option value="all">All projects</option>
+                    {fleetProjectNames.map((projectName) => (
+                      <option key={projectName} value={projectName}>
+                        project:{projectName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <ActionTileGrid layout="operate">
                 <ActionTile
                   icon={<Package size={15} />}
@@ -426,9 +460,28 @@ export function EnterpriseDashboardFlow({
             <div className="enterprise-flow-accordion__body">
             <ActionTileGrid layout="2col">
               <ActionTile
+                icon={<Upload size={15} />}
+                label="Export for Ship Handoff"
+                detail={
+                  archiveCard?.status === 'missing'
+                    ? 'Create .rapidkit-archive.zip and refresh ship manifest'
+                    : archiveCard?.summary || 'Portable workspace archive'
+                }
+                evidenceStatus={archiveCard?.status}
+                pending={isPending('archive')}
+                onClick={() =>
+                  runWorkspaceAction('exportWorkspace', { path: workspaceStatus.workspacePath })
+                }
+                actionContract={commandContract(
+                  'exportWorkspace',
+                  !hasWorkspace ? 'Select a workspace' : undefined
+                )}
+                title={hasWorkspace ? 'Export workspace for ship handoff' : 'Select a workspace first'}
+              />
+              <ActionTile
                 icon={<Archive size={15} />}
                 label="Archive Tools"
-                detail="Inspect / verify"
+                detail="Export · inspect · verify · doctor"
                 pending={isPending('archive')}
                 onClick={() => runWorkspaceAction('workspaceArchive')}
                 actionContract={commandContract(
@@ -446,19 +499,6 @@ export function EnterpriseDashboardFlow({
                   'workspaceShare',
                   !hasWorkspace ? 'Select a workspace' : undefined
                 )}
-              />
-              <ActionTile
-                icon={<Upload size={15} />}
-                label="Export"
-                detail="Workspace bundle"
-                onClick={() =>
-                  runWorkspaceAction('exportWorkspace', { path: workspaceStatus.workspacePath })
-                }
-                actionContract={commandContract(
-                  'exportWorkspace',
-                  !hasWorkspace ? 'Select a workspace' : undefined
-                )}
-                title={hasWorkspace ? 'Export Workspace' : 'Select a workspace first'}
               />
               <ActionTile
                 icon={<BrainCircuit size={15} />}

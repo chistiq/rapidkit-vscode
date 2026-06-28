@@ -10,6 +10,7 @@ import {
 } from '../core/canonicalProjectLifecycle';
 import { resolveEnableModulesPreference } from '../core/moduleEnablementPrompt';
 import { refreshExtensionAfterNpmProjectOnboard } from '../core/npmProjectOnboardRefresh';
+import { gateCompatibleCliVersion } from '../core/cliVersionGate';
 import { gateAdoptCli } from '../core/rapidkitCliCapabilities';
 import { findWorkspaceRootUp } from '../core/workspacePaths';
 
@@ -56,6 +57,9 @@ export async function adoptProjectCommand(input: AdoptProjectInput): Promise<boo
   const explicitWorkspacePath = resolveExplicitWorkspacePath(input);
 
   try {
+    if (!(await gateCompatibleCliVersion({ cwd: projectPath, featureLabel: 'Adopt Project' }))) {
+      return false;
+    }
     if (!(await gateAdoptCli('Adopt Project', { cwd: projectPath }))) {
       return false;
     }

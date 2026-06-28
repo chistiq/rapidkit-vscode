@@ -99,6 +99,8 @@ describe('enterprise capability smoke', () => {
     expect(extension).not.toContain('scheduleAutoWorkspaceIntelligenceChain');
     expect(extension).toContain('shouldRefreshEvidenceOnTerminalClose');
     expect(extension).toContain('WelcomePanel.refreshDashboardForWorkspacePath(workspacePath)');
+    expect(read('src/ui/panels/welcomePanel.ts')).toContain('_pendingDashboardFullRefreshPath');
+    expect(read('src/ui/panels/welcomePanel.ts')).toContain('flushPendingDashboardRefresh');
   });
 
   it('surfaces framework and module badge in console project actions', () => {

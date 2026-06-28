@@ -110,10 +110,16 @@ describe('actionsWebviewProvider — sidebar protocol handlers', () => {
 
   it('supports the studio action set the React command cards invoke', () => {
     expect(source).toContain("action === 'verify'");
+    expect(source).toContain("action === 'verify-handoff'");
     expect(source).toContain("action === 'run-command'");
     expect(source).toContain("action === 'copy-command'");
     expect(source).toContain('resolveRapidkitExecutionPlan');
     expect(source).toContain('runCommandsInTerminal');
+    expect(source).toContain('exitCode: execution.exitCode');
+    expect(source).toContain('stderrTail: execution.stderrTail');
+    expect(source).toContain(
+      'topBlocker: execution.success ? undefined : execution.error ?? handoff.blockers[0]'
+    );
   });
 });
 

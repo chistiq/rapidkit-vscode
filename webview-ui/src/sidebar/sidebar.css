@@ -2112,3 +2112,264 @@
   font-size: var(--ws-sidebar-text-xs);
   line-height: var(--ws-sidebar-leading-normal);
 }
+
+.ws-sidebar__studio-chrome {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
+  background: color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-focusBorder) 8%);
+}
+
+.ws-sidebar__studio-posture {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.ws-sidebar__studio-posture-icon {
+  display: inline-flex;
+  margin-top: 2px;
+  color: var(--vscode-textLink-foreground);
+}
+
+.ws-sidebar__studio-posture-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ws-sidebar__studio-posture-copy strong {
+  font-size: var(--ws-sidebar-text-sm);
+}
+
+.ws-sidebar__studio-posture-copy span,
+.ws-sidebar__studio-posture-copy small {
+  font-size: var(--ws-sidebar-text-xs);
+  color: var(--vscode-descriptionForeground);
+  line-height: var(--ws-sidebar-leading-normal);
+}
+
+.ws-sidebar__studio-blockers {
+  font-size: var(--ws-sidebar-text-xs);
+  color: var(--vscode-descriptionForeground);
+}
+
+.ws-sidebar__studio-blockers ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+
+.ws-sidebar__studio-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ws-sidebar__inline--primary {
+  border-color: var(--vscode-button-background);
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.ws-sidebar__studio-note {
+  margin: 0;
+  font-size: var(--ws-sidebar-text-xs);
+  color: var(--vscode-textLink-foreground);
+}
+
+.ws-sidebar__studio-verify-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 8px;
+  border: 1px solid var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+  background: var(--vscode-inputValidation-errorBackground, var(--vscode-editor-background));
+  color: var(--vscode-foreground);
+  font-size: var(--ws-sidebar-text-xs);
+  line-height: var(--ws-sidebar-leading-normal);
+}
+
+.ws-sidebar__studio-verify-alert span,
+.ws-sidebar__studio-verify-alert code {
+  overflow-wrap: anywhere;
+}
+
+.ws-sidebar__studio-verify-alert code {
+  color: var(--vscode-descriptionForeground);
+}
+
+.ws-sidebar__studio-audit-alert {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
+  background: var(--vscode-inputValidation-warningBackground, var(--vscode-editor-background));
+  color: var(--vscode-foreground);
+  font-size: var(--ws-sidebar-text-xs);
+}
+
+.ws-sidebar__studio-audit-alert[data-state='failed'] {
+  background: var(--vscode-inputValidation-errorBackground, var(--vscode-editor-background));
+}
+
+.ws-sidebar__studio-audit-alert-icon {
+  display: inline-flex;
+  margin-top: 2px;
+  color: var(--vscode-inputValidation-warningBorder, var(--vscode-textLink-foreground));
+}
+
+.ws-sidebar__studio-audit-alert[data-state='failed'] .ws-sidebar__studio-audit-alert-icon {
+  color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+.ws-sidebar__studio-audit-alert-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ws-sidebar__studio-audit-alert-copy span,
+.ws-sidebar__studio-audit-alert-copy small {
+  color: var(--vscode-descriptionForeground);
+  line-height: var(--ws-sidebar-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.ws-sidebar__studio-patch-review {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--ws-sidebar-radius-sm);
+  background: var(--vscode-editor-background);
+  font-size: var(--ws-sidebar-text-xs);
+}
+
+.ws-sidebar__studio-patch-review > p {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+}
+
+.ws-sidebar__studio-patch-review > .ws-sidebar__studio-patch-risk {
+  color: var(--vscode-editorWarning-foreground, var(--vscode-descriptionForeground));
+}
+
+.ws-sidebar__studio-patch-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.ws-sidebar__studio-patch-list label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.ws-sidebar__studio-patch-list code {
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--ws-sidebar-text-xs);
+}
+
+.ws-sidebar__studio-patch-tag {
+  padding: 0 0.25rem;
+  border-radius: 3px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+}
+
+.ws-sidebar__studio-rollback {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--vscode-inputValidation-warningBorder);
+  border-radius: var(--ws-sidebar-radius-sm);
+  background: var(--vscode-inputValidation-warningBackground);
+  font-size: var(--ws-sidebar-text-xs);
+}
+
+.ws-sidebar__studio-rollback code {
+  word-break: break-all;
+  font-family: var(--vscode-editor-font-family);
+}
+
+.ws-sidebar__ship-loop {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--ws-sidebar-radius-sm);
+  background: var(--vscode-sideBar-background);
+  font-size: var(--ws-sidebar-text-xs);
+}
+
+.ws-sidebar__ship-loop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ws-sidebar__ship-loop-next {
+  color: var(--vscode-descriptionForeground);
+}
+
+.ws-sidebar__ship-loop-hint {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+}
+
+.ws-sidebar__ship-loop-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.ws-sidebar__ship-loop-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.ws-sidebar__ship-loop-step:first-child {
+  border-top: none;
+}
+
+.ws-sidebar__ship-loop-step[data-current='true'] {
+  background: color-mix(in srgb, var(--vscode-focusBorder) 8%, transparent);
+}
+
+.ws-sidebar__ship-loop-step-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.ws-sidebar__ship-loop-step-copy small {
+  color: var(--vscode-descriptionForeground);
+}

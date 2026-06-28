@@ -22,6 +22,11 @@ export type DashboardReportKind =
   | 'workspace-model-diff'
   | 'workspace-impact'
   | 'workspace-verify'
+  | 'workspace-contract-verify'
+  | 'workspace-explain'
+  | 'workspace-why'
+  | 'workspace-trace'
+  | 'workspace-skills-index'
   | 'workspace-context-agent'
   | 'agent-reports-index'
   | 'archive-manifest'
@@ -194,10 +199,55 @@ const REPORT_BINDINGS: Array<{
     },
   },
   {
+    match: (name) => name === 'workspace-contract-verify-last-run.json',
+    binding: {
+      kind: 'workspace-contract-verify',
+      command: 'workspaceContractVerify',
+      cardId: 'contract',
+      scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'workspace-explain-last-run.json',
+    binding: {
+      kind: 'workspace-explain',
+      command: 'workspaceExplain',
+      cardId: 'workspaceExplain',
+      scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'workspace-why-last-run.json',
+    binding: {
+      kind: 'workspace-why',
+      command: 'workspaceWhy',
+      cardId: 'workspaceWhy',
+      scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'workspace-trace-last-run.json',
+    binding: {
+      kind: 'workspace-trace',
+      command: 'workspaceTrace',
+      cardId: 'workspaceTrace',
+      scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'workspace-skills-index.json',
+    binding: {
+      kind: 'workspace-skills-index',
+      command: 'workspaceAgentSync',
+      cardId: 'agentGrounding',
+      scope: 'workspace',
+    },
+  },
+  {
     match: (name) => name === 'archive-manifest.json',
     binding: {
       kind: 'archive-manifest',
-      command: 'workspaceArchive',
+      command: 'exportWorkspace',
       cardId: 'archive',
       scope: 'workspace',
     },
@@ -215,7 +265,7 @@ const REPORT_BINDINGS: Array<{
     match: (name) => name === 'mirror-ops.latest.json' || name.startsWith('mirror-ops-'),
     binding: {
       kind: 'mirror-ops',
-      command: 'mirrorStatus',
+      command: 'mirrorOps',
       cardId: 'mirror',
       scope: 'workspace',
     },
@@ -251,11 +301,15 @@ const EVIDENCE_CARD_COMMAND_FALLBACKS: Record<string, string> = {
   workspaceDiff: 'workspaceDiff',
   workspaceImpact: 'workspaceImpact',
   workspaceVerify: 'workspaceVerify',
+  workspaceExplain: 'workspaceExplain',
+  workspaceWhy: 'workspaceWhy',
+  workspaceTrace: 'workspaceTrace',
+  workspaceWatch: 'workspaceWatch',
   workspaceContextAgent: 'workspaceContextAgent',
   agentGrounding: 'workspaceAgentSync',
   share: 'workspaceShare',
   archive: 'workspaceArchive',
-  mirror: 'mirrorStatus',
+  mirror: 'mirrorOps',
   cache: 'cacheStatus',
   policy: 'workspacePolicyShow',
   infra: 'workspaceInfra',
@@ -601,6 +655,22 @@ export function extractBlockersFromReport(
     }
     case 'infra-plan':
       return collectStringItems(raw.errors ?? raw.warnings ?? raw.blockers, 6);
+    case 'workspace-explain':
+    case 'workspace-why':
+    case 'workspace-trace':
+      return collectStringItems(raw.blockingReasons ?? raw.blockers, 8);
+    case 'workspace-skills-index':
+      return collectStringItems(raw.blockers, 8);
+    case 'workspace-contract-verify': {
+      const violations = Array.isArray(raw.violations) ? raw.violations : [];
+      if (violations.length > 0) {
+        return violations.filter((entry): entry is string => typeof entry === 'string').slice(0, 8);
+      }
+      const status = String(raw.status ?? '').toLowerCase();
+      return status === 'failed' || status === 'fail'
+        ? ['Workspace contract verification failed']
+        : [];
+    }
     default:
       return [];
   }

@@ -25,6 +25,7 @@ interface ChatTabProps {
   onSelectModel: (id: string | null) => void;
   onRefreshModels?: () => void;
   toolbar?: ReactNode;
+  headerChrome?: ReactNode;
   footerActions?: ReactNode;
   onRunCommand?: (command: string) => void;
   onCopyCommand?: (command: string) => void;
@@ -86,6 +87,7 @@ export function ChatTab(props: ChatTabProps) {
       aria-label={props.contextLabel}
       hidden={!active}
     >
+      {props.headerChrome}
       <div className="ws-sidebar__stream" aria-live="polite">
         {!activeSession || activeSession.messages.length === 0 ? (
           <SidebarMessage role="ai">

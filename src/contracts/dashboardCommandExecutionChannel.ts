@@ -21,8 +21,12 @@ export const DASHBOARD_BACKGROUND_COMMANDS = new Set<DashboardCommand>([
   'workspaceContextAgent',
   'workspaceAgentSync',
   'workspaceVerify',
+  'workspaceExplain',
+  'workspaceWhy',
+  'workspaceTrace',
   'workspaceIntelligenceChain',
   'workspaceImpactLens',
+  'workspaceImpactLensCli',
 ]);
 
 /** Rapidkit CLI commands that normally open an integrated terminal (unless evidence direct-run). */
@@ -39,6 +43,8 @@ export const DASHBOARD_TERMINAL_RAPIDKIT_COMMANDS = new Set<DashboardCommand>([
   'workspaceRunInit',
   'workspaceRunBuild',
   'workspaceRunStart',
+  'workspaceWatch',
+  'workspaceMcp',
   'workspaceAnalyze',
   'workspaceReadiness',
   'workspaceAutopilotRelease',

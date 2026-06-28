@@ -118,4 +118,26 @@ describe('dashboard enterprise smoke scenarios', () => {
     expect(importCard?.incidentStudioTarget).toBe('doctor');
     expect(EVIDENCE_CARD_COMMANDS.importReadiness).toBe('projectDoctor');
   });
+
+  it('stays fail-closed for fix-lens when analyze evidence is stale or blocked', () => {
+    expect(resolveStudioCodeChangeActionBlockReason('fix-lens', null)).toContain('analyze');
+
+    expect(
+      resolveStudioCodeChangeActionBlockReason('fix-lens', {
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        verdict: 'blocked',
+        findings: { fail: 2, warn: 0, info: 0 },
+        topFindings: [],
+      })
+    ).toContain('blocked');
+
+    expect(
+      resolveStudioCodeChangeActionBlockReason('fix-lens', {
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        verdict: 'needs-attention',
+        findings: { fail: 0, warn: 1, info: 0 },
+        topFindings: [],
+      })
+    ).toBeNull();
+  });
 });

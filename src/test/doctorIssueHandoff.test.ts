@@ -55,4 +55,36 @@ describe('doctorIssueHandoff', () => {
     });
     expect(resolved?.issue).toBe(payload?.issue);
   });
+
+  it('labels policy violations as governance evidence instead of doctor issues', () => {
+    const policyPayload = buildDoctorIssueHandoffPayload({
+      issue:
+        'policy.workspace.marker.missing: Workspace marker is missing; model is based on filesystem observation. (workspace.marker)',
+      kind: 'policy-violation',
+      evidence: {
+        workspacePath: '/tmp/ws',
+        workspaceName: 'demo-ws',
+        generatedAt: '2026-06-27T15:12:13.914Z',
+        healthScore: { total: 6, passed: 5, warnings: 1, errors: 0 },
+        system: { versions: { core: '0.5.4', npm: '0.41.0' } },
+      },
+    });
+
+    expect(policyPayload).toBeTruthy();
+
+    const advisor = buildDoctorIssueAdvisorQuestion(policyPayload!);
+    expect(advisor).toContain('Issue detected by Workspai Governance Policy');
+    expect(advisor).not.toContain('Issue detected by Workspai Doctor');
+    expect(advisor).toContain('"source": "workspace-governance-policy"');
+
+    const studio = buildDoctorIssueStudioPrompt(policyPayload!);
+    expect(studio).toContain('workspace governance evidence issue');
+    expect(studio).toContain('## Governance policy issue');
+    expect(studio).toContain('workspace verify/model evidence');
+    expect(studio).not.toContain('## Doctor issue');
+
+    const copilot = buildDoctorIssueCopilotQuestion(policyPayload!);
+    expect(copilot).toContain('Workspai governance policy issue');
+    expect(copilot).toContain('workspace verify/model evidence artifacts');
+  });
 });

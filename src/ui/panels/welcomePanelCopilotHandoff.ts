@@ -9,10 +9,14 @@ import {
   buildEvidenceCardStudioPromptEnriched,
   type EvidenceCardAgentContextInput,
 } from '../../core/evidenceCardAgentPrompt';
+import { buildStudioBlockerHandoff } from '../../core/studioBlockerHandoffBuilder.js';
+import { normalizeStudioHandoffSource } from '../../core/studioBlockerFixRouting.js';
+import type { StudioBlockerHandoff } from '../../contracts/studio-blocker-handoff-contract.js';
 
 export type WelcomePanelCopilotHandoffContext = {
   resolveWorkspacePath: () => string | undefined;
   resolveWorkspaceName: () => string | undefined;
+  extensionContext?: import('vscode').ExtensionContext;
 };
 
 function readOptionalString(data: unknown, key: string): string | undefined {
@@ -107,6 +111,23 @@ export async function handleWelcomePanelAskStudioAboutEvidence(
     projectName: readOptionalString(data, 'projectName'),
   });
 
+  let blockerHandoff: StudioBlockerHandoff | undefined;
+  if (
+    typedCard &&
+    (typedCard.status === 'fail' || typedCard.status === 'warn' || typedCard.status === 'missing')
+  ) {
+    const handoffSource = normalizeStudioHandoffSource(
+      readOptionalString(data, 'handoffSource') ?? readOptionalString(data, 'source')
+    );
+    blockerHandoff = await buildStudioBlockerHandoff({
+      card: typedCard,
+      workspacePath,
+      projectPath: readOptionalString(data, 'projectPath'),
+      handoffSource,
+      extensionContext: context.extensionContext,
+    });
+  }
+
   await vscode.commands.executeCommand('workspai.openIncidentStudio', {
     workspacePath,
     workspaceName: readOptionalString(data, 'workspaceName'),
@@ -114,9 +135,15 @@ export async function handleWelcomePanelAskStudioAboutEvidence(
     projectName: readOptionalString(data, 'projectName'),
     composerHandoff: 'prefill',
     initialQuery: studioPrompt,
-    studioMode: 'investigate',
+    studioMode:
+      blockerHandoff?.studioMode === 'VERIFY_ONLY'
+        ? 'verify'
+        : blockerHandoff?.studioMode === 'EXPLAIN'
+          ? 'investigate'
+          : 'investigate',
     source: readOptionalString(data, 'source') ?? 'dashboard',
     trigger: readOptionalString(data, 'trigger') ?? 'dashboard-evidence-studio-handoff',
     evidenceCard: typedCard,
+    blockerHandoff,
   });
 }

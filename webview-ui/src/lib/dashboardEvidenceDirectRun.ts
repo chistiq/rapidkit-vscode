@@ -1,6 +1,6 @@
 import type { DashboardCommand } from './dashboardCommandRegistry';
 import type { DashboardEvidenceCard } from './dashboardEvidence';
-import { isBootstrapPendingCard } from './dashboardEvidence';
+import { isBootstrapPendingCard, isCorruptArtifactCard } from './dashboardEvidence';
 
 export type EvidenceWorkspaceContext = {
   path?: string;
@@ -13,6 +13,9 @@ export function evidenceCardNeedsDirectRun(card: DashboardEvidenceCard): boolean
     return true;
   }
   if (card.status === 'missing') {
+    return true;
+  }
+  if (isCorruptArtifactCard(card)) {
     return true;
   }
   if (!card.artifactPath?.trim()) {
@@ -46,6 +49,13 @@ export function buildEvidenceCardCommandData(
     evidenceDirectRun: true,
     ...(EVIDENCE_DIRECT_COMMAND_FLAGS[command] ?? {}),
   };
+
+  if (isCorruptArtifactCard(card)) {
+    data.repairReason = 'corrupt-artifact';
+    if (card.artifactPath?.trim()) {
+      data.repairArtifactPath = card.artifactPath.trim();
+    }
+  }
 
   if (workspace?.path) {
     data.path = workspace.path;

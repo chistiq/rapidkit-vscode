@@ -58,11 +58,11 @@ export function WorkspaceOverview({
   ];
 
   return (
-    <section className="ws-overview-shell workspace-overview" aria-label="Home health and status">
+    <section className="ws-overview-shell workspace-overview" aria-label="Workspace status summary">
       <div className="workspace-overview-title">
         <div className="workspace-overview-heading">
           <Shield size={14} />
-          <span>Workspace command summary</span>
+          <span>Workspace status summary</span>
           <small>
             {hasWorkspace
               ? 'Workspace-first signals with project attribution when needed'

@@ -39,6 +39,88 @@ import { resolveRapidkitExecutionPlan } from '../../core/incidentInlineCommandRu
 import { buildCoreRapidkitShellCommand, runCommandsInTerminal } from '../../utils/terminalExecutor';
 import { createWorkspaceCommand } from '../../commands/createWorkspace';
 import type { ScaffoldFramework } from '../../core/scaffoldKits';
+import {
+  isStudioBlockerHandoff,
+  type StudioBlockerHandoff,
+} from '../../contracts/studio-blocker-handoff-contract.js';
+import { buildSidebarStudioPrompt } from '../../core/sidebarStudioFixPrompt.js';
+import { executeStudioActionById } from '../panels/incidentStudioActionBridge.js';
+import { pickStudioFixActionId } from '../../core/studioBlockerHandoffBuilder.js';
+import { recordStudioBlockerCommandRun } from '../../core/studioBlockerCommandLedger.js';
+import { runRapidkitStreaming } from '../../core/streamingRapidkitRunner.js';
+import { extractDoctorFixResult } from '../../core/doctorFixResultReader.js';
+import { resolveStudioDoctorFixInvocation } from '../../core/studioDoctorFixCommand.js';
+import { runIncidentInlineCommand } from '../panels/incidentStudioInlineCommandBridge.js';
+import type { StudioActionId } from '../../core/studioActionCommands.js';
+import {
+  formatStudioCardRefreshToast,
+  refreshDashboardAfterStudioVerify,
+} from '../../core/studioSidebarDashboardRefresh.js';
+import {
+  applySidebarPendingPatches,
+  executeSidebarApplyDebugPatch,
+  type SidebarPatchBridgeResult,
+} from '../../core/sidebarStudioPatchBridge.js';
+import type { FilePatch } from '../../core/patchApplyEngine.js';
+import {
+  dispatchSidebarShipLoopStep,
+  isSidebarShipLoopStepId,
+  resolveSidebarShipLoopPayload,
+} from '../../core/sidebarStudioShipLoopBridge.js';
+import {
+  buildSidebarPatchRollbackHint,
+  collectAppliedPatchPaths,
+} from '../../core/sidebarStudioRollbackHint.js';
+import {
+  attachAdvisorHandoffSource,
+  buildAdvisorStudioPrefill,
+} from '../../core/sidebarAdvisorStudioHandoff.js';
+import {
+  recordSidebarStudioFixAudit,
+  type RecordSidebarStudioFixAuditInput,
+  type SidebarStudioPatchAuditMetadata,
+} from '../../core/sidebarStudioAuditBridge.js';
+import { recordRetentionMilestone } from '../../core/retentionMilestones.js';
+import { WelcomePanel } from '../panels/welcomePanel.js';
+
+function serializeSidebarPatchReviewItems(patches: FilePatch[]): Array<{
+  relativePath: string;
+  status: string;
+  isNewFile?: boolean;
+  failReason?: string;
+}> {
+  return patches.map((patch) => ({
+    relativePath: patch.relativePath,
+    status: patch.status,
+    isNewFile: patch.isNewFile,
+    failReason: patch.failReason,
+  }));
+}
+
+function buildSidebarPatchAuditMetadata(input: {
+  sourceAction: 'auto-fix' | 'apply-patch';
+  reviewRequired: boolean;
+  patchResult?: SidebarPatchBridgeResult['patchResult'];
+  appliedFixes?: Array<{ path: string; action: string; outcome: string }>;
+  rollbackCommand?: string | null;
+}): SidebarStudioPatchAuditMetadata | undefined {
+  const affectedFiles = collectAppliedPatchPaths(input.appliedFixes);
+  const patchResult = input.patchResult;
+  if (!patchResult && affectedFiles.length === 0) {
+    return undefined;
+  }
+  return {
+    ...(patchResult?.patchId ? { patchId: patchResult.patchId } : {}),
+    sourceAction: input.sourceAction,
+    reviewRequired: input.reviewRequired,
+    ...(patchResult?.branchCreated ? { branchCreated: patchResult.branchCreated } : {}),
+    appliedCount: patchResult?.appliedCount ?? affectedFiles.length,
+    rejectedCount: patchResult?.rejectedCount ?? 0,
+    failedCount: patchResult?.failedCount ?? 0,
+    affectedFiles,
+    ...(input.rollbackCommand ? { rollbackCommand: input.rollbackCommand } : {}),
+  };
+}
 
 async function readWorkspaceProfileFromManifest(
   workspacePath: string | undefined
@@ -228,6 +310,13 @@ function resolveExplicitWorkspaceScope(payloadScope: unknown): { workspacePath?:
   return { workspacePath };
 }
 
+function parseStudioBlockerHandoffPayload(value: unknown): StudioBlockerHandoff | undefined {
+  if (!isStudioBlockerHandoff(value)) {
+    return undefined;
+  }
+  return value;
+}
+
 export type WorkspaiSecondaryTab = 'create' | 'impact' | 'studio';
 export type WorkspaiSecondaryTabPayload = {
   workspace?: { name?: string; path?: string; workspaceRootPath?: string } | null;
@@ -240,6 +329,7 @@ export type WorkspaiSecondaryTabPayload = {
   useDefaultWorkspace?: boolean;
   source?: string;
   trigger?: string;
+  blockerHandoff?: Record<string, unknown>;
 };
 
 export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
@@ -248,6 +338,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
   private _view?: vscode.WebviewView;
   private _pendingSecondaryTab?: WorkspaiSecondaryTab;
   private _pendingSecondaryTabPayload?: WorkspaiSecondaryTabPayload;
+  private _activeBlockerHandoff?: StudioBlockerHandoff;
+  private _pendingSidebarPatches = new Map<string, FilePatch[]>();
+  private _lastSidebarStudioAuditInput?: RecordSidebarStudioFixAuditInput;
 
   constructor(
     private readonly _extensionUri: vscode.Uri,
@@ -381,7 +474,23 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     }
     this._pendingSecondaryTab = undefined;
     this._pendingSecondaryTabPayload = undefined;
+    const handoff = parseStudioBlockerHandoffPayload(payload?.blockerHandoff);
+    if (handoff) {
+      this._activeBlockerHandoff = handoff;
+    }
     this._postInlineCreate('sidebarActivateTab', { tab, ...(payload ?? {}) });
+    if (handoff) {
+      this._postInlineCreate('sidebarBlockerHandoff', { handoff });
+    }
+    if (tab === 'studio') {
+      const workspacePath =
+        payload?.workspace?.path ?? payload?.workspace?.workspaceRootPath ?? undefined;
+      void this._refreshSidebarShipLoop({
+        workspacePath,
+        projectPath: payload?.project?.path,
+        projectName: payload?.project?.name,
+      });
+    }
   }
 
   private _postInlineCreate(command: string, data?: Record<string, unknown>): void {
@@ -463,6 +572,121 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           }
         : null,
     });
+    await this._refreshSidebarShipLoop({
+      workspacePath: workspace?.path,
+      projectPath: project?.path,
+      projectName: project?.name,
+    });
+  }
+
+  private async _auditSidebarStudioFix(input: {
+    workspacePath: string;
+    handoff?: StudioBlockerHandoff;
+    kind: 'auto-fix' | 'apply-patch' | 'verify-handoff' | 'ship-loop-step';
+    actionId: string;
+    summary: string;
+    ok: boolean;
+    appliedFixes?: Array<{ path: string; action: string; outcome: string }>;
+    rollbackCommand?: string;
+    patchMetadata?: SidebarStudioPatchAuditMetadata;
+  }): Promise<void> {
+    if (input.ok && input.kind !== 'ship-loop-step') {
+      void recordRetentionMilestone(this._context, 'first_blocker_fixed', {
+        surface: 'studio',
+      });
+    }
+    if (!input.workspacePath?.trim()) {
+      return;
+    }
+    const auditInput: RecordSidebarStudioFixAuditInput = {
+      workspacePath: input.workspacePath,
+      handoff: input.handoff,
+      kind: input.kind,
+      actionId: input.actionId,
+      summary: input.summary,
+      ok: input.ok,
+      appliedFixes: input.appliedFixes,
+      rollbackCommand: input.rollbackCommand,
+      patchMetadata: input.patchMetadata,
+    };
+    this._lastSidebarStudioAuditInput = auditInput;
+    try {
+      const result = await recordSidebarStudioFixAudit(auditInput);
+      this._postInlineCreate('sidebarStudioAuditState', {
+        actionId: input.actionId,
+        kind: input.kind,
+        status: result.ok ? 'saved' : 'stale',
+        registryRecorded: result.registryRecorded,
+        feedbackRecorded: result.feedbackRecorded,
+        stale: result.stale,
+        error: result.error,
+        retryable: result.retryable === true,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this._postInlineCreate('sidebarStudioAuditState', {
+        actionId: input.actionId,
+        kind: input.kind,
+        status: 'failed',
+        registryRecorded: false,
+        feedbackRecorded: false,
+        stale: true,
+        error: message || 'Sidebar Studio audit write failed.',
+        retryable: true,
+      });
+    }
+  }
+
+  private async _retryLastSidebarStudioAudit(sessionId?: string): Promise<void> {
+    if (!this._lastSidebarStudioAuditInput) {
+      this._postInlineCreate('sidebarStudioAuditState', {
+        actionId: 'retry-audit',
+        status: 'failed',
+        registryRecorded: false,
+        feedbackRecorded: false,
+        stale: true,
+        error: 'No Studio audit payload is available to retry.',
+        retryable: false,
+      });
+      return;
+    }
+
+    this._postInlineCreate('sidebarStudioActionResult', {
+      sessionId,
+      action: 'retry-audit',
+      status: 'running',
+      phase: 'audit-retry',
+    });
+    await this._auditSidebarStudioFix(this._lastSidebarStudioAuditInput);
+    this._postInlineCreate('sidebarStudioActionResult', {
+      sessionId,
+      action: 'retry-audit',
+      status: 'done',
+      summary: 'Studio audit retry completed.',
+    });
+  }
+
+  private async _refreshSidebarShipLoop(input: {
+    workspacePath?: string;
+    projectPath?: string;
+    projectName?: string;
+  }): Promise<void> {
+    if (!input.workspacePath) {
+      return;
+    }
+    try {
+      const payload = await resolveSidebarShipLoopPayload({
+        workspacePath: input.workspacePath,
+        projectPath: input.projectPath,
+        projectName: input.projectName,
+      });
+      this._postInlineCreate('sidebarStudioShipLoop', {
+        workspacePath: payload.workspacePath,
+        cards: payload.cards,
+      });
+    } catch (error) {
+      console.warn('[Workspai] Failed to refresh sidebar ship loop', error);
+    }
   }
 
   private async _runInlineAICreatePlan(payload: unknown): Promise<void> {
@@ -975,6 +1199,40 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       typeof payloadRecord.sessionId === 'string' ? payloadRecord.sessionId : undefined;
     try {
       if (action === 'studio') {
+        const question =
+          typeof payloadRecord.question === 'string' ? payloadRecord.question.trim() : '';
+        const answer = typeof payloadRecord.answer === 'string' ? payloadRecord.answer.trim() : '';
+        const advisorHandoff = attachAdvisorHandoffSource(this._activeBlockerHandoff);
+        const prefill = buildAdvisorStudioPrefill({
+          question,
+          answer,
+          blockerHandoff: advisorHandoff,
+          freshnessStatus: advisorHandoff?.verifyArtifact
+            ? 'verify artifact cited - re-run verify before claiming pass'
+            : 'unknown - verify before use',
+        });
+        if (advisorHandoff) {
+          this._activeBlockerHandoff = advisorHandoff;
+        }
+        this._postInlineCreate('sidebarActivateTab', { tab: 'studio' });
+        this._postInlineCreate('sidebarAdvisorStudioHandoff', {
+          sessionId,
+          prefill,
+          handoffSource: 'advisor',
+          ...(advisorHandoff ? { blockerHandoff: advisorHandoff } : {}),
+        });
+        if (advisorHandoff) {
+          this._postInlineCreate('sidebarBlockerHandoff', { handoff: advisorHandoff });
+        }
+        const scope = resolveStudioActionScope(payloadRecord.scope);
+        const workspacePath =
+          scope.workspacePath ?? (await resolvePreferredAIModalContext()).workspaceRootPath;
+        if (workspacePath) {
+          void this._refreshSidebarShipLoop({
+            workspacePath,
+            projectPath: scope.projectPath,
+          });
+        }
         this._postInlineCreate('sidebarAdvisorActionResult', { sessionId, action, status: 'done' });
         return;
       }
@@ -1039,6 +1297,11 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       payloadRecord.mode === 'verify' || payloadRecord.mode === 'prepare'
         ? payloadRecord.mode
         : 'investigate';
+    const handoff =
+      parseStudioBlockerHandoffPayload(payloadRecord.blockerHandoff) ?? this._activeBlockerHandoff;
+    if (handoff) {
+      this._activeBlockerHandoff = handoff;
+    }
     const rawHistory = Array.isArray(payloadRecord.history) ? payloadRecord.history : [];
     const history: AIConversationHistoryEntry[] = rawHistory
       .filter((entry): entry is AIConversationHistoryEntry => {
@@ -1087,33 +1350,11 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         label: 'Preparing evidence-aware Studio plan...',
       });
 
-      const modeLabel =
-        studioMode === 'verify'
-          ? 'Verify'
-          : studioMode === 'prepare'
-            ? 'Prepare safe action'
-            : 'Investigate';
-      const loopFocus =
-        studioMode === 'verify'
-          ? 'Focus on Verify, but cite the Detect and Diagnose evidence that supports the verification path.'
-          : studioMode === 'prepare'
-            ? 'Focus on Plan and Learn/Prepare, but include the Verify gate that must pass before action.'
-            : 'Focus on Detect and Diagnose first; include a short Plan only when the evidence is clear.';
-      const studioPrompt = [
-        `Studio mode: ${modeLabel}.`,
-        'Internal Studio loop: Detect -> Diagnose -> Plan -> Verify -> Learn.',
-        loopFocus,
-        'Respond as Workspai Studio inside VS Code.',
-        'Be concise, evidence-aware, and action-safe.',
-        'Do not claim that files were changed unless an explicit tool/command did it.',
-        'Return a clear next action, verification path, and any risk to check.',
-        'Use short markdown sections only when relevant, in this order: Detect, Diagnose, Plan, Verify, Learn, Evidence, Commands, Assumptions.',
-        'Each section should be brief: one short paragraph or up to three bullets.',
-        'If evidence is missing, say exactly what evidence is missing and which command can refresh it.',
-        'Put runnable shell commands in bash code fences or inline code so Studio can expose Run/Copy actions.',
-        '',
+      const studioPrompt = buildSidebarStudioPrompt({
         task,
-      ].join('\n');
+        handoff,
+        studioMode,
+      });
       const prepared = await prepareAIConversation('ask', studioPrompt, aiContext, history);
       let answer = '';
       let modelId = '';
@@ -1153,7 +1394,168 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     const action = typeof payloadRecord.action === 'string' ? payloadRecord.action : '';
     const sessionId =
       typeof payloadRecord.sessionId === 'string' ? payloadRecord.sessionId : undefined;
+    const handoff =
+      parseStudioBlockerHandoffPayload(payloadRecord.blockerHandoff) ?? this._activeBlockerHandoff;
     try {
+      if (action === 'retry-audit') {
+        await this._retryLastSidebarStudioAudit(sessionId);
+        return;
+      }
+      if (action === 'auto-fix') {
+        if (!handoff) {
+          throw new Error('No blocker handoff is active for auto-fix.');
+        }
+        if (!this._context) {
+          throw new Error('Studio auto-fix is not available until the extension context is ready.');
+        }
+        await this._runSidebarAutoFix(handoff, sessionId, payloadRecord.scope);
+        return;
+      }
+      if (action === 'apply-patch') {
+        if (!handoff) {
+          throw new Error('No blocker handoff is active for patch apply.');
+        }
+        const scope = resolveStudioActionScope(payloadRecord.scope);
+        const workspacePath =
+          handoff.workspacePath ??
+          scope.workspacePath ??
+          (await resolvePreferredAIModalContext()).workspaceRootPath;
+        if (!workspacePath) {
+          throw new Error('No workspace is selected for patch apply.');
+        }
+        const pendingPatches = this._pendingSidebarPatches.get(handoff.cardId);
+        if (!pendingPatches || pendingPatches.length === 0) {
+          throw new Error('No pending patches are available for review.');
+        }
+        const acceptedPaths = Array.isArray(payloadRecord.acceptedPaths)
+          ? payloadRecord.acceptedPaths.filter(
+              (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
+            )
+          : undefined;
+        this._postInlineCreate('sidebarStudioActionResult', {
+          sessionId,
+          action,
+          status: 'running',
+          phase: 'applying-patch',
+        });
+        const patchResult = await applySidebarPendingPatches({
+          workspacePath,
+          handoff,
+          patches: pendingPatches,
+          acceptedPaths,
+        });
+        this._pendingSidebarPatches.delete(handoff.cardId);
+        await this._finalizeSidebarPatchBridgeResult(
+          handoff,
+          sessionId,
+          patchResult,
+          'apply-patch'
+        );
+        return;
+      }
+      if (action === 'reject-patch') {
+        if (handoff) {
+          this._pendingSidebarPatches.delete(handoff.cardId);
+        }
+        this._postInlineCreate('sidebarStudioPatchReview', {
+          sessionId,
+          cleared: true,
+          patches: [],
+        });
+        this._postInlineCreate('sidebarStudioActionResult', {
+          sessionId,
+          action,
+          status: 'done',
+          summary: 'Patch review dismissed.',
+        });
+        return;
+      }
+      if (action === 'ship-loop-step') {
+        const stepId = payloadRecord.stepId;
+        if (!isSidebarShipLoopStepId(stepId)) {
+          throw new Error('Unknown ship-loop step.');
+        }
+        if (!this._context) {
+          throw new Error('Ship-loop steps require extension context.');
+        }
+        const scope = resolveStudioActionScope(payloadRecord.scope);
+        const workspacePath =
+          scope.workspacePath ?? (await resolvePreferredAIModalContext()).workspaceRootPath;
+        if (!workspacePath) {
+          throw new Error('No workspace is selected for ship-loop.');
+        }
+        this._postInlineCreate('sidebarStudioActionResult', {
+          sessionId,
+          action,
+          status: 'running',
+          phase: `ship-loop-${stepId}`,
+        });
+        const result = await dispatchSidebarShipLoopStep({
+          context: this._context,
+          stepId,
+          workspacePath,
+          projectPath: scope.projectPath,
+        });
+        await this._auditSidebarStudioFix({
+          workspacePath,
+          handoff: handoff ?? this._activeBlockerHandoff,
+          kind: 'ship-loop-step',
+          actionId: stepId,
+          summary: result.summary,
+          ok: result.success,
+        });
+        await this._refreshSidebarShipLoop({
+          workspacePath,
+          projectPath: scope.projectPath,
+        });
+        this._postInlineCreate('sidebarStudioActionResult', {
+          sessionId,
+          action,
+          status: result.success ? 'done' : 'failed',
+          summary: result.summary,
+          stepId,
+        });
+        return;
+      }
+      if (action === 'verify-handoff') {
+        if (!handoff?.verifyCommand) {
+          throw new Error('No verify command is attached to this blocker handoff.');
+        }
+        const scope = resolveStudioActionScope(payloadRecord.scope);
+        if (!scope.workspacePath) {
+          throw new Error('No workspace is selected for verify.');
+        }
+        const execution = await runIncidentInlineCommand({
+          command: handoff.verifyCommand,
+          workspacePath: scope.workspacePath,
+          actionId: 'verify-gates',
+        });
+        await this._finalizeStudioVerifyHandoff({
+          handoff,
+          workspacePath: scope.workspacePath,
+          projectPath: scope.projectPath,
+          sessionId,
+          verifySucceeded: execution.success,
+          verifyExitCode: execution.exitCode ?? (execution.success ? 0 : 1),
+          verifyError: execution.error,
+        });
+        if (execution.success) {
+          void recordRetentionMilestone(this._context, 'verify_pass_after_studio_fix', {
+            surface: 'studio',
+          });
+        }
+        this._postInlineCreate('sidebarStudioActionResult', {
+          sessionId,
+          action,
+          status: execution.success ? 'done' : 'failed',
+          commandText: handoff.verifyCommand,
+          exitCode: execution.exitCode,
+          stderrTail: execution.stderrTail,
+          topBlocker: execution.success ? undefined : (execution.error ?? handoff.blockers[0]),
+          error: execution.error,
+        });
+        return;
+      }
       if (action === 'verify') {
         const scope = resolveStudioActionScope(payloadRecord.scope);
         await vscode.commands.executeCommand('workspai.workspaceVerify', {
@@ -1193,6 +1595,13 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           cwd: executionPlan.cwd,
           commands: [buildCoreRapidkitShellCommand(executionPlan.executable, executionPlan.args)],
         });
+        if (this._context && handoff && commandText === handoff.sourceCommand) {
+          void recordStudioBlockerCommandRun(this._context, {
+            cardId: handoff.cardId,
+            sourceCommand: handoff.sourceCommand,
+            blockers: handoff.blockers,
+          });
+        }
         this._postInlineCreate('sidebarStudioActionResult', {
           sessionId,
           action,
@@ -1247,6 +1656,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       }
     } catch (error) {
       console.warn('[Workspai] Studio action failed', error);
+      void recordRetentionMilestone(this._context, 'command_failure', {
+        surface: 'studio',
+      });
       this._postInlineCreate('sidebarStudioActionResult', {
         sessionId,
         action,
@@ -1254,6 +1666,398 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private async _finalizeStudioVerifyHandoff(input: {
+    handoff: StudioBlockerHandoff;
+    workspacePath: string;
+    projectPath?: string;
+    sessionId?: string;
+    verifySucceeded: boolean;
+    verifyExitCode?: number | null;
+    verifyError?: string;
+  }): Promise<void> {
+    if (this._context) {
+      await recordStudioBlockerCommandRun(this._context, {
+        cardId: input.handoff.cardId,
+        sourceCommand: input.handoff.verifyCommand ?? input.handoff.sourceCommand,
+        blockers: input.handoff.blockers,
+        exitCode: input.verifyExitCode,
+      });
+    }
+
+    const refresh = await refreshDashboardAfterStudioVerify({
+      context: this._context,
+      workspacePath: input.workspacePath,
+      handoff: input.handoff,
+      projectPath: input.projectPath,
+      verifyExitCode: input.verifyExitCode,
+      refreshDashboardCards: (payload) => WelcomePanel.refreshDashboardEvidenceCards(payload),
+    });
+    if (input.verifySucceeded) {
+      void recordRetentionMilestone(this._context, 'return_to_dashboard_after_verify', {
+        surface: 'studio',
+      });
+    }
+
+    const nextHandoff: StudioBlockerHandoff = {
+      ...input.handoff,
+      cardStatus: refresh.primaryCard?.status ?? input.handoff.cardStatus,
+      blockers: refresh.primaryCard?.blockers ?? input.handoff.blockers,
+      blockerSignature: refresh.ledger?.nextSignature ?? input.handoff.blockerSignature,
+      commandRunCount:
+        refresh.ledger?.signatureChanged === true ? 0 : input.handoff.commandRunCount,
+      studioMode: refresh.primaryCard?.status === 'pass' ? 'VERIFY_ONLY' : input.handoff.studioMode,
+    };
+    this._activeBlockerHandoff = nextHandoff;
+
+    this._postInlineCreate('sidebarStudioCardRefreshed', {
+      handoff: nextHandoff,
+      cardId: input.handoff.cardId,
+      cardStatus: refresh.primaryCard?.status,
+      blockers: refresh.primaryCard?.blockers ?? [],
+      refreshedCardIds: refresh.cardIds,
+      verifySucceeded: input.verifySucceeded,
+    });
+
+    if (input.verifySucceeded || refresh.primaryCard) {
+      this._postInlineCreate('sidebarStudioFixApplied', {
+        cardId: input.handoff.cardId,
+        verifyCommand: input.handoff.verifyCommand,
+        verifyArtifact: input.handoff.verifyArtifact,
+        requiresVerify: refresh.primaryCard?.status !== 'pass',
+        phase: refresh.primaryCard?.status === 'pass' ? 'verified' : 'awaiting-verify',
+        blockerSignatureBefore: input.handoff.blockerSignature,
+        appliedFixes: [],
+        cardStatus: refresh.primaryCard?.status,
+      });
+    }
+
+    void this._auditSidebarStudioFix({
+      workspacePath: input.workspacePath,
+      handoff: input.handoff,
+      kind: 'verify-handoff',
+      actionId: input.handoff.verifyCommand ?? 'verify-handoff',
+      summary: input.verifySucceeded
+        ? 'Verify handoff completed.'
+        : (input.verifyError ?? 'Verify failed.'),
+      ok: input.verifySucceeded,
+    });
+
+    void this._refreshSidebarShipLoop({
+      workspacePath: input.workspacePath,
+      projectPath: input.projectPath,
+    });
+
+    const toast = formatStudioCardRefreshToast({
+      primaryCard: refresh.primaryCard,
+      verifySucceeded: input.verifySucceeded,
+    });
+    if (toast.kind === 'info') {
+      void vscode.window.showInformationMessage(toast.message);
+    } else if (toast.kind === 'warning') {
+      void vscode.window.showWarningMessage(toast.message);
+    } else {
+      void vscode.window.showErrorMessage(
+        input.verifyError ? `${toast.message} ${input.verifyError}` : toast.message
+      );
+    }
+  }
+
+  private async _finalizeSidebarPatchBridgeResult(
+    handoff: StudioBlockerHandoff,
+    sessionId: string | undefined,
+    result: SidebarPatchBridgeResult,
+    sourceAction: 'auto-fix' | 'apply-patch' = 'auto-fix'
+  ): Promise<void> {
+    if (result.status === 'review' && result.pendingPatches && result.pendingPatches.length > 0) {
+      this._pendingSidebarPatches.set(handoff.cardId, result.pendingPatches);
+      this._postInlineCreate('sidebarStudioPatchReview', {
+        sessionId,
+        summary: result.summary,
+        riskSummary: `Elevated-risk mutation: review ${result.pendingPatches.length} file patch(es) before apply.`,
+        patches: serializeSidebarPatchReviewItems(result.pendingPatches),
+      });
+      this._postInlineCreate('sidebarStudioActionResult', {
+        sessionId,
+        action: sourceAction,
+        status: 'review',
+        summary: result.summary,
+      });
+      return;
+    }
+
+    if (result.status === 'applied') {
+      if (this._context) {
+        await recordStudioBlockerCommandRun(this._context, {
+          cardId: handoff.cardId,
+          sourceCommand: handoff.sourceCommand,
+          blockers: handoff.blockers,
+          exitCode: 0,
+        });
+      }
+      this._pendingSidebarPatches.delete(handoff.cardId);
+      this._postInlineCreate('sidebarStudioPatchReview', {
+        sessionId,
+        cleared: true,
+        patches: [],
+      });
+      const appliedFixes = result.appliedFixes ?? [
+        { path: handoff.artifactPath, action: 'apply-debug-patch', outcome: 'applied' },
+      ];
+      const rollbackCommand = buildSidebarPatchRollbackHint(collectAppliedPatchPaths(appliedFixes));
+      const patchMetadata = buildSidebarPatchAuditMetadata({
+        sourceAction,
+        reviewRequired: sourceAction === 'apply-patch',
+        patchResult: result.patchResult,
+        appliedFixes,
+        rollbackCommand,
+      });
+      this._postInlineCreate('sidebarStudioFixApplied', {
+        cardId: handoff.cardId,
+        appliedFixes,
+        verifyCommand: handoff.verifyCommand,
+        verifyArtifact: handoff.verifyArtifact,
+        requiresVerify: true,
+        phase: 'awaiting-verify',
+        blockerSignatureBefore: handoff.blockerSignature,
+        summary: result.summary,
+        ...(rollbackCommand ? { rollbackCommand } : {}),
+      });
+      void this._auditSidebarStudioFix({
+        workspacePath: handoff.workspacePath ?? '',
+        handoff,
+        kind: sourceAction === 'apply-patch' ? 'apply-patch' : 'auto-fix',
+        actionId: 'apply-debug-patch',
+        summary: result.summary,
+        ok: true,
+        appliedFixes,
+        rollbackCommand: rollbackCommand ?? undefined,
+        patchMetadata,
+      });
+      this._postInlineCreate('sidebarStudioActionResult', {
+        sessionId,
+        action: sourceAction,
+        status: 'done',
+        summary: result.summary,
+      });
+      if (handoff.workspacePath) {
+        void this._refreshSidebarShipLoop({
+          workspacePath: handoff.workspacePath,
+          projectPath: handoff.projectPath,
+        });
+      }
+      return;
+    }
+
+    this._pendingSidebarPatches.delete(handoff.cardId);
+    this._postInlineCreate('sidebarStudioActionResult', {
+      sessionId,
+      action: sourceAction,
+      status: 'failed',
+      summary: result.summary,
+    });
+  }
+
+  private async _runSidebarAutoFix(
+    handoff: StudioBlockerHandoff,
+    sessionId?: string,
+    payloadScope?: unknown
+  ): Promise<void> {
+    const workspacePath =
+      handoff.workspacePath ??
+      (await resolvePreferredAIModalContext()).workspaceRootPath ??
+      undefined;
+    if (!workspacePath) {
+      throw new Error('No workspace is selected for Studio auto-fix.');
+    }
+    const workspaceName = path.basename(workspacePath);
+    const mode = handoff.studioMode ?? 'FIX';
+
+    this._postInlineCreate('sidebarStudioActionResult', {
+      sessionId,
+      action: 'auto-fix',
+      status: 'running',
+      phase: mode === 'RUN_ONCE' ? 'running-source-command' : 'fixing',
+    });
+
+    if (mode === 'RUN_ONCE') {
+      const execution = await runIncidentInlineCommand({
+        command: handoff.sourceCommand,
+        workspacePath,
+        actionId: 'run-analyze',
+      });
+      if (this._context) {
+        await recordStudioBlockerCommandRun(this._context, {
+          cardId: handoff.cardId,
+          sourceCommand: handoff.sourceCommand,
+          blockers: handoff.blockers,
+          exitCode: execution.success ? 0 : 1,
+        });
+      }
+      this._postInlineCreate('sidebarStudioFixApplied', {
+        cardId: handoff.cardId,
+        appliedFixes: [
+          {
+            path: handoff.artifactPath,
+            action: 'run-once',
+            outcome: execution.success ? 'pass' : 'fail',
+          },
+        ],
+        verifyCommand: handoff.verifyCommand,
+        verifyArtifact: handoff.verifyArtifact,
+        requiresVerify: true,
+        phase: 'awaiting-verify',
+        blockerSignatureBefore: handoff.blockerSignature,
+      });
+      this._postInlineCreate('sidebarStudioActionResult', {
+        sessionId,
+        action: 'auto-fix',
+        status: execution.success ? 'done' : 'failed',
+        summary: execution.success
+          ? 'Source command completed. Run verify to refresh the card.'
+          : (execution.error ?? 'Source command failed.'),
+      });
+      void this._auditSidebarStudioFix({
+        workspacePath,
+        handoff,
+        kind: 'auto-fix',
+        actionId: 'run-once',
+        summary: execution.success
+          ? 'Source command completed.'
+          : (execution.error ?? 'Source command failed.'),
+        ok: execution.success,
+        appliedFixes: [
+          {
+            path: handoff.artifactPath,
+            action: 'run-once',
+            outcome: execution.success ? 'pass' : 'fail',
+          },
+        ],
+      });
+      return;
+    }
+
+    const fixAction = pickStudioFixActionId(handoff);
+    if (fixAction === 'doctor-fix') {
+      const doctorInvocation = resolveStudioDoctorFixInvocation({ workspacePath, handoff });
+      const doctorRun = await runRapidkitStreaming<{ fixResult?: unknown }>({
+        command: doctorInvocation.command,
+        cwd: doctorInvocation.cwd,
+        featureLabel: 'Studio doctor-fix',
+        timeoutMs: 180_000,
+      });
+      const fixResult = extractDoctorFixResult(doctorRun.result);
+      const doctorOk =
+        !doctorRun.failed && fixResult != null && fixResult.remainingBlockers.length === 0;
+      if (this._context) {
+        await recordStudioBlockerCommandRun(this._context, {
+          cardId: handoff.cardId,
+          sourceCommand: handoff.sourceCommand,
+          blockers: handoff.blockers,
+          exitCode: doctorRun.exitCode,
+        });
+      }
+      this._postInlineCreate('sidebarStudioFixApplied', {
+        cardId: handoff.cardId,
+        appliedFixes: (fixResult?.appliedFixes ?? []).map((entry) => ({
+          path: entry.path,
+          action: entry.action,
+          outcome: entry.outcome,
+        })),
+        verifyCommand: fixResult?.verifyRecommended ?? handoff.verifyCommand,
+        verifyArtifact: handoff.verifyArtifact,
+        requiresVerify: true,
+        phase: 'awaiting-verify',
+        blockerSignatureBefore: handoff.blockerSignature,
+      });
+      this._postInlineCreate('sidebarStudioActionResult', {
+        sessionId,
+        action: 'auto-fix',
+        status: doctorOk ? 'done' : 'failed',
+        summary: doctorOk
+          ? 'Doctor fix completed. Run verify to refresh the card.'
+          : (fixResult?.remainingBlockers[0] ?? 'Doctor fix reported remaining blockers.'),
+      });
+      void this._auditSidebarStudioFix({
+        workspacePath,
+        handoff,
+        kind: 'auto-fix',
+        actionId: 'doctor-fix',
+        summary: doctorOk
+          ? 'Doctor fix completed from sidebar Studio.'
+          : (fixResult?.remainingBlockers.join('; ') ?? 'Doctor fix failed.'),
+        ok: doctorOk,
+        appliedFixes: (fixResult?.appliedFixes ?? []).map((entry) => ({
+          path: entry.path,
+          action: entry.action,
+          outcome: entry.outcome,
+        })),
+      });
+      return;
+    }
+
+    if (!this._context) {
+      throw new Error('Studio fix engine requires extension context.');
+    }
+
+    const scope = resolveStudioActionScope(payloadScope);
+    const projectPath = handoff.projectPath ?? scope.projectPath;
+
+    if (fixAction === 'fix-lens') {
+      const patchResult = await executeSidebarApplyDebugPatch({
+        context: this._context,
+        workspacePath,
+        handoff,
+        projectPath,
+      });
+      await this._finalizeSidebarPatchBridgeResult(handoff, sessionId, patchResult);
+      return;
+    }
+
+    const { actionResult } = await executeStudioActionById(
+      this._context,
+      { workspacePath, workspaceName },
+      fixAction as StudioActionId,
+      {
+        source: 'workspai-secondary-sidebar',
+        trigger: 'studio-auto-fix',
+        cardId: handoff.cardId,
+      }
+    );
+    if (this._context) {
+      await recordStudioBlockerCommandRun(this._context, {
+        cardId: handoff.cardId,
+        sourceCommand: handoff.sourceCommand,
+        blockers: handoff.blockers,
+        exitCode: 0,
+      });
+    }
+    this._postInlineCreate('sidebarStudioFixApplied', {
+      cardId: handoff.cardId,
+      appliedFixes: [{ path: handoff.artifactPath, action: fixAction, outcome: 'applied' }],
+      verifyCommand: handoff.verifyCommand,
+      verifyArtifact: handoff.verifyArtifact,
+      requiresVerify: true,
+      phase: 'awaiting-verify',
+      blockerSignatureBefore: handoff.blockerSignature,
+      summary: actionResult?.summary,
+    });
+    this._postInlineCreate('sidebarStudioActionResult', {
+      sessionId,
+      action: 'auto-fix',
+      status: 'done',
+      summary: actionResult?.summary ?? `Studio action ${fixAction} completed.`,
+    });
+    void this._auditSidebarStudioFix({
+      workspacePath,
+      handoff,
+      kind: 'auto-fix',
+      actionId: fixAction,
+      summary: actionResult?.summary ?? `Studio action ${fixAction} completed.`,
+      ok: true,
+      appliedFixes: [{ path: handoff.artifactPath, action: fixAction, outcome: 'applied' }],
+    });
   }
 
   private async _runSidebarAction(

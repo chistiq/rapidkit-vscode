@@ -29,6 +29,6 @@ export const DASHBOARD_STUDIO_HANDOFF_LINKS: ReadonlyArray<DashboardStudioHandof
   {
     section: 'overview',
     label: 'Home',
-    description: 'Health signals and next steps',
+    description: 'Workspace status summary, onboarding handoffs, and next action',
   },
 ];

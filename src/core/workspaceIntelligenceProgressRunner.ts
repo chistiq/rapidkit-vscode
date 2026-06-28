@@ -56,6 +56,7 @@ export async function runWorkspaceIntelligenceCommandWithProgress<T = unknown>(
       const result = await runRapidkitStreaming<T>({
         command: options.command,
         cwd: options.cwd,
+        featureLabel: options.featureLabel,
         timeoutMs: options.timeoutMs,
         onProgress: (message) => {
           if (message.trim()) {
@@ -77,6 +78,56 @@ export interface IntelligenceSequenceStep {
   command: string[];
   /** Short label shown in the progress notification, e.g. `Model`. */
   label: string;
+}
+
+/**
+ * Intelligence-chain steps such as verify/explain exit non-zero when the
+ * workspace needs attention, even though they wrote a structured artifact.
+ * Treat those as verdicts, not crashes, so downstream chain steps still run.
+ */
+export function isIntelligenceChainVerdictExit(
+  step: IntelligenceSequenceStep,
+  result: StreamingRunResult
+): boolean {
+  if (!result.failed) {
+    return false;
+  }
+  if (!['Verify', 'Explain', 'Why'].includes(step.label)) {
+    return false;
+  }
+  const payload = result.result as Record<string, unknown> | null | undefined;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return false;
+  }
+  const outputPath = payload.outputPath;
+  if (typeof outputPath === 'string' && outputPath.trim().length > 0) {
+    return true;
+  }
+  if (step.label === 'Verify' && payload.summary != null && payload.gate != null) {
+    return true;
+  }
+  return false;
+}
+
+function intelligenceChainVerdictDetail(
+  step: IntelligenceSequenceStep,
+  result: StreamingRunResult
+): string | undefined {
+  const payload = result.result as Record<string, unknown> | null | undefined;
+  if (!payload || typeof payload !== 'object') {
+    return undefined;
+  }
+  if (step.label === 'Verify') {
+    const summary = payload.summary as Record<string, unknown> | undefined;
+    const verdict = typeof summary?.verdict === 'string' ? summary.verdict : undefined;
+    if (verdict) {
+      return `verify reported ${verdict.replace(/-/g, ' ')} (exit ${result.exitCode}) — continuing chain`;
+    }
+  }
+  if (typeof payload.summary === 'string' && payload.summary.trim()) {
+    return `${step.label} completed with attention (exit ${result.exitCode}) — continuing chain`;
+  }
+  return `${step.label} wrote evidence (exit ${result.exitCode}) — continuing chain`;
 }
 
 export interface RunIntelligenceSequenceOptions {
@@ -115,6 +166,7 @@ export async function runWorkspaceIntelligenceSequenceWithProgress(
         const result = await runRapidkitStreaming({
           command: step.command,
           cwd: options.cwd,
+          featureLabel: step.label,
           timeoutMs: options.timeoutMs,
           onProgress: (message) => {
             if (message.trim()) {
@@ -127,13 +179,20 @@ export async function runWorkspaceIntelligenceSequenceWithProgress(
         });
         results.push(result);
 
-        if (result.failed) {
+        if (result.failed && !isIntelligenceChainVerdictExit(step, result)) {
           const detail =
             result.lastLifecycleEvent?.message?.trim() ||
             result.stderr.trim().split('\n').filter(Boolean).pop() ||
             `exited with code ${result.exitCode}`;
           void vscode.window.showErrorMessage(`${step.label} failed: ${detail}`);
           break;
+        }
+
+        if (result.failed && isIntelligenceChainVerdictExit(step, result)) {
+          const detail = intelligenceChainVerdictDetail(step, result);
+          if (detail) {
+            void vscode.window.showWarningMessage(detail);
+          }
         }
       }
 

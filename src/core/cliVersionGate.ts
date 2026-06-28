@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 import { run } from '../utils/exec';
-import { buildNpxRapidkitArgs } from '../utils/platformCapabilities';
+import { buildRapidkitExecutionSpec } from '../utils/platformCapabilities';
 import { runShellCommandInTerminal } from '../utils/terminalExecutor';
 import { parseTrailingJson } from './canonicalProjectLifecycle';
 import { fetchRuntimeCommandSurface } from './runtimeCommandSurface';
@@ -26,8 +26,10 @@ export async function resolveLinkedCliVersion(cwd?: string): Promise<string | nu
   }
 
   try {
-    const result = await run('npx', buildNpxRapidkitArgs(['--version', '--json']), {
+    const execution = buildRapidkitExecutionSpec(['--version', '--json']);
+    const result = await run(execution.command, execution.args, {
       cwd,
+      shell: execution.shell,
       timeout: 15_000,
     });
     if (result.exitCode === 0) {
@@ -74,10 +76,11 @@ export function resetCliVersionGateSession(): void {
 }
 
 /**
- * Runtime CLI version gate (roadmap item 2.3): detect the linked CLI version,
- * compare against {@link import('./cliVersionPolicy').MIN_RAPIDKIT_CLI_VERSION},
- * and surface a mismatch banner with an "Update CLI" action. Non-blocking — it
- * informs and offers a fix; it does not hard-stop the user.
+ * Runtime CLI version notice: detect the linked CLI version, compare against
+ * {@link import('./cliVersionPolicy').MIN_RAPIDKIT_CLI_VERSION}, and surface a
+ * mismatch banner with an "Update CLI" action. This is intentionally usable for
+ * activation/read-only contexts. Enterprise workflows must use
+ * {@link gateCompatibleCliVersion} so incompatible CLIs fail closed.
  */
 export async function presentCliVersionGate(options?: {
   cwd?: string;
@@ -96,7 +99,11 @@ export async function presentCliVersionGate(options?: {
   warnedThisSession = true;
 
   const message = formatCliVersionMismatchMessage(assessment);
-  const choice = await vscode.window.showWarningMessage(message, 'Update CLI', 'Open Setup');
+  const choice = await vscode.window.showWarningMessage(
+    message,
+    'Update CLI',
+    'Open Setup Recovery'
+  );
 
   if (choice === 'Update CLI') {
     runShellCommandInTerminal({
@@ -105,9 +112,36 @@ export async function presentCliVersionGate(options?: {
       command: 'npm',
       args: ['install', '-g', 'rapidkit@latest'],
     });
-  } else if (choice === 'Open Setup') {
+  } else if (choice === 'Open Setup Recovery') {
     await vscode.commands.executeCommand('workspai.openSetup');
   }
 
   return assessment;
+}
+
+export async function gateCompatibleCliVersion(options: {
+  cwd?: string;
+  featureLabel: string;
+}): Promise<boolean> {
+  const version = await resolveLinkedCliVersion(options.cwd);
+  const assessment = assessCliVersion(version);
+  if (assessment.status === 'compatible') {
+    return true;
+  }
+
+  const message = `${options.featureLabel} is blocked because ${formatCliVersionMismatchMessage(assessment)}`;
+  const choice = await vscode.window.showErrorMessage(message, 'Update CLI', 'Open Setup Recovery');
+
+  if (choice === 'Update CLI') {
+    runShellCommandInTerminal({
+      name: 'Workspai: Update RapidKit CLI',
+      cwd: options.cwd,
+      command: 'npm',
+      args: ['install', '-g', 'rapidkit@latest'],
+    });
+  } else if (choice === 'Open Setup Recovery') {
+    await vscode.commands.executeCommand('workspai.openSetup');
+  }
+
+  return false;
 }

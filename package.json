@@ -404,6 +404,36 @@
         "icon": "$(verified)"
       },
       {
+        "command": "workspai.workspaceExplain",
+        "title": "Workspace Explain",
+        "category": "Workspai",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "workspai.workspaceWhy",
+        "title": "Workspace Why",
+        "category": "Workspai",
+        "icon": "$(question)"
+      },
+      {
+        "command": "workspai.workspaceTrace",
+        "title": "Workspace Trace",
+        "category": "Workspai",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "workspai.workspaceWatch",
+        "title": "Workspace Watch",
+        "category": "Workspai",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "workspai.workspaceMcp",
+        "title": "Workspace MCP Serve",
+        "category": "Workspai",
+        "icon": "$(server-process)"
+      },
+      {
         "command": "workspai.workspaceImpactLens",
         "title": "Workspace Advisor",
         "category": "Workspai",
@@ -842,6 +872,12 @@
         "icon": "$(wrench)"
       },
       {
+        "command": "workspai.mirrorOps",
+        "title": "Mirror: Operations",
+        "category": "Workspai",
+        "icon": "$(sync)"
+      },
+      {
         "command": "workspai.mirrorStatus",
         "title": "Mirror: Status",
         "category": "Workspai",
@@ -1239,7 +1275,7 @@
       },
       {
         "id": "workspai.workspace.governance",
-        "label": "Policy & Sharing"
+        "label": "Governance & Gates"
       },
       {
         "id": "workspai.workspace.cache",
@@ -1531,6 +1567,10 @@
           "when": "false"
         },
         {
+          "command": "workspai.mirrorOps",
+          "when": "false"
+        },
+        {
           "command": "workspai.mirrorRotate",
           "when": "false"
         },
@@ -1791,6 +1831,10 @@
           "when": "false"
         },
         {
+          "command": "workspai.workspaceExplain",
+          "when": "false"
+        },
+        {
           "command": "workspai.workspaceFoundationEnsure",
           "when": "false"
         },
@@ -1812,6 +1856,10 @@
         },
         {
           "command": "workspai.workspaceIntelligenceSnapshot",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceMcp",
           "when": "false"
         },
         {
@@ -1887,7 +1935,19 @@
           "when": "false"
         },
         {
+          "command": "workspai.workspaceTrace",
+          "when": "false"
+        },
+        {
           "command": "workspai.workspaceVerify",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceWatch",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceWhy",
           "when": "false"
         }
       ],
@@ -2261,6 +2321,14 @@
       ],
       "workspai.workspace.run": [
         {
+          "command": "workspai.importProject",
+          "group": "ops@0"
+        },
+        {
+          "command": "workspai.adoptProject",
+          "group": "ops@0.5"
+        },
+        {
           "command": "workspai.workspaceBootstrap",
           "group": "ops@1"
         },
@@ -2299,26 +2367,6 @@
         {
           "command": "workspai.workspaceRunStart",
           "group": "run@5"
-        },
-        {
-          "command": "workspai.workspaceAnalyze",
-          "group": "release@1"
-        },
-        {
-          "command": "workspai.workspacePipeline",
-          "group": "release@0"
-        },
-        {
-          "command": "workspai.workspaceReadiness",
-          "group": "release@2"
-        },
-        {
-          "command": "workspai.workspaceAutopilotRelease",
-          "group": "release@3"
-        },
-        {
-          "command": "workspai.exportVerifyPackContract",
-          "group": "release@4"
         }
       ],
       "workspai.workspace.recovery": [
@@ -2389,20 +2437,44 @@
           "group": "intelligence@6"
         },
         {
-          "command": "workspai.openWorkspaceAdvisor",
+          "command": "workspai.workspaceExplain",
           "group": "intelligence@7"
         },
         {
-          "command": "workspai.workspaceContextAgent",
+          "command": "workspai.workspaceWhy",
           "group": "intelligence@8"
         },
         {
-          "command": "workspai.workspaceAgentSync",
+          "command": "workspai.workspaceTrace",
           "group": "intelligence@9"
         },
         {
-          "command": "workspai.copyCopilotContextPrompt",
+          "command": "workspai.workspaceWatch",
           "group": "intelligence@10"
+        },
+        {
+          "command": "workspai.workspaceMcp",
+          "group": "intelligence@11"
+        },
+        {
+          "command": "workspai.openWorkspaceAdvisor",
+          "group": "intelligence@12"
+        },
+        {
+          "command": "workspai.workspaceImpactLens",
+          "group": "intelligence@13"
+        },
+        {
+          "command": "workspai.workspaceContextAgent",
+          "group": "intelligence@14"
+        },
+        {
+          "command": "workspai.workspaceAgentSync",
+          "group": "intelligence@15"
+        },
+        {
+          "command": "workspai.copyCopilotContextPrompt",
+          "group": "intelligence@16"
         }
       ],
       "workspai.workspace.contract": [
@@ -2433,12 +2505,24 @@
       ],
       "workspai.workspace.governance": [
         {
-          "command": "workspai.workspaceSync",
-          "group": "sync@1"
+          "command": "workspai.workspacePipeline",
+          "group": "gates@0"
         },
         {
-          "command": "workspai.workspacePipeline",
-          "group": "pipeline@1"
+          "command": "workspai.workspaceAnalyze",
+          "group": "gates@1"
+        },
+        {
+          "command": "workspai.workspaceReadiness",
+          "group": "gates@2"
+        },
+        {
+          "command": "workspai.workspaceAutopilotRelease",
+          "group": "gates@3"
+        },
+        {
+          "command": "workspai.exportVerifyPackContract",
+          "group": "gates@4"
         },
         {
           "command": "workspai.workspacePolicyShow",
@@ -2476,6 +2560,10 @@
         }
       ],
       "workspai.workspace.mirror": [
+        {
+          "command": "workspai.mirrorOps",
+          "group": "mirror@0"
+        },
         {
           "command": "workspai.mirrorStatus",
           "group": "mirror@1"
@@ -2846,11 +2934,12 @@
     "webview:build:production": "cd webview-ui && npm run build -- --production",
     "webview:watch": "cd webview-ui && npm run watch",
     "dev": "concurrently \"npm run esbuild-watch\" \"npm run webview:watch\"",
-    "pretest": "npm run compile && npm run lint",
+    "pretest": "npm run typecheck && npm run lint",
     "lint": "eslint src --ext ts",
     "lint:stabilization": "eslint src --ext ts --max-warnings 100",
     "lint:fix": "eslint src --ext ts --fix",
     "test": "vitest run",
+    "test:local-e2e": "WORKSPAI_RUN_CLI_E2E=1 vitest run src/test/workspaceIntelligenceLocalE2E.test.ts",
     "test:watch": "vitest",
     "sync:shared-contracts": "node scripts/sync-import-stack-parity-snapshot.mjs",
     "check:shared-contracts": "node scripts/sync-import-stack-parity-snapshot.mjs --check",
@@ -2870,8 +2959,13 @@
     "release:stop-gate": "node scripts/release-stop-gate.mjs",
     "release:open-issues-report": "node scripts/export-open-issues-report.mjs",
     "sync:modules": "node scripts/sync-modules.mjs",
+    "prepackage": "npm run build",
     "package": "vsce package",
-    "publish": "vsce publish",
+    "package:ci": "npm run build && vsce package --out rapidkit-vscode-${npm_package_version}.vsix",
+    "smoke:vsix-artifact": "node scripts/inspect-vsix-artifact.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix",
+    "publish:guard": "node scripts/guard-vsix-publish.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix",
+    "publish:ci": "npm run publish:guard && vsce publish --packagePath rapidkit-vscode-${npm_package_version}.vsix",
+    "publish": "npm run publish:ci",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",

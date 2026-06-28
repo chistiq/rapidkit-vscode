@@ -11,8 +11,10 @@ node_modules/
 # TypeScript
 *.tsbuildinfo
 
-# VS Code
+# Test artifacts
 .vscode-test/
+test-results/
+
 .vscode/settings.json
 
 # Logs

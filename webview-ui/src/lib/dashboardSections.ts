@@ -17,8 +17,8 @@ export const DASHBOARD_SECTIONS: ReadonlyArray<DashboardSectionDefinition> = [
   {
     id: 'overview',
     label: 'Home',
-    scope: 'status',
-    description: 'Health signals, next steps, and quick navigation',
+    scope: 'home',
+    description: 'Workspace status, create/import handoffs, and next action summary',
   },
   {
     id: 'operate',
@@ -82,7 +82,7 @@ const SECTION_BY_ID = Object.fromEntries(
 ) as Record<DashboardSection, DashboardSectionDefinition>;
 
 export function dashboardSectionLabel(section: DashboardSection): string {
-  return SECTION_BY_ID[section]?.label ?? 'Home';
+  return SECTION_BY_ID[section]?.label ?? 'Status';
 }
 
 export function dashboardSectionScope(section: DashboardSection): string | undefined {
@@ -92,7 +92,7 @@ export function dashboardSectionScope(section: DashboardSection): string | undef
 export function dashboardSectionAriaLabel(section: DashboardSection): string {
   const definition = SECTION_BY_ID[section];
   if (!definition) {
-    return 'Home';
+    return 'Status';
   }
   return `${definition.label}, ${definition.scope}`;
 }

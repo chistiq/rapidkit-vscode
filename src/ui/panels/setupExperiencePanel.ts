@@ -11,10 +11,12 @@ import * as path from 'path';
 import { runCommandsInTerminal } from '../../utils/terminalExecutor';
 import { run } from '../../utils/exec';
 import {
+  buildPackageRunnerSubprocessEnv,
   buildNpmCliVersionVerifyCommands,
   buildNpxRapidkitVersionProbeArgs,
   buildRapidkitDisplayCommand,
   parseNpmCliVersionOutput,
+  resolvePackageRunnerInvocation,
 } from '../../utils/platformCapabilities';
 
 const SETUP_PREFERENCES_KEY = 'workspai.setup.preferences';
@@ -1246,11 +1248,17 @@ export class SetupPanel {
     }
 
     try {
-      const listResult = await execa('npm', ['list', '-g', 'rapidkit', '--depth=0'], {
-        shell: status.isWindows,
-        timeout: 3000,
-        reject: false,
-      });
+      const npmInvocation = resolvePackageRunnerInvocation('npm');
+      const listResult = await execa(
+        npmInvocation.command,
+        [...npmInvocation.prefixArgs, 'list', '-g', 'rapidkit', '--depth=0'],
+        {
+          shell: status.isWindows,
+          timeout: 3000,
+          reject: false,
+          env: buildPackageRunnerSubprocessEnv(),
+        }
+      );
 
       if (listResult.exitCode === 0 && listResult.stdout.includes('rapidkit@')) {
         const match = listResult.stdout.match(/rapidkit@([\d.]+)/);
@@ -1270,11 +1278,17 @@ export class SetupPanel {
     // Check if rapidkit is available via npx (even if not globally installed)
     if (!status.npmInstalled) {
       try {
-        const npxResult = await execa('npx', buildNpxRapidkitVersionProbeArgs(), {
-          shell: status.isWindows,
-          timeout: 5000,
-          reject: false,
-        });
+        const npxInvocation = resolvePackageRunnerInvocation('npx');
+        const npxResult = await execa(
+          npxInvocation.command,
+          [...npxInvocation.prefixArgs, ...buildNpxRapidkitVersionProbeArgs()],
+          {
+            shell: status.isWindows,
+            timeout: 5000,
+            reject: false,
+            env: buildPackageRunnerSubprocessEnv(),
+          }
+        );
 
         if (npxResult.exitCode === 0 && npxResult.stdout) {
           const parsedVersion = parseNpmCliVersionOutput(npxResult.stdout);

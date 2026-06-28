@@ -82,8 +82,10 @@ export function buildDoctorIssueHandoffPayload(input: {
 }
 
 function structuredDoctorContext(payload: DoctorIssueHandoffPayload): Record<string, unknown> {
+  const source =
+    payload.kind === 'policy-violation' ? 'workspace-governance-policy' : 'workspace-health';
   return {
-    source: 'workspace-health',
+    source,
     issue: payload.issue,
     kind: payload.kind,
     probe: payload.probe,
@@ -98,12 +100,40 @@ function structuredDoctorContext(payload: DoctorIssueHandoffPayload): Record<str
   };
 }
 
+function issueSourceLabel(payload: DoctorIssueHandoffPayload): string {
+  if (payload.kind === 'policy-violation') {
+    return 'Workspai Governance Policy';
+  }
+  return 'Workspai Doctor (Workspace Health)';
+}
+
+function issueHeading(payload: DoctorIssueHandoffPayload): string {
+  if (payload.kind === 'policy-violation') {
+    return 'Governance policy issue';
+  }
+  return 'Doctor issue';
+}
+
+function issueTaskIntro(payload: DoctorIssueHandoffPayload): string {
+  if (payload.kind === 'policy-violation') {
+    return 'You are Workspai Incident Studio. Diagnose and fix this workspace governance evidence issue with the smallest safe change set.';
+  }
+  return 'You are Workspai Incident Studio. Diagnose and fix this Workspace Health issue with the smallest safe change set.';
+}
+
+function issueEvidenceName(payload: DoctorIssueHandoffPayload): string {
+  if (payload.kind === 'policy-violation') {
+    return 'workspace verify/model evidence';
+  }
+  return 'doctor evidence';
+}
+
 export function buildDoctorIssueAdvisorQuestion(payload: DoctorIssueHandoffPayload): string {
   const framework = payload.project?.framework ?? 'unknown';
   const projectName = payload.project?.name ?? 'workspace';
   const lines = [
     `Project: ${projectName} (${framework})`,
-    `Issue detected by Workspai Doctor (Workspace Health):`,
+    `Issue detected by ${issueSourceLabel(payload)}:`,
     payload.issue,
   ];
 
@@ -126,9 +156,9 @@ export function buildDoctorIssueStudioPrompt(payload: DoctorIssueHandoffPayload)
   const framework = payload.project?.framework ?? 'unknown';
   const projectName = payload.project?.name;
   const lines = [
-    'You are Workspai Incident Studio. Diagnose and fix this Workspace Health issue with the smallest safe change set.',
+    issueTaskIntro(payload),
     '',
-    '## Doctor issue',
+    `## ${issueHeading(payload)}`,
     `- Issue: ${payload.issue}`,
     `- Kind: ${payload.kind}`,
     `- Workspace: ${payload.workspaceName || payload.workspacePath} (${payload.workspacePath})`,
@@ -161,9 +191,9 @@ export function buildDoctorIssueStudioPrompt(payload: DoctorIssueHandoffPayload)
   lines.push(
     '',
     '## Your task',
-    '1. Identify the root cause using workspace intelligence and this doctor evidence.',
+    `1. Identify the root cause using workspace intelligence and this ${issueEvidenceName(payload)}.`,
     '2. Propose the safest fix path (commands + file edits) without re-scanning the entire repository.',
-    '3. Call out missing prerequisites if doctor evidence is stale.',
+    `3. Call out missing prerequisites if ${issueEvidenceName(payload)} is stale.`,
     '4. Return one recommended next action the operator can run immediately.',
     '',
     '## Structured context',
@@ -179,8 +209,12 @@ export function buildDoctorIssueCopilotQuestion(payload: DoctorIssueHandoffPaylo
   const target = payload.project?.name
     ? `project "${payload.project.name}"`
     : `workspace "${payload.workspaceName || payload.workspacePath}"`;
+  const issueName =
+    payload.kind === 'policy-violation'
+      ? 'Workspai governance policy issue'
+      : 'Workspai Doctor issue';
   return [
-    `Fix this Workspai Doctor issue for ${target}.`,
+    `Fix this ${issueName} for ${target}.`,
     `Work ONLY inside the Workspai workspace at \`${payload.workspacePath.replace(/\\/g, '/')}\`.`,
     payload.project?.path
       ? `Target project path: \`${payload.project.path.replace(/\\/g, '/')}\`.`
@@ -189,7 +223,7 @@ export function buildDoctorIssueCopilotQuestion(payload: DoctorIssueHandoffPaylo
     payload.probe?.recommendation?.trim()
       ? `Recommendation: ${payload.probe.recommendation.trim()}`
       : undefined,
-    'Use the attached workspace intelligence pack and doctor evidence artifacts.',
+    `Use the attached workspace intelligence pack and ${issueEvidenceName(payload)} artifacts.`,
     'Do not re-explore sibling repos — start from this doctor issue and suggested fix commands.',
   ]
     .filter((line): line is string => Boolean(line))

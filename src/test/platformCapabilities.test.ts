@@ -1,16 +1,19 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import {
+  buildPackageRunnerSubprocessEnv,
   buildNpmCliVersionVerifyCommands,
   buildNpxRapidkitArgs,
   buildNpxRapidkitPrefix,
   buildNpxRapidkitVersionProbeArgs,
   buildRapidkitDisplayCommand,
   buildRapidkitCommand,
+  buildRapidkitExecutionSpec,
   buildShellCommand,
   detectPlatformKind,
   parseNpmCliVersionOutput,
   quoteShellArg,
   resetResolvedRapidkitNpmPackageSpecifier,
+  resolvePackageRunnerInvocation,
   setResolvedRapidkitNpmPackageSpecifier,
   toDisplayRapidkitCommand,
   toPinnedRapidkitExecutionCommand,
@@ -132,6 +135,66 @@ describe('platformCapabilities', () => {
       'doctor',
       'workspace',
     ]);
+  });
+
+  it('builds the canonical rapidkit execution spec with platform shell mode', () => {
+    const linuxInvocation = resolvePackageRunnerInvocation('npx', 'linux');
+    expect(buildRapidkitExecutionSpec(['workspace', 'verify', 'my folder'], 'linux')).toEqual({
+      command: linuxInvocation.command,
+      args: [
+        ...linuxInvocation.prefixArgs,
+        '--yes',
+        'rapidkit',
+        'workspace',
+        'verify',
+        'my folder',
+      ],
+      displayCommand: "npx rapidkit workspace verify 'my folder'",
+      shell: false,
+    });
+
+    const windowsInvocation = resolvePackageRunnerInvocation('npx', 'win32');
+    expect(buildRapidkitExecutionSpec(['workspace', 'verify', 'my folder'], 'win32')).toEqual({
+      command: windowsInvocation.command,
+      args: [
+        ...windowsInvocation.prefixArgs,
+        '--yes',
+        'rapidkit',
+        'workspace',
+        'verify',
+        'my folder',
+      ],
+      displayCommand: 'npx rapidkit workspace verify "my folder"',
+      shell: true,
+    });
+  });
+
+  it('resolves package runners as command-safe invocations for extension host subprocesses', () => {
+    const invocation = resolvePackageRunnerInvocation('npm');
+
+    expect(invocation.command).toBeTruthy();
+    expect(invocation.command.includes(' ')).toBe(false);
+    if (invocation.command === process.execPath) {
+      expect(invocation.prefixArgs[0]).toMatch(/npm-cli\.js$/);
+    } else if (invocation.command === 'corepack') {
+      expect(invocation.prefixArgs).toEqual(['npm']);
+    } else {
+      expect(invocation.prefixArgs).toEqual([]);
+    }
+  });
+
+  it('builds package-runner env without inherited npx package pins', () => {
+    const env = buildPackageRunnerSubprocessEnv({
+      PATH: '/usr/bin',
+      npm_config_package: 'file:/tmp/rapidkit-npm',
+      npm_config__package: 'file:/tmp/rapidkit-npm',
+      HOME: '/home/dev',
+    });
+
+    expect(env.npm_config_package).toBeUndefined();
+    expect(env.npm_config__package).toBeUndefined();
+    expect(env.COREPACK_HOME).toBeTruthy();
+    expect(env.HOME).toBe('/home/dev');
   });
 
   it('keeps scenario command matrix stable across linux/macos/windows', () => {

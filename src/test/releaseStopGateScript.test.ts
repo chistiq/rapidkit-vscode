@@ -218,6 +218,7 @@ describe('extension package build contract', () => {
     const scripts = packageJson.scripts ?? {};
 
     expect(scripts['vscode:prepublish']).toBe('npm run build');
+    expect(scripts.prepackage).toBe('npm run build');
     expect(scripts.build).toContain('npm run esbuild-base -- --production');
     expect(scripts.build).toContain('npm run webview:build:production');
     expect(scripts['webview:build:production']).toContain('npm run build -- --production');

@@ -491,8 +491,16 @@ export function registerWorkspaceSelectionCommands(options: {
     }),
 
     vscode.commands.registerCommand('workspai.workspaceArchive', async () => {
-      const selected = await vscode.window.showQuickPick(
+      const workspaceExplorer = getWorkspaceExplorer();
+      const activeWorkspace = workspaceExplorer?.getSelectedWorkspace?.();
+
+      const choice = await vscode.window.showQuickPick(
         [
+          {
+            label: '$(export) Export workspace archive',
+            description: 'Create .rapidkit-archive.zip and refresh ship-handoff manifest',
+            value: 'export' as const,
+          },
           {
             label: '$(search) Inspect archive',
             description: 'Show manifest, producer, security posture, and file list',
@@ -516,9 +524,20 @@ export function registerWorkspaceSelectionCommands(options: {
         }
       );
 
-      if (selected) {
-        await runArchiveAction(selected.value);
+      if (!choice) {
+        return;
       }
+
+      if (choice.value === 'export') {
+        if (!activeWorkspace?.path) {
+          vscode.window.showErrorMessage('Select a workspace before exporting.');
+          return;
+        }
+        await workspaceExplorer?.exportWorkspace(activeWorkspace);
+        return;
+      }
+
+      await runArchiveAction(choice.value);
     }),
 
     vscode.commands.registerCommand('workspai.workspaceArchiveInspect', async () => {

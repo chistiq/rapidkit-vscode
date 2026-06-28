@@ -100,6 +100,12 @@ import {
   countOperateAttention,
   filterOpsChainForActiveWorkspace,
 } from '@/lib/dashboardEvidence';
+import {
+  applyDashboardCommandFailures,
+  successfulEvidenceCardIds,
+  type DashboardCommandFailure,
+  type DashboardCommandFailureMap,
+} from '@/lib/dashboardCommandFailure';
 import { normalizeEvidenceViewMode, type EvidenceViewMode } from '@/lib/dashboardEvidenceViewMode';
 import { buildDashboardScopeDescriptor } from '@/lib/dashboardScope';
 import {
@@ -268,7 +274,11 @@ export function App() {
   const [dashboardCommandNotice, setDashboardCommandNotice] = useState<{
     title: string;
     body: string;
+    stderrTail?: string;
+    exitCode?: number;
   } | null>(null);
+  const [dashboardCommandFailures, setDashboardCommandFailures] =
+    useState<DashboardCommandFailureMap>({});
   const lastDashboardNavigationRef = useRef<{
     section: DashboardSection;
     operateZone?: DashboardOperateZone;
@@ -282,6 +292,10 @@ export function App() {
   requestedOperateZoneRef.current = requestedOperateZone;
   const [dashboardEvidence, setDashboardEvidence] = useState<DashboardEvidencePayload | null>(null);
   const dashboardEvidenceRef = useRef<DashboardEvidencePayload | null>(dashboardEvidence);
+  const effectiveDashboardEvidence = useMemo(
+    () => applyDashboardCommandFailures(dashboardEvidence, dashboardCommandFailures),
+    [dashboardEvidence, dashboardCommandFailures]
+  );
   const [importedWorkspaceShare, setImportedWorkspaceShare] =
     useState<ImportedWorkspaceShareSummary | null>(null);
   const [selectedWorkspaceForAnalysis, setSelectedWorkspaceForAnalysis] = useState<string | null>(
@@ -391,12 +405,28 @@ export function App() {
         path: selectedProjectForAnalysis?.path,
         name: selectedProjectForAnalysis?.name,
       },
-      evidence: dashboardEvidence,
+      evidence: effectiveDashboardEvidence,
     });
     vscode.postMessage('askStudioAboutEvidence', {
       ...actionContract.studioPayload,
-      source: 'dashboard',
-      trigger: 'dashboard-evidence-studio-handoff',
+      source:
+        dashboardSection === 'repair'
+          ? 'repair'
+          : dashboardSection === 'evidence'
+            ? 'artifacts'
+            : 'dashboard',
+      handoffSource:
+        dashboardSection === 'repair'
+          ? 'repair'
+          : dashboardSection === 'evidence'
+            ? 'artifacts'
+            : 'dashboard',
+      trigger:
+        dashboardSection === 'repair'
+          ? 'repair-flow-studio-handoff'
+          : dashboardSection === 'evidence'
+            ? 'artifacts-inbox-studio-handoff'
+            : 'dashboard-evidence-studio-handoff',
     });
   };
 
@@ -405,8 +435,8 @@ export function App() {
     options?: { studioMode?: 'investigate' | 'verify' | 'prepare' }
   ) => {
     const card =
-      dashboardEvidence?.cards.find((entry) => entry.incidentStudioTarget === target) ??
-      dashboardEvidence?.cards.find((entry) => entry.id === target);
+      effectiveDashboardEvidence?.cards.find((entry) => entry.incidentStudioTarget === target) ??
+      effectiveDashboardEvidence?.cards.find((entry) => entry.id === target);
     if (card) {
       openStudioForEvidence(card);
       return;
@@ -427,8 +457,8 @@ export function App() {
     workspaceStatus.workspacePath || selectedWorkspaceForAnalysis || null;
   const visibleOpsChain = useMemo(
     () =>
-      filterOpsChainForActiveWorkspace(dashboardEvidence?.opsChain, activeDashboardWorkspacePath),
-    [dashboardEvidence?.opsChain, activeDashboardWorkspacePath]
+      filterOpsChainForActiveWorkspace(effectiveDashboardEvidence?.opsChain, activeDashboardWorkspacePath),
+    [effectiveDashboardEvidence?.opsChain, activeDashboardWorkspacePath]
   );
   const workspaceCommandPayload = () => ({
     path: workspaceStatus.workspacePath,
@@ -528,6 +558,7 @@ export function App() {
       setPendingEvidenceCardIds([]);
       setPendingEvidenceRefreshCardIds([]);
       setIsEvidenceFullRefreshPending(false);
+      setDashboardCommandFailures({});
       const nextRequestId = nextEvidenceRequestId(dashboardEvidenceRequestIdRef.current);
       dashboardEvidenceRequestIdRef.current = nextRequestId;
       lastAppliedEvidenceRequestIdRef.current = 0;
@@ -535,13 +566,34 @@ export function App() {
     },
     [clearDashboardEvidenceRefreshTimers]
   );
+  const clearDashboardCommandFailuresForCards = useCallback((cardIds: DashboardEvidenceCardId[]) => {
+    if (cardIds.length === 0) {
+      return;
+    }
+    const cardIdSet = new Set(cardIds);
+    setDashboardCommandFailures((current) => {
+      let changed = false;
+      const next: DashboardCommandFailureMap = {};
+      for (const [cardId, failure] of Object.entries(current) as Array<
+        [DashboardEvidenceCardId, DashboardCommandFailure]
+      >) {
+        if (cardIdSet.has(cardId)) {
+          changed = true;
+          continue;
+        }
+        next[cardId] = failure;
+      }
+      return changed ? next : current;
+    });
+  }, []);
   const reconcilePendingEvidenceCards = useCallback((payload?: DashboardEvidencePayload | null) => {
     setPendingEvidenceCardIds((current) => reconcilePendingEvidenceCardIds(current, payload));
     setPendingEvidenceRefreshCardIds((current) => reconcilePendingEvidenceCardIds(current, payload));
+    clearDashboardCommandFailuresForCards(successfulEvidenceCardIds(payload));
     if (payload?.refreshMode === 'full') {
       setIsEvidenceFullRefreshPending(false);
     }
-  }, []);
+  }, [clearDashboardCommandFailuresForCards]);
   const scheduleDashboardEvidenceFullRefresh = useCallback(
     (context?: Record<string, unknown>) => {
       dashboardEvidenceRefreshSchedulerRef.current.scheduleFull(() =>
@@ -568,7 +620,7 @@ export function App() {
         path: selectedProjectForAnalysis?.path,
         name: selectedProjectForAnalysis?.name,
       },
-      evidence: dashboardEvidence,
+      evidence: effectiveDashboardEvidence,
     });
 
   const askStudioAboutEvidenceCard = useCallback(
@@ -578,16 +630,28 @@ export function App() {
         return;
       }
       const actionContract = buildEvidenceActionContract(card);
+      const handoffSource =
+        dashboardSection === 'repair'
+          ? 'repair'
+          : dashboardSection === 'evidence'
+            ? 'artifacts'
+            : 'dashboard';
       vscode.postMessage('askStudioAboutEvidence', {
         ...actionContract.studioPayload,
-        source: 'dashboard',
-        trigger: 'dashboard-evidence-studio-handoff',
+        source: handoffSource,
+        handoffSource,
+        trigger:
+          handoffSource === 'repair'
+            ? 'repair-flow-studio-handoff'
+            : handoffSource === 'artifacts'
+              ? 'artifacts-inbox-studio-handoff'
+              : 'dashboard-evidence-studio-handoff',
       });
     },
     [
       activeWorkspaceName,
-      dashboardEvidence?.projectName,
-      dashboardEvidence?.projectPath,
+      effectiveDashboardEvidence?.projectName,
+      effectiveDashboardEvidence?.projectPath,
       dashboardSection,
       selectedProjectForAnalysis?.name,
       selectedProjectForAnalysis?.path,
@@ -605,8 +669,8 @@ export function App() {
     },
     [
       activeWorkspaceName,
-      dashboardEvidence?.projectName,
-      dashboardEvidence?.projectPath,
+      effectiveDashboardEvidence?.projectName,
+      effectiveDashboardEvidence?.projectPath,
       selectedProjectForAnalysis?.name,
       selectedProjectForAnalysis?.path,
       workspaceStatus.workspacePath,
@@ -661,6 +725,7 @@ export function App() {
       dashboardEvidence?.cards.map((card) => card.id) ?? []
     );
     const shouldRefreshEvidence = shouldRefreshDashboardEvidenceAfterCommand(command);
+    clearDashboardCommandFailuresForCards(affectedCards);
     if (pendingCards.length > 0) {
       setPendingEvidenceCardIds((current) => [...new Set([...current, ...pendingCards])]);
     }
@@ -677,20 +742,20 @@ export function App() {
   };
   const handleDashboardCommand = dispatchDashboardCommand;
   const isFreshInstall =
-    dashboardEvidence?.onboarding?.isFreshInstall ??
+    effectiveDashboardEvidence?.onboarding?.isFreshInstall ??
     (recentWorkspaces.length === 0 && !hasActiveWorkspace);
   const evidenceAttentionCount = useMemo(
-    () => countEvidenceAttention(dashboardEvidence),
-    [dashboardEvidence]
+    () => countEvidenceAttention(effectiveDashboardEvidence),
+    [effectiveDashboardEvidence]
   );
   const operateAttentionCount = useMemo(
     () =>
       countOperateAttention({
-        evidence: dashboardEvidence,
+        evidence: effectiveDashboardEvidence,
         complianceStatus: activeWorkspace?.complianceStatus,
         mirrorStatus: activeWorkspace?.mirrorStatus,
       }),
-    [dashboardEvidence, activeWorkspace?.complianceStatus, activeWorkspace?.mirrorStatus]
+    [effectiveDashboardEvidence, activeWorkspace?.complianceStatus, activeWorkspace?.mirrorStatus]
   );
   const dashboardScope = useMemo(
     () =>
@@ -762,6 +827,39 @@ export function App() {
       setRequestedOperateZone(null);
     }
   };
+
+  const renderDashboardRepairFlow = () => (
+    <DashboardRepairFlow
+      evidence={effectiveDashboardEvidence}
+      hasWorkspace={hasActiveWorkspace}
+      hasProject={workspaceStatus.hasProjectSelected === true}
+      scope={dashboardWorkspaceOnlyScope}
+      workspace={{
+        path: workspaceStatus.workspacePath || undefined,
+        name: activeWorkspaceName,
+      }}
+      pendingCardIds={mergedPendingEvidenceCardIds}
+      pendingRunCardIds={pendingEvidenceCardIds}
+      pendingRefreshCardIds={pendingEvidenceRefreshCardIds}
+      isEvidenceFullRefreshPending={isEvidenceFullRefreshPending}
+      onRunCommand={handleDashboardCommand}
+      onRefreshEvidence={refreshDashboardEvidenceFull}
+      onRefreshEvidenceCard={(cardId) => refreshDashboardEvidenceCard([cardId])}
+      onAskStudioAboutCard={askStudioAboutEvidenceCard}
+      onSendEvidenceToCopilot={sendEvidenceCardToCopilot}
+      onShowEvidenceOutput={showWorkspaiEvidenceOutput}
+      onRevealArtifact={(artifactPath) =>
+        vscode.postMessage('revealEvidence', {
+          path: artifactPath,
+          workspacePath: workspaceStatus.workspacePath,
+        })
+      }
+      onOpenRunZone={openRunZone}
+      onOpenProjectLifecycle={() =>
+        updateDashboardSection('console', { navigationSource: 'repair' })
+      }
+    />
+  );
 
   const openRunZone = (
     zone: DashboardOperateZone,
@@ -993,13 +1091,50 @@ export function App() {
             typeof message.data?.command === 'string' ? message.data.command : undefined;
           const failureReason =
             typeof message.data?.reason === 'string' ? message.data.reason.trim() : '';
+          const failedCardIds = Array.isArray(message.data?.cardIds)
+            ? message.data.cardIds.filter((cardId): cardId is DashboardEvidenceCardId =>
+                typeof cardId === 'string'
+              )
+            : failedCommand
+              ? getDashboardCommandAffectedEvidenceCards(failedCommand)
+              : [];
+          const exitCode =
+            typeof message.data?.exitCode === 'number' ? message.data.exitCode : undefined;
+          const stderrTail =
+            typeof message.data?.stderrTail === 'string' && message.data.stderrTail.trim()
+              ? message.data.stderrTail.trim()
+              : undefined;
+          const suggestedNextAction =
+            typeof message.data?.suggestedNextAction === 'string' &&
+            message.data.suggestedNextAction.trim()
+              ? message.data.suggestedNextAction.trim()
+              : undefined;
           if (failureReason.length > 0) {
             setDashboardCommandNotice({
-              title: 'Dashboard command blocked',
+              title: exitCode === undefined ? 'Dashboard command blocked' : 'Dashboard command failed',
               body: failureReason,
+              exitCode,
+              stderrTail,
             });
           }
-          if (failedCommand) {
+          if (failedCommand && failedCardIds.length > 0) {
+            const failure: DashboardCommandFailure = {
+              command: failedCommand,
+              reason: failureReason || `${failedCommand} failed.`,
+              cardIds: failedCardIds,
+              ...(exitCode !== undefined ? { exitCode } : {}),
+              ...(stderrTail ? { stderrTail } : {}),
+              ...(suggestedNextAction ? { suggestedNextAction } : {}),
+              timestamp:
+                typeof message.data?.timestamp === 'number' ? message.data.timestamp : Date.now(),
+            };
+            setDashboardCommandFailures((current) => {
+              const next: DashboardCommandFailureMap = { ...current };
+              for (const cardId of failedCardIds) {
+                next[cardId] = failure;
+              }
+              return next;
+            });
             setPendingEvidenceCardIds((current) =>
               clearPendingEvidenceForCommand(current, failedCommand)
             );
@@ -1490,6 +1625,7 @@ export function App() {
 
   const workspaiViewTabs = (
     <div className="workspai-view-tabs" role="tablist" aria-label="Workspai views">
+      <Header version={version} variant="inline" />
       <div className="workspai-view-tabs__group workspai-view-tabs__group--primary">
         <button
           type="button"
@@ -1557,10 +1693,6 @@ export function App() {
           .join(' ')}
         data-active-view={activeView}
       >
-        <div className="workspai-top-bar">
-          <Header version={version} variant="topbar" />
-        </div>
-
         {activeView === 'dashboard' ? (
           <div className="ws-dashboard-shell">
             <div className="ws-dashboard-shell__main">
@@ -1583,6 +1715,16 @@ export function App() {
                     onDismiss={() => setDashboardCommandNotice(null)}
                   >
                     <p className="workspai-banner__body">{dashboardCommandNotice.body}</p>
+                    {dashboardCommandNotice.exitCode !== undefined ? (
+                      <p className="workspai-banner__meta">
+                        Exit code: {dashboardCommandNotice.exitCode}
+                      </p>
+                    ) : null}
+                    {dashboardCommandNotice.stderrTail ? (
+                      <pre className="workspai-banner__log">
+                        {dashboardCommandNotice.stderrTail}
+                      </pre>
+                    ) : null}
                   </WorkspaiBanner>
                 ) : null}
 
@@ -1607,7 +1749,7 @@ export function App() {
                 />
               </div>
 
-              {dashboardSection === 'overview' ? (
+              {dashboardSection === 'overview' && (!hasActiveWorkspace || isFreshInstall) ? (
                 <div className="home-onboarding-handoffs">
                   <HomeCreateHandoff
                     workspaceStatus={workspaceStatus}
@@ -1625,6 +1767,8 @@ export function App() {
               {dashboardSection === 'overview' && isFreshInstall ? (
                 <FreshInstallOnboarding
                   templateCount={exampleWorkspaces.length}
+                  onOpenSetup={openSetupInDashboard}
+                  onCreateWithAI={handleOpenAICreateWorkspace}
                   onBrowseCatalog={() =>
                     updateDashboardSection('catalog', { navigationSource: 'onboarding' })
                   }
@@ -1700,7 +1844,7 @@ export function App() {
 
                   <WorkspaceOverview
                     workspaceStatus={workspaceStatus}
-                    evidence={dashboardEvidence}
+                    evidence={effectiveDashboardEvidence}
                     evidenceAttentionCount={evidenceAttentionCount}
                     operateAttentionCount={operateAttentionCount}
                     onOpenEvidence={() =>
@@ -1730,36 +1874,7 @@ export function App() {
                   aria-labelledby="dashboard-tab-repair"
                   className="dashboard-panel dashboard-panel--repair"
                 >
-                  <DashboardRepairFlow
-                    evidence={dashboardEvidence}
-                    hasWorkspace={hasActiveWorkspace}
-                    hasProject={workspaceStatus.hasProjectSelected === true}
-                    scope={dashboardWorkspaceOnlyScope}
-                    workspace={{
-                      path: workspaceStatus.workspacePath || undefined,
-                      name: activeWorkspaceName,
-                    }}
-                    pendingCardIds={mergedPendingEvidenceCardIds}
-                    pendingRunCardIds={pendingEvidenceCardIds}
-                    pendingRefreshCardIds={pendingEvidenceRefreshCardIds}
-                    isEvidenceFullRefreshPending={isEvidenceFullRefreshPending}
-                    onRunCommand={handleDashboardCommand}
-                    onRefreshEvidence={refreshDashboardEvidenceFull}
-                    onRefreshEvidenceCard={(cardId) => refreshDashboardEvidenceCard([cardId])}
-                    onAskStudioAboutCard={askStudioAboutEvidenceCard}
-                    onSendEvidenceToCopilot={sendEvidenceCardToCopilot}
-                    onShowEvidenceOutput={showWorkspaiEvidenceOutput}
-                    onRevealArtifact={(artifactPath) =>
-                      vscode.postMessage('revealEvidence', {
-                        path: artifactPath,
-                        workspacePath: workspaceStatus.workspacePath,
-                      })
-                    }
-                    onOpenRunZone={openRunZone}
-                    onOpenProjectLifecycle={() =>
-                      updateDashboardSection('console', { navigationSource: 'repair' })
-                    }
-                  />
+                  {renderDashboardRepairFlow()}
                 </div>
               ) : null}
 
@@ -1771,7 +1886,7 @@ export function App() {
                   className="dashboard-panel dashboard-panel--evidence"
                 >
                   <DashboardEvidenceSection
-                    evidence={dashboardEvidence}
+                    evidence={effectiveDashboardEvidence}
                     hasWorkspace={hasActiveWorkspace}
                     hasProject={workspaceStatus.hasProjectSelected === true}
                     scope={dashboardWorkspaceOnlyScope}
@@ -1828,7 +1943,7 @@ export function App() {
                     hasWorkspace={hasActiveWorkspace}
                     scope={dashboardWorkspaceOnlyScope}
                     workspaceStatus={workspaceStatus}
-                    evidence={dashboardEvidence}
+                    evidence={effectiveDashboardEvidence}
                     pendingCardIds={pendingEvidenceCardIds}
                     selectedFramework={selectedFramework}
                     onSelectFramework={setSelectedFramework}
@@ -1876,8 +1991,7 @@ export function App() {
                     onContractVerify={() => handleDashboardCommand('workspaceContractVerify')}
                     onReadiness={() => handleDashboardCommand('workspaceReadiness')}
                     onAutopilotRelease={() => handleDashboardCommand('workspaceAutopilotRelease')}
-                    onMirrorStatus={() => handleDashboardCommand('mirrorStatus')}
-                    onMirrorSync={() => handleDashboardCommand('mirrorSync')}
+                    onMirrorOps={() => handleDashboardCommand('mirrorOps')}
                     onCacheStatus={() => handleDashboardCommand('cacheStatus')}
                     onPolicy={() => handleDashboardCommand('workspacePolicyShow')}
                     onInfra={() => handleDashboardCommand('workspaceInfra')}
@@ -1890,6 +2004,13 @@ export function App() {
                     onWorkspaceContextAgent={() => handleDashboardCommand('workspaceContextAgent')}
                     onWorkspaceAgentSync={() => handleDashboardCommand('workspaceAgentSync')}
                     onWorkspaceVerify={() => handleDashboardCommand('workspaceVerify')}
+                    onWorkspaceExplain={() => handleDashboardCommand('workspaceExplain')}
+                    onWorkspaceWhy={() => handleDashboardCommand('workspaceWhy')}
+                    onWorkspaceTrace={() => handleDashboardCommand('workspaceTrace')}
+                    onWorkspaceWatch={() => handleDashboardCommand('workspaceWatch')}
+                    onWorkspaceMcp={() => handleDashboardCommand('workspaceMcp')}
+                    onWorkspaceImpactLens={() => handleDashboardCommand('workspaceImpactLens')}
+                    onRunImpactLensCli={() => handleDashboardCommand('workspaceImpactLensCli')}
                     onIntelligenceChain={() => handleDashboardCommand('workspaceIntelligenceChain')}
                     onSendWorkspaceToCopilot={() =>
                       vscode.postMessage('sendWorkspaceToCopilot', {
@@ -1954,7 +2075,7 @@ export function App() {
                       <ProjectActions
                         workspaceStatus={workspaceStatus}
                         scope={dashboardScope}
-                        evidence={dashboardEvidence}
+                        evidence={effectiveDashboardEvidence}
                         pendingCardIds={pendingEvidenceCardIds}
                         onTerminal={() => dispatchDashboardCommand('projectTerminal')}
                         onInit={() => dispatchDashboardCommand('projectInit')}

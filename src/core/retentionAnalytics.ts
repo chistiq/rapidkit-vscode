@@ -4,6 +4,12 @@ import { Logger } from '../utils/logger';
 import { getTtfvRecord, type TtfvRecord } from './ttfvBridge';
 import { getDashboardActivityLog, type DashboardActivityEntry } from './dashboardActivityBridge';
 import { resolveAnalyticsOptIn } from './analyticsConsent';
+import {
+  emptyRetentionMilestoneState,
+  getRetentionMilestones,
+  type RetentionMilestoneState,
+  type RetentionSignalSurface,
+} from './retentionMilestones';
 
 /**
  * Local retention/cohort aggregation (roadmap item 2.10).
@@ -38,6 +44,12 @@ export interface RetentionCohortSummary {
   activityFailedCount: number;
   /** Sum of per-command run counts (no command identifiers included). */
   totalCommandRuns: number;
+  firstArtifactGenerated: boolean;
+  firstBlockerFixed: boolean;
+  verifyPassAfterStudioFix: boolean;
+  returnToDashboardAfterVerify: boolean;
+  totalCommandFailures: number;
+  commandFailuresBySurface: Partial<Record<RetentionSignalSurface, number>>;
 }
 
 export interface RetentionCohortInput {
@@ -46,6 +58,7 @@ export interface RetentionCohortInput {
   ttfv: TtfvRecord | null;
   registeredWorkspaceCount: number;
   activity: DashboardActivityEntry[];
+  milestones?: RetentionMilestoneState | null;
 }
 
 function bucketActivity(activity: DashboardActivityEntry[]): {
@@ -80,6 +93,7 @@ export function buildRetentionCohortSummary(input: RetentionCohortInput): Retent
       ? Math.max(0, Math.floor((now - installedAt) / MS_PER_DAY))
       : null;
   const buckets = bucketActivity(input.activity);
+  const milestones = input.milestones ?? emptyRetentionMilestoneState();
 
   return {
     schemaVersion: 'retention-cohort.v1',
@@ -94,6 +108,14 @@ export function buildRetentionCohortSummary(input: RetentionCohortInput): Retent
     activityCompletedCount: buckets.completed,
     activityFailedCount: buckets.failed,
     totalCommandRuns: buckets.totalRuns,
+    firstArtifactGenerated:
+      Boolean(milestones.firstArtifactGeneratedAt) ||
+      Boolean(input.ttfv && !input.ttfv.preexisting),
+    firstBlockerFixed: Boolean(milestones.firstBlockerFixedAt),
+    verifyPassAfterStudioFix: Boolean(milestones.verifyPassAfterStudioFixAt),
+    returnToDashboardAfterVerify: Boolean(milestones.returnToDashboardAfterVerifyAt),
+    totalCommandFailures: milestones.totalCommandFailures,
+    commandFailuresBySurface: { ...milestones.commandFailuresBySurface },
   };
 }
 
@@ -121,6 +143,7 @@ export function buildRetentionAnalyticsPayload(
     ttfv: getTtfvRecord(context),
     registeredWorkspaceCount: resolveRegisteredWorkspaceCount(),
     activity: getDashboardActivityLog(context),
+    milestones: getRetentionMilestones(context),
   });
 }
 

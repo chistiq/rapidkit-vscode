@@ -24,6 +24,7 @@ import {
   type DashboardEvidenceRefreshContext,
 } from './doctorTelemetryRefresh';
 import { type WebviewFromExtensionMessage } from '../../contracts/webviewProtocol';
+import type { DashboardEvidenceCardId } from '../../contracts/dashboardEvidenceCards.js';
 import { SetupPanel } from './setupExperiencePanel.js';
 import { readAIActionRegistry } from '../../core/aiActionRegistry';
 import { AIActionContract, AIActionOperation } from '../../core/aiActionContract';
@@ -161,6 +162,15 @@ type MessagePayload = Record<string, unknown>;
 export class WelcomePanel {
   public static currentPanel: WelcomePanel | undefined;
   private static _dashboardPanel: WelcomePanel | undefined;
+  private static _pendingDashboardFullRefreshPath: string | undefined;
+  private static _pendingDashboardEvidencePatch:
+    | {
+        workspacePath: string;
+        cardIds: readonly DashboardEvidenceCardId[];
+        projectPath?: string;
+        projectName?: string;
+      }
+    | undefined;
   private readonly _panel: vscode.WebviewPanel;
   private _disposables: vscode.Disposable[] = [];
   private _aiQueryTokenSource?: vscode.CancellationTokenSource;
@@ -970,6 +980,7 @@ export class WelcomePanel {
   public static async refreshDashboardForWorkspacePath(workspacePath: string) {
     const dashboardPanel = WelcomePanel._dashboardPanel;
     if (!dashboardPanel) {
+      WelcomePanel._pendingDashboardFullRefreshPath = workspacePath;
       return;
     }
 
@@ -977,6 +988,43 @@ export class WelcomePanel {
     await dashboardPanel._sendWorkspaceStatus();
     await dashboardPanel._refreshModulesCatalog();
     await dashboardPanel._sendDashboardEvidence({ workspacePath, refreshMode: 'full' });
+  }
+
+  public static async refreshDashboardEvidenceCards(input: {
+    workspacePath: string;
+    cardIds: readonly DashboardEvidenceCardId[];
+    projectPath?: string;
+    projectName?: string;
+  }): Promise<void> {
+    const dashboardPanel = WelcomePanel._dashboardPanel;
+    if (!dashboardPanel) {
+      WelcomePanel._pendingDashboardEvidencePatch = input;
+      return;
+    }
+
+    await dashboardPanel._sendDashboardEvidence({
+      workspacePath: input.workspacePath,
+      projectPath: input.projectPath,
+      projectName: input.projectName,
+      cardIds: [...input.cardIds],
+      refreshMode: 'patch',
+    });
+  }
+
+  private static async flushPendingDashboardRefresh(_panel: WelcomePanel): Promise<void> {
+    const pendingPath = WelcomePanel._pendingDashboardFullRefreshPath;
+    const pendingPatch = WelcomePanel._pendingDashboardEvidencePatch;
+    WelcomePanel._pendingDashboardFullRefreshPath = undefined;
+    WelcomePanel._pendingDashboardEvidencePatch = undefined;
+
+    if (pendingPath) {
+      await WelcomePanel.refreshDashboardForWorkspacePath(pendingPath);
+      return;
+    }
+
+    if (pendingPatch) {
+      await WelcomePanel.refreshDashboardEvidenceCards(pendingPatch);
+    }
   }
 
   private _getSelectedWorkspaceInfo(): { name: string; path: string } | null {
@@ -1221,6 +1269,7 @@ export class WelcomePanel {
       postWebviewMessage: (command, data) => this._postWebviewMessage(command, data),
       markPanelReady: () => {
         this._isReady = true;
+        void WelcomePanel.flushPendingDashboardRefresh(this);
       },
       takePendingFrameworkModal: () => {
         const pending = WelcomePanel._pendingModal;

@@ -267,8 +267,11 @@ function renderEvidenceCard(
         canRun={Boolean(runAction)}
         showAgentActions={showAgentActions}
         compact
+        primaryAction={actionContract.primaryAction}
+        copyCommandText={runAction?.command}
         onRun={runAction ? () => onRunCommand(runAction.command, runAction.commandData) : undefined}
         onRefresh={onRefreshEvidenceCard}
+        onAdvancedInspect={onShowEvidenceOutput}
         artifactLabel={actionContract.artifactLabel}
         artifactPath={actionContract.artifactPath}
         artifactState={actionContract.artifactState}

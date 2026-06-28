@@ -20,6 +20,7 @@ export const REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS = [
   'verify',
   'context',
   'agent-sync',
+  'explain',
 ] as const;
 
 /** Top-level command that backs the create-frontend flow. */
@@ -29,6 +30,10 @@ const ADOPT_COMMAND_ID = 'adopt';
 
 function workspaceFeatureLabel(subcommand: string): string {
   return `workspace ${subcommand}`;
+}
+
+function topLevelFeatureLabel(commandId: string): string {
+  return commandId;
 }
 
 export async function probeWorkspaceIntelligenceCliCapabilities(options?: {
@@ -82,6 +87,36 @@ export async function probeAdoptCliCapabilities(options?: {
   return { available: Boolean(surface?.topLevelCommands.includes(ADOPT_COMMAND_ID)) };
 }
 
+export async function probeTopLevelCliCapability(
+  commandId: string,
+  options?: {
+    cwd?: string;
+    forceRefresh?: boolean;
+  }
+): Promise<{ available: boolean }> {
+  const surface = await fetchRuntimeCommandSurface({
+    cwd: options?.cwd,
+    forceRefresh: options?.forceRefresh,
+  });
+
+  return { available: Boolean(surface?.topLevelCommands.includes(commandId)) };
+}
+
+export async function probeWorkspaceSubcommandCliCapability(
+  subcommand: string,
+  options?: {
+    cwd?: string;
+    forceRefresh?: boolean;
+  }
+): Promise<{ available: boolean }> {
+  const surface = await fetchRuntimeCommandSurface({
+    cwd: options?.cwd,
+    forceRefresh: options?.forceRefresh,
+  });
+
+  return { available: Boolean(surface?.workspaceSubcommands.includes(subcommand)) };
+}
+
 async function showCliCapabilityGate(
   featureLabel: string,
   missingFeatures: string[]
@@ -90,18 +125,16 @@ async function showCliCapabilityGate(
     return true;
   }
 
-  const choice = await vscode.window.showWarningMessage(
-    `${featureLabel} needs rapidkit CLI capabilities not advertised by your linked npm package: ${missingFeatures.join(', ')}. Verify with \`npx rapidkit commands --json\`, link the latest rapidkit-npm locally (npm run install:local), then reload the window.`,
-    'Open Setup',
-    'Continue anyway'
+  const choice = await vscode.window.showErrorMessage(
+    `${featureLabel} is blocked because your linked rapidkit CLI does not advertise required capabilities: ${missingFeatures.join(', ')}. Verify with \`npx rapidkit commands --json\`, link or install the latest rapidkit package, then reload the window.`,
+    'Open Setup'
   );
 
   if (choice === 'Open Setup') {
     await vscode.commands.executeCommand('workspai.openSetup');
-    return false;
   }
 
-  return choice === 'Continue anyway';
+  return false;
 }
 
 export async function gateWorkspaceIntelligenceCli(
@@ -135,6 +168,32 @@ export async function gateAdoptCli(
     return true;
   }
   return showCliCapabilityGate(featureLabel, ['adopt']);
+}
+
+export async function gateTopLevelRapidkitCli(
+  featureLabel: string,
+  commandId: string,
+  options?: { cwd?: string }
+): Promise<boolean> {
+  const probe = await probeTopLevelCliCapability(commandId, { cwd: options?.cwd });
+  if (probe.available) {
+    return true;
+  }
+  return showCliCapabilityGate(featureLabel, [topLevelFeatureLabel(commandId)]);
+}
+
+export async function gateWorkspaceSubcommandCli(
+  featureLabel: string,
+  subcommand: string,
+  options?: { cwd?: string }
+): Promise<boolean> {
+  const probe = await probeWorkspaceSubcommandCliCapability(subcommand, {
+    cwd: options?.cwd,
+  });
+  if (probe.available) {
+    return true;
+  }
+  return showCliCapabilityGate(featureLabel, [workspaceFeatureLabel(subcommand)]);
 }
 
 /** Test/diagnostic helper: drop any cached command-surface resolution. */

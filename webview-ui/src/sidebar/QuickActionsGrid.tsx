@@ -1,4 +1,4 @@
-import { Home, Plus, ShieldCheck, Sparkles, Stethoscope, type LucideIcon } from 'lucide-react';
+import { Home, Plus, Sparkles, Stethoscope, type LucideIcon } from 'lucide-react';
 import { vscode } from '@/vscode';
 
 interface QuickAction {
@@ -12,13 +12,6 @@ interface QuickAction {
 const QUICK_ACTIONS: QuickAction[] = [
   { command: 'openWelcome', label: 'Dashboard', title: 'Open Workspai dashboard', icon: Home },
   { command: 'createWithAI', label: 'Create', title: 'Create with AI', icon: Plus },
-  {
-    command: 'workspaceAdvisor',
-    label: 'Advisor',
-    title: 'Ask Workspace Advisor',
-    icon: ShieldCheck,
-    tone: 'grounding',
-  },
   {
     command: 'incidentStudioNext',
     label: 'Studio',

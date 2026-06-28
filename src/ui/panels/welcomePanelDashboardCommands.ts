@@ -5,6 +5,7 @@ import type { DashboardEvidenceRefreshContext } from './doctorTelemetryRefresh';
 import { resolveDashboardCommandContract } from '../../core/dashboardCommandContracts';
 import { enrichDashboardEvidenceCommandData } from '../../core/dashboardEvidenceDirectRun';
 import { runDashboardEvidenceContractCli } from '../../core/evidenceCommandRunner';
+import { gateCompatibleCliVersion } from '../../core/cliVersionGate';
 import { resolveEvidenceCardIdsForDashboardCommand } from '../../core/dashboardReportRegistry';
 
 export type DashboardSelectedProject = {
@@ -18,7 +19,15 @@ export type DashboardSelectedProject = {
 export type DashboardCommandHost = {
   getSelectedWorkspaceInfo: () => { name: string; path: string } | null;
   getSelectedProject: () => DashboardSelectedProject;
-  postDashboardCommandFailed: (command: string, reason: string) => void;
+  postDashboardCommandFailed: (
+    command: string,
+    reason: string,
+    details?: {
+      exitCode?: number;
+      stderrTail?: string;
+      suggestedNextAction?: string;
+    }
+  ) => void;
   sendDashboardEvidence: (context: DashboardEvidenceRefreshContext) => Promise<void>;
   refreshWorkspaceStatus: () => Promise<void>;
 };
@@ -169,6 +178,18 @@ export async function executeDashboardContractCommand(
       );
     }
 
+    const versionAllowed = await gateCompatibleCliVersion({
+      cwd: workspacePayload.path,
+      featureLabel: contract.label,
+    });
+    if (!versionAllowed) {
+      host.postDashboardCommandFailed(
+        command,
+        `${contract.label} is blocked until the linked rapidkit CLI is compatible.`
+      );
+      return false;
+    }
+
     const cliResult = await runDashboardEvidenceContractCli({
       command,
       workspacePath: workspacePayload.path,
@@ -177,9 +198,15 @@ export async function executeDashboardContractCommand(
     });
 
     if (cliResult && cliResult.exitCode !== 0) {
-      void vscode.window.showWarningMessage(
-        `${contract.label} failed (exit ${cliResult.exitCode}). See Workspai Evidence output.`
-      );
+      const stderrTail = cliResult.stderr.trim().split(/\r?\n/).slice(-3).join(' ').trim();
+      const reason = `${contract.label} failed (exit ${cliResult.exitCode}).${stderrTail ? ` ${stderrTail}` : ''} See Workspai Evidence output.`;
+      host.postDashboardCommandFailed(command, reason, {
+        exitCode: cliResult.exitCode,
+        stderrTail,
+        suggestedNextAction: 'Repair evidence or open the Workspai Evidence output.',
+      });
+      void vscode.window.showWarningMessage(reason);
+      return false;
     }
 
     const affectedCardIds = resolveEvidenceCardIdsForDashboardCommand(command);

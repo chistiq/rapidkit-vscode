@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildIntelligenceChainCliSnippet,
+  buildWorkspaceTraceCliSnippet,
+  buildWorkspaceWhyCliSnippet,
   WORKSPACE_IMPACT_REPORT_PATH,
   WORKSPACE_MODEL_DIFF_REPORT_PATH,
   WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH,
@@ -26,6 +28,8 @@ describe('incidentCliActionMatrix', () => {
     );
     expect(chain?.command).toContain(`workspace impact --from ${WORKSPACE_MODEL_DIFF_REPORT_PATH}`);
     expect(chain?.command).toContain('--for-agent --json --write');
+    expect(chain?.command).toContain(buildWorkspaceWhyCliSnippet());
+    expect(chain?.command).toContain(buildWorkspaceTraceCliSnippet());
     expect(chain?.command).not.toContain('--for-agent cursor');
 
     expect(verify?.command).toBe(

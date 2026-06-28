@@ -20,15 +20,23 @@ import type {
   DashboardEvidenceCardId,
   DashboardEvidencePayload,
 } from '@/lib/dashboardEvidence';
-import { evidenceCardStatusLabel, resolveEvidenceFreshness } from '@/lib/dashboardEvidence';
+import { evidenceNeedsFreshnessAttention, resolveEvidenceFreshness } from '@/lib/dashboardEvidence';
+import {
+  evidenceCardStatusLabelForWorkspace,
+  effectiveCardBlockers,
+  evidenceCardVisualTone,
+  resolveWorkspaceProjectCountFromEvidence,
+} from '@/lib/dashboardScaffoldEvidence';
 import {
   buildEvidenceGuidedSteps,
+  buildGuidedStepFocusCard,
   evidenceGuidedStepCards,
   type EvidenceGuidedStep,
   type EvidenceGuidedStepState,
 } from '@/lib/dashboardEvidenceViewMode';
 import { evidenceGuidedStepShortLabel } from '@/components/EvidenceGuidedPath';
 import { buildDashboardEvidenceBrief } from '@/lib/dashboardEvidenceBrief';
+import { getDashboardCommandMeta } from '@/lib/dashboardCommandRegistry';
 import type { DashboardOperateZone } from '@/lib/dashboardOperateZones';
 import type { DashboardScopeDescriptor } from '@/lib/dashboardScope';
 import { dashboardScopeDetail, dashboardScopeLabel } from '@/lib/dashboardScope';
@@ -64,14 +72,19 @@ const MODE_LABELS: Record<RepairMode, string> = {
 };
 
 function isActionableCard(card: DashboardEvidenceCard): boolean {
-  return card.status === 'fail' || card.status === 'warn' || card.status === 'missing';
+  return (
+    card.status === 'fail' ||
+    card.status === 'warn' ||
+    card.status === 'missing' ||
+    evidenceNeedsFreshnessAttention(card)
+  );
 }
 
-function cardPriority(card: DashboardEvidenceCard): number {
+function cardPriority(card: DashboardEvidenceCard, workspaceProjectCount: number | null): number {
   if (card.status === 'fail') {
     return 0;
   }
-  if ((card.blockers?.length ?? 0) > 0) {
+  if (effectiveCardBlockers(card, workspaceProjectCount).length > 0) {
     return 1;
   }
   if (card.status === 'warn') {
@@ -85,10 +98,22 @@ function cardPriority(card: DashboardEvidenceCard): number {
 
 function chooseActiveCard(
   cards: DashboardEvidenceCard[],
-  currentStep?: EvidenceGuidedStep,
-  evidence?: DashboardEvidencePayload | null,
-  preferredCard?: DashboardEvidenceCard
+  currentStep: EvidenceGuidedStep | undefined,
+  evidence: DashboardEvidencePayload | null | undefined,
+  preferredCard: DashboardEvidenceCard | undefined,
+  workspaceProjectCount: number | null
 ): DashboardEvidenceCard | undefined {
+  if (
+    currentStep?.command === 'importProject' &&
+    workspaceProjectCount === 0 &&
+    (currentStep.state === 'attention' || currentStep.state === 'current')
+  ) {
+    const importFocus = buildGuidedStepFocusCard(currentStep);
+    if (importFocus && isActionableCard(importFocus)) {
+      return importFocus;
+    }
+  }
+
   if (preferredCard && isActionableCard(preferredCard)) {
     return preferredCard;
   }
@@ -98,25 +123,31 @@ function chooseActiveCard(
     : [];
   const scoped = currentStepCards
     .filter(isActionableCard)
-    .sort((a, b) => cardPriority(a) - cardPriority(b));
+    .sort(
+      (a, b) => cardPriority(a, workspaceProjectCount) - cardPriority(b, workspaceProjectCount)
+    );
   if (scoped[0]) {
     return scoped[0];
   }
 
-  return cards.filter(isActionableCard).sort((a, b) => cardPriority(a) - cardPriority(b))[0];
+  if (currentStep && (currentStep.state === 'attention' || currentStep.state === 'current')) {
+    const stepFocus = buildGuidedStepFocusCard(currentStep);
+    return stepFocus && isActionableCard(stepFocus) ? stepFocus : undefined;
+  }
+
+  return cards
+    .filter(isActionableCard)
+    .sort(
+      (a, b) => cardPriority(a, workspaceProjectCount) - cardPriority(b, workspaceProjectCount)
+    )[0];
 }
 
-function statusTone(card: DashboardEvidenceCard): string {
-  if (card.status === 'fail' || (card.blockers?.length ?? 0) > 0) {
-    return 'danger';
-  }
-  if (card.status === 'warn') {
-    return 'warn';
-  }
-  if (card.status === 'pass') {
-    return 'good';
-  }
-  return 'neutral';
+function statusTone(card: DashboardEvidenceCard, workspaceProjectCount: number | null): string {
+  return evidenceCardVisualTone(card, workspaceProjectCount);
+}
+
+function statusLabel(card: DashboardEvidenceCard, workspaceProjectCount: number | null): string {
+  return evidenceCardStatusLabelForWorkspace(card, workspaceProjectCount);
 }
 
 type RepairCardGroup = {
@@ -244,7 +275,9 @@ function RepairPathRailItem({
           {evidenceGuidedStepShortLabel(step)}
         </span>
       </button>
-      {!isLast ? <span className="evidence-guided-path__rail-connector" aria-hidden="true" /> : null}
+      {!isLast ? (
+        <span className="evidence-guided-path__rail-connector" aria-hidden="true" />
+      ) : null}
     </div>
   );
 }
@@ -324,7 +357,10 @@ function RepairPath({
         <span className="repair-flow__path-track-fill" style={{ width: `${progressPct}%` }} />
       </div>
 
-      <nav className="repair-flow__path-rail evidence-guided-path__rail" aria-label="Evidence path steps">
+      <nav
+        className="repair-flow__path-rail evidence-guided-path__rail"
+        aria-label="Evidence path steps"
+      >
         {steps.map((step, index) => (
           <RepairPathRailItem
             key={step.id}
@@ -354,6 +390,7 @@ function RepairStackCard({
   card,
   evidence,
   workspace,
+  workspaceProjectCount,
   pending,
   refreshPending = false,
   selected = false,
@@ -362,11 +399,13 @@ function RepairStackCard({
   onRefreshEvidenceCard,
   onAskStudioAboutCard,
   onSendEvidenceToCopilot,
+  onShowEvidenceOutput,
   onRevealArtifact,
 }: {
   card: DashboardEvidenceCard;
   evidence: DashboardEvidencePayload | null;
   workspace?: { path?: string; name?: string };
+  workspaceProjectCount: number | null;
   pending: boolean;
   refreshPending?: boolean;
   selected?: boolean;
@@ -375,9 +414,10 @@ function RepairStackCard({
   onRefreshEvidenceCard: (cardId: DashboardEvidenceCardId) => void;
   onAskStudioAboutCard: (card: DashboardEvidenceCard) => void;
   onSendEvidenceToCopilot: (card: DashboardEvidenceCard) => void;
+  onShowEvidenceOutput: () => void;
   onRevealArtifact: (artifactPath: string) => void;
 }) {
-  const tone = statusTone(card);
+  const tone = statusTone(card, workspaceProjectCount);
   const actionContract = buildDashboardEvidenceActionContract(card, { workspace, evidence });
   const action = actionContract.commandAction;
 
@@ -387,7 +427,11 @@ function RepairStackCard({
     >
       <div className="repair-flow__card-head">
         <span className={`repair-flow__status repair-flow__status--${tone}`}>
-          {refreshPending ? 'Refreshing' : pending ? 'Running' : evidenceCardStatusLabel(card)}
+          {refreshPending
+            ? 'Refreshing'
+            : pending
+              ? 'Running'
+              : statusLabel(card, workspaceProjectCount)}
         </span>
         <button
           type="button"
@@ -411,8 +455,11 @@ function RepairStackCard({
           showAgentActions
           compact
           studioVariant="ghost"
+          primaryAction={actionContract.primaryAction}
+          copyCommandText={action?.command}
           onRun={action ? () => onRunCommand(action.command, action.commandData) : undefined}
           onRefresh={onRefreshEvidenceCard}
+          onAdvancedInspect={onShowEvidenceOutput}
           artifactLabel={actionContract.artifactLabel}
           artifactPath={actionContract.artifactPath}
           artifactState={actionContract.artifactState}
@@ -471,8 +518,11 @@ function RepairActiveCard({
   card,
   evidence,
   workspace,
+  workspaceProjectCount,
   pending,
   refreshPending = false,
+  fallbackStepCommand,
+  fallbackStepCommandLabel,
   mode,
   onModeChange,
   onRunCommand,
@@ -486,8 +536,11 @@ function RepairActiveCard({
   card: DashboardEvidenceCard;
   evidence: DashboardEvidencePayload | null;
   workspace?: { path?: string; name?: string };
+  workspaceProjectCount: number | null;
   pending: boolean;
   refreshPending?: boolean;
+  fallbackStepCommand?: string;
+  fallbackStepCommandLabel?: string;
   mode: RepairMode;
   onModeChange: (mode: RepairMode) => void;
   onRunCommand: (command: string, data?: Record<string, unknown>) => void;
@@ -500,23 +553,30 @@ function RepairActiveCard({
 }) {
   const actionContract = buildDashboardEvidenceActionContract(card, { workspace, evidence });
   const action = actionContract.commandAction;
+  const runLabel = action?.label ?? fallbackStepCommandLabel ?? actionContract.commandLabel;
+  const canRun = Boolean(action || fallbackStepCommand);
   const freshness = resolveEvidenceFreshness(card);
-  const blockers = card.blockers ?? [];
+  const blockers = effectiveCardBlockers(card, workspaceProjectCount);
   const visibleBlockers = blockers.slice(0, 4);
   const hiddenBlockerCount = Math.max(blockers.length - visibleBlockers.length, 0);
   const projectAttribution = resolveEvidenceProjectAttribution(card, evidence);
+  const tone = statusTone(card, workspaceProjectCount);
 
   return (
     <section
-      className={`repair-flow__active repair-flow__active--${statusTone(card)}`}
+      className={`repair-flow__active repair-flow__active--${tone}`}
       aria-label="Active repair item"
     >
       <div className="repair-flow__active-head">
         <span className="ws-kicker">Active blocker</span>
         <div className="repair-flow__active-head-tools">
           <RepairModeToggle mode={mode} onChange={onModeChange} />
-          <span className={`repair-flow__status repair-flow__status--${statusTone(card)}`}>
-            {refreshPending ? 'Refreshing' : pending ? 'Running' : evidenceCardStatusLabel(card)}
+          <span className={`repair-flow__status repair-flow__status--${tone}`}>
+            {refreshPending
+              ? 'Refreshing'
+              : pending
+                ? 'Running'
+                : statusLabel(card, workspaceProjectCount)}
           </span>
         </div>
       </div>
@@ -555,19 +615,32 @@ function RepairActiveCard({
       <div className="repair-flow__active-actions">
         <EvidenceCardActions
           cardId={card.id}
-          runLabel={action?.label ?? actionContract.commandLabel}
+          runLabel={runLabel}
           pending={pending}
           refreshPending={refreshPending}
-          canRun={Boolean(action)}
+          canRun={canRun}
           canRefresh
           showAgentActions
           studioVariant="ghost"
+          primaryAction={actionContract.primaryAction}
+          copyCommandText={action?.command ?? fallbackStepCommand}
           artifactLabel={actionContract.artifactLabel}
           artifactPath={actionContract.artifactPath}
           artifactState={actionContract.artifactState}
           executionChannel={actionContract.executionChannel}
-          onRun={action ? () => onRunCommand(action.command, action.commandData) : undefined}
+          onRun={
+            action
+              ? () => onRunCommand(action.command, action.commandData)
+              : fallbackStepCommand
+                ? () =>
+                    onRunCommand(
+                      fallbackStepCommand,
+                      workspace?.path ? { workspacePath: workspace.path } : undefined
+                    )
+                : undefined
+          }
           onRefresh={onRefreshEvidenceCard}
+          onAdvancedInspect={onShowEvidenceOutput}
           onRevealArtifact={onRevealArtifact}
           onAskStudio={() => onAskStudioAboutCard(card)}
           onSendToCopilot={() => onSendEvidenceToCopilot(card)}
@@ -606,11 +679,17 @@ export function DashboardRepairFlow({
   const [mode, setMode] = useState<RepairMode>('guided');
   const [selectedCardId, setSelectedCardId] = useState<DashboardEvidenceCardId | null>(null);
   const cards = evidence?.cards ?? [];
+  const workspaceProjectCount = resolveWorkspaceProjectCountFromEvidence(evidence);
   const steps = buildEvidenceGuidedSteps({ evidence, hasProject });
   const brief = buildDashboardEvidenceBrief({ evidence, hasWorkspace, hasProject });
   const actionableCards = useMemo(
-    () => cards.filter(isActionableCard).sort((a, b) => cardPriority(a) - cardPriority(b)),
-    [cards]
+    () =>
+      cards
+        .filter(isActionableCard)
+        .sort(
+          (a, b) => cardPriority(a, workspaceProjectCount) - cardPriority(b, workspaceProjectCount)
+        ),
+    [cards, workspaceProjectCount]
   );
   const selectedCard = selectedCardId
     ? actionableCards.find((card) => card.id === selectedCardId)
@@ -619,12 +698,15 @@ export function DashboardRepairFlow({
     cards,
     brief.currentStep,
     evidence,
-    selectedCard ?? brief.primaryCard
+    selectedCard ?? brief.primaryCard,
+    workspaceProjectCount
   );
   const activeContract = activeCard
     ? buildDashboardEvidenceActionContract(activeCard, { workspace, evidence })
     : undefined;
   const activeAction = activeContract?.commandAction;
+  const stepCommand = brief.currentStep?.command;
+  const stepCommandLabel = stepCommand ? getDashboardCommandMeta(stepCommand)?.label : undefined;
   const visibleCards =
     mode === 'guided'
       ? actionableCards.slice(0, 3)
@@ -639,7 +721,21 @@ export function DashboardRepairFlow({
     isEvidenceFullRefreshPending ||
     pendingRefreshCardIds.length > 0 ||
     (activeCard ? pendingActiveRefresh : false);
-  const nextLabel = activeContract?.commandLabel ?? brief.currentStep?.title ?? 'Refresh evidence';
+  const nextLabel =
+    activeContract?.commandLabel ??
+    stepCommandLabel ??
+    brief.currentStep?.title ??
+    'Refresh evidence';
+
+  const runActiveRepairAction = () => {
+    if (activeAction) {
+      onRunCommand(activeAction.command, activeAction.commandData);
+      return;
+    }
+    if (stepCommand) {
+      onRunCommand(stepCommand, workspace?.path ? { workspacePath: workspace.path } : undefined);
+    }
+  };
 
   useEffect(() => {
     if (selectedCardId && !actionableCards.some((card) => card.id === selectedCardId)) {
@@ -668,11 +764,7 @@ export function DashboardRepairFlow({
         fixPathContract={activeContract}
         fixPathPending={pendingActiveRun}
         isRefreshingEvidence={isRefreshingEvidence}
-        onRunFixPath={() => {
-          if (activeAction) {
-            onRunCommand(activeAction.command, activeAction.commandData);
-          }
-        }}
+        onRunFixPath={runActiveRepairAction}
         onRefreshEvidence={onRefreshEvidence}
       />
 
@@ -694,8 +786,11 @@ export function DashboardRepairFlow({
           card={activeCard}
           evidence={evidence}
           workspace={workspace}
+          workspaceProjectCount={workspaceProjectCount}
           pending={pendingActiveRun}
           refreshPending={pendingActiveRefresh}
+          fallbackStepCommand={stepCommand}
+          fallbackStepCommandLabel={stepCommandLabel}
           mode={mode}
           onModeChange={setMode}
           onRunCommand={onRunCommand}
@@ -759,6 +854,7 @@ export function DashboardRepairFlow({
                         card={card}
                         evidence={evidence}
                         workspace={workspace}
+                        workspaceProjectCount={workspaceProjectCount}
                         pending={pendingRunCardIds.includes(card.id)}
                         refreshPending={pendingRefreshCardIds.includes(card.id)}
                         selected={activeCard?.id === card.id}
@@ -767,6 +863,7 @@ export function DashboardRepairFlow({
                         onRefreshEvidenceCard={onRefreshEvidenceCard}
                         onAskStudioAboutCard={onAskStudioAboutCard}
                         onSendEvidenceToCopilot={onSendEvidenceToCopilot}
+                        onShowEvidenceOutput={onShowEvidenceOutput}
                         onRevealArtifact={onRevealArtifact}
                       />
                     ))}
@@ -782,6 +879,7 @@ export function DashboardRepairFlow({
                   card={card}
                   evidence={evidence}
                   workspace={workspace}
+                  workspaceProjectCount={workspaceProjectCount}
                   pending={pendingRunCardIds.includes(card.id)}
                   refreshPending={pendingRefreshCardIds.includes(card.id)}
                   selected={activeCard?.id === card.id}
@@ -790,6 +888,7 @@ export function DashboardRepairFlow({
                   onRefreshEvidenceCard={onRefreshEvidenceCard}
                   onAskStudioAboutCard={onAskStudioAboutCard}
                   onSendEvidenceToCopilot={onSendEvidenceToCopilot}
+                  onShowEvidenceOutput={onShowEvidenceOutput}
                   onRevealArtifact={onRevealArtifact}
                 />
               ))}

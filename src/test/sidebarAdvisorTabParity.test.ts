@@ -38,6 +38,18 @@ describe('React Advisor tab ↔ host protocol parity (roadmap 2.11e)', () => {
     }
   });
 
+  it('routes advisor → Studio handoff without auto-fix (roadmap 3.24)', () => {
+    expect(provider).toContain('buildAdvisorStudioPrefill');
+    expect(provider).toContain('attachAdvisorHandoffSource');
+    expect(provider).toContain('blockerHandoff: advisorHandoff');
+    expect(provider).toContain('verify artifact cited - re-run verify before claiming pass');
+    expect(provider).toContain("'sidebarAdvisorStudioHandoff'");
+    expect(secondary).toContain("case 'sidebarAdvisorStudioHandoff'");
+    expect(secondary).toContain('setStudioPrefill');
+    expect(secondary).toContain("setActiveTab('studio')");
+    expect(provider).not.toMatch(/action === 'studio'[\s\S]{0,400}_runSidebarAutoFix/);
+  });
+
   it('exposes the advisor action set (studio / verify / copy) the host supports', () => {
     expect(secondary).toContain("advisorAction('studio')");
     expect(secondary).toContain("advisorAction('verify')");

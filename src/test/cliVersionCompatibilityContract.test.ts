@@ -20,6 +20,7 @@ describe('cliVersionCompatibilityContract', () => {
     expect(PUBLISHED_CLI_CONTRACT_SCHEMAS.runtimeCommandSurface).toBeTruthy();
     expect(PUBLISHED_CLI_CONTRACT_SCHEMAS.cliLogEvent).toBeTruthy();
     expect(PUBLISHED_CLI_CONTRACT_SCHEMAS.freshnessMetadata).toBeTruthy();
+    expect(PUBLISHED_CLI_CONTRACT_SCHEMAS.blockerResolution).toBe('rapidkit-blocker-resolution-v1');
   });
 
   it('matches rapidkit-npm package version in sibling monorepo layout', () => {

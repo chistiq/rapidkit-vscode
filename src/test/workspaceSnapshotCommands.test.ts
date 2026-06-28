@@ -122,7 +122,7 @@ describe('workspace snapshot commands', () => {
     );
   });
 
-  it('runs workspace analyze with strict JSON output and writes report to .rapidkit/reports', async () => {
+  it('runs workspace analyze with JSON output and writes report to .rapidkit/reports', async () => {
     const { getCommand } = setupHarness();
 
     await getCommand('workspai.workspaceAnalyze')();
@@ -131,13 +131,7 @@ describe('workspace snapshot commands', () => {
       expect.objectContaining({
         cwd: '/tmp/team-ws',
         commands: [
-          [
-            'analyze',
-            '--json',
-            '--strict',
-            '--output',
-            '/tmp/team-ws/.rapidkit/reports/analyze-last-run.json',
-          ],
+          ['analyze', '--json', '--output', '/tmp/team-ws/.rapidkit/reports/analyze-last-run.json'],
         ],
       })
     );
@@ -166,7 +160,13 @@ describe('workspace snapshot commands', () => {
 
     expect(contributedCommands.has('workspai.workspaceAnalyze')).toBe(true);
     expect(workspaceContextCommands.has('workspai.workspaceAnalyze')).toBe(false);
-    expect(workspaceRunCommands.has('workspai.workspaceAnalyze')).toBe(true);
+    const governanceCommands = new Set(
+      (manifest.contributes?.menus?.['workspai.workspace.governance'] || []).map(
+        (item) => item.command
+      )
+    );
+    expect(governanceCommands.has('workspai.workspaceAnalyze')).toBe(true);
+    expect(workspaceRunCommands.has('workspai.workspaceAnalyze')).toBe(false);
   });
 
   it('inspects a named snapshot', async () => {

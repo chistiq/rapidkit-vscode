@@ -12,12 +12,16 @@ export {
   shouldRefreshEvidenceOnTerminalClose,
   trackWorkspaceEvidenceTerminal,
 } from './evidenceTerminalTracker';
+import { fetchRuntimeCommandSurface } from './runtimeCommandSurface';
 import {
   runWorkspaceIntelligenceSequenceWithProgress,
   type IntelligenceSequenceStep,
 } from './workspaceIntelligenceProgressRunner';
 
-export function buildWorkspaceIntelligenceChainCommands(): string[][] {
+/** Phase 4 narrative steps — optional; gated by workspace subcommand surface, not intelligence gate. */
+export const WORKSPACE_INTELLIGENCE_PHASE4_SUBCOMMANDS = ['why', 'trace'] as const;
+
+export function buildWorkspaceIntelligenceCoreChainCommands(): string[][] {
   return [
     ['workspace', 'model', '--json', '--write'],
     ['workspace', 'snapshot', '--json'],
@@ -26,7 +30,36 @@ export function buildWorkspaceIntelligenceChainCommands(): string[][] {
     ['workspace', 'verify', '--from-impact', WORKSPACE_IMPACT_REPORT_PATH, '--json'],
     buildWorkspaceAgentContextCliArgs(),
     buildWorkspaceAgentSyncCliArgs(),
+    ['workspace', 'explain', 'release-blocked', '--json', '--write'],
   ];
+}
+
+export function buildWorkspaceIntelligencePhase4ChainCommands(): string[][] {
+  return [
+    ['workspace', 'why', 'release-blocked', '--json', '--write'],
+    ['workspace', 'trace', '--from', WORKSPACE_MODEL_DIFF_REPORT_PATH, '--json', '--write'],
+  ];
+}
+
+export function buildWorkspaceIntelligenceChainCommands(options?: {
+  includePhase4?: boolean;
+}): string[][] {
+  const core = buildWorkspaceIntelligenceCoreChainCommands();
+  if (!options?.includePhase4) {
+    return core;
+  }
+  return [...core, ...buildWorkspaceIntelligencePhase4ChainCommands()];
+}
+
+export async function resolveWorkspaceIntelligencePhase4Available(cwd: string): Promise<boolean> {
+  const surface = await fetchRuntimeCommandSurface({ cwd });
+  if (!surface) {
+    return false;
+  }
+  const advertised = new Set(surface.workspaceSubcommands);
+  return WORKSPACE_INTELLIGENCE_PHASE4_SUBCOMMANDS.every((subcommand) =>
+    advertised.has(subcommand)
+  );
 }
 
 export function buildWorkspaceImpactLensCommands(scope?: string): string[][] {
@@ -56,6 +89,9 @@ const WORKSPACE_INTELLIGENCE_CHAIN_LABELS = [
   'Verify',
   'Agent Context',
   'Agent Grounding',
+  'Explain',
+  'Why',
+  'Trace',
 ];
 
 function labelForCommand(command: string[], fallback: string): string {
@@ -75,6 +111,12 @@ function labelForCommand(command: string[], fallback: string): string {
       return 'Agent Context';
     case 'agent-sync':
       return 'Agent Grounding';
+    case 'explain':
+      return 'Explain';
+    case 'why':
+      return 'Why';
+    case 'trace':
+      return 'Trace';
     default:
       return fallback;
   }
@@ -95,10 +137,11 @@ export async function dispatchWorkspaceIntelligenceChain(input: {
   workspaceName: string;
   label?: string;
 }): Promise<void> {
+  const includePhase4 = await resolveWorkspaceIntelligencePhase4Available(input.workspacePath);
   await runWorkspaceIntelligenceSequenceWithProgress({
     title: input.label ?? `Intelligence Chain — ${input.workspaceName}`,
     cwd: input.workspacePath,
-    steps: toSequenceSteps(buildWorkspaceIntelligenceChainCommands()),
+    steps: toSequenceSteps(buildWorkspaceIntelligenceChainCommands({ includePhase4 })),
   });
 }
 

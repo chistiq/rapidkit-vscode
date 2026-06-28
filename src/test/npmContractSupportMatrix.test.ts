@@ -65,6 +65,7 @@ describe('npm contract support matrix', () => {
     const byPath = new Map(NPM_CONTRACT_SUPPORT_MATRIX.map((entry) => [entry.contractPath, entry]));
 
     for (const contractPath of [
+      'agent-customization-pack.v1.json',
       'create-planner-capabilities.v1.json',
       'cli-log-event.v1.json',
       'module-support.v1.json',
@@ -76,13 +77,13 @@ describe('npm contract support matrix', () => {
     }
 
     for (const contractPath of [
-      'agent-customization-pack.v1.json',
       'workspace-intelligence/workspace-context.v1.json',
       'workspace-intelligence/workspace-impact.v1.json',
       'workspace-intelligence/workspace-model-diff.v1.json',
       'workspace-intelligence/workspace-model-snapshot.v1.json',
       'workspace-intelligence/workspace-model.v1.json',
       'workspace-intelligence/workspace-verify.v1.json',
+      'workspace-intelligence/workspace-contract-verify.v1.json',
       'workspace-run-last.v1.json',
       'doctor-project-evidence.v1.json',
       'doctor-workspace-evidence.v1.json',
@@ -96,10 +97,14 @@ describe('npm contract support matrix', () => {
     expect(byPath.get('backend-import-stack-parity.snapshot.json')?.mode).toBe('schema-guarded');
     expect(byPath.get('module-layout.v1.json')?.mode).toBe('schema-guarded');
     expect(byPath.get('cli-log-event.v1.json')?.usage).toContain('RAPIDKIT_LOG_FORMAT=json');
+    expect(
+      byPath.get('workspace-intelligence/workspace-dependency-graph.v1.json')?.usage
+    ).toContain('operational weight');
   });
 
   it('keeps runtime-consumed src mirrors aligned with npm canonical contracts', () => {
     for (const contractPath of [
+      'agent-customization-pack.v1.json',
       'create-planner-capabilities.v1.json',
       'release-readiness.v1.json',
       'workspace-registry.v1.json',

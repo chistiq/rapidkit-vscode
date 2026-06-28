@@ -19,6 +19,8 @@ const WORKSPACE_SUBCOMMANDS_THAT_REFRESH_EVIDENCE = new Set([
   'verify',
   'context',
   'agent-sync',
+  'explain',
+  'trace',
   'sync',
   'run',
   'policy',

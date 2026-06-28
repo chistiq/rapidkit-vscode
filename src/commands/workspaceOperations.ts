@@ -20,6 +20,7 @@ type WorkspaceCommandItem = {
   name?: unknown;
   since?: unknown;
   maxWorkers?: unknown;
+  scope?: unknown;
   stage?: unknown;
   mode?: unknown;
   preferredAction?: unknown;
@@ -283,7 +284,7 @@ function parseWorkspaceAutopilotMode(value: unknown): WorkspaceAutopilotMode | u
 async function pickWorkspaceRunFlags(
   stage: WorkspaceRunStage,
   workspaceName: string,
-  options?: { preferredSince?: string; preferredMaxWorkers?: number }
+  options?: { preferredSince?: string; preferredMaxWorkers?: number; preferredScope?: string }
 ): Promise<string[] | undefined> {
   const selected = await vscode.window.showQuickPick(
     [
@@ -386,6 +387,14 @@ async function pickWorkspaceRunFlags(
     if (sinceRef) {
       flags.push('--since', sinceRef);
     }
+  }
+
+  const typedScope =
+    typeof options?.preferredScope === 'string' && options.preferredScope.trim().length > 0
+      ? options.preferredScope.trim()
+      : undefined;
+  if (typedScope && typedScope !== 'all') {
+    flags.push('--scope', typedScope.startsWith('project:') ? typedScope : `project:${typedScope}`);
   }
 
   if (selectedValues.has('parallel')) {
@@ -629,9 +638,14 @@ export function registerWorkspaceOperationsCommands(options: {
         ? typedItem.since.trim()
         : undefined;
     const preferredMaxWorkers = parsePositiveInteger(typedItem?.maxWorkers);
+    const preferredScope =
+      typeof typedItem?.scope === 'string' && typedItem.scope.trim().length > 0
+        ? typedItem.scope.trim()
+        : undefined;
     const flags = await pickWorkspaceRunFlags(stage, wsName, {
       preferredSince,
       preferredMaxWorkers,
+      preferredScope,
     });
     if (!flags) {
       return;
@@ -1327,6 +1341,43 @@ export function registerWorkspaceOperationsCommands(options: {
       await runWorkspaceStageCommand(item, 'start');
     }),
 
+    vscode.commands.registerCommand('workspai.workspaceWatch', async (item?: unknown) => {
+      const workspaceExplorer = getWorkspaceExplorer();
+      const { workspacePath, workspaceName } = resolveWorkspaceTarget(item, workspaceExplorer);
+      if (!workspacePath) {
+        vscode.window.showErrorMessage(
+          'No workspace selected. Select a workspace in the sidebar first.'
+        );
+        return;
+      }
+      const wsName = workspaceName || path.basename(workspacePath);
+      runRapidkitCommandsInTerminal({
+        name: `Workspai: Workspace Watch — ${wsName}`,
+        cwd: workspacePath,
+        commands: [['workspace', 'watch', '--once', '--json']],
+      });
+    }),
+
+    vscode.commands.registerCommand('workspai.workspaceMcp', async (item?: unknown) => {
+      const workspaceExplorer = getWorkspaceExplorer();
+      const { workspacePath, workspaceName } = resolveWorkspaceTarget(item, workspaceExplorer);
+      if (!workspacePath) {
+        vscode.window.showErrorMessage(
+          'No workspace selected. Select a workspace in the sidebar first.'
+        );
+        return;
+      }
+      const wsName = workspaceName || path.basename(workspacePath);
+      void vscode.window.showInformationMessage(
+        'Workspace MCP serve starts a stdio MCP server in the integrated terminal. Stop it with Ctrl+C when finished.'
+      );
+      runRapidkitCommandsInTerminal({
+        name: `Workspai: Workspace MCP — ${wsName}`,
+        cwd: workspacePath,
+        commands: [['workspace', 'mcp', 'serve']],
+      });
+    }),
+
     vscode.commands.registerCommand(
       'workspai.workspaceAutopilotRelease',
       async (item?: unknown) => {
@@ -1352,7 +1403,7 @@ export function registerWorkspaceOperationsCommands(options: {
       runRapidkitCommandsInTerminal({
         name: `Workspai: Analyze Workspace — ${wsName}`,
         cwd: workspacePath,
-        commands: [['analyze', '--json', '--strict', '--output', reportOutputPath]],
+        commands: [['analyze', '--json', '--output', reportOutputPath]],
       });
     }),
 
@@ -1659,6 +1710,67 @@ export function registerWorkspaceOperationsCommands(options: {
         name: `Workspai: Cache — ${workspaceName || path.basename(workspacePath)}`,
         cwd: workspacePath,
         commands: [['cache', 'repair']],
+      });
+    }),
+
+    vscode.commands.registerCommand('workspai.mirrorOps', async (item?: unknown) => {
+      const workspaceExplorer = getWorkspaceExplorer();
+      const { workspacePath, workspaceName } = resolveWorkspaceTarget(item, workspaceExplorer);
+      if (!workspacePath) {
+        vscode.window.showErrorMessage('No workspace selected.');
+        return;
+      }
+
+      type MirrorAction = 'status' | 'sync' | 'verify' | 'rotate';
+      const actions: Array<{ label: string; description: string; action: MirrorAction }> = [
+        {
+          label: '$(pulse) Mirror status',
+          description: 'Initialize mirror config stub and write mirror-ops evidence',
+          action: 'status',
+        },
+        {
+          label: '$(cloud-download) Mirror sync',
+          description: 'Sync pinned registry mirror artifacts',
+          action: 'sync',
+        },
+        {
+          label: '$(verified) Mirror verify',
+          description: 'Verify mirror integrity in offline/CI mode',
+          action: 'verify',
+        },
+        {
+          label: '$(refresh) Rotate keys',
+          description: 'Re-sign pinned mirror artifacts (destructive)',
+          action: 'rotate',
+        },
+      ];
+
+      const selection = await vscode.window.showQuickPick(actions, {
+        title: 'Mirror Operations',
+        placeHolder: 'Choose mirror operation',
+        ignoreFocusOut: true,
+      });
+      if (!selection) {
+        return;
+      }
+
+      const wsName = workspaceName || path.basename(workspacePath);
+      if (selection.action === 'rotate') {
+        const confirm = await vscode.window.showWarningMessage(
+          `Rotate signing keys for mirror in "${wsName}"?\n\nThis re-signs all pinned artifacts. Existing rotation snapshots will be archived.`,
+          { modal: true },
+          'Rotate Keys',
+          'Cancel'
+        );
+        if (confirm !== 'Rotate Keys') {
+          return;
+        }
+      }
+
+      runRapidkitCommandsInTerminal({
+        name: `Workspai: Mirror — ${wsName}`,
+        cwd: workspacePath,
+        commands: [['mirror', selection.action]],
       });
     }),
 

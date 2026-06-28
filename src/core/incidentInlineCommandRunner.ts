@@ -2,14 +2,15 @@ import fs from 'fs-extra';
 import path from 'path';
 
 import {
-  buildNpxRapidkitArgs,
+  buildRapidkitExecutionSpec,
   toPinnedRapidkitExecutionCommand,
 } from '../utils/platformCapabilities';
 import { getWorkspaceVenvRapidkitCandidates } from '../utils/platformCapabilities';
+import { DASHBOARD_COMMAND_CONTRACTS } from './dashboardCommandContracts.js';
 
 const SHELL_METACHAR_PATTERN = /[;|`$]|&&|\|\||\$\(/;
 
-const ALLOWED_ROOT_COMMANDS = new Set([
+const BASE_ALLOWED_ROOT_COMMANDS = [
   'doctor',
   'readiness',
   'pipeline',
@@ -21,7 +22,21 @@ const ALLOWED_ROOT_COMMANDS = new Set([
   'build',
   'dev',
   'shell',
-]);
+] as const;
+
+function buildAllowedRootCommands(): Set<string> {
+  const roots = new Set<string>(BASE_ALLOWED_ROOT_COMMANDS);
+  for (const contract of Object.values(DASHBOARD_COMMAND_CONTRACTS)) {
+    const cliArgs = 'cliArgs' in contract ? contract.cliArgs : undefined;
+    const root = cliArgs?.[0];
+    if (typeof root === 'string' && root.trim().length > 0) {
+      roots.add(root);
+    }
+  }
+  return roots;
+}
+
+const ALLOWED_ROOT_COMMANDS = buildAllowedRootCommands();
 
 export type ParsedRapidkitInvocation = {
   rapidkitArgs: string[];
@@ -40,6 +55,7 @@ export type RapidkitExecutionPlan = {
   args: string[];
   cwd: string;
   displayCommand: string;
+  shell?: boolean;
 };
 
 function tokenizeCommandArgs(input: string): string[] {
@@ -123,6 +139,26 @@ export function parseRapidkitInlineCommand(
     return { error: 'Autopilot commands must use the release subcommand.' };
   }
 
+  if (
+    root === 'snapshot' &&
+    rapidkitArgs[1] &&
+    !['create', 'list', 'inspect', 'restore'].includes(rapidkitArgs[1])
+  ) {
+    return { error: 'Snapshot commands must use create, list, inspect, or restore.' };
+  }
+
+  if (root === 'infra' && rapidkitArgs[1] !== 'plan') {
+    return { error: 'Infra commands must use the plan subcommand.' };
+  }
+
+  if (root === 'mirror' && rapidkitArgs[1] && !['sync', 'status'].includes(rapidkitArgs[1])) {
+    return { error: 'Mirror commands must use sync or status.' };
+  }
+
+  if (root === 'cache' && rapidkitArgs[1] !== 'status') {
+    return { error: 'Cache commands must use the status subcommand.' };
+  }
+
   return {
     rapidkitArgs,
     displayCommand: `rapidkit ${rapidkitArgs.join(' ')}`.trim(),
@@ -136,6 +172,12 @@ const WORKSPACE_SCOPED_ROOTS = new Set([
   'workspace',
   'analyze',
   'autopilot',
+  'bootstrap',
+  'setup',
+  'snapshot',
+  'infra',
+  'mirror',
+  'cache',
 ]);
 
 export async function resolveRapidkitExecutionPlan(
@@ -168,6 +210,7 @@ export async function resolveRapidkitExecutionPlan(
         args: parsed.rapidkitArgs,
         cwd: effectiveCwd,
         displayCommand: parsed.displayCommand,
+        shell: false,
       };
     }
   }
@@ -178,6 +221,7 @@ export async function resolveRapidkitExecutionPlan(
       args: parsed.rapidkitArgs,
       cwd: effectiveCwd,
       displayCommand: `./rapidkit ${parsed.rapidkitArgs.join(' ')}`.trim(),
+      shell: false,
     };
   }
 
@@ -189,14 +233,17 @@ export async function resolveRapidkitExecutionPlan(
       args: ['run', 'rapidkit', ...parsed.rapidkitArgs],
       cwd: effectiveCwd,
       displayCommand: `poetry run ${parsed.displayCommand}`,
+      shell: false,
     };
   }
 
+  const execution = buildRapidkitExecutionSpec(parsed.rapidkitArgs);
   return {
-    executable: 'npx',
-    args: buildNpxRapidkitArgs(parsed.rapidkitArgs),
+    executable: execution.command,
+    args: execution.args,
     cwd: effectiveCwd,
-    displayCommand: parsed.displayCommand,
+    displayCommand: execution.displayCommand,
+    shell: execution.shell,
   };
 }
 
@@ -208,7 +255,7 @@ export async function execRapidkitExecutionPlan(plan: RapidkitExecutionPlan): Pr
   const { execa } = await import('execa');
   const result = await execa(plan.executable, plan.args, {
     cwd: plan.cwd,
-    shell: false,
+    shell: plan.shell ?? false,
     timeout: 60_000,
     reject: false,
   });

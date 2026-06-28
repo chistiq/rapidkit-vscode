@@ -31,7 +31,7 @@ describe('incident studio minimal UX guard', () => {
     const sidebar = read('webview-ui/src/sidebar/SecondarySidebar.tsx');
     const composer = read('webview-ui/src/sidebar/composer/ComposerShell.tsx');
 
-    expect(sidebar).toContain('placeholder="Describe the issue or task"');
+    expect(sidebar).toContain("'Describe the issue or task'");
     expect(composer).toContain('placeholder={props.placeholder}');
     expect(composer).not.toContain('Ask about current evidence or run the guided next step');
   });

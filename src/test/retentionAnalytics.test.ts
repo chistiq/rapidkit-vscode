@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 
 const { envState, mockGet } = vi.hoisted(() => ({
   envState: { isTelemetryEnabled: true },
@@ -30,6 +32,13 @@ import {
 import { ANALYTICS_OPT_IN_KEY } from '../core/analyticsConsent';
 import type { TtfvRecord } from '../core/ttfvBridge';
 import type { DashboardActivityEntry } from '../core/dashboardActivityBridge';
+import type { RetentionMilestoneState } from '../core/retentionMilestones';
+
+const repoRoot = path.resolve(__dirname, '..', '..');
+
+function read(relPath: string): string {
+  return fs.readFileSync(path.join(repoRoot, relPath), 'utf8');
+}
 
 function createContext() {
   const store = new Map<string, unknown>();
@@ -87,6 +96,20 @@ function activity(): DashboardActivityEntry[] {
   ];
 }
 
+function milestones(overrides: Partial<RetentionMilestoneState> = {}): RetentionMilestoneState {
+  return {
+    schemaVersion: 'workspai-retention-milestones-v1',
+    firstArtifactGeneratedAt: NOW - 50_000,
+    firstBlockerFixedAt: NOW - 40_000,
+    verifyPassAfterStudioFixAt: NOW - 30_000,
+    returnToDashboardAfterVerifyAt: NOW - 20_000,
+    commandFailuresBySurface: { dashboard: 2, studio: 1 },
+    totalCommandFailures: 3,
+    updatedAt: NOW - 10_000,
+    ...overrides,
+  };
+}
+
 describe('buildRetentionCohortSummary', () => {
   it('aggregates counts/durations into an anonymous summary', () => {
     const summary = buildRetentionCohortSummary({
@@ -94,6 +117,7 @@ describe('buildRetentionCohortSummary', () => {
       ttfv: ttfv(),
       registeredWorkspaceCount: 2,
       activity: activity(),
+      milestones: milestones(),
     });
 
     expect(summary.schemaVersion).toBe('retention-cohort.v1');
@@ -106,6 +130,13 @@ describe('buildRetentionCohortSummary', () => {
     expect(summary.activityFailedCount).toBe(1);
     expect(summary.activityDispatchedCount).toBe(1);
     expect(summary.totalCommandRuns).toBe(6); // 3 + 1 + 2
+    expect(summary.firstArtifactGenerated).toBe(true);
+    expect(summary.firstBlockerFixed).toBe(true);
+    expect(summary.verifyPassAfterStudioFix).toBe(true);
+    expect(summary.returnToDashboardAfterVerify).toBe(true);
+    expect(summary.totalCommandFailures).toBe(3);
+    expect(summary.commandFailuresBySurface.dashboard).toBe(2);
+    expect(summary.commandFailuresBySurface.studio).toBe(1);
   });
 
   it('never includes paths, names, or command identifiers', () => {
@@ -114,6 +145,7 @@ describe('buildRetentionCohortSummary', () => {
       ttfv: ttfv(),
       registeredWorkspaceCount: 1,
       activity: activity(),
+      milestones: milestones(),
     });
     const serialized = JSON.stringify(summary);
     expect(serialized).not.toContain('secret');
@@ -174,5 +206,20 @@ describe('sendRetentionAnalyticsPayload + captureRetentionAnalytics', () => {
     const sent = await sendRetentionAnalyticsPayload(context, payload);
     expect(sent).toBe(true);
     expect(store.has(ANALYTICS_LOCAL_SNAPSHOT_KEY)).toBe(true);
+  });
+});
+
+describe('retention milestone wiring', () => {
+  it('records local-only milestone signals from artifact, dashboard, and Studio paths', () => {
+    const ttfvBridge = read('src/core/ttfvBridge.ts');
+    const dashboardHost = read('src/ui/panels/welcomePanelDashboardHostFactories.ts');
+    const actionsProvider = read('src/ui/webviews/actionsWebviewProvider.ts');
+
+    expect(ttfvBridge).toContain("recordRetentionMilestone(context, 'first_artifact_generated'");
+    expect(dashboardHost).toContain("recordRetentionMilestone(bindings.context, 'command_failure'");
+    expect(actionsProvider).toContain("'first_blocker_fixed'");
+    expect(actionsProvider).toContain("'verify_pass_after_studio_fix'");
+    expect(actionsProvider).toContain("'return_to_dashboard_after_verify'");
+    expect(actionsProvider).toContain("surface: 'studio'");
   });
 });

@@ -74,6 +74,7 @@ describe('shared contracts workflow (Wave A + B)', () => {
     expect(syncScript).toContain('rapidkit-npm/contracts/');
     expect(syncScript).toContain('listJsonContracts');
     expect(syncScript).toContain('SRC_CONTRACT_MIRROR_FILES');
+    expect(syncScript).toContain('agent-customization-pack.v1.json');
     expect(preCommit).toContain('npm run validate:contracts');
     expect(preCommit).toContain('npm run sync:shared-contracts');
     if (fs.existsSync(npmSyncScriptPath)) {
@@ -102,6 +103,7 @@ describe('shared contracts workflow (Wave A + B)', () => {
 
   it('keeps runtime-consumed src contract copies aligned with rapidkit-npm', () => {
     const srcMirroredContracts = [
+      'agent-customization-pack.v1.json',
       'create-planner-capabilities.v1.json',
       'release-readiness.v1.json',
       'workspace-registry.v1.json',
@@ -120,6 +122,19 @@ describe('shared contracts workflow (Wave A + B)', () => {
       expect(fs.existsSync(srcContractPath), contractFile).toBe(true);
       expect(JSON.parse(fs.readFileSync(srcContractPath, 'utf8')), contractFile).toEqual(
         JSON.parse(fs.readFileSync(npmContractPath, 'utf8'))
+      );
+    }
+  });
+
+  it('includes Phase 4 operational intelligence schemas in npm contract mirror', () => {
+    const phase4 = [
+      'workspace-intelligence/workspace-explain.v1.json',
+      'workspace-intelligence/workspace-skills-index.v1.json',
+      'workspace-intelligence/agent-action-outcome.v1.json',
+    ];
+    for (const contractFile of phase4) {
+      expect(fs.existsSync(path.join(repoRoot, 'contracts', contractFile)), contractFile).toBe(
+        true
       );
     }
   });

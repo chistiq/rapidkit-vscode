@@ -1,6 +1,6 @@
 import { run } from '../utils/exec';
 import {
-  buildNpxRapidkitArgs,
+  buildRapidkitExecutionSpec,
   warmRapidkitNpmPackageResolution,
 } from '../utils/platformCapabilities';
 import { parseTrailingJson } from './canonicalProjectLifecycle';
@@ -122,8 +122,10 @@ export async function fetchRuntimeCommandSurface(options?: {
   await warmRapidkitNpmPackageResolution();
 
   try {
-    const result = await run('npx', buildNpxRapidkitArgs(['commands', '--json']), {
+    const execution = buildRapidkitExecutionSpec(['commands', '--json']);
+    const result = await run(execution.command, execution.args, {
       cwd,
+      shell: execution.shell,
       timeout: 20_000,
     });
 

@@ -3,6 +3,7 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 
 import { Logger } from '../utils/logger';
+import { recordRetentionMilestone } from './retentionMilestones';
 
 /**
  * Time-to-First-Value (TTFV) instrumentation (roadmap item 2.9).
@@ -185,6 +186,12 @@ export async function recordTtfvIfNeeded(
     extensionVersion: options?.extensionVersion,
   };
   await context.globalState.update(TTFV_RECORD_KEY, record);
+  if (!preexisting) {
+    await recordRetentionMilestone(context, 'first_artifact_generated', {
+      surface: 'dashboard',
+      now,
+    });
+  }
 
   const logger = Logger.getInstance();
   if (preexisting) {

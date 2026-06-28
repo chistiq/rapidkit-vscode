@@ -3,6 +3,21 @@ import * as path from 'path';
 
 import { WORKSPACE_CONTEXT_AGENT_REPORT_PATH } from './workspaceIntelligencePaths';
 
+export const WORKSPACE_CONTEXT_SCHEMA_VERSION = 'workspace-context.v1';
+
+export function isWorkspaceAgentContextReport(
+  value: unknown
+): value is WorkspaceAgentContextReport {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    record.schemaVersion === WORKSPACE_CONTEXT_SCHEMA_VERSION &&
+    typeof record.generatedAt === 'string'
+  );
+}
+
 export type WorkspaceAgentContextReport = {
   schemaVersion?: string;
   generatedAt?: string;
@@ -48,7 +63,7 @@ export async function readWorkspaceAgentContextReport(
       return null;
     }
     const raw = await fs.readJson(reportPath);
-    return raw && typeof raw === 'object' ? (raw as WorkspaceAgentContextReport) : null;
+    return isWorkspaceAgentContextReport(raw) ? raw : null;
   } catch {
     return null;
   }

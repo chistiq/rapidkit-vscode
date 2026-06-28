@@ -70,6 +70,10 @@ vi.mock('../core/rapidkitCliCapabilities', () => ({
   gateAdoptCli: vi.fn().mockResolvedValue(true),
 }));
 
+vi.mock('../core/cliVersionGate', () => ({
+  gateCompatibleCliVersion: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock('../core/moduleEnablementPrompt', () => ({
   resolveEnableModulesPreference: vi.fn().mockResolvedValue(false),
 }));

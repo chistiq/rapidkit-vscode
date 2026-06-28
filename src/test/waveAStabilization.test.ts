@@ -39,7 +39,7 @@ describe('project selection sync (Wave A)', () => {
     expect(welcomePanelSource).toContain('_pendingDashboardSectionOpen');
   });
 
-  it('registers workspaceSync in package manifest and governance submenu', () => {
+  it('registers workspaceSync in package manifest and run submenu', () => {
     const packageJson = JSON.parse(read('package.json'));
 
     const commandIds = packageJson.contributes.commands.map(
@@ -47,15 +47,10 @@ describe('project selection sync (Wave A)', () => {
     );
     expect(commandIds).toContain('workspai.workspaceSync');
 
-    const governanceSubmenu = packageJson.contributes.submenus.find(
-      (entry: { id: string }) => entry.id === 'workspai.workspace.governance'
-    );
-    expect(governanceSubmenu).toBeDefined();
-
-    const governanceCommands = packageJson.contributes.menus['workspai.workspace.governance'].map(
+    const runCommands = packageJson.contributes.menus['workspai.workspace.run'].map(
       (entry: { command: string }) => entry.command
     );
-    expect(governanceCommands).toContain('workspai.workspaceSync');
+    expect(runCommands).toContain('workspai.workspaceSync');
   });
 
   it('aligns workspace verify and context agent contract cli args with dispatch', () => {

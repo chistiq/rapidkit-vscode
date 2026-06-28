@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 const SRC_CONTRACT_MIRROR_FILES = [
+  'agent-customization-pack.v1.json',
   'create-planner-capabilities.v1.json',
   'release-readiness.v1.json',
   'workspace-registry.v1.json',

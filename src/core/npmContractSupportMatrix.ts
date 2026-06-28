@@ -21,10 +21,10 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
   },
   {
     contractPath: 'agent-customization-pack.v1.json',
-    mode: 'evidence-consumed',
+    mode: 'runtime-consumed',
     extensionSurface: 'Agent Customization Pack card, walkthrough agent-sync step, Copilot handoff',
     usage:
-      'Reads agent-customization-pack.json for preset/target inventory, drift state, hooks/MCP metadata, and dispatches enterprise agent-sync CLI args.',
+      'Imports the npm-synced contract for the standard answer contract and reads agent-customization-pack.json for preset/target inventory, drift state, hooks/MCP metadata, and enterprise agent-sync routing.',
   },
   {
     contractPath: 'analyze-last-run.v1.json',
@@ -112,7 +112,7 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
     mode: 'evidence-consumed',
     extensionSurface: 'Workspace atlas graph view, Advisor, Studio blast-radius',
     usage:
-      'Reads the dependency graph embedded in workspace-model.json (nodes, typed edges, integrity) for blast-radius and impact navigation.',
+      'Reads the dependency graph embedded in workspace-model.json (typed edges, coverage, diagnostics, operational weight, and integrity) for blast-radius and impact navigation.',
   },
   {
     contractPath: 'workspace-intelligence/workspace-impact.v1.json',
@@ -143,6 +143,60 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
     mode: 'evidence-consumed',
     extensionSurface: 'Workspace verify evidence and repair verification',
     usage: 'Reads workspace-verify-last-run.json to verify impact and gate results.',
+  },
+  {
+    contractPath: 'workspace-intelligence/workspace-contract-verify.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Workspace contract verify card and governance gate',
+    usage: 'Reads workspace-contract-verify-last-run.json for contract gate evidence.',
+  },
+  {
+    contractPath: 'workspace-intelligence/blocker-resolution.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Studio blocker resolution hints and verify handoff',
+    usage: 'Reads resolutionHints from workspace verify aligned with blocker-resolution.v1.',
+  },
+  {
+    contractPath: 'workspace-intelligence/studio-blocker-handoff.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Studio fix loop handoff and sidebar patch bridge',
+    usage: 'Validates studio blocker handoff payloads between dashboard and sidebar Studio.',
+  },
+  {
+    contractPath: 'workspace-intelligence/workspace-explain.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Workspace Explain card and Advisor read-only narrative',
+    usage: 'Reads workspace-explain-last-run.json for release/project explain sections.',
+  },
+  {
+    contractPath: 'workspace-intelligence/workspace-skills-index.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Agent Grounding card and Copilot handoff',
+    usage: 'Reads workspace-skills-index.json for operational skill catalog metadata.',
+  },
+  {
+    contractPath: 'workspace-intelligence/doctor-fix-result.v1.json',
+    mode: 'schema-guarded',
+    extensionSurface: 'Studio doctor-fix stdout parsing',
+    usage: 'Guards structured fixResult payloads emitted by doctor workspace/project --fix --json.',
+  },
+  {
+    contractPath: 'workspace-intelligence/workspace-operational-skill.v1.json',
+    mode: 'schema-guarded',
+    extensionSurface: 'Operational skills parity',
+    usage: 'Guards canonical .rapidkit/skills/ record shape against npm generator.',
+  },
+  {
+    contractPath: 'workspace-intelligence/agent-action-outcome.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Studio feedback bridge to workspace history',
+    usage: 'Maps sidebar audit payloads to workspace feedback record CLI stdin.',
+  },
+  {
+    contractPath: 'workspace-intelligence/workspace-intelligence-history.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Workspace trend chart and feedback history',
+    usage: 'Reads verify and agent-action entries from workspace-intelligence-history.json.',
   },
   {
     contractPath: 'workspace-registry.v1.json',

@@ -10,6 +10,7 @@ import * as fs from 'fs-extra';
 import { ProjectWizard } from '../ui/wizards/projectWizard';
 import type { ScaffoldFramework } from '../core/scaffoldKits';
 import { isFrontendScaffoldKit } from '../core/scaffoldKits';
+import { gateCompatibleCliVersion } from '../core/cliVersionGate';
 import { gateCreateFrontendCli } from '../core/rapidkitCliCapabilities';
 import { Logger } from '../utils/logger';
 import { WorkspaceManager } from '../core/workspaceManager';
@@ -302,6 +303,13 @@ export async function createProjectCommand(
     logger.info('Project config from wizard:', JSON.stringify(config));
 
     if (isFrontendScaffoldKit(config.kit)) {
+      const versionAllowed = await gateCompatibleCliVersion({
+        cwd: outputParentAbs,
+        featureLabel: 'Create Frontend Project',
+      });
+      if (!versionAllowed) {
+        return;
+      }
       const allowed = await gateCreateFrontendCli('Create Frontend Project', {
         cwd: outputParentAbs,
       });

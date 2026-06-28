@@ -5,6 +5,7 @@ import * as path from 'path';
 import AdmZip from 'adm-zip';
 import {
   buildWorkspaceArchiveManifest,
+  persistWorkspaceShipHandoffManifest,
   extractWorkspaceArchiveToTemp,
   isSafeArchiveEntryName,
   sanitizeWorkspaceArchiveName,
@@ -28,6 +29,25 @@ describe('workspaceArchive', () => {
     tempRoots.push(dirPathStr);
     return dirPathStr;
   }
+
+  it('persists ship-handoff manifest on the workspace after export', async () => {
+    const workspacePath = await makeTempDir('workspai-archive-manifest-');
+    await fs.writeFile(path.join(workspacePath, '.rapidkit-workspace'), '{}', 'utf8');
+    await fs.ensureDir(path.join(workspacePath, 'api'));
+    await fs.writeFile(path.join(workspacePath, 'api', 'README.md'), '# api', 'utf8');
+
+    const manifestPath = await persistWorkspaceShipHandoffManifest({
+      workspacePath,
+      workspaceName: 'demo-workspace',
+      exportArchivePath: '/tmp/demo-workspace.rapidkit-archive.zip',
+    });
+
+    expect(manifestPath).toContain('archive-manifest.json');
+    const record = await fs.readJson(manifestPath);
+    expect(record.summary).toContain('exported to');
+    expect(record.files.length).toBeGreaterThan(0);
+    expect(record.exportArchivePath).toContain('demo-workspace.rapidkit-archive.zip');
+  });
 
   it('rejects unsafe archive entry names across operating systems', () => {
     expect(isSafeArchiveEntryName('.rapidkit-workspace')).toBe(true);

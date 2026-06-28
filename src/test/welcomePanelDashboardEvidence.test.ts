@@ -22,6 +22,16 @@ describe('welcomePanelDashboardEvidence', () => {
     expect(source).toContain("postWebviewMessage(\n    'dashboardEvidence'");
     expect(source).toContain('onboarding:');
     expect(source).toContain('refreshMode:');
+    const hostFactoriesSource = readFileSync(
+      path.resolve(currentDir, '../ui/panels/welcomePanelDashboardHostFactories.ts'),
+      'utf8'
+    );
+    expect(hostFactoriesSource).toContain("'dashboardCommandFailed'");
+    expect(hostFactoriesSource).toContain(
+      'cardIds: resolveEvidenceCardIdsForDashboardCommand(command)'
+    );
+    expect(hostFactoriesSource).toContain('exitCode: details?.exitCode');
+    expect(hostFactoriesSource).toContain('stderrTail: details?.stderrTail');
     expect(welcomePanelSource).toContain('_dashboardEvidenceHost()');
     expect(welcomePanelSource).toContain('sendDashboardEvidence(this._dashboardEvidenceHost()');
     expect(welcomePanelSource).not.toContain('buildDashboardEvidenceBundle({');

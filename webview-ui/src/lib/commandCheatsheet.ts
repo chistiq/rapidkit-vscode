@@ -1,4 +1,10 @@
 import { buildRapidkitDisplayCommand } from './rapidkitCommandText';
+import {
+  buildWorkspaceExplainCliSnippet,
+  buildWorkspaceGraphExplainCliSnippet,
+  buildWorkspaceTraceCliSnippet,
+  buildWorkspaceWhyCliSnippet,
+} from './workspaceIntelligencePaths';
 
 export type CommandCheatsheetEntry = {
   label: string;
@@ -25,7 +31,12 @@ export const COMMAND_CHEATSHEET_GROUPS: CommandCheatsheetGroup[] = [
         scope: 'workspace',
       },
       { label: 'Doctor', command: 'rapidkit doctor workspace', scope: 'workspace' },
-      { label: 'Analyze', command: 'rapidkit analyze --json --strict', scope: 'workspace' },
+      {
+        label: 'Analyze',
+        command: 'rapidkit analyze --json',
+        scope: 'workspace',
+        note: 'Use --strict for CI gates; interactive runs omit strict so scaffold workspaces stay needs-attention',
+      },
       {
         label: 'Governance pipeline',
         command: 'rapidkit pipeline --json --strict',
@@ -48,6 +59,36 @@ export const COMMAND_CHEATSHEET_GROUPS: CommandCheatsheetGroup[] = [
       {
         label: 'Agent context pack',
         command: 'rapidkit workspace context --for-agent --json --write',
+        scope: 'workspace',
+      },
+      {
+        label: 'Workspace explain',
+        command: buildWorkspaceExplainCliSnippet().replace(/^npx /, ''),
+        scope: 'workspace',
+      },
+      {
+        label: 'Workspace why',
+        command: buildWorkspaceWhyCliSnippet().replace(/^npx /, ''),
+        scope: 'workspace',
+      },
+      {
+        label: 'Workspace trace',
+        command: buildWorkspaceTraceCliSnippet().replace(/^npx /, ''),
+        scope: 'workspace',
+      },
+      {
+        label: 'Workspace graph explain',
+        command: buildWorkspaceGraphExplainCliSnippet().replace(/^npx /, ''),
+        scope: 'workspace',
+      },
+      {
+        label: 'Workspace watch',
+        command: 'rapidkit workspace watch --once --json',
+        scope: 'workspace',
+      },
+      {
+        label: 'Workspace MCP serve',
+        command: 'rapidkit workspace mcp serve',
         scope: 'workspace',
       },
     ],

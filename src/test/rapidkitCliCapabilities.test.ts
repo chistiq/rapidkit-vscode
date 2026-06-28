@@ -6,6 +6,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 vi.mock('vscode', () => ({
   window: {
     showWarningMessage: vi.fn(),
+    showErrorMessage: vi.fn(),
   },
   commands: {
     executeCommand: vi.fn(),
@@ -25,15 +26,22 @@ vi.mock('../utils/platformCapabilities', async (importOriginal) => {
 });
 
 import { run } from '../utils/exec';
+import * as vscode from 'vscode';
 import {
   gateCreateFrontendCli,
+  gateTopLevelRapidkitCli,
+  gateWorkspaceSubcommandCli,
   gateWorkspaceIntelligenceCli,
   probeAdoptCliCapabilities,
   probeCreateFrontendCliCapabilities,
+  probeTopLevelCliCapability,
+  probeWorkspaceSubcommandCliCapability,
   probeWorkspaceIntelligenceCliCapabilities,
   REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS,
 } from '../core/rapidkitCliCapabilities';
+import { gateRapidkitCliArgs } from '../core/rapidkitEnterpriseCliGate';
 import { clearRuntimeCommandSurfaceCache } from '../core/runtimeCommandSurface';
+import { MIN_RAPIDKIT_CLI_VERSION } from '../core/cliVersionCompatibilityContract';
 
 const mockedRun = vi.mocked(run);
 
@@ -46,25 +54,27 @@ function commandsJson(
   } = {}
 ): string {
   const intelligence = overrides.intelligenceSubcommands ?? [
-    'model',
-    'snapshot',
-    'diff',
-    'impact',
-    'verify',
-    'context',
-    'agent-sync',
+    ...REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS,
   ];
   const workspaceSubcommands = overrides.workspaceSubcommands ?? [
     ...intelligence,
     'graph',
     'watch',
   ];
-  const commandMapIds = overrides.commandMap ?? ['create', 'adopt', 'workspace', 'project'];
+  const commandMapIds = overrides.commandMap ?? [
+    'create',
+    'adopt',
+    'workspace',
+    'project',
+    'readiness',
+    'doctor',
+    'autopilot',
+  ];
   const payload = {
     schemaVersion: overrides.schemaVersion ?? 'rapidkit-command-capabilities-v1',
     scope: 'global',
     cli: 'rapidkit-npm',
-    version: '0.39.0',
+    version: MIN_RAPIDKIT_CLI_VERSION,
     cwd: '/tmp/ws',
     contracts: {
       runtimeCommandSurface: 'rapidkit-runtime-command-surface-v1',
@@ -86,6 +96,7 @@ describe('rapidkitCliCapabilities (commands --json driven)', () => {
   beforeEach(() => {
     mockedRun.mockReset();
     clearRuntimeCommandSurfaceCache();
+    vi.mocked(vscode.window.showErrorMessage).mockReset();
   });
 
   it('detects workspace intelligence from rapidkit commands --json', async () => {
@@ -169,6 +180,23 @@ describe('rapidkitCliCapabilities (commands --json driven)', () => {
     });
   });
 
+  it('detects enterprise Studio root commands and workspace subcommands from commands --json', async () => {
+    mockedRun.mockResolvedValue({
+      stdout: commandsJson({
+        workspaceSubcommands: [...REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS, 'archive', 'graph'],
+      }),
+      stderr: '',
+      exitCode: 0,
+    });
+
+    await expect(probeTopLevelCliCapability('readiness', { forceRefresh: true })).resolves.toEqual({
+      available: true,
+    });
+    await expect(
+      probeWorkspaceSubcommandCliCapability('archive', { forceRefresh: true })
+    ).resolves.toEqual({ available: true });
+  });
+
   it('reports create-frontend unavailable when the CLI omits the create command', async () => {
     mockedRun.mockResolvedValueOnce({
       stdout: commandsJson({ commandMap: ['adopt', 'workspace'] }),
@@ -206,6 +234,70 @@ describe('rapidkitCliCapabilities gates', () => {
     });
 
     await expect(gateCreateFrontendCli('Create Frontend Project')).resolves.toBe(true);
+  });
+
+  it('allows Studio enterprise commands advertised by the runtime surface', async () => {
+    mockedRun.mockResolvedValue({
+      stdout: commandsJson({
+        workspaceSubcommands: [...REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS, 'archive', 'graph'],
+      }),
+      stderr: '',
+      exitCode: 0,
+    });
+
+    await expect(gateTopLevelRapidkitCli('Studio readiness', 'readiness')).resolves.toBe(true);
+    await expect(gateWorkspaceSubcommandCli('Studio archive', 'archive')).resolves.toBe(true);
+  });
+
+  it('blocks workspace intelligence when required capabilities are missing', async () => {
+    mockedRun.mockResolvedValueOnce({
+      stdout: commandsJson({ intelligenceSubcommands: ['model'] }),
+      stderr: '',
+      exitCode: 0,
+    });
+
+    await expect(gateWorkspaceIntelligenceCli('Intelligence Chain')).resolves.toBe(false);
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+      expect.stringContaining('Intelligence Chain is blocked'),
+      'Open Setup'
+    );
+  });
+
+  it('gates raw rapidkit args before enterprise evidence execution', async () => {
+    mockedRun.mockResolvedValue({
+      stdout: commandsJson({
+        workspaceSubcommands: [...REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS, 'contract'],
+      }),
+      stderr: '',
+      exitCode: 0,
+    });
+
+    await expect(
+      gateRapidkitCliArgs({
+        args: ['workspace', 'verify', '--json'],
+        cwd: '/tmp/ws',
+        featureLabel: 'Workspace Verify',
+      })
+    ).resolves.toEqual({ allowed: true });
+  });
+
+  it('blocks raw rapidkit args when the runtime surface omits the command capability', async () => {
+    mockedRun.mockResolvedValue({
+      stdout: commandsJson({ commandMap: ['workspace'] }),
+      stderr: '',
+      exitCode: 0,
+    });
+
+    await expect(
+      gateRapidkitCliArgs({
+        args: ['readiness'],
+        cwd: '/tmp/ws',
+        featureLabel: 'Release Readiness',
+      })
+    ).resolves.toMatchObject({
+      allowed: false,
+      error: expect.stringContaining('does not advertise readiness'),
+    });
   });
 });
 

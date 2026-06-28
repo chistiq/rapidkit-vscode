@@ -40,6 +40,7 @@ describe('evidenceCardAgentPrompt', () => {
     await fs.ensureDir(reportsDir);
     await fs.writeJson(path.join(reportsDir, 'workspace-impact-last-run.json'), {
       schemaVersion: 'workspace-impact.v1',
+      generatedAt: '2026-06-15T10:00:00.000Z',
       summary: {
         risk: 'high',
         affectedProjects: 0,

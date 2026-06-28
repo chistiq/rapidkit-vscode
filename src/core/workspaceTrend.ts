@@ -138,6 +138,7 @@ export function buildWorkspaceTrend(
   const cutoff = now - windowMs;
 
   const points = entries
+    .filter((entry) => entry.kind !== 'agent-action')
     .map((entry) => ({ entry, time: Date.parse(entry.generatedAt ?? '') }))
     .filter(({ time }) => Number.isFinite(time) && time >= cutoff)
     .sort((a, b) => a.time - b.time)

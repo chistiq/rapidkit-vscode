@@ -10,7 +10,7 @@ import type { DashboardEvidenceCardId as HostCardId } from '../core/dashboardEvi
 describe('dashboard evidence cards contract', () => {
   it('exports a stable v1 card id list', () => {
     expect(DASHBOARD_EVIDENCE_CARDS_CONTRACT_VERSION).toBe('1');
-    expect(DASHBOARD_EVIDENCE_CARD_IDS.length).toBe(27);
+    expect(DASHBOARD_EVIDENCE_CARD_IDS.length).toBe(31);
     expect(isDashboardEvidenceCardId('doctor')).toBe(true);
     expect(isDashboardEvidenceCardId('not-a-card')).toBe(false);
   });
@@ -36,6 +36,10 @@ describe('dashboard evidence cards contract', () => {
       'workspaceDiff',
       'workspaceImpact',
       'workspaceVerify',
+      'workspaceExplain',
+      'workspaceWhy',
+      'workspaceTrace',
+      'workspaceWatch',
       'workspaceContextAgent',
       'agentGrounding',
       'share',

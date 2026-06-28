@@ -103,9 +103,9 @@ export function evaluateAgentCustomizationPackSynced(
 export function agentCustomizationPackStatus(
   pack: AgentCustomizationPackReport | null,
   summary: AgentCustomizationPackSummary | null,
-  indexBlockers: string[]
+  supportBlockers: string[]
 ): 'pass' | 'warn' | 'fail' {
-  if (indexBlockers.length > 0) {
+  if (supportBlockers.length > 0) {
     return 'fail';
   }
   if (!pack || !summary) {

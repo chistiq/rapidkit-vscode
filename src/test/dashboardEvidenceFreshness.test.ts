@@ -82,4 +82,23 @@ describe('dashboard evidence freshness', () => {
       ).map((entry) => entry.id)
     ).toEqual(['readiness']);
   });
+
+  it('treats stale referenced evidence as stale even when the card artifact is fresh', () => {
+    const verify = card({
+      id: 'workspaceVerify',
+      label: 'Workspace Verify',
+      generatedAt: '2026-06-18T11:55:00.000Z',
+      metrics: {
+        staleEvidence: 1,
+        staleEvidenceDetail:
+          'workspace.contract.verify: Workspace contract verify evidence is stale: generated at 2026-06-17T10:00:00.000Z, before impact 2026-06-18T10:00:00.000Z.',
+      },
+    });
+
+    expect(resolveEvidenceFreshness(verify, NOW)).toMatchObject({
+      status: 'stale',
+      label: 'Stale evidence',
+    });
+    expect(evidenceNeedsFreshnessAttention(verify, NOW)).toBe(true);
+  });
 });

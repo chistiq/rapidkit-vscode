@@ -124,6 +124,111 @@ describe('dashboard action contract', () => {
     expect(contract.copilotPayload.actionContext.artifactState).toBe('pending');
   });
 
+  it('turns corrupt artifact cards into same-card repair actions', () => {
+    const card: DashboardEvidenceCard = {
+      id: 'workspaceVerify',
+      label: 'Workspace Verify',
+      status: 'fail',
+      summary: 'Artifact is unreadable or corrupt.',
+      scope: 'workspace',
+      artifactPath: '/tmp/ws/.rapidkit/reports/workspace-verify-last-run.json',
+      metrics: { corruptArtifact: 1 },
+      blockers: ['Corrupt artifact: workspace-verify-last-run.json'],
+    };
+
+    const contract = buildDashboardEvidenceActionContract(card, {
+      workspace: { path: '/tmp/ws', name: 'ws' },
+    });
+
+    expect(contract.commandState).toBe('ready');
+    expect(contract.commandLabel).toBe('Repair evidence');
+    expect(contract.commandAction).toMatchObject({
+      command: 'workspaceVerify',
+      label: 'Repair evidence',
+      commandData: {
+        source: 'evidence',
+        evidenceDirectRun: true,
+        repairReason: 'corrupt-artifact',
+        repairArtifactPath: '/tmp/ws/.rapidkit/reports/workspace-verify-last-run.json',
+        path: '/tmp/ws',
+      },
+    });
+    expect(contract.artifactState).toBe('ready');
+    expect(contract.artifactLabel).toBe('Corrupt artifact: workspace-verify-last-run.json');
+    expect(contract.primaryAction).toEqual({ type: 'run', label: 'Repair evidence' });
+  });
+
+  it('selects one primary CTA per card phase and keeps secondary work out of the contract primary', () => {
+    const missingCard: DashboardEvidenceCard = {
+      id: 'doctor',
+      label: 'Workspace Doctor',
+      status: 'missing',
+      summary: 'No doctor evidence yet',
+      scope: 'workspace',
+    };
+    const failedCard: DashboardEvidenceCard = {
+      id: 'readiness',
+      label: 'Release Readiness',
+      status: 'fail',
+      summary: 'Release blocked',
+      scope: 'workspace',
+      blockers: ['analyze blocked'],
+    };
+    const warningCard: DashboardEvidenceCard = {
+      id: 'workspaceImpact',
+      label: 'Workspace Impact',
+      status: 'warn',
+      summary: 'Risk high',
+      scope: 'workspace',
+    };
+    const passingCard: DashboardEvidenceCard = {
+      id: 'workspaceVerify',
+      label: 'Workspace Verify',
+      status: 'pass',
+      summary: 'Ready',
+      scope: 'workspace',
+    };
+
+    expect(buildDashboardEvidenceActionContract(missingCard).primaryAction).toMatchObject({
+      type: 'run',
+    });
+    expect(buildDashboardEvidenceActionContract(failedCard).primaryAction).toEqual({
+      type: 'studio',
+      label: 'Fix in Studio',
+    });
+    expect(buildDashboardEvidenceActionContract(warningCard).primaryAction).toEqual({
+      type: 'studio',
+      label: 'Open in Studio',
+    });
+    expect(buildDashboardEvidenceActionContract(passingCard).primaryAction).toEqual({
+      type: 'done',
+      label: 'Done',
+    });
+  });
+
+  it('labels derived artifacts so Workspace Why does not pretend to own Explain evidence', () => {
+    const card: DashboardEvidenceCard = {
+      id: 'workspaceWhy',
+      label: 'Workspace Why',
+      status: 'warn',
+      summary: 'Derived from Workspace Explain',
+      scope: 'workspace',
+      artifactPath: '/tmp/ws/.rapidkit/reports/workspace-explain-last-run.json',
+      metrics: { derivedArtifact: 1, derivedFrom: 'Workspace Explain' },
+    };
+
+    const contract = buildDashboardEvidenceActionContract(card, {
+      workspace: { path: '/tmp/ws', name: 'ws' },
+    });
+
+    expect(contract.artifactState).toBe('ready');
+    expect(contract.artifactLabel).toBe('Derived: workspace-explain-last-run.json');
+    expect(contract.copilotPayload.card.metrics).toMatchObject({
+      derivedArtifact: 1,
+      derivedFrom: 'Workspace Explain',
+    });
+  });
+
   it('keeps every official evidence card wired to command, Studio, Copilot, and artifact state', () => {
     for (const cardId of DASHBOARD_EVIDENCE_CARD_IDS) {
       const card: DashboardEvidenceCard = {

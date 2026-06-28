@@ -137,6 +137,7 @@ describe('aiWorkspaceArchitectureAtlas', () => {
       path.join(reportsDir, 'workspace-model.json'),
       JSON.stringify({
         schemaVersion: 'workspace-model.v1',
+        generatedAt: '2026-06-11T00:00:00.000Z',
         summary: { projectCount: 1 },
         projects: [
           {

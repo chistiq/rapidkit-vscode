@@ -230,6 +230,7 @@ function revealStudioForScope(input: {
   studioMode?: 'investigate' | 'verify' | 'prepare';
   source?: string;
   trigger?: string;
+  blockerHandoff?: Record<string, unknown>;
 }): void {
   void secondaryActionsWebviewProvider?.revealSecondaryTab('studio', {
     workspace: input.workspace
@@ -252,6 +253,7 @@ function revealStudioForScope(input: {
     studioMode: input.studioMode,
     source: input.source ?? 'extension-command',
     trigger: input.trigger ?? 'studio',
+    ...(input.blockerHandoff ? { blockerHandoff: input.blockerHandoff } : {}),
   });
 }
 
@@ -696,6 +698,10 @@ export async function activate(context: vscode.ExtensionContext) {
           studioMode,
           source: typeof record.source === 'string' ? record.source : 'activitybar',
           trigger: typeof record.trigger === 'string' ? record.trigger : 'open-studio',
+          blockerHandoff:
+            record.blockerHandoff && typeof record.blockerHandoff === 'object'
+              ? (record.blockerHandoff as Record<string, unknown>)
+              : undefined,
         });
       }),
       vscode.commands.registerCommand('workspai.openCreateWithAI', (item?: unknown) => {

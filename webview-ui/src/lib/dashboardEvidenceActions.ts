@@ -3,7 +3,7 @@ import type {
   DashboardEvidenceCardId,
   DashboardEvidencePayload,
 } from './dashboardEvidence';
-import { findEvidenceCard } from './dashboardEvidence';
+import { findEvidenceCard, isCorruptArtifactCard } from './dashboardEvidence';
 import {
   buildEvidenceCardCommandData,
   type EvidenceWorkspaceContext,
@@ -42,11 +42,15 @@ export const EVIDENCE_CARD_COMMANDS: Partial<Record<DashboardEvidenceCardId, Das
   workspaceDiff: 'workspaceDiff',
   workspaceImpact: 'workspaceImpact',
   workspaceVerify: 'workspaceVerify',
+  workspaceExplain: 'workspaceExplain',
+  workspaceWhy: 'workspaceWhy',
+  workspaceTrace: 'workspaceTrace',
+  workspaceWatch: 'workspaceWatch',
   workspaceContextAgent: 'workspaceContextAgent',
   agentGrounding: 'workspaceAgentSync',
   share: 'workspaceShare',
-  archive: 'workspaceArchive',
-  mirror: 'mirrorStatus',
+  archive: 'exportWorkspace',
+  mirror: 'mirrorOps',
   cache: 'cacheStatus',
   policy: 'workspacePolicyShow',
   infra: 'workspaceInfra',
@@ -73,8 +77,21 @@ export function resolveEvidenceCardCommandAction(
     evidence?: DashboardEvidencePayload | null;
   }
 ): DashboardEvidenceCommandAction | undefined {
+  const guidedCommand = card.metrics?.guidedCommand;
   let command =
-    card.id === 'workspaceRun' ? resolveWorkspaceRunCommand(card) : EVIDENCE_CARD_COMMANDS[card.id];
+    typeof guidedCommand === 'string' && getDashboardCommandMeta(guidedCommand)
+      ? (guidedCommand as DashboardCommand)
+      : card.id === 'workspaceRun'
+        ? resolveWorkspaceRunCommand(card)
+        : EVIDENCE_CARD_COMMANDS[card.id];
+
+  if (card.id === 'archive') {
+    command = card.status === 'missing' ? 'exportWorkspace' : 'workspaceArchive';
+  }
+
+  if (card.id === 'mirror') {
+    command = 'mirrorOps';
+  }
 
   if (card.id === 'workspaceVerify' && options?.evidence) {
     const impact = findEvidenceCard(options.evidence, 'workspaceImpact');
@@ -94,7 +111,7 @@ export function resolveEvidenceCardCommandAction(
   const commandData = buildEvidenceCardCommandData(card, command, options?.workspace);
   return {
     command,
-    label: meta.label,
+    label: isCorruptArtifactCard(card) ? 'Repair evidence' : meta.label,
     scope: meta.scope,
     trackActivity: meta.trackActivity,
     ...(commandData ? { commandData } : {}),
@@ -147,6 +164,8 @@ export function resolveIncidentStudioTargetFromCard(
     case 'infra':
       return 'readiness';
     case 'workspaceVerify':
+    case 'workspaceExplain':
+    case 'workspaceWhy':
     case 'autopilot':
     case 'archive':
     case 'share':
@@ -156,11 +175,13 @@ export function resolveIncidentStudioTargetFromCard(
     case 'workspaceContextAgent':
     case 'agentGrounding':
     case 'workspaceRun':
+    case 'workspaceWatch':
     case 'mirror':
     case 'cache':
       return 'model';
     case 'workspaceDiff':
     case 'workspaceImpact':
+    case 'workspaceTrace':
     case 'snapshot':
     case 'importReadiness':
       return 'impact';

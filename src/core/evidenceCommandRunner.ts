@@ -2,7 +2,11 @@ import * as vscode from 'vscode';
 
 import { resolveDashboardCommandContract } from './dashboardCommandContracts.js';
 import { run } from '../utils/exec.js';
-import { buildRapidkitDisplayCommand } from '../utils/platformCapabilities.js';
+import {
+  buildRapidkitExecutionSpec,
+  warmRapidkitNpmPackageResolution,
+} from '../utils/platformCapabilities.js';
+import { gateRapidkitCliArgs } from './rapidkitEnterpriseCliGate.js';
 
 const OUTPUT_CHANNEL_NAME = 'Workspai Evidence';
 
@@ -31,6 +35,18 @@ function appendEvidenceLog(label: string, detail: string): void {
   channel.appendLine('');
 }
 
+export function revealWorkspaiEvidenceOutputForUser(): void {
+  const channel = getWorkspaiEvidenceOutputChannel();
+  channel.appendLine(
+    `[${new Date().toISOString()}] Opened from Workspai dashboard. Background CLI runs append stdout/stderr here.`
+  );
+  channel.appendLine(
+    'If this panel looks empty, run a dashboard card (Run) or use Open artifact file for JSON on disk.'
+  );
+  channel.appendLine('');
+  channel.show(true);
+}
+
 export async function runEvidenceCliCommand(options: {
   workspacePath: string;
   cliArgs: string[];
@@ -38,16 +54,34 @@ export async function runEvidenceCliCommand(options: {
   env?: Record<string, string>;
   revealOutput?: boolean;
 }): Promise<EvidenceCliRunResult> {
-  const displayCommand = buildRapidkitDisplayCommand(options.cliArgs);
+  const gate = await gateRapidkitCliArgs({
+    args: options.cliArgs,
+    cwd: options.workspacePath,
+    featureLabel: options.label,
+  });
+  if (!gate.allowed) {
+    appendEvidenceLog(`${options.label} · blocked`, gate.error);
+    return {
+      exitCode: 1,
+      stdout: '',
+      stderr: gate.error,
+      displayCommand: `rapidkit ${options.cliArgs.join(' ')}`.trim(),
+    };
+  }
+
+  const execution = buildRapidkitExecutionSpec(options.cliArgs);
+  const displayCommand = execution.displayCommand;
 
   appendEvidenceLog(`${options.label} · ${options.workspacePath}`, `$ ${displayCommand}`);
+  await warmRapidkitNpmPackageResolution();
 
-  const result = await run('npx', ['rapidkit', ...options.cliArgs], {
+  const result = await run(execution.command, execution.args, {
     cwd: options.workspacePath,
     env: {
       ...process.env,
       ...options.env,
     },
+    shell: execution.shell,
     timeout: 15 * 60 * 1000,
   });
 

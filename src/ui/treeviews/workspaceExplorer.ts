@@ -14,6 +14,7 @@ import { CoreVersionService, CoreVersionInfo } from '../../core/coreVersionServi
 import {
   downloadWorkspaceArchiveToTemp,
   buildWorkspaceArchiveManifest,
+  persistWorkspaceShipHandoffManifest,
   extractWorkspaceArchiveToTemp,
   sanitizeWorkspaceArchiveName,
   shouldExcludeWorkspaceArchivePath,
@@ -720,7 +721,16 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
           output.on('error', reject);
         });
 
-        progress.report({ increment: 30, message: 'Done!' });
+        progress.report({ increment: 20, message: 'Recording ship handoff manifest...' });
+
+        await persistWorkspaceShipHandoffManifest({
+          workspacePath: workspace.path,
+          workspaceName: workspace.name,
+          manifest,
+          exportArchivePath: saveUri.fsPath,
+        });
+
+        progress.report({ increment: 10, message: 'Done!' });
 
         // Get archive stats
         const stats = await fs.stat(saveUri.fsPath);

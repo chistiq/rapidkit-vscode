@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   Blocks,
   CheckCircle2,
   Compass,
   ListChecks,
+  RotateCcw,
   ScanSearch,
   Search,
   type LucideIcon,
@@ -28,6 +30,30 @@ import {
 } from './sidebarModels';
 import type { SidebarScope, SidebarTab } from './sidebarTypes';
 import { resolveScopeFromPayload } from './sidebarTypes';
+import {
+  StudioBlockerChrome,
+  parseStudioBlockerHandoffView,
+  resolveStudioFixPhase,
+} from './StudioBlockerChrome';
+import {
+  StudioPatchReview,
+  type SidebarPatchReviewItem,
+} from './StudioPatchReview';
+import { StudioShipLoopStepper } from './StudioShipLoopStepper';
+import {
+  mergeStudioFixAppliedIntoHandoff,
+  shouldAwaitVerifyAfterStudioFixApplied,
+  type StudioBlockerHandoffView,
+} from '@/lib/studioBlockerHandoff';
+import {
+  buildSidebarStudioRetryAuditPayload,
+  parseSidebarStudioAuditState,
+  type SidebarStudioAuditState,
+} from '@/lib/sidebarStudioAuditState';
+import {
+  parseStudioVerifyFailure,
+  type StudioVerifyFailureView,
+} from '@/lib/studioVerifyFailure';
 
 const META = { source: 'workspai-sidebar-react', version: '1' } as const;
 
@@ -124,6 +150,51 @@ function advisorSuggestions(scope: SidebarScope): string[] {
   ];
 }
 
+function parseSidebarPatchReviewItems(value: unknown): SidebarPatchReviewItem[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
+    .map((entry) => entry as Record<string, unknown>)
+    .filter((entry) => typeof entry.relativePath === 'string')
+    .map((entry) => ({
+      relativePath: entry.relativePath as string,
+      status: typeof entry.status === 'string' ? entry.status : 'pending',
+      isNewFile: entry.isNewFile === true,
+      failReason: typeof entry.failReason === 'string' ? entry.failReason : undefined,
+    }));
+}
+
+function parseSidebarShipLoopCards(value: unknown): Array<{
+  id: 'analyze' | 'verify-gates' | 'readiness' | 'archive' | 'autopilot';
+  status: 'pass' | 'warn' | 'fail' | 'missing';
+  summary?: string;
+  blockers?: string[];
+}> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
+    .map((entry) => entry as Record<string, unknown>)
+    .filter((entry) => typeof entry.id === 'string')
+    .map((entry) => ({
+      id: entry.id as 'analyze' | 'verify-gates' | 'readiness' | 'archive' | 'autopilot',
+      status:
+        entry.status === 'pass' ||
+        entry.status === 'warn' ||
+        entry.status === 'fail' ||
+        entry.status === 'missing'
+          ? entry.status
+          : 'missing',
+      summary: typeof entry.summary === 'string' ? entry.summary : undefined,
+      blockers: Array.isArray(entry.blockers)
+        ? entry.blockers.filter((blocker): blocker is string => typeof blocker === 'string')
+        : undefined,
+    }));
+}
+
 /**
  * React secondary-sidebar (roadmap 2.11). Hosts the Create / Advisor / Studio
  * tabs on the same React stack + `ws-*` tokens as the dashboard. Create (2.11d)
@@ -149,6 +220,29 @@ export function SecondarySidebar() {
   const [studioPrefill, setStudioPrefill] = useState('');
   const [impactPrefillKey, setImpactPrefillKey] = useState(0);
   const [studioPrefillKey, setStudioPrefillKey] = useState(0);
+  const [blockerHandoff, setBlockerHandoff] = useState<StudioBlockerHandoffView | null>(null);
+  const [studioAutoFixBusy, setStudioAutoFixBusy] = useState(false);
+  const [studioFixApplied, setStudioFixApplied] = useState(false);
+  const [studioPatchReview, setStudioPatchReview] = useState<{
+    summary?: string;
+    riskSummary?: string;
+    patches: SidebarPatchReviewItem[];
+  } | null>(null);
+  const [studioPatchApplyBusy, setStudioPatchApplyBusy] = useState(false);
+  const [studioRollbackCommand, setStudioRollbackCommand] = useState<string | null>(null);
+  const [studioAuditState, setStudioAuditState] = useState<SidebarStudioAuditState | null>(null);
+  const [studioVerifyFailure, setStudioVerifyFailure] = useState<StudioVerifyFailureView | null>(
+    null
+  );
+  const [shipLoopCards, setShipLoopCards] = useState<
+    Array<{
+      id: 'analyze' | 'verify-gates' | 'readiness' | 'archive' | 'autopilot';
+      status: 'pass' | 'warn' | 'fail' | 'missing';
+      summary?: string;
+      blockers?: string[];
+    }>
+  >([]);
+  const [shipLoopBusy, setShipLoopBusy] = useState(false);
   const handleSubmitImpactRef = useRef<
     (question: string, options?: { forceNew?: boolean }) => void
   >(() => undefined);
@@ -203,6 +297,11 @@ export function SecondarySidebar() {
             setStudioPrefill(initialTask);
             setStudioPrefillKey((key) => key + 1);
           }
+        }
+        const activatedHandoff = parseStudioBlockerHandoffView(data.blockerHandoff);
+        if (activatedHandoff) {
+          setBlockerHandoff(activatedHandoff);
+          setStudioFixApplied(false);
         }
         if (data.createMode === 'project') {
           setCreateDrawerFocus({ drawer: 'project', key: Date.now() });
@@ -349,6 +448,92 @@ export function SecondarySidebar() {
           String(data.sessionId ?? ''),
           (data.error as string) || 'Unknown error'
         );
+        setStudioAutoFixBusy(false);
+        break;
+      case 'sidebarBlockerHandoff': {
+        const nextHandoff = parseStudioBlockerHandoffView(data.handoff);
+        if (nextHandoff) {
+          setBlockerHandoff(nextHandoff);
+          setStudioFixApplied(false);
+          setStudioPatchReview(null);
+          setStudioVerifyFailure(null);
+        }
+        break;
+      }
+      case 'sidebarAdvisorStudioHandoff': {
+        if (typeof data.prefill === 'string' && data.prefill.trim()) {
+          studio.newSession();
+          setStudioPrefill(data.prefill.trim());
+          setStudioPrefillKey((key) => key + 1);
+        }
+        setActiveTab('studio');
+        const advisorHandoff = parseStudioBlockerHandoffView(data.blockerHandoff);
+        if (advisorHandoff) {
+          setBlockerHandoff(advisorHandoff);
+          setStudioFixApplied(false);
+          setStudioVerifyFailure(null);
+        }
+        break;
+      }
+      case 'sidebarStudioFixApplied':
+        setBlockerHandoff((current) => mergeStudioFixAppliedIntoHandoff(current, data));
+        setStudioFixApplied(shouldAwaitVerifyAfterStudioFixApplied(data));
+        if (data.cardStatus === 'pass') {
+          setStudioVerifyFailure(null);
+        }
+        setStudioAutoFixBusy(false);
+        setStudioPatchReview(null);
+        setStudioPatchApplyBusy(false);
+        if (typeof data.rollbackCommand === 'string' && data.rollbackCommand.trim()) {
+          setStudioRollbackCommand(data.rollbackCommand.trim());
+        }
+        break;
+      case 'sidebarStudioShipLoop':
+        setShipLoopCards(parseSidebarShipLoopCards(data.cards));
+        setShipLoopBusy(false);
+        break;
+      case 'sidebarStudioPatchReview':
+        if (data.cleared === true) {
+          setStudioPatchReview(null);
+        } else {
+          setStudioPatchReview({
+            summary: typeof data.summary === 'string' ? data.summary : undefined,
+            riskSummary: typeof data.riskSummary === 'string' ? data.riskSummary : undefined,
+            patches: parseSidebarPatchReviewItems(data.patches),
+          });
+        }
+        setStudioAutoFixBusy(false);
+        setStudioPatchApplyBusy(false);
+        break;
+      case 'sidebarStudioCardRefreshed': {
+        const nextHandoff = parseStudioBlockerHandoffView(data.handoff);
+        if (nextHandoff) {
+          setBlockerHandoff(nextHandoff);
+          setStudioFixApplied(nextHandoff.cardStatus === 'pass' ? false : true);
+          if (nextHandoff.cardStatus === 'pass') {
+            setStudioVerifyFailure(null);
+          }
+        }
+        break;
+      }
+      case 'sidebarStudioActionResult':
+        if (data.action === 'verify-handoff') {
+          setStudioVerifyFailure(parseStudioVerifyFailure(data));
+        }
+        if (data.action === 'auto-fix' || data.action === 'apply-patch') {
+          setStudioAutoFixBusy(data.status === 'running');
+          setStudioPatchApplyBusy(data.status === 'running' && data.action === 'apply-patch');
+        }
+        if (data.action === 'retry-audit') {
+          setStudioAutoFixBusy(false);
+          setStudioPatchApplyBusy(false);
+        }
+        if (data.action === 'ship-loop-step') {
+          setShipLoopBusy(data.status === 'running');
+        }
+        break;
+      case 'sidebarStudioAuditState':
+        setStudioAuditState(parseSidebarStudioAuditState(data));
         break;
       default:
         break;
@@ -519,6 +704,7 @@ export function SecondarySidebar() {
         modelId: selectedModelId ?? undefined,
         history,
         scope: scopePayload,
+        ...(blockerHandoff ? { blockerHandoff } : {}),
       },
       META
     );
@@ -543,10 +729,95 @@ export function SecondarySidebar() {
       META
     );
   };
-  const studioVerify = () => {
+  const studioVerifyHandoff = () => {
+    setStudioVerifyFailure(null);
     vscode.postMessage(
       'sidebarStudioAction',
-      { action: 'verify', sessionId: studio.activeId ?? undefined, scope: scopePayload },
+      {
+        action: blockerHandoff?.verifyCommand ? 'verify-handoff' : 'verify',
+        sessionId: studio.activeId ?? undefined,
+        scope: scopePayload,
+        ...(blockerHandoff ? { blockerHandoff } : {}),
+      },
+      META
+    );
+  };
+  const studioAutoFix = () => {
+    if (!blockerHandoff) {
+      return;
+    }
+    setStudioAutoFixBusy(true);
+    setStudioPatchReview(null);
+    vscode.postMessage(
+      'sidebarStudioAction',
+      {
+        action: 'auto-fix',
+        sessionId: studio.activeId ?? undefined,
+        scope: scopePayload,
+        blockerHandoff,
+      },
+      META
+    );
+  };
+  const studioApplyPatches = (acceptedPaths: string[]) => {
+    if (!blockerHandoff) {
+      return;
+    }
+    setStudioPatchApplyBusy(true);
+    vscode.postMessage(
+      'sidebarStudioAction',
+      {
+        action: 'apply-patch',
+        acceptedPaths,
+        sessionId: studio.activeId ?? undefined,
+        scope: scopePayload,
+        blockerHandoff,
+      },
+      META
+    );
+  };
+  const studioRejectPatches = () => {
+    vscode.postMessage(
+      'sidebarStudioAction',
+      {
+        action: 'reject-patch',
+        sessionId: studio.activeId ?? undefined,
+        ...(blockerHandoff ? { blockerHandoff } : {}),
+      },
+      META
+    );
+    setStudioPatchReview(null);
+  };
+  const studioRunShipLoopStep = (stepId: 'analyze' | 'verify-gates' | 'readiness' | 'archive') => {
+    setShipLoopBusy(true);
+    vscode.postMessage(
+      'sidebarStudioAction',
+      {
+        action: 'ship-loop-step',
+        stepId,
+        sessionId: studio.activeId ?? undefined,
+        scope: scopePayload,
+      },
+      META
+    );
+  };
+  const studioCopyRollback = () => {
+    if (!studioRollbackCommand) {
+      return;
+    }
+    vscode.postMessage(
+      'sidebarStudioAction',
+      { action: 'copy-command', commandText: studioRollbackCommand, sessionId: studio.activeId ?? undefined },
+      META
+    );
+  };
+  const studioRetryAudit = () => {
+    vscode.postMessage(
+      'sidebarStudioAction',
+      buildSidebarStudioRetryAuditPayload({
+        sessionId: studio.activeId ?? undefined,
+        scope: scopePayload,
+      }),
       META
     );
   };
@@ -669,7 +940,13 @@ export function SecondarySidebar() {
       <ChatTab
         active={activeTab === 'studio'}
         contextLabel="Studio"
-        placeholder="Describe the issue or task"
+        placeholder={
+          blockerHandoff?.studioMode === 'FIX'
+            ? 'Ask clarifying questions about the fix'
+            : blockerHandoff
+              ? 'Review the blocker plan or ask for details'
+              : 'Describe the issue or task'
+        }
         scope={scope}
         sessions={studio.sessions}
         activeSessionId={studio.activeId}
@@ -693,6 +970,94 @@ export function SecondarySidebar() {
         composerPrefillKey={studioPrefillKey}
         onRunCommand={runStudioCommand}
         onCopyCommand={copyStudioCommand}
+        headerChrome={
+          blockerHandoff ||
+          studioAuditState ||
+          studioPatchReview ||
+          shipLoopCards.length > 0 ||
+          studioRollbackCommand ? (
+            <>
+              {studioAuditState ? (
+                <div
+                  className="ws-sidebar__studio-audit-alert"
+                  data-state={studioAuditState.status}
+                  role="alert"
+                >
+                  <span className="ws-sidebar__studio-audit-alert-icon" aria-hidden="true">
+                    <AlertTriangle size={14} strokeWidth={1.8} />
+                  </span>
+                  <div className="ws-sidebar__studio-audit-alert-copy">
+                    <strong>
+                      {studioAuditState.status === 'failed'
+                        ? 'Audit write failed'
+                        : 'Feedback history is stale'}
+                    </strong>
+                    <span>
+                      {studioAuditState.error ||
+                        'The fix or verify result was preserved, but workspace feedback history was not updated.'}
+                    </span>
+                    <small>
+                      Registry {studioAuditState.registryRecorded ? 'saved' : 'not saved'} ·
+                      Feedback {studioAuditState.feedbackRecorded ? 'saved' : 'not saved'}
+                    </small>
+                  </div>
+                  {studioAuditState.retryable ? (
+                    <button
+                      type="button"
+                      className="ws-sidebar__inline"
+                      onClick={studioRetryAudit}
+                      title="Retry recording Studio audit history"
+                    >
+                      <RotateCcw size={12} strokeWidth={1.75} aria-hidden="true" />
+                      Retry
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              {blockerHandoff ? (
+                <StudioBlockerChrome
+                  handoff={blockerHandoff}
+                  phase={resolveStudioFixPhase({
+                    handoff: blockerHandoff,
+                    fixApplied: studioFixApplied,
+                    autoFixRunning: studioAutoFixBusy,
+                  })}
+                  onAutoFix={studioAutoFix}
+                  onVerify={studioVerifyHandoff}
+                  autoFixBusy={studioAutoFixBusy}
+                  verifyFailure={studioVerifyFailure}
+                />
+              ) : null}
+              {studioPatchReview ? (
+                <StudioPatchReview
+                  key={`${blockerHandoff?.cardId ?? 'patch'}-${studioPatchReview.patches.length}`}
+                  summary={studioPatchReview.summary}
+                  riskSummary={studioPatchReview.riskSummary}
+                  patches={studioPatchReview.patches}
+                  busy={studioPatchApplyBusy}
+                  onApply={studioApplyPatches}
+                  onReject={studioRejectPatches}
+                />
+              ) : null}
+              {studioRollbackCommand ? (
+                <div className="ws-sidebar__studio-rollback" role="note">
+                  <strong>Rollback available</strong>
+                  <code>{studioRollbackCommand}</code>
+                  <button type="button" className="ws-sidebar__inline" onClick={studioCopyRollback}>
+                    Copy rollback
+                  </button>
+                </div>
+              ) : null}
+              {shipLoopCards.length > 0 ? (
+                <StudioShipLoopStepper
+                  cards={shipLoopCards}
+                  busy={shipLoopBusy}
+                  onRunStep={studioRunShipLoopStep}
+                />
+              ) : null}
+            </>
+          ) : null
+        }
         toolbar={
           <div className="ws-sidebar__mode-switch" role="group" aria-label="Studio mode">
             {STUDIO_MODES.map((mode) => {
@@ -715,7 +1080,7 @@ export function SecondarySidebar() {
         }
         footerActions={
           <>
-            <button type="button" className="ws-sidebar__inline" onClick={studioVerify}>
+            <button type="button" className="ws-sidebar__inline" onClick={studioVerifyHandoff}>
               Run Verify
             </button>
             <button type="button" className="ws-sidebar__inline" onClick={studioCopyBrief}>

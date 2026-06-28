@@ -86,7 +86,7 @@ export function shouldRefreshEvidenceForCliLogEvent(event: CliLogEvent): boolean
   const command = event.command?.join(' ') ?? '';
   const component = event.component.toLowerCase();
   return (
-    /\bworkspace\s+(model|snapshot|diff|impact|verify|context|agent-sync|sync|run|policy)\b/i.test(
+    /\bworkspace\s+(model|snapshot|diff|impact|verify|context|agent-sync|explain|trace|sync|run|policy)\b/i.test(
       command
     ) ||
     /\bdoctor\s+workspace\b/i.test(command) ||

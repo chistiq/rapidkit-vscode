@@ -47,6 +47,7 @@ esbuild.js
 .husky/**
 coverage/**
 artifacts/**
+test-results/**
 releases/**
 scripts/**
 

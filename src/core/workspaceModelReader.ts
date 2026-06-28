@@ -1,10 +1,24 @@
-import * as fs from 'fs-extra';
 import * as path from 'path';
 
 import type { AnalyzeEvidenceSlice, AnalyzeProjectEvidenceSlice } from './aiArchitectureGrounding';
 import type { ProjectArchitectureFingerprint } from './aiWorkspaceArchitectureAtlas';
 import { resolveKitId } from './aiKitArchitectureCatalog';
 import { WORKSPACE_MODEL_REPORT_PATH } from './workspaceIntelligencePaths';
+import { readJsonArtifact, type JsonArtifactReadResult } from './jsonArtifactReader.js';
+
+export const WORKSPACE_MODEL_SCHEMA_VERSION = 'workspace-model.v1';
+
+export function isWorkspaceModelReport(value: unknown): value is WorkspaceModelReport {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    record.schemaVersion === WORKSPACE_MODEL_SCHEMA_VERSION &&
+    typeof record.generatedAt === 'string' &&
+    Array.isArray(record.projects)
+  );
+}
 
 export type WorkspaceModelProjectReport = {
   name: string;
@@ -54,6 +68,11 @@ export type WorkspaceModelReport = {
   };
 };
 
+export type WorkspaceModelReportReadResult =
+  | { kind: 'missing'; artifactPath: string }
+  | { kind: 'valid'; artifactPath: string; report: WorkspaceModelReport }
+  | { kind: 'corrupt'; artifactPath: string; error: string };
+
 export function resolveWorkspaceModelProjectAbsolutePath(
   workspacePath: string,
   project: WorkspaceModelProjectReport
@@ -67,20 +86,30 @@ export function resolveWorkspaceModelProjectAbsolutePath(
 export async function readWorkspaceModelReport(
   workspacePath?: string
 ): Promise<WorkspaceModelReport | null> {
+  const result = await readWorkspaceModelReportArtifact(workspacePath);
+  return result.kind === 'valid' ? result.report : null;
+}
+
+export async function readWorkspaceModelReportArtifact(
+  workspacePath?: string
+): Promise<WorkspaceModelReportReadResult> {
+  const reportPath = path.join(workspacePath ?? '', WORKSPACE_MODEL_REPORT_PATH);
   if (!workspacePath) {
-    return null;
+    return { kind: 'missing', artifactPath: reportPath };
   }
 
-  const reportPath = path.join(workspacePath, WORKSPACE_MODEL_REPORT_PATH);
-  try {
-    if (!(await fs.pathExists(reportPath))) {
-      return null;
-    }
-    const raw = await fs.readJson(reportPath);
-    return raw && typeof raw === 'object' ? (raw as WorkspaceModelReport) : null;
-  } catch {
-    return null;
+  const result: JsonArtifactReadResult = await readJsonArtifact(reportPath);
+  if (result.kind !== 'valid') {
+    return result;
   }
+  if (!isWorkspaceModelReport(result.raw)) {
+    return {
+      kind: 'corrupt',
+      artifactPath: result.artifactPath,
+      error: 'Workspace model artifact does not match workspace-model.v1.',
+    };
+  }
+  return { kind: 'valid', artifactPath: result.artifactPath, report: result.raw };
 }
 
 export function workspaceModelToAnalyzeEvidenceSlice(

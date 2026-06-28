@@ -42,8 +42,7 @@ interface DashboardOperateSectionProps {
   onContractVerify: () => void;
   onReadiness: () => void;
   onAutopilotRelease: () => void;
-  onMirrorStatus: () => void;
-  onMirrorSync: () => void;
+  onMirrorOps: () => void;
   onCacheStatus: () => void;
   onPolicy: () => void;
   onInfra: () => void;
@@ -54,6 +53,13 @@ interface DashboardOperateSectionProps {
   onWorkspaceContextAgent: () => void;
   onWorkspaceAgentSync?: () => void;
   onWorkspaceVerify: () => void;
+  onWorkspaceExplain?: () => void;
+  onWorkspaceWhy?: () => void;
+  onWorkspaceTrace?: () => void;
+  onWorkspaceWatch?: () => void;
+  onWorkspaceMcp?: () => void;
+  onWorkspaceImpactLens?: () => void;
+  onRunImpactLensCli?: () => void;
   onIntelligenceChain: () => void;
   onSendWorkspaceToCopilot?: () => void;
   onCopyText?: (text: string) => void;
@@ -87,8 +93,7 @@ export function DashboardOperateSection({
   onContractVerify,
   onReadiness,
   onAutopilotRelease,
-  onMirrorStatus,
-  onMirrorSync,
+  onMirrorOps,
   onCacheStatus,
   onPolicy,
   onInfra,
@@ -99,6 +104,13 @@ export function DashboardOperateSection({
   onWorkspaceContextAgent,
   onWorkspaceAgentSync,
   onWorkspaceVerify,
+  onWorkspaceExplain,
+  onWorkspaceWhy,
+  onWorkspaceTrace,
+  onWorkspaceWatch,
+  onWorkspaceMcp,
+  onWorkspaceImpactLens,
+  onRunImpactLensCli,
   onIntelligenceChain,
   onSendWorkspaceToCopilot,
   onCopyText,
@@ -213,6 +225,13 @@ export function DashboardOperateSection({
               onWorkspaceContextAgent={onWorkspaceContextAgent}
               onWorkspaceAgentSync={onWorkspaceAgentSync}
               onWorkspaceVerify={onWorkspaceVerify}
+              onWorkspaceExplain={onWorkspaceExplain}
+              onWorkspaceWhy={onWorkspaceWhy}
+              onWorkspaceTrace={onWorkspaceTrace}
+              onWorkspaceWatch={onWorkspaceWatch}
+              onWorkspaceMcp={onWorkspaceMcp}
+              onWorkspaceImpactLens={onWorkspaceImpactLens}
+              onRunImpactLensCli={onRunImpactLensCli}
               onRunFullChain={onIntelligenceChain}
               onSendWorkspaceToCopilot={onSendWorkspaceToCopilot}
             />
@@ -231,8 +250,7 @@ export function DashboardOperateSection({
               onContractVerify={onContractVerify}
               onReadiness={onReadiness}
               onAutopilotRelease={onAutopilotRelease}
-              onMirrorStatus={onMirrorStatus}
-              onMirrorSync={onMirrorSync}
+              onMirrorOps={onMirrorOps}
               onCacheStatus={onCacheStatus}
               onPolicy={onPolicy}
               onInfra={onInfra}

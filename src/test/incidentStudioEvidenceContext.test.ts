@@ -137,6 +137,7 @@ describe('incidentStudioEvidenceContext', () => {
       path.join(reportsDir, 'workspace-context-agent.json'),
       JSON.stringify({
         schemaVersion: 'workspace-context.v1',
+        generatedAt: '2026-06-11T00:00:00.000Z',
         agent: 'cursor',
         workspaceSummary: 'Polyglot workspace',
         safeCommands: [{ display: 'rapidkit workspace verify --json' }],
@@ -147,6 +148,7 @@ describe('incidentStudioEvidenceContext', () => {
       path.join(reportsDir, 'workspace-impact-last-run.json'),
       JSON.stringify({
         schemaVersion: 'workspace-impact.v1',
+        generatedAt: '2026-06-11T00:00:00.000Z',
         summary: { risk: 'medium', affectedProjects: 1, workspaceItems: 0, recommendedCommands: 2 },
         agentBrief: { headline: 'Workspace impact risk: medium.' },
         affectedProjects: [
@@ -163,6 +165,7 @@ describe('incidentStudioEvidenceContext', () => {
       path.join(reportsDir, 'workspace-impact-workspace-only.json'),
       JSON.stringify({
         schemaVersion: 'workspace-impact.v1',
+        generatedAt: '2026-06-11T00:00:00.000Z',
         summary: { risk: 'high', affectedProjects: 0, workspaceItems: 2, recommendedCommands: 1 },
         workspaceImpact: [
           {
@@ -225,6 +228,7 @@ describe('incidentStudioEvidenceContext', () => {
       path.join(reportsDir, 'workspace-model.json'),
       JSON.stringify({
         schemaVersion: 'workspace-model.v1',
+        generatedAt: '2026-06-11T00:00:00.000Z',
         workspace: { name: 'workspace', type: 'polyglot' },
         identity: { workspaceType: 'polyglot', runtimeFamilies: ['node', 'python'] },
         summary: { projectCount: 2, frameworks: ['nestjs', 'fastapi'] },
@@ -246,6 +250,7 @@ describe('incidentStudioEvidenceContext', () => {
       path.join(reportsDir, 'workspace-verify-last-run.json'),
       JSON.stringify({
         schemaVersion: 'workspace-verify.v1',
+        generatedAt: '2026-06-11T00:00:00.000Z',
         summary: {
           verdict: 'needs-attention',
           exitCode: 2,

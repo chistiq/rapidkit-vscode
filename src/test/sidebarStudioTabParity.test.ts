@@ -43,7 +43,34 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(secondary).toContain("'prepare'");
     expect(secondary).toContain("action: 'run-command'");
     expect(secondary).toContain("action: 'copy-command'");
+    expect(secondary).toContain("action: 'auto-fix'");
+    expect(secondary).toContain("'verify-handoff'");
     expect(secondary).toContain("useChatSessions('workspaiStudio'");
+    expect(secondary).toContain('StudioBlockerChrome');
+  });
+
+  it('handles blocker handoff + fix-applied inbound commands', () => {
+    for (const command of [
+      'sidebarBlockerHandoff',
+      'sidebarStudioFixApplied',
+      'sidebarStudioCardRefreshed',
+      'sidebarStudioPatchReview',
+    ]) {
+      expect(secondary, `React should handle inbound "${command}"`).toContain(`case '${command}'`);
+      expect(provider, `host should emit "${command}"`).toContain(`'${command}'`);
+    }
+    expect(provider).toContain("action === 'auto-fix'");
+    expect(provider).toContain("action === 'apply-patch'");
+    expect(provider).toContain('executeSidebarApplyDebugPatch');
+    expect(provider).toContain('dispatchSidebarShipLoopStep');
+    expect(provider).toContain('sidebarStudioShipLoop');
+    expect(provider).toContain('buildSidebarStudioPrompt');
+    expect(provider).toContain('refreshDashboardAfterStudioVerify');
+    expect(secondary).toContain('StudioPatchReview');
+    expect(secondary).toContain('StudioShipLoopStepper');
+    expect(secondary).toContain("action: 'apply-patch'");
+    expect(secondary).toContain("action: 'ship-loop-step'");
+    expect(secondary).toContain('rollbackCommand');
   });
 
   it('shares advisor session UX primitives with an isolated studio store', () => {

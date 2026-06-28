@@ -7,7 +7,7 @@ import {
   readStringField,
   readTrimmedStringField,
 } from '../../contracts/webviewProtocol';
-import { getWorkspaiEvidenceOutputChannel } from '../../core/evidenceCommandRunner';
+import { revealWorkspaiEvidenceOutputForUser } from '../../core/evidenceCommandRunner';
 import { buildIncidentLifecycleMetrics } from './incidentConversationMetrics';
 import { dispatchIncidentStudioInlineCommand } from './incidentStudioInlineCommandBridge';
 import {
@@ -224,10 +224,11 @@ export async function tryDispatchIncidentStudioWebviewMessage(
       await handleWelcomePanelAskStudioAboutEvidence(data, {
         resolveWorkspacePath: () => host.getSelectedWorkspaceInfo()?.path,
         resolveWorkspaceName: () => host.getSelectedWorkspaceInfo()?.name,
+        extensionContext: host.context,
       });
       break;
     case 'showWorkspaiEvidenceOutput':
-      getWorkspaiEvidenceOutputChannel().show(true);
+      revealWorkspaiEvidenceOutputForUser();
       break;
     case 'requestIncidentStudioTelemetry':
       await postIncidentStudioTelemetry(host.webview, {

@@ -6,6 +6,7 @@ import {
   execRapidkitExecutionPlan,
   resolveRapidkitExecutionPlan,
 } from '../../core/incidentInlineCommandRunner';
+import { gateIncidentStudioRapidkitCommand } from '../../core/rapidkitEnterpriseCliGate';
 import { WorkspaceUsageTracker } from '../../utils/workspaceUsageTracker';
 import { resolveStudioMutationBlockReason } from './incidentStudioMutationGate';
 import type { IncidentStudioTelemetryGateSlice } from './incidentStudioPolicyGateMapper';
@@ -26,6 +27,8 @@ export type RunIncidentInlineCommandResult = {
   success: boolean;
   output?: string;
   error?: string;
+  exitCode?: number | null;
+  stderrTail?: string;
   executionTranscript?: IncidentStudioExecutionTranscript;
 };
 
@@ -76,6 +79,29 @@ export function isMutatingRapidkitCliCommand(command: string): boolean {
     return false;
   }
   return MUTATING_RAPIDKIT_CLI_COMMAND.test(normalized);
+}
+
+export function summarizeIncidentInlineFailure(input: {
+  exitCode?: number | null;
+  stdout?: string;
+  stderr?: string;
+  fallback?: string;
+}): {
+  error: string;
+  stderrTail?: string;
+} {
+  const stderrTail = input.stderr?.trim()
+    ? input.stderr.trim().split('\n').filter(Boolean).slice(-8).join('\n').slice(0, 1200)
+    : undefined;
+  const stdoutTail = input.stdout?.trim()
+    ? input.stdout.trim().split('\n').filter(Boolean).slice(-8).join('\n').slice(0, 1200)
+    : undefined;
+  const body = stderrTail || stdoutTail || input.fallback || 'Command failed.';
+  const prefix = typeof input.exitCode === 'number' ? `Exit ${input.exitCode}` : 'Command failed';
+  return {
+    error: `${prefix}: ${body}`,
+    ...(stderrTail ? { stderrTail } : {}),
+  };
 }
 
 export type DispatchIncidentStudioInlineCommandInput = {
@@ -248,6 +274,24 @@ export async function runIncidentInlineCommand(
   const inlineScopeProps = projectPath && projectBelongsToWorkspace ? { projectPath } : {};
 
   try {
+    const cliGate = await gateIncidentStudioRapidkitCommand({
+      command: inlineCommand,
+      cwd: workspacePath,
+      featureLabel: 'Incident Studio command',
+    });
+    if (!cliGate.allowed) {
+      return {
+        command: inlineCommand,
+        success: false,
+        error: cliGate.error,
+        executionTranscript: buildTranscript({
+          success: false,
+          cwd: workspacePath,
+          error: cliGate.error,
+        }),
+      };
+    }
+
     const executionPlan = await resolveRapidkitExecutionPlan({
       command: inlineCommand,
       workspacePath,
@@ -273,6 +317,14 @@ export async function runIncidentInlineCommand(
     const output = combinedOutput || 'Command completed with no output.';
     const truncatedOutput = output.split('\n').slice(0, 30).join('\n');
     const success = result.exitCode === 0;
+    const failureSummary = success
+      ? undefined
+      : summarizeIncidentInlineFailure({
+          exitCode: result.exitCode,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          fallback: truncatedOutput,
+        });
     const tracker = WorkspaceUsageTracker.getInstance();
     const telemetryBase = {
       actionId: inlineActionId,
@@ -308,13 +360,15 @@ export async function runIncidentInlineCommand(
       command: inlineCommand,
       success,
       output: success ? truncatedOutput : undefined,
-      error: !success ? `Exit ${result.exitCode}: ${truncatedOutput}` : undefined,
+      error: failureSummary?.error,
+      exitCode: result.exitCode,
+      stderrTail: failureSummary?.stderrTail,
       executionTranscript: buildTranscript({
         success,
         exitCode: result.exitCode,
         cwd: effectiveCwd,
         output: success ? truncatedOutput : undefined,
-        error: !success ? `Exit ${result.exitCode}: ${truncatedOutput}` : undefined,
+        error: failureSummary?.error,
       }),
     };
   } catch (error) {

@@ -1,13 +1,19 @@
 import {
   Brain,
   Camera,
+  Eye,
   Files,
   GitCompare,
+  ListTree,
   Network,
+  Plug,
   Radar,
+  Route,
+  ScrollText,
   Send,
   ShieldCheck,
   Sparkles,
+  Terminal,
 } from 'lucide-react';
 import { AGENT_REPORTS_INDEX_PATH } from '@/lib/workspaceIntelligencePaths';
 import type { DashboardEvidenceCardId } from '@/lib/dashboardCommandRegistry';
@@ -17,6 +23,9 @@ import { buildDashboardCommandActionContract } from '@/lib/dashboardCommandActio
 import type { WorkspaceStatus } from '@/types';
 import { ActionTile, ActionTileGrid } from './ActionTile';
 import { ColumnHeader } from './SectionHeader';
+import { IntelligenceDetailAccordion } from './IntelligenceDetailAccordion';
+import { WorkspaceGraphPreview } from './WorkspaceGraphPreview';
+import { findWorkspaceGraphSection } from '@/lib/workspaceModelGraphVisual';
 
 interface WorkspaceIntelligencePanelProps {
   workspaceStatus: WorkspaceStatus;
@@ -29,6 +38,13 @@ interface WorkspaceIntelligencePanelProps {
   onWorkspaceContextAgent: () => void;
   onWorkspaceAgentSync?: () => void;
   onWorkspaceVerify: () => void;
+  onWorkspaceExplain?: () => void;
+  onWorkspaceWhy?: () => void;
+  onWorkspaceTrace?: () => void;
+  onWorkspaceWatch?: () => void;
+  onWorkspaceMcp?: () => void;
+  onWorkspaceImpactLens?: () => void;
+  onRunImpactLensCli?: () => void;
   onRunFullChain: () => void;
   onSendWorkspaceToCopilot?: () => void;
 }
@@ -56,6 +72,13 @@ export function WorkspaceIntelligencePanel({
   onWorkspaceContextAgent,
   onWorkspaceAgentSync,
   onWorkspaceVerify,
+  onWorkspaceExplain,
+  onWorkspaceWhy,
+  onWorkspaceTrace,
+  onWorkspaceWatch,
+  onWorkspaceMcp,
+  onWorkspaceImpactLens,
+  onRunImpactLensCli,
   onRunFullChain,
   onSendWorkspaceToCopilot,
 }: WorkspaceIntelligencePanelProps) {
@@ -67,12 +90,19 @@ export function WorkspaceIntelligencePanel({
   ) => buildDashboardCommandActionContract(command, { evidence, disabledReason });
 
   const modelCard = findEvidenceCard(evidence, 'workspaceModel');
+  const modelGraph = findWorkspaceGraphSection(modelCard?.detailSections);
+  const modelDetailSections =
+    modelCard?.detailSections?.filter((section) => section.id !== 'workspace-graph') ?? [];
   const snapshotCard = findEvidenceCard(evidence, 'intelligenceSnapshot');
   const diffCard = findEvidenceCard(evidence, 'workspaceDiff');
   const impactCard = findEvidenceCard(evidence, 'workspaceImpact');
   const contextCard = findEvidenceCard(evidence, 'workspaceContextAgent');
   const groundingCard = findEvidenceCard(evidence, 'agentGrounding');
   const verifyCard = findEvidenceCard(evidence, 'workspaceVerify');
+  const explainCard = findEvidenceCard(evidence, 'workspaceExplain');
+  const whyCard = findEvidenceCard(evidence, 'workspaceWhy');
+  const traceCard = findEvidenceCard(evidence, 'workspaceTrace');
+  const watchCard = findEvidenceCard(evidence, 'workspaceWatch');
   const hasAgentContext = contextCard?.status !== 'missing';
   const hasAgentGrounding = groundingCard?.status !== 'missing';
 
@@ -92,7 +122,7 @@ export function WorkspaceIntelligencePanel({
           fullWidth
           icon={<Sparkles size={15} />}
           label="Intelligence Chain"
-          detail="Model → snapshot → diff → advisor → verify → agent context → grounding sync"
+          detail="Model → snapshot → diff → impact → verify → agent context → grounding → explain → why → trace"
           pending={
             isPending('workspaceModel') ||
             isPending('intelligenceSnapshot') ||
@@ -100,7 +130,10 @@ export function WorkspaceIntelligencePanel({
             isPending('workspaceImpact') ||
             isPending('workspaceVerify') ||
             isPending('workspaceContextAgent') ||
-            isPending('agentGrounding')
+            isPending('agentGrounding') ||
+            isPending('workspaceExplain') ||
+            isPending('workspaceWhy') ||
+            isPending('workspaceTrace')
           }
           stateLabel={
             isPending('workspaceModel') ||
@@ -109,7 +142,10 @@ export function WorkspaceIntelligencePanel({
             isPending('workspaceImpact') ||
             isPending('workspaceVerify') ||
             isPending('workspaceContextAgent') ||
-            isPending('agentGrounding')
+            isPending('agentGrounding') ||
+            isPending('workspaceExplain') ||
+            isPending('workspaceWhy') ||
+            isPending('workspaceTrace')
               ? 'Running intelligence chain'
               : undefined
           }
@@ -139,6 +175,20 @@ export function WorkspaceIntelligencePanel({
           )}
           title="rapidkit workspace model --json --write"
         />
+        {modelGraph ? (
+          <div className="workspace-intelligence-panel__graph">
+            <WorkspaceGraphPreview payload={modelGraph} compact />
+          </div>
+        ) : null}
+        {modelDetailSections.length > 0 ? (
+          <IntelligenceDetailAccordion
+            title="Workspace model"
+            count={modelDetailSections.length}
+            hint="Profile, validation, and dependency graph summary"
+            icon={<Network size={15} />}
+            sections={modelDetailSections}
+          />
+        ) : null}
         <ActionTile
           icon={<ShieldCheck size={15} />}
           label="Workspace Verify"
@@ -157,6 +207,141 @@ export function WorkspaceIntelligencePanel({
           )}
           title="rapidkit workspace verify --from-impact --json"
         />
+        {onWorkspaceExplain ? (
+          <ActionTile
+            icon={<Sparkles size={15} />}
+            label="Workspace Explain"
+            detail={intelligenceDetail(
+              evidence,
+              'workspaceExplain',
+              'Human narrative for release blockers and project posture'
+            )}
+            evidenceStatus={explainCard?.status}
+            pending={isPending('workspaceExplain')}
+            onClick={onWorkspaceExplain}
+            disabled={!hasWorkspace}
+            actionContract={commandContract(
+              'workspaceExplain',
+              !hasWorkspace ? 'Select a workspace' : undefined
+            )}
+            title="rapidkit workspace explain release-blocked --json --write"
+          />
+        ) : null}
+        {onWorkspaceWhy ? (
+          <ActionTile
+            icon={<Sparkles size={15} />}
+            label="Workspace Why"
+            detail={intelligenceDetail(
+              evidence,
+              'workspaceWhy',
+              'Blocker narrative for agents (alias of explain)'
+            )}
+            evidenceStatus={whyCard?.status}
+            pending={isPending('workspaceWhy')}
+            onClick={onWorkspaceWhy}
+            disabled={!hasWorkspace}
+            actionContract={commandContract(
+              'workspaceWhy',
+              !hasWorkspace ? 'Select a workspace' : undefined
+            )}
+            title="rapidkit workspace why release-blocked --json --write"
+          />
+        ) : null}
+        {onWorkspaceTrace ? (
+          <ActionTile
+            icon={<Route size={15} />}
+            label="Workspace Trace"
+            detail={intelligenceDetail(
+              evidence,
+              'workspaceTrace',
+              'Trace narrative from last workspace diff'
+            )}
+            evidenceStatus={traceCard?.status}
+            pending={isPending('workspaceTrace')}
+            onClick={onWorkspaceTrace}
+            disabled={!hasWorkspace}
+            actionContract={commandContract(
+              'workspaceTrace',
+              !hasWorkspace ? 'Select a workspace' : undefined
+            )}
+            title="rapidkit workspace trace --from workspace-model-diff-last-run.json --json --write"
+          />
+        ) : null}
+        {onWorkspaceWatch ? (
+          <ActionTile
+            icon={<Eye size={15} />}
+            label="Workspace Watch"
+            detail={intelligenceDetail(
+              evidence,
+              'workspaceWatch',
+              'One-shot model/graph refresh (--once)'
+            )}
+            evidenceStatus={watchCard?.status}
+            pending={isPending('workspaceWatch')}
+            onClick={onWorkspaceWatch}
+            disabled={!hasWorkspace}
+            actionContract={commandContract(
+              'workspaceWatch',
+              !hasWorkspace ? 'Select a workspace' : undefined
+            )}
+            title="rapidkit workspace watch --once --json"
+          />
+        ) : null}
+        {onWorkspaceMcp ? (
+          <ActionTile
+            icon={<Plug size={15} />}
+            label="Workspace MCP"
+            detail="Start stdio MCP server for agent tools"
+            evidenceStatus={
+              groundingCard?.summary?.includes('MCP-ready') ? groundingCard.status : undefined
+            }
+            onClick={onWorkspaceMcp}
+            disabled={!hasWorkspace}
+            actionContract={commandContract(
+              'workspaceMcp',
+              !hasWorkspace ? 'Select a workspace' : undefined
+            )}
+            title="rapidkit workspace mcp serve"
+          />
+        ) : null}
+        {onWorkspaceImpactLens ? (
+          <ActionTile
+            icon={<Network size={15} />}
+            label="Workspace Advisor"
+            detail="Open Workspai advisor with intelligence context"
+            evidenceStatus={impactCard?.status}
+            pending={
+              isPending('workspaceImpact') ||
+              isPending('workspaceDiff') ||
+              isPending('intelligenceSnapshot')
+            }
+            onClick={onWorkspaceImpactLens}
+            disabled={!hasWorkspace}
+            actionContract={commandContract(
+              'workspaceImpactLens',
+              !hasWorkspace ? 'Select a workspace' : undefined
+            )}
+            title="Workspai advisor — impact-aware Q&A"
+          />
+        ) : null}
+        {explainCard?.detailSections && explainCard.detailSections.length > 0 ? (
+          <IntelligenceDetailAccordion
+            title="Explain sections"
+            count={explainCard.detailSections.length}
+            hint="Narrative from workspace explain report"
+            icon={<ScrollText size={15} />}
+            sections={explainCard.detailSections}
+          />
+        ) : null}
+        {contextCard?.detailSections && contextCard.detailSections.length > 0 ? (
+          <IntelligenceDetailAccordion
+            title="Safe commands"
+            count={contextCard.detailSections.length}
+            hint="Agent-safe CLI commands from context pack"
+            icon={<Terminal size={15} />}
+            sections={contextCard.detailSections}
+          />
+        ) : null}
         <ActionTile
           icon={<Brain size={15} />}
           label="Agent Context"
@@ -193,6 +378,15 @@ export function WorkspaceIntelligencePanel({
           )}
           title="rapidkit workspace agent-sync --write --refresh-context --preset enterprise --target vscode --json"
         />
+        {groundingCard?.detailSections && groundingCard.detailSections.length > 0 ? (
+          <IntelligenceDetailAccordion
+            title="MCP tools"
+            count={groundingCard.detailSections.length}
+            hint="Candidate tools from MCP-ready design report"
+            icon={<ListTree size={15} />}
+            sections={groundingCard.detailSections}
+          />
+        ) : null}
       </ActionTileGrid>
       <details
         className="enterprise-flow-accordion enterprise-flow-secondary workspace-intelligence-panel__advanced"
@@ -258,6 +452,26 @@ export function WorkspaceIntelligencePanel({
               disabled={!hasWorkspace}
               title="rapidkit workspace impact --from <diff> --json"
             />
+            {onRunImpactLensCli ? (
+              <ActionTile
+                icon={<Network size={15} />}
+                label="Impact Lens"
+                detail="Run snapshot → diff → impact CLI chain"
+                evidenceStatus={impactCard?.status}
+                pending={
+                  isPending('workspaceImpact') ||
+                  isPending('workspaceDiff') ||
+                  isPending('intelligenceSnapshot')
+                }
+                onClick={onRunImpactLensCli}
+                disabled={!hasWorkspace}
+                actionContract={commandContract(
+                  'workspaceImpactLensCli',
+                  !hasWorkspace ? 'Select a workspace' : undefined
+                )}
+                title="rapidkit workspace snapshot → diff → impact"
+              />
+            ) : null}
             {onSendWorkspaceToCopilot ? (
               <ActionTile
                 icon={<Send size={15} />}

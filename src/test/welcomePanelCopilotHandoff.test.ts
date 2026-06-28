@@ -21,6 +21,20 @@ vi.mock('../core/evidenceCardAgentPrompt.js', () => ({
   buildEvidenceCardStudioPromptEnriched: vi.fn(async () => 'studio prompt'),
 }));
 
+vi.mock('../core/studioBlockerHandoffBuilder.js', () => ({
+  buildStudioBlockerHandoff: vi.fn(async () => ({
+    schemaVersion: 'rapidkit-studio-blocker-handoff-v1',
+    cardId: 'doctor',
+    cardStatus: 'fail',
+    blockers: ['doctor blocked'],
+    artifactPath: '.rapidkit/reports/doctor-last-run.json',
+    sourceCommand: 'npx rapidkit doctor --json',
+    scope: 'workspace',
+    blockerSignature: 'abc123456789abcd',
+    studioMode: 'FIX',
+  })),
+}));
+
 describe('welcomePanelCopilotHandoff', () => {
   beforeEach(() => {
     executeCommand.mockReset();
@@ -45,6 +59,7 @@ describe('welcomePanelCopilotHandoff', () => {
   it('opens Studio with enriched prompt for evidence cards', async () => {
     const { buildEvidenceCardStudioPromptEnriched } =
       await import('../core/evidenceCardAgentPrompt.js');
+    const { buildStudioBlockerHandoff } = await import('../core/studioBlockerHandoffBuilder.js');
     const { handleWelcomePanelAskStudioAboutEvidence } =
       await import('../ui/panels/welcomePanelCopilotHandoff.js');
 
@@ -60,12 +75,38 @@ describe('welcomePanelCopilotHandoff', () => {
     );
 
     expect(buildEvidenceCardStudioPromptEnriched).toHaveBeenCalled();
+    expect(buildStudioBlockerHandoff).toHaveBeenCalledWith(
+      expect.objectContaining({ handoffSource: 'dashboard' })
+    );
     expect(executeCommand).toHaveBeenCalledWith(
       'workspai.openIncidentStudio',
       expect.objectContaining({
         initialQuery: 'studio prompt',
         trigger: 'dashboard-evidence-studio-handoff',
+        blockerHandoff: expect.objectContaining({ cardId: 'doctor', studioMode: 'FIX' }),
       })
+    );
+  });
+
+  it('maps repair and artifacts sources into typed handoffSource', async () => {
+    const { buildStudioBlockerHandoff } = await import('../core/studioBlockerHandoffBuilder.js');
+    const { handleWelcomePanelAskStudioAboutEvidence } =
+      await import('../ui/panels/welcomePanelCopilotHandoff.js');
+
+    await handleWelcomePanelAskStudioAboutEvidence(
+      {
+        workspacePath: '/tmp/ws',
+        source: 'repair',
+        card: { id: 'doctor', label: 'Doctor', status: 'fail', summary: 'x', scope: 'workspace' },
+      },
+      {
+        resolveWorkspacePath: () => '/tmp/ws',
+        resolveWorkspaceName: () => 'demo',
+      }
+    );
+
+    expect(buildStudioBlockerHandoff).toHaveBeenCalledWith(
+      expect.objectContaining({ handoffSource: 'repair' })
     );
   });
 });

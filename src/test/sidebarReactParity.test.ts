@@ -21,13 +21,7 @@ describe('React sidebar parity (roadmap 2.11)', () => {
     const source = read('webview-ui/src/sidebar/QuickActionsGrid.tsx');
     const commandIds = Array.from(source.matchAll(/command:\s*'([^']+)'/g)).map((m) => m[1]);
 
-    expect(commandIds).toEqual([
-      'openWelcome',
-      'createWithAI',
-      'workspaceAdvisor',
-      'incidentStudioNext',
-      'doctor',
-    ]);
+    expect(commandIds).toEqual(['openWelcome', 'createWithAI', 'incidentStudioNext', 'doctor']);
 
     for (const id of commandIds) {
       expect(

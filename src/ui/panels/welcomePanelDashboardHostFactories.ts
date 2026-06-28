@@ -16,6 +16,8 @@ import {
 import type { DashboardShortcutMessageHost } from './welcomePanelDashboardShortcutMessages';
 import type { ModulesCatalogHost } from './welcomePanelModulesCatalog';
 import type { RecentWorkspaceEntry } from './welcomePanelRecentWorkspaces';
+import { resolveEvidenceCardIdsForDashboardCommand } from '../../core/dashboardReportRegistry';
+import { recordRetentionMilestone } from '../../core/retentionMilestones';
 
 export type WelcomePanelDashboardHostFactoryBindings = {
   context: vscode.ExtensionContext;
@@ -142,8 +144,19 @@ export function buildWelcomePanelDashboardCommandHost(
     getSelectedWorkspaceInfo: () =>
       getSelectedWorkspaceInfoFromExplorer(bindings.getWorkspaceExplorerSelectedWorkspace),
     getSelectedProject: bindings.getSelectedProject,
-    postDashboardCommandFailed: (command: string, reason: string) => {
-      bindings.postWebviewMessage('dashboardCommandFailed', { command, reason });
+    postDashboardCommandFailed: (command: string, reason: string, details) => {
+      void recordRetentionMilestone(bindings.context, 'command_failure', {
+        surface: 'dashboard',
+      });
+      bindings.postWebviewMessage('dashboardCommandFailed', {
+        command,
+        reason,
+        cardIds: resolveEvidenceCardIdsForDashboardCommand(command),
+        exitCode: details?.exitCode,
+        stderrTail: details?.stderrTail,
+        suggestedNextAction: details?.suggestedNextAction,
+        timestamp: Date.now(),
+      });
     },
     sendDashboardEvidence: (context) => sendDashboardEvidence(getDashboardEvidenceHost(), context),
     refreshWorkspaceStatus: bindings.refreshWorkspaceStatus,

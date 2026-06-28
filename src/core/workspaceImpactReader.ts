@@ -1,7 +1,20 @@
-import * as fs from 'fs-extra';
 import * as path from 'path';
 
 import { WORKSPACE_IMPACT_REPORT_PATH } from './workspaceIntelligencePaths';
+import { readJsonArtifact, type JsonArtifactReadResult } from './jsonArtifactReader.js';
+
+export const WORKSPACE_IMPACT_SCHEMA_VERSION = 'workspace-impact.v1';
+
+export function isWorkspaceImpactReport(value: unknown): value is WorkspaceImpactReport {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    record.schemaVersion === WORKSPACE_IMPACT_SCHEMA_VERSION &&
+    typeof record.generatedAt === 'string'
+  );
+}
 
 export type WorkspaceImpactReport = {
   schemaVersion?: string;
@@ -51,23 +64,38 @@ export type WorkspaceImpactReport = {
   };
 };
 
+export type WorkspaceImpactReportReadResult =
+  | { kind: 'missing'; artifactPath: string }
+  | { kind: 'valid'; artifactPath: string; report: WorkspaceImpactReport }
+  | { kind: 'corrupt'; artifactPath: string; error: string };
+
 export async function readWorkspaceImpactReport(
   workspacePath?: string
 ): Promise<WorkspaceImpactReport | null> {
+  const result = await readWorkspaceImpactReportArtifact(workspacePath);
+  return result.kind === 'valid' ? result.report : null;
+}
+
+export async function readWorkspaceImpactReportArtifact(
+  workspacePath?: string
+): Promise<WorkspaceImpactReportReadResult> {
+  const reportPath = path.join(workspacePath ?? '', WORKSPACE_IMPACT_REPORT_PATH);
   if (!workspacePath) {
-    return null;
+    return { kind: 'missing', artifactPath: reportPath };
   }
 
-  const reportPath = path.join(workspacePath, WORKSPACE_IMPACT_REPORT_PATH);
-  try {
-    if (!(await fs.pathExists(reportPath))) {
-      return null;
-    }
-    const raw = await fs.readJson(reportPath);
-    return raw && typeof raw === 'object' ? (raw as WorkspaceImpactReport) : null;
-  } catch {
-    return null;
+  const result: JsonArtifactReadResult = await readJsonArtifact(reportPath);
+  if (result.kind !== 'valid') {
+    return result;
   }
+  if (!isWorkspaceImpactReport(result.raw)) {
+    return {
+      kind: 'corrupt',
+      artifactPath: result.artifactPath,
+      error: 'Workspace impact artifact does not match workspace-impact.v1.',
+    };
+  }
+  return { kind: 'valid', artifactPath: result.artifactPath, report: result.raw };
 }
 
 export function buildWorkspaceImpactPromptSection(report: WorkspaceImpactReport | null): string {

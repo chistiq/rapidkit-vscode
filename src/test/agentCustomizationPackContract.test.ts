@@ -30,6 +30,8 @@ describe('agent-customization-pack contract parity', () => {
     expect(srcJson).toEqual(npmJson);
     expect(npmJson.outputKinds).toContain('hook');
     expect(npmJson.outputKinds).toContain('mcp-design');
+    expect(npmJson.outputKinds).toContain('skills-index');
+    expect(npmJson.outputKinds).toContain('operational-skill');
     expect(npmJson.standardAnswerContract).toEqual([
       'Scope',
       'Evidence',

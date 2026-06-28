@@ -4,12 +4,17 @@ import type {
   DashboardEvidenceStatus,
 } from './dashboardEvidence';
 import {
-  evidenceGuidedStepCards,
   buildEvidenceGuidedSteps,
+  buildGuidedStepFocusCard,
+  evidenceGuidedStepCards,
   pickGuidedStepPrimaryCard,
   type EvidenceGuidedStep,
 } from './dashboardEvidenceViewMode';
 import { outcomeCards, resolveEvidenceFreshness } from './dashboardEvidence';
+import {
+  cardCountsAsReleaseBlocker,
+  resolveWorkspaceProjectCountFromEvidence,
+} from './dashboardScaffoldEvidence';
 
 export type EvidenceBriefPosture = 'healthy' | 'attention' | 'blocked' | 'empty';
 
@@ -43,8 +48,11 @@ export function buildDashboardEvidenceBrief(input: {
 }): EvidenceBriefView {
   const { evidence, hasWorkspace, hasProject } = input;
   const cards = evidence?.cards ?? [];
-  const blockers = cards.filter((card) => (card.blockers?.length ?? 0) > 0);
-  const failed = countCardsByStatus(cards, 'fail');
+  const workspaceProjectCount = resolveWorkspaceProjectCountFromEvidence(evidence);
+  const releaseBlockingCards = cards.filter((card) =>
+    cardCountsAsReleaseBlocker(card, workspaceProjectCount)
+  );
+  const failed = releaseBlockingCards.filter((card) => card.status === 'fail').length;
   const warnings = countCardsByStatus(cards, 'warn');
   const missing = countCardsByStatus(cards, 'missing');
   const stale = cards.filter((card) => resolveEvidenceFreshness(card).status === 'stale').length;
@@ -56,9 +64,10 @@ export function buildDashboardEvidenceBrief(input: {
     guidedSteps.find((step) => step.state === 'locked') ??
     guidedSteps.find((step) => step.state === 'complete');
   const stepCards = currentStep ? evidenceGuidedStepCards(currentStep, evidence) : [];
-  const primaryCard = currentStep
-    ? pickGuidedStepPrimaryCard(currentStep.id, stepCards)
-    : undefined;
+  const primaryCard =
+    (currentStep
+      ? pickGuidedStepPrimaryCard(currentStep.id, stepCards, workspaceProjectCount)
+      : undefined) ?? (currentStep ? buildGuidedStepFocusCard(currentStep) : undefined);
 
   if (!hasWorkspace) {
     return {
@@ -74,17 +83,19 @@ export function buildDashboardEvidenceBrief(input: {
     };
   }
 
-  if (failed > 0 || blockers.length > 0) {
+  if (failed > 0 || releaseBlockingCards.length > 0) {
     return {
       posture: 'blocked',
       label: 'Blocked',
       summary:
-        primaryCard?.summary || blockers[0]?.summary || 'A required evidence gate is blocked.',
+        primaryCard?.summary ||
+        releaseBlockingCards[0]?.summary ||
+        'A required evidence gate is blocked.',
       detail: currentStep
         ? `${currentStep.title}: ${currentStep.detail}`
         : 'Open the highest priority blocker before continuing.',
       metrics: [
-        { label: 'blocked', value: Math.max(failed, blockers.length), tone: 'danger' },
+        { label: 'blocked', value: Math.max(failed, releaseBlockingCards.length), tone: 'danger' },
         { label: 'attention', value: warnings, tone: warnings > 0 ? 'warn' : 'neutral' },
         { label: 'stale', value: stale, tone: stale > 0 ? 'warn' : 'good' },
       ],
@@ -93,11 +104,16 @@ export function buildDashboardEvidenceBrief(input: {
     };
   }
 
-  if (warnings > 0 || stale > 0 || outcomes.length > 0) {
+  if (warnings > 0 || stale > 0 || outcomes.length > 0 || missing > 0) {
+    const emptyShell = workspaceProjectCount === 0;
     return {
       posture: 'attention',
-      label: 'Needs attention',
-      summary: primaryCard?.summary || 'Evidence is usable, but at least one card needs review.',
+      label: emptyShell ? 'Scaffold ready' : 'Needs attention',
+      summary:
+        primaryCard?.summary ||
+        (emptyShell
+          ? 'Workspace shell is healthy — add your first project to continue the evidence loop.'
+          : 'Evidence is usable, but at least one card needs review.'),
       detail: currentStep
         ? `${currentStep.title}: ${currentStep.detail}`
         : 'Review warning and stale evidence before release.',

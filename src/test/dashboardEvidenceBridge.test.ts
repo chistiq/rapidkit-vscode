@@ -25,6 +25,17 @@ describe('dashboardEvidenceBridge', () => {
     return workspacePath;
   }
 
+  async function createWorkspaceWithRawReports(reports: Record<string, string>): Promise<string> {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'rapidkit-evidence-'));
+    tempDirs.push(workspacePath);
+    const reportsDir = path.join(workspacePath, '.rapidkit', 'reports');
+    await fs.ensureDir(reportsDir);
+    for (const [fileName, payload] of Object.entries(reports)) {
+      await fs.writeFile(path.join(reportsDir, fileName), payload, 'utf8');
+    }
+    return workspacePath;
+  }
+
   it('builds doctor and analyze cards from report artifacts', async () => {
     const workspacePath = await createWorkspaceWithReports({
       'doctor-last-run.json': {
@@ -105,6 +116,92 @@ describe('dashboardEvidenceBridge', () => {
     expect(bundle.cards.some((card) => card.id === 'analyze' && card.status === 'missing')).toBe(
       true
     );
+  });
+
+  it('surfaces malformed JSON artifacts as failed corrupt cards instead of missing evidence', async () => {
+    const workspacePath = await createWorkspaceWithRawReports({
+      'workspace-model.json': '{not-json',
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+    const model = findEvidenceCard(bundle, 'workspaceModel');
+
+    expect(model?.status).toBe('fail');
+    expect(model?.summary).toContain('corrupt');
+    expect(model?.artifactPath).toContain('workspace-model.json');
+    expect(model?.blockers?.join('\n')).toContain('Corrupt artifact');
+    expect(model?.detailSections?.[0]?.body).toContain('workspace-model.json');
+  });
+
+  it('surfaces wrong-shape workspace model artifacts as corrupt instead of valid', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'workspace-model.json': {
+        schemaVersion: 'unexpected',
+        projects: [],
+      },
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+    const model = findEvidenceCard(bundle, 'workspaceModel');
+
+    expect(model?.status).toBe('fail');
+    expect(model?.summary).toContain('corrupt');
+    expect(model?.blockers?.join('\n')).toContain('summary metadata');
+    expect(model?.metrics?.corruptArtifact).toBe(1);
+  });
+
+  it('surfaces corrupt enterprise evidence artifacts as failed cards', async () => {
+    const workspacePath = await createWorkspaceWithRawReports({
+      'doctor-last-run.json': '{not-json',
+      'pipeline-last-run.json': '{not-json',
+      'analyze-last-run.json': '{not-json',
+      'release-readiness-last-run.json': '{not-json',
+      'workspace-impact-last-run.json': '{not-json',
+      'workspace-verify-last-run.json': '{not-json',
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+
+    for (const id of [
+      'doctor',
+      'pipeline',
+      'analyze',
+      'readiness',
+      'workspaceImpact',
+      'workspaceVerify',
+    ]) {
+      const card = findEvidenceCard(bundle, id);
+      expect(card?.status, id).toBe('fail');
+      expect(card?.summary, id).toContain('corrupt');
+      expect(card?.metrics?.corruptArtifact, id).toBe(1);
+      expect(card?.blockers?.join('\n'), id).toContain('Corrupt artifact');
+      expect(card?.detailSections?.[0]?.body, id).toContain('.json');
+    }
+  });
+
+  it('surfaces corrupt project doctor artifacts for selected project scope', async () => {
+    const workspacePath = await createWorkspaceWithReports({});
+    const projectPath = path.join(workspacePath, 'api');
+    const reportPath = path.join(
+      projectPath,
+      '.rapidkit',
+      'reports',
+      'doctor-project-last-run.json'
+    );
+    await fs.ensureDir(path.dirname(reportPath));
+    await fs.writeFile(reportPath, '{not-json', 'utf8');
+
+    const bundle = await buildDashboardEvidenceBundle({
+      workspacePath,
+      projectPath,
+      projectName: 'api',
+    });
+    const projectDoctor = findEvidenceCard(bundle, 'projectDoctor');
+
+    expect(projectDoctor?.status).toBe('fail');
+    expect(projectDoctor?.scope).toBe('project');
+    expect(projectDoctor?.artifactPath).toBe(reportPath);
+    expect(projectDoctor?.blockers?.join('\n')).toContain('Corrupt artifact');
   });
 
   it('describes pending bootstrap compliance when profile exists but report is missing', async () => {
@@ -204,6 +301,192 @@ describe('dashboardEvidenceBridge', () => {
     expect(findEvidenceCard(bundle, 'workspaceDiff')?.status).toBe('pass');
     expect(findEvidenceCard(bundle, 'workspaceDiff')?.summary).toContain('no project model drift');
     expect(findEvidenceCard(bundle, 'workspaceImpact')?.status).toBe('warn');
+  });
+
+  it('softens verify and agent grounding for empty scaffolded workspaces', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'workspace-model.json': {
+        generatedAt: '2026-06-15T10:00:00.000Z',
+        summary: { projectCount: 0 },
+        validation: { status: 'warning', errors: 0, warnings: 2 },
+      },
+      'workspace-verify-last-run.json': {
+        generatedAt: '2026-06-15T10:05:00.000Z',
+        summary: {
+          verdict: 'blocked',
+          stepsPassed: 2,
+          stepsMissing: 4,
+          stepsFailed: 0,
+        },
+        policyViolations: [{ severity: 'warning', code: 'workspace.projects.empty' }],
+        blockers: ['doctor-last-run.json is stale relative to impact evidence'],
+      },
+      'INDEX.json': {
+        generatedAt: '2026-06-15T10:04:00.000Z',
+        reports: [
+          { path: '.rapidkit/reports/pipeline-last-run.json', required: true, exists: false },
+        ],
+      },
+      'agent-customization-pack.json': {
+        generatedAt: '2026-06-15T10:04:00.000Z',
+        preset: 'enterprise',
+        outputs: [],
+        blockers: ['Missing required project-scoped AGENTS.md surface'],
+      },
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+
+    expect(findEvidenceCard(bundle, 'workspaceVerify')?.status).toBe('warn');
+    expect(findEvidenceCard(bundle, 'agentGrounding')?.status).toBe('warn');
+  });
+
+  it('surfaces MCP design tools on agent grounding detail sections', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'agent-customization-pack.json': {
+        schemaVersion: 'rapidkit-agent-customization-pack.v1',
+        generatedAt: '2026-06-15T10:04:00.000Z',
+        preset: 'enterprise',
+        experimental: { mcpReady: true },
+        outputInventory: [{ path: 'AGENTS.md', status: 'written' }],
+      },
+      'rapidkit-mcp-design.json': {
+        schemaVersion: 'rapidkit-mcp-design.v1',
+        mode: 'read-mostly',
+        candidateTools: [
+          {
+            name: 'getWorkspaceModel',
+            reads: ['.rapidkit/reports/workspace-model.json'],
+            mutates: false,
+          },
+          {
+            name: 'getBlockers',
+            reads: ['.rapidkit/reports/workspace-verify-last-run.json'],
+            mutates: false,
+          },
+        ],
+      },
+    });
+    await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Agents\n', 'utf8');
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+    const grounding = findEvidenceCard(bundle, 'agentGrounding');
+
+    expect(grounding?.detailSections?.length).toBe(2);
+    expect(grounding?.metrics?.mcpTools).toBe(2);
+    expect(grounding?.detailSections?.[0]?.title).toBe('getWorkspaceModel');
+  });
+
+  it('does not fail Agent Grounding just because the workspace report index contains release blockers', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'INDEX.json': {
+        generatedAt: '2026-06-15T10:04:00.000Z',
+        blockers: [
+          'readiness: dependency: 2 dependency vulnerability(ies) reported',
+          'workspace.readiness: Release readiness evidence reports blocking failures.',
+        ],
+        reports: [
+          { path: '.rapidkit/reports/workspace-context-agent.json', required: true, exists: true },
+          { path: '.rapidkit/reports/workspace-skills-index.json', required: true, exists: true },
+        ],
+      },
+      'agent-customization-pack.json': {
+        schemaVersion: 'rapidkit-agent-customization-pack.v1',
+        generatedAt: '2026-06-15T10:04:00.000Z',
+        preset: 'enterprise',
+        experimental: { mcpReady: true },
+        outputInventory: [{ path: 'AGENTS.md', status: 'written' }],
+        drift: { missingRequired: [], staleReports: [], strictViolations: [] },
+      },
+    });
+    await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Agents\n', 'utf8');
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+    const grounding = findEvidenceCard(bundle, 'agentGrounding');
+
+    expect(grounding?.status).toBe('pass');
+    expect(grounding?.blockers ?? []).toEqual([]);
+    expect(grounding?.detailSections?.[0]?.title).toBe('Workspace report blockers');
+    expect(grounding?.detailSections?.[0]?.body).toContain('dependency');
+  });
+
+  it('builds Phase 4 why, trace, and explain cards from separate last-run artifacts', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'workspace-model.json': {
+        generatedAt: '2026-06-15T10:00:00.000Z',
+        summary: { projectCount: 1 },
+        projects: [{ name: 'api' }],
+        validation: { status: 'pass', errors: 0, warnings: 0 },
+      },
+      'workspace-explain-last-run.json': {
+        schemaVersion: 'workspace-explain.v1',
+        generatedAt: '2026-06-15T10:04:00.000Z',
+        workspacePath: '/tmp/phase4-workspace',
+        target: { kind: 'release-blocked' },
+        summary: 'Explain release posture',
+        sections: [{ id: 'release', title: 'Release', body: 'blocked' }],
+      },
+      'workspace-why-last-run.json': {
+        schemaVersion: 'workspace-explain.v1',
+        generatedAt: '2026-06-15T10:05:00.000Z',
+        workspacePath: '/tmp/phase4-workspace',
+        target: { kind: 'release-blocked' },
+        summary: 'Why release is blocked',
+        sections: [{ id: 'why', title: 'Why', body: 'doctor failed' }],
+      },
+      'workspace-trace-last-run.json': {
+        schemaVersion: 'workspace-explain.v1',
+        generatedAt: '2026-06-15T10:06:00.000Z',
+        workspacePath: '/tmp/phase4-workspace',
+        target: { kind: 'trace', diffRef: '.rapidkit/reports/workspace-model-diff-last-run.json' },
+        summary: 'Trace from diff baseline',
+        sections: [{ id: 'blast-radius', title: 'Blast radius', body: 'api affected' }],
+      },
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+
+    expect(findEvidenceCard(bundle, 'workspaceExplain')?.status).toBe('pass');
+    expect(findEvidenceCard(bundle, 'workspaceWhy')?.status).toBe('pass');
+    expect(findEvidenceCard(bundle, 'workspaceTrace')?.status).toBe('pass');
+    expect(findEvidenceCard(bundle, 'workspaceExplain')?.summary).toContain('Explain release');
+    expect(findEvidenceCard(bundle, 'workspaceWhy')?.summary).toContain('Why release');
+    expect(findEvidenceCard(bundle, 'workspaceTrace')?.summary).toContain('Trace from diff');
+    expect(findEvidenceCard(bundle, 'workspaceWatch')?.status).toBe('pass');
+  });
+
+  it('marks Workspace Why as derived when the dedicated why artifact is missing', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'workspace-model.json': {
+        generatedAt: '2026-06-15T10:00:00.000Z',
+        summary: { projectCount: 1 },
+        projects: [{ name: 'api' }],
+        validation: { status: 'pass', errors: 0, warnings: 0 },
+      },
+      'workspace-explain-last-run.json': {
+        schemaVersion: 'workspace-explain.v1',
+        generatedAt: '2026-06-15T10:04:00.000Z',
+        workspacePath: '/tmp/phase4-workspace',
+        target: { kind: 'release-blocked' },
+        summary: 'Release blocked: blocked with 1 blocking reason(s).',
+        sections: [{ id: 'release', title: 'Release', body: 'blocked' }],
+        blockingReasons: [
+          'workspace.readiness: Release readiness evidence is stale: generated at 2026-06-15T09:00:00.000Z, before impact 2026-06-15T10:00:00.000Z.',
+        ],
+      },
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+    const why = findEvidenceCard(bundle, 'workspaceWhy');
+
+    expect(why?.artifactPath).toContain('workspace-explain-last-run.json');
+    expect(why?.summary).toContain('Derived from Workspace Explain');
+    expect(why?.metrics).toMatchObject({
+      derivedArtifact: 1,
+      derivedFrom: 'Workspace Explain',
+      staleEvidence: 1,
+    });
+    expect(why?.detailSections?.[0]?.title).toBe('Artifact source');
   });
 
   it('downgrades workspace-only high impact to warn when projects exist but none are affected', async () => {
@@ -462,6 +745,18 @@ describe('dashboardEvidenceBridge', () => {
         legacyWorkspaceJson: { exists: true, projectCount: 1 },
       },
     });
+    await fs.writeJSON(
+      path.join(workspacePath, '.rapidkit', 'reports', 'workspace-contract-verify-last-run.json'),
+      {
+        schemaVersion: 'workspace-contract-verify.v1',
+        generatedAt: '2026-06-11T10:00:00.000Z',
+        status: 'passed',
+        contractPath: '.rapidkit/workspace.contract.json',
+        projectCount: 1,
+        violations: [],
+        checks: [],
+      }
+    );
 
     const bundle = await buildDashboardEvidenceBundle({ workspacePath });
 
@@ -515,6 +810,8 @@ describe('dashboardEvidenceBridge', () => {
     const bundle = await buildDashboardEvidenceBundle({ workspacePath });
 
     expect(findEvidenceCard(bundle, 'workspaceModel')?.status).toBe('pass');
+    const modelSections = findEvidenceCard(bundle, 'workspaceModel')?.detailSections ?? [];
+    expect(modelSections.some((section) => section.id === 'workspace-graph')).toBe(true);
     expect(findEvidenceCard(bundle, 'intelligenceSnapshot')?.status).toBe('pass');
     expect(findEvidenceCard(bundle, 'workspaceDiff')?.status).toBe('warn');
     expect(findEvidenceCard(bundle, 'workspaceImpact')?.status).toBe('warn');

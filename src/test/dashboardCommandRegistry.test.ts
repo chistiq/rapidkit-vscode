@@ -369,6 +369,10 @@ describe('dashboardCommandRegistry', () => {
       source: 'dashboard',
       trigger: 'workspace_intelligence',
     });
+    expect(DASHBOARD_COMMAND_CONTRACTS.workspaceImpactLensCli.vscodeCommand).toBe(
+      'workspai.workspaceImpactLens'
+    );
+    expect(DASHBOARD_COMMAND_SURFACE.workspaceImpactLensCli.refreshEvidence).toBe(true);
     expect(DASHBOARD_COMMAND_CONTRACTS.projectDoctor.payloadKind).toBe('project-path');
     expect(DASHBOARD_COMMAND_CONTRACTS.projectDoctor.payloadDefaults).toEqual({
       preferredAction: 'check',
@@ -545,7 +549,8 @@ describe('dashboardCommandRegistry', () => {
   });
 
   it('resolves evidence card CTAs through registry-backed command actions', () => {
-    expect(EVIDENCE_CARD_COMMANDS.archive).toBe('workspaceArchive');
+    expect(EVIDENCE_CARD_COMMANDS.archive).toBe('exportWorkspace');
+    expect(EVIDENCE_CARD_COMMANDS.mirror).toBe('mirrorOps');
 
     for (const [cardId, command] of Object.entries(EVIDENCE_CARD_COMMANDS)) {
       const meta = getDashboardCommandMeta(command);
@@ -553,7 +558,7 @@ describe('dashboardCommandRegistry', () => {
       const action = resolveEvidenceCardCommandAction({
         id: cardId as keyof typeof EVIDENCE_CARD_COMMANDS,
         label: cardId,
-        status: 'fail',
+        status: cardId === 'archive' ? 'missing' : 'fail',
         summary: 'Needs attention',
         scope: meta?.scope === 'project' ? 'project' : 'workspace',
       });

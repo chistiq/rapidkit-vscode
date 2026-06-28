@@ -1,7 +1,11 @@
-import * as fs from 'fs-extra';
 import * as path from 'path';
 
 import { WORKSPACE_VERIFY_REPORT_PATH } from './workspaceIntelligencePaths';
+import type { BlockerResolution } from '../contracts/blocker-resolution-contract.js';
+import { isBlockerResolution } from '../contracts/blocker-resolution-contract.js';
+import { readJsonArtifact, type JsonArtifactReadResult } from './jsonArtifactReader.js';
+
+export const WORKSPACE_VERIFY_SCHEMA_VERSION = 'workspace-verify.v1' as const;
 
 export type WorkspaceVerifyStepReport = {
   id?: string;
@@ -51,25 +55,66 @@ export type WorkspaceVerifyReport = {
   steps?: WorkspaceVerifyStepReport[];
   blockingReasons?: string[];
   missingEvidence?: string[];
+  resolutionHints?: BlockerResolution[];
 };
+
+export type WorkspaceVerifyReportReadResult =
+  | { kind: 'missing'; artifactPath: string }
+  | { kind: 'valid'; artifactPath: string; report: WorkspaceVerifyReport }
+  | { kind: 'corrupt'; artifactPath: string; error: string };
+
+function normalizeResolutionHints(value: unknown): BlockerResolution[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const hints = value.filter((entry) => isBlockerResolution(entry));
+  return hints.length > 0 ? hints : undefined;
+}
+
+export function isWorkspaceVerifyReport(value: unknown): value is WorkspaceVerifyReport {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.schemaVersion !== WORKSPACE_VERIFY_SCHEMA_VERSION) {
+    return false;
+  }
+  return typeof record.generatedAt === 'string';
+}
 
 export async function readWorkspaceVerifyReport(
   workspacePath?: string
 ): Promise<WorkspaceVerifyReport | null> {
+  const result = await readWorkspaceVerifyReportArtifact(workspacePath);
+  return result.kind === 'valid' ? result.report : null;
+}
+
+export async function readWorkspaceVerifyReportArtifact(
+  workspacePath?: string
+): Promise<WorkspaceVerifyReportReadResult> {
+  const reportPath = path.join(workspacePath ?? '', WORKSPACE_VERIFY_REPORT_PATH);
   if (!workspacePath) {
-    return null;
+    return { kind: 'missing', artifactPath: reportPath };
   }
 
-  const reportPath = path.join(workspacePath, WORKSPACE_VERIFY_REPORT_PATH);
-  try {
-    if (!(await fs.pathExists(reportPath))) {
-      return null;
-    }
-    const raw = await fs.readJson(reportPath);
-    return raw && typeof raw === 'object' ? (raw as WorkspaceVerifyReport) : null;
-  } catch {
-    return null;
+  const result: JsonArtifactReadResult = await readJsonArtifact(reportPath);
+  if (result.kind !== 'valid') {
+    return result;
   }
+  if (!isWorkspaceVerifyReport(result.raw)) {
+    return {
+      kind: 'corrupt',
+      artifactPath: result.artifactPath,
+      error: 'Workspace verify artifact does not match workspace-verify.v1.',
+    };
+  }
+  const report = result.raw as WorkspaceVerifyReport;
+  const hints = normalizeResolutionHints(report.resolutionHints);
+  return {
+    kind: 'valid',
+    artifactPath: result.artifactPath,
+    report: hints ? { ...report, resolutionHints: hints } : report,
+  };
 }
 
 export function buildWorkspaceVerifyPromptSection(report: WorkspaceVerifyReport | null): string {

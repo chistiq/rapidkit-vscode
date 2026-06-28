@@ -35,6 +35,27 @@ describe('dashboardEvidenceDirectRun', () => {
     ).toBe(false);
   });
 
+  it('treats corrupt artifact cards as repair direct-runs even when an artifact path exists', () => {
+    const corrupt = card({
+      id: 'analyze',
+      status: 'fail',
+      artifactPath: '/ws/.rapidkit/reports/analyze-last-run.json',
+      metrics: { corruptArtifact: 1 },
+    });
+
+    expect(evidenceCardNeedsDirectRun(corrupt)).toBe(true);
+
+    const payload = buildEvidenceCardCommandData(corrupt, 'workspaceAnalyze', { path: '/ws' });
+
+    expect(payload).toMatchObject({
+      source: 'evidence',
+      evidenceDirectRun: true,
+      repairReason: 'corrupt-artifact',
+      repairArtifactPath: '/ws/.rapidkit/reports/analyze-last-run.json',
+      path: '/ws',
+    });
+  });
+
   it('builds bootstrap direct payload with saved profile hint flags', () => {
     const payload = buildEvidenceCardCommandData(
       card({

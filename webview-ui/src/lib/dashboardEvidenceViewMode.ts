@@ -60,6 +60,10 @@ const CARD_MIN_VIEW_MODE: Partial<Record<DashboardEvidenceCardId, EvidenceViewMo
   intelligenceSnapshot: 'balanced',
   workspaceDiff: 'balanced',
   workspaceImpact: 'balanced',
+  workspaceExplain: 'balanced',
+  workspaceWhy: 'balanced',
+  workspaceTrace: 'balanced',
+  workspaceWatch: 'balanced',
   workspaceContextAgent: 'balanced',
   agentGrounding: 'balanced',
   snapshot: 'balanced',
@@ -128,12 +132,17 @@ export const EVIDENCE_WORKFLOW_GROUPS: ReadonlyArray<EvidenceWorkflowGroup> = [
   {
     id: 'intelligence',
     label: 'Intelligence',
-    description: 'Model, snapshot, diff, impact, agent context',
+    description: 'Model, snapshot, diff, impact, verify, explain, agent context',
     cardIds: [
       'workspaceModel',
       'intelligenceSnapshot',
       'workspaceDiff',
       'workspaceImpact',
+      'workspaceVerify',
+      'workspaceExplain',
+      'workspaceWhy',
+      'workspaceTrace',
+      'workspaceWatch',
       'workspaceContextAgent',
       'agentGrounding',
       'snapshot',
@@ -218,12 +227,38 @@ export function healthStepCardNeedsAction(card: DashboardEvidenceCard): boolean 
   return card.status === 'warn';
 }
 
+export function isEmptyWorkspaceProjectStepNoise(
+  card: DashboardEvidenceCard,
+  workspaceProjectCount: number | null
+): boolean {
+  if (workspaceProjectCount !== 0) {
+    return false;
+  }
+  if (card.id !== 'projectDoctor' && card.id !== 'importReadiness') {
+    return false;
+  }
+  return card.status === 'warn' || card.status === 'missing';
+}
+
 export function pickGuidedStepPrimaryCard(
   stepId: EvidenceGuidedStepId,
-  cards: DashboardEvidenceCard[]
+  cards: DashboardEvidenceCard[],
+  workspaceProjectCount: number | null = null
 ): DashboardEvidenceCard | undefined {
   if (cards.length === 0) {
     return undefined;
+  }
+
+  if (stepId === 'project' && workspaceProjectCount === 0) {
+    const actionable = cards.filter((entry) => !isEmptyWorkspaceProjectStepNoise(entry, 0));
+    if (actionable.length === 0) {
+      return undefined;
+    }
+    return (
+      actionable.find((entry) => entry.status === 'fail') ??
+      actionable.find((entry) => entry.status === 'warn') ??
+      actionable[0]
+    );
   }
 
   if (stepId === 'health') {
@@ -243,6 +278,29 @@ export function pickGuidedStepPrimaryCard(
     cards.find((entry) => entry.status === 'missing') ??
     cards[0]
   );
+}
+
+/** Fallback card when a guided step has no actionable evidence cards yet (e.g. empty workspace project step). */
+export function buildGuidedStepFocusCard(
+  step: EvidenceGuidedStep
+): DashboardEvidenceCard | undefined {
+  if (step.state !== 'attention' && step.state !== 'current') {
+    return undefined;
+  }
+  if (!step.command && step.cardIds.length === 0) {
+    return undefined;
+  }
+  const focusId = step.cardIds[0] ?? 'bootstrap';
+  return {
+    id: focusId,
+    label: step.title,
+    status: step.state === 'attention' ? 'warn' : 'missing',
+    summary: step.detail,
+    scope: 'workspace',
+    blockers: [],
+    incidentStudioTarget: step.incidentStudioTarget,
+    ...(step.command ? { metrics: { guidedCommand: step.command } } : {}),
+  };
 }
 
 function healthStepComplete(evidence: DashboardEvidencePayload | null | undefined): boolean {
@@ -352,6 +410,7 @@ export function buildEvidenceGuidedSteps(input: {
         ? 'Scaffold or import a backend service before analyze and release gates.'
         : 'Pick a project when you need project-scoped doctor and run evidence.',
       cardIds: ['projectDoctor', 'importReadiness'],
+      command: workspaceEmpty ? 'importProject' : undefined,
       complete: projectComplete,
       needsAttention: workspaceEmpty,
       prerequisiteComplete: healthComplete,
@@ -359,7 +418,8 @@ export function buildEvidenceGuidedSteps(input: {
     {
       id: 'analyze',
       title: 'Analyze workspace',
-      detail: 'Generate strict analyze evidence for the ops loop.',
+      detail:
+        'Run workspace analyze (interactive, non-strict). Use Governance Gate for strict CI evidence.',
       cardIds: ['analyze', 'pipeline'],
       command: 'workspaceAnalyze',
       incidentStudioTarget: 'analyze',

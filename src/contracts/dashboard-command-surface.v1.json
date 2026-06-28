@@ -316,9 +316,84 @@
       ],
       "refreshEvidence": true
     },
+    "workspaceExplain": {
+      "id": "workspaceExplain",
+      "label": "Workspace Explain",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "workspaceExplain",
+        "workspaceWhy",
+        "workspaceVerify"
+      ],
+      "refreshEvidence": true
+    },
+    "workspaceWhy": {
+      "id": "workspaceWhy",
+      "label": "Workspace Why",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "workspaceWhy",
+        "workspaceExplain",
+        "workspaceVerify"
+      ],
+      "refreshEvidence": true
+    },
+    "workspaceTrace": {
+      "id": "workspaceTrace",
+      "label": "Workspace Trace",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "workspaceTrace",
+        "workspaceDiff"
+      ],
+      "refreshEvidence": true
+    },
+    "workspaceWatch": {
+      "id": "workspaceWatch",
+      "label": "Workspace Watch",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "workspaceWatch",
+        "workspaceModel",
+        "workspaceDiff"
+      ],
+      "refreshEvidence": true
+    },
+    "workspaceMcp": {
+      "id": "workspaceMcp",
+      "label": "Workspace MCP Serve",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "workspaceContextAgent"
+      ],
+      "refreshEvidence": false
+    },
     "workspaceImpactLens": {
       "id": "workspaceImpactLens",
       "label": "Workspace Advisor",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "workspaceImpact",
+        "workspaceDiff",
+        "intelligenceSnapshot"
+      ],
+      "refreshEvidence": true
+    },
+    "workspaceImpactLensCli": {
+      "id": "workspaceImpactLensCli",
+      "label": "Impact Lens",
       "scope": "workspace",
       "handler": "extension-host",
       "trackActivity": true,
@@ -366,7 +441,11 @@
         "workspaceImpact",
         "workspaceVerify",
         "workspaceContextAgent",
-        "agentGrounding"
+        "agentGrounding",
+        "workspaceExplain",
+        "workspaceWhy",
+        "workspaceTrace",
+        "workspaceWatch"
       ],
       "refreshEvidence": true
     },
@@ -462,6 +541,17 @@
     "mirrorSync": {
       "id": "mirrorSync",
       "label": "Mirror Sync",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "mirror"
+      ],
+      "refreshEvidence": true
+    },
+    "mirrorOps": {
+      "id": "mirrorOps",
+      "label": "Mirror Operations",
       "scope": "workspace",
       "handler": "extension-host",
       "trackActivity": true,

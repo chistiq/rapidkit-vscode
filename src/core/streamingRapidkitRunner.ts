@@ -1,7 +1,11 @@
-import { buildNpxRapidkitArgs } from '../utils/platformCapabilities';
+import {
+  buildPackageRunnerSubprocessEnv,
+  buildRapidkitExecutionSpec,
+} from '../utils/platformCapabilities';
 import { parseTrailingJson } from './canonicalProjectLifecycle';
 import { CliLogEventStreamParser, isProgressEvent, isRunLifecycleEvent } from './cliLogEventStream';
 import type { CliLogEvent } from './cliLogEventContract';
+import { gateRapidkitCliArgs, type EnterpriseCliGateResult } from './rapidkitEnterpriseCliGate';
 
 /**
  * Minimal subprocess surface the streaming runner depends on. The default
@@ -18,14 +22,32 @@ export interface RapidkitSubprocess {
 export type RapidkitSpawn = (
   command: string,
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number }
+  options: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    timeoutMs: number;
+    stdin?: string;
+    shell: boolean;
+  }
 ) => RapidkitSubprocess;
+
+export type RapidkitStreamingEnterpriseGate =
+  | false
+  | ((options: {
+      args: readonly string[];
+      cwd: string;
+      featureLabel: string;
+    }) => Promise<EnterpriseCliGateResult>);
 
 export interface StreamingRunOptions {
   /** RapidKit CLI args, e.g. `['workspace', 'model', '--json', '--write']`. */
   command: string[];
   cwd: string;
+  /** Human label for enterprise version/capability gates. */
+  featureLabel?: string;
   timeoutMs?: number;
+  /** Optional stdin payload (e.g. feedback JSON). */
+  stdin?: string;
   /** Fired for every decoded `cli-log-event.v1` event. */
   onEvent?: (event: CliLogEvent) => void;
   /** Fired for progress-advancing events with a UI-ready message. */
@@ -34,6 +56,8 @@ export interface StreamingRunOptions {
   signal?: { onCancelled(listener: () => void): void };
   /** Injectable spawn (defaults to execa). */
   spawn?: RapidkitSpawn;
+  /** Injectable enterprise gate; defaults to the shared fail-closed RapidKit CLI gate. */
+  enterpriseGate?: RapidkitStreamingEnterpriseGate;
 }
 
 export interface StreamingRunResult<T = unknown> {
@@ -58,13 +82,13 @@ const defaultSpawn: RapidkitSpawn = (command, args, options) => {
 
   const completed = (async () => {
     const { execa } = (await import('execa')) as any;
-    const isWindows = process.platform === 'win32';
     const subprocess = execa(command, args, {
       cwd: options.cwd,
       env: options.env,
       timeout: options.timeoutMs,
       reject: false,
-      shell: isWindows,
+      shell: options.shell,
+      ...(options.stdin != null ? { input: options.stdin } : {}),
     });
 
     killer = () => {
@@ -115,17 +139,43 @@ export async function runRapidkitStreaming<T = unknown>(
   options: StreamingRunOptions
 ): Promise<StreamingRunResult<T>> {
   const spawn = options.spawn ?? defaultSpawn;
+  const enterpriseGate =
+    options.enterpriseGate === undefined ? gateRapidkitCliArgs : options.enterpriseGate;
+  if (enterpriseGate !== false) {
+    const gate = await enterpriseGate({
+      args: options.command,
+      cwd: options.cwd,
+      featureLabel: options.featureLabel ?? 'RapidKit streaming command',
+    });
+    if (!gate.allowed) {
+      return {
+        exitCode: 1,
+        events: [],
+        lastLifecycleEvent: null,
+        result: null,
+        stdout: '',
+        stderr: gate.error,
+        failed: true,
+      };
+    }
+  }
+
   const parser = new CliLogEventStreamParser();
   const events: CliLogEvent[] = [];
   let stdoutBuffer = '';
 
-  const args = buildNpxRapidkitArgs([...options.command]);
-  const env: NodeJS.ProcessEnv = { ...process.env, RAPIDKIT_LOG_FORMAT: 'json' };
+  const execution = buildRapidkitExecutionSpec([...options.command]);
+  const env: NodeJS.ProcessEnv = buildPackageRunnerSubprocessEnv({
+    ...process.env,
+    RAPIDKIT_LOG_FORMAT: 'json',
+  });
 
-  const subprocess = spawn('npx', args, {
+  const subprocess = spawn(execution.command, execution.args, {
     cwd: options.cwd,
     env,
     timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    stdin: options.stdin,
+    shell: execution.shell,
   });
 
   const handleEvent = (event: CliLogEvent): void => {

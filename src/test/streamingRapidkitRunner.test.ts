@@ -1,10 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 
+vi.mock('vscode', () => ({
+  window: {
+    showErrorMessage: vi.fn(),
+  },
+  commands: {
+    executeCommand: vi.fn(),
+  },
+}));
+
 import {
   runRapidkitStreaming,
   type RapidkitSpawn,
   type RapidkitSubprocess,
 } from '../core/streamingRapidkitRunner';
+import { buildRapidkitExecutionSpec } from '../utils/platformCapabilities';
 
 function cliEvent(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
@@ -27,11 +37,16 @@ function fakeSpawn(config: {
   stderrChunks: string[];
   stdoutChunks: string[];
   exitCode: number;
-  onArgs?: (command: string, args: string[], env: NodeJS.ProcessEnv) => void;
+  onArgs?: (
+    command: string,
+    args: string[],
+    env: NodeJS.ProcessEnv,
+    options: { shell: boolean }
+  ) => void;
   onKill?: () => void;
 }): RapidkitSpawn {
   return (command, args, options) => {
-    config.onArgs?.(command, args, options.env);
+    config.onArgs?.(command, args, options.env, { shell: options.shell });
     let stdoutListener: ((chunk: string) => void) | undefined;
     let stderrListener: ((chunk: string) => void) | undefined;
 
@@ -74,6 +89,7 @@ describe('runRapidkitStreaming', () => {
     const result = await runRapidkitStreaming<{ verdict: string }>({
       command: ['workspace', 'verify', '--json'],
       cwd: '/tmp/ws',
+      enterpriseGate: false,
       onProgress,
       spawn: fakeSpawn({
         stderrChunks: [
@@ -100,19 +116,41 @@ describe('runRapidkitStreaming', () => {
     await runRapidkitStreaming({
       command: ['workspace', 'model', '--json', '--write'],
       cwd: '/tmp/ws',
+      enterpriseGate: false,
       spawn: fakeSpawn({ stderrChunks: [], stdoutChunks: ['{}'], exitCode: 0, onArgs }),
     });
 
     expect(onArgs).toHaveBeenCalled();
     const [command, , env] = onArgs.mock.calls[0];
-    expect(command).toBe('npx');
+    expect(command).toBe(
+      buildRapidkitExecutionSpec(['workspace', 'model', '--json', '--write']).command
+    );
     expect(env.RAPIDKIT_LOG_FORMAT).toBe('json');
+    expect(env.npm_config_package).toBeUndefined();
+    expect(env.npm_config__package).toBeUndefined();
+  });
+
+  it('passes canonical npx args and shell mode as separate execution fields', async () => {
+    const onArgs = vi.fn();
+    await runRapidkitStreaming({
+      command: ['workspace', 'verify', 'my folder'],
+      cwd: '/tmp/ws',
+      enterpriseGate: false,
+      spawn: fakeSpawn({ stderrChunks: [], stdoutChunks: ['{}'], exitCode: 0, onArgs }),
+    });
+
+    const [command, args, , options] = onArgs.mock.calls[0];
+    const execution = buildRapidkitExecutionSpec(['workspace', 'verify', 'my folder']);
+    expect(command).toBe(execution.command);
+    expect(args).toEqual(execution.args);
+    expect(typeof options.shell).toBe('boolean');
   });
 
   it('marks the run failed on a non-zero exit code', async () => {
     const result = await runRapidkitStreaming({
       command: ['workspace', 'verify', '--json'],
       cwd: '/tmp/ws',
+      enterpriseGate: false,
       spawn: fakeSpawn({ stderrChunks: [], stdoutChunks: [''], exitCode: 2 }),
     });
     expect(result.failed).toBe(true);
@@ -123,6 +161,7 @@ describe('runRapidkitStreaming', () => {
     const result = await runRapidkitStreaming({
       command: ['workspace', 'verify', '--json'],
       cwd: '/tmp/ws',
+      enterpriseGate: false,
       spawn: fakeSpawn({
         stderrChunks: [`${cliEvent({ event: 'run.failed', message: 'boom' })}\n`],
         stdoutChunks: ['{}'],
@@ -139,10 +178,40 @@ describe('runRapidkitStreaming', () => {
     await runRapidkitStreaming({
       command: ['workspace', 'model', '--json'],
       cwd: '/tmp/ws',
+      enterpriseGate: false,
       signal: { onCancelled: (listener) => (cancel = listener) },
       spawn: fakeSpawn({ stderrChunks: [], stdoutChunks: ['{}'], exitCode: 0, onKill }),
     });
     cancel?.();
     expect(onKill).toHaveBeenCalled();
+  });
+
+  it('fails closed before spawning when the enterprise gate blocks the command', async () => {
+    const spawn = vi.fn();
+    const result = await runRapidkitStreaming({
+      command: ['workspace', 'verify', '--json'],
+      cwd: '/tmp/ws',
+      featureLabel: 'Workspace Verify',
+      enterpriseGate: async ({ args, cwd, featureLabel }) => {
+        expect(args).toEqual(['workspace', 'verify', '--json']);
+        expect(cwd).toBe('/tmp/ws');
+        expect(featureLabel).toBe('Workspace Verify');
+        return {
+          allowed: false,
+          error: 'Workspace Verify is blocked until rapidkit is updated.',
+        };
+      },
+      spawn,
+    });
+
+    expect(result).toMatchObject({
+      exitCode: 1,
+      failed: true,
+      stderr: 'Workspace Verify is blocked until rapidkit is updated.',
+      stdout: '',
+      events: [],
+      result: null,
+    });
+    expect(spawn).not.toHaveBeenCalled();
   });
 });

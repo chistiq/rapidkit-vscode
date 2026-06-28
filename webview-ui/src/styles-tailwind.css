@@ -110,6 +110,49 @@
     line-height: 1.25;
   }
 
+  .header--inline {
+    margin: 0;
+    padding: 3px 10px 3px 2px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    flex: 0 0 auto;
+    align-self: center;
+    min-height: 0;
+    max-width: none;
+    gap: 7px;
+    border-right: 1px solid var(--vscode-panel-border);
+    margin-right: 2px;
+  }
+
+  .header--inline .logo {
+    width: 22px;
+    height: 22px;
+    align-self: center;
+  }
+
+  .header--inline .header-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    line-height: 1.1;
+  }
+
+  .header--inline h1 {
+    font-size: 12px;
+    white-space: nowrap;
+    line-height: 1.05;
+  }
+
+  .tagline--inline {
+    font-size: 9px;
+    line-height: 1.15;
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+    opacity: 0.88;
+  }
+
   .workspai-top-bar {
     display: flex;
     flex-wrap: wrap;
@@ -3056,12 +3099,12 @@
   .workspai-view-tabs {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     flex-wrap: wrap;
     gap: 6px;
     flex: 1 1 240px;
     min-width: 0;
-    min-height: 36px;
+    min-height: 34px;
     margin-left: auto;
     border: 1px solid var(--vscode-panel-border);
     border-radius: 10px;
@@ -3101,6 +3144,14 @@
     .workspai-view-tabs {
       flex-basis: 100%;
       margin-left: 0;
+    }
+
+    .header--inline h1 {
+      font-size: 11px;
+    }
+
+    .header--inline .tagline--inline {
+      font-size: 8.5px;
     }
 
     .workspai-view-tabs__group--trailing {
@@ -3513,6 +3564,30 @@
     font-size: 9.5px;
     color: var(--vscode-descriptionForeground);
     line-height: 1.35;
+  }
+
+  .fresh-install-onboarding__details {
+    color: var(--vscode-descriptionForeground);
+    font-size: 10.5px;
+  }
+
+  .fresh-install-onboarding__details summary {
+    cursor: pointer;
+    color: var(--vscode-foreground);
+    font-weight: 700;
+  }
+
+  .fresh-install-onboarding__details-body {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-top: 6px;
+  }
+
+  .fresh-install-onboarding__details-body p {
+    flex-basis: 100%;
+    margin: 0;
   }
 
   .dashboard-sub-nav__count--alert {
@@ -5309,12 +5384,67 @@
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
+    position: relative;
+    align-items: center;
   }
 
   .evidence-card-actions--compact .ws-btn {
     min-height: 22px;
     padding: 2px 6px;
     font-size: 9px;
+  }
+
+  .evidence-card-actions__overflow {
+    position: relative;
+    flex: 0 0 auto;
+  }
+
+  .evidence-card-actions__overflow-trigger {
+    list-style: none;
+    min-width: 54px;
+  }
+
+  .evidence-card-actions__overflow-trigger::-webkit-details-marker {
+    display: none;
+  }
+
+  .evidence-card-actions__menu {
+    position: absolute;
+    right: 0;
+    z-index: 20;
+    display: grid;
+    min-width: 178px;
+    gap: 2px;
+    margin-top: 4px;
+    padding: 5px;
+    border: 1px solid var(--ws-border-subtle);
+    border-radius: var(--ws-radius-sm);
+    background: var(--ws-surface-raised);
+    box-shadow: var(--ws-shadow-sm);
+  }
+
+  .evidence-card-actions__menu-item {
+    display: flex;
+    width: 100%;
+    min-height: 28px;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 7px;
+    border: 0;
+    border-radius: var(--ws-radius-xs);
+    background: transparent;
+    color: var(--ws-text);
+    font: inherit;
+    text-align: left;
+  }
+
+  .evidence-card-actions__menu-item:hover:not(:disabled) {
+    background: var(--ws-surface-hover);
+  }
+
+  .evidence-card-actions__menu-item:disabled {
+    cursor: not-allowed;
+    opacity: 0.56;
   }
 
   .evidence-attention-inbox {
@@ -6855,6 +6985,21 @@
     font-size: 12px;
     color: var(--vscode-descriptionForeground);
     line-height: 1.45;
+  }
+
+  .workspai-banner__log {
+    margin: 8px 0 0;
+    max-height: 120px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--vscode-editor-foreground);
+    background: var(--vscode-textCodeBlock-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 6px;
+    padding: 8px;
   }
 
   .workspai-empty-state {

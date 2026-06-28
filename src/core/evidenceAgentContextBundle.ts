@@ -17,9 +17,11 @@ import {
 import {
   AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
   WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
+  WORKSPACE_EXPLAIN_REPORT_PATH,
   WORKSPACE_IMPACT_REPORT_PATH,
   WORKSPACE_MODEL_REPORT_PATH,
   WORKSPACE_VERIFY_REPORT_PATH,
+  WORKSPACE_SKILLS_INDEX_PATH,
 } from './workspaceIntelligencePaths.js';
 
 export type EvidenceAgentAttachment = {
@@ -80,6 +82,16 @@ const INTELLIGENCE_ATTACHMENTS: Array<{ relativePath: string; label: string; req
     {
       relativePath: WORKSPACE_VERIFY_REPORT_PATH,
       label: 'Workspace verify report',
+      required: false,
+    },
+    {
+      relativePath: WORKSPACE_EXPLAIN_REPORT_PATH,
+      label: 'Workspace explain report',
+      required: false,
+    },
+    {
+      relativePath: WORKSPACE_SKILLS_INDEX_PATH,
+      label: 'Operational skills index',
       required: false,
     },
     {

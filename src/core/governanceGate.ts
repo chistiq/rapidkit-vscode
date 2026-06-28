@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 
 import { runWorkspaceIntelligenceCommandWithProgress } from './workspaceIntelligenceProgressRunner';
-import { presentCliVersionGate } from './cliVersionGate';
+import { gateCompatibleCliVersion } from './cliVersionGate';
 
 /**
  * Governance Gate (roadmap item 2.6): a single entrypoint that runs
@@ -154,9 +154,13 @@ export async function runGovernanceGate(options: {
   workspacePath: string;
   workspaceName: string;
 }): Promise<GovernanceGateSummary | undefined> {
-  // Parity with the workspace-intelligence commands: surface a version-mismatch
-  // banner (once per session) before running.
-  await presentCliVersionGate({ cwd: options.workspacePath });
+  const versionAllowed = await gateCompatibleCliVersion({
+    cwd: options.workspacePath,
+    featureLabel: 'Governance Gate',
+  });
+  if (!versionAllowed) {
+    return undefined;
+  }
 
   const result = await runWorkspaceIntelligenceCommandWithProgress<PipelineReportLike>({
     command: ['pipeline', '--json', '--strict'],

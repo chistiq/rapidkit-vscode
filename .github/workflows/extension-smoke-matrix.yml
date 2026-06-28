@@ -104,3 +104,35 @@ jobs:
 
       - name: Release stop gate (contract/parity)
         run: npm run release:stop-gate -- --marker releases/wave3-kpi-marker.json --marker-max-age-hours 720 --claim-checklist releases/wave3-claim-checklist.md --enforce-claim-checklist --issue-report artifacts/open-issues-report.json --enforce-open-issues --block-severities p0,p1 --enterprise-gate releases/wave3-enterprise-gate.json --enforce-enterprise-freeze --release-notes releases/release-posture-label.md --enforce-release-posture-label --enforce-claim-safety --release-readiness-validation-mode auto --predictive-calibration-mode production
+
+  vsix-package-smoke:
+    name: VSIX package artifact smoke
+    runs-on: ubuntu-latest
+    needs: [contract-parity-gate, smoke]
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build VSIX artifact
+        run: npm run package:ci
+
+      - name: Inspect VSIX artifact contents
+        run: npm run smoke:vsix-artifact
+
+      - name: Upload inspected VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspai-vsix-${{ github.sha }}
+          path: rapidkit-vscode-*.vsix
+          if-no-files-found: error
