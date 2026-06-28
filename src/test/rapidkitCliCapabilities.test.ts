@@ -120,7 +120,7 @@ describe('rapidkitCliCapabilities (commands --json driven)', () => {
 
     await probeWorkspaceIntelligenceCliCapabilities({ forceRefresh: true });
     expect(mockedRun).toHaveBeenCalledTimes(1);
-    expect(mockedRun.mock.calls[0]?.[0]).toBe('npx');
+    expect(path.basename(mockedRun.mock.calls[0]?.[0] ?? '')).toBe('npx');
     const args = mockedRun.mock.calls[0]?.[1] as string[];
     expect(args).toContain('commands');
     expect(args).toContain('--json');

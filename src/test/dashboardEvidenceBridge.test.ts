@@ -104,6 +104,13 @@ describe('dashboardEvidenceBridge', () => {
 
     expect(pipeline?.status).toBe('fail');
     expect(pipeline?.blockers?.[0]).toContain('readiness gate failed');
+    expect(pipeline?.incidentSummary).toEqual({
+      title: 'Governance Gate',
+      phase: 'fix',
+      primaryAction: 'Fix source issue',
+      verifyRequired: true,
+      auditStatus: 'not-started',
+    });
   });
 
   it('returns missing cards when workspace has no reports', async () => {
@@ -133,7 +140,7 @@ describe('dashboardEvidenceBridge', () => {
     expect(model?.detailSections?.[0]?.body).toContain('workspace-model.json');
   });
 
-  it('surfaces wrong-shape workspace model artifacts as corrupt instead of valid', async () => {
+  it('surfaces wrong-shape workspace model artifacts as incompatible instead of valid', async () => {
     const workspacePath = await createWorkspaceWithReports({
       'workspace-model.json': {
         schemaVersion: 'unexpected',
@@ -145,7 +152,7 @@ describe('dashboardEvidenceBridge', () => {
     const model = findEvidenceCard(bundle, 'workspaceModel');
 
     expect(model?.status).toBe('fail');
-    expect(model?.summary).toContain('corrupt');
+    expect(model?.summary).toContain('incompatible');
     expect(model?.blockers?.join('\n')).toContain('summary metadata');
     expect(model?.metrics?.corruptArtifact).toBe(1);
   });
@@ -487,6 +494,33 @@ describe('dashboardEvidenceBridge', () => {
       staleEvidence: 1,
     });
     expect(why?.detailSections?.[0]?.title).toBe('Artifact source');
+  });
+
+  it('surfaces incompatible explainability artifacts as failed cards', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'workspace-model.json': {
+        generatedAt: '2026-06-15T10:00:00.000Z',
+        summary: { projectCount: 1 },
+        projects: [{ name: 'api' }],
+        validation: { status: 'pass', errors: 0, warnings: 0 },
+      },
+      'workspace-why-last-run.json': {
+        schemaVersion: 'workspace-explain.vNext',
+        generatedAt: '2026-06-15T10:05:00.000Z',
+        workspacePath: '/tmp/phase4-workspace',
+        target: { kind: 'release-blocked' },
+        summary: 'Why release is blocked',
+        sections: [],
+      },
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+    const why = findEvidenceCard(bundle, 'workspaceWhy');
+
+    expect(why?.status).toBe('fail');
+    expect(why?.summary).toContain('schema is incompatible');
+    expect(why?.blockers?.[0]).toContain('Incompatible artifact');
+    expect(why?.detailSections?.[0]?.title).toBe('Artifact compatibility error');
   });
 
   it('downgrades workspace-only high impact to warn when projects exist but none are affected', async () => {

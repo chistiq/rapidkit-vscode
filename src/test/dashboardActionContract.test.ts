@@ -153,9 +153,10 @@ describe('dashboard action contract', () => {
         path: '/tmp/ws',
       },
     });
-    expect(contract.artifactState).toBe('ready');
+    expect(contract.artifactState).toBe('corrupt');
     expect(contract.artifactLabel).toBe('Corrupt artifact: workspace-verify-last-run.json');
     expect(contract.primaryAction).toEqual({ type: 'run', label: 'Repair evidence' });
+    expect(contract.copilotPayload.actionContext.artifactState).toBe('corrupt');
   });
 
   it('selects one primary CTA per card phase and keeps secondary work out of the contract primary', () => {

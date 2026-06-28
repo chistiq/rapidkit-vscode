@@ -103,14 +103,6 @@ export async function handleWelcomePanelAskStudioAboutEvidence(
   }
 
   const typedCard = card as EvidenceCardAgentContextInput['card'];
-  const studioPrompt = await buildEvidenceCardStudioPromptEnriched({
-    card: typedCard,
-    workspacePath,
-    workspaceName: readOptionalString(data, 'workspaceName'),
-    projectPath: readOptionalString(data, 'projectPath'),
-    projectName: readOptionalString(data, 'projectName'),
-  });
-
   let blockerHandoff: StudioBlockerHandoff | undefined;
   if (
     typedCard &&
@@ -127,6 +119,15 @@ export async function handleWelcomePanelAskStudioAboutEvidence(
       extensionContext: context.extensionContext,
     });
   }
+
+  const studioPrompt = await buildEvidenceCardStudioPromptEnriched({
+    card: typedCard,
+    workspacePath,
+    workspaceName: readOptionalString(data, 'workspaceName'),
+    projectPath: readOptionalString(data, 'projectPath'),
+    projectName: readOptionalString(data, 'projectName'),
+    blockerHandoff,
+  });
 
   await vscode.commands.executeCommand('workspai.openIncidentStudio', {
     workspacePath,

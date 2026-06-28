@@ -4,7 +4,12 @@ import type { AnalyzeEvidenceSlice, AnalyzeProjectEvidenceSlice } from './aiArch
 import type { ProjectArchitectureFingerprint } from './aiWorkspaceArchitectureAtlas';
 import { resolveKitId } from './aiKitArchitectureCatalog';
 import { WORKSPACE_MODEL_REPORT_PATH } from './workspaceIntelligencePaths';
-import { readJsonArtifact, type JsonArtifactReadResult } from './jsonArtifactReader.js';
+import {
+  incompatibleJsonArtifact,
+  isJsonArtifactReadFailure,
+  readJsonArtifact,
+  type JsonArtifactReadResult,
+} from './jsonArtifactReader.js';
 
 export const WORKSPACE_MODEL_SCHEMA_VERSION = 'workspace-model.v1';
 
@@ -71,7 +76,8 @@ export type WorkspaceModelReport = {
 export type WorkspaceModelReportReadResult =
   | { kind: 'missing'; artifactPath: string }
   | { kind: 'valid'; artifactPath: string; report: WorkspaceModelReport }
-  | { kind: 'corrupt'; artifactPath: string; error: string };
+  | { kind: 'corrupt'; artifactPath: string; error: string }
+  | { kind: 'incompatible'; artifactPath: string; error: string };
 
 export function resolveWorkspaceModelProjectAbsolutePath(
   workspacePath: string,
@@ -99,15 +105,16 @@ export async function readWorkspaceModelReportArtifact(
   }
 
   const result: JsonArtifactReadResult = await readJsonArtifact(reportPath);
-  if (result.kind !== 'valid') {
+  if (isJsonArtifactReadFailure(result)) {
     return result;
   }
   if (!isWorkspaceModelReport(result.raw)) {
-    return {
-      kind: 'corrupt',
+    return incompatibleJsonArtifact({
       artifactPath: result.artifactPath,
-      error: 'Workspace model artifact does not match workspace-model.v1.',
-    };
+      expectedSchemaVersion: WORKSPACE_MODEL_SCHEMA_VERSION,
+      actualSchemaVersion: result.raw.schemaVersion,
+      reason: 'Workspace model artifact must include generatedAt and projects[].',
+    });
   }
   return { kind: 'valid', artifactPath: result.artifactPath, report: result.raw };
 }

@@ -2152,6 +2152,37 @@
   line-height: var(--ws-sidebar-leading-normal);
 }
 
+.ws-sidebar__studio-incident {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
+  background: color-mix(in srgb, var(--vscode-editor-background) 94%, var(--vscode-focusBorder) 6%);
+}
+
+.ws-sidebar__studio-incident div {
+  min-width: 0;
+}
+
+.ws-sidebar__studio-incident span,
+.ws-sidebar__studio-incident strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-sidebar__studio-incident span {
+  font-size: var(--ws-sidebar-text-xxs);
+  color: var(--vscode-descriptionForeground);
+  text-transform: uppercase;
+}
+
+.ws-sidebar__studio-incident strong {
+  font-size: var(--ws-sidebar-text-xs);
+}
+
 .ws-sidebar__studio-blockers {
   font-size: var(--ws-sidebar-text-xs);
   color: var(--vscode-descriptionForeground);

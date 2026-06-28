@@ -27,6 +27,17 @@ export const STUDIO_BLOCKER_EXECUTION_MODES = [
 
 export type StudioBlockerExecutionMode = (typeof STUDIO_BLOCKER_EXECUTION_MODES)[number];
 
+export type StudioIncidentPhase = 'detect' | 'diagnose' | 'fix' | 'verify' | 'audit';
+export type StudioIncidentAuditStatus = 'not-started' | 'pending' | 'saved' | 'failed' | 'unknown';
+
+export type StudioIncidentSummary = {
+  title: string;
+  phase: StudioIncidentPhase;
+  primaryAction: string;
+  verifyRequired: boolean;
+  auditStatus: StudioIncidentAuditStatus;
+};
+
 export type StudioBlockerHandoff = {
   schemaVersion: typeof STUDIO_BLOCKER_HANDOFF_SCHEMA_VERSION;
   cardId: string;
@@ -43,6 +54,7 @@ export type StudioBlockerHandoff = {
   resolutionClass?: BlockerResolutionClass;
   studioMode?: StudioBlockerExecutionMode;
   resolutionHints?: BlockerResolution[];
+  incidentSummary?: StudioIncidentSummary;
   verifyCommand?: string;
   verifyArtifact?: string;
   handoffSource?: StudioBlockerHandoffSource;
@@ -103,7 +115,80 @@ export function isStudioBlockerHandoff(value: unknown): value is StudioBlockerHa
   ) {
     return false;
   }
+  if (record.incidentSummary != null && !isStudioIncidentSummary(record.incidentSummary)) {
+    return false;
+  }
   return true;
+}
+
+export function isStudioIncidentSummary(value: unknown): value is StudioIncidentSummary {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.title === 'string' &&
+    record.title.trim().length > 0 &&
+    (record.phase === 'detect' ||
+      record.phase === 'diagnose' ||
+      record.phase === 'fix' ||
+      record.phase === 'verify' ||
+      record.phase === 'audit') &&
+    typeof record.primaryAction === 'string' &&
+    record.primaryAction.trim().length > 0 &&
+    typeof record.verifyRequired === 'boolean' &&
+    (record.auditStatus === 'not-started' ||
+      record.auditStatus === 'pending' ||
+      record.auditStatus === 'saved' ||
+      record.auditStatus === 'failed' ||
+      record.auditStatus === 'unknown')
+  );
+}
+
+export function buildStudioIncidentSummary(input: {
+  cardId: string;
+  cardLabel?: string;
+  cardStatus: StudioBlockerHandoff['cardStatus'];
+  studioMode?: StudioBlockerExecutionMode;
+  verifyCommand?: string;
+  auditStatus?: StudioIncidentAuditStatus;
+}): StudioIncidentSummary {
+  const title = input.cardLabel?.trim() || input.cardId;
+  const verifyRequired = Boolean(input.verifyCommand) && input.cardStatus !== 'pass';
+  if (input.cardStatus === 'missing' || input.studioMode === 'RUN_ONCE') {
+    return {
+      title,
+      phase: 'detect',
+      primaryAction: 'Run source command once',
+      verifyRequired,
+      auditStatus: input.auditStatus ?? 'not-started',
+    };
+  }
+  if (input.studioMode === 'VERIFY_ONLY' || input.cardStatus === 'pass') {
+    return {
+      title,
+      phase: 'verify',
+      primaryAction: input.verifyCommand?.trim() || 'Run verify',
+      verifyRequired,
+      auditStatus: input.auditStatus ?? 'not-started',
+    };
+  }
+  if (input.studioMode === 'EXPLAIN') {
+    return {
+      title,
+      phase: 'diagnose',
+      primaryAction: 'Explain blockers',
+      verifyRequired,
+      auditStatus: input.auditStatus ?? 'not-started',
+    };
+  }
+  return {
+    title,
+    phase: 'fix',
+    primaryAction: 'Fix source issue',
+    verifyRequired,
+    auditStatus: input.auditStatus ?? 'not-started',
+  };
 }
 
 export function buildBlockerSignatureFromHandoff(input: {

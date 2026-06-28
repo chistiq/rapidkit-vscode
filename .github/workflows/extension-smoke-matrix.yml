@@ -5,6 +5,18 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_electron_smoke:
+        description: 'Run optional packaged VSIX Electron smoke'
+        required: false
+        default: false
+        type: boolean
+      run_audit_gate:
+        description: 'Run optional npm audit gate (high/critical)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   contract-parity-gate:
@@ -82,6 +94,9 @@ jobs:
       - name: Shared parity contract snapshot
         run: npm run test:parity-contract
 
+      - name: Enterprise validation matrix
+        run: npm run release:enterprise-matrix
+
       - name: Checkout workspai-front for claim parity
         uses: actions/checkout@v4
         with:
@@ -96,6 +111,10 @@ jobs:
 
       - name: Stabilization debt budget
         run: npm run stabilization:debt-budget
+
+      - name: Optional npm audit gate (high/critical)
+        if: github.event_name == 'workflow_dispatch' && inputs.run_audit_gate == true
+        run: npm run release:audit-gate
 
       - name: Open issue severity report
         env:
@@ -136,3 +155,31 @@ jobs:
           name: workspai-vsix-${{ github.sha }}
           path: rapidkit-vscode-*.vsix
           if-no-files-found: error
+
+  vsix-electron-smoke:
+    name: Optional packaged VSIX Electron smoke
+    runs-on: ubuntu-latest
+    needs: [vsix-package-smoke]
+    timeout-minutes: 20
+    if: github.event_name == 'workflow_dispatch' && inputs.run_electron_smoke == true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download inspected VSIX artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: workspai-vsix-${{ github.sha }}
+
+      - name: Run packaged VSIX Electron smoke
+        run: xvfb-run -a npm run smoke:vsix-electron

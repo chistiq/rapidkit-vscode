@@ -50,7 +50,44 @@ export interface RetentionCohortSummary {
   returnToDashboardAfterVerify: boolean;
   totalCommandFailures: number;
   commandFailuresBySurface: Partial<Record<RetentionSignalSurface, number>>;
+  /** Highest anonymous product funnel step reached by this install. */
+  activationStage: RetentionActivationStage;
+  /** Studio/repair loop progress without blocker text, command ids, paths, or names. */
+  repairLoopStage: RetentionRepairLoopStage;
+  /** 0-100 local completion score for first-value and repair-loop milestones. */
+  activationCompletionScore: number;
+  /** Failed activity entries divided by retained activity entries. */
+  commandFailureRate: number;
+  /** Number of broad surfaces that have seen command failures. */
+  distinctFailureSurfaceCount: number;
+  /** True when local signals suggest the user is hitting repeated execution friction. */
+  repeatedFailureFriction: boolean;
+  /** Anonymous local guidance bucket; never includes commands, paths, names, or free text. */
+  nextRecommendedFocus: RetentionRecommendedFocus;
 }
+
+export type RetentionActivationStage =
+  | 'not_started'
+  | 'first_artifact'
+  | 'first_blocker_fixed'
+  | 'verify_passed'
+  | 'returned_after_verify';
+
+export type RetentionRepairLoopStage =
+  | 'not_started'
+  | 'needs_fix'
+  | 'fix_recorded'
+  | 'verify_passed'
+  | 'returned_to_dashboard';
+
+export type RetentionRecommendedFocus =
+  | 'setup'
+  | 'generate_first_artifact'
+  | 'fix_first_blocker'
+  | 'verify_fix'
+  | 'return_to_dashboard'
+  | 'reduce_command_failures'
+  | 'sustain';
 
 export interface RetentionCohortInput {
   now?: number;
@@ -84,6 +121,104 @@ function bucketActivity(activity: DashboardActivityEntry[]): {
   return { dispatched, completed, failed, totalRuns };
 }
 
+function countFailureSurfaces(
+  failuresBySurface: Partial<Record<RetentionSignalSurface, number>>
+): number {
+  return Object.values(failuresBySurface).filter(
+    (value): value is number => typeof value === 'number' && value > 0
+  ).length;
+}
+
+function hasMilestone(value: number | undefined): boolean {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function resolveActivationStage(input: {
+  ttfvResolved: boolean;
+  firstArtifactGenerated: boolean;
+  firstBlockerFixed: boolean;
+  verifyPassAfterStudioFix: boolean;
+  returnToDashboardAfterVerify: boolean;
+}): RetentionActivationStage {
+  if (input.returnToDashboardAfterVerify) {
+    return 'returned_after_verify';
+  }
+  if (input.verifyPassAfterStudioFix) {
+    return 'verify_passed';
+  }
+  if (input.firstBlockerFixed) {
+    return 'first_blocker_fixed';
+  }
+  if (input.firstArtifactGenerated || input.ttfvResolved) {
+    return 'first_artifact';
+  }
+  return 'not_started';
+}
+
+function resolveRepairLoopStage(input: {
+  firstBlockerFixed: boolean;
+  verifyPassAfterStudioFix: boolean;
+  returnToDashboardAfterVerify: boolean;
+  activityFailedCount: number;
+  totalCommandFailures: number;
+}): RetentionRepairLoopStage {
+  if (input.returnToDashboardAfterVerify) {
+    return 'returned_to_dashboard';
+  }
+  if (input.verifyPassAfterStudioFix) {
+    return 'verify_passed';
+  }
+  if (input.firstBlockerFixed) {
+    return 'fix_recorded';
+  }
+  if (input.activityFailedCount > 0 || input.totalCommandFailures > 0) {
+    return 'needs_fix';
+  }
+  return 'not_started';
+}
+
+function activationCompletionScore(input: {
+  ttfvResolved: boolean;
+  firstArtifactGenerated: boolean;
+  firstBlockerFixed: boolean;
+  verifyPassAfterStudioFix: boolean;
+  returnToDashboardAfterVerify: boolean;
+}): number {
+  const completed = [
+    input.ttfvResolved || input.firstArtifactGenerated,
+    input.firstBlockerFixed,
+    input.verifyPassAfterStudioFix,
+    input.returnToDashboardAfterVerify,
+  ].filter(Boolean).length;
+  return Math.round((completed / 4) * 100);
+}
+
+function resolveRecommendedFocus(input: {
+  ttfvResolved: boolean;
+  firstArtifactGenerated: boolean;
+  firstBlockerFixed: boolean;
+  verifyPassAfterStudioFix: boolean;
+  returnToDashboardAfterVerify: boolean;
+  repeatedFailureFriction: boolean;
+}): RetentionRecommendedFocus {
+  if (!input.ttfvResolved) {
+    return 'setup';
+  }
+  if (!input.firstArtifactGenerated) {
+    return 'generate_first_artifact';
+  }
+  if (!input.firstBlockerFixed) {
+    return input.repeatedFailureFriction ? 'reduce_command_failures' : 'fix_first_blocker';
+  }
+  if (!input.verifyPassAfterStudioFix) {
+    return 'verify_fix';
+  }
+  if (!input.returnToDashboardAfterVerify) {
+    return 'return_to_dashboard';
+  }
+  return input.repeatedFailureFriction ? 'reduce_command_failures' : 'sustain';
+}
+
 /** Pure: build the anonymous cohort summary from already-collected signals. */
 export function buildRetentionCohortSummary(input: RetentionCohortInput): RetentionCohortSummary {
   const now = input.now ?? Date.now();
@@ -94,12 +229,39 @@ export function buildRetentionCohortSummary(input: RetentionCohortInput): Retent
       : null;
   const buckets = bucketActivity(input.activity);
   const milestones = input.milestones ?? emptyRetentionMilestoneState();
+  const firstArtifactGenerated =
+    hasMilestone(milestones.firstArtifactGeneratedAt) ||
+    Boolean(input.ttfv && !input.ttfv.preexisting);
+  const firstBlockerFixed = hasMilestone(milestones.firstBlockerFixedAt);
+  const verifyPassAfterStudioFix = hasMilestone(milestones.verifyPassAfterStudioFixAt);
+  const returnToDashboardAfterVerify = hasMilestone(milestones.returnToDashboardAfterVerifyAt);
+  const totalCommandFailures = Math.max(0, Math.floor(milestones.totalCommandFailures));
+  const commandFailureRate =
+    input.activity.length > 0 ? Number((buckets.failed / input.activity.length).toFixed(4)) : 0;
+  const distinctFailureSurfaceCount = countFailureSurfaces(milestones.commandFailuresBySurface);
+  const repeatedFailureFriction =
+    totalCommandFailures >= 2 || buckets.failed >= 2 || commandFailureRate >= 0.5;
+  const ttfvResolved = Boolean(input.ttfv);
+  const activationStage = resolveActivationStage({
+    ttfvResolved,
+    firstArtifactGenerated,
+    firstBlockerFixed,
+    verifyPassAfterStudioFix,
+    returnToDashboardAfterVerify,
+  });
+  const repairLoopStage = resolveRepairLoopStage({
+    firstBlockerFixed,
+    verifyPassAfterStudioFix,
+    returnToDashboardAfterVerify,
+    activityFailedCount: buckets.failed,
+    totalCommandFailures,
+  });
 
   return {
     schemaVersion: 'retention-cohort.v1',
     extensionVersion: input.extensionVersion ?? input.ttfv?.extensionVersion,
     daysSinceInstall,
-    ttfvResolved: Boolean(input.ttfv),
+    ttfvResolved,
     ttfvMs: input.ttfv?.ttfvMs ?? null,
     ttfvPreexisting: input.ttfv?.preexisting === true,
     registeredWorkspaceCount: Math.max(0, Math.floor(input.registeredWorkspaceCount)),
@@ -108,14 +270,32 @@ export function buildRetentionCohortSummary(input: RetentionCohortInput): Retent
     activityCompletedCount: buckets.completed,
     activityFailedCount: buckets.failed,
     totalCommandRuns: buckets.totalRuns,
-    firstArtifactGenerated:
-      Boolean(milestones.firstArtifactGeneratedAt) ||
-      Boolean(input.ttfv && !input.ttfv.preexisting),
-    firstBlockerFixed: Boolean(milestones.firstBlockerFixedAt),
-    verifyPassAfterStudioFix: Boolean(milestones.verifyPassAfterStudioFixAt),
-    returnToDashboardAfterVerify: Boolean(milestones.returnToDashboardAfterVerifyAt),
-    totalCommandFailures: milestones.totalCommandFailures,
+    firstArtifactGenerated,
+    firstBlockerFixed,
+    verifyPassAfterStudioFix,
+    returnToDashboardAfterVerify,
+    totalCommandFailures,
     commandFailuresBySurface: { ...milestones.commandFailuresBySurface },
+    activationStage,
+    repairLoopStage,
+    activationCompletionScore: activationCompletionScore({
+      ttfvResolved,
+      firstArtifactGenerated,
+      firstBlockerFixed,
+      verifyPassAfterStudioFix,
+      returnToDashboardAfterVerify,
+    }),
+    commandFailureRate,
+    distinctFailureSurfaceCount,
+    repeatedFailureFriction,
+    nextRecommendedFocus: resolveRecommendedFocus({
+      ttfvResolved,
+      firstArtifactGenerated,
+      firstBlockerFixed,
+      verifyPassAfterStudioFix,
+      returnToDashboardAfterVerify,
+      repeatedFailureFriction,
+    }),
   };
 }
 

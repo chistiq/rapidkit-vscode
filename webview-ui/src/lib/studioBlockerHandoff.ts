@@ -1,4 +1,14 @@
 export type StudioBlockerExecutionMode = 'FIX' | 'RUN_ONCE' | 'VERIFY_ONLY' | 'EXPLAIN';
+export type StudioIncidentPhase = 'detect' | 'diagnose' | 'fix' | 'verify' | 'audit';
+export type StudioIncidentAuditStatus = 'not-started' | 'pending' | 'saved' | 'failed' | 'unknown';
+
+export type StudioIncidentSummaryView = {
+  title: string;
+  phase: StudioIncidentPhase;
+  primaryAction: string;
+  verifyRequired: boolean;
+  auditStatus: StudioIncidentAuditStatus;
+};
 
 export type StudioBlockerHandoffView = {
   schemaVersion: string;
@@ -13,6 +23,7 @@ export type StudioBlockerHandoffView = {
   commandRunCount?: number;
   resolutionClass?: string;
   studioMode?: StudioBlockerExecutionMode;
+  incidentSummary?: StudioIncidentSummaryView;
   verifyCommand?: string;
   verifyArtifact?: string;
   handoffSource?: string;
@@ -78,6 +89,19 @@ export function mergeStudioFixAppliedIntoHandoff(
     ...(payload.cardStatus ? { cardStatus: payload.cardStatus } : {}),
     ...(verifyCommand ? { verifyCommand } : {}),
     ...(verifyArtifact ? { verifyArtifact } : {}),
+    ...(handoff.incidentSummary
+      ? {
+          incidentSummary: {
+            ...handoff.incidentSummary,
+            phase: payload.cardStatus === 'pass' ? 'verify' : 'audit',
+            primaryAction:
+              payload.cardStatus === 'pass'
+                ? verifyCommand || handoff.verifyCommand || 'Run verify'
+                : 'Verify applied fix',
+            verifyRequired: payload.cardStatus !== 'pass' && payload.requiresVerify !== false,
+          },
+        }
+      : {}),
     studioMode: payload.cardStatus === 'pass' ? 'VERIFY_ONLY' : handoff.studioMode,
   };
 }

@@ -2,6 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
 
+import { buildStudioBlockerHandoff } from '../core/studioBlockerHandoffBuilder.js';
+import { isStudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
+
 const repoRoot = path.resolve(__dirname, '..', '..');
 const npmContractsRoot = path.resolve(repoRoot, '..', 'rapidkit-npm', 'contracts');
 
@@ -39,5 +42,30 @@ describe('Phase 3 studio contracts parity', () => {
     expect(
       fs.readFileSync(path.join(repoRoot, 'src/core/studioBlockerFixRouting.ts'), 'utf8')
     ).toContain('STUDIO_CARD_FIX_ROUTING');
+  });
+
+  it('builds studio-blocker-handoff as the active incident object', async () => {
+    const handoff = await buildStudioBlockerHandoff({
+      workspacePath: '/tmp/workspai',
+      card: {
+        id: 'workspaceVerify',
+        label: 'Workspace Verify',
+        status: 'fail',
+        scope: 'workspace',
+        artifactPath: '.rapidkit/reports/workspace-verify-last-run.json',
+        blockers: ['workspace.contract.verify is stale'],
+      },
+    });
+
+    expect(isStudioBlockerHandoff(handoff)).toBe(true);
+    expect(handoff.incidentSummary).toEqual({
+      title: 'Workspace Verify',
+      phase: 'fix',
+      primaryAction: 'Fix source issue',
+      verifyRequired: true,
+      auditStatus: 'not-started',
+    });
+    expect(handoff.verifyCommand).toBeTruthy();
+    expect(handoff.blockerSignature).toHaveLength(16);
   });
 });

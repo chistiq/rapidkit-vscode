@@ -3,7 +3,12 @@ import * as path from 'path';
 import { WORKSPACE_VERIFY_REPORT_PATH } from './workspaceIntelligencePaths';
 import type { BlockerResolution } from '../contracts/blocker-resolution-contract.js';
 import { isBlockerResolution } from '../contracts/blocker-resolution-contract.js';
-import { readJsonArtifact, type JsonArtifactReadResult } from './jsonArtifactReader.js';
+import {
+  incompatibleJsonArtifact,
+  isJsonArtifactReadFailure,
+  readJsonArtifact,
+  type JsonArtifactReadResult,
+} from './jsonArtifactReader.js';
 
 export const WORKSPACE_VERIFY_SCHEMA_VERSION = 'workspace-verify.v1' as const;
 
@@ -61,7 +66,8 @@ export type WorkspaceVerifyReport = {
 export type WorkspaceVerifyReportReadResult =
   | { kind: 'missing'; artifactPath: string }
   | { kind: 'valid'; artifactPath: string; report: WorkspaceVerifyReport }
-  | { kind: 'corrupt'; artifactPath: string; error: string };
+  | { kind: 'corrupt'; artifactPath: string; error: string }
+  | { kind: 'incompatible'; artifactPath: string; error: string };
 
 function normalizeResolutionHints(value: unknown): BlockerResolution[] | undefined {
   if (!Array.isArray(value)) {
@@ -98,15 +104,16 @@ export async function readWorkspaceVerifyReportArtifact(
   }
 
   const result: JsonArtifactReadResult = await readJsonArtifact(reportPath);
-  if (result.kind !== 'valid') {
+  if (isJsonArtifactReadFailure(result)) {
     return result;
   }
   if (!isWorkspaceVerifyReport(result.raw)) {
-    return {
-      kind: 'corrupt',
+    return incompatibleJsonArtifact({
       artifactPath: result.artifactPath,
-      error: 'Workspace verify artifact does not match workspace-verify.v1.',
-    };
+      expectedSchemaVersion: WORKSPACE_VERIFY_SCHEMA_VERSION,
+      actualSchemaVersion: result.raw.schemaVersion,
+      reason: 'Workspace verify artifact must include generatedAt.',
+    });
   }
   const report = result.raw as WorkspaceVerifyReport;
   const hints = normalizeResolutionHints(report.resolutionHints);

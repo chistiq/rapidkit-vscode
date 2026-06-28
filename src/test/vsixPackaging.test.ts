@@ -38,11 +38,20 @@ describe('VSIX packaging exclusions', () => {
     expect(packageJson.scripts?.['smoke:vsix-artifact']).toBe(
       'node scripts/inspect-vsix-artifact.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix'
     );
+    expect(packageJson.scripts?.['smoke:vsix-electron']).toBe(
+      'node scripts/vsix-electron-smoke.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix'
+    );
     expect(packageJson.scripts?.['publish:guard']).toBe(
       'node scripts/guard-vsix-publish.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix'
     );
     expect(packageJson.scripts?.['publish:ci']).toBe(
       'npm run publish:guard && vsce publish --packagePath rapidkit-vscode-${npm_package_version}.vsix'
+    );
+    expect(packageJson.scripts?.['release:enterprise-matrix']).toBe(
+      'node scripts/enterprise-validation-matrix.mjs'
+    );
+    expect(packageJson.scripts?.['release:audit-gate']).toBe(
+      'node scripts/npm-audit-gate.mjs --level high'
     );
     expect(packageJson.scripts?.publish).toBe('npm run publish:ci');
     expect(packageJson.scripts?.publish).not.toBe('vsce publish');
@@ -65,6 +74,8 @@ describe('VSIX packaging exclusions', () => {
 
   it('inspects the built VSIX artifact for required runtime assets and denied dev files', () => {
     const script = read('scripts/inspect-vsix-artifact.mjs');
+    const electronSmokeScript = read('scripts/vsix-electron-smoke.mjs');
+    const electronSmokeTests = read('scripts/vsix-electron-smoke-tests.cjs');
 
     for (const required of [
       'extension/dist/extension.js',
@@ -89,6 +100,21 @@ describe('VSIX packaging exclusions', () => {
     ]) {
       expect(script, denied).toContain(denied);
     }
+
+    expect(electronSmokeScript).toContain("from '@vscode/test-electron'");
+    expect(electronSmokeScript).toContain('extensionDevelopmentPath: extensionDir');
+    expect(electronSmokeScript).toContain('extensionTestsPath: path.join');
+    expect(electronSmokeScript).toContain('--disable-workspace-trust');
+    expect(electronSmokeScript).toContain('workspace-model.json');
+    expect(electronSmokeScript).toContain('workspace-explain-last-run.json');
+    expect(electronSmokeScript).toContain('workspace-why-last-run.json');
+    expect(electronSmokeScript).toContain('workspace-trace-last-run.json');
+    expect(electronSmokeTests).toContain('workspai.openDashboardSection');
+    expect(electronSmokeTests).toContain('workspai.openIncidentStudio');
+    expect(electronSmokeTests).toContain('workspai.workspaceExplain');
+    expect(electronSmokeTests).toContain("section: 'operate'");
+    expect(electronSmokeTests).toContain("operateZone: 'intelligence'");
+    expect(electronSmokeTests).toContain("section: 'evidence'");
   });
 
   it('wires CI to build, inspect, and upload the exact VSIX artifact', () => {
@@ -96,10 +122,21 @@ describe('VSIX packaging exclusions', () => {
 
     expect(workflow).toContain('vsix-package-smoke:');
     expect(workflow).toContain('needs: [contract-parity-gate, smoke]');
+    expect(workflow).toContain('Enterprise validation matrix');
+    expect(workflow).toContain('npm run release:enterprise-matrix');
     expect(workflow).toContain('npm run package:ci');
     expect(workflow).toContain('npm run smoke:vsix-artifact');
     expect(workflow).toContain('actions/upload-artifact@v4');
     expect(workflow).toContain('path: rapidkit-vscode-*.vsix');
+    expect(workflow).toContain('run_electron_smoke:');
+    expect(workflow).toContain('run_audit_gate:');
+    expect(workflow).toContain('npm run release:audit-gate');
+    expect(workflow).toContain('vsix-electron-smoke:');
+    expect(workflow).toContain(
+      "if: github.event_name == 'workflow_dispatch' && inputs.run_electron_smoke == true"
+    );
+    expect(workflow).toContain('actions/download-artifact@v4');
+    expect(workflow).toContain('xvfb-run -a npm run smoke:vsix-electron');
   });
 
   it('gates marketplace publish on the inspected VSIX artifact and npm target version', () => {

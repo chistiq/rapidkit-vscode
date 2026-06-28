@@ -137,6 +137,13 @@ describe('buildRetentionCohortSummary', () => {
     expect(summary.totalCommandFailures).toBe(3);
     expect(summary.commandFailuresBySurface.dashboard).toBe(2);
     expect(summary.commandFailuresBySurface.studio).toBe(1);
+    expect(summary.activationStage).toBe('returned_after_verify');
+    expect(summary.repairLoopStage).toBe('returned_to_dashboard');
+    expect(summary.activationCompletionScore).toBe(100);
+    expect(summary.commandFailureRate).toBe(0.3333);
+    expect(summary.distinctFailureSurfaceCount).toBe(2);
+    expect(summary.repeatedFailureFriction).toBe(true);
+    expect(summary.nextRecommendedFocus).toBe('reduce_command_failures');
   });
 
   it('never includes paths, names, or command identifiers', () => {
@@ -164,6 +171,43 @@ describe('buildRetentionCohortSummary', () => {
     expect(summary.ttfvResolved).toBe(false);
     expect(summary.daysSinceInstall).toBeNull();
     expect(summary.ttfvMs).toBeNull();
+    expect(summary.activationStage).toBe('not_started');
+    expect(summary.repairLoopStage).toBe('not_started');
+    expect(summary.activationCompletionScore).toBe(0);
+    expect(summary.nextRecommendedFocus).toBe('setup');
+  });
+
+  it('identifies the next anonymous funnel focus without leaking commands', () => {
+    const summary = buildRetentionCohortSummary({
+      now: NOW,
+      ttfv: ttfv({ preexisting: true }),
+      registeredWorkspaceCount: 1,
+      activity: [
+        {
+          id: '1',
+          command: 'secret-command',
+          label: 'Secret Command',
+          scope: 'workspace',
+          status: 'completed',
+          timestamp: 1,
+        },
+      ],
+      milestones: milestones({
+        firstArtifactGeneratedAt: NOW - 50_000,
+        firstBlockerFixedAt: undefined,
+        verifyPassAfterStudioFixAt: undefined,
+        returnToDashboardAfterVerifyAt: undefined,
+        totalCommandFailures: 0,
+        commandFailuresBySurface: {},
+      }),
+    });
+
+    expect(summary.activationStage).toBe('first_artifact');
+    expect(summary.repairLoopStage).toBe('not_started');
+    expect(summary.activationCompletionScore).toBe(25);
+    expect(summary.nextRecommendedFocus).toBe('fix_first_blocker');
+    expect(JSON.stringify(summary)).not.toContain('secret-command');
+    expect(JSON.stringify(summary)).not.toContain('Secret Command');
   });
 });
 

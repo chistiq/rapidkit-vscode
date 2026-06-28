@@ -71,6 +71,8 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(secondary).toContain("action: 'apply-patch'");
     expect(secondary).toContain("action: 'ship-loop-step'");
     expect(secondary).toContain('rollbackCommand');
+    const chatTab = read('webview-ui/src/sidebar/ChatTab.tsx');
+    expect(chatTab.indexOf('{props.headerChrome}')).toBeLessThan(chatTab.indexOf('<ComposerShell'));
   });
 
   it('shares advisor session UX primitives with an isolated studio store', () => {

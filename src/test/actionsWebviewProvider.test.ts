@@ -118,7 +118,7 @@ describe('actionsWebviewProvider — sidebar protocol handlers', () => {
     expect(source).toContain('exitCode: execution.exitCode');
     expect(source).toContain('stderrTail: execution.stderrTail');
     expect(source).toContain(
-      'topBlocker: execution.success ? undefined : execution.error ?? handoff.blockers[0]'
+      'topBlocker: execution.success ? undefined : (execution.error ?? handoff.blockers[0])'
     );
   });
 });

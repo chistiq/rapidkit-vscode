@@ -1,7 +1,12 @@
 import * as path from 'path';
 
 import { WORKSPACE_IMPACT_REPORT_PATH } from './workspaceIntelligencePaths';
-import { readJsonArtifact, type JsonArtifactReadResult } from './jsonArtifactReader.js';
+import {
+  incompatibleJsonArtifact,
+  isJsonArtifactReadFailure,
+  readJsonArtifact,
+  type JsonArtifactReadResult,
+} from './jsonArtifactReader.js';
 
 export const WORKSPACE_IMPACT_SCHEMA_VERSION = 'workspace-impact.v1';
 
@@ -67,7 +72,8 @@ export type WorkspaceImpactReport = {
 export type WorkspaceImpactReportReadResult =
   | { kind: 'missing'; artifactPath: string }
   | { kind: 'valid'; artifactPath: string; report: WorkspaceImpactReport }
-  | { kind: 'corrupt'; artifactPath: string; error: string };
+  | { kind: 'corrupt'; artifactPath: string; error: string }
+  | { kind: 'incompatible'; artifactPath: string; error: string };
 
 export async function readWorkspaceImpactReport(
   workspacePath?: string
@@ -85,15 +91,16 @@ export async function readWorkspaceImpactReportArtifact(
   }
 
   const result: JsonArtifactReadResult = await readJsonArtifact(reportPath);
-  if (result.kind !== 'valid') {
+  if (isJsonArtifactReadFailure(result)) {
     return result;
   }
   if (!isWorkspaceImpactReport(result.raw)) {
-    return {
-      kind: 'corrupt',
+    return incompatibleJsonArtifact({
       artifactPath: result.artifactPath,
-      error: 'Workspace impact artifact does not match workspace-impact.v1.',
-    };
+      expectedSchemaVersion: WORKSPACE_IMPACT_SCHEMA_VERSION,
+      actualSchemaVersion: result.raw.schemaVersion,
+      reason: 'Workspace impact artifact must include generatedAt.',
+    });
   }
   return { kind: 'valid', artifactPath: result.artifactPath, report: result.raw };
 }

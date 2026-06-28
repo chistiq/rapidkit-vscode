@@ -2,6 +2,7 @@ import type { DashboardSection } from './dashboardSections';
 import type { DashboardOperateZone } from './dashboardOperateZones';
 import type { DashboardCommand, DashboardCommandScope } from './dashboardCommandRegistry';
 import type { DashboardEvidenceCardId } from '@workspai-contracts/dashboardEvidenceCards';
+import type { StudioIncidentSummaryView } from './studioBlockerHandoff';
 
 export type { DashboardEvidenceCardId };
 
@@ -32,6 +33,7 @@ export type DashboardEvidenceCard = {
   metrics?: Record<string, number | string>;
   blockers?: string[];
   detailSections?: Array<{ id: string; title: string; body: string }>;
+  incidentSummary?: StudioIncidentSummaryView;
   incidentStudioTarget?:
     | 'doctor'
     | 'analyze'

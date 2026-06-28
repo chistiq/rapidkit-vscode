@@ -514,6 +514,33 @@ function RepairActionContract({ contract }: { contract: DashboardEvidenceActionC
   );
 }
 
+function RepairIncidentSummary({
+  summary,
+}: {
+  summary: NonNullable<DashboardEvidenceCard['incidentSummary']>;
+}) {
+  return (
+    <dl className="repair-flow__incident-summary" aria-label="Incident summary">
+      <div>
+        <dt>Phase</dt>
+        <dd>{summary.phase}</dd>
+      </div>
+      <div>
+        <dt>Action</dt>
+        <dd>{summary.primaryAction}</dd>
+      </div>
+      <div>
+        <dt>Verify</dt>
+        <dd>{summary.verifyRequired ? 'Required' : 'Optional'}</dd>
+      </div>
+      <div>
+        <dt>Audit</dt>
+        <dd>{summary.auditStatus}</dd>
+      </div>
+    </dl>
+  );
+}
+
 function RepairActiveCard({
   card,
   evidence,
@@ -561,6 +588,7 @@ function RepairActiveCard({
   const hiddenBlockerCount = Math.max(blockers.length - visibleBlockers.length, 0);
   const projectAttribution = resolveEvidenceProjectAttribution(card, evidence);
   const tone = statusTone(card, workspaceProjectCount);
+  const incidentSummary = card.incidentSummary;
 
   return (
     <section
@@ -610,6 +638,7 @@ function RepairActiveCard({
             ) : null}
           </ul>
         ) : null}
+        {incidentSummary ? <RepairIncidentSummary summary={incidentSummary} /> : null}
       </div>
 
       <div className="repair-flow__active-actions">

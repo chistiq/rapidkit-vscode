@@ -33,6 +33,37 @@ describe('evidenceCardAgentPrompt', () => {
     expect(prompt).toContain('do NOT run `rapidkit doctor`');
   });
 
+  it('carries the active incident object into Studio prompts', () => {
+    const prompt = buildEvidenceCardStudioPrompt({
+      workspacePath: '/tmp/ws',
+      blockerHandoff: {
+        blockerSignature: 'sig-release-1234',
+        blockers: ['readiness is blocked'],
+        incidentSummary: {
+          title: 'Governance Gate',
+          phase: 'fix',
+          primaryAction: 'Fix source issue',
+          verifyRequired: true,
+          auditStatus: 'not-started',
+        },
+      },
+      card: {
+        id: 'pipeline',
+        label: 'Governance Gate',
+        status: 'fail',
+        summary: '2 passed · 0 warn · 3 failed',
+        scope: 'workspace',
+        blockers: ['readiness is blocked'],
+      },
+    });
+
+    expect(prompt).toContain('## Incident summary');
+    expect(prompt).toContain('Title: Governance Gate');
+    expect(prompt).toContain('Primary action: Fix source issue');
+    expect(prompt).toContain('Verify required: yes');
+    expect(prompt).toContain('Blocker signature: sig-release-1234');
+  });
+
   it('enriches impact cards with workspace-level samples from the artifact', async () => {
     const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-impact-card-'));
     tempDirs.push(workspacePath);

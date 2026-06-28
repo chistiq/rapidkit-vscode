@@ -1,5 +1,6 @@
 import type { DashboardEvidenceCard } from './dashboardEvidenceBridge.js';
 import { resolveDashboardCommandForEvidenceCard } from './dashboardReportRegistry.js';
+import type { StudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
 import {
   buildAgentPackHandoffSummaryLines,
   buildStandardAnswerContractPromptLines,
@@ -70,7 +71,38 @@ export type EvidenceCardAgentContextInput = {
   projectPath?: string;
   projectName?: string;
   userQuestion?: string;
+  blockerHandoff?: Pick<StudioBlockerHandoff, 'incidentSummary' | 'blockers' | 'blockerSignature'>;
 };
+
+function buildStudioIncidentPromptSection(
+  handoff?: EvidenceCardAgentContextInput['blockerHandoff']
+): string[] {
+  const summary = handoff?.incidentSummary;
+  if (!summary) {
+    return [];
+  }
+  const lines = [
+    '',
+    '## Incident summary',
+    `- Title: ${summary.title}`,
+    `- Phase: ${summary.phase}`,
+    `- Primary action: ${summary.primaryAction}`,
+    `- Verify required: ${summary.verifyRequired ? 'yes' : 'no'}`,
+    `- Audit status: ${summary.auditStatus}`,
+  ];
+  if (handoff?.blockerSignature?.trim()) {
+    lines.push(`- Blocker signature: ${handoff.blockerSignature.trim()}`);
+  }
+  if (handoff?.blockers?.length) {
+    lines.push('- Active blockers:');
+    for (const blocker of handoff.blockers.slice(0, 6)) {
+      if (blocker.trim()) {
+        lines.push(`  - ${blocker.trim()}`);
+      }
+    }
+  }
+  return lines;
+}
 
 export function buildEvidenceCardStudioPrompt(input: EvidenceCardAgentContextInput): string {
   const { card, workspacePath, workspaceName, projectPath, projectName } = input;
@@ -121,6 +153,8 @@ export function buildEvidenceCardStudioPrompt(input: EvidenceCardAgentContextInp
       lines.push(`- ${blocker}`);
     }
   }
+
+  lines.push(...buildStudioIncidentPromptSection(input.blockerHandoff));
 
   if (stderrTail) {
     lines.push('', '## Recent stderr (tail)', '```', stderrTail.slice(0, 1200), '```');

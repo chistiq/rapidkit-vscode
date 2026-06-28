@@ -17,8 +17,12 @@ import {
 } from 'lucide-react';
 import { AGENT_REPORTS_INDEX_PATH } from '@/lib/workspaceIntelligencePaths';
 import type { DashboardEvidenceCardId } from '@/lib/dashboardCommandRegistry';
-import type { DashboardEvidencePayload } from '@/lib/dashboardEvidence';
-import { findEvidenceCard } from '@/lib/dashboardEvidence';
+import type { DashboardEvidenceCard, DashboardEvidencePayload } from '@/lib/dashboardEvidence';
+import {
+  evidenceCardStatusLabel,
+  findEvidenceCard,
+  resolveEvidenceFreshness,
+} from '@/lib/dashboardEvidence';
 import { buildDashboardCommandActionContract } from '@/lib/dashboardCommandActionContract';
 import type { WorkspaceStatus } from '@/types';
 import { ActionTile, ActionTileGrid } from './ActionTile';
@@ -59,6 +63,36 @@ function intelligenceDetail(
     return fallback;
   }
   return card.summary;
+}
+
+function basenameFromArtifact(artifactPath?: string): string {
+  if (!artifactPath?.trim()) {
+    return 'Artifact pending';
+  }
+  const parts = artifactPath.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] || 'Artifact ready';
+}
+
+function explainabilitySource(card: DashboardEvidenceCard | undefined, dedicatedLabel: string): string {
+  if (!card || card.status === 'missing') {
+    return 'Pending';
+  }
+  if (typeof card.metrics?.derivedFrom === 'string' && card.metrics.derivedFrom.trim()) {
+    return `Derived from ${card.metrics.derivedFrom}`;
+  }
+  return dedicatedLabel;
+}
+
+function explainabilitySectionCount(card: DashboardEvidenceCard | undefined): string {
+  const count = card?.detailSections?.length ?? 0;
+  return `${count} section${count === 1 ? '' : 's'}`;
+}
+
+function explainabilityArtifact(card: DashboardEvidenceCard | undefined): string {
+  if (!card?.artifactPath?.trim()) {
+    return 'No artifact yet';
+  }
+  return basenameFromArtifact(card.artifactPath);
 }
 
 export function WorkspaceIntelligencePanel({
@@ -266,6 +300,73 @@ export function WorkspaceIntelligencePanel({
             )}
             title="rapidkit workspace trace --from workspace-model-diff-last-run.json --json --write"
           />
+        ) : null}
+        {onWorkspaceExplain || onWorkspaceWhy || onWorkspaceTrace ? (
+          <div className="workspace-explainability-stack">
+            <div className="workspace-explainability-stack__header">
+              <span className="workspace-explainability-stack__icon" aria-hidden="true">
+                <ScrollText size={15} />
+              </span>
+              <span>
+                <strong>Explainability stack</strong>
+                <small>Explain what is blocked, why it matters, and where the evidence came from.</small>
+              </span>
+            </div>
+            <div className="workspace-explainability-stack__grid">
+              {[
+                {
+                  label: 'Explain',
+                  question: 'What is the release posture?',
+                  card: explainCard,
+                  dedicatedLabel: 'workspace-explain-last-run.json',
+                },
+                {
+                  label: 'Why',
+                  question: 'Why is this the active blocker?',
+                  card: whyCard,
+                  dedicatedLabel: 'workspace-why-last-run.json',
+                },
+                {
+                  label: 'Trace',
+                  question: 'Where did the evidence come from?',
+                  card: traceCard,
+                  dedicatedLabel: 'workspace-trace-last-run.json',
+                },
+              ].map((item) => {
+                const freshness = item.card ? resolveEvidenceFreshness(item.card) : null;
+                return (
+                  <article
+                    key={item.label}
+                    className={`workspace-explainability-stack__item workspace-explainability-stack__item--${item.card?.status ?? 'missing'}`}
+                  >
+                    <header>
+                      <strong>{item.label}</strong>
+                      <span>{item.card ? evidenceCardStatusLabel(item.card) : 'Missing'}</span>
+                    </header>
+                    <p>{item.question}</p>
+                    <dl>
+                      <div>
+                        <dt>Source</dt>
+                        <dd>{explainabilitySource(item.card, item.dedicatedLabel)}</dd>
+                      </div>
+                      <div>
+                        <dt>Artifact</dt>
+                        <dd>{explainabilityArtifact(item.card)}</dd>
+                      </div>
+                      <div>
+                        <dt>Freshness</dt>
+                        <dd>{freshness ? freshness.label : 'No evidence'}</dd>
+                      </div>
+                      <div>
+                        <dt>Sections</dt>
+                        <dd>{explainabilitySectionCount(item.card)}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
         ) : null}
         {onWorkspaceWatch ? (
           <ActionTile

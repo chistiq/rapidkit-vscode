@@ -1,6 +1,11 @@
-import * as fs from 'fs-extra';
 import * as path from 'path';
 
+import {
+  incompatibleJsonArtifact,
+  isJsonArtifactReadFailure,
+  readJsonArtifact,
+  type JsonArtifactReadResult,
+} from './jsonArtifactReader.js';
 import { WORKSPACE_CONTRACT_VERIFY_REPORT_PATH } from './workspaceIntelligencePaths.js';
 
 export const WORKSPACE_CONTRACT_VERIFY_SCHEMA_VERSION = 'workspace-contract-verify.v1' as const;
@@ -14,6 +19,12 @@ export type WorkspaceContractVerifyEvidence = {
   violations?: string[];
   checks?: Array<{ id: string; status: string; message: string }>;
 };
+
+export type WorkspaceContractVerifyEvidenceReadResult =
+  | { kind: 'missing'; artifactPath: string }
+  | { kind: 'valid'; artifactPath: string; evidence: WorkspaceContractVerifyEvidence }
+  | { kind: 'corrupt'; artifactPath: string; error: string }
+  | { kind: 'incompatible'; artifactPath: string; error: string };
 
 export function isWorkspaceContractVerifyEvidence(
   value: unknown
@@ -35,16 +46,28 @@ export function isWorkspaceContractVerifyEvidence(
 export async function readWorkspaceContractVerifyEvidence(
   workspacePath: string
 ): Promise<WorkspaceContractVerifyEvidence | null> {
+  const result = await readWorkspaceContractVerifyEvidenceArtifact(workspacePath);
+  return result.kind === 'valid' ? result.evidence : null;
+}
+
+export async function readWorkspaceContractVerifyEvidenceArtifact(
+  workspacePath: string
+): Promise<WorkspaceContractVerifyEvidenceReadResult> {
   const absolutePath = path.join(workspacePath, WORKSPACE_CONTRACT_VERIFY_REPORT_PATH);
-  if (!(await fs.pathExists(absolutePath))) {
-    return null;
+  const result: JsonArtifactReadResult = await readJsonArtifact(absolutePath);
+  if (isJsonArtifactReadFailure(result)) {
+    return result;
   }
-  try {
-    const raw = await fs.readJson(absolutePath);
-    return isWorkspaceContractVerifyEvidence(raw) ? raw : null;
-  } catch {
-    return null;
+  if (!isWorkspaceContractVerifyEvidence(result.raw)) {
+    return incompatibleJsonArtifact({
+      artifactPath: result.artifactPath,
+      expectedSchemaVersion: WORKSPACE_CONTRACT_VERIFY_SCHEMA_VERSION,
+      actualSchemaVersion: result.raw.schemaVersion,
+      reason:
+        'Contract verify artifact must include generatedAt, status, contractPath, checks[], and violations[].',
+    });
   }
+  return { kind: 'valid', artifactPath: result.artifactPath, evidence: result.raw };
 }
 
 export function summarizeWorkspaceContractVerify(

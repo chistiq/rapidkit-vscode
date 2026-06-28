@@ -141,6 +141,7 @@ describe('dashboard minimal UX guard', () => {
 
   it('keeps Dashboard and Studio status language aligned to enterprise posture labels', () => {
     const dashboardEvidence = read('webview-ui/src/lib/dashboardEvidence.ts');
+    const repairFlow = read('webview-ui/src/components/DashboardRepairFlow.tsx');
     const scaffoldEvidence = read('webview-ui/src/lib/dashboardScaffoldEvidence.ts');
     const studioChrome = read('webview-ui/src/sidebar/StudioBlockerChrome.tsx');
     const shipLoop = read('webview-ui/src/sidebar/StudioShipLoopStepper.tsx');
@@ -150,9 +151,14 @@ describe('dashboard minimal UX guard', () => {
     expect(dashboardEvidence).not.toContain("return 'Green'");
     expect(dashboardEvidence).not.toContain("return 'No evidence'");
     expect(scaffoldEvidence).toContain("return 'Expected before first project'");
+    expect(repairFlow).toContain('RepairIncidentSummary');
+    expect(repairFlow).toContain('aria-label="Incident summary"');
+    expect(repairFlow).not.toContain('buildRepairIncidentSummary');
     expect(studioChrome).toContain("idle: 'Blocked'");
     expect(studioChrome).toContain("diagnosing: 'Running'");
     expect(studioChrome).toContain("'fix-applied': 'Awaiting verify'");
+    expect(studioChrome).toContain('Incident summary');
+    expect(studioChrome).toContain('incidentSummary');
     expect(shipLoop).toContain("pass: 'Passed'");
     expect(shipLoop).toContain('All core steps passed');
   });
@@ -226,6 +232,8 @@ describe('dashboard minimal UX guard', () => {
 
     expect(actions).toContain('artifactLabel?: string');
     expect(actions).toContain('No evidence artifact exists yet');
+    expect(actions).toContain('Evidence artifact is corrupt');
+    expect(actions).toContain("artifactState === 'corrupt'");
     expect(actions).toContain('artifactState ===');
     expect(actions).toContain('primaryAction?: DashboardEvidencePrimaryAction');
     expect(actions).toContain('evidence-card-actions__overflow');
@@ -662,6 +670,20 @@ describe('dashboard minimal UX guard', () => {
     expect(accordion).toContain('workspace-intelligence-detail-card');
     expect(styles).toContain('.workspace-intelligence-detail-card__section');
     expect(panel).not.toContain('workspace-intelligence-explain-sections');
+  });
+
+  it('renders explain/why/trace as a single explainability stack with artifact source context', () => {
+    const panel = read('webview-ui/src/components/WorkspaceIntelligencePanel.tsx');
+    const styles = read('webview-ui/src/styles/workspai-primitives.css');
+
+    expect(panel).toContain('Explainability stack');
+    expect(panel).toContain('What is the release posture?');
+    expect(panel).toContain('Why is this the active blocker?');
+    expect(panel).toContain('Where did the evidence come from?');
+    expect(panel).toContain('explainabilitySource');
+    expect(panel).toContain('resolveEvidenceFreshness');
+    expect(styles).toContain('.workspace-explainability-stack');
+    expect(styles).toContain('.workspace-explainability-stack__item--fail');
   });
 
   it('keeps agent sync under collapsed advanced intelligence commands', () => {

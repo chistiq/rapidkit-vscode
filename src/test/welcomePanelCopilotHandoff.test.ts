@@ -32,6 +32,13 @@ vi.mock('../core/studioBlockerHandoffBuilder.js', () => ({
     scope: 'workspace',
     blockerSignature: 'abc123456789abcd',
     studioMode: 'FIX',
+    incidentSummary: {
+      title: 'Doctor',
+      phase: 'fix',
+      primaryAction: 'Fix source issue',
+      verifyRequired: true,
+      auditStatus: 'not-started',
+    },
   })),
 }));
 
@@ -74,7 +81,14 @@ describe('welcomePanelCopilotHandoff', () => {
       }
     );
 
-    expect(buildEvidenceCardStudioPromptEnriched).toHaveBeenCalled();
+    expect(buildEvidenceCardStudioPromptEnriched).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blockerHandoff: expect.objectContaining({
+          cardId: 'doctor',
+          incidentSummary: expect.objectContaining({ primaryAction: 'Fix source issue' }),
+        }),
+      })
+    );
     expect(buildStudioBlockerHandoff).toHaveBeenCalledWith(
       expect.objectContaining({ handoffSource: 'dashboard' })
     );

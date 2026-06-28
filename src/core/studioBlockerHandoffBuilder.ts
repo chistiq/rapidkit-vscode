@@ -4,6 +4,7 @@ import type { DashboardEvidenceCard } from './dashboardEvidenceBridge.js';
 import { WORKSPACE_VERIFY_REPORT_PATH } from './workspaceIntelligencePaths.js';
 import { readWorkspaceVerifyReport } from './workspaceVerifyReader.js';
 import {
+  buildStudioIncidentSummary,
   STUDIO_BLOCKER_HANDOFF_SCHEMA_VERSION,
   type StudioBlockerHandoff,
   type StudioBlockerHandoffSource,
@@ -99,6 +100,14 @@ export async function buildStudioBlockerHandoff(
   handoff.studioMode = resolveBlockerResolutionClass({
     handoff,
     onDiskHints: resolutionHints,
+  });
+  handoff.incidentSummary = buildStudioIncidentSummary({
+    cardId: handoff.cardId,
+    cardLabel: handoff.cardLabel,
+    cardStatus: handoff.cardStatus,
+    studioMode: handoff.studioMode,
+    verifyCommand: handoff.verifyCommand,
+    auditStatus: 'not-started',
   });
 
   return handoff;

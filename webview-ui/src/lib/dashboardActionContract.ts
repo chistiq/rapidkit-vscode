@@ -19,7 +19,7 @@ export interface DashboardEvidenceActionContract {
   disabledReason?: string;
   artifactPath?: string;
   artifactLabel: string;
-  artifactState: 'ready' | 'pending';
+  artifactState: DashboardEvidenceArtifactState;
   studioTarget?: ReturnType<typeof buildIncidentStudioEvidenceOpen>;
   studioLabel: string;
   copilotLabel: string;
@@ -33,9 +33,19 @@ export type DashboardEvidencePrimaryAction =
   | { type: 'studio'; label: string }
   | { type: 'done'; label: string };
 
+export type DashboardEvidenceArtifactState = 'ready' | 'pending' | 'corrupt';
+
 export type DashboardEvidenceAgentCard = Pick<
   DashboardEvidenceCard,
-  'id' | 'label' | 'status' | 'summary' | 'scope' | 'artifactPath' | 'blockers' | 'metrics'
+  | 'id'
+  | 'label'
+  | 'status'
+  | 'summary'
+  | 'scope'
+  | 'artifactPath'
+  | 'blockers'
+  | 'metrics'
+  | 'incidentSummary'
 >;
 
 export interface DashboardEvidenceAgentPayload {
@@ -52,7 +62,7 @@ export interface DashboardEvidenceAgentPayload {
     commandLabel?: string;
     commandScope?: DashboardEvidenceCommandAction['scope'];
     artifactPath?: string;
-    artifactState: 'ready' | 'pending';
+    artifactState: DashboardEvidenceArtifactState;
     studioTarget?: ReturnType<typeof buildIncidentStudioEvidenceOpen>;
   };
 }
@@ -75,6 +85,7 @@ function serializeEvidenceCardForAgent(card: DashboardEvidenceCard): DashboardEv
     artifactPath: card.artifactPath,
     blockers: card.blockers,
     metrics: card.metrics,
+    incidentSummary: card.incidentSummary,
   };
 }
 
@@ -85,7 +96,7 @@ function buildEvidenceAgentPayload(
     project?: EvidenceWorkspaceContext;
     commandAction?: DashboardEvidenceCommandAction;
     studioTarget?: ReturnType<typeof buildIncidentStudioEvidenceOpen>;
-    artifactState: 'ready' | 'pending';
+    artifactState: DashboardEvidenceArtifactState;
   }
 ): DashboardEvidenceAgentPayload {
   const projectPath = card.scope === 'project' ? options.project?.path : undefined;
@@ -147,8 +158,12 @@ export function buildDashboardEvidenceActionContract(
   const commandAction = resolveEvidenceCardCommandAction(card, options);
   const studioTarget = buildIncidentStudioEvidenceOpen(card);
   const artifactReady = Boolean(card.artifactPath?.trim());
-  const artifactState = artifactReady ? 'ready' : 'pending';
   const corruptArtifact = isCorruptArtifactCard(card);
+  const artifactState: DashboardEvidenceArtifactState = corruptArtifact
+    ? 'corrupt'
+    : artifactReady
+      ? 'ready'
+      : 'pending';
   const payload = buildEvidenceAgentPayload(card, {
     workspace: options?.workspace,
     project: {

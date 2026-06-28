@@ -1,6 +1,11 @@
-import * as fs from 'fs-extra';
 import * as path from 'path';
 
+import {
+  incompatibleJsonArtifact,
+  isJsonArtifactReadFailure,
+  readJsonArtifact,
+  type JsonArtifactReadResult,
+} from './jsonArtifactReader.js';
 import {
   WORKSPACE_EXPLAIN_REPORT_PATH,
   WORKSPACE_TRACE_REPORT_PATH,
@@ -26,6 +31,12 @@ export type WorkspaceExplainReport = {
   releaseRisk?: string;
 };
 
+export type WorkspaceExplainReportReadResult =
+  | { kind: 'missing'; artifactPath: string }
+  | { kind: 'valid'; artifactPath: string; report: WorkspaceExplainReport }
+  | { kind: 'corrupt'; artifactPath: string; error: string }
+  | { kind: 'incompatible'; artifactPath: string; error: string };
+
 export function isWorkspaceExplainReport(value: unknown): value is WorkspaceExplainReport {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return false;
@@ -47,16 +58,47 @@ async function readWorkspaceExplainReportAtPath(
   relativePath: string,
   _scope: string
 ): Promise<WorkspaceExplainReport | null> {
+  const result = await readWorkspaceExplainReportArtifactAtPath(workspacePath, relativePath);
+  return result.kind === 'valid' ? result.report : null;
+}
+
+async function readWorkspaceExplainReportArtifactAtPath(
+  workspacePath: string,
+  relativePath: string
+): Promise<WorkspaceExplainReportReadResult> {
   const absolutePath = path.join(workspacePath, relativePath);
-  if (!(await fs.pathExists(absolutePath))) {
-    return null;
+  const result: JsonArtifactReadResult = await readJsonArtifact(absolutePath);
+  if (isJsonArtifactReadFailure(result)) {
+    return result;
   }
-  try {
-    const raw = await fs.readJson(absolutePath);
-    return isWorkspaceExplainReport(raw) ? raw : null;
-  } catch {
-    return null;
+  if (!isWorkspaceExplainReport(result.raw)) {
+    return incompatibleJsonArtifact({
+      artifactPath: result.artifactPath,
+      expectedSchemaVersion: WORKSPACE_EXPLAIN_SCHEMA_VERSION,
+      actualSchemaVersion: result.raw.schemaVersion,
+      reason:
+        'Workspace explain artifact must include generatedAt, workspacePath, target, summary, and sections[].',
+    });
   }
+  return { kind: 'valid', artifactPath: result.artifactPath, report: result.raw };
+}
+
+export async function readWorkspaceExplainReportArtifact(
+  workspacePath: string
+): Promise<WorkspaceExplainReportReadResult> {
+  return readWorkspaceExplainReportArtifactAtPath(workspacePath, WORKSPACE_EXPLAIN_REPORT_PATH);
+}
+
+export async function readWorkspaceWhyReportArtifact(
+  workspacePath: string
+): Promise<WorkspaceExplainReportReadResult> {
+  return readWorkspaceExplainReportArtifactAtPath(workspacePath, WORKSPACE_WHY_REPORT_PATH);
+}
+
+export async function readWorkspaceTraceReportArtifact(
+  workspacePath: string
+): Promise<WorkspaceExplainReportReadResult> {
+  return readWorkspaceExplainReportArtifactAtPath(workspacePath, WORKSPACE_TRACE_REPORT_PATH);
 }
 
 export async function readWorkspaceExplainReport(

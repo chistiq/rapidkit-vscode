@@ -1717,6 +1717,156 @@
   color: var(--ws-text-muted, var(--vscode-descriptionForeground));
 }
 
+.workspace-explainability-stack {
+  grid-column: 1 / -1;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--ws-space-sm, 8px);
+  border: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
+  border-radius: var(--ws-radius-sm, 6px);
+  padding: 10px;
+  background: color-mix(
+    in srgb,
+    var(--ws-surface, var(--vscode-editor-background)) 92%,
+    transparent
+  );
+}
+
+.workspace-explainability-stack__header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.workspace-explainability-stack__header strong,
+.workspace-explainability-stack__header small {
+  display: block;
+  min-width: 0;
+}
+
+.workspace-explainability-stack__header strong {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.workspace-explainability-stack__header small {
+  margin-top: 2px;
+  color: var(--ws-text-muted, var(--vscode-descriptionForeground));
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.workspace-explainability-stack__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--ws-text-muted, var(--vscode-descriptionForeground));
+}
+
+.workspace-explainability-stack__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.workspace-explainability-stack__item {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+  border: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
+  border-radius: var(--ws-radius-sm, 6px);
+  padding: 8px;
+  background: color-mix(
+    in srgb,
+    var(--ws-surface-raised, var(--vscode-editor-background)) 80%,
+    transparent
+  );
+}
+
+.workspace-explainability-stack__item header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.workspace-explainability-stack__item header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.workspace-explainability-stack__item header span {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: var(--ws-text-muted, var(--vscode-descriptionForeground));
+  background: color-mix(in srgb, var(--vscode-editor-inactiveSelectionBackground) 64%, transparent);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.workspace-explainability-stack__item--pass header span {
+  color: var(--workspai-status-success);
+  background: color-mix(in srgb, var(--workspai-status-success) 14%, transparent);
+}
+
+.workspace-explainability-stack__item--warn header span {
+  color: var(--workspai-status-warn);
+  background: color-mix(in srgb, var(--workspai-status-warn) 14%, transparent);
+}
+
+.workspace-explainability-stack__item--fail header span {
+  color: var(--workspai-status-error);
+  background: color-mix(in srgb, var(--workspai-status-error) 14%, transparent);
+}
+
+.workspace-explainability-stack__item p {
+  margin: 0;
+  color: var(--ws-text-muted, var(--vscode-descriptionForeground));
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.workspace-explainability-stack__item dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+  margin: 0;
+}
+
+.workspace-explainability-stack__item dl div {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+}
+
+.workspace-explainability-stack__item dt,
+.workspace-explainability-stack__item dd {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9.5px;
+  line-height: 1.25;
+}
+
+.workspace-explainability-stack__item dt {
+  color: var(--ws-text-muted, var(--vscode-descriptionForeground));
+}
+
+.workspace-explainability-stack__item dd {
+  color: var(--ws-text, var(--vscode-foreground));
+}
+
 .evidence-section-body__lines {
   margin: 0;
   padding-left: 16px;

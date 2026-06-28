@@ -1,6 +1,11 @@
-import * as fs from 'fs-extra';
 import * as path from 'path';
 
+import {
+  incompatibleJsonArtifact,
+  isJsonArtifactReadFailure,
+  readJsonArtifact,
+  type JsonArtifactReadResult,
+} from './jsonArtifactReader.js';
 import { WORKSPACE_CONTEXT_AGENT_REPORT_PATH } from './workspaceIntelligencePaths';
 
 export const WORKSPACE_CONTEXT_SCHEMA_VERSION = 'workspace-context.v1';
@@ -50,6 +55,12 @@ export type WorkspaceAgentContextReport = {
   };
 };
 
+export type WorkspaceAgentContextReportReadResult =
+  | { kind: 'missing'; artifactPath: string }
+  | { kind: 'valid'; artifactPath: string; report: WorkspaceAgentContextReport }
+  | { kind: 'corrupt'; artifactPath: string; error: string }
+  | { kind: 'incompatible'; artifactPath: string; error: string };
+
 export async function readWorkspaceAgentContextReport(
   workspacePath?: string
 ): Promise<WorkspaceAgentContextReport | null> {
@@ -57,16 +68,27 @@ export async function readWorkspaceAgentContextReport(
     return null;
   }
 
+  const result = await readWorkspaceAgentContextReportArtifact(workspacePath);
+  return result.kind === 'valid' ? result.report : null;
+}
+
+export async function readWorkspaceAgentContextReportArtifact(
+  workspacePath: string
+): Promise<WorkspaceAgentContextReportReadResult> {
   const reportPath = path.join(workspacePath, WORKSPACE_CONTEXT_AGENT_REPORT_PATH);
-  try {
-    if (!(await fs.pathExists(reportPath))) {
-      return null;
-    }
-    const raw = await fs.readJson(reportPath);
-    return isWorkspaceAgentContextReport(raw) ? raw : null;
-  } catch {
-    return null;
+  const result: JsonArtifactReadResult = await readJsonArtifact(reportPath);
+  if (isJsonArtifactReadFailure(result)) {
+    return result;
   }
+  if (!isWorkspaceAgentContextReport(result.raw)) {
+    return incompatibleJsonArtifact({
+      artifactPath: result.artifactPath,
+      expectedSchemaVersion: WORKSPACE_CONTEXT_SCHEMA_VERSION,
+      actualSchemaVersion: result.raw.schemaVersion,
+      reason: 'Workspace agent context artifact must include generatedAt.',
+    });
+  }
+  return { kind: 'valid', artifactPath: result.artifactPath, report: result.raw };
 }
 
 export function buildWorkspaceAgentContextPromptSection(

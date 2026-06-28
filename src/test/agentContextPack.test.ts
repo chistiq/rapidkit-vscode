@@ -9,6 +9,10 @@ import {
 import {
   WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
   AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
+  WORKSPACE_CONTRACT_VERIFY_REPORT_PATH,
+  WORKSPACE_EXPLAIN_REPORT_PATH,
+  WORKSPACE_TRACE_REPORT_PATH,
+  WORKSPACE_WHY_REPORT_PATH,
 } from '../core/workspaceIntelligencePaths';
 
 describe('agentContextPack', () => {
@@ -74,6 +78,12 @@ describe('agentContextPack', () => {
     );
     expect(buildCopilotChatContextPrompt()).toContain(
       `#file:${AGENT_CUSTOMIZATION_PACK_REPORT_PATH}`
+    );
+    expect(buildCopilotChatContextPrompt()).toContain(`#file:${WORKSPACE_EXPLAIN_REPORT_PATH}`);
+    expect(buildCopilotChatContextPrompt()).toContain(`#file:${WORKSPACE_WHY_REPORT_PATH}`);
+    expect(buildCopilotChatContextPrompt()).toContain(`#file:${WORKSPACE_TRACE_REPORT_PATH}`);
+    expect(buildCopilotChatContextPrompt()).toContain(
+      `#file:${WORKSPACE_CONTRACT_VERIFY_REPORT_PATH}`
     );
     expect(buildCopilotChatContextPrompt('debug auth')).toContain('debug auth');
     expect(buildCopilotChatModelPrompt()).toContain('#file:.rapidkit/reports/workspace-model.json');

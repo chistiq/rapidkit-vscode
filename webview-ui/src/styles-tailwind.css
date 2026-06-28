@@ -4946,6 +4946,39 @@
     white-space: nowrap;
   }
 
+  .repair-flow__incident-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+    margin: 0;
+  }
+
+  .repair-flow__incident-summary div {
+    min-width: 0;
+    padding: 6px 7px;
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--vscode-editorWidget-background) 58%, transparent);
+  }
+
+  .repair-flow__incident-summary dt {
+    margin: 0 0 2px;
+    color: var(--vscode-descriptionForeground);
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .repair-flow__incident-summary dd {
+    overflow: hidden;
+    margin: 0;
+    color: var(--vscode-editor-foreground);
+    font-size: 10px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .repair-flow__active--clear {
     place-items: start;
   }
@@ -5220,6 +5253,10 @@
 
     .repair-flow__contract {
       grid-template-columns: 1fr;
+    }
+
+    .repair-flow__incident-summary {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .repair-flow__metrics {

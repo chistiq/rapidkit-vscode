@@ -41,6 +41,13 @@ describe('sidebarAdvisorStudioHandoff (roadmap 3.24)', () => {
         verifyArtifact: '.rapidkit/reports/workspace-contract-verify.json',
         verifyCommand: 'rapidkit workspace contract verify --json',
         handoffSource: 'advisor',
+        incidentSummary: {
+          title: 'Governance Gate',
+          phase: 'fix',
+          primaryAction: 'Fix source issue',
+          verifyRequired: true,
+          auditStatus: 'not-started',
+        },
       },
     });
 
@@ -50,6 +57,9 @@ describe('sidebarAdvisorStudioHandoff (roadmap 3.24)', () => {
     expect(prefill).toContain('Source command: rapidkit workspace pipeline --json');
     expect(prefill).toContain('Verify command: rapidkit workspace contract verify --json');
     expect(prefill).toContain('Blocker signature: sig-release-1234');
+    expect(prefill).toContain('Incident summary');
+    expect(prefill).toContain('Primary action: Fix source issue');
+    expect(prefill).toContain('Verify required: yes');
     expect(prefill).toContain('workspace.contract.verify is stale');
     expect(prefill).toContain('readiness is blocked');
   });

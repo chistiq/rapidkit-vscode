@@ -7,6 +7,12 @@ import {
   buildEvidenceAgentContextBundle,
   buildSendToCopilotPrompt,
 } from '../core/evidenceAgentContextBundle';
+import {
+  WORKSPACE_CONTRACT_VERIFY_REPORT_PATH,
+  WORKSPACE_EXPLAIN_REPORT_PATH,
+  WORKSPACE_TRACE_REPORT_PATH,
+  WORKSPACE_WHY_REPORT_PATH,
+} from '../core/workspaceIntelligencePaths';
 
 describe('evidenceAgentContextBundle', () => {
   const tempDirs: string[] = [];
@@ -38,6 +44,12 @@ describe('evidenceAgentContextBundle', () => {
         drift: { missingRequired: [], staleReports: [], strictViolations: [] },
       },
       '.rapidkit/reports/doctor-last-run.json': { generatedAt: '2026-06-10T00:00:00.000Z' },
+      [WORKSPACE_EXPLAIN_REPORT_PATH]: { schemaVersion: 'workspace-explain.v1' },
+      [WORKSPACE_WHY_REPORT_PATH]: { schemaVersion: 'workspace-explain.v1', mode: 'why' },
+      [WORKSPACE_TRACE_REPORT_PATH]: { schemaVersion: 'workspace-explain.v1', mode: 'trace' },
+      [WORKSPACE_CONTRACT_VERIFY_REPORT_PATH]: {
+        schemaVersion: 'rapidkit-workspace-contract-verify.v1',
+      },
     });
 
     const bundle = await buildEvidenceAgentContextBundle({
@@ -66,6 +78,26 @@ describe('evidenceAgentContextBundle', () => {
     );
     expect(prompt).toContain(
       `#file:${workspacePath.replace(/\\/g, '/')}/.rapidkit/reports/agent-customization-pack.json`
+    );
+    expect(prompt).toContain(
+      `#file:${workspacePath.replace(/\\/g, '/')}/${WORKSPACE_EXPLAIN_REPORT_PATH}`
+    );
+    expect(prompt).toContain(
+      `#file:${workspacePath.replace(/\\/g, '/')}/${WORKSPACE_WHY_REPORT_PATH}`
+    );
+    expect(prompt).toContain(
+      `#file:${workspacePath.replace(/\\/g, '/')}/${WORKSPACE_TRACE_REPORT_PATH}`
+    );
+    expect(prompt).toContain(
+      `#file:${workspacePath.replace(/\\/g, '/')}/${WORKSPACE_CONTRACT_VERIFY_REPORT_PATH}`
+    );
+    expect(bundle.attachments.map((attachment) => attachment.relativePath)).toEqual(
+      expect.arrayContaining([
+        WORKSPACE_EXPLAIN_REPORT_PATH,
+        WORKSPACE_WHY_REPORT_PATH,
+        WORKSPACE_TRACE_REPORT_PATH,
+        WORKSPACE_CONTRACT_VERIFY_REPORT_PATH,
+      ])
     );
     expect(prompt).toContain('Agent pack preset: enterprise');
     expect(prompt).toContain('## Standard answer contract');

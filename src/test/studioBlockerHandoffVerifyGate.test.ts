@@ -20,6 +20,13 @@ function handoff(overrides: Partial<StudioBlockerHandoffView> = {}): StudioBlock
     studioMode: 'FIX',
     verifyCommand: 'npx rapidkit workspace verify --json --write',
     verifyArtifact: '.rapidkit/reports/workspace-verify-last-run.json',
+    incidentSummary: {
+      title: 'Workspace Doctor',
+      phase: 'fix',
+      primaryAction: 'Fix source issue',
+      verifyRequired: true,
+      auditStatus: 'not-started',
+    },
     ...overrides,
   };
 }
@@ -57,6 +64,8 @@ describe('Studio blocker verify gate', () => {
     });
 
     expect(merged?.verifyCommand).toBe('npx rapidkit doctor workspace --json');
+    expect(merged?.incidentSummary?.phase).toBe('audit');
+    expect(merged?.incidentSummary?.primaryAction).toBe('Verify applied fix');
     expect(
       resolveStudioFixPhase({
         handoff: merged,

@@ -1,7 +1,8 @@
 import type { DashboardCommandExecutionChannel } from '@workspai-contracts/dashboardCommandExecutionChannel';
 import { resolveDashboardCommandExecutionChannel } from '@workspai-contracts/dashboardCommandExecutionChannel';
 import type { DashboardEvidenceCard, DashboardEvidencePayload } from './dashboardEvidence';
-import { findEvidenceCard } from './dashboardEvidence';
+import { findEvidenceCard, isCorruptArtifactCard } from './dashboardEvidence';
+import type { DashboardEvidenceArtifactState } from './dashboardActionContract';
 import {
   getDashboardCommandAffectedEvidenceCards,
   getDashboardCommandMeta,
@@ -15,7 +16,7 @@ export interface DashboardCommandActionContract {
   executionChannel?: DashboardCommandExecutionChannel;
   artifactPath?: string;
   artifactLabel: string;
-  artifactState: 'ready' | 'pending';
+  artifactState: DashboardEvidenceArtifactState;
   disabledReason?: string;
   studioLabel: string;
   copilotLabel: string;
@@ -57,6 +58,11 @@ export function buildDashboardCommandActionContract(
       ? findEvidenceCard(options.evidence, options.preferredArtifactCardId)
       : undefined) ?? findEvidenceCard(options?.evidence, affectedCardIds[0]);
   const artifactReady = Boolean(artifactCard?.artifactPath?.trim());
+  const artifactState: DashboardEvidenceArtifactState = isCorruptArtifactCard(artifactCard)
+    ? 'corrupt'
+    : artifactReady
+      ? 'ready'
+      : 'pending';
   const executionScope = contractScopeLabel(meta?.scope);
 
   return {
@@ -66,7 +72,7 @@ export function buildDashboardCommandActionContract(
     executionChannel: resolveDashboardCommandExecutionChannel(command),
     artifactPath: artifactCard?.artifactPath,
     artifactLabel: artifactLabelFromCard(artifactCard),
-    artifactState: artifactReady ? 'ready' : 'pending',
+    artifactState,
     disabledReason: options?.disabledReason,
     studioLabel: `Studio: ${executionScope.toLowerCase()}`,
     copilotLabel: `Copilot: ${executionScope.toLowerCase()} evidence pack`,

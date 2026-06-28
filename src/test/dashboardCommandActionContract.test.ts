@@ -40,4 +40,27 @@ describe('dashboard command action contract', () => {
     expect(contract.artifactState).toBe('pending');
     expect(contract.disabledReason).toBe('Start dev first');
   });
+
+  it('preserves corrupt artifact state for command-level action surfaces', () => {
+    const evidence: DashboardEvidencePayload = {
+      cards: [
+        {
+          id: 'workspaceVerify',
+          label: 'Workspace Verify',
+          status: 'fail',
+          summary: 'Artifact is unreadable or corrupt.',
+          scope: 'workspace',
+          artifactPath: '/tmp/.rapidkit/reports/workspace-verify-last-run.json',
+          metrics: { corruptArtifact: 1 },
+          blockers: ['Corrupt artifact: workspace-verify-last-run.json'],
+        },
+      ],
+      activity: [],
+    };
+
+    const contract = buildDashboardCommandActionContract('workspaceVerify', { evidence });
+
+    expect(contract.artifactLabel).toBe('workspace-verify-last-run.json');
+    expect(contract.artifactState).toBe('corrupt');
+  });
 });

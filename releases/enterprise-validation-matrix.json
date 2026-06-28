@@ -1,0 +1,183 @@
+{
+  "schemaVersion": "workspai-enterprise-validation-matrix.v1",
+  "generatedFor": "rapidkit-vscode",
+  "npmTruthBaseline": "0.41.2",
+  "scenarios": [
+    {
+      "id": "cli.version.below_minimum",
+      "label": "Old CLI is blocked before enterprise workflows run",
+      "category": "runtime-gate",
+      "priority": "P0",
+      "evidence": [
+        "src/test/cliVersionGate.test.ts",
+        "src/test/cliVersionPolicy.test.ts",
+        "src/test/cliVersionCompatibilityContract.test.ts"
+      ],
+      "requiredSnippets": [
+        "blocks below-minimum enterprise workflows without a continue option",
+        "reports missing and unparseable versions as unknown",
+        "matches rapidkit-npm package version"
+      ]
+    },
+    {
+      "id": "cli.capability.required_missing",
+      "label": "Missing required commands/contracts block execution",
+      "category": "runtime-gate",
+      "priority": "P0",
+      "evidence": [
+        "src/test/rapidkitCliCapabilities.test.ts",
+        "src/core/rapidkitCliCapabilities.ts",
+        "src/core/rapidkitEnterpriseCliGate.ts"
+      ],
+      "requiredSnippets": [
+        "blocks workspace intelligence when required capabilities are missing",
+        "does not advertise required capabilities",
+        "gateRapidkitCliArgs"
+      ]
+    },
+    {
+      "id": "cli.runner.pinned",
+      "label": "Enterprise CLI execution uses the unified pinned runner",
+      "category": "runtime-gate",
+      "priority": "P0",
+      "evidence": [
+        "src/test/platformCapabilities.test.ts",
+        "src/test/evidenceCommandRunner.test.ts",
+        "src/test/streamingRapidkitRunner.test.ts"
+      ],
+      "requiredSnippets": [
+        "buildRapidkitExecutionSpec",
+        "buildRapidkitExecutionSpec",
+        "buildRapidkitExecutionSpec"
+      ]
+    },
+    {
+      "id": "dashboard.command_failure.visible",
+      "label": "Dashboard command failures are visible in webview state",
+      "category": "dashboard",
+      "priority": "P0",
+      "evidence": [
+        "src/test/dashboardCommandFailure.test.ts",
+        "src/test/welcomePanelDashboardEvidence.test.ts",
+        "src/test/dashboardMinimalUx.test.ts",
+        "webview-ui/src/lib/dashboardCommandFailure.ts"
+      ],
+      "requiredSnippets": [
+        "only clears failed-run overlays",
+        "dashboardCommandFailed",
+        "Capability unknown",
+        "failed-run-${failure.command}"
+      ]
+    },
+    {
+      "id": "dashboard.artifact_corrupt.visible",
+      "label": "Corrupt and incompatible JSON artifacts render as failed cards",
+      "category": "dashboard",
+      "priority": "P0",
+      "evidence": [
+        "src/test/dashboardEvidenceBridge.test.ts",
+        "src/test/workspaceReportReaderCompatibility.test.ts",
+        "src/core/jsonArtifactReader.ts"
+      ],
+      "requiredSnippets": [
+        "surfaces corrupt enterprise evidence artifacts as failed cards",
+        "incompatible",
+        "kind: 'corrupt'"
+      ]
+    },
+    {
+      "id": "studio.verify.non_bypassable",
+      "label": "Mutating Studio actions require verify before completion",
+      "category": "studio",
+      "priority": "P0",
+      "evidence": [
+        "src/test/studioBlockerHandoffVerifyGate.test.ts",
+        "src/test/incidentStudioPayload.test.ts",
+        "webview-ui/src/sidebar/StudioBlockerChrome.tsx"
+      ],
+      "requiredSnippets": [
+        "keeps mutating fixes blocked on verify",
+        "allowCompletionClaimWithoutVerify",
+        "Run verify"
+      ]
+    },
+    {
+      "id": "studio.audit.visible",
+      "label": "Studio audit and feedback failures are visible and retryable",
+      "category": "studio",
+      "priority": "P1",
+      "evidence": [
+        "src/test/sidebarStudioAuditBridge.test.ts",
+        "src/test/dashboardMinimalUx.test.ts",
+        "webview-ui/src/sidebar/SecondarySidebar.tsx"
+      ],
+      "requiredSnippets": [
+        "retry",
+        "Feedback history is stale",
+        "sidebarStudioAuditState"
+      ]
+    },
+    {
+      "id": "handoff.why_trace.parity",
+      "label": "Host/webview why/trace paths and snippets stay aligned",
+      "category": "parity",
+      "priority": "P1",
+      "evidence": [
+        "src/test/workspaceIntelligencePathParity.test.ts",
+        "src/test/dashboardEvidenceBridge.test.ts",
+        "src/test/evidenceAgentContextBundle.test.ts"
+      ],
+      "requiredSnippets": [
+        "rapidkit workspace why release-blocked --json --write",
+        "workspace-trace-last-run.json",
+        "workspace-why-last-run.json"
+      ]
+    },
+    {
+      "id": "dashboard.incident_command_center",
+      "label": "Dashboard cards expose one primary CTA plus secondary overflow",
+      "category": "dashboard",
+      "priority": "P1",
+      "evidence": [
+        "src/test/dashboardMinimalUx.test.ts",
+        "webview-ui/src/components/EvidenceCardActions.tsx",
+        "webview-ui/src/components/DashboardRepairFlow.tsx"
+      ],
+      "requiredSnippets": [
+        "primaryAction",
+        "overflow",
+        "RepairIncidentSummary"
+      ]
+    },
+    {
+      "id": "advisor.read_only_boundary",
+      "label": "Advisor remains read-only and hands fixes to Studio",
+      "category": "advisor",
+      "priority": "P1",
+      "evidence": [
+        "src/test/sidebarAdvisorStudioHandoff.test.ts",
+        "src/core/sidebarAdvisorStudioHandoff.ts"
+      ],
+      "requiredSnippets": [
+        "Advisor role: read-only explanation",
+        "Mutation boundary: Studio must run any fix"
+      ]
+    },
+    {
+      "id": "vsix.package_artifact_gate",
+      "label": "CI builds and inspects the exact VSIX artifact before publish",
+      "category": "supply-chain",
+      "priority": "P0",
+      "evidence": [
+        "src/test/vsixPackaging.test.ts",
+        ".github/workflows/extension-smoke-matrix.yml",
+        ".github/workflows/release-extension.yml"
+      ],
+      "requiredSnippets": [
+        "vsix-package-smoke:",
+        "npm run smoke:vsix-artifact",
+        "npm view rapidkit@${{ inputs.rapidkit_npm_version }} version"
+      ]
+    }
+  ]
+}

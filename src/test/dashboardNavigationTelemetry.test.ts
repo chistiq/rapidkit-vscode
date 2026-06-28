@@ -23,8 +23,11 @@ describe('dashboardNavigationTelemetry', () => {
   });
 
   it('maps ops chain and incident targets to Run zones', async () => {
-    const { dashboardOperateZoneForOpsChainStep, dashboardOperateZoneForIncidentTarget } =
-      await import('../../webview-ui/src/lib/dashboardOperateZones');
+    const {
+      dashboardOperateZoneForOpsChainStep,
+      dashboardOperateZoneForIncidentTarget,
+      resolveCommandOperateZone,
+    } = await import('../../webview-ui/src/lib/dashboardOperateZones');
 
     expect(dashboardOperateZoneForOpsChainStep('bootstrap')).toBe('governance');
     expect(dashboardOperateZoneForOpsChainStep('doctor')).toBe('quick');
@@ -36,6 +39,10 @@ describe('dashboardNavigationTelemetry', () => {
     expect(dashboardOperateZoneForIncidentTarget('impact')).toBe('intelligence');
     expect(dashboardOperateZoneForIncidentTarget('model')).toBe('intelligence');
     expect(dashboardOperateZoneForIncidentTarget('pipeline')).toBe('governance');
+    expect(resolveCommandOperateZone('projectDoctor')).toBe('quick');
+    expect(resolveCommandOperateZone('workspaceRunInit')).toBe('quick');
+    expect(resolveCommandOperateZone('workspaceRunStart')).toBe('quick');
+    expect(resolveCommandOperateZone('workspaceExplain')).toBe('intelligence');
   });
 
   it('lists studio handoff labels aligned with dashboard tabs', async () => {

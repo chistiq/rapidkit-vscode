@@ -1,6 +1,10 @@
 import {
   WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
   AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
+  WORKSPACE_CONTRACT_VERIFY_REPORT_PATH,
+  WORKSPACE_EXPLAIN_REPORT_PATH,
+  WORKSPACE_TRACE_REPORT_PATH,
+  WORKSPACE_WHY_REPORT_PATH,
 } from './workspaceIntelligencePaths';
 
 /** npm `workspace context --for-agent` without a slug → generic agent pack (Copilot-safe). */
@@ -41,8 +45,12 @@ export function buildCopilotChatContextPrompt(userQuestion?: string): string {
     '@workspace',
     `#file:${WORKSPACE_CONTEXT_AGENT_REPORT_PATH}`,
     `#file:${AGENT_CUSTOMIZATION_PACK_REPORT_PATH}`,
+    `#file:${WORKSPACE_EXPLAIN_REPORT_PATH}`,
+    `#file:${WORKSPACE_WHY_REPORT_PATH}`,
+    `#file:${WORKSPACE_TRACE_REPORT_PATH}`,
+    `#file:${WORKSPACE_CONTRACT_VERIFY_REPORT_PATH}`,
     '',
-    `With this workspace context and agent customization pack, ${question}`,
+    `With this workspace context, agent customization pack, explain/why/trace evidence, and contract verification, ${question}`,
   ].join('\n');
 }
 

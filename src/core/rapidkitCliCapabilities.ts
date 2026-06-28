@@ -21,6 +21,8 @@ export const REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS = [
   'context',
   'agent-sync',
   'explain',
+  'why',
+  'trace',
 ] as const;
 
 /** Top-level command that backs the create-frontend flow. */

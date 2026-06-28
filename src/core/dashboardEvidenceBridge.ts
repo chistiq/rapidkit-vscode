@@ -26,14 +26,14 @@ import {
   summarizeAgentCustomizationPack,
 } from './agentCustomizationPack.js';
 import {
-  readWorkspaceExplainReport,
-  readWorkspaceTraceReport,
-  readWorkspaceWhyReport,
+  readWorkspaceExplainReportArtifact,
+  readWorkspaceTraceReportArtifact,
+  readWorkspaceWhyReportArtifact,
   summarizeWorkspaceExplain,
   type WorkspaceExplainReport,
 } from './workspaceExplainReader.js';
 import {
-  readWorkspaceSkillsIndex,
+  readWorkspaceSkillsIndexArtifact,
   summarizeOperationalSkills,
 } from './workspaceSkillsIndexReader.js';
 import {
@@ -44,7 +44,7 @@ import {
   RAPIDKIT_MCP_DESIGN_REPORT_PATH,
 } from './workspaceIntelligencePaths.js';
 import {
-  readWorkspaceContractVerifyEvidence,
+  readWorkspaceContractVerifyEvidenceArtifact,
   summarizeWorkspaceContractVerify,
 } from './workspaceContractVerifyReader.js';
 import {
@@ -53,6 +53,11 @@ import {
 } from './workspaceScaffoldEvidence.js';
 import { buildWorkspaceModelDetailSections } from './workspaceModelGraphVisual.js';
 import { readJsonArtifact, type JsonArtifactReadResult } from './jsonArtifactReader.js';
+import {
+  buildStudioIncidentSummary,
+  type StudioIncidentSummary,
+} from '../contracts/studio-blocker-handoff-contract.js';
+import { DEFAULT_VERIFY_COMMAND } from './studioCardSourceShell.js';
 
 export type { DashboardEvidenceCardId };
 
@@ -77,6 +82,7 @@ export type DashboardEvidenceCard = {
   metrics?: Record<string, number | string>;
   blockers?: string[];
   detailSections?: Array<{ id: string; title: string; body: string }>;
+  incidentSummary?: StudioIncidentSummary;
   incidentStudioTarget?:
     | 'doctor'
     | 'analyze'
@@ -86,6 +92,22 @@ export type DashboardEvidenceCard = {
     | 'model'
     | 'pipeline';
 };
+
+function attachDashboardIncidentSummary(card: DashboardEvidenceCard): DashboardEvidenceCard {
+  if (!card.incidentStudioTarget) {
+    return card;
+  }
+  return {
+    ...card,
+    incidentSummary: buildStudioIncidentSummary({
+      cardId: card.id,
+      cardLabel: card.label,
+      cardStatus: card.status,
+      verifyCommand: card.status === 'pass' ? undefined : DEFAULT_VERIFY_COMMAND,
+      auditStatus: 'not-started',
+    }),
+  };
+}
 
 export type DashboardEvidenceBundle = {
   workspacePath?: string;
@@ -347,10 +369,16 @@ async function readJsonIfExists(filePath: string): Promise<Record<string, unknow
   if (result.kind === 'valid') {
     return result.raw;
   }
-  if (result.kind === 'corrupt') {
+  if (result.kind === 'corrupt' || result.kind === 'incompatible') {
     logEvidenceBridgeWarning('readJsonIfExists', filePath, result.error);
   }
   return undefined;
+}
+
+function isArtifactReadFailure<T extends { kind: string }>(
+  result: T
+): result is T & { kind: 'corrupt' | 'incompatible'; artifactPath: string; error: string } {
+  return result.kind === 'corrupt' || result.kind === 'incompatible';
 }
 
 function corruptArtifactCard(input: {
@@ -358,23 +386,30 @@ function corruptArtifactCard(input: {
   label: string;
   artifactPath: string;
   error: string;
+  kind?: 'corrupt' | 'incompatible';
   scope?: DashboardEvidenceScope;
   incidentStudioTarget?: DashboardEvidenceCard['incidentStudioTarget'];
 }): DashboardEvidenceCard {
   const message = input.error.split('\n').slice(0, 2).join(' ').slice(0, 240);
+  const incompatible = input.kind === 'incompatible';
   return {
     id: input.id,
     label: input.label,
     status: 'fail',
-    summary: 'Artifact is unreadable or corrupt.',
+    summary: incompatible
+      ? 'Artifact schema is incompatible with this extension.'
+      : 'Artifact is unreadable or corrupt.',
     scope: input.scope ?? 'workspace',
     artifactPath: input.artifactPath,
     metrics: { corruptArtifact: 1 },
-    blockers: [`Corrupt artifact: ${path.basename(input.artifactPath)}`, message],
+    blockers: [
+      `${incompatible ? 'Incompatible' : 'Corrupt'} artifact: ${path.basename(input.artifactPath)}`,
+      message,
+    ],
     detailSections: [
       {
         id: 'artifact-read-error',
-        title: 'Artifact read error',
+        title: incompatible ? 'Artifact compatibility error' : 'Artifact read error',
         body: [`path: ${input.artifactPath}`, `error: ${message}`].join('\n'),
       },
     ],
@@ -402,7 +437,11 @@ function validOrCorruptWorkspaceModelArtifact(
   }
   const schemaError = validateWorkspaceModelArtifact(result.raw);
   return schemaError
-    ? { kind: 'corrupt', artifactPath: result.artifactPath, error: schemaError }
+    ? {
+        kind: 'incompatible',
+        artifactPath: result.artifactPath,
+        error: `Artifact schema is incompatible: expected workspace-model.v1, got ${typeof result.raw.schemaVersion === 'string' ? result.raw.schemaVersion : 'missing'}. ${schemaError}`,
+      }
     : result;
 }
 
@@ -921,7 +960,7 @@ async function readProjectDoctorReport(input: {
   projectName?: string;
 }): Promise<
   | { kind: 'valid'; raw: Record<string, unknown>; artifactPath: string; reportsDir: string }
-  | { kind: 'corrupt'; artifactPath: string; error: string; reportsDir: string }
+  | { kind: 'corrupt' | 'incompatible'; artifactPath: string; error: string; reportsDir: string }
   | undefined
 > {
   const projectReportsDir = path.join(input.projectPath, '.rapidkit', 'reports');
@@ -941,9 +980,9 @@ async function readProjectDoctorReport(input: {
     if (result.kind === 'missing') {
       continue;
     }
-    if (result.kind === 'corrupt') {
+    if (isArtifactReadFailure(result)) {
       return {
-        kind: 'corrupt',
+        kind: result.kind,
         artifactPath: result.artifactPath,
         error: result.error,
         reportsDir: path.dirname(result.artifactPath),
@@ -1175,27 +1214,41 @@ async function buildWorkspaceStateCards(workspacePath: string): Promise<Dashboar
     const contractProjects = Array.isArray(contractRaw.projects)
       ? contractRaw.projects
       : legacyProjects;
-    const contractVerifyEvidence = await readWorkspaceContractVerifyEvidence(workspacePath);
-    const contractVerifySummary = summarizeWorkspaceContractVerify(
-      contractVerifyEvidence,
-      contractProjects.length
-    );
-    const verifyEvidencePath = path.join(
-      rapidkitDir,
-      'reports',
-      path.basename(WORKSPACE_CONTRACT_VERIFY_REPORT_PATH)
-    );
-    cards.push({
-      id: 'contract',
-      label: 'Workspace Contract',
-      status: contractVerifySummary.status === 'missing' ? 'warn' : contractVerifySummary.status,
-      summary: contractVerifySummary.summary,
-      scope: 'workspace',
-      artifactPath: contractVerifyEvidence ? verifyEvidencePath : contractPath,
-      generatedAt: contractVerifyEvidence?.generatedAt,
-      metrics: { projects: contractProjects.length },
-      blockers: contractVerifySummary.blockers,
-    });
+    const contractVerifyArtifact = await readWorkspaceContractVerifyEvidenceArtifact(workspacePath);
+    if (isArtifactReadFailure(contractVerifyArtifact)) {
+      cards.push(
+        corruptArtifactCard({
+          id: 'contract',
+          label: 'Workspace Contract',
+          artifactPath: contractVerifyArtifact.artifactPath,
+          error: contractVerifyArtifact.error,
+          kind: contractVerifyArtifact.kind,
+        })
+      );
+    } else {
+      const contractVerifyEvidence =
+        contractVerifyArtifact.kind === 'valid' ? contractVerifyArtifact.evidence : null;
+      const contractVerifySummary = summarizeWorkspaceContractVerify(
+        contractVerifyEvidence,
+        contractProjects.length
+      );
+      const verifyEvidencePath = path.join(
+        rapidkitDir,
+        'reports',
+        path.basename(WORKSPACE_CONTRACT_VERIFY_REPORT_PATH)
+      );
+      cards.push({
+        id: 'contract',
+        label: 'Workspace Contract',
+        status: contractVerifySummary.status === 'missing' ? 'warn' : contractVerifySummary.status,
+        summary: contractVerifySummary.summary,
+        scope: 'workspace',
+        artifactPath: contractVerifyEvidence ? verifyEvidencePath : contractPath,
+        generatedAt: contractVerifyEvidence?.generatedAt,
+        metrics: { projects: contractProjects.length },
+        blockers: contractVerifySummary.blockers,
+      });
+    }
   } else {
     cards.push({
       id: 'contract',
@@ -1367,13 +1420,14 @@ async function buildWorkspaceIntelligenceCards(
       : {};
   const workspaceProjectCount = Number(modelSummary.projectCount ?? 0);
 
-  if (modelArtifact.kind === 'corrupt') {
+  if (isArtifactReadFailure(modelArtifact)) {
     cards.push(
       corruptArtifactCard({
         id: 'workspaceModel',
         label: 'Workspace Model',
         artifactPath: modelArtifact.artifactPath,
         error: modelArtifact.error,
+        kind: modelArtifact.kind,
         incidentStudioTarget: 'model',
       })
     );
@@ -1528,13 +1582,14 @@ async function buildWorkspaceIntelligenceCards(
   const impactArtifact = await readJsonArtifact(
     path.join(reportsDir, 'workspace-impact-last-run.json')
   );
-  if (impactArtifact.kind === 'corrupt') {
+  if (isArtifactReadFailure(impactArtifact)) {
     cards.push(
       corruptArtifactCard({
         id: 'workspaceImpact',
         label: 'Workspace Impact',
         artifactPath: impactArtifact.artifactPath,
         error: impactArtifact.error,
+        kind: impactArtifact.kind,
         incidentStudioTarget: 'impact',
       })
     );
@@ -1677,10 +1732,14 @@ async function buildWorkspaceIntelligenceCards(
       ...(!agentsMdExists ? ['AGENTS.md not synced — run agent customization sync'] : []),
       ...(packSummary?.blockers ?? []),
     ];
-    const blockers = [...agentBlockers];
+    const skillsArtifact = await readWorkspaceSkillsIndexArtifact(workspaceRoot);
+    const skillsBlockers = isArtifactReadFailure(skillsArtifact)
+      ? [`Operational skills index is incompatible: ${skillsArtifact.error}`]
+      : [];
+    const blockers = [...agentBlockers, ...skillsBlockers];
     const status = softenEmptyWorkspaceGroundingStatus({
       workspaceProjectCount,
-      status: agentCustomizationPackStatus(pack, packSummary, agentBlockers),
+      status: agentCustomizationPackStatus(pack, packSummary, blockers),
       blockers,
     });
     const mcpDesignRaw = await readJsonIfExists(
@@ -1690,7 +1749,7 @@ async function buildWorkspaceIntelligenceCards(
     const packLine = packSummary
       ? `${packSummary.preset} · ${packSummary.writtenOutputs}/${packSummary.totalOutputs} surfaces`
       : `${existingCount}/${reportEntries.length || 0} reports indexed`;
-    const skillsIndex = await readWorkspaceSkillsIndex(workspaceRoot);
+    const skillsIndex = skillsArtifact.kind === 'valid' ? skillsArtifact.index : null;
     const skillsLine = summarizeOperationalSkills(skillsIndex);
     const hookLine = packSummary?.hooksEnabled
       ? ' · advisory hooks'
@@ -1745,13 +1804,14 @@ async function buildWorkspaceIntelligenceCards(
   const verifyArtifact = await readJsonArtifact(
     path.join(reportsDir, 'workspace-verify-last-run.json')
   );
-  if (verifyArtifact.kind === 'corrupt') {
+  if (isArtifactReadFailure(verifyArtifact)) {
     cards.push(
       corruptArtifactCard({
         id: 'workspaceVerify',
         label: 'Workspace Verify',
         artifactPath: verifyArtifact.artifactPath,
         error: verifyArtifact.error,
+        kind: verifyArtifact.kind,
         incidentStudioTarget: 'release',
       })
     );
@@ -1817,9 +1877,12 @@ async function buildWorkspaceIntelligenceCards(
     );
   }
 
-  const explainReport = await readWorkspaceExplainReport(workspaceRoot);
-  const whyReportDedicated = await readWorkspaceWhyReport(workspaceRoot);
-  const traceReportDedicated = await readWorkspaceTraceReport(workspaceRoot);
+  const explainArtifact = await readWorkspaceExplainReportArtifact(workspaceRoot);
+  const whyArtifact = await readWorkspaceWhyReportArtifact(workspaceRoot);
+  const traceArtifact = await readWorkspaceTraceReportArtifact(workspaceRoot);
+  const explainReport = explainArtifact.kind === 'valid' ? explainArtifact.report : null;
+  const whyReportDedicated = whyArtifact.kind === 'valid' ? whyArtifact.report : null;
+  const traceReportDedicated = traceArtifact.kind === 'valid' ? traceArtifact.report : null;
   const whyReport =
     whyReportDedicated ??
     (explainReport?.target.kind === 'release-blocked' || explainReport?.target.kind === 'blocker'
@@ -1828,7 +1891,18 @@ async function buildWorkspaceIntelligenceCards(
   const traceReport =
     traceReportDedicated ?? (explainReport?.target.kind === 'trace' ? explainReport : null);
 
-  if (explainReport && explainReport.target.kind !== 'trace') {
+  if (isArtifactReadFailure(explainArtifact)) {
+    cards.push(
+      corruptArtifactCard({
+        id: 'workspaceExplain',
+        label: 'Workspace Explain',
+        artifactPath: explainArtifact.artifactPath,
+        error: explainArtifact.error,
+        kind: explainArtifact.kind,
+        incidentStudioTarget: 'release',
+      })
+    );
+  } else if (explainReport && explainReport.target.kind !== 'trace') {
     cards.push(
       buildExplainDerivedEvidenceCard(
         'workspaceExplain',
@@ -1851,7 +1925,18 @@ async function buildWorkspaceIntelligenceCards(
     );
   }
 
-  if (whyReport) {
+  if (isArtifactReadFailure(whyArtifact)) {
+    cards.push(
+      corruptArtifactCard({
+        id: 'workspaceWhy',
+        label: 'Workspace Why',
+        artifactPath: whyArtifact.artifactPath,
+        error: whyArtifact.error,
+        kind: whyArtifact.kind,
+        incidentStudioTarget: 'release',
+      })
+    );
+  } else if (whyReport) {
     cards.push(
       buildExplainDerivedEvidenceCard(
         'workspaceWhy',
@@ -1875,7 +1960,18 @@ async function buildWorkspaceIntelligenceCards(
     );
   }
 
-  if (traceReport) {
+  if (isArtifactReadFailure(traceArtifact)) {
+    cards.push(
+      corruptArtifactCard({
+        id: 'workspaceTrace',
+        label: 'Workspace Trace',
+        artifactPath: traceArtifact.artifactPath,
+        error: traceArtifact.error,
+        kind: traceArtifact.kind,
+        incidentStudioTarget: 'impact',
+      })
+    );
+  } else if (traceReport) {
     cards.push(
       buildExplainDerivedEvidenceCard(
         'workspaceTrace',
@@ -1965,13 +2061,14 @@ export async function buildDashboardEvidenceBundle(input?: {
   const workspaceDoctorArtifact = await readJsonArtifact(
     path.join(reportsDir, 'doctor-last-run.json')
   );
-  if (workspaceDoctorArtifact.kind === 'corrupt') {
+  if (isArtifactReadFailure(workspaceDoctorArtifact)) {
     cards.push(
       corruptArtifactCard({
         id: 'doctor',
         label: 'Workspace Doctor',
         artifactPath: workspaceDoctorArtifact.artifactPath,
         error: workspaceDoctorArtifact.error,
+        kind: workspaceDoctorArtifact.kind,
         incidentStudioTarget: 'doctor',
       })
     );
@@ -1988,13 +2085,14 @@ export async function buildDashboardEvidenceBundle(input?: {
   }
 
   const pipelineArtifact = await readJsonArtifact(path.join(reportsDir, 'pipeline-last-run.json'));
-  if (pipelineArtifact.kind === 'corrupt') {
+  if (isArtifactReadFailure(pipelineArtifact)) {
     cards.push(
       corruptArtifactCard({
         id: 'pipeline',
         label: 'Governance Gate',
         artifactPath: pipelineArtifact.artifactPath,
         error: pipelineArtifact.error,
+        kind: pipelineArtifact.kind,
         incidentStudioTarget: 'readiness',
       })
     );
@@ -2055,13 +2153,14 @@ export async function buildDashboardEvidenceBundle(input?: {
     });
     const projectReportsDir =
       projectDoctor?.reportsDir ?? path.join(projectPath, '.rapidkit', 'reports');
-    if (projectDoctor?.kind === 'corrupt') {
+    if (projectDoctor && isArtifactReadFailure(projectDoctor)) {
       cards.push(
         corruptArtifactCard({
           id: 'projectDoctor',
           label: 'Project Doctor',
           artifactPath: projectDoctor.artifactPath,
           error: projectDoctor.error,
+          kind: projectDoctor.kind,
           scope: 'project',
           incidentStudioTarget: 'doctor',
         })
@@ -2091,13 +2190,14 @@ export async function buildDashboardEvidenceBundle(input?: {
   }
 
   const analyzeArtifact = await readJsonArtifact(path.join(reportsDir, 'analyze-last-run.json'));
-  if (analyzeArtifact.kind === 'corrupt') {
+  if (isArtifactReadFailure(analyzeArtifact)) {
     cards.push(
       corruptArtifactCard({
         id: 'analyze',
         label: 'Analyze',
         artifactPath: analyzeArtifact.artifactPath,
         error: analyzeArtifact.error,
+        kind: analyzeArtifact.kind,
         incidentStudioTarget: 'analyze',
       })
     );
@@ -2151,13 +2251,14 @@ export async function buildDashboardEvidenceBundle(input?: {
   const readinessArtifact = await readJsonArtifact(
     path.join(reportsDir, 'release-readiness-last-run.json')
   );
-  if (readinessArtifact.kind === 'corrupt') {
+  if (isArtifactReadFailure(readinessArtifact)) {
     cards.push(
       corruptArtifactCard({
         id: 'readiness',
         label: 'Readiness',
         artifactPath: readinessArtifact.artifactPath,
         error: readinessArtifact.error,
+        kind: readinessArtifact.kind,
         incidentStudioTarget: 'readiness',
       })
     );
@@ -2250,7 +2351,7 @@ export async function buildDashboardEvidenceBundle(input?: {
     workspacePath,
     projectPath,
     projectName,
-    cards: finalizedCards,
+    cards: finalizedCards.map(attachDashboardIncidentSummary),
     trend,
   };
 }

@@ -35,6 +35,18 @@ export function buildAdvisorStudioPrefill(input: {
   if (handoff?.blockerSignature?.trim()) {
     lines.push(`- Blocker signature: ${handoff.blockerSignature.trim()}`);
   }
+  if (handoff?.incidentSummary) {
+    const summary = handoff.incidentSummary;
+    lines.push(
+      '',
+      '### Incident summary',
+      `- Title: ${summary.title}`,
+      `- Phase: ${summary.phase}`,
+      `- Primary action: ${summary.primaryAction}`,
+      `- Verify required: ${summary.verifyRequired ? 'yes' : 'no'}`,
+      `- Audit status: ${summary.auditStatus}`
+    );
+  }
   if (handoff?.blockers?.length) {
     lines.push('', '### Incident context');
     for (const blocker of handoff.blockers.slice(0, 8)) {

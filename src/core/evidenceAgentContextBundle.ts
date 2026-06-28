@@ -15,12 +15,19 @@ import {
   type EvidenceCardAgentContextInput,
 } from './evidenceCardAgentPrompt.js';
 import {
+  AGENT_GROUNDING_DOC_PATH,
   AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
+  AGENT_REPORTS_INDEX_PATH,
+  AGENTS_MD_PATH,
   WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
+  WORKSPACE_CONTRACT_VERIFY_REPORT_PATH,
   WORKSPACE_EXPLAIN_REPORT_PATH,
+  WORKSPACE_HISTORY_PATH,
   WORKSPACE_IMPACT_REPORT_PATH,
   WORKSPACE_MODEL_REPORT_PATH,
+  WORKSPACE_TRACE_REPORT_PATH,
   WORKSPACE_VERIFY_REPORT_PATH,
+  WORKSPACE_WHY_REPORT_PATH,
   WORKSPACE_SKILLS_INDEX_PATH,
 } from './workspaceIntelligencePaths.js';
 
@@ -47,10 +54,6 @@ export type EvidenceAgentContextBundle = {
   agentPackSummary?: AgentCustomizationPackSummary | null;
   copilotQuestion: string;
 };
-
-const AGENT_REPORTS_INDEX_PATH = '.rapidkit/reports/INDEX.json';
-const AGENT_GROUNDING_DOC_PATH = '.rapidkit/AGENT-GROUNDING.md';
-const AGENTS_MD_PATH = 'AGENTS.md';
 
 const INTELLIGENCE_ATTACHMENTS: Array<{ relativePath: string; label: string; required: boolean }> =
   [
@@ -87,6 +90,26 @@ const INTELLIGENCE_ATTACHMENTS: Array<{ relativePath: string; label: string; req
     {
       relativePath: WORKSPACE_EXPLAIN_REPORT_PATH,
       label: 'Workspace explain report',
+      required: false,
+    },
+    {
+      relativePath: WORKSPACE_WHY_REPORT_PATH,
+      label: 'Workspace why report',
+      required: false,
+    },
+    {
+      relativePath: WORKSPACE_TRACE_REPORT_PATH,
+      label: 'Workspace trace report',
+      required: false,
+    },
+    {
+      relativePath: WORKSPACE_CONTRACT_VERIFY_REPORT_PATH,
+      label: 'Workspace contract verify report',
+      required: false,
+    },
+    {
+      relativePath: WORKSPACE_HISTORY_PATH,
+      label: 'Workspace intelligence history',
       required: false,
     },
     {

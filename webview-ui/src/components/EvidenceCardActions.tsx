@@ -2,7 +2,10 @@ import { Bot, Check, Copy, FileSearch, MoreHorizontal, Play, RefreshCw, Search, 
 import type { DashboardEvidenceCardId } from '@/lib/dashboardEvidence';
 import type { DashboardCommandExecutionChannel } from '@workspai-contracts/dashboardCommandExecutionChannel';
 import { CommandExecutionBadge } from '@/components/CommandExecutionBadge';
-import type { DashboardEvidencePrimaryAction } from '@/lib/dashboardActionContract';
+import type {
+  DashboardEvidenceArtifactState,
+  DashboardEvidencePrimaryAction,
+} from '@/lib/dashboardActionContract';
 import { copyTextWithBrowserFallback } from '@/lib/webviewClipboard';
 
 interface EvidenceCardActionsProps {
@@ -15,7 +18,7 @@ interface EvidenceCardActionsProps {
   showAgentActions?: boolean;
   artifactLabel?: string;
   artifactPath?: string;
-  artifactState?: 'ready' | 'pending';
+  artifactState?: DashboardEvidenceArtifactState;
   compact?: boolean;
   onRun?: () => void;
   onRefresh?: (cardId: DashboardEvidenceCardId) => void;
@@ -54,6 +57,7 @@ export function EvidenceCardActions({
   const isRefreshPending = refreshPending ?? pending;
   const isBusy = pending || isRefreshPending;
   const canRevealArtifact = Boolean(artifactPath?.trim() && onRevealArtifact);
+  const artifactIsCorrupt = artifactState === 'corrupt';
   const shouldExplainArtifact = Boolean(artifactLabel && !canRevealArtifact);
   const resolvedPrimaryAction =
     primaryAction ??
@@ -178,10 +182,18 @@ export function EvidenceCardActions({
                 className="evidence-card-actions__menu-item"
                 onClick={() => onRevealArtifact?.(artifactPath!)}
                 disabled={isBusy}
-                title={`Open ${artifactLabel || 'evidence artifact'}`}
+                title={`${artifactIsCorrupt ? 'Inspect corrupt' : 'Open'} ${
+                  artifactLabel || 'evidence artifact'
+                }`}
               >
                 <FileSearch size={12} aria-hidden="true" />
-                <span>{compact ? 'Artifact' : artifactLabel || 'Open artifact'}</span>
+                <span>
+                  {compact
+                    ? artifactIsCorrupt
+                      ? 'Corrupt'
+                      : 'Artifact'
+                    : artifactLabel || 'Open artifact'}
+                </span>
               </button>
             ) : shouldExplainArtifact ? (
               <button
@@ -191,7 +203,9 @@ export function EvidenceCardActions({
                 title={
                   artifactState === 'pending'
                     ? 'No evidence artifact exists yet. Run the mapped command or refresh this card.'
-                    : 'Evidence artifact is unavailable for this card.'
+                    : artifactState === 'corrupt'
+                      ? 'Evidence artifact is corrupt. Repair evidence or inspect the artifact.'
+                      : 'Evidence artifact is unavailable for this card.'
                 }
               >
                 <FileSearch size={12} aria-hidden="true" />

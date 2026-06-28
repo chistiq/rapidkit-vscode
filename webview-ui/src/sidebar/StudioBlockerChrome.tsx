@@ -5,6 +5,7 @@ import {
   studioModeHeadline,
   type StudioBlockerHandoffView,
   type StudioFixPhase,
+  type StudioIncidentSummaryView,
 } from '@/lib/studioBlockerHandoff';
 import {
   studioVerifyFailureSummary,
@@ -42,6 +43,7 @@ export function StudioBlockerChrome({
 
   const headline = studioModeHeadline(handoff.studioMode);
   const detail = studioModeDetail(handoff);
+  const incident = handoff.incidentSummary;
   const showAutoFix =
     handoff.studioMode === 'FIX' ||
     handoff.studioMode === 'RUN_ONCE' ||
@@ -69,6 +71,27 @@ export function StudioBlockerChrome({
           </small>
         </div>
       </div>
+
+      {incident ? (
+        <div className="ws-sidebar__studio-incident" role="note" aria-label="Incident summary">
+          <div>
+            <span>Phase</span>
+            <strong>{incident.phase}</strong>
+          </div>
+          <div>
+            <span>Action</span>
+            <strong>{incident.primaryAction}</strong>
+          </div>
+          <div>
+            <span>Verify</span>
+            <strong>{incident.verifyRequired ? 'Required' : 'Optional'}</strong>
+          </div>
+          <div>
+            <span>Audit</span>
+            <strong>{incident.auditStatus}</strong>
+          </div>
+        </div>
+      ) : null}
 
       {handoff.blockers.length > 0 ? (
         <div className="ws-sidebar__studio-blockers" role="note">
@@ -127,6 +150,47 @@ export function StudioBlockerChrome({
   );
 }
 
+function parseStudioIncidentSummary(value: unknown): StudioIncidentSummaryView | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const phase =
+    record.phase === 'detect' ||
+    record.phase === 'diagnose' ||
+    record.phase === 'fix' ||
+    record.phase === 'verify' ||
+    record.phase === 'audit'
+      ? record.phase
+      : undefined;
+  const auditStatus =
+    record.auditStatus === 'not-started' ||
+    record.auditStatus === 'pending' ||
+    record.auditStatus === 'saved' ||
+    record.auditStatus === 'failed' ||
+    record.auditStatus === 'unknown'
+      ? record.auditStatus
+      : undefined;
+  if (
+    typeof record.title !== 'string' ||
+    !record.title.trim() ||
+    !phase ||
+    typeof record.primaryAction !== 'string' ||
+    !record.primaryAction.trim() ||
+    typeof record.verifyRequired !== 'boolean' ||
+    !auditStatus
+  ) {
+    return undefined;
+  }
+  return {
+    title: record.title.trim(),
+    phase,
+    primaryAction: record.primaryAction.trim(),
+    verifyRequired: record.verifyRequired,
+    auditStatus,
+  };
+}
+
 export function parseStudioBlockerHandoffView(value: unknown): StudioBlockerHandoffView | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
@@ -166,6 +230,7 @@ export function parseStudioBlockerHandoffView(value: unknown): StudioBlockerHand
       record.studioMode === 'EXPLAIN'
         ? record.studioMode
         : undefined,
+    incidentSummary: parseStudioIncidentSummary(record.incidentSummary),
     verifyCommand: typeof record.verifyCommand === 'string' ? record.verifyCommand : undefined,
     verifyArtifact: typeof record.verifyArtifact === 'string' ? record.verifyArtifact : undefined,
     handoffSource: typeof record.handoffSource === 'string' ? record.handoffSource : undefined,
