@@ -17,7 +17,9 @@ type WorkspaceExplorerLike = {
 type WorkspaceCommandItem = {
   workspace?: { path?: unknown; name?: unknown };
   path?: unknown;
+  workspacePath?: unknown;
   name?: unknown;
+  workspaceName?: unknown;
   since?: unknown;
   maxWorkers?: unknown;
   scope?: unknown;
@@ -180,13 +182,13 @@ function getWorkspaceItemPath(item: unknown): string | undefined {
   }
 
   const typed = asWorkspaceCommandItem(item);
-  const candidate = typed?.workspace?.path ?? typed?.path;
+  const candidate = typed?.workspace?.path ?? typed?.path ?? typed?.workspacePath;
   return typeof candidate === 'string' && candidate.length > 0 ? candidate : undefined;
 }
 
 function getWorkspaceItemName(item: unknown): string | undefined {
   const typed = asWorkspaceCommandItem(item);
-  const candidate = typed?.workspace?.name ?? typed?.name;
+  const candidate = typed?.workspace?.name ?? typed?.name ?? typed?.workspaceName;
   return typeof candidate === 'string' && candidate.length > 0 ? candidate : undefined;
 }
 
@@ -532,21 +534,18 @@ function resolveWorkspaceTarget(
   const selectedPath = selectedWorkspace?.path;
 
   const workspacePath =
-    selectedPath &&
-    itemWorkspacePath &&
-    itemWorkspacePath.length > 0 &&
-    itemWorkspacePath !== selectedPath
-      ? selectedPath
-      : typeof itemWorkspacePath === 'string' && itemWorkspacePath.length > 0
-        ? itemWorkspacePath
-        : selectedPath;
+    typeof itemWorkspacePath === 'string' && itemWorkspacePath.length > 0
+      ? itemWorkspacePath
+      : selectedPath;
 
   const workspaceName =
     workspacePath === selectedPath
       ? (selectedWorkspace?.name ?? itemWorkspaceName)
       : typeof itemWorkspaceName === 'string' && itemWorkspaceName.length > 0
         ? itemWorkspaceName
-        : selectedWorkspace?.name;
+        : workspacePath
+          ? path.basename(workspacePath)
+          : selectedWorkspace?.name;
 
   return { workspacePath, workspaceName };
 }

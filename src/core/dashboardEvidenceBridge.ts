@@ -1028,6 +1028,7 @@ async function buildHandoffCards(workspacePath: string): Promise<DashboardEviden
       generatedAt: typeof shareRaw.generatedAt === 'string' ? shareRaw.generatedAt : undefined,
       artifactPath: path.join(reportsDir, 'share-bundle.json'),
       blockers,
+      incidentStudioTarget: 'release',
     });
   }
 
@@ -1048,6 +1049,7 @@ async function buildHandoffCards(workspacePath: string): Promise<DashboardEviden
         typeof snapshotRaw.generatedAt === 'string' ? snapshotRaw.generatedAt : undefined,
       artifactPath: path.join(reportsDir, 'snapshot-last-run.json'),
       blockers,
+      incidentStudioTarget: 'release',
     });
   }
 

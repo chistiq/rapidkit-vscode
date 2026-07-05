@@ -1,8 +1,36 @@
 const RUNNABLE_PREFIX =
-  /^(npx\s+rapidkit|rapidkit|git|npm|pnpm|yarn|python3?|node|docker|kubectl)\s/i;
+  /^(npx\s+(?:--yes\s+)?(?:--package\s+\S+\s+)?rapidkit|rapidkit|git|npm|pnpm|yarn|python3?|node|docker|kubectl)\s/i;
 
 function stripCommandLabelPrefix(line: string): string {
-  return line.replace(/^(?:verify|next action|run|command)\s*:\s*/i, '').trim();
+  return line
+    .replace(/^run\s+the\s+command\s+/i, '')
+    .replace(/^(?:verify|next action|run|command)\s*:\s*/i, '')
+    .trim();
+}
+
+function trimTrailingInstruction(candidate: string): string {
+  return candidate
+    .replace(
+      /\s+to\s+(?:confirm|refresh|verify|check|run|update|fix|produce|generate|inspect|see|validate)\b[\s\S]*$/i,
+      ''
+    )
+    .replace(/[),.;:]+$/g, '')
+    .trim();
+}
+
+export function extractStudioRunnableCommandFromLine(line: string): string | null {
+  const stripped = trimTrailingInstruction(stripCommandLabelPrefix(line.trim()));
+  const direct = normalizeStudioRunnableCommand(stripped);
+  if (direct) {
+    return direct;
+  }
+  const embedded = stripped.match(
+    /\b(npx\s+(?:--yes\s+)?(?:--package\s+\S+\s+)?rapidkit|rapidkit|git|npm|pnpm|yarn|python3?|node|docker|kubectl)\b[\s\S]*$/i
+  );
+  if (!embedded) {
+    return null;
+  }
+  return normalizeStudioRunnableCommand(trimTrailingInstruction(embedded[0]));
 }
 
 export function normalizeStudioRunnableCommand(raw: string): string | null {
@@ -32,8 +60,7 @@ export function extractStudioCommandsFromText(text: string): string[] {
   }
 
   for (const line of text.split('\n')) {
-    const stripped = stripCommandLabelPrefix(line.trim());
-    const command = normalizeStudioRunnableCommand(stripped);
+    const command = extractStudioRunnableCommandFromLine(line);
     if (command && !found.includes(command)) {
       found.push(command);
     }

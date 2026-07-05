@@ -13,6 +13,7 @@ describe('VSIX packaging exclusions', () => {
     const vscodeignore = read('.vscodeignore');
 
     for (const pattern of [
+      '!dist/**',
       'test-results/**',
       '**/test/**',
       '**/*.map',
@@ -33,7 +34,7 @@ describe('VSIX packaging exclusions', () => {
     expect(packageJson.scripts?.prepackage).toBe('npm run build');
     expect(packageJson.scripts?.build).toContain('--production');
     expect(packageJson.scripts?.['package:ci']).toBe(
-      'npm run build && vsce package --out rapidkit-vscode-${npm_package_version}.vsix'
+      'npm run build && vsce package --no-dependencies --out rapidkit-vscode-${npm_package_version}.vsix'
     );
     expect(packageJson.scripts?.['smoke:vsix-artifact']).toBe(
       'node scripts/inspect-vsix-artifact.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix'
@@ -53,6 +54,7 @@ describe('VSIX packaging exclusions', () => {
     expect(packageJson.scripts?.['release:audit-gate']).toBe(
       'node scripts/npm-audit-gate.mjs --level high'
     );
+    expect(packageJson.scripts?.['soak:studio-reload']).toBe('node scripts/studio-reload-soak.mjs');
     expect(packageJson.scripts?.publish).toBe('npm run publish:ci');
     expect(packageJson.scripts?.publish).not.toBe('vsce publish');
   });
@@ -101,10 +103,17 @@ describe('VSIX packaging exclusions', () => {
       expect(script, denied).toContain(denied);
     }
 
-    expect(electronSmokeScript).toContain("from '@vscode/test-electron'");
-    expect(electronSmokeScript).toContain('extensionDevelopmentPath: extensionDir');
-    expect(electronSmokeScript).toContain('extensionTestsPath: path.join');
+    expect(electronSmokeScript).toContain("downloadAndUnzipVSCode } from '@vscode/test-electron'");
+    expect(electronSmokeScript).toContain(
+      "version: process.env.WORKSPAI_VSCODE_TEST_VERSION || '1.100.0'"
+    );
+    expect(electronSmokeScript).toContain('delete childEnv.ELECTRON_RUN_AS_NODE');
+    expect(electronSmokeScript).toContain('pathToFileURL(workspacePath).toString()');
+    expect(electronSmokeScript).toContain('function runVsCodeSmoke');
+    expect(electronSmokeScript).toContain('`--extensionDevelopmentPath=${extensionDir}`');
+    expect(electronSmokeScript).toContain('`--extensionTestsPath=${extensionTestsPath}`');
     expect(electronSmokeScript).toContain('--disable-workspace-trust');
+    expect(electronSmokeScript).toContain('--folder-uri');
     expect(electronSmokeScript).toContain('workspace-model.json');
     expect(electronSmokeScript).toContain('workspace-explain-last-run.json');
     expect(electronSmokeScript).toContain('workspace-why-last-run.json');

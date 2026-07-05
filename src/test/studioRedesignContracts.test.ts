@@ -142,8 +142,10 @@ describe('StudioRedesign contracts', () => {
     expect(combinedIncidentStudioHostSource).toContain("case 'runStudioAction':");
     expect(combinedIncidentStudioHostSource).toContain("case 'studioMessage':");
     expect(combinedIncidentStudioHostSource).toContain("case 'runAIActionContractCommand':");
+    expect(combinedIncidentStudioHostSource).toContain('isDashboardStudioSidebarOnly');
     expect(welcomeSource).not.toContain("case 'runStudioAction':");
     expect(welcomeSource).not.toContain("case 'studioMessage':");
+    expect(welcomeSource).toContain("get<boolean>('studio.sidebarOnly', true)");
     expect(combinedStudioHostSource).toContain('_handleDashboardStudioAction');
     expect(combinedStudioHostSource).toContain('_handleDashboardStudioMessage');
     expect(combinedStudioHostSource).toContain('_handleDashboardAIActionContractCommand');

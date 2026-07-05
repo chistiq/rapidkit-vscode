@@ -19,7 +19,14 @@ export function collectAppliedPatchPaths(
     .filter(
       (entry) =>
         entry.outcome === 'applied' &&
-        entry.action === 'apply-debug-patch' &&
+        (entry.action === 'apply-debug-patch' ||
+          entry.action === 'file-create' ||
+          entry.action === 'file-append' ||
+          entry.action === 'file-copy' ||
+          entry.action === 'package-json-script' ||
+          entry.action === 'json-edit' ||
+          entry.action === 'env-key-add' ||
+          entry.action === 'makefile-target') &&
         typeof entry.path === 'string' &&
         entry.path.trim().length > 0
     )

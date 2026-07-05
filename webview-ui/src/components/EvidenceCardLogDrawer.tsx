@@ -8,6 +8,7 @@ import { EvidenceCardDetailPreview } from '@/components/EvidenceCardDetailPrevie
 interface EvidenceCardLogDrawerProps {
   card: DashboardEvidenceCard;
   activity?: DashboardActivityEntry[];
+  defaultExpanded?: boolean;
   onOpenOutputChannel?: () => void;
   onRevealArtifact?: (artifactPath: string) => void;
 }
@@ -26,10 +27,11 @@ function relatedActivity(
 export function EvidenceCardLogDrawer({
   card,
   activity = [],
+  defaultExpanded = false,
   onOpenOutputChannel,
   onRevealArtifact,
 }: EvidenceCardLogDrawerProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const preview = buildEvidenceCardLogPreview(card);
   const entries = relatedActivity(card, activity);
   const blockers = card.blockers ?? [];

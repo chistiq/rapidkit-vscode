@@ -303,6 +303,9 @@ export async function tryDispatchCatalogWebviewMessage(
           await showModuleDetails(host, moduleData);
         } else {
           console.error('Module not found:', data);
+          vscode.window.showWarningMessage(
+            'Module details are not available for this catalog item. Refresh the catalog and try again.'
+          );
         }
       }
       break;

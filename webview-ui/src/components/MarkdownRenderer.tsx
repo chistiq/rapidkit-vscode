@@ -13,7 +13,11 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Copy, Play } from 'lucide-react';
-import { normalizeStudioRunnableCommand } from '@/lib/studioCommandActions';
+import { compactStudioPathText } from '@/lib/studioDisplayText';
+import {
+    extractStudioRunnableCommandFromLine,
+    normalizeStudioRunnableCommand,
+} from '@/lib/studioCommandActions';
 
 // ─── Inline tokens ────────────────────────────────────────────────────────────
 
@@ -88,6 +92,14 @@ type Block =
     | { type: 'hr' }
     | { type: 'paragraph'; lines: string[] };
 
+function isFenceOpen(line: string): RegExpMatchArray | null {
+    return line.match(/^\s*```([\w-]*)\s*$/);
+}
+
+function isFenceClose(line: string): boolean {
+    return /^\s*```\s*$/.test(line);
+}
+
 function parseBlocks(markdown: string): Block[] {
     const rawLines = markdown.split('\n');
 
@@ -102,7 +114,7 @@ function parseBlocks(markdown: string): Block[] {
         const line = lines[i];
 
         // ── Fenced code block ───────────────────────────────────────────────
-        const codeOpen = line.match(/^```(\w*)/);
+        const codeOpen = isFenceOpen(line);
         if (codeOpen) {
             const lang = codeOpen[1] || '';
             const codeLines: string[] = [];
@@ -112,13 +124,13 @@ function parseBlocks(markdown: string): Block[] {
             const codeStart = i;
             while (
                 i < lines.length &&
-                !lines[i].startsWith('```') &&
+                !isFenceClose(lines[i]) &&
                 i - codeStart < 500
             ) {
                 codeLines.push(lines[i]);
                 i++;
             }
-            if (i < lines.length && lines[i].startsWith('```')) {
+            if (i < lines.length && isFenceClose(lines[i])) {
                 i++; // consume closing ```
             }
             blocks.push({ type: 'codeblock', lang, lines: codeLines });
@@ -175,7 +187,7 @@ function parseBlocks(markdown: string): Block[] {
             i < lines.length &&
             lines[i].trim() !== '' &&
             !lines[i].match(/^#{1,3}\s/) &&
-            !lines[i].match(/^```/) &&
+            !isFenceOpen(lines[i]) &&
             !lines[i].match(/^[-*+]\s/) &&
             !lines[i].match(/^\d+\.\s/) &&
             !/^(-{3,}|\*{3,}|_{3,})$/.test(lines[i].trim())
@@ -205,6 +217,19 @@ interface MarkdownRendererProps {
     onRunCommand?: (command: string) => void;
 }
 
+function commandFromParagraphLine(line: string): string | null {
+    return extractStudioRunnableCommandFromLine(line);
+}
+
+function copyText(text: string, onCopyCommand?: (command: string) => void): void {
+    const runnable = normalizeStudioRunnableCommand(text);
+    if (runnable && onCopyCommand) {
+        onCopyCommand(runnable);
+        return;
+    }
+    void navigator.clipboard?.writeText(text);
+}
+
 export function MarkdownRenderer({
     content,
     isStreaming,
@@ -232,7 +257,7 @@ export function MarkdownRenderer({
     if (isStreaming) {
         return (
             <div className="md-body md-streaming">
-                {content}
+                {compactStudioPathText(content)}
                 <span className="ai-modal-cursor" aria-hidden="true">▍</span>
             </div>
         );
@@ -250,8 +275,7 @@ export function MarkdownRenderer({
             case 'codeblock': {
                 const codeText = block.lines.join('\n');
                 const runnableCommand = normalizeStudioRunnableCommand(codeText);
-                const showActions =
-                    Boolean(runnableCommand) && Boolean(onCopyCommand || onRunCommand);
+                const displayCodeText = compactStudioPathText(codeText);
                 return (
                     <div key={idx} className="md-code-block">
                         <div className="md-code-block__head">
@@ -260,34 +284,30 @@ export function MarkdownRenderer({
                             ) : (
                                 <div className="md-code-lang">command</div>
                             )}
-                            {showActions && runnableCommand ? (
-                                <div className="md-code-block__actions">
-                                    {onCopyCommand ? (
-                                        <button
-                                            type="button"
-                                            className="md-code-action"
-                                            onClick={() => onCopyCommand(runnableCommand)}
-                                            title="Copy command"
-                                            aria-label="Copy command"
-                                        >
-                                            <Copy size={12} />
-                                        </button>
-                                    ) : null}
-                                    {onRunCommand ? (
-                                        <button
-                                            type="button"
-                                            className="md-code-action md-code-action--run"
-                                            onClick={() => onRunCommand(runnableCommand)}
-                                            title="Run command"
-                                            aria-label="Run command"
-                                        >
-                                            <Play size={12} />
-                                        </button>
-                                    ) : null}
-                                </div>
-                            ) : null}
+                            <div className="md-code-block__actions">
+                                <button
+                                    type="button"
+                                    className="md-code-action"
+                                    onClick={() => copyText(codeText, onCopyCommand)}
+                                    title={runnableCommand ? 'Copy command' : 'Copy code'}
+                                    aria-label={runnableCommand ? 'Copy command' : 'Copy code'}
+                                >
+                                    <Copy size={12} />
+                                </button>
+                                {runnableCommand && onRunCommand ? (
+                                    <button
+                                        type="button"
+                                        className="md-code-action md-code-action--run"
+                                        onClick={() => onRunCommand(runnableCommand)}
+                                        title="Run command"
+                                        aria-label="Run command"
+                                    >
+                                        <Play size={12} />
+                                    </button>
+                                ) : null}
+                            </div>
                         </div>
-                        <pre className="md-code-pre"><code>{codeText}</code></pre>
+                        <pre className="md-code-pre"><code>{displayCodeText}</code></pre>
                     </div>
                 );
             }
@@ -311,14 +331,48 @@ export function MarkdownRenderer({
                 return <hr key={idx} className="md-hr" />;
             case 'paragraph':
                 return (
-                    <p key={idx} className="md-p">
-                        {block.lines.map((line, j) => (
-                            <span key={j}>
-                                {j > 0 && <br />}
-                                {renderInline(line, `${keyPfx}-${j}`)}
-                            </span>
-                        ))}
-                    </p>
+                    <div key={idx} className="md-p">
+                        {block.lines.map((line, j) => {
+                            const command = commandFromParagraphLine(line);
+                            if (command) {
+                                const displayCommand = compactStudioPathText(command);
+                                return (
+                                    <div key={j} className="md-command-card">
+                                        <span className="md-command-card__label">Command</span>
+                                        <code>{displayCommand}</code>
+                                        <div className="md-command-card__actions">
+                                            <button
+                                                type="button"
+                                                className="md-code-action"
+                                                onClick={() => copyText(command, onCopyCommand)}
+                                                title="Copy command"
+                                                aria-label="Copy command"
+                                            >
+                                                <Copy size={12} />
+                                            </button>
+                                            {onRunCommand ? (
+                                                <button
+                                                    type="button"
+                                                    className="md-code-action md-code-action--run"
+                                                    onClick={() => onRunCommand(command)}
+                                                    title="Run command"
+                                                    aria-label="Run command"
+                                                >
+                                                    <Play size={12} />
+                                                </button>
+                                            ) : null}
+                                        </div>
+                                    </div>
+                                );
+                            }
+                            return (
+                                <span key={j}>
+                                    {j > 0 && <br />}
+                                    {renderInline(line, `${keyPfx}-${j}`)}
+                                </span>
+                            );
+                        })}
+                    </div>
                 );
             default:
                 return null;

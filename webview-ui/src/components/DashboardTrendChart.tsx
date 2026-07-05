@@ -47,8 +47,8 @@ function deltaLabel(delta: number | null): { text: string; tone: 'up' | 'down' |
 export function DashboardTrendChart({ trend }: DashboardTrendChartProps) {
   if (!trend || trend.points.length < 2) {
     return (
-      <section className="dashboard-trend dashboard-trend--empty" aria-label="Health and impact trend">
-        <div className="dashboard-trend__header">
+      <section className="ws-dashboard-trend ws-dashboard-trend--empty" aria-label="Health and impact trend">
+        <div className="ws-dashboard-trend__header">
           <span className="ws-kicker">30-day trend</span>
           <p>
             Not enough history yet. Run the Governance Gate or Workspace Verify a few times to chart
@@ -75,8 +75,8 @@ export function DashboardTrendChart({ trend }: DashboardTrendChartProps) {
     health.tone === 'up' ? TrendingUp : health.tone === 'down' ? TrendingDown : Activity;
 
   return (
-    <section className="dashboard-trend" aria-label="Health and impact trend">
-      <div className="dashboard-trend__header">
+    <section className="ws-dashboard-trend" aria-label="Health and impact trend">
+      <div className="ws-dashboard-trend__header">
         <span className="ws-kicker">30-day trend</span>
         <h3>
           <HealthTrendIcon size={15} aria-hidden="true" /> Health &amp; impact
@@ -87,36 +87,36 @@ export function DashboardTrendChart({ trend }: DashboardTrendChartProps) {
       </div>
 
       <svg
-        className="dashboard-trend__chart"
+        className="ws-dashboard-trend__chart"
         viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
         preserveAspectRatio="none"
         role="img"
         aria-label={`Gate health trend ${health.text}, impact risk trend ${risk.text}`}
       >
         <polyline
-          className="dashboard-trend__line dashboard-trend__line--health"
+          className="ws-dashboard-trend__line ws-dashboard-trend__line--health"
           points={gateHealthPoints}
           fill="none"
         />
         <polyline
-          className="dashboard-trend__line dashboard-trend__line--risk"
+          className="ws-dashboard-trend__line ws-dashboard-trend__line--risk"
           points={impactRiskPoints}
           fill="none"
         />
       </svg>
 
-      <div className="dashboard-trend__legend" aria-label="Trend metrics">
-        <span className="dashboard-trend__metric">
-          <span className="dashboard-trend__swatch dashboard-trend__swatch--health" aria-hidden="true" />
+      <div className="ws-dashboard-trend__legend" aria-label="Trend metrics">
+        <span className="ws-dashboard-trend__metric">
+          <span className="ws-dashboard-trend__swatch ws-dashboard-trend__swatch--health" aria-hidden="true" />
           Gate health
-          <strong className={`dashboard-trend__delta dashboard-trend__delta--${health.tone}`}>
+          <strong className={`ws-dashboard-trend__delta ws-dashboard-trend__delta--${health.tone}`}>
             {health.text}
           </strong>
         </span>
-        <span className="dashboard-trend__metric">
-          <span className="dashboard-trend__swatch dashboard-trend__swatch--risk" aria-hidden="true" />
+        <span className="ws-dashboard-trend__metric">
+          <span className="ws-dashboard-trend__swatch ws-dashboard-trend__swatch--risk" aria-hidden="true" />
           Impact risk
-          <strong className={`dashboard-trend__delta dashboard-trend__delta--${risk.tone}`}>
+          <strong className={`ws-dashboard-trend__delta ws-dashboard-trend__delta--${risk.tone}`}>
             {risk.text}
           </strong>
         </span>

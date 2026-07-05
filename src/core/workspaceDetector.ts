@@ -7,6 +7,12 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 import { WorkspaiProject } from '../types';
 import { Logger } from '../utils/logger';
+import { hasWorkspaceRootMarkers } from './workspacePaths';
+
+export interface DetectedWorkspaceRoot {
+  name: string;
+  path: string;
+}
 
 export class WorkspaceDetector {
   private static instance: WorkspaceDetector;
@@ -39,6 +45,30 @@ export class WorkspaceDetector {
 
     this.logger.info(`Detected ${this.projects.length} Workspai project(s)`);
     return this.projects.length > 0;
+  }
+
+  /**
+   * Detect open VS Code folders that are already governed workspace roots but
+   * may not be registered in the Workspai workspace registry yet.
+   */
+  public async detectWorkspaceRoots(): Promise<DetectedWorkspaceRoot[]> {
+    if (!vscode.workspace.workspaceFolders) {
+      return [];
+    }
+
+    const rootsByPath = new Map<string, DetectedWorkspaceRoot>();
+    for (const folder of vscode.workspace.workspaceFolders) {
+      const workspacePath = path.resolve(folder.uri.fsPath);
+      if (!hasWorkspaceRootMarkers(workspacePath)) {
+        continue;
+      }
+      rootsByPath.set(workspacePath, {
+        name: path.basename(workspacePath),
+        path: workspacePath,
+      });
+    }
+
+    return Array.from(rootsByPath.values()).sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /**

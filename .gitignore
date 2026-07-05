@@ -36,6 +36,7 @@ Thumbs.db
 # Build artifacts
 coverage/
 .nyc_output/
+.rapidkit
 
 # Temporary files
 tmp/

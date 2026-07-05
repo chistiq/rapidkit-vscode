@@ -39,7 +39,10 @@ import {
   probeWorkspaceIntelligenceCliCapabilities,
   REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS,
 } from '../core/rapidkitCliCapabilities';
-import { gateRapidkitCliArgs } from '../core/rapidkitEnterpriseCliGate';
+import {
+  gateIncidentStudioRapidkitCommand,
+  gateRapidkitCliArgs,
+} from '../core/rapidkitEnterpriseCliGate';
 import { clearRuntimeCommandSurfaceCache } from '../core/runtimeCommandSurface';
 import { MIN_RAPIDKIT_CLI_VERSION } from '../core/cliVersionCompatibilityContract';
 
@@ -279,6 +282,18 @@ describe('rapidkitCliCapabilities gates', () => {
         featureLabel: 'Workspace Verify',
       })
     ).resolves.toEqual({ allowed: true });
+  });
+
+  it('allows trusted ecosystem remediation commands without RapidKit capability probing', async () => {
+    await expect(
+      gateIncidentStudioRapidkitCommand({
+        command: 'cd "/tmp/ws/api" && dotnet restore',
+        cwd: '/tmp/ws',
+        featureLabel: 'Incident Studio command',
+      })
+    ).resolves.toEqual({ allowed: true });
+
+    expect(mockedRun).not.toHaveBeenCalled();
   });
 
   it('blocks raw rapidkit args when the runtime surface omits the command capability', async () => {

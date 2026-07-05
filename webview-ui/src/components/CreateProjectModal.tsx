@@ -274,18 +274,18 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
             footer={
                 <>
                     {onSwitchToAI && ['fastapi', 'nestjs', 'go', 'springboot', 'dotnet'].includes(framework) && (
-                        <button type="button" className="enterprise-button enterprise-button--ghost" onClick={onSwitchToAI}>
+                        <button type="button" className="ws-btn ws-btn--ghost" onClick={onSwitchToAI}>
                             <Sparkles size={13} />
                             Use AI instead
                         </button>
                     )}
                     <div className="enterprise-modal-actions">
-                        <button type="button" className="enterprise-button enterprise-button--secondary" onClick={onClose}>
+                        <button type="button" className="ws-btn" onClick={onClose}>
                             Cancel
                         </button>
                         <button
                             type="button"
-                            className="enterprise-button enterprise-button--primary"
+                            className="ws-btn ws-btn--primary"
                             onClick={handleCreate}
                             disabled={!canCreate}
                         >
@@ -409,7 +409,7 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
                     <EnterpriseModalSection title="AI module suggestions" meta="Optional">
                         <button
                             type="button"
-                            className="enterprise-button enterprise-button--secondary"
+                            className="ws-btn"
                             onClick={handleAISuggest}
                             disabled={aiSuggestLoading}
                         >

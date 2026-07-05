@@ -16,13 +16,12 @@ function read(relPath: string): string {
 describe('React Advisor tab ↔ host protocol parity (roadmap 2.11e)', () => {
   const secondary = read('webview-ui/src/sidebar/SecondarySidebar.tsx');
   const provider = read('src/ui/webviews/actionsWebviewProvider.ts');
+  const dispatcher = read('src/ui/webviews/actionsWebviewMessageDispatcher.ts');
 
   it('posts the advisor outbound commands the host handles', () => {
     for (const command of ['sidebarImpactQuery', 'sidebarAdvisorAction']) {
       expect(secondary, `React should post "${command}"`).toContain(`'${command}'`);
-      expect(provider, `host should handle "${command}"`).toContain(
-        `message.command === '${command}'`
-      );
+      expect(dispatcher, `host should handle "${command}"`).toContain(`command: '${command}'`);
     }
   });
 
@@ -59,6 +58,16 @@ describe('React Advisor tab ↔ host protocol parity (roadmap 2.11e)', () => {
     expect(provider).toContain("action === 'copy'");
   });
 
+  it('surfaces advisor action failures inside the sidebar instead of console only', () => {
+    expect(provider).toContain("'sidebarAdvisorActionResult'");
+    expect(provider).toContain('Workspace Advisor action failed');
+    expect(provider).toContain('nextAction:');
+    expect(secondary).toContain("case 'sidebarAdvisorActionResult'");
+    expect(secondary).toContain('setAdvisorActionFailure');
+    expect(secondary).toContain('ws-sidebar__advisor-alert');
+    expect(secondary).toContain('advisorActionFailure.nextAction');
+  });
+
   it('persists advisor sessions under the workspaiImpact state key', () => {
     expect(secondary).toContain("useChatSessions('workspaiImpact'");
     const sessions = read('webview-ui/src/sidebar/sidebarSessions.ts');
@@ -75,7 +84,8 @@ describe('React Advisor tab ↔ host protocol parity (roadmap 2.11e)', () => {
     expect(sessionBar).toContain('New chat');
     expect(sessionBar).toContain('Session history');
     expect(sessionsHook).toContain('forceNew');
-    expect(secondary).toContain('forceNew: true');
+    expect(secondary).toContain('forceNew: !editorIssue');
+    expect(secondary).toContain('sessionScopeSnapshot');
     expect(secondary).toContain('impact.newSession()');
   });
 });

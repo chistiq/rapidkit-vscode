@@ -9,18 +9,16 @@ import {
 } from '../core/studioSidebarDashboardRefresh.js';
 import { STUDIO_BLOCKER_HANDOFF_SCHEMA_VERSION } from '../contracts/studio-blocker-handoff-contract.js';
 
-vi.mock('../core/dashboardEvidenceBridge.js', () => ({
-  buildDashboardEvidenceBundle: vi.fn(async () => ({
-    cards: [
-      {
-        id: 'doctor',
-        label: 'Workspace Doctor',
-        status: 'pass',
-        summary: 'ready',
-        scope: 'workspace',
-      },
-    ],
-  })),
+vi.mock('../core/dashboardEvidenceCardRefresh.js', () => ({
+  buildDashboardEvidenceCardsForIds: vi.fn(async () => [
+    {
+      id: 'doctor',
+      label: 'Workspace Doctor',
+      status: 'pass',
+      summary: 'ready',
+      scope: 'workspace',
+    },
+  ]),
 }));
 
 describe('studio sidebar dashboard refresh', () => {

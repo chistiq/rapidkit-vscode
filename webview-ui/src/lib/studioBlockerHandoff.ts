@@ -22,11 +22,14 @@ export type StudioBlockerHandoffView = {
   blockerSignature: string;
   commandRunCount?: number;
   resolutionClass?: string;
+  resolutionHints?: unknown[];
   studioMode?: StudioBlockerExecutionMode;
   incidentSummary?: StudioIncidentSummaryView;
   verifyCommand?: string;
   verifyArtifact?: string;
   handoffSource?: string;
+  workspacePath?: string;
+  projectPath?: string;
 };
 
 export type StudioFixPhase = 'idle' | 'diagnosing' | 'fixing' | 'fix-applied' | 'awaiting-verify';

@@ -104,7 +104,7 @@ export function extractPatchesFromAiResponse(
 
     // Security: prevent path traversal outside workspace
     const resolved = path.resolve(opts.workspacePath, relPath);
-    if (!resolved.startsWith(path.resolve(opts.workspacePath))) {
+    if (!isChildPathOf(opts.workspacePath, resolved)) {
       continue;
     }
 
@@ -125,6 +125,65 @@ export function extractPatchesFromAiResponse(
   }
 
   return Array.from(byPath.values());
+}
+
+function isChildPathOf(parentPath: string, childPath: string): boolean {
+  const relative = path.relative(path.resolve(parentPath), path.resolve(childPath));
+  return (
+    relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative))
+  );
+}
+
+export function normalizePatchesForWorkspaceScope(input: {
+  workspacePath: string;
+  projectPath?: string;
+  patches: FilePatch[];
+}): FilePatch[] {
+  const workspacePath = path.resolve(input.workspacePath);
+  const projectPath = input.projectPath?.trim() ? path.resolve(input.projectPath) : undefined;
+  const projectIsInsideWorkspace = Boolean(
+    projectPath && isChildPathOf(workspacePath, projectPath)
+  );
+
+  const normalizedByPath = new Map<string, FilePatch>();
+
+  for (const patch of input.patches) {
+    const rawRelativePath = patch.relativePath.trim();
+    const absoluteFromWorkspace = path.isAbsolute(rawRelativePath)
+      ? path.resolve(rawRelativePath)
+      : path.resolve(workspacePath, rawRelativePath);
+
+    if (
+      projectPath &&
+      projectIsInsideWorkspace &&
+      !isChildPathOf(projectPath, absoluteFromWorkspace)
+    ) {
+      const absoluteFromProject = path.isAbsolute(rawRelativePath)
+        ? absoluteFromWorkspace
+        : path.resolve(projectPath, rawRelativePath);
+      if (isChildPathOf(projectPath, absoluteFromProject)) {
+        const normalizedPatch = {
+          ...patch,
+          relativePath: path.relative(workspacePath, absoluteFromProject),
+        };
+        normalizedByPath.set(normalizedPatch.relativePath, normalizedPatch);
+        continue;
+      }
+    }
+
+    if (isChildPathOf(workspacePath, absoluteFromWorkspace)) {
+      const normalizedPatch = {
+        ...patch,
+        relativePath: path.relative(workspacePath, absoluteFromWorkspace),
+      };
+      normalizedByPath.set(normalizedPatch.relativePath, normalizedPatch);
+      continue;
+    }
+
+    normalizedByPath.set(patch.relativePath, patch);
+  }
+
+  return Array.from(normalizedByPath.values());
 }
 
 /**
@@ -258,6 +317,13 @@ export async function applyPatches(
       }
 
       const absPath = path.resolve(input.workspacePath, patch.relativePath);
+      if (!isChildPathOf(input.workspacePath, absPath)) {
+        return {
+          ...patch,
+          status: 'failed',
+          failReason: `Refusing to apply patch outside workspace boundary: ${patch.relativePath}`,
+        };
+      }
       const originalContent = await readFile(absPath);
       const isNewFile = originalContent === null;
 

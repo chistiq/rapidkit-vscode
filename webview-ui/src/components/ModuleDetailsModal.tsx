@@ -73,11 +73,11 @@ export function ModuleDetailsModal({ module, onClose }: ModuleDetailsModalProps)
     >
       <div className="modal-chip-row" style={{ marginTop: -4, marginBottom: 12 }}>
         <span
-          className={`modal-chip ${module.status && module.status !== 'stable' ? 'modal-chip--warning' : ''}`}
+          className={`ws-chip ${module.status && module.status !== 'stable' ? 'ws-chip--warn' : 'ws-chip--muted'}`}
         >
           {module.status || 'stable'}
         </span>
-        <span className="modal-chip modal-chip--mono">{module.slug}</span>
+        <span className="ws-chip ws-chip--muted modal-chip--mono">{module.slug}</span>
       </div>
 
       {/* Tabs */}

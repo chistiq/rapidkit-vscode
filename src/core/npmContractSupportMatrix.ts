@@ -33,6 +33,13 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
     usage: 'Reads analyze-last-run.json blockers, score, warnings, and artifact paths.',
   },
   {
+    contractPath: 'artifact-remediation-plan.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Studio cross-artifact repair plan and evidence-card remediation',
+    usage:
+      'Reads artifact-remediation-plan-last-run.json emitted by workspace remediation-plan --ci --write --include-paths so Studio can consume npm-authored repair actions for all governance cards, not only Doctor.',
+  },
+  {
     contractPath: 'backend-import-stack-parity.snapshot.json',
     mode: 'schema-guarded',
     extensionSurface: 'Runtime parity and import-stack guardrails',
@@ -56,6 +63,13 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
     mode: 'evidence-consumed',
     extensionSurface: 'Project health evidence and Project lifecycle',
     usage: 'Reads project doctor evidence for blockers, warnings, health, and capability status.',
+  },
+  {
+    contractPath: 'doctor-remediation-plan.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Studio repair plan, doctor-fix UX, and evidence-card remediation',
+    usage:
+      'Reads doctor-remediation-plan-last-run.json to show ordered, policy-aware repair steps, affected files, risk, and verify commands for Studio handoff.',
   },
   {
     contractPath: 'doctor-workspace-evidence.v1.json',
@@ -179,6 +193,13 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
     mode: 'schema-guarded',
     extensionSurface: 'Studio doctor-fix stdout parsing',
     usage: 'Guards structured fixResult payloads emitted by doctor workspace/project --fix --json.',
+  },
+  {
+    contractPath: 'workspace-intelligence/fact-freshness.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Workspace evidence freshness, Advisor grounding, and Studio verification',
+    usage:
+      'Consumes fact-level freshness metadata embedded in workspace intelligence artifacts so UI surfaces can distinguish durable facts from verify-before-use or live evidence.',
   },
   {
     contractPath: 'workspace-intelligence/workspace-operational-skill.v1.json',

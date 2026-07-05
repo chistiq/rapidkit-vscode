@@ -72,7 +72,8 @@ function validatePackageScripts(repoRoot, errors) {
     'typecheck': 'tsc --noEmit',
     'lint': 'eslint src --ext ts',
     'test': 'vitest run',
-    'package:ci': 'npm run build && vsce package --out rapidkit-vscode-${npm_package_version}.vsix',
+    'package:ci':
+      'npm run build && vsce package --no-dependencies --out rapidkit-vscode-${npm_package_version}.vsix',
     'smoke:vsix-artifact':
       'node scripts/inspect-vsix-artifact.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix',
     'release:audit-gate': 'node scripts/npm-audit-gate.mjs --level high',

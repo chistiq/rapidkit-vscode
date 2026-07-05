@@ -11,7 +11,11 @@ import { Logger } from '../utils/logger';
 import { parseRapidKitError, formatErrorMessage, logDetailedError } from '../utils/errorParser';
 import { CreateWorkspaceOptions, WorkspaiCLI } from '../core/rapidkitCLI';
 import { WorkspaceManager } from '../core/workspaceManager';
-import { isFirstTimeSetup, showFirstTimeSetupMessage } from '../utils/firstTimeSetup';
+import {
+  isFirstTimeSetup,
+  showFirstTimeSetupComplete,
+  showFirstTimeSetupMessage,
+} from '../utils/firstTimeSetup';
 import { updateWorkspaceMetadata } from '../utils/workspaceMarker';
 import { WelcomePanel } from '../ui/panels/welcomePanel';
 import { isPoetryInstalledCached } from '../utils/poetryHelper';
@@ -789,6 +793,18 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
           }
         };
 
+        const context = (globalThis as { extensionContext?: vscode.ExtensionContext })
+          .extensionContext;
+        const setupCompleteShown = context?.globalState.get<boolean>(
+          'workspai.firstTimeSetupCompleteShown',
+          false
+        );
+
+        if (!config.silent && context && !setupCompleteShown) {
+          await context.globalState.update('workspai.firstTimeSetupCompleteShown', true);
+          void showFirstTimeSetupComplete();
+        }
+
         if (config.silent) {
           // Caller owns progress UX, for example the Workspai chat tab.
         } else if (config.suppressPostCreatePrompt) {
@@ -801,8 +817,6 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
         }
 
         // Refresh welcome page if it's open and start governance onboarding chain
-        const context = (globalThis as { extensionContext?: vscode.ExtensionContext })
-          .extensionContext;
         if (context) {
           void WelcomePanel.notifyWorkspaceGovernanceChain(
             config.path,

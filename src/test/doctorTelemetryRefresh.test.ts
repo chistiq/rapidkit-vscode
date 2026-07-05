@@ -77,6 +77,56 @@ describe('doctorTelemetryRefresh', () => {
     controller.dispose();
   });
 
+  it('coalesces rapid report writes in the same workspace into one patch refresh', async () => {
+    const onRefresh = vi.fn();
+    const controller = createDoctorTelemetryRefreshController({ onRefresh, delayMs: 250 });
+    const workspacePath = '/tmp/workspace';
+
+    for (const reportName of [
+      'doctor-last-run.json',
+      'analyze-last-run.json',
+      'release-readiness-last-run.json',
+      'pipeline-last-run.json',
+      'doctor-last-run.json',
+    ]) {
+      controller.schedule(`${workspacePath}/.rapidkit/reports/${reportName}`);
+    }
+
+    vi.advanceTimersByTime(250);
+    await Promise.resolve();
+
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(onRefresh).toHaveBeenCalledWith({
+      workspacePath,
+      reportPath: `${workspacePath}/.rapidkit/reports/doctor-last-run.json`,
+      cardIds: ['doctor', 'analyze', 'readiness', 'pipeline'],
+      refreshMode: 'patch',
+    });
+
+    controller.dispose();
+  });
+
+  it('does not merge report bursts across different workspaces', async () => {
+    const onRefresh = vi.fn();
+    const controller = createDoctorTelemetryRefreshController({ onRefresh, delayMs: 250 });
+
+    controller.schedule('/tmp/first/.rapidkit/reports/doctor-last-run.json');
+    controller.schedule('/tmp/second/.rapidkit/reports/analyze-last-run.json');
+
+    vi.advanceTimersByTime(250);
+    await Promise.resolve();
+
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(onRefresh).toHaveBeenCalledWith({
+      workspacePath: '/tmp/second',
+      reportPath: '/tmp/second/.rapidkit/reports/analyze-last-run.json',
+      cardIds: ['analyze'],
+      refreshMode: 'patch',
+    });
+
+    controller.dispose();
+  });
+
   it('cancels a pending doctor telemetry refresh on dispose', async () => {
     const onRefresh = vi.fn();
     const controller = createDoctorTelemetryRefreshController({ onRefresh, delayMs: 250 });

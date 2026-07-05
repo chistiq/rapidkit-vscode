@@ -1,6 +1,6 @@
-import { AlertTriangle, Bot, FileSearch, Play, RefreshCw, Send, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, ShieldAlert } from 'lucide-react';
+import { EvidenceCardActions } from '@/components/EvidenceCardActions';
 import { evidenceCardPendingLabel } from '@/lib/dashboardEvidencePending';
-import { CommandExecutionBadge } from '@/components/CommandExecutionBadge';
 import type { DashboardEvidenceCard, DashboardEvidencePayload } from '@/lib/dashboardEvidence';
 import {
   buildEvidenceAttentionInbox,
@@ -12,6 +12,7 @@ import { resolveEvidenceFreshness } from '@/lib/dashboardEvidence';
 import { buildDashboardEvidenceActionContract } from '@/lib/dashboardActionContract';
 import type { EvidenceWorkspaceContext } from '@/lib/dashboardEvidenceDirectRun';
 import { resolveEvidenceProjectAttribution } from '@/lib/dashboardEvidenceProjectAttribution';
+import { buildDashboardIncidentCopy } from '@/lib/dashboardIncidentContract';
 
 interface EvidenceAttentionInboxProps {
   evidence: DashboardEvidencePayload | null;
@@ -63,9 +64,8 @@ function AttentionRow({
   const Icon = item.severity === 'fail' ? ShieldAlert : AlertTriangle;
   const freshness = resolveEvidenceFreshness(item.card);
   const actionContract = buildDashboardEvidenceActionContract(item.card, { evidence, workspace });
+  const incident = buildDashboardIncidentCopy({ card: item.card, contract: actionContract });
   const commandAction = actionContract.commandAction;
-  const canRevealArtifact = Boolean(actionContract.artifactPath?.trim() && onRevealArtifact);
-  const shouldExplainArtifact = !canRevealArtifact && actionContract.artifactState === 'pending';
   const projectAttribution = resolveEvidenceProjectAttribution(item.card, evidence);
   const pendingLabel = evidenceCardPendingLabel(
     item.card.id,
@@ -87,10 +87,10 @@ function AttentionRow({
           </small>
         ) : null}
         <small className="evidence-attention-inbox__trail">
-          <span>{actionContract.commandLabel}</span>
-          <span>{actionContract.artifactLabel}</span>
-          <span>{actionContract.studioLabel}</span>
-          <span>{actionContract.copilotLabel}</span>
+          <span>Incident</span>
+          <span>{incident.phaseLabel}</span>
+          <span>{incident.primaryAction}</span>
+          <span>{incident.artifactLabel}</span>
         </small>
         {!pending && freshness.status === 'stale' ? (
           <small className={`evidence-freshness evidence-freshness--${freshness.status}`}>
@@ -118,65 +118,36 @@ function AttentionRow({
       )}
       {onRunCommand ||
       onRefreshEvidenceCard ||
-      canRevealArtifact ||
-      shouldExplainArtifact ||
+      actionContract.artifactPath ||
       onAskStudio ||
       onSendToCopilot ? (
         <div className="evidence-attention-inbox__actions">
-          {commandAction && onRunCommand ? (
-            <button
-              type="button"
-              className="ws-btn ws-btn--primary ws-btn--compact evidence-card-actions__run"
-              onClick={() => onRunCommand(commandAction.command, commandAction.commandData)}
-              disabled={pending}
-              title={`Run ${commandAction.label}`}
-            >
-              <Play size={12} aria-hidden="true" />
-              <span>{runPending ? 'Running…' : 'Run'}</span>
-              <CommandExecutionBadge channel={actionContract.executionChannel} compact />
-            </button>
-          ) : null}
-          {onRefreshEvidenceCard ? (
-            <button
-              type="button"
-              className="ws-btn ws-btn--compact"
-              onClick={() => onRefreshEvidenceCard(item.card.id)}
-              disabled={pending}
-              aria-busy={refreshPending || undefined}
-              title={refreshPending ? 'Refreshing…' : 'Refresh this card from disk'}
-            >
-              <RefreshCw
-                size={12}
-                aria-hidden="true"
-                className={refreshPending ? 'spinning' : undefined}
-              />
-              {refreshPending ? 'Refreshing…' : 'Refresh'}
-            </button>
-          ) : null}
-          {canRevealArtifact ? (
-            <button
-              type="button"
-              className="ws-btn ws-btn--compact"
-              onClick={() =>
-                actionContract.artifactPath && onRevealArtifact?.(actionContract.artifactPath)
-              }
-              disabled={pending}
-              title={`Open ${actionContract.artifactLabel}`}
-            >
-              <FileSearch size={12} aria-hidden="true" />
-              Artifact
-            </button>
-          ) : shouldExplainArtifact ? (
-            <button
-              type="button"
-              className="ws-btn ws-btn--compact"
-              disabled
-              title="No evidence artifact exists yet. Run the mapped command or refresh this card."
-            >
-              <FileSearch size={12} aria-hidden="true" />
-              No artifact
-            </button>
-          ) : null}
+          <EvidenceCardActions
+            cardId={item.card.id}
+            runLabel={actionContract.commandLabel}
+            pending={runPending || pending}
+            refreshPending={refreshPending}
+            canRun={Boolean(commandAction && onRunCommand)}
+            canRefresh={Boolean(onRefreshEvidenceCard)}
+            showAgentActions
+            compact
+            studioVariant="ghost"
+            primaryAction={actionContract.primaryAction}
+            copyCommandText={commandAction?.command}
+            artifactLabel={actionContract.artifactLabel}
+            artifactPath={actionContract.artifactPath}
+            artifactState={actionContract.artifactState}
+            executionChannel={actionContract.executionChannel}
+            onRun={
+              commandAction && onRunCommand
+                ? () => onRunCommand(commandAction.command, commandAction.commandData)
+                : undefined
+            }
+            onRefresh={onRefreshEvidenceCard}
+            onRevealArtifact={onRevealArtifact}
+            onAskStudio={onAskStudio}
+            onSendToCopilot={onSendToCopilot}
+          />
           {projectAttribution && onOpenProjectLifecycle ? (
             <button
               type="button"
@@ -186,30 +157,6 @@ function AttentionRow({
               title={`Open Project lifecycle for ${projectAttribution.label}`}
             >
               Project
-            </button>
-          ) : null}
-          {onAskStudio ? (
-            <button
-              type="button"
-              className="ws-btn ws-btn--compact"
-              onClick={onAskStudio}
-              disabled={pending}
-              title="Ask Studio about this evidence"
-            >
-              <Bot size={12} aria-hidden="true" />
-              Studio
-            </button>
-          ) : null}
-          {onSendToCopilot ? (
-            <button
-              type="button"
-              className="ws-btn ws-btn--compact"
-              onClick={onSendToCopilot}
-              disabled={pending}
-              title="Send evidence pack to Copilot with workspace path"
-            >
-              <Send size={12} aria-hidden="true" />
-              Copilot
             </button>
           ) : null}
         </div>

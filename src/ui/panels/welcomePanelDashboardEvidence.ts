@@ -17,6 +17,8 @@ import {
 } from '../../core/dashboardOpsChainBridge';
 import { resolveReportBinding } from '../../core/dashboardReportRegistry';
 import { formatTtfvLabel, getTtfvRecord } from '../../core/ttfvBridge';
+import { getRetentionMilestones } from '../../core/retentionMilestones';
+import { buildRetentionAnalyticsPayload } from '../../core/retentionAnalytics';
 import type { DashboardEvidenceRefreshContext } from './doctorTelemetryRefresh';
 import type { DashboardSelectedProject } from './welcomePanelDashboardCommands';
 import type { RecentWorkspaceEntry } from './welcomePanelRecentWorkspaces';
@@ -107,6 +109,8 @@ export async function sendDashboardEvidence(
   const isFreshInstall = recentWorkspaceCount === 0 && !hasActiveWorkspace;
   const ttfvRecord = getTtfvRecord(host.context);
   const ttfvLabel = ttfvRecord?.ttfvMs != null ? formatTtfvLabel(ttfvRecord.ttfvMs) : null;
+  const retentionMilestones = getRetentionMilestones(host.context);
+  const retentionCohortSummary = buildRetentionAnalyticsPayload(host.context);
 
   const isPatch =
     normalizedContext?.refreshMode === 'patch' &&
@@ -205,6 +209,16 @@ export async function sendDashboardEvidence(
             recentWorkspaceCount,
             hasActiveWorkspace,
             ttfvLabel,
+            cohortSummary: retentionCohortSummary,
+            milestones: {
+              firstArtifactGenerated: Boolean(retentionMilestones.firstArtifactGeneratedAt),
+              firstBlockerFixed: Boolean(retentionMilestones.firstBlockerFixedAt),
+              studioOpened: Boolean(retentionMilestones.studioOpenedAt),
+              verifyPassAfterStudioFix: Boolean(retentionMilestones.verifyPassAfterStudioFixAt),
+              returnToDashboardAfterVerify: Boolean(
+                retentionMilestones.returnToDashboardAfterVerifyAt
+              ),
+            },
           },
           trend: bundle.trend ?? null,
           refreshMode: 'full',

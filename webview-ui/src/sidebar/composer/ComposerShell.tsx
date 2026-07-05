@@ -15,6 +15,7 @@ interface ComposerShellProps {
   onRefreshModels?: () => void;
   onOpenAdd: () => void;
   addLabel?: string;
+  contextLabel?: string;
   drawer?: React.ReactNode;
 }
 
@@ -65,6 +66,11 @@ export function ComposerShell(props: ComposerShellProps) {
         className={`ws-composer__surface${props.disabled ? ' is-disabled' : ''}`}
         aria-label="Message composer"
       >
+        {props.contextLabel ? (
+          <div className="ws-composer__context" title={props.contextLabel}>
+            {props.contextLabel}
+          </div>
+        ) : null}
         <textarea
           ref={textareaRef}
           className="ws-composer__input"

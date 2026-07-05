@@ -311,7 +311,7 @@ export function ModuleBrowser({
           <small>
             {isCatalogSurface
               ? 'Browse modules and starter surfaces before installing into a supported project'
-              : dashboardScopeDetail(scope) || selectedProjectMeta}
+              : dashboardScopeDetail(scope, { showPaths: false }) || selectedProjectMeta}
           </small>
         </div>
         <div className="module-browser-summary__stats" aria-label="Module inventory">

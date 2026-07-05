@@ -32,6 +32,11 @@ interface CreateTabProps {
   onApprovePlan: (plan: CreationPlan) => void;
   onRevisePlan: () => void;
   onManualCreate: (input: ManualWorkspaceInput | { mode: 'project'; name: string; framework: string }) => void;
+  onBootstrapWorkspace: (input: {
+    workspacePath: string;
+    workspaceName?: string;
+    profile?: string;
+  }) => void;
   onFocusView: (target: 'workspaces' | 'projects') => void;
 }
 
@@ -130,6 +135,7 @@ export function CreateTab(props: CreateTabProps) {
             onRevise={props.onRevisePlan}
             onFocus={props.onFocusView}
             onCreateManual={() => setDrawer('workspace')}
+            onBootstrapWorkspace={props.onBootstrapWorkspace}
           />
         ))}
       </div>
@@ -162,6 +168,16 @@ function looksLikeFilesystemPath(value: string): boolean {
   );
 }
 
+function displayNameFromPath(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const normalized = trimmed.replace(/[\\/]+$/, '');
+  const segments = normalized.split(/[\\/]/).filter(Boolean);
+  return segments.at(-1) ?? normalized;
+}
+
 function CreateMessageView({
   message,
   agentActive = false,
@@ -169,6 +185,7 @@ function CreateMessageView({
   onRevise,
   onFocus,
   onCreateManual,
+  onBootstrapWorkspace,
 }: {
   message: CreateMessage;
   agentActive?: boolean;
@@ -176,12 +193,21 @@ function CreateMessageView({
   onRevise: () => void;
   onFocus: (target: 'workspaces' | 'projects') => void;
   onCreateManual: () => void;
+  onBootstrapWorkspace: (input: {
+    workspacePath: string;
+    workspaceName?: string;
+    profile?: string;
+  }) => void;
 }) {
   const role = message.role === 'user' ? 'user' : 'ai';
 
   return (
     <SidebarMessage role={role} agentActive={agentActive}>
-      {renderCreateBody(message, { onApprove, onRevise, onFocus, onCreateManual }, agentActive)}
+      {renderCreateBody(
+        message,
+        { onApprove, onRevise, onFocus, onCreateManual, onBootstrapWorkspace },
+        agentActive
+      )}
     </SidebarMessage>
   );
 }
@@ -193,6 +219,11 @@ function renderCreateBody(
     onRevise: () => void;
     onFocus: (target: 'workspaces' | 'projects') => void;
     onCreateManual: () => void;
+    onBootstrapWorkspace: (input: {
+      workspacePath: string;
+      workspaceName?: string;
+      profile?: string;
+    }) => void;
   },
   agentActive = false
 ) {
@@ -289,11 +320,40 @@ function renderCreateBody(
       );
     }
     case 'manual-done':
+      const canBootstrapWorkspace = Boolean(message.workspacePath);
+      const workspaceLabel =
+        message.mode === 'workspace'
+          ? message.name || displayNameFromPath(message.workspacePath)
+          : displayNameFromPath(message.workspacePath);
+      const projectLabel =
+        message.mode === 'project' ? message.name || displayNameFromPath(message.projectPath) : undefined;
       return (
         <>
           <strong>{message.mode === 'project' ? 'Project created.' : 'Workspace created.'}</strong>
           {message.summary ? <p>{message.summary}</p> : null}
+          {workspaceLabel || projectLabel ? (
+            <p className="ws-sidebar__path-hint">
+              {projectLabel ? <>Project: {projectLabel}</> : null}
+              {projectLabel && workspaceLabel ? ' · ' : null}
+              {workspaceLabel ? <>Workspace: {workspaceLabel}</> : null}
+            </p>
+          ) : null}
           <div className="ws-sidebar__inline-actions">
+            {canBootstrapWorkspace ? (
+              <button
+                type="button"
+                className="ws-sidebar__inline"
+                onClick={() =>
+                  actions.onBootstrapWorkspace({
+                    workspacePath: message.workspacePath as string,
+                    workspaceName: message.mode === 'workspace' ? message.name : undefined,
+                    profile: message.profile,
+                  })
+                }
+              >
+                Bootstrap workspace
+              </button>
+            ) : null}
             <button
               type="button"
               className="ws-sidebar__inline"

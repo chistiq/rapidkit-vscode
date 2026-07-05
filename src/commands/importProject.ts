@@ -84,6 +84,36 @@ const OPEN_STUDIO_ACTION = 'Open Studio';
 const VIEW_ARCHITECTURE_ACTION = 'View Architecture Map';
 const HEALTH_CHECK_ACTION = 'Run Health Check';
 const BATCH_IMPORT_CONCURRENCY = 3;
+const PICK_WORKSPACE_ACTION = 'Pick Workspace';
+const CREATE_WORKSPACE_ACTION = 'Create Workspace';
+const USE_DEFAULT_WORKSPACE_ACTION = 'Use Default Workspace';
+
+async function showImportWorkspaceResolutionHelp(input: {
+  title: string;
+  detail: string;
+}): Promise<void> {
+  const action = await vscode.window.showWarningMessage(
+    `${input.title}\n${input.detail}\nNext: pick a registered workspace, create one, or use the managed default workspace.`,
+    PICK_WORKSPACE_ACTION,
+    CREATE_WORKSPACE_ACTION,
+    USE_DEFAULT_WORKSPACE_ACTION
+  );
+
+  if (action === PICK_WORKSPACE_ACTION) {
+    await vscode.commands.executeCommand('workspai.quickSwitchWorkspace');
+    return;
+  }
+
+  if (action === CREATE_WORKSPACE_ACTION) {
+    await vscode.commands.executeCommand('workspai.createWorkspace');
+    return;
+  }
+
+  if (action === USE_DEFAULT_WORKSPACE_ACTION) {
+    const ensured = await ensureManagedDefaultWorkspace();
+    await vscode.commands.executeCommand('workspai.selectWorkspace', ensured.path);
+  }
+}
 
 function summarizeC06Status(input: {
   evaluated: boolean;
@@ -332,9 +362,11 @@ async function promptWorkspaceSelectionFromRegistry(): Promise<ResolvedWorkspace
 
     const registered = await registerManagedWorkspacePath(folderPath);
     if (!registered) {
-      vscode.window.showErrorMessage(
-        'Selected folder is not a valid Workspai workspace. Use Auto or New to create one.'
-      );
+      await showImportWorkspaceResolutionHelp({
+        title: 'Selected folder is not a governed Workspai workspace.',
+        detail:
+          'Import needs a workspace root with .rapidkit-workspace or .rapidkit/workspace.json.',
+      });
       return null;
     }
 
@@ -526,7 +558,10 @@ async function resolveDestinationProjectPath(
 
   destinationPath = path.join(workspacePath, normalizeProjectName(renamed));
   if (await fs.pathExists(destinationPath)) {
-    vscode.window.showErrorMessage('Destination project already exists with the selected name.');
+    await showImportWorkspaceResolutionHelp({
+      title: 'Destination project already exists.',
+      detail: `Choose another workspace or rename the imported project before using "${normalizeProjectName(renamed)}".`,
+    });
     return null;
   }
 
@@ -541,14 +576,19 @@ async function importFromFolderPath(
 ): Promise<{ project: ImportedProject; workspacePath: string } | null> {
   const sourceStats = await fs.stat(sourcePath).catch(() => null);
   if (!sourceStats || !sourceStats.isDirectory()) {
-    vscode.window.showErrorMessage('Dropped path is not a folder. Drop a project directory.');
+    await showImportWorkspaceResolutionHelp({
+      title: 'Import source is not a project folder.',
+      detail: 'Drop or select a directory that contains the project you want to adopt/import.',
+    });
     return null;
   }
 
   if (workspacePath && isSameOrInsideDirectory(workspacePath, sourcePath)) {
-    vscode.window.showErrorMessage(
-      'Import source must be outside the current workspace root. Choose an external project folder.'
-    );
+    await showImportWorkspaceResolutionHelp({
+      title: 'Import source is inside the destination workspace.',
+      detail:
+        'Use Project Create for new in-workspace projects, or choose an external folder for import/adopt.',
+    });
     return null;
   }
 
@@ -1160,6 +1200,11 @@ export async function importProjectCommand(
       result: 'cancelled',
       reason: 'workspace-resolution-dismissed',
     });
+    await showImportWorkspaceResolutionHelp({
+      title: 'Project import needs a destination workspace.',
+      detail:
+        'No workspace was selected for this import. Workspai can continue after you pick, create, or use the default workspace.',
+    });
     return;
   }
 
@@ -1268,6 +1313,9 @@ export async function importProjectCommand(
     });
     const message = error instanceof Error ? error.message : String(error);
     logger.error('Project import failed', error);
-    vscode.window.showErrorMessage(`Project import failed: ${message}`);
+    await showImportWorkspaceResolutionHelp({
+      title: 'Project import failed.',
+      detail: message,
+    });
   }
 }

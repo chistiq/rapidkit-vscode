@@ -17,6 +17,13 @@ interface WorkspaceOverviewProps {
   onOpenRunGovernance?: () => void;
 }
 
+export function formatWorkspaceOverviewTtfvCopy(ttfvLabel?: string | null): string | null {
+  if (!ttfvLabel) {
+    return null;
+  }
+  return `First evidence generated in ${ttfvLabel}`;
+}
+
 export function WorkspaceOverview({
   workspaceStatus,
   evidence = null,
@@ -29,7 +36,7 @@ export function WorkspaceOverview({
 
   const evidenceValue = homeEvidenceMetricValue(evidence, evidenceAttentionCount);
   const governanceValue = homeGovernanceMetricValue(evidence, operateAttentionCount, hasWorkspace);
-  const ttfvLabel = evidence?.onboarding?.ttfvLabel ?? null;
+  const ttfvCopy = formatWorkspaceOverviewTtfvCopy(evidence?.onboarding?.ttfvLabel);
 
   const metrics = [
     {
@@ -68,9 +75,9 @@ export function WorkspaceOverview({
               ? 'Workspace-first signals with project attribution when needed'
               : 'Open a workspace to unlock governed operations'}
           </small>
-          {ttfvLabel ? (
-            <small className="workspace-overview-ttfv" aria-label="Time to first value">
-              Time to first value: {ttfvLabel}
+          {ttfvCopy ? (
+            <small className="workspace-overview-ttfv" aria-label="First evidence timing">
+              {ttfvCopy}
             </small>
           ) : null}
         </div>

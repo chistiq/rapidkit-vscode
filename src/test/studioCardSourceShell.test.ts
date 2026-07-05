@@ -34,4 +34,20 @@ describe('studioCardSourceShell', () => {
     expect(CARD_SOURCE_SHELL.workspaceImpact).toContain('workspace impact --from');
     expect(CARD_SOURCE_SHELL.workspaceVerify).toContain('workspace verify');
   });
+
+  it('uses deterministic CI mode for bootstrap evidence refreshes', () => {
+    expect(CARD_SOURCE_SHELL.bootstrap).toBe('npx rapidkit bootstrap --ci --json');
+  });
+
+  it('uses an explicit archive output path for Studio archive refreshes', () => {
+    expect(CARD_SOURCE_SHELL.archive).toBe(
+      'npx rapidkit workspace export --output team-workspace.rapidkit-archive.zip --json'
+    );
+  });
+
+  it('uses the dashboard evidence share bundle path for Studio share refreshes', () => {
+    expect(CARD_SOURCE_SHELL.share).toBe(
+      'npx rapidkit workspace share --output .rapidkit/reports/share-bundle.json --json'
+    );
+  });
 });

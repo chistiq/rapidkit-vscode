@@ -24,6 +24,30 @@ import {
 import { WelcomePanel } from '../panels/welcomePanel';
 
 const WATCHER_REFRESH_DEBOUNCE_MS = 250;
+const WORKSPACE_ARCHIVE_RECOVERY_DOCS_URL = 'https://www.workspai.com/docs/troubleshooting';
+const ARCHIVE_RECOVERY_DOCS_ACTION = 'Open Docs';
+const ARCHIVE_RECOVERY_FOLDER_ACTION = 'Import Folder Instead';
+
+function formatArchiveVerificationDetails(
+  input: ReturnType<typeof verifyWorkspaceArchive>
+): string {
+  return [
+    input.mismatches.length
+      ? `Checksum mismatch: ${input.mismatches.map((item) => item.path).join(', ')}`
+      : '',
+    input.missingArchiveEntries.length
+      ? `Missing archive entries: ${input.missingArchiveEntries.join(', ')}`
+      : '',
+    input.extraArchiveEntries.length
+      ? `Unexpected archive entries: ${input.extraArchiveEntries.join(', ')}`
+      : '',
+    input.missingChecksumFiles.length
+      ? `Missing checksum records: ${input.missingChecksumFiles.join(', ')}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('; ');
+}
 
 export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<WorkspaceTreeItem> {
   private _onDidChangeTreeData: vscode.EventEmitter<WorkspaceTreeItem | undefined | null | void> =
@@ -40,10 +64,12 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
   private profileCache: Map<string, string | undefined> = new Map();
   private moduleCountCache: Map<string, number> = new Map();
   private _backgroundLoadInProgress = false;
+  private _initialLoadPromise: Promise<void>;
+  private _initialSelectionPublished = false;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
-    this.loadWorkspaces();
+    this._initialLoadPromise = this.loadWorkspaces({ publishSelection: false });
     this.setupFileWatcher();
   }
 
@@ -264,19 +290,37 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
     }
   }
 
-  private async loadWorkspaces(): Promise<void> {
+  private async loadWorkspaces(options: { publishSelection?: boolean } = {}): Promise<void> {
+    const publishSelection = options.publishSelection !== false;
     this.workspaces = await this.workspaceManager.loadWorkspaces();
 
     // Auto-select first workspace if none selected
     if (!this.selectedWorkspace && this.workspaces.length > 0) {
       this.selectedWorkspace = this.workspaces[0];
-      vscode.commands.executeCommand('workspai.workspaceSelected', this.selectedWorkspace);
-      // Set context key for toolbar buttons
-      vscode.commands.executeCommand('setContext', 'workspai.workspaceSelected', true);
-    } else if (this.workspaces.length === 0) {
+      if (publishSelection) {
+        await this.publishSelectedWorkspaceContext();
+      }
+    } else if (this.workspaces.length === 0 && publishSelection) {
       // No workspaces - clear context
-      vscode.commands.executeCommand('setContext', 'workspai.workspaceSelected', false);
+      await vscode.commands.executeCommand('setContext', 'workspai.workspaceSelected', false);
     }
+  }
+
+  public async whenReady(): Promise<void> {
+    await this._initialLoadPromise;
+  }
+
+  public async publishSelectedWorkspaceContext(): Promise<void> {
+    if (this._initialSelectionPublished) {
+      return;
+    }
+    if (!this.selectedWorkspace) {
+      await vscode.commands.executeCommand('setContext', 'workspai.workspaceSelected', false);
+      return;
+    }
+    await vscode.commands.executeCommand('setContext', 'workspai.workspaceSelected', true);
+    await vscode.commands.executeCommand('workspai.workspaceSelected', this.selectedWorkspace);
+    this._initialSelectionPublished = true;
   }
 
   public async addWorkspace(): Promise<void> {
@@ -436,6 +480,24 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
     return this.importArchivePath(archivePath);
   }
 
+  private async showArchiveImportRecovery(input: { title: string; detail: string }): Promise<void> {
+    const action = await vscode.window.showWarningMessage(
+      `${input.title}\n${input.detail}\nNext: use a verified Workspai archive, import the extracted workspace folder, or open troubleshooting docs.`,
+      ARCHIVE_RECOVERY_DOCS_ACTION,
+      ARCHIVE_RECOVERY_FOLDER_ACTION,
+      'OK'
+    );
+
+    if (action === ARCHIVE_RECOVERY_DOCS_ACTION) {
+      await vscode.env.openExternal(vscode.Uri.parse(WORKSPACE_ARCHIVE_RECOVERY_DOCS_URL));
+      return;
+    }
+
+    if (action === ARCHIVE_RECOVERY_FOLDER_ACTION) {
+      await this.importFromFolder();
+    }
+  }
+
   private async importFromRemoteArchive(): Promise<WorkspaiWorkspace | undefined> {
     const archiveUrl = await vscode.window.showInputBox({
       title: 'Import Remote Workspace Archive',
@@ -489,9 +551,10 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
       if (downloaded?.tempRoot) {
         await fs.remove(downloaded.tempRoot).catch(() => undefined);
       }
-      vscode.window.showErrorMessage(
-        `Failed to import remote archive: ${error instanceof Error ? error.message : String(error)}`
-      );
+      await this.showArchiveImportRecovery({
+        title: 'Remote workspace archive import failed.',
+        detail: error instanceof Error ? error.message : String(error),
+      });
       return undefined;
     }
   }
@@ -533,25 +596,13 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
 
           const verification = verifyWorkspaceArchive({ archivePath });
           if (verification.status !== 'passed') {
-            const details = [
-              verification.mismatches.length
-                ? `mismatches: ${verification.mismatches.map((item) => item.path).join(', ')}`
-                : '',
-              verification.missingArchiveEntries.length
-                ? `missing entries: ${verification.missingArchiveEntries.join(', ')}`
-                : '',
-              verification.extraArchiveEntries.length
-                ? `unexpected entries: ${verification.extraArchiveEntries.join(', ')}`
-                : '',
-              verification.missingChecksumFiles.length
-                ? `missing checksums: ${verification.missingChecksumFiles.join(', ')}`
-                : '',
-            ]
-              .filter(Boolean)
-              .join('; ');
-            throw new Error(
-              `Archive integrity verification failed${details ? ` (${details})` : ''}.`
-            );
+            await this.showArchiveImportRecovery({
+              title: 'Archive could not be verified.',
+              detail:
+                formatArchiveVerificationDetails(verification) ||
+                'The archive is missing signed manifest or checksum evidence.',
+            });
+            return undefined;
           }
 
           const verificationAction = await vscode.window.showInformationMessage(
@@ -615,9 +666,10 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
 
           return undefined;
         } catch (error) {
-          vscode.window.showErrorMessage(
-            `Failed to import archive: ${error instanceof Error ? error.message : String(error)}`
-          );
+          await this.showArchiveImportRecovery({
+            title: 'Workspace archive import failed.',
+            detail: error instanceof Error ? error.message : String(error),
+          });
           return undefined;
         } finally {
           for (const cleanupPath of options?.cleanupPaths || []) {
@@ -788,6 +840,7 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
 
     // Fire event for other views to update
     await vscode.commands.executeCommand('workspai.workspaceSelected', workspace);
+    this._initialSelectionPublished = true;
   }
 
   public getSelectedWorkspace(): WorkspaiWorkspace | null {

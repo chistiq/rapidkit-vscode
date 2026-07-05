@@ -34,7 +34,10 @@ export function openTerminal(options: TerminalOpenOptions): vscode.Terminal {
 
 export function runCommandsInTerminal(options: TerminalExecutionOptions): vscode.Terminal {
   const terminal = openTerminal(options);
-  appendCommandsToTerminal(terminal, options.commands);
+  appendCommandsToTerminal(terminal, [
+    ...(options.cwd ? [buildShellCommand('cd', [options.cwd])] : []),
+    ...options.commands,
+  ]);
 
   return terminal;
 }

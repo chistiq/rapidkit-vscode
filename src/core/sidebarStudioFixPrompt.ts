@@ -1,12 +1,15 @@
 import type { StudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
+import type { DoctorRemediationPlanView } from './doctorRemediationPlanReader.js';
 import { shouldForbidSourceCommandRerun } from './studioBlockerResolution.js';
 
 export function buildSidebarStudioPrompt(input: {
   task: string;
   handoff?: StudioBlockerHandoff | null;
+  remediationPlan?: DoctorRemediationPlanView | null;
   studioMode?: 'investigate' | 'verify' | 'prepare';
 }): string {
   const handoff = input.handoff;
+  const remediationPlan = input.remediationPlan;
   const executionMode = handoff?.studioMode;
   const forbidRerun =
     handoff != null &&
@@ -50,10 +53,80 @@ export function buildSidebarStudioPrompt(input: {
       `- Resolution class: ${handoff.resolutionClass ?? 'unknown'}`,
       `- Execution mode: ${executionMode ?? 'FIX'}`,
       `- Source command: ${handoff.sourceCommand}`,
+      ...(handoff.workspacePath ? [`- Workspace path: ${handoff.workspacePath}`] : []),
+      ...(handoff.projectPath ? [`- Project path: ${handoff.projectPath}`] : []),
+      ...(handoff.artifactPath ? [`- Evidence artifact: ${handoff.artifactPath}`] : []),
+      ...(handoff.exitCode != null ? [`- Last exit code: ${handoff.exitCode}`] : []),
+      ...(handoff.stderrTail ? [`- Last stderr tail: ${handoff.stderrTail.slice(0, 800)}`] : []),
+      ...(handoff.commandRunCount != null
+        ? [`- Prior command runs for this signature: ${handoff.commandRunCount}`]
+        : []),
+      ...(handoff.incidentSummary
+        ? [
+            `- Incident phase: ${handoff.incidentSummary.phase}`,
+            `- Primary action: ${handoff.incidentSummary.primaryAction}`,
+            `- Verify required: ${handoff.incidentSummary.verifyRequired ? 'yes' : 'no'}`,
+            `- Audit status: ${handoff.incidentSummary.auditStatus}`,
+          ]
+        : []),
       ...(handoff.blockers.length > 0
         ? [`- Blockers: ${handoff.blockers.slice(0, 4).join('; ')}`]
         : []),
       ...(handoff.verifyCommand ? [`- Verify after fix: ${handoff.verifyCommand}`] : [])
+    );
+
+    lines.push(
+      '',
+      'Card repair continuation contract:',
+      '- Treat short follow-ups such as "continue", "fix it", "apply it", "yes", or unrelated small talk as part of this active card repair session unless the user explicitly changes topic.',
+      '- Do not ask the user to restate the blocker; use the active blocker handoff, project path, remediation plan, artifact, and verify command first.',
+      '- If the user asks a casual or clarifying question, answer briefly, then return to the current card fix path and next safe action.',
+      '- Prefer the project path from the handoff over the globally active workspace/project when they differ.',
+      '- If a deterministic Studio apply step exists, tell the user to use that approved Studio action instead of inventing a parallel edit.',
+      '- If deterministic steps are exhausted or blocked, continue with the smallest AI-assisted source/config edit grounded in the blocker and current evidence.'
+    );
+  }
+
+  if (remediationPlan) {
+    const firstSteps = remediationPlan.visibleSteps.slice(0, 4);
+    lines.push(
+      '',
+      '## Active remediation plan',
+      `- Freshness: ${remediationPlan.freshness.verdict}${
+        remediationPlan.freshness.reason ? ` (${remediationPlan.freshness.reason})` : ''
+      }`,
+      `- Scope: ${remediationPlan.scope}`,
+      `- Visible steps: ${remediationPlan.visibleSteps.length} of ${remediationPlan.totalSteps}`,
+      `- Executable steps: ${remediationPlan.executableSteps}`,
+      ...(firstSteps.length > 0
+        ? firstSteps.flatMap((step, index) => [
+            `- Step ${index + 1}: ${step.previewTitle || step.primaryAction}`,
+            `  - Project: ${step.projectName}`,
+            `  - Risk: ${step.risk}; Studio state: ${step.studioState}; Apply available: ${step.canApply ? 'yes' : 'no'}`,
+            `  - Action: ${step.primaryAction}`,
+            ...(step.diffSummary ? [`  - Diff preview: ${step.diffSummary}`] : []),
+            ...(step.files.length > 0
+              ? [`  - File hints: ${step.files.slice(0, 4).join(', ')}`]
+              : []),
+            ...(step.verifyCommand ? [`  - Verify: ${step.verifyCommand}`] : []),
+          ])
+        : [
+            '- Deterministic remediation steps: none visible.',
+            '- Continue with AI fix: propose the smallest source/config edit grounded in the blocker and verify command.',
+          ]),
+      remediationPlan.hiddenStepCount > 0
+        ? `- Hidden supporting steps: ${remediationPlan.hiddenStepCount}`
+        : '- Hidden supporting steps: 0',
+      '',
+      'Remediation contract:',
+      '- Use the active remediation plan as the source of truth for known safe/guarded edits.',
+      '- Do not invent unrelated framework setup when the remediation plan already names a safer step.',
+      '- If the user asks to fix it, prefer the Studio Apply/Continue repair path for deterministic steps.',
+      '- If no deterministic step remains, propose the smallest source edit and verification command.',
+      '- If you propose an AI-assisted file edit, return patch blocks in this exact format: ```<language> path: <relative/path> ... ```.',
+      '- If you cannot produce a safe patch from the evidence, say that no patch is safe yet and name the missing evidence.',
+      '- Do not present prose guidance as a completed repair; Studio must extract/apply a patch or run a verified deterministic step.',
+      '- Never switch to a generic workspace answer while a card repair handoff is active.'
     );
   }
 

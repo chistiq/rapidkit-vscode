@@ -5,11 +5,33 @@ import path from 'path';
 describe('Workspai design system drift', () => {
   const repoRoot = path.resolve(__dirname, '../..');
 
+  function collectFiles(dir: string): string[] {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const entryPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        return collectFiles(entryPath);
+      }
+      return /\.(css|md|ts|tsx)$/.test(entry.name) ? [entryPath] : [];
+    });
+  }
+
+  function countMatches(source: string, pattern: RegExp): number {
+    return source.match(pattern)?.length ?? 0;
+  }
+
   it('loads the shared token spine before product surfaces', () => {
     const indexSource = fs.readFileSync(path.join(repoRoot, 'webview-ui/src/index.tsx'), 'utf8');
     const appSource = fs.readFileSync(path.join(repoRoot, 'webview-ui/src/App.tsx'), 'utf8');
     const sidebarIndexSource = fs.readFileSync(
       path.join(repoRoot, 'webview-ui/src/sidebar/index.tsx'),
+      'utf8'
+    );
+    const sidebarAppSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/sidebar/SidebarApp.tsx'),
+      'utf8'
+    );
+    const actionsProviderSource = fs.readFileSync(
+      path.join(repoRoot, 'src/ui/webviews/actionsWebviewProvider.ts'),
       'utf8'
     );
 
@@ -28,6 +50,14 @@ describe('Workspai design system drift', () => {
 
     expect(sidebarIndexSource).toContain("import '@/styles/workspai-tokens.css';");
     expect(sidebarIndexSource).toContain("import '@/styles/workspai-primitives.css';");
+    expect(sidebarAppSource).toContain(
+      "import { WorkspaiThemeProvider } from '@/components/WorkspaiThemeProvider';"
+    );
+    expect(sidebarAppSource).toContain('<WorkspaiThemeProvider themeMode={themeMode}>');
+    expect(sidebarAppSource).toContain("command === 'sidebarThemeSettings'");
+    expect(sidebarAppSource).toContain('normalizeThemeMode(data.themeMode)');
+    expect(actionsProviderSource).toContain("this._postInlineCreate('sidebarThemeSettings'");
+    expect(actionsProviderSource).toContain('themeMode: settings.themeMode');
   });
 
   it('keeps theme detection centralized and VS Code sourced', () => {
@@ -99,6 +129,22 @@ describe('Workspai design system drift', () => {
     );
   });
 
+  it('documents the shipped secondary-sidebar Studio path instead of stale dashboard Studio', () => {
+    const contractSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/styles/DESIGN_SYSTEM.md'),
+      'utf8'
+    );
+
+    expect(contractSource).toContain('Workspai Studio (Secondary Sidebar)');
+    expect(contractSource).toContain('SecondarySidebar');
+    expect(contractSource).toContain('StudioBlockerChrome');
+    expect(contractSource).toContain('StudioPatchReview');
+    expect(contractSource).toContain('StudioShipLoopStepper');
+    expect(contractSource).toContain('Historical Studio Assets');
+    expect(contractSource).not.toContain('Production path: `IncidentStudioVNext`');
+    expect(contractSource).not.toContain('ActionOutcomePanel` in `ChatSurface');
+  });
+
   it('defines canonical ws-* primitives and legacy migration aliases', () => {
     const primitivesSource = fs.readFileSync(
       path.join(repoRoot, 'webview-ui/src/styles/workspai-primitives.css'),
@@ -132,6 +178,48 @@ describe('Workspai design system drift', () => {
     expect(primitivesSource).not.toMatch(/linear-gradient\(\s*135deg,\s*#/);
   });
 
+  it('keeps legacy dashboard-* and spc-* prefixes on a shrinking migration budget', () => {
+    const webviewFiles = collectFiles(path.join(repoRoot, 'webview-ui/src'));
+    const designSystem = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/styles/DESIGN_SYSTEM.md'),
+      'utf8'
+    );
+
+    const budgets = [
+      {
+        label: 'legacy dashboard-*',
+        pattern: /(?<!ws-)dashboard-/g,
+        maxOccurrences: 104,
+        maxFiles: 19,
+      },
+      { label: 'spc-*', pattern: /spc-/g, maxOccurrences: 294, maxFiles: 3 },
+    ];
+
+    for (const budget of budgets) {
+      const productFiles = webviewFiles.filter(
+        (filePath) => !filePath.endsWith('DESIGN_SYSTEM.md')
+      );
+      const matchingFiles = productFiles.filter(
+        (filePath) => countMatches(fs.readFileSync(filePath, 'utf8'), budget.pattern) > 0
+      );
+      const occurrences = matchingFiles.reduce(
+        (total, filePath) =>
+          total + countMatches(fs.readFileSync(filePath, 'utf8'), budget.pattern),
+        0
+      );
+
+      expect(occurrences, `${budget.label} occurrence budget`).toBeLessThanOrEqual(
+        budget.maxOccurrences
+      );
+      expect(matchingFiles.length, `${budget.label} file budget`).toBeLessThanOrEqual(
+        budget.maxFiles
+      );
+      expect(designSystem).toContain(
+        `| ${budget.label.startsWith('legacy') ? `legacy \`dashboard-*\`` : `\`spc-*\``} | ${budget.maxOccurrences} occurrences across ${budget.maxFiles} product source files |`
+      );
+    }
+  });
+
   it('uses the unified embedded host for setup and settings while Studio routes to Workspai', () => {
     const appSource = fs.readFileSync(path.join(repoRoot, 'webview-ui/src/App.tsx'), 'utf8');
 
@@ -162,11 +250,11 @@ describe('Workspai design system drift', () => {
     expect(settingsSource).not.toContain('workspai-settings-card');
     expect(settingsSource).not.toContain('workspai-settings-secondary-btn');
 
-    expect(railSource).toContain('ws-kicker dashboard-next-step-rail__meta');
+    expect(railSource).toContain('ws-kicker ws-dashboard-next-step-rail__meta');
     expect(railSource).toContain('ws-chip ws-chip--muted');
 
     expect(primitivesSource).toContain('.ws-settings-shell');
-    expect(primitivesSource).toContain('.dashboard-next-step-rail');
+    expect(primitivesSource).toContain('.ws-dashboard-next-step-rail');
   });
 
   it('migrates overview, onboarding, and evidence panels to ws-* primitives', () => {
@@ -288,6 +376,91 @@ describe('Workspai design system drift', () => {
     expect(primitivesSource).toContain('.ws-action-tile');
     expect(primitivesSource).toContain('.module-browser .module-card');
     expect(primitivesSource).toContain('.example-card.ws-card');
+  });
+
+  it('migrates create and module modal actions to ws-* primitives', () => {
+    const modalSurfaces = [
+      'webview-ui/src/components/CreateProjectModal.tsx',
+      'webview-ui/src/components/CreateWorkspaceModal.tsx',
+      'webview-ui/src/components/ImportAdoptOptionsModal.tsx',
+      'webview-ui/src/components/InstallModuleModal.tsx',
+      'webview-ui/src/components/ModuleDetailsModal.tsx',
+      'webview-ui/src/components/WorkspaiBanner.tsx',
+    ];
+
+    for (const relativePath of modalSurfaces) {
+      const source = fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
+      expect(source, relativePath).toContain('ws-');
+      expect(source, relativePath).not.toContain('enterprise-button');
+      expect(source, relativePath).not.toMatch(/className=(?:\{`|")modal-chip(?:\s|["`{])/);
+    }
+
+    const installModuleSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/components/InstallModuleModal.tsx'),
+      'utf8'
+    );
+    const moduleDetailsSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/components/ModuleDetailsModal.tsx'),
+      'utf8'
+    );
+
+    expect(installModuleSource).toContain('ws-btn ws-btn--primary');
+    expect(installModuleSource).toContain('ws-chip ws-chip--warn');
+    expect(moduleDetailsSource).toContain('ws-chip--muted');
+    expect(moduleDetailsSource).toContain('ws-chip--warn');
+  });
+
+  it('guards compact dashboard and sidebar chrome against long evidence text', () => {
+    const dashboardSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/styles-tailwind.css'),
+      'utf8'
+    );
+    const sidebarSource = fs.readFileSync(
+      path.join(repoRoot, 'webview-ui/src/sidebar/sidebar.css'),
+      'utf8'
+    );
+
+    for (const selector of [
+      '.ws-dashboard-sub-nav__tab',
+      '.ws-dashboard-sub-nav__tab-content',
+      '.ws-dashboard-sub-nav__label-group',
+      '.repair-flow__active-main',
+      '.repair-flow__active-meta',
+      '.evidence-attention-inbox__item',
+      '.evidence-attention-inbox__main',
+      '.evidence-attention-inbox__copy',
+      '.home-create-handoff__action',
+      '.home-next-actions__item > span',
+    ]) {
+      const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      expect(dashboardSource, selector).toMatch(
+        new RegExp(`${escapedSelector}\\s*\\{[\\s\\S]*?min-width:\\s*0;`)
+      );
+    }
+
+    for (const selector of [
+      '.repair-flow__active-main',
+      '.repair-flow__blocker-list li',
+      '.evidence-attention-inbox__copy',
+      '.evidence-attention-inbox__next',
+      '.home-next-actions__item > span',
+    ]) {
+      const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      expect(dashboardSource, selector).toMatch(
+        new RegExp(`${escapedSelector}\\s*\\{[\\s\\S]*?overflow-wrap:\\s*anywhere;`)
+      );
+    }
+
+    for (const selector of [
+      '.ws-sidebar--secondary .ws-sidebar__tab-label',
+      '.ws-sidebar__studio-patch-list code',
+      '.ws-sidebar__studio-rollback code',
+    ]) {
+      const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      expect(sidebarSource, selector).toMatch(
+        new RegExp(`${escapedSelector}\\s*\\{[\\s\\S]*?overflow`)
+      );
+    }
   });
 
   it('keeps legacy context inquire off the dashboard shell', () => {

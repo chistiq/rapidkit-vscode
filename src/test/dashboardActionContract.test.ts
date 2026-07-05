@@ -155,7 +155,7 @@ describe('dashboard action contract', () => {
     });
     expect(contract.artifactState).toBe('corrupt');
     expect(contract.artifactLabel).toBe('Corrupt artifact: workspace-verify-last-run.json');
-    expect(contract.primaryAction).toEqual({ type: 'run', label: 'Repair evidence' });
+    expect(contract.primaryAction).toEqual({ type: 'run', label: 'Re-run command' });
     expect(contract.copilotPayload.actionContext.artifactState).toBe('corrupt');
   });
 
@@ -195,7 +195,7 @@ describe('dashboard action contract', () => {
     });
     expect(buildDashboardEvidenceActionContract(failedCard).primaryAction).toEqual({
       type: 'studio',
-      label: 'Fix in Studio',
+      label: 'Fix by Workspai',
     });
     expect(buildDashboardEvidenceActionContract(warningCard).primaryAction).toEqual({
       type: 'studio',
@@ -205,6 +205,73 @@ describe('dashboard action contract', () => {
       type: 'done',
       label: 'Done',
     });
+  });
+
+  it('maps Studio execution-mode incident summaries to the Repair primary CTA', () => {
+    const baseCard = {
+      id: 'readiness',
+      label: 'Release Readiness',
+      status: 'fail',
+      summary: 'Release blocked',
+      scope: 'workspace',
+      blockers: ['release gate blocked'],
+    } satisfies DashboardEvidenceCard;
+
+    expect(
+      buildDashboardEvidenceActionContract({
+        ...baseCard,
+        status: 'missing',
+        incidentSummary: {
+          title: 'Missing evidence',
+          phase: 'detect',
+          primaryAction: 'Run source command once',
+          verifyRequired: true,
+          auditStatus: 'not-started',
+        },
+      }).primaryAction
+    ).toEqual({ type: 'run', label: 'Generate artifact' });
+
+    expect(
+      buildDashboardEvidenceActionContract({
+        ...baseCard,
+        incidentSummary: {
+          title: 'Blocked release',
+          phase: 'fix',
+          primaryAction: 'Fix source issue',
+          verifyRequired: true,
+          auditStatus: 'not-started',
+        },
+      }).primaryAction
+    ).toEqual({ type: 'studio', label: 'Fix by Workspai' });
+
+    expect(
+      buildDashboardEvidenceActionContract({
+        ...baseCard,
+        id: 'workspaceVerify',
+        label: 'Workspace Verify',
+        incidentSummary: {
+          title: 'Verify gate',
+          phase: 'verify',
+          primaryAction: 'Run verify',
+          verifyRequired: true,
+          auditStatus: 'not-started',
+        },
+      }).primaryAction
+    ).toEqual({ type: 'run', label: 'Run verify' });
+
+    expect(
+      buildDashboardEvidenceActionContract({
+        ...baseCard,
+        status: 'warn',
+        incidentSummary: {
+          title: 'Needs diagnosis',
+          phase: 'diagnose',
+          primaryAction: 'Explain blockers',
+          verifyRequired: false,
+          auditStatus: 'not-started',
+        },
+      }).primaryAction
+    ).toEqual({ type: 'studio', label: 'Explain blocker' });
   });
 
   it('labels derived artifacts so Workspace Why does not pretend to own Explain evidence', () => {

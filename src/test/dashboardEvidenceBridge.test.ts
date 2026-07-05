@@ -113,6 +113,42 @@ describe('dashboardEvidenceBridge', () => {
     });
   });
 
+  it('attaches Studio incident summaries to blocked handoff artifacts', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'share-bundle.json': {
+        generatedAt: '2026-06-10T10:02:00.000Z',
+        workspaceName: 'team-workspace',
+        healthTotals: { errors: 1 },
+        blockingReasons: ['share bundle includes stale doctor evidence'],
+      },
+      'snapshot-last-run.json': {
+        generatedAt: '2026-06-10T10:03:00.000Z',
+        snapshotName: 'pre-release',
+        status: 'fail',
+        blockingReasons: ['snapshot restore point is incomplete'],
+      },
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+    const share = findEvidenceCard(bundle, 'share');
+    const snapshot = findEvidenceCard(bundle, 'snapshot');
+
+    expect(share?.status).toBe('warn');
+    expect(share?.incidentSummary).toMatchObject({
+      title: 'Share bundle',
+      phase: 'fix',
+      primaryAction: 'Fix source issue',
+      verifyRequired: true,
+    });
+    expect(snapshot?.status).toBe('fail');
+    expect(snapshot?.incidentSummary).toMatchObject({
+      title: 'Recovery Snapshot',
+      phase: 'fix',
+      primaryAction: 'Fix source issue',
+      verifyRequired: true,
+    });
+  });
+
   it('returns missing cards when workspace has no reports', async () => {
     const workspacePath = await createWorkspaceWithReports({});
     const bundle = await buildDashboardEvidenceBundle({ workspacePath });

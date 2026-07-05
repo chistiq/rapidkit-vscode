@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 vi.mock('vscode', () => ({
   workspace: { workspaceFolders: [] },
-  window: {},
+  window: { showErrorMessage: vi.fn() },
   commands: { executeCommand: vi.fn() },
   Uri: { file: (value: string) => ({ fsPath: value }) },
 }));
@@ -274,7 +274,7 @@ describe('welcomePanelDashboardShortcutMessages', () => {
     expect(source).toContain("case 'aiFixPreviewLite':");
     expect(source).toContain("case 'upgradeCore':");
     expect(source).toContain("case 'openDocs':");
-    expect(routingSource).toContain('tryDispatchDashboardShortcutWebviewMessage(');
+    expect(routingSource).toContain('tryDispatchDashboardWebviewMessage(host');
     expect(welcomePanelSource).not.toContain("case 'aiForWorkspace':");
     expect(welcomePanelSource).not.toContain("case 'openDocs':");
   });
@@ -302,6 +302,29 @@ describe('welcomePanelModulesCatalog', () => {
 });
 
 describe('welcomePanelDashboardLifecycleMessages', () => {
+  it('routes dashboard message lanes through one typed dispatcher', () => {
+    const currentDir = path.dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(
+      path.resolve(currentDir, '../ui/panels/welcomePanelDashboardMessageDispatcher.ts'),
+      'utf8'
+    );
+    const routingSource = readWelcomePanelRoutingSource(currentDir);
+
+    expect(source).toContain('export type DashboardMessageDispatchHost');
+    expect(source).toContain('type DashboardMessageLane');
+    expect(source).toContain('listDashboardMessageLaneNames');
+    expect(source).toContain("name: 'dashboard-contract'");
+    expect(source).toContain("name: 'dashboard-lifecycle'");
+    expect(source).toContain("name: 'dashboard-shortcut'");
+    expect(source).toContain('tryDispatchDashboardContractWebviewMessage(');
+    expect(source).toContain('tryDispatchDashboardLifecycleWebviewMessage(');
+    expect(source).toContain('tryDispatchDashboardShortcutWebviewMessage(');
+    expect(routingSource).toContain('tryDispatchDashboardWebviewMessage(host');
+    expect(routingSource).not.toContain('tryDispatchDashboardContractWebviewMessage(');
+    expect(routingSource).not.toContain('tryDispatchDashboardLifecycleWebviewMessage(');
+    expect(routingSource).not.toContain('tryDispatchDashboardShortcutWebviewMessage(');
+  });
+
   it('exports dashboard lifecycle dispatch ahead of the welcomePanel switch', () => {
     const currentDir = path.dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(
@@ -314,9 +337,41 @@ describe('welcomePanelDashboardLifecycleMessages', () => {
     expect(source).toContain('export async function tryDispatchDashboardLifecycleWebviewMessage');
     expect(source).toContain("case 'requestDashboardEvidence':");
     expect(source).toContain("case 'trackDashboardNavigation':");
-    expect(routingSource).toContain('tryDispatchDashboardLifecycleWebviewMessage(');
+    expect(routingSource).toContain('tryDispatchDashboardWebviewMessage(host');
     expect(welcomePanelSource).not.toContain("case 'requestDashboardEvidence':");
     expect(welcomePanelSource).not.toContain("case 'clearDashboardActivity':");
+  });
+
+  it('posts visible card failure when direct evidence refresh throws', async () => {
+    const { tryDispatchDashboardLifecycleWebviewMessage } =
+      await import('../ui/panels/welcomePanelDashboardLifecycleMessages');
+    const postDashboardEvidenceRefreshFailed = vi.fn();
+
+    const handled = await tryDispatchDashboardLifecycleWebviewMessage(
+      {
+        context: {} as never,
+        sendDashboardEvidence: vi.fn(async () => {
+          throw new Error('artifact reader failed');
+        }),
+        sendWorkspaceToolStatus: vi.fn(),
+        resolveTelemetryWorkspacePath: () => '/ws',
+        postDashboardEvidenceRefreshFailed,
+      },
+      'refreshDashboardEvidenceCard',
+      {
+        workspacePath: '/ws',
+        cardIds: ['workspaceVerify'],
+        requestId: 42,
+      }
+    );
+
+    expect(handled).toBe(true);
+    expect(postDashboardEvidenceRefreshFailed).toHaveBeenCalledWith({
+      reason: 'Dashboard evidence refresh failed: artifact reader failed',
+      cardIds: ['workspaceVerify'],
+      requestId: 42,
+      refreshMode: 'patch',
+    });
   });
 });
 
@@ -351,6 +406,7 @@ describe('welcomePanelIncidentStudioMessages', () => {
     expect(source).toContain('export function isIncidentStudioWebviewCommand');
     expect(source).toContain('export function handleAiChatCloseConversation');
     expect(source).toContain("case 'studioMessage':");
+    expect(source).toContain('host.isDashboardStudioSidebarOnly()');
     expect(source).toContain("case 'aiChatClose':");
     expect(source).toContain('postIncidentStudioTelemetry');
     expect(welcomePanelSource).toContain('tryDispatchIncidentStudioWebviewMessage(');
@@ -630,6 +686,7 @@ describe('welcomePanelDashboardStudioDispatch', () => {
     expect(source).toContain('export async function dispatchDashboardStudioMessage');
     expect(welcomePanelSource).toContain('dispatchDashboardStudioAction');
     expect(welcomePanelSource).toContain('_handleDashboardStudioAction');
+    expect(welcomePanelSource).toContain("get<boolean>('studio.sidebarOnly', true)");
   });
 });
 
@@ -706,7 +763,7 @@ describe('welcomePanelWebviewMessageDispatch', () => {
     );
 
     expect(source).toContain('export async function dispatchWelcomePanelWebviewMessage');
-    expect(source).toContain('tryDispatchDashboardContractWebviewMessage');
+    expect(source).toContain('tryDispatchDashboardWebviewMessage');
     expect(source).toContain('tryDispatchIncidentStudioWebviewMessage');
     expect(welcomePanelSource).toContain('dispatchWelcomePanelWebviewMessage');
     expect(welcomePanelSource).toContain('_webviewMessageDispatchHost');

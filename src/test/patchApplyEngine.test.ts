@@ -20,6 +20,7 @@ vi.mock('vscode', () => ({
 
 import {
   extractPatchesFromAiResponse,
+  normalizePatchesForWorkspaceScope,
   applyPatches,
   parseLogTrace,
   type FilePatch,
@@ -85,11 +86,81 @@ describe('extractPatchesFromAiResponse', () => {
     expect(patches).toHaveLength(0);
   });
 
+  it('rejects absolute sibling paths that only share a workspace prefix', () => {
+    const text = ['```typescript path: /workspace2/src/escape.ts', 'hack', '```'].join('\n');
+
+    const patches = extractPatchesFromAiResponse(text, opts);
+    expect(patches).toHaveLength(0);
+  });
+
   it('produces one hunk per file', () => {
     const text = ['```ts path: src/x.ts', 'const x = 1;', '```'].join('\n');
     const patches = extractPatchesFromAiResponse(text, opts);
     expect(patches[0].hunks).toHaveLength(1);
     expect(patches[0].hunks[0].startLine).toBe(1);
+  });
+});
+
+describe('normalizePatchesForWorkspaceScope', () => {
+  function patch(relativePath: string): FilePatch {
+    return {
+      relativePath,
+      language: 'text',
+      isNewFile: false,
+      patchedContent: 'x',
+      hunks: [{ startLine: 1, removedLines: [], addedLines: ['x'] }],
+      status: 'pending',
+    };
+  }
+
+  it('converts project-relative AI patch paths to workspace-relative paths', () => {
+    const patches = normalizePatchesForWorkspaceScope({
+      workspacePath: '/workspace',
+      projectPath: '/workspace/fastapi-service',
+      patches: [patch('.gitignore'), patch('src/main.py')],
+    });
+
+    expect(patches.map((entry) => entry.relativePath)).toEqual([
+      'fastapi-service/.gitignore',
+      'fastapi-service/src/main.py',
+    ]);
+  });
+
+  it('preserves workspace-relative patch paths that already point at the project', () => {
+    const patches = normalizePatchesForWorkspaceScope({
+      workspacePath: '/workspace',
+      projectPath: '/workspace/fastapi-service',
+      patches: [patch('fastapi-service/.gitignore')],
+    });
+
+    expect(patches[0].relativePath).toBe('fastapi-service/.gitignore');
+  });
+
+  it('normalizes absolute patch paths inside the workspace', () => {
+    const patches = normalizePatchesForWorkspaceScope({
+      workspacePath: '/workspace',
+      projectPath: '/workspace/fastapi-service',
+      patches: [patch('/workspace/fastapi-service/Makefile')],
+    });
+
+    expect(patches[0].relativePath).toBe('fastapi-service/Makefile');
+  });
+
+  it('deduplicates patches that normalize to the same workspace path by last occurrence', () => {
+    const first = patch('.gitignore');
+    first.patchedContent = 'first';
+    const second = patch('fastapi-service/.gitignore');
+    second.patchedContent = 'second';
+
+    const patches = normalizePatchesForWorkspaceScope({
+      workspacePath: '/workspace',
+      projectPath: '/workspace/fastapi-service',
+      patches: [first, second],
+    });
+
+    expect(patches).toHaveLength(1);
+    expect(patches[0].relativePath).toBe('fastapi-service/.gitignore');
+    expect(patches[0].patchedContent).toBe('second');
   });
 });
 
@@ -207,6 +278,26 @@ describe('applyPatches', () => {
     expect(result.failedCount).toBe(1);
     expect(result.patches[0].status).toBe('failed');
     expect(result.patches[0].failReason).toContain('disk full');
+  });
+
+  it('refuses to apply patches outside the workspace boundary', async () => {
+    const written: Record<string, string> = {};
+    const deps = makeDeps({}, written);
+
+    const result = await applyPatches(
+      {
+        actionId: 'act-boundary',
+        workspacePath: '/workspace',
+        patches: [makePatch('/workspace2/src/escape.ts', 'const escape = true;')],
+      },
+      deps
+    );
+
+    expect(result.appliedCount).toBe(0);
+    expect(result.failedCount).toBe(1);
+    expect(result.patches[0].status).toBe('failed');
+    expect(result.patches[0].failReason).toContain('outside workspace boundary');
+    expect(Object.keys(written)).toHaveLength(0);
   });
 
   it('creates a branch when branchSafeApply is true and git succeeds', async () => {

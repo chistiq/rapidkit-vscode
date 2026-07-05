@@ -34,6 +34,9 @@ export async function gateIncidentStudioRapidkitCommand(input: {
       error: parsed.error,
     };
   }
+  if (parsed.rapidkitArgs.length === 0 && parsed.executable) {
+    return { allowed: true };
+  }
 
   const versionAllowed = await gateCompatibleCliVersion({
     cwd: input.cwd,

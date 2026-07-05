@@ -75,7 +75,7 @@ export function DashboardSubNav({
   };
 
   return (
-    <nav className="dashboard-sub-nav" role="tablist" aria-label="Dashboard sections">
+    <nav className="ws-dashboard-sub-nav" role="tablist" aria-label="Dashboard sections">
       {DASHBOARD_SECTIONS.map((section) => {
         const Icon = SECTION_ICONS[section.id];
         const isActive = activeSection === section.id;
@@ -98,23 +98,23 @@ export function DashboardSubNav({
             tabIndex={isActive ? 0 : -1}
             title={section.description}
             aria-label={section.scope ? `${section.label}, ${section.scope}` : section.label}
-            className={`dashboard-sub-nav__tab ${isActive ? 'is-active' : ''}`}
+            className={`ws-dashboard-sub-nav__tab ${isActive ? 'is-active' : ''}`}
             onClick={() => onSectionChange(section.id)}
             onKeyDown={(event) => handleTabKeyDown(event, section.id)}
           >
-            <span className="dashboard-sub-nav__tab-content">
+            <span className="ws-dashboard-sub-nav__tab-content">
               <Icon size={12} aria-hidden="true" />
-              <span className="dashboard-sub-nav__label-group">
-                <span className="dashboard-sub-nav__label">{section.label}</span>
+              <span className="ws-dashboard-sub-nav__label-group">
+                <span className="ws-dashboard-sub-nav__label">{section.label}</span>
                 {section.scope ? (
-                  <span className="dashboard-sub-nav__scope" aria-hidden="true">
+                  <span className="ws-dashboard-sub-nav__scope" aria-hidden="true">
                     {section.scope}
                   </span>
                 ) : null}
               </span>
               {showArtifactBadge ? (
                 <span
-                  className="dashboard-sub-nav__count"
+                  className="ws-dashboard-sub-nav__count"
                   aria-label={`${evidenceAttentionCount} evidence artifacts need review`}
                 >
                   {evidenceAttentionCount}
@@ -122,7 +122,7 @@ export function DashboardSubNav({
               ) : null}
               {showOperateBadge ? (
                 <span
-                  className="dashboard-sub-nav__count dashboard-sub-nav__count--alert"
+                  className="ws-dashboard-sub-nav__count ws-dashboard-sub-nav__count--alert"
                   aria-label={`${operateAttentionCount} governance items need attention`}
                 >
                   {operateAttentionCount}
@@ -130,17 +130,17 @@ export function DashboardSubNav({
               ) : null}
               {showProjectBadge ? (
                 <span
-                  className="dashboard-sub-nav__badge"
+                  className="ws-dashboard-sub-nav__badge"
                   aria-label="Project connected and ready"
                   title="A project is selected — Project tab is active"
                 >
-                  <span className="dashboard-sub-nav__live-dot" aria-hidden="true" />
+                  <span className="ws-dashboard-sub-nav__live-dot" aria-hidden="true" />
                   Live
                 </span>
               ) : null}
               {showLibraryBadge ? (
                 <span
-                  className="dashboard-sub-nav__count"
+                  className="ws-dashboard-sub-nav__count"
                   aria-label={`${recentWorkspaceCount} recent workspaces`}
                 >
                   <FolderKanban size={10} aria-hidden="true" />

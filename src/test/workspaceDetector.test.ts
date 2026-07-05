@@ -42,6 +42,29 @@ describe('WorkspaceDetector (Go support)', () => {
     fs.rmSync(projectPath, { recursive: true, force: true });
   });
 
+  it('detects open governed workspace roots for one-click registration', async () => {
+    const detector = WorkspaceDetector.getInstance();
+    const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-detected-ws-'));
+    fs.writeFileSync(
+      path.join(workspacePath, '.rapidkit-workspace'),
+      JSON.stringify({ createdBy: 'rapidkit-npm' }, null, 2)
+    );
+    const vscode = await import('vscode');
+    (vscode.workspace as any).workspaceFolders = [
+      {
+        uri: { fsPath: workspacePath },
+        name: path.basename(workspacePath),
+        index: 0,
+      },
+    ];
+
+    const detected = await detector.detectWorkspaceRoots();
+
+    expect(detected).toEqual([{ name: path.basename(workspacePath), path: workspacePath }]);
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+    (vscode.workspace as any).workspaceFolders = undefined;
+  });
+
   it('keeps Go precedence when package.json also exists', async () => {
     const detector = WorkspaceDetector.getInstance();
     const projectPath = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-go-priority-'));

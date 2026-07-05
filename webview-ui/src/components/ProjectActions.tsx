@@ -1,10 +1,13 @@
 import {
+  AlertTriangle,
   BrainCircuit,
+  FileJson,
   GitBranch,
   Hammer,
   Layers,
   Package,
   Play,
+  RefreshCw,
   ShieldCheck,
   Square,
   Stethoscope,
@@ -16,8 +19,8 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { WorkspaceStatus } from '@/types';
-import type { DashboardEvidencePayload } from '@/lib/dashboardEvidence';
-import { findEvidenceCard } from '@/lib/dashboardEvidence';
+import type { DashboardEvidenceCard, DashboardEvidencePayload } from '@/lib/dashboardEvidence';
+import { evidenceStatusLabel, findEvidenceCard } from '@/lib/dashboardEvidence';
 import type { DashboardCommand, DashboardEvidenceCardId } from '@/lib/dashboardCommandRegistry';
 import type { DashboardScopeDescriptor } from '@/lib/dashboardScope';
 import { dashboardScopeDetail, dashboardScopeLabel } from '@/lib/dashboardScope';
@@ -57,6 +60,34 @@ interface ProjectActionsProps {
   onBuild: () => void;
   onLint?: () => void;
   onFormat?: () => void;
+  onRevealArtifact?: (artifactPath: string) => void;
+}
+
+function formatProjectDoctorTime(generatedAt?: string): string {
+  if (!generatedAt) {
+    return 'No run yet';
+  }
+  const timestamp = Date.parse(generatedAt);
+  if (!Number.isFinite(timestamp)) {
+    return 'Evidence timestamp unknown';
+  }
+  const elapsedMs = Date.now() - timestamp;
+  if (elapsedMs < 60_000) {
+    return 'Updated just now';
+  }
+  const elapsedMinutes = Math.max(1, Math.round(elapsedMs / 60_000));
+  if (elapsedMinutes < 60) {
+    return `Updated ${elapsedMinutes}m ago`;
+  }
+  const elapsedHours = Math.round(elapsedMinutes / 60);
+  if (elapsedHours < 24) {
+    return `Updated ${elapsedHours}h ago`;
+  }
+  return `Updated ${Math.round(elapsedHours / 24)}d ago`;
+}
+
+function projectDoctorStatusTone(card?: DashboardEvidenceCard): 'pass' | 'warn' | 'fail' | 'missing' {
+  return card?.status ?? 'missing';
 }
 
 export function ProjectActions({
@@ -79,6 +110,7 @@ export function ProjectActions({
   onBuild,
   onLint,
   onFormat,
+  onRevealArtifact,
 }: ProjectActionsProps) {
   if (!workspaceStatus.hasWorkspace) {
     return null;
@@ -93,9 +125,7 @@ export function ProjectActions({
         capabilities.moduleSupport ? ' · modules enabled' : ' · no modules'
       }`
     : projectScope;
-  const projectPathLabel = workspaceStatus.projectPath
-    ? `.../${workspaceStatus.projectPath.split(/[\\/]/).filter(Boolean).slice(-2).join('/')}`
-    : 'Select a project from the sidebar';
+  const projectPathLabel = workspaceStatus.projectName || 'Select a project from the sidebar';
   const supportLabel = capabilities?.available
     ? capabilities.moduleSupport
       ? 'Modules ready'
@@ -107,6 +137,11 @@ export function ProjectActions({
   const isPending = (cardId: DashboardEvidenceCardId) => pendingCardIds.includes(cardId);
   const commandContract = (command: DashboardCommand, disabledReason?: string) =>
     buildDashboardCommandActionContract(command, { evidence, disabledReason });
+  const doctorTone = projectDoctorStatusTone(projectDoctorCard);
+  const doctorBlockers = projectDoctorCard?.blockers?.filter(Boolean).slice(0, 2) ?? [];
+  const doctorHasArtifact = Boolean(projectDoctorCard?.artifactPath?.trim());
+  const doctorActionLabel =
+    projectDoctorCard && projectDoctorCard.status !== 'missing' ? 'Re-run' : 'Run';
 
   const lifecycleTile = (
     dashboardCommand: DashboardCommand,
@@ -140,7 +175,7 @@ export function ProjectActions({
         <div className="project-actions-summary__main">
           <span className="ws-kicker">Selected project</span>
           <strong>{dashboardScopeLabel(scope)}</strong>
-          <small>{dashboardScopeDetail(scope) || projectPathLabel}</small>
+          <small>{dashboardScopeDetail(scope, { showPaths: false }) || projectPathLabel}</small>
         </div>
         <div className="project-actions-summary__meta">
           <span>
@@ -166,20 +201,62 @@ export function ProjectActions({
           })
         )}
         {lifecycleTile('projectTest', <TestTube size={15} />, 'Test', 'Run tests', onTest)}
-        <ActionTile
-          icon={<Stethoscope size={15} />}
-          label="Doctor"
-          detail={
-            projectDoctorCard && projectDoctorCard.status !== 'missing'
-              ? projectDoctorCard.summary
-              : 'Health scan'
-          }
-          evidenceStatus={projectDoctorCard?.status}
-          pending={isPending('projectDoctor')}
-          onClick={onDoctor}
-          actionContract={commandContract('projectDoctor')}
-          title="Check Project Health"
-        />
+        <article
+          className={`project-doctor-card project-doctor-card--${doctorTone}${isPending('projectDoctor') ? ' is-running' : ''}`}
+          aria-label="Project Doctor evidence"
+        >
+          <div className="project-doctor-card__header">
+            <span className="project-doctor-card__icon" aria-hidden="true">
+              <Stethoscope size={15} />
+            </span>
+            <span className="project-doctor-card__title">
+              <strong>Doctor</strong>
+              <small>{projectDoctorCard?.summary || 'Health scan for selected project'}</small>
+            </span>
+            <span
+              className={`project-doctor-card__status project-doctor-card__status--${doctorTone}`}
+            >
+              {isPending('projectDoctor') ? 'Running' : evidenceStatusLabel(doctorTone)}
+            </span>
+          </div>
+          <div className="project-doctor-card__meta">
+            <span>{formatProjectDoctorTime(projectDoctorCard?.generatedAt)}</span>
+            <span>{doctorHasArtifact ? 'artifact ready' : 'artifact pending'}</span>
+          </div>
+          {doctorBlockers.length > 0 ? (
+            <ul className="project-doctor-card__blockers" aria-label="Project doctor issues">
+              {doctorBlockers.map((blocker) => (
+                <li key={blocker}>
+                  <AlertTriangle size={11} aria-hidden="true" />
+                  <span>{blocker}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="project-doctor-card__actions">
+            <button
+              type="button"
+              className="project-doctor-card__button project-doctor-card__button--primary"
+              onClick={onDoctor}
+              disabled={isPending('projectDoctor')}
+              title="Run Project Doctor for the selected project"
+            >
+              <RefreshCw size={12} aria-hidden="true" />
+              {doctorActionLabel}
+            </button>
+            {doctorHasArtifact && onRevealArtifact ? (
+              <button
+                type="button"
+                className="project-doctor-card__button"
+                onClick={() => onRevealArtifact(projectDoctorCard!.artifactPath!)}
+                title="Open latest Project Doctor artifact"
+              >
+                <FileJson size={12} aria-hidden="true" />
+                Artifact
+              </button>
+            ) : null}
+          </div>
+        </article>
         {lifecycleTile('projectBuild', <Hammer size={15} />, 'Build', 'Compile project', onBuild, {
           variant: 'warn',
         })}

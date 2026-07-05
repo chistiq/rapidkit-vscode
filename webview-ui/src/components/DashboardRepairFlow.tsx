@@ -7,7 +7,7 @@ import {
   Lock,
   ShieldCheck,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { type KeyboardEvent, useEffect, useMemo, useState } from 'react';
 import { EvidenceCardActions } from '@/components/EvidenceCardActions';
 import { CommandExecutionBadge } from '@/components/CommandExecutionBadge';
 import { EvidenceCardLogDrawer } from '@/components/EvidenceCardLogDrawer';
@@ -41,10 +41,11 @@ import type { DashboardOperateZone } from '@/lib/dashboardOperateZones';
 import type { DashboardScopeDescriptor } from '@/lib/dashboardScope';
 import { dashboardScopeDetail, dashboardScopeLabel } from '@/lib/dashboardScope';
 import { resolveEvidenceProjectAttribution } from '@/lib/dashboardEvidenceProjectAttribution';
+import { buildDashboardIncidentCopy, type DashboardIncidentCopy } from '@/lib/dashboardIncidentContract';
 
 type RepairMode = 'guided' | 'inspect' | 'audit';
 
-interface DashboardRepairFlowProps {
+export interface DashboardRepairFlowProps {
   evidence: DashboardEvidencePayload | null;
   hasWorkspace: boolean;
   hasProject?: boolean;
@@ -70,6 +71,58 @@ const MODE_LABELS: Record<RepairMode, string> = {
   inspect: 'Inspect',
   audit: 'Audit',
 };
+
+const REPAIR_MODE_STORAGE_KEY = 'workspai.dashboard.repairMode';
+const REPAIR_MODE_PERSIST_AFTER_VERIFY_COUNT = 3;
+const REPAIR_VERIFY_CARD_IDS = new Set<DashboardEvidenceCardId>([
+  'workspaceVerify',
+  'readiness',
+  'pipeline',
+  'autopilot',
+]);
+
+function countRepairVerificationPasses(evidence: DashboardEvidencePayload | null | undefined): number {
+  return (evidence?.cards ?? []).filter(
+    (card) => REPAIR_VERIFY_CARD_IDS.has(card.id) && card.status === 'pass'
+  ).length;
+}
+
+function normalizeRepairMode(value: string | null | undefined): RepairMode | null {
+  return value === 'guided' || value === 'inspect' || value === 'audit' ? value : null;
+}
+
+function storedRepairMode(): RepairMode | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  try {
+    return normalizeRepairMode(window.localStorage.getItem(REPAIR_MODE_STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function persistRepairMode(mode: RepairMode, verifyPassCount: number): void {
+  if (
+    typeof window === 'undefined' ||
+    verifyPassCount < REPAIR_MODE_PERSIST_AFTER_VERIFY_COUNT
+  ) {
+    return;
+  }
+  try {
+    window.localStorage.setItem(REPAIR_MODE_STORAGE_KEY, mode);
+  } catch {
+    // Ignore storage failures; guided remains the safe runtime default.
+  }
+}
+
+function initialRepairMode(evidence: DashboardEvidencePayload | null | undefined): RepairMode {
+  const verifyPassCount = countRepairVerificationPasses(evidence);
+  if (verifyPassCount < REPAIR_MODE_PERSIST_AFTER_VERIFY_COUNT) {
+    return 'guided';
+  }
+  return storedRepairMode() ?? 'guided';
+}
 
 function isActionableCard(card: DashboardEvidenceCard): boolean {
   return (
@@ -150,6 +203,17 @@ function statusLabel(card: DashboardEvidenceCard, workspaceProjectCount: number 
   return evidenceCardStatusLabelForWorkspace(card, workspaceProjectCount);
 }
 
+function activeRepairKicker(card: DashboardEvidenceCard, workspaceProjectCount: number | null): string {
+  const tone = statusTone(card, workspaceProjectCount);
+  if (tone === 'warn') {
+    return 'Active warning';
+  }
+  if (tone === 'missing') {
+    return 'Active evidence gap';
+  }
+  return 'Active blocker';
+}
+
 type RepairCardGroup = {
   id: string;
   label: string;
@@ -207,6 +271,15 @@ function RepairModeToggle({
         </button>
       ))}
     </div>
+  );
+}
+
+function isInteractiveKeyboardTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  return Boolean(
+    target.closest('button, a, input, textarea, select, [role="button"], [contenteditable="true"]')
   );
 }
 
@@ -420,6 +493,7 @@ function RepairStackCard({
   const tone = statusTone(card, workspaceProjectCount);
   const actionContract = buildDashboardEvidenceActionContract(card, { workspace, evidence });
   const action = actionContract.commandAction;
+  const incident = buildDashboardIncidentCopy({ card, contract: actionContract });
 
   return (
     <article
@@ -444,6 +518,7 @@ function RepairStackCard({
         </button>
       </div>
       <p className="repair-flow__card-summary">{card.summary || 'No summary available yet.'}</p>
+      <p className="repair-flow__card-summary">Incident · {incident.compactLabel}</p>
       <div className="repair-flow__card-actions">
         <EvidenceCardActions
           cardId={card.id}
@@ -515,27 +590,27 @@ function RepairActionContract({ contract }: { contract: DashboardEvidenceActionC
 }
 
 function RepairIncidentSummary({
-  summary,
+  incident,
 }: {
-  summary: NonNullable<DashboardEvidenceCard['incidentSummary']>;
+  incident: DashboardIncidentCopy;
 }) {
   return (
     <dl className="repair-flow__incident-summary" aria-label="Incident summary">
       <div>
         <dt>Phase</dt>
-        <dd>{summary.phase}</dd>
+        <dd>{incident.phaseLabel}</dd>
       </div>
       <div>
         <dt>Action</dt>
-        <dd>{summary.primaryAction}</dd>
+        <dd>{incident.primaryAction}</dd>
       </div>
       <div>
         <dt>Verify</dt>
-        <dd>{summary.verifyRequired ? 'Required' : 'Optional'}</dd>
+        <dd>{incident.verifyLabel}</dd>
       </div>
       <div>
         <dt>Audit</dt>
-        <dd>{summary.auditStatus}</dd>
+        <dd>{incident.auditLabel}</dd>
       </div>
     </dl>
   );
@@ -588,15 +663,37 @@ function RepairActiveCard({
   const hiddenBlockerCount = Math.max(blockers.length - visibleBlockers.length, 0);
   const projectAttribution = resolveEvidenceProjectAttribution(card, evidence);
   const tone = statusTone(card, workspaceProjectCount);
-  const incidentSummary = card.incidentSummary;
+  const incident = buildDashboardIncidentCopy({ card, contract: actionContract });
+  const runPrimaryAction = () => {
+    if (action) {
+      onRunCommand(action.command, action.commandData);
+      return;
+    }
+    if (fallbackStepCommand) {
+      onRunCommand(
+        fallbackStepCommand,
+        workspace?.path ? { workspacePath: workspace.path } : undefined
+      );
+    }
+  };
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Enter' || isInteractiveKeyboardTarget(event.target) || !canRun) {
+      return;
+    }
+    event.preventDefault();
+    runPrimaryAction();
+  };
 
   return (
     <section
       className={`repair-flow__active repair-flow__active--${tone}`}
       aria-label="Active repair item"
+      aria-keyshortcuts="Enter"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
     >
       <div className="repair-flow__active-head">
-        <span className="ws-kicker">Active blocker</span>
+        <span className="ws-kicker">{activeRepairKicker(card, workspaceProjectCount)}</span>
         <div className="repair-flow__active-head-tools">
           <RepairModeToggle mode={mode} onChange={onModeChange} />
           <span className={`repair-flow__status repair-flow__status--${tone}`}>
@@ -638,7 +735,7 @@ function RepairActiveCard({
             ) : null}
           </ul>
         ) : null}
-        {incidentSummary ? <RepairIncidentSummary summary={incidentSummary} /> : null}
+        <RepairIncidentSummary incident={incident} />
       </div>
 
       <div className="repair-flow__active-actions">
@@ -658,15 +755,9 @@ function RepairActiveCard({
           artifactState={actionContract.artifactState}
           executionChannel={actionContract.executionChannel}
           onRun={
-            action
-              ? () => onRunCommand(action.command, action.commandData)
-              : fallbackStepCommand
-                ? () =>
-                    onRunCommand(
-                      fallbackStepCommand,
-                      workspace?.path ? { workspacePath: workspace.path } : undefined
-                    )
-                : undefined
+            canRun
+              ? runPrimaryAction
+              : undefined
           }
           onRefresh={onRefreshEvidenceCard}
           onAdvancedInspect={onShowEvidenceOutput}
@@ -705,9 +796,10 @@ export function DashboardRepairFlow({
   onOpenRunZone,
   onOpenProjectLifecycle,
 }: DashboardRepairFlowProps) {
-  const [mode, setMode] = useState<RepairMode>('guided');
+  const [mode, setMode] = useState<RepairMode>(() => initialRepairMode(evidence));
   const [selectedCardId, setSelectedCardId] = useState<DashboardEvidenceCardId | null>(null);
   const cards = evidence?.cards ?? [];
+  const verifyPassCount = countRepairVerificationPasses(evidence);
   const workspaceProjectCount = resolveWorkspaceProjectCountFromEvidence(evidence);
   const steps = buildEvidenceGuidedSteps({ evidence, hasProject });
   const brief = buildDashboardEvidenceBrief({ evidence, hasWorkspace, hasProject });
@@ -750,6 +842,10 @@ export function DashboardRepairFlow({
     isEvidenceFullRefreshPending ||
     pendingRefreshCardIds.length > 0 ||
     (activeCard ? pendingActiveRefresh : false);
+  const handleRepairModeChange = (nextMode: RepairMode) => {
+    setMode(nextMode);
+    persistRepairMode(nextMode, verifyPassCount);
+  };
   const nextLabel =
     activeContract?.commandLabel ??
     stepCommandLabel ??
@@ -771,6 +867,12 @@ export function DashboardRepairFlow({
       setSelectedCardId(null);
     }
   }, [actionableCards, selectedCardId]);
+
+  useEffect(() => {
+    if (verifyPassCount < REPAIR_MODE_PERSIST_AFTER_VERIFY_COUNT && mode !== 'guided') {
+      setMode('guided');
+    }
+  }, [mode, verifyPassCount]);
 
   if (!hasWorkspace) {
     return (
@@ -821,7 +923,7 @@ export function DashboardRepairFlow({
           fallbackStepCommand={stepCommand}
           fallbackStepCommandLabel={stepCommandLabel}
           mode={mode}
-          onModeChange={setMode}
+          onModeChange={handleRepairModeChange}
           onRunCommand={onRunCommand}
           onRefreshEvidenceCard={onRefreshEvidenceCard}
           onAskStudioAboutCard={onAskStudioAboutCard}
@@ -834,7 +936,7 @@ export function DashboardRepairFlow({
         <section className="repair-flow__active repair-flow__active--clear">
           <div className="repair-flow__active-head">
             <span className="ws-kicker">Active blocker</span>
-            <RepairModeToggle mode={mode} onChange={setMode} />
+            <RepairModeToggle mode={mode} onChange={handleRepairModeChange} />
           </div>
           <ShieldCheck size={18} aria-hidden="true" />
           <h3>No active blocker.</h3>

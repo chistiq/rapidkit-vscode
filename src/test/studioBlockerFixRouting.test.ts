@@ -7,6 +7,7 @@ import {
   normalizeStudioHandoffSource,
   resolveStudioFixActionForHandoff,
 } from '../core/studioBlockerFixRouting.js';
+import { DASHBOARD_EVIDENCE_CARD_IDS } from '../contracts/dashboardEvidenceCards.js';
 import { pickStudioFixActionId } from '../core/studioBlockerHandoffBuilder.js';
 import { resolveBlockerResolutionClass } from '../core/studioBlockerResolution.js';
 
@@ -26,9 +27,15 @@ function baseHandoff(overrides: Partial<StudioBlockerHandoff> = {}): StudioBlock
 
 describe('studioBlockerFixRouting', () => {
   it('pins card-specific default fix actions', () => {
+    expect(Object.keys(STUDIO_CARD_FIX_ROUTING).sort()).toEqual(
+      [...DASHBOARD_EVIDENCE_CARD_IDS].sort()
+    );
     expect(STUDIO_CARD_FIX_ROUTING.doctor).toBe('doctor-fix');
+    expect(STUDIO_CARD_FIX_ROUTING.bootstrap).toBe('verify-gates');
     expect(STUDIO_CARD_FIX_ROUTING.workspaceVerify).toBe('verify-gates');
     expect(STUDIO_CARD_FIX_ROUTING.workspaceImpact).toBe('fix-lens');
+    expect(STUDIO_CARD_FIX_ROUTING.workspaceRun).toBe('verify-gates');
+    expect(STUDIO_CARD_FIX_ROUTING.mirror).toBe('verify-gates');
     expect(STUDIO_CARD_FIX_ROUTING.contract).toBe('verify-gates');
     expect(STUDIO_CARD_FIX_ROUTING.analyze).toBe('run-analyze');
   });

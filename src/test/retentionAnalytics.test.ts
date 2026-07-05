@@ -25,9 +25,14 @@ vi.mock('../utils/logger', () => ({
 
 import {
   ANALYTICS_LOCAL_SNAPSHOT_KEY,
+  RETENTION_ANALYTICS_ALLOWED_PAYLOAD_KEYS,
+  RETENTION_ANALYTICS_PRIVACY_CONTRACT,
+  RETENTION_ANALYTICS_REMOTE_ENDPOINT,
+  RETENTION_ANALYTICS_REMOTE_TRANSPORT,
   buildRetentionCohortSummary,
   captureRetentionAnalytics,
   sendRetentionAnalyticsPayload,
+  validateRetentionAnalyticsPayloadContract,
 } from '../core/retentionAnalytics';
 import { ANALYTICS_OPT_IN_KEY } from '../core/analyticsConsent';
 import type { TtfvRecord } from '../core/ttfvBridge';
@@ -204,10 +209,53 @@ describe('buildRetentionCohortSummary', () => {
 
     expect(summary.activationStage).toBe('first_artifact');
     expect(summary.repairLoopStage).toBe('not_started');
-    expect(summary.activationCompletionScore).toBe(25);
+    expect(summary.activationCompletionScore).toBe(20);
     expect(summary.nextRecommendedFocus).toBe('fix_first_blocker');
     expect(JSON.stringify(summary)).not.toContain('secret-command');
     expect(JSON.stringify(summary)).not.toContain('Secret Command');
+  });
+
+  it('pins the RC privacy contract to local-only anonymous aggregates', () => {
+    const summary = buildRetentionCohortSummary({
+      now: NOW,
+      ttfv: ttfv(),
+      registeredWorkspaceCount: 1,
+      activity: activity(),
+      milestones: milestones(),
+    });
+
+    expect(RETENTION_ANALYTICS_REMOTE_TRANSPORT).toBe('disabled-for-rc');
+    expect(RETENTION_ANALYTICS_REMOTE_ENDPOINT).toBeNull();
+    expect(RETENTION_ANALYTICS_PRIVACY_CONTRACT.deniedData).toEqual([
+      'paths',
+      'workspace names',
+      'project names',
+      'command arguments',
+      'free text',
+    ]);
+    expect(Object.keys(summary).sort()).toEqual(
+      [...RETENTION_ANALYTICS_ALLOWED_PAYLOAD_KEYS].sort()
+    );
+    expect(validateRetentionAnalyticsPayloadContract(summary)).toEqual({
+      ok: true,
+      violations: [],
+    });
+  });
+
+  it('rejects payload fields outside the privacy allowlist', () => {
+    const summary = buildRetentionCohortSummary({
+      now: NOW,
+      ttfv: ttfv(),
+      registeredWorkspaceCount: 1,
+      activity: activity(),
+      milestones: milestones(),
+    }) as ReturnType<typeof buildRetentionCohortSummary> & { workspacePath: string };
+    summary.workspacePath = '/secret/workspace';
+
+    expect(validateRetentionAnalyticsPayloadContract(summary).ok).toBe(false);
+    expect(validateRetentionAnalyticsPayloadContract(summary).violations).toContain(
+      'unexpected field: workspacePath'
+    );
   });
 });
 
@@ -251,6 +299,24 @@ describe('sendRetentionAnalyticsPayload + captureRetentionAnalytics', () => {
     expect(sent).toBe(true);
     expect(store.has(ANALYTICS_LOCAL_SNAPSHOT_KEY)).toBe(true);
   });
+
+  it('does not persist invalid opted-in payloads', async () => {
+    mockGet.mockImplementation((key: string, fallback?: unknown) =>
+      key === ANALYTICS_OPT_IN_KEY ? true : fallback
+    );
+    const { context, store } = createContext();
+    const payload = buildRetentionCohortSummary({
+      now: NOW,
+      ttfv: ttfv(),
+      registeredWorkspaceCount: 1,
+      activity: [],
+    }) as ReturnType<typeof buildRetentionCohortSummary> & { projectName: string };
+    payload.projectName = 'private-project';
+
+    const sent = await sendRetentionAnalyticsPayload(context, payload);
+    expect(sent).toBe(false);
+    expect(store.has(ANALYTICS_LOCAL_SNAPSHOT_KEY)).toBe(false);
+  });
 });
 
 describe('retention milestone wiring', () => {
@@ -265,5 +331,11 @@ describe('retention milestone wiring', () => {
     expect(actionsProvider).toContain("'verify_pass_after_studio_fix'");
     expect(actionsProvider).toContain("'return_to_dashboard_after_verify'");
     expect(actionsProvider).toContain("surface: 'studio'");
+    expect(read('src/ui/panels/welcomePanelIncidentStudioMessages.ts')).toContain(
+      "'studio_opened'"
+    );
+    expect(read('src/ui/panels/welcomePanelCreationNavigationMessages.ts')).toContain(
+      "'studio_opened'"
+    );
   });
 });

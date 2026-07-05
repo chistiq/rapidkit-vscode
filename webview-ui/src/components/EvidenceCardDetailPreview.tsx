@@ -3,16 +3,25 @@ import { IntelligenceDetailAccordion } from '@/components/IntelligenceDetailAcco
 import { WorkspaceGraphPreview } from '@/components/WorkspaceGraphPreview';
 import type { DashboardEvidenceCard } from '@/lib/dashboardEvidence';
 import { findWorkspaceGraphSection } from '@/lib/workspaceModelGraphVisual';
+import { buildDashboardIncidentCopy } from '@/lib/dashboardIncidentContract';
 
 export function EvidenceCardDetailPreview({ card }: { card: DashboardEvidenceCard }) {
   const sections = card.detailSections ?? [];
   const graphPayload = findWorkspaceGraphSection(sections);
   const proseSections = sections.filter((section) => section.id !== 'workspace-graph');
+  const incident = buildDashboardIncidentCopy({ card });
 
   if (sections.length === 0) {
     if (card.id === 'workspaceModel') {
       return (
         <div className="evidence-card-detail-preview evidence-card-detail-preview--empty">
+          <div className="evidence-card-detail-preview__incident" aria-label="Incident detail">
+            <span>Incident</span>
+            <strong>{incident.phaseLabel}</strong>
+            <span>{incident.primaryAction}</span>
+            <span>{incident.verifyLabel}</span>
+            <span>{incident.auditLabel}</span>
+          </div>
           <WorkspaceGraphPreview
             payload={{ nodes: [], edges: [], stats: { nodeCount: 0, edgeCount: 0 } }}
             compact
@@ -28,6 +37,13 @@ export function EvidenceCardDetailPreview({ card }: { card: DashboardEvidenceCar
 
   return (
     <div className="evidence-card-detail-preview">
+      <div className="evidence-card-detail-preview__incident" aria-label="Incident detail">
+        <span>Incident</span>
+        <strong>{incident.phaseLabel}</strong>
+        <span>{incident.primaryAction}</span>
+        <span>{incident.verifyLabel}</span>
+        <span>{incident.auditLabel}</span>
+      </div>
       {graphPayload ? (
         <div className="evidence-card-detail-preview__graph">
           <span className="ws-kicker">Dependency graph</span>

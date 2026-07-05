@@ -2676,6 +2676,11 @@
           "default": false,
           "markdownDescription": "When enabled, Workspai passes `--experimental-hooks` to `rapidkit workspace agent-sync`. Hooks stay advisory and disabled by default in the CLI."
         },
+        "workspai.studio.sidebarOnly": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Keeps Incident Studio in the Workspai secondary sidebar. Legacy dashboard Studio webview messages are ignored when this is enabled, preventing duplicate repair surfaces."
+        },
         "workspai.pythonPath": {
           "type": "string",
           "default": "python3",
@@ -2955,6 +2960,7 @@
     "stabilization:debt-budget": "node scripts/stabilization-debt-budget.mjs",
     "test:coverage": "vitest run --coverage",
     "test:stress:incident-studio": "vitest run src/test/incidentStudioLifecycle.test.ts src/test/incidentStudioStressGate.test.ts src/test/debounceWatchers.test.ts",
+    "soak:studio-reload": "node scripts/studio-reload-soak.mjs",
     "test:vscode": "vscode-test",
     "release:stop-gate": "node scripts/release-stop-gate.mjs",
     "release:open-issues-report": "node scripts/export-open-issues-report.mjs",
@@ -2963,7 +2969,7 @@
     "sync:modules": "node scripts/sync-modules.mjs",
     "prepackage": "npm run build",
     "package": "vsce package",
-    "package:ci": "npm run build && vsce package --out rapidkit-vscode-${npm_package_version}.vsix",
+    "package:ci": "npm run build && vsce package --no-dependencies --out rapidkit-vscode-${npm_package_version}.vsix",
     "smoke:vsix-artifact": "node scripts/inspect-vsix-artifact.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix",
     "smoke:vsix-electron": "node scripts/vsix-electron-smoke.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix",
     "publish:guard": "node scripts/guard-vsix-publish.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix",

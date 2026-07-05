@@ -1,5 +1,9 @@
 import { useRef, type KeyboardEvent } from 'react';
-import { DASHBOARD_OPERATE_ZONES, type DashboardOperateZone } from '@/lib/dashboardOperateZones';
+import {
+  DASHBOARD_OPERATE_ZONES,
+  DEFAULT_DASHBOARD_OPERATE_ZONE,
+  type DashboardOperateZone,
+} from '@/lib/dashboardOperateZones';
 
 const RUN_WORKSPACE_ZONES = DASHBOARD_OPERATE_ZONES.filter((zone) => zone.id !== 'build');
 
@@ -9,7 +13,7 @@ interface DashboardOperateSubNavProps {
 }
 
 export function DashboardOperateSubNav({
-  activeZone = 'quick',
+  activeZone = DEFAULT_DASHBOARD_OPERATE_ZONE,
   onZoneSelect,
 }: DashboardOperateSubNavProps) {
   const tabRefs = useRef<Partial<Record<DashboardOperateZone, HTMLButtonElement | null>>>({});

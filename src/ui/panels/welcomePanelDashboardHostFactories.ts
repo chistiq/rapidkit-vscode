@@ -100,6 +100,19 @@ export function buildWelcomePanelDashboardLifecycleMessageHost(
     sendDashboardEvidence: (context) => sendDashboardEvidence(getDashboardEvidenceHost(), context),
     sendWorkspaceToolStatus: bindings.sendWorkspaceToolStatus,
     resolveTelemetryWorkspacePath: bindings.resolveTelemetryWorkspacePath,
+    postDashboardEvidenceRefreshFailed: (input) => {
+      bindings.postWebviewMessage('dashboardCommandFailed', {
+        command: 'dashboardEvidenceRefresh',
+        reason: input.reason,
+        cardIds: input.cardIds ?? [],
+        suggestedNextAction:
+          input.refreshMode === 'patch'
+            ? 'Open the evidence artifact or rerun the mapped card command.'
+            : 'Open the Workspai Evidence output or refresh the dashboard again.',
+        timestamp: Date.now(),
+        requestId: input.requestId,
+      });
+    },
   };
 }
 

@@ -1,4 +1,5 @@
 import type { StudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
+import { isDashboardEvidenceCardId } from '../contracts/dashboardEvidenceCards.js';
 
 export type StudioFixActionId = 'fix-lens' | 'verify-gates' | 'run-analyze' | 'doctor-fix';
 
@@ -10,17 +11,34 @@ export const STUDIO_CARD_FIX_ROUTING: Readonly<Record<string, StudioFixActionId>
   doctor: 'doctor-fix',
   projectDoctor: 'doctor-fix',
   importReadiness: 'doctor-fix',
+  bootstrap: 'verify-gates',
+  setup: 'verify-gates',
+  workspaceRun: 'verify-gates',
   analyze: 'run-analyze',
   workspaceModel: 'run-analyze',
+  snapshot: 'run-analyze',
+  intelligenceSnapshot: 'run-analyze',
+  workspaceWatch: 'run-analyze',
   workspaceVerify: 'verify-gates',
   readiness: 'verify-gates',
   pipeline: 'verify-gates',
+  autopilot: 'verify-gates',
   workspaceImpact: 'fix-lens',
   workspaceDiff: 'fix-lens',
   contract: 'verify-gates',
   workspaceExplain: 'verify-gates',
+  workspaceWhy: 'verify-gates',
+  workspaceTrace: 'verify-gates',
   agentGrounding: 'verify-gates',
   workspaceContextAgent: 'verify-gates',
+  workspaceSync: 'verify-gates',
+  foundation: 'verify-gates',
+  share: 'verify-gates',
+  archive: 'verify-gates',
+  mirror: 'verify-gates',
+  cache: 'verify-gates',
+  policy: 'verify-gates',
+  infra: 'verify-gates',
 };
 
 export function resolveStudioFixActionForHandoff(handoff: StudioBlockerHandoff): StudioFixActionId {
@@ -35,7 +53,9 @@ export function resolveStudioFixActionForHandoff(handoff: StudioBlockerHandoff):
     return 'fix-lens';
   }
 
-  return STUDIO_CARD_FIX_ROUTING[handoff.cardId] ?? 'fix-lens';
+  return isDashboardEvidenceCardId(handoff.cardId)
+    ? STUDIO_CARD_FIX_ROUTING[handoff.cardId]
+    : 'verify-gates';
 }
 
 export function normalizeStudioHandoffSource(

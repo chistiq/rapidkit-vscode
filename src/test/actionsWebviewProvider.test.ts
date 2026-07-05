@@ -56,8 +56,17 @@ describe('actionsWebviewProvider — React migration (roadmap 2.11)', () => {
 
 describe('actionsWebviewProvider — sidebar protocol handlers', () => {
   const source = read('src/ui/webviews/actionsWebviewProvider.ts');
+  const dispatcherSource = read('src/ui/webviews/actionsWebviewMessageDispatcher.ts');
+  const studioActionHostSource = read('src/ui/webviews/actionsWebviewStudioActionHost.ts');
 
   it('handles every inbound sidebar command the React webview posts', () => {
+    expect(source).toContain(
+      'dispatchActionsWebviewMessage(this._actionsWebviewMessageDispatchHost()'
+    );
+    expect(source).not.toContain("message.command === 'sidebarAiCreatePlan'");
+    expect(dispatcherSource).toContain('export type ActionsWebviewMessageDispatchHost');
+    expect(dispatcherSource).toContain('listActionsWebviewMessageCommands');
+
     for (const command of [
       'sidebarAiCreatePlan',
       'sidebarAiCreateConfirm',
@@ -67,11 +76,32 @@ describe('actionsWebviewProvider — sidebar protocol handlers', () => {
       'sidebarStudioQuery',
       'sidebarStudioAction',
       'sidebarFocusView',
+      'sidebarOpenDashboard',
       'sidebarRefreshScope',
       'sidebarRefreshModels',
       'setPreferredModel',
     ]) {
-      expect(source, command).toContain(`message.command === '${command}'`);
+      expect(dispatcherSource, command).toContain(`command: '${command}'`);
+    }
+  });
+
+  it('keeps command surface audit documentation aligned with sidebar protocol', () => {
+    const auditDoc = read('docs/COMMAND_SURFACE_AUDIT.md');
+
+    expect(auditDoc).toContain('Workspai Command Surface Audit');
+    expect(auditDoc).toContain(
+      'Dashboard diagnoses and routes; Studio fixes; Advisor explains; Create builds.'
+    );
+    for (const command of [
+      'sidebarAiCreatePlan',
+      'sidebarAiCreateConfirm',
+      'sidebarManualCreate',
+      'sidebarCreatedWorkspaceBootstrap',
+      'sidebarStudioAction',
+      'sidebarOpenDashboard',
+      'sidebarRefreshScope',
+    ]) {
+      expect(auditDoc).toContain(command);
     }
   });
 
@@ -121,14 +151,37 @@ describe('actionsWebviewProvider — sidebar protocol handlers', () => {
       'topBlocker: execution.success ? undefined : (execution.error ?? handoff.blockers[0])'
     );
   });
+
+  it('routes Studio actions through a typed host facade', () => {
+    expect(studioActionHostSource).toContain('export type ActionsWebviewStudioActionHost');
+    expect(studioActionHostSource).toContain('resolveSidebarStudioActionPayload');
+    expect(source).toContain('buildActionsWebviewStudioActionHost({');
+    expect(source).toContain('private _actionsWebviewStudioActionHost()');
+    expect(source).toContain('resolveSidebarStudioActionPayload(');
+
+    for (const hostCall of [
+      'studioHost.retryLastSidebarStudioAudit(',
+      'studioHost.runSidebarAutoFix(',
+      'studioHost.finalizeSidebarPatchBridgeResult(',
+      'studioHost.auditSidebarStudioFix(',
+      'studioHost.refreshSidebarShipLoop(',
+      'studioHost.finalizeStudioVerifyHandoff(',
+      'studioHost.postInlineCreate(',
+    ]) {
+      expect(source, hostCall).toContain(hostCall);
+    }
+  });
 });
 
 describe('actionsWebviewProvider — contract-driven quick actions', () => {
   const source = read('src/ui/webviews/actionsWebviewProvider.ts');
+  const dispatcherSource = read('src/ui/webviews/actionsWebviewMessageDispatcher.ts');
 
   it('routes unknown commands through the sidebar action surface contract', () => {
-    expect(source).toContain('resolveSidebarActionSurface(message.command)');
-    expect(source).toContain('void this._runSidebarAction(action, message.data)');
+    expect(dispatcherSource).toContain('resolveSidebarActionSurface(message.command)');
+    expect(source).toContain(
+      'runSidebarAction: (action, data) => this._runSidebarAction(action, data)'
+    );
 
     for (const meta of Object.values(SIDEBAR_ACTION_SURFACE)) {
       expect(meta.id).toBeTruthy();
@@ -205,6 +258,32 @@ describe('actionsWebviewProvider — manifest + command alignment', () => {
     const readme = read('README.md');
     expect(readme).toContain('| **Quick Actions** |');
     expect(readme).toContain('| **Workspai** |');
+    expect(readme).toContain('Home, Run, Repair, Artifacts, Project, and Library');
+    expect(readme).toContain('Secondary sidebar: Create · Advisor · Studio');
+    expect(readme).toContain('Workspai Studio');
+    expect(readme).toContain('not** another AI coding assistant');
+    expect(readme).toContain('not** another agent framework');
+    expect(readme).toContain('not** another context window');
+    expect(readme).toContain('Workspace Intelligence for software systems');
+    expect(readme).toContain('Dashboard evidence');
+    expect(readme).toContain('Studio fix');
+    expect(readme).toContain('Artifact refresh');
+    expect(readme).toContain('every stack in the workspace');
+    expect(readme).toContain('generation depth');
+    expect(readme).toContain('Workspai checks the linked RapidKit CLI capability surface');
+    expect(readme).toContain('Latest recommended for enterprise Dashboard, Repair, Studio');
+    expect(readme).not.toContain('Incident Studio VNext');
+    expect(readme).not.toContain('Home, Evidence, Run, Project, and Library');
+  });
+
+  it('keeps media capture guidance aligned with the shipped dashboard and sidebar Studio', () => {
+    const mediaReadme = read('media/README.md');
+    expect(mediaReadme).toContain('Dashboard evidence → Studio fix → verify → artifact refresh');
+    expect(mediaReadme).toContain('Workspai Studio secondary-sidebar repair workflow');
+    expect(mediaReadme).toContain('Run / Repair / Artifacts + sidebar visible');
+    expect(mediaReadme).toContain('Secondary sidebar Studio open with blocker context');
+    expect(mediaReadme).not.toContain('Incident Studio VNext');
+    expect(mediaReadme).not.toContain('Evidence + sidebar visible');
   });
 
   it('keeps manifest and host copy aligned with the Workspai surface', () => {

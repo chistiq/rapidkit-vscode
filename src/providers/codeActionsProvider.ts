@@ -17,6 +17,30 @@ type DiagnosticSeed = {
   message: string;
 };
 
+function buildDiagnosticSignature(context: vscode.CodeActionContext): string {
+  const signature = context.diagnostics
+    .slice(0, 4)
+    .map((diagnostic) =>
+      [
+        diagnostic.severity,
+        diagnostic.range.start.line,
+        diagnostic.range.start.character,
+        diagnostic.message,
+      ].join(':')
+    )
+    .join('|');
+  return signature || 'selection';
+}
+
+function buildEditorIssuePayload(document: vscode.TextDocument, context: vscode.CodeActionContext) {
+  return {
+    filePath: document.uri.fsPath,
+    fileName: vscode.workspace.asRelativePath(document.fileName),
+    languageId: document.languageId,
+    diagnosticSignature: buildDiagnosticSignature(context),
+  };
+}
+
 export function buildAIDiagnosticSeed(input: {
   intent: 'debug' | 'fix-preview' | 'explain';
   fileName: string;
@@ -28,8 +52,8 @@ export function buildAIDiagnosticSeed(input: {
     input.intent === 'debug'
       ? 'Debug with Workspai AI'
       : input.intent === 'fix-preview'
-        ? 'Preview fix with Workspai AI'
-        : 'Explain error with Workspai AI';
+        ? 'Fix with Workspai'
+        : 'Explain with Workspai';
   const diagnosticsBlock =
     input.diagnostics.length > 0
       ? input.diagnostics
@@ -42,7 +66,9 @@ export function buildAIDiagnosticSeed(input: {
       : '- No diagnostic supplied; use the selected code snippet as evidence.';
 
   return [
-    `${intentLabel}: analyze this editor issue with evidence-first output.`,
+    `${intentLabel}: handle this editor issue with the smallest safe change.`,
+    '',
+    'Scope:',
     `File: ${input.fileName}`,
     `Language: ${input.languageId}`,
     '',
@@ -50,11 +76,13 @@ export function buildAIDiagnosticSeed(input: {
     diagnosticsBlock,
     input.snippet ? ['', 'Selected/current code evidence:', '```', input.snippet, '```'] : '',
     '',
-    'Required output:',
-    '- Diagnosis or explanation grounded in the diagnostic and file context.',
-    '- Smallest safe next step; do not claim the fix is applied.',
-    '- Exact verify command and execution directory.',
-    '- Rollback or undo note for any proposed mutation.',
+    'Studio rules:',
+    '- Ground the answer in this diagnostic and the existing project context.',
+    '- Do not invent missing config files, package scripts, or framework choices.',
+    '- If evidence is insufficient, name the exact file or command to inspect next.',
+    '- For editor diagnostics, prefer the local project typecheck/test command over workspace release gates.',
+    '- Do not claim a mutation has been applied unless a tool reports it.',
+    '- Include the smallest safe fix path, verify command, and rollback note.',
   ]
     .flat()
     .filter(Boolean)
@@ -166,77 +194,45 @@ export class WorkspaiCodeActionsProvider implements vscode.CodeActionProvider {
     const hasSelection = Boolean(selectionSnippet);
 
     if (hasErrors || hasSelection) {
-      const action = new vscode.CodeAction(
-        '✦ Debug with Workspai AI',
-        vscode.CodeActionKind.QuickFix
-      );
-      action.command = {
-        command: 'workspai.debugWithAI',
-        title: 'Debug with Workspai AI',
+      const fixAction = new vscode.CodeAction('Fix with Workspai', vscode.CodeActionKind.QuickFix);
+      const editorIssue = buildEditorIssuePayload(document, context);
+      fixAction.command = {
+        command: 'workspai.openIncidentStudio',
+        title: 'Fix with Workspai',
         arguments: [
           {
-            seed: this.buildDiagnosticSeed('debug', document, range, context),
+            initialTask: this.buildDiagnosticSeed('fix-preview', document, range, context),
+            composerHandoff: 'prefill',
+            studioMode: 'investigate',
             source: 'code-action',
-            trigger: 'debug-with-ai',
+            trigger: 'editor-fix',
+            editorIssue,
           },
         ],
       };
-      action.isPreferred = false;
-      actions.push(action);
-
-      const fixPreviewAction = new vscode.CodeAction(
-        '✦ Preview fix with Workspai AI',
-        vscode.CodeActionKind.QuickFix
-      );
-      fixPreviewAction.command = {
-        command: 'workspai.aiFixPreviewLite',
-        title: 'Preview fix with Workspai AI',
-        arguments: [
-          {
-            seed: this.buildDiagnosticSeed('fix-preview', document, range, context),
-            source: 'code-action',
-            trigger: 'preview-fix',
-          },
-        ],
-      };
-      actions.push(fixPreviewAction);
+      fixAction.isPreferred = hasErrors;
+      actions.push(fixAction);
     }
 
     if (hasErrors) {
-      const errorMessages = context.diagnostics
-        .filter((d) => d.severity === vscode.DiagnosticSeverity.Error)
-        .map((d) => d.message)
-        .join('; ');
-
+      const editorIssue = buildEditorIssuePayload(document, context);
       const explainAction = new vscode.CodeAction(
-        `✦ Explain error with AI: "${errorMessages.slice(0, 60)}${errorMessages.length > 60 ? '…' : ''}"`,
+        'Explain with Workspai',
         vscode.CodeActionKind.QuickFix
       );
       explainAction.command = {
-        command: 'workspai.explainErrorWithAI',
-        title: 'Explain error with AI',
+        command: 'workspai.openWorkspaceAdvisor',
+        title: 'Explain with Workspai',
         arguments: [
           {
-            seed: this.buildDiagnosticSeed('explain', document, range, context),
+            initialQuestion: this.buildDiagnosticSeed('explain', document, range, context),
             source: 'code-action',
-            trigger: 'explain-error',
+            trigger: 'editor-explain',
+            editorIssue,
           },
         ],
       };
       actions.push(explainAction);
-    }
-
-    if (hasSelection) {
-      const impactAction = new vscode.CodeAction(
-        '✦ Analyze change impact with AI',
-        vscode.CodeActionKind.Refactor
-      );
-      impactAction.command = {
-        command: 'workspai.aiChangeImpactLite',
-        title: 'Analyze change impact with AI',
-        arguments: [selectionSnippet],
-      };
-      actions.push(impactAction);
     }
 
     return actions;

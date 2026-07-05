@@ -104,6 +104,7 @@ export type WelcomePanelChatBrainHostFactoryBindings = {
   handleDashboardStudioMessage: (data: unknown) => Promise<void>;
   handleDashboardStudioAction: (data: unknown) => Promise<void>;
   handleDashboardAIActionContractCommand: (data: unknown) => Promise<void>;
+  isDashboardStudioSidebarOnly: () => boolean;
   handleAiChatQuery: (data: unknown, requestId?: string) => Promise<void>;
   handleAiChatExecuteAction: (data: unknown, requestId?: string) => Promise<void>;
   handleExportSandboxSimulationEvidence: (data: unknown, requestId?: string) => Promise<void>;
@@ -327,6 +328,7 @@ export function buildWelcomePanelIncidentStudioMessageHost(
     handleDashboardStudioMessage: bindings.handleDashboardStudioMessage,
     handleDashboardStudioAction: bindings.handleDashboardStudioAction,
     handleDashboardAIActionContractCommand: bindings.handleDashboardAIActionContractCommand,
+    isDashboardStudioSidebarOnly: bindings.isDashboardStudioSidebarOnly,
     runOptionalMessageLane: bindings.runOptionalMessageLane,
     handleRunDoctorMessage: (data, action) =>
       handleRunDoctorMessage(getDoctorMessageHost(), data, action),

@@ -5,6 +5,7 @@ export const RETENTION_MILESTONES_KEY = 'workspai.retention.milestones.v1';
 export type RetentionMilestoneType =
   | 'first_artifact_generated'
   | 'first_blocker_fixed'
+  | 'studio_opened'
   | 'verify_pass_after_studio_fix'
   | 'return_to_dashboard_after_verify'
   | 'command_failure';
@@ -15,6 +16,7 @@ export interface RetentionMilestoneState {
   schemaVersion: 'workspai-retention-milestones-v1';
   firstArtifactGeneratedAt?: number;
   firstBlockerFixedAt?: number;
+  studioOpenedAt?: number;
   verifyPassAfterStudioFixAt?: number;
   returnToDashboardAfterVerifyAt?: number;
   commandFailuresBySurface: Partial<Record<RetentionSignalSurface, number>>;
@@ -64,6 +66,8 @@ export function applyRetentionMilestone(
     next.firstArtifactGeneratedAt ??= now;
   } else if (milestone === 'first_blocker_fixed') {
     next.firstBlockerFixedAt ??= now;
+  } else if (milestone === 'studio_opened') {
+    next.studioOpenedAt ??= now;
   } else if (milestone === 'verify_pass_after_studio_fix') {
     next.verifyPassAfterStudioFixAt ??= now;
   } else if (milestone === 'return_to_dashboard_after_verify') {

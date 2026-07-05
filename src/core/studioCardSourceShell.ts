@@ -14,10 +14,11 @@ const DEFAULT_VERIFY_COMMAND =
 
 /** Intelligence-chain `--from` paths not expressed in generic dashboard cliArgs. */
 const CARD_SOURCE_SHELL_OVERRIDES: Record<string, string> = {
+  bootstrap: 'npx rapidkit bootstrap --ci --json',
   workspaceDiff: `npx rapidkit workspace diff --from ${WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH} --json`,
   workspaceImpact: `npx rapidkit workspace impact --from ${WORKSPACE_MODEL_DIFF_REPORT_PATH} --json`,
-  share: 'npx rapidkit workspace share',
-  archive: 'npx rapidkit workspace export --json',
+  share: 'npx rapidkit workspace share --output .rapidkit/reports/share-bundle.json --json',
+  archive: 'npx rapidkit workspace export --output team-workspace.rapidkit-archive.zip --json',
 };
 
 function appendJsonFlag(cliArgs: string[]): string[] {

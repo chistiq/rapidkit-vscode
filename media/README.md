@@ -44,9 +44,9 @@ Current README uses product mockups in `media/readme/` plus a **Mermaid architec
 | File | Section |
 |------|---------|
 | `readme/dashboard.png` | Enterprise dashboard |
-| `readme/evidence-loop.png` | Command → Evidence → Next Step |
+| `readme/evidence-loop.png` | Dashboard evidence → Studio fix → verify → artifact refresh |
 | `readme/sidebar.png` | Sidebar control plane |
-| `readme/incident-studio.png` | Incident Studio VNext |
+| `readme/incident-studio.png` | Workspai Studio secondary-sidebar repair workflow |
 
 These are **not** a substitute for Marketplace screenshots. They keep the public README current while real workbench captures are regenerated.
 
@@ -64,8 +64,8 @@ The older `screenshots/workspai-screenshot-*.png` set predates v0.35 dashboard/s
 
 | Asset | Flow |
 |-------|------|
-| Marketplace hero | Dashboard open → workspace selected → Evidence + sidebar visible |
-| Incident Studio | Studio open with ship loop and context panel |
+| Marketplace hero | Dashboard open → workspace selected → Run / Repair / Artifacts + sidebar visible |
+| Workspai Studio | Secondary sidebar Studio open with blocker context, ship loop, and verify state |
 | Module browser | FastAPI project selected → installed/available filters |
 | Contract graph | Workspace selected → graph populated from `workspace.contract.json` |
 

@@ -39,11 +39,42 @@ Workspai supports:
 | You get                    | Why it matters                                                                               |
 | -------------------------- | -------------------------------------------------------------------------------------------- |
 | **Workspace intelligence** | Model, context, diff, impact, and verification operate on the entire workspace               |
-| **Enterprise dashboard**   | Home, Evidence, Run, Project, and Library surfaces with contextual actions                   |
-| **Evidence loop**          | Commands generate evidence and recommended next steps                                        |
+| **Enterprise dashboard**   | Home, Run, Repair, Artifacts, Project, and Library surfaces with contextual actions          |
+| **Incident evidence loop** | Commands generate evidence, Studio resolves blockers, and verify refreshes the dashboard     |
 | **Sidebar control plane**  | Workspaces, projects, modules, health, contracts, and operational state                      |
-| **Incident Studio**        | Workspace-aware diagnosis, repair workflows, and change validation                           |
-| **Canonical CLI bridge**   | Delegates to `npx rapidkit` for adoption, creation, lifecycle, governance, and CI operations |
+| **Workspai Studio**        | Sidebar-first diagnosis, repair workflows, patch review, verify, and audit visibility        |
+| **Canonical CLI bridge**   | Delegates to `rapidkit` npm CLI for adoption, creation, lifecycle, governance, and CI operations |
+
+### What this is not
+
+Workspai is **not** another AI coding assistant.
+
+It is **not** another agent framework.
+
+It is **not** another context window.
+
+Workspai is the VS Code surface for **Workspace Intelligence for software systems**: a shared operating model where humans, CI, IDEs, and AI agents see the same workspace truth before making changes.
+
+### The operating loop
+
+The main workflow is intentionally simple:
+
+```mermaid
+flowchart LR
+  Dashboard["Dashboard evidence"]
+  Studio["Studio fix"]
+  Verify["Verify"]
+  Refresh["Artifact refresh"]
+  Context["Agent context"]
+
+  Dashboard --> Studio
+  Studio --> Verify
+  Verify --> Refresh
+  Refresh --> Context
+  Context --> Dashboard
+```
+
+Run generates or refreshes evidence. Repair routes blockers into Studio. Verify proves whether the fix worked. Refreshed artifacts update the dashboard and the context agents receive.
 
 
 
@@ -53,10 +84,10 @@ RapidKit does **not** pretend every framework is a native kit. The product strat
 
 ```text
 First-class engine kits  →  FastAPI and NestJS (modules + deep generation)
-Workspace Intelligence   →  every other stack you already have
+Workspace Intelligence   →  every stack in the workspace
 ```
 
-That means Next.js, Vite, Angular, Go, Spring Boot, .NET, and adopted repos are **first-class workspace citizens** — observable, governable, and agent-ready — even when they use their native package ecosystems instead of the RapidKit module marketplace.
+That means FastAPI, NestJS, Next.js, Vite, Angular, Go, Spring Boot, .NET, and adopted repos are **first-class workspace citizens** — observable, governable, and agent-ready. The difference is generation depth: FastAPI and NestJS have deep RapidKit module generation; other stacks use native ecosystem workflows while still receiving workspace intelligence, governance, artifacts, and agent grounding.
 
 ```mermaid
 flowchart TB
@@ -68,8 +99,8 @@ flowchart TB
 
   subgraph Workspai["Workspai VS Code Extension"]
     Sidebar["Sidebar: Workspaces · Projects · Modules · Health · Graph"]
-    Dashboard["Dashboard: Home · Evidence · Run · Project · Library"]
-    Studio["Incident Studio VNext"]
+    Dashboard["Dashboard: Home · Run · Repair · Artifacts · Project · Library"]
+    Studio["Secondary sidebar: Create · Advisor · Studio"]
   end
 
   subgraph CLI["RapidKit npm CLI"]
@@ -111,14 +142,15 @@ flowchart TB
 The dashboard is the primary operating surface for v0.35+:
 
 - **Home** — workspace summary, onboarding, and quick orientation
-- **Evidence** — doctor, analyze, pipeline, readiness, and release artifacts
-- **Run** — workspace governance, cheatsheet, intelligence, and workspace-level commands
+- **Run** — generate and refresh governance, intelligence, and release evidence
+- **Repair** — one safe path through active blockers, Studio handoff, verify, and audit
+- **Artifacts** — doctor, analyze, pipeline, readiness, and release records
 - **Project** — project actions, module browser, and capability-aware controls
 - **Library** — recent workspaces, starter templates, and module catalog browse
 
 Commands dispatch through contract-aware bridges so the UI only offers actions the active workspace or project actually supports.
 
-### Evidence loop
+### Incident evidence loop
 
 <p align="center">
   <img src="media/readme/evidence-loop.png" alt="Command to evidence to next step loop" width="88%" />
@@ -128,7 +160,9 @@ Workspai closes the ops loop inside the IDE:
 
 1. Run a governed command (`doctor`, `analyze`, `pipeline`, archive, release, …)
 2. Read structured evidence from `.rapidkit/reports/*`
-3. Review outcomes and open the safest next command from the dashboard or Incident Studio
+3. Open Repair or Studio with the exact blocker, artifact, and verify context
+4. Apply or guide the smallest safe fix, then run verify
+5. Return the refreshed truth to the dashboard and agent context
 
 ### Sidebar control plane
 
@@ -148,19 +182,21 @@ Everyday operations stay one click away:
 | **Workspace Health** | Doctor evidence without an extra CLI call |
 | **Contract Graph** | Services, ports, dependencies, events, and ownership |
 
-### Incident Studio VNext
+### Workspai Studio
 
 <p align="center">
-  <img src="media/readme/incident-studio.png" alt="Workspai Incident Studio VNext" width="92%" />
+  <img src="media/readme/incident-studio.png" alt="Workspai Studio sidebar incident workflow" width="92%" />
 </p>
 
-Incident Studio is the workspace-aware AI repair environment:
+Workspai Studio is the sidebar-first workspace-aware repair environment:
 
 - Root-cause analysis with scoped workspace/project context
-- Fix preview before mutating code
-- Ship loop: analyze → verify-gates → readiness → archive → autopilot-release
+- Handoff from dashboard cards with blocker, artifact, and verify context
+- Run-once, fix, explain, and verify-only modes based on the active blocker
+- Patch review and rollback hints before mutating code
+- Ship loop: analyze → verify-gates → readiness → archive
 - CLI surface with allowlisted RapidKit commands and mutation gates
-- Terminal bridge for structured diagnosis from real command output
+- Visible failure, verify, and audit states without relying on developer console output
 
 ---
 
@@ -194,20 +230,32 @@ The extension uses those surfaces for dashboard buttons, sidebar menus, module i
 
 [Install from the Marketplace](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode), then reload VS Code.
 
-### 2. Open the dashboard
+### 2. Verify the RapidKit CLI bridge
+
+Workspai uses the canonical RapidKit npm CLI for enterprise workflows. Install or update it before running create, adopt, governance, Repair, or Studio actions:
+
+```bash
+npm install -g rapidkit@latest
+rapidkit --version --json
+rapidkit commands --json
+```
+
+Workspai checks the linked RapidKit CLI capability surface before enterprise workflows run.
+
+### 3. Open the dashboard
 
 ```text
 Workspai: Open Dashboard
 ```
 
-### 3. Create or import a workspace
+### 4. Create or import a workspace
 
 ```text
 Workspai: Create Workspace
 Workspai: Import Workspace
 ```
 
-### 4. Add a project
+### 5. Add a project
 
 ```text
 Workspai: Create Project
@@ -219,7 +267,7 @@ Or adopt an existing repo into the active workspace:
 Workspai: Adopt Project
 ```
 
-### 5. Verify the environment
+### 6. Verify the environment
 
 ```text
 Workspai: Run System Check
@@ -287,6 +335,7 @@ Workspai AI features use the language models available in your VS Code environme
 |------|---------|
 | VS Code | 1.100+ |
 | Node.js | 18+ |
+| RapidKit npm CLI | Latest recommended for enterprise Dashboard, Repair, Studio, create, and adopt workflows |
 | Python | 3.10+ for FastAPI projects |
 | Go | 1.21+ for Go projects |
 | Java | 17+ for Spring Boot projects |
@@ -326,7 +375,7 @@ Select a FastAPI or NestJS project in the Projects panel. Frontend and extended 
 
 **Project creation or adopt fails**
 
-Open `View → Output → Workspai`, inspect the command output, then run `Workspai: Run System Check`.
+Open `View → Output → Workspai`, inspect the command output, then run `Workspai: Run System Check`. Create and adopt workflows require a compatible `rapidkit` npm CLI; update with `npm install -g rapidkit@latest` when the CLI gate reports an older or missing version.
 
 ---
 

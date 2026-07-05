@@ -9,7 +9,9 @@ This webview follows VS Code first theming with Workspai shape and identity.
 - Surface, text, border, input, focus, and status colors use semantic `--ws-*` variables.
 - New component styles should prefer `ws-*` / `workspai-*` vocabulary. Legacy prefixes such as `spc-*`, `studio-*`, and `dashboard-*` are migration targets, not expansion points.
 - New hardcoded hex or rgba colors are not allowed in React component files. Token files are the exception.
-- New standalone webview entries must import `workspai-tokens.css` and render under `WorkspaiThemeProvider`.
+- New standalone webview entries must import `workspai-tokens.css`. Dashboard-style entries
+  render under `WorkspaiThemeProvider`; sidebar entries must use the same semantic tokens and
+  VS Code theme variables with no local theme override controls.
 
 ## Theme Spine
 
@@ -67,6 +69,18 @@ Legacy aliases (migration only, do not extend):
 - `spc-shell` → `ws-setup-shell`
 - `workspai-settings-*` → `ws-settings-*` + `ws-card` / `ws-field` / `ws-btn`
 
+### Legacy Prefix Budget
+
+Legacy prefixes are allowed only as tracked migration debt. They must not grow.
+
+| Prefix | Current budget | Rule |
+| ------ | -------------- | ---- |
+| legacy `dashboard-*` | 104 occurrences across 19 product source files | New dashboard chrome should add `ws-dashboard-*` aliases or replace old selectors. |
+| `spc-*` | 294 occurrences across 3 product source files | Setup surfaces should migrate toward `ws-setup-*`, `ws-card`, `ws-field`, and `ws-btn`. |
+
+`designSystemDrift.test.ts` enforces this budget so touched UI can move toward
+the shared system without silently expanding legacy vocabulary.
+
 Import order for every webview entry:
 
 ```text
@@ -78,39 +92,42 @@ Product-specific bundles (import only when the surface is mounted):
 
 - `workspai-analyze-report.css` — Analyze report viewer
 
-## Incident Studio (vNext)
+## Workspai Studio (Secondary Sidebar)
 
-Production path: `IncidentStudioVNext` → region components under `StudioRedesign/regions/`.
+Production path: secondary sidebar React bundle → `SidebarApp` → `SecondarySidebar` →
+`StudioBlockerChrome` / `StudioPatchReview` / `StudioShipLoopStepper`.
+
+Studio is no longer a dashboard-embedded surface. Dashboard cards build typed blocker
+handoff payloads and open the sidebar Studio with the exact blocker, artifact, source
+command, verify command, and audit context. Release-path guidance is not default
+Studio chrome; it only appears for explicit readiness / verify-gate handoffs with a
+known workspace scope.
 
 | Layer | File | Role |
 |-------|------|------|
 | Tokens | `workspai-tokens.css` | Semantic `--ws-*` variables |
-| Layout + tone utilities | `workspai-studio.css` | Region layout, tone modifiers, enter animations |
-| Component chrome | `workspai-studio-chrome.css` | Legacy `studio-*` shell extracted from GlobalStyles |
-| Class registry | `styles/studioUi.ts` | `studioClass.*` keys + tone helpers |
-| Theme bridge (internal) | `styles/designTokens.ts` | `--ws-*` aliases for `themeSystem.ts` only — not exported from barrel |
+| Sidebar entry | `webview-ui/src/sidebar/index.tsx` | Imports token spine, primitives, sidebar CSS, and a11y styles |
+| Sidebar app | `webview-ui/src/sidebar/SidebarApp.tsx` | Secondary-sidebar shell |
+| Studio orchestration | `webview-ui/src/sidebar/SecondarySidebar.tsx` | Create / Advisor / Studio tabs and host protocol |
+| Blocker chrome | `webview-ui/src/sidebar/StudioBlockerChrome.tsx` | Mode, phase, blockers, verify, and visible failure state |
+| Patch review | `webview-ui/src/sidebar/StudioPatchReview.tsx` | Human review before patch apply |
+| Release path | `webview-ui/src/sidebar/StudioShipLoopStepper.tsx` | Scoped analyze, verify-gates, readiness, archive loop |
 
-Rules for studio regions:
+Rules for Studio and sidebar surfaces:
 
-1. Prefer `studioClass` + tone helpers (`postureToneClass`, `releasePostureToneClass`, …) over inline `style={{}}`.
-2. Do not import `colorTokens` / `motionTokens` in token-ready region components.
-3. Lucide icons inherit tone via `currentColor` + tone classes — avoid `color={…}` props.
-4. `globalStyles.tsx` is a stub; chrome lives in static CSS (`scripts/verify-studio-chrome-css.mjs` guards CI).
-5. `IncidentStudioVNext` syncs `data-studio-theme-kind` from VS Code — do not mutate runtime `colorTokens`.
+1. Prefer shared primitives (`ws-btn`, `ws-chip`, `ws-card`, `ws-kicker`) for touched controls.
+2. Keep one primary action per Studio phase; move secondary actions to compact controls or overflow.
+3. Use `currentColor` for Lucide icons and semantic tone classes; avoid hardcoded icon colors.
+4. Surface action failures inside Studio chrome instead of relying on `console.warn`.
+5. Keep Advisor read-only; mutation belongs in Studio.
+6. Preserve typed blocker handoff fields: card id, status, artifact, source command, verify command, mode, and audit state.
 
-Legacy monolith removed in Wave S — presentation contracts live in `webview-ui/src/lib/` and `incidentStudioPresentationContracts.test.ts`.
+## Historical Studio Assets
 
-Wave T wires action-outcome presentation into production Studio: `buildActionOutcomePresentation` → `ActionOutcomePanel` in `ChatSurface`, fed by `incomingActionResult` from `App.tsx`.
-
-## Integration Waves (post design migration)
-
-| Wave | Status | Focus |
-|------|--------|-------|
-| J–Y | Complete | Design system, vNext regions, guided/lite UX |
-| Z1 | In progress | Workspace path navigation — source files open in editor; `.rapidkit/reports/*` reveal in OS |
-| Z2 | Complete | Persistent chat history + approval audit per workspace (`incidentStudioSessionPersistenceBridge`) |
-| Z3 | Complete | Live policy gates from telemetry — shared host/webview policy core + parity tests |
-| Z4 | In progress | Confidence UI + observability surfaces (release readiness KPI, command telemetry, repro pack) |
+`webview-ui/src/components/StudioRedesign/` still contains state and style utilities from
+the earlier dashboard Studio migration. Those files are compatibility and test assets, not
+the shipped production Studio entry. New work should extend the secondary sidebar Studio
+unless a product decision explicitly reintroduces a dashboard Studio surface.
 
 ## Migration Rule
 

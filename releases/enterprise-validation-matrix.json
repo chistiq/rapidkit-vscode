@@ -1,7 +1,7 @@
 {
   "schemaVersion": "workspai-enterprise-validation-matrix.v1",
   "generatedFor": "rapidkit-vscode",
-  "npmTruthBaseline": "0.41.2",
+  "npmTruthBaseline": "0.41.4",
   "scenarios": [
     {
       "id": "cli.version.below_minimum",
@@ -147,6 +147,146 @@
         "primaryAction",
         "overflow",
         "RepairIncidentSummary"
+      ]
+    },
+    {
+      "id": "dashboard.home.attention_rank",
+      "label": "Home ranks top blockers by severity, recency, and governance impact",
+      "category": "dashboard",
+      "priority": "P1",
+      "evidence": [
+        "src/test/dashboardMinimalUx.test.ts",
+        "webview-ui/src/components/DashboardOverviewQuickNav.tsx",
+        "webview-ui/src/lib/evidenceAgentContext.ts"
+      ],
+      "requiredSnippets": [
+        "Top blockers",
+        "buildEvidenceAttentionInbox(evidence).slice(0, 3)",
+        "GOVERNANCE_IMPACT_SCORE"
+      ]
+    },
+    {
+      "id": "dashboard.first_artifact.celebration",
+      "label": "First artifact generation creates a subtle Day-0 value moment",
+      "category": "dashboard",
+      "priority": "P2",
+      "evidence": [
+        "src/test/dashboardMinimalUx.test.ts",
+        "webview-ui/src/components/DashboardOverviewQuickNav.tsx",
+        "webview-ui/src/styles-tailwind.css"
+      ],
+      "requiredSnippets": [
+        "First evidence ready",
+        "aria-label=\"First evidence generated\"",
+        ".home-first-artifact-celebration"
+      ]
+    },
+    {
+      "id": "studio.verify.closure_return",
+      "label": "Verified Studio repairs close with a clear return-to-dashboard path",
+      "category": "studio",
+      "priority": "P1",
+      "evidence": [
+        "src/test/dashboardMinimalUx.test.ts",
+        "src/test/sidebarStudioReturnState.test.ts",
+        "webview-ui/src/sidebar/StudioRepairResult.tsx",
+        "src/ui/webviews/actionsWebviewMessageDispatcher.ts"
+      ],
+      "requiredSnippets": [
+        "Blocker resolved",
+        "Back to Dashboard",
+        "command: 'sidebarOpenDashboard'"
+      ]
+    },
+    {
+      "id": "statusbar.ambient_truth",
+      "label": "Status bar exposes workspace, blocker, and CLI truth without opening panels",
+      "category": "dashboard",
+      "priority": "P2",
+      "evidence": [
+        "src/test/statusBar.test.ts",
+        "src/ui/statusBar.ts"
+      ],
+      "requiredSnippets": [
+        "updateAmbientTruth",
+        "Top: none loaded",
+        "`$(rocket) Workspai · ${segments.join(' · ')}`"
+      ]
+    },
+    {
+      "id": "repair.guided_default.keyboard",
+      "label": "Repair stays guided for new users and supports Enter on the active card",
+      "category": "dashboard",
+      "priority": "P2",
+      "evidence": [
+        "src/test/dashboardMinimalUx.test.ts",
+        "webview-ui/src/components/DashboardRepairFlow.tsx"
+      ],
+      "requiredSnippets": [
+        "REPAIR_MODE_PERSIST_AFTER_VERIFY_COUNT = 3",
+        "aria-keyshortcuts=\"Enter\"",
+        "function isInteractiveKeyboardTarget"
+      ]
+    },
+    {
+      "id": "performance.evidence_refresh_coalesced",
+      "label": "Rapid evidence writes coalesce before refreshing the dashboard",
+      "category": "performance",
+      "priority": "P2",
+      "evidence": [
+        "src/test/doctorTelemetryRefresh.test.ts",
+        "src/ui/panels/doctorTelemetryRefresh.ts"
+      ],
+      "requiredSnippets": [
+        "coalesces rapid report writes in the same workspace into one patch refresh",
+        "does not merge report bursts across different workspaces",
+        "mergeDashboardEvidenceRefreshContexts"
+      ]
+    },
+    {
+      "id": "performance.remediation_plan_cache",
+      "label": "Studio caches doctor remediation plans briefly without crossing blocker signatures",
+      "category": "performance",
+      "priority": "P2",
+      "evidence": [
+        "src/test/doctorRemediationPlanReader.test.ts",
+        "src/core/doctorRemediationPlanReader.ts"
+      ],
+      "requiredSnippets": [
+        "clearDoctorRemediationPlanCache",
+        "DOCTOR_REMEDIATION_PLAN_CACHE_TTL_MS = 2_000",
+        "const readJsonSpy = vi.spyOn(fs, 'readJSON')"
+      ]
+    },
+    {
+      "id": "dashboard.archive.paginated",
+      "label": "Expanded artifact archive paginates large workspaces",
+      "category": "performance",
+      "priority": "P2",
+      "evidence": [
+        "src/test/dashboardMinimalUx.test.ts",
+        "webview-ui/src/components/CommandActivityPanel.tsx"
+      ],
+      "requiredSnippets": [
+        "ARCHIVE_CARD_PAGE_SIZE = 12",
+        "expandedVisibleCardCount",
+        "Show {Math.min(ARCHIVE_CARD_PAGE_SIZE, hiddenArchiveCardCount)} more artifacts"
+      ]
+    },
+    {
+      "id": "governance.activation_and_command_surface",
+      "label": "Activation logs and command ownership stay auditable",
+      "category": "governance",
+      "priority": "P2",
+      "evidence": [
+        "src/test/workspaceExplorerActivation.test.ts",
+        "src/test/actionsWebviewProvider.test.ts",
+        "docs/COMMAND_SURFACE_AUDIT.md"
+      ],
+      "requiredSnippets": [
+        "Activation: registering commands",
+        "Activation: Workspai extension initialized",
+        "Dashboard diagnoses and routes; Studio fixes; Advisor explains; Create builds."
       ]
     },
     {

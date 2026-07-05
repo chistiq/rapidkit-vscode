@@ -12,13 +12,15 @@ describe('sidebarStudioRollbackHint', () => {
     );
   });
 
-  it('collects applied debug-patch paths only', () => {
+  it('collects rollback-safe Studio file mutation paths only', () => {
     expect(
       collectAppliedPatchPaths([
         { path: 'src/a.ts', action: 'apply-debug-patch', outcome: 'applied' },
+        { path: 'package.json', action: 'package-json-script', outcome: 'applied' },
+        { path: '.env.example', action: 'env-key-add', outcome: 'applied' },
         { path: '.rapidkit/reports/x.json', action: 'doctor-fix', outcome: 'applied' },
         { path: 'src/b.ts', action: 'apply-debug-patch', outcome: 'failed' },
       ])
-    ).toEqual(['src/a.ts']);
+    ).toEqual(['src/a.ts', 'package.json', '.env.example']);
   });
 });

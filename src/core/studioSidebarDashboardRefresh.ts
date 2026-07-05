@@ -5,10 +5,8 @@ import {
   type DashboardEvidenceCardId,
 } from '../contracts/dashboardEvidenceCards.js';
 import type { StudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
-import {
-  buildDashboardEvidenceBundle,
-  type DashboardEvidenceCard,
-} from './dashboardEvidenceBridge.js';
+import type { DashboardEvidenceCard } from './dashboardEvidenceBridge.js';
+import { buildDashboardEvidenceCardsForIds } from './dashboardEvidenceCardRefresh.js';
 import {
   reconcileStudioBlockerLedgerAfterVerify,
   type StudioBlockerLedgerReconcileResult,
@@ -66,14 +64,14 @@ export async function refreshDashboardAfterStudioVerify(input: {
     projectName: input.projectName,
   });
 
-  const bundle = await buildDashboardEvidenceBundle({
+  const refreshedCards = await buildDashboardEvidenceCardsForIds({
     workspacePath: input.workspacePath,
     projectPath: input.projectPath,
     projectName: input.projectName,
+    cardIds,
   });
 
-  const refreshedCards = bundle.cards.filter((card) => cardIds.includes(card.id));
-  const primaryCard = bundle.cards.find((card) => card.id === input.handoff.cardId);
+  const primaryCard = refreshedCards.find((card) => card.id === input.handoff.cardId);
 
   let ledger: StudioBlockerLedgerReconcileResult | undefined;
   if (input.context) {

@@ -2,6 +2,7 @@ import { ChevronRight, Sparkles, Wrench } from 'lucide-react';
 
 interface FreshInstallOnboardingProps {
   templateCount: number;
+  mode?: 'fresh' | 'resume-setup';
   onOpenSetup: () => void;
   onCreateWithAI: () => void;
   onBrowseCatalog: () => void;
@@ -9,10 +10,13 @@ interface FreshInstallOnboardingProps {
 
 export function FreshInstallOnboarding({
   templateCount,
+  mode = 'fresh',
   onOpenSetup,
   onCreateWithAI,
   onBrowseCatalog,
 }: FreshInstallOnboardingProps) {
+  const isResumeSetup = mode === 'resume-setup';
+
   return (
     <section
       className="ws-onboarding-shell fresh-install-onboarding fresh-install-onboarding--compact"
@@ -21,9 +25,15 @@ export function FreshInstallOnboarding({
       <div className="fresh-install-onboarding__hero">
         <Sparkles size={18} aria-hidden="true" />
         <div>
-          <div className="ws-kicker">Setup recovery</div>
-          <h2>Workspace Intelligence is not ready yet</h2>
-          <p>Resolve the setup path first, then generate the first useful artifact.</p>
+          <div className="ws-kicker">{isResumeSetup ? 'Setup recovery' : 'Get started'}</div>
+          <h2>
+            {isResumeSetup ? 'Resume setup before continuing' : 'Create your first workspace'}
+          </h2>
+          <p>
+            {isResumeSetup
+              ? 'Finish the compatible CLI path, then return to Repair or generate evidence.'
+              : 'New to Workspai: no workspace yet. Start with a governed workspace, then generate the first useful evidence artifact.'}
+          </p>
         </div>
       </div>
       <button
@@ -33,8 +43,12 @@ export function FreshInstallOnboarding({
       >
         <Wrench size={16} aria-hidden="true" />
         <span className="fresh-install-onboarding__card-copy">
-          <strong>Open Setup Recovery</strong>
-          <small>Install or link the compatible CLI, select a workspace, then run the first model.</small>
+          <strong>{isResumeSetup ? 'Resume setup' : 'Start setup'}</strong>
+          <small>
+            {isResumeSetup
+              ? 'Return to Setup & Installation and finish the CLI recovery path.'
+              : 'Install or link the compatible CLI, create a workspace, then run the first model.'}
+          </small>
         </span>
         <ChevronRight size={16} aria-hidden="true" />
       </button>

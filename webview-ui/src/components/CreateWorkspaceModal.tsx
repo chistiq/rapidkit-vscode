@@ -216,18 +216,18 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, 
             footer={
                 <>
                     {onSwitchToAI && (
-                        <button type="button" className="enterprise-button enterprise-button--ghost" onClick={onSwitchToAI}>
+                        <button type="button" className="ws-btn ws-btn--ghost" onClick={onSwitchToAI}>
                             <Sparkles size={13} />
                             Use AI instead
                         </button>
                     )}
                     <div className="enterprise-modal-actions">
-                        <button type="button" className="enterprise-button enterprise-button--secondary" onClick={onClose}>
+                        <button type="button" className="ws-btn" onClick={onClose}>
                             Cancel
                         </button>
                         <button
                             type="button"
-                            className="enterprise-button enterprise-button--primary"
+                            className="ws-btn ws-btn--primary"
                             onClick={handleCreate}
                             disabled={!canCreate}
                         >

@@ -88,3 +88,24 @@ jobs:
           echo "Dry-run complete. VSIX artifact passed provenance and content gates."
           echo "Commit: ${{ inputs.commit_sha }}"
           echo "Artifact: workspai-vsix-${{ inputs.commit_sha }}"
+
+      - name: Refresh Workspai changelog cache
+        if: inputs.publish_target == 'marketplace'
+        continue-on-error: true
+        env:
+          WORKSPAI_CHANGELOG_WEBHOOK_URL: ${{ secrets.WORKSPAI_CHANGELOG_WEBHOOK_URL }}
+          WORKSPAI_CHANGELOG_WEBHOOK_SECRET: ${{ secrets.WORKSPAI_CHANGELOG_WEBHOOK_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${WORKSPAI_CHANGELOG_WEBHOOK_URL:-}" ] || [ -z "${WORKSPAI_CHANGELOG_WEBHOOK_SECRET:-}" ]; then
+            echo "::warning::Workspai changelog webhook is not configured (need secrets.WORKSPAI_CHANGELOG_WEBHOOK_URL and secrets.WORKSPAI_CHANGELOG_WEBHOOK_SECRET)."
+            exit 0
+          fi
+          VERSION=$(node -p "require('./package.json').version")
+          echo "Requesting Workspai changelog revalidation for vscode@${VERSION}..."
+          curl -fsS -X POST "${WORKSPAI_CHANGELOG_WEBHOOK_URL}" \
+            -H "Authorization: Bearer ${WORKSPAI_CHANGELOG_WEBHOOK_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d "{\"source\":\"vscode\",\"version\":\"${VERSION}\"}"
+          echo "Workspai changelog cache refresh requested."

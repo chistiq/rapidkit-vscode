@@ -8,6 +8,10 @@ import {
   resolveEvidenceCardCommandAction,
   type DashboardEvidenceCommandAction,
 } from './dashboardEvidenceActions';
+import {
+  fallbackDashboardIncidentPrimaryAction,
+  normalizeDashboardIncidentPrimaryAction,
+} from './dashboardIncidentActionLabels';
 
 export interface DashboardEvidenceActionContract {
   cardId: DashboardEvidenceCard['id'];
@@ -129,16 +133,40 @@ function resolvePrimaryEvidenceAction(input: {
   if (input.card.status === 'pass') {
     return { type: 'done', label: 'Done' };
   }
+
+  const incidentAction =
+    normalizeDashboardIncidentPrimaryAction(
+      input.card.incidentSummary?.primaryAction,
+      input.card.incidentSummary?.phase
+    ) ||
+    fallbackDashboardIncidentPrimaryAction({
+      status: input.card.status,
+      phase: input.card.incidentSummary?.phase,
+    });
+
   if (isCorruptArtifactCard(input.card) && input.commandAction) {
-    return { type: 'run', label: input.commandAction.label };
+    return { type: 'run', label: 'Re-run command' };
   }
   if (input.card.status === 'missing' && input.commandAction) {
-    return { type: 'run', label: input.commandAction.label || 'Run once' };
+    return { type: 'run', label: 'Generate artifact' };
+  }
+  if (incidentAction === 'Generate evidence' && input.commandAction) {
+    return { type: 'run', label: incidentAction };
+  }
+  if (incidentAction === 'Run verify' && input.commandAction) {
+    return { type: 'run', label: incidentAction };
   }
   if ((input.card.status === 'fail' || input.card.status === 'warn') && input.studioTarget) {
     return {
       type: 'studio',
-      label: input.card.status === 'fail' ? 'Fix in Studio' : 'Open in Studio',
+      label:
+        incidentAction === 'Explain blocker' ||
+        incidentAction === 'Fix by Workspai' ||
+        incidentAction === 'Open in Studio'
+          ? incidentAction
+          : input.card.status === 'fail'
+            ? 'Fix by Workspai'
+            : 'Open in Studio',
     };
   }
   if (input.commandAction) {

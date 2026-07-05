@@ -33,4 +33,19 @@ describe('retentionMilestones', () => {
     expect(state.commandFailuresBySurface.dashboard).toBe(1);
     expect(state.commandFailuresBySurface.studio).toBe(1);
   });
+
+  it('records Studio opened as a write-once local milestone', () => {
+    const first = applyRetentionMilestone(emptyRetentionMilestoneState(), 'studio_opened', {
+      surface: 'studio',
+      now: 300,
+    });
+    const second = applyRetentionMilestone(first, 'studio_opened', {
+      surface: 'studio',
+      now: 400,
+    });
+
+    expect(second.studioOpenedAt).toBe(300);
+    expect(JSON.stringify(second)).not.toContain('workspacePath');
+    expect(JSON.stringify(second)).not.toContain('projectPath');
+  });
 });

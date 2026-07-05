@@ -957,7 +957,10 @@ export class WelcomePanel {
   /**
    * Refresh workspace status (installed modules) after module installation
    */
-  public static async refreshWorkspaceStatus(options?: { forceCapabilityRefresh?: boolean }) {
+  public static async refreshWorkspaceStatus(options?: {
+    forceCapabilityRefresh?: boolean;
+    workspaceOverride?: { name?: string; path: string } | null;
+  }) {
     if (WelcomePanel.currentPanel) {
       await WelcomePanel.currentPanel._sendWorkspaceStatus(options);
       // Also refresh modules catalog to get latest versions
@@ -985,7 +988,12 @@ export class WelcomePanel {
     }
 
     await dashboardPanel._sendRecentWorkspaces();
-    await dashboardPanel._sendWorkspaceStatus();
+    await dashboardPanel._sendWorkspaceStatus({
+      workspaceOverride: {
+        path: workspacePath,
+        name: path.basename(workspacePath),
+      },
+    });
     await dashboardPanel._refreshModulesCatalog();
     await dashboardPanel._sendDashboardEvidence({ workspacePath, refreshMode: 'full' });
   }
@@ -1391,6 +1399,8 @@ export class WelcomePanel {
       handleDashboardStudioAction: (data) => this._handleDashboardStudioAction(data),
       handleDashboardAIActionContractCommand: (data) =>
         this._handleDashboardAIActionContractCommand(data),
+      isDashboardStudioSidebarOnly: () =>
+        vscode.workspace.getConfiguration('workspai').get<boolean>('studio.sidebarOnly', true),
       handleAiChatQuery: (data, requestId) =>
         this._handleAiChatQuery(data as MessagePayload, requestId),
       handleAiChatExecuteAction: (data, requestId) =>
@@ -1824,7 +1834,10 @@ export class WelcomePanel {
     await refreshWelcomePanelModulesCatalog(this._modulesCatalogHost(), options);
   }
 
-  private async _sendWorkspaceStatus(options?: { forceCapabilityRefresh?: boolean }) {
+  private async _sendWorkspaceStatus(options?: {
+    forceCapabilityRefresh?: boolean;
+    workspaceOverride?: { name?: string; path: string } | null;
+  }) {
     await sendWelcomePanelWorkspaceStatus(this._bootstrapPayloadHost(), options);
   }
 

@@ -32,6 +32,38 @@ interface EvidenceCardActionsProps {
   copyCommandText?: string;
 }
 
+export function resolveVisiblePrimaryEvidenceAction(input: {
+  primaryAction?: DashboardEvidencePrimaryAction;
+  canRun: boolean;
+  hasRunHandler: boolean;
+  hasStudioHandler: boolean;
+  showAgentActions: boolean;
+  runLabel: string;
+}): DashboardEvidencePrimaryAction | undefined {
+  if (input.primaryAction?.type === 'done') {
+    return input.primaryAction;
+  }
+  if (input.primaryAction?.type === 'run' && input.canRun && input.hasRunHandler) {
+    return input.primaryAction;
+  }
+  if (input.primaryAction?.type === 'studio' && input.hasStudioHandler) {
+    return input.primaryAction;
+  }
+  if (input.canRun && input.hasRunHandler) {
+    return {
+      type: 'run',
+      label: input.primaryAction?.type === 'run' ? input.primaryAction.label : input.runLabel,
+    };
+  }
+  if (input.showAgentActions && input.hasStudioHandler) {
+    return {
+      type: 'studio',
+      label: input.primaryAction?.type === 'studio' ? input.primaryAction.label : 'Open in Studio',
+    };
+  }
+  return undefined;
+}
+
 export function EvidenceCardActions({
   cardId,
   runLabel = 'Run',
@@ -57,15 +89,18 @@ export function EvidenceCardActions({
   const isRefreshPending = refreshPending ?? pending;
   const isBusy = pending || isRefreshPending;
   const canRevealArtifact = Boolean(artifactPath?.trim() && onRevealArtifact);
+  const hasRunHandler = canRun && Boolean(onRun);
+  const hasStudioHandler = Boolean(onAskStudio);
   const artifactIsCorrupt = artifactState === 'corrupt';
   const shouldExplainArtifact = Boolean(artifactLabel && !canRevealArtifact);
-  const resolvedPrimaryAction =
-    primaryAction ??
-    (canRun
-      ? ({ type: 'run', label: runLabel } as const)
-      : showAgentActions && onAskStudio
-        ? ({ type: 'studio', label: 'Open in Studio' } as const)
-        : undefined);
+  const resolvedPrimaryAction = resolveVisiblePrimaryEvidenceAction({
+    primaryAction,
+    canRun,
+    hasRunHandler,
+    hasStudioHandler,
+    showAgentActions,
+    runLabel,
+  });
   const primaryType = resolvedPrimaryAction?.type;
   const hasRunSecondary = canRun && onRun && primaryType !== 'run';
   const hasStudioSecondary = showAgentActions && onAskStudio && primaryType !== 'studio';
@@ -245,7 +280,7 @@ export function EvidenceCardActions({
                 title="Open Workspai Studio with this evidence context"
               >
                 <Bot size={12} aria-hidden="true" />
-                <span>Ask Studio</span>
+                <span>Fix by Workspai</span>
               </button>
             ) : null}
             {hasCopilotSecondary ? (

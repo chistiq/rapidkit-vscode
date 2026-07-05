@@ -23,6 +23,12 @@ export type DashboardLifecycleMessageHost = {
   sendDashboardEvidence: (context?: DashboardEvidenceRefreshContext) => Promise<void>;
   sendWorkspaceToolStatus: () => Promise<void>;
   resolveTelemetryWorkspacePath: () => string | undefined;
+  postDashboardEvidenceRefreshFailed?: (input: {
+    reason: string;
+    cardIds?: DashboardEvidenceRefreshContext['cardIds'];
+    requestId?: number;
+    refreshMode?: DashboardEvidenceRefreshContext['refreshMode'];
+  }) => void;
 };
 
 const DASHBOARD_LIFECYCLE_WEBVIEW_COMMANDS = new Set([
@@ -35,6 +41,30 @@ const DASHBOARD_LIFECYCLE_WEBVIEW_COMMANDS = new Set([
   'trackDashboardCommand',
   'trackDashboardNavigation',
 ]);
+
+function failureMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function sendDashboardEvidenceOrPostFailure(
+  host: DashboardLifecycleMessageHost,
+  context: DashboardEvidenceRefreshContext
+): Promise<void> {
+  try {
+    await host.sendDashboardEvidence(context);
+  } catch (error) {
+    const message = failureMessage(error);
+    const cardIds =
+      context.refreshMode === 'patch' && Array.isArray(context.cardIds) ? context.cardIds : [];
+    host.postDashboardEvidenceRefreshFailed?.({
+      reason: `Dashboard evidence refresh failed: ${message}`,
+      cardIds,
+      requestId: context.requestId,
+      refreshMode: context.refreshMode,
+    });
+    void vscode.window.showErrorMessage(`Dashboard evidence refresh failed: ${message}`);
+  }
+}
 
 export function isDashboardLifecycleWebviewCommand(command: string): boolean {
   return DASHBOARD_LIFECYCLE_WEBVIEW_COMMANDS.has(command);
@@ -58,7 +88,7 @@ export async function tryDispatchDashboardLifecycleWebviewMessage(
       break;
     case 'requestDashboardEvidence': {
       const payload = getWebviewMessageDataRecord({ command, data });
-      await host.sendDashboardEvidence({
+      await sendDashboardEvidenceOrPostFailure(host, {
         workspacePath: readStringField(payload, 'workspacePath'),
         projectPath: readStringField(payload, 'projectPath'),
         projectName: readStringField(payload, 'projectName'),
@@ -70,7 +100,7 @@ export async function tryDispatchDashboardLifecycleWebviewMessage(
     }
     case 'refreshDashboardEvidenceCard': {
       const payload = getWebviewMessageDataRecord({ command, data });
-      await host.sendDashboardEvidence({
+      await sendDashboardEvidenceOrPostFailure(host, {
         workspacePath: readStringField(payload, 'workspacePath'),
         projectPath: readStringField(payload, 'projectPath'),
         projectName: readStringField(payload, 'projectName'),

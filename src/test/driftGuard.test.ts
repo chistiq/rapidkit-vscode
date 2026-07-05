@@ -514,7 +514,7 @@ describe('contract drift guard', () => {
     expect(read('src/utils/platformCapabilities.ts')).toContain('buildNpxRapidkitPrefix');
     expect(read('src/utils/platformCapabilities.ts')).toContain("return ['--yes', 'rapidkit']");
     expect(read('src/core/incidentInlineCommandRunner.ts')).toContain(
-      'toPinnedRapidkitExecutionCommand(trimmed)'
+      'toPinnedRapidkitExecutionCommand(commandBody)'
     );
     expect(read('src/ui/panels/welcomePanelIncidentStudioMessages.ts')).toContain(
       'dispatchIncidentStudioInlineCommand'
@@ -599,9 +599,11 @@ describe('contract drift guard', () => {
 
   it('keeps the React sidebar provider on the enveloped, normalized protocol', () => {
     const source = read('src/ui/webviews/actionsWebviewProvider.ts');
+    const dispatcherSource = read('src/ui/webviews/actionsWebviewMessageDispatcher.ts');
 
     // Inbound messages are normalized; outbound goes through the shared envelope.
-    expect(source).toContain('normalizeWebviewMessage(rawMessage)');
+    expect(source).toContain('dispatchActionsWebviewMessage');
+    expect(dispatcherSource).toContain('normalizeWebviewMessage(rawMessage)');
     expect(source).toContain('createExtensionWebviewMessage(command, data');
     expect(source).not.toMatch(/\bvscode\.postMessage\(\s*{/);
     expect(source).toContain("source: 'workspai-secondary-sidebar'");

@@ -62,12 +62,12 @@ export function ImportAdoptOptionsModal({
       onClose={onClose}
       footer={
         <>
-          <button type="button" className="enterprise-button enterprise-button--secondary" onClick={onClose}>
+          <button type="button" className="ws-btn" onClick={onClose}>
             Cancel
           </button>
           <button
             type="button"
-            className="enterprise-button enterprise-button--primary"
+            className="ws-btn ws-btn--primary"
             onClick={() => onConfirm(enableModules)}
           >
             Continue

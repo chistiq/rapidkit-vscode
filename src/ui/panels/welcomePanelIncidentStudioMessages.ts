@@ -8,6 +8,7 @@ import {
   readTrimmedStringField,
 } from '../../contracts/webviewProtocol';
 import { revealWorkspaiEvidenceOutputForUser } from '../../core/evidenceCommandRunner';
+import { recordRetentionMilestone } from '../../core/retentionMilestones';
 import { buildIncidentLifecycleMetrics } from './incidentConversationMetrics';
 import { dispatchIncidentStudioInlineCommand } from './incidentStudioInlineCommandBridge';
 import {
@@ -54,6 +55,7 @@ export type IncidentStudioWebviewMessageHost = {
   handleDashboardStudioMessage: (data: unknown) => Promise<void>;
   handleDashboardStudioAction: (data: unknown) => Promise<void>;
   handleDashboardAIActionContractCommand: (data: unknown) => Promise<void>;
+  isDashboardStudioSidebarOnly: () => boolean;
   runOptionalMessageLane: (laneName: string, lane: () => Promise<void> | void) => Promise<void>;
   handleRunDoctorMessage: (data: unknown, action: 'check' | 'fix') => Promise<void>;
   handleViewProjectDoctorReportMessage: (data: unknown) => Promise<void>;
@@ -199,12 +201,21 @@ export async function tryDispatchIncidentStudioWebviewMessage(
       await host.saveDashboardIncidentStudioSession(data);
       break;
     case 'studioMessage':
+      if (host.isDashboardStudioSidebarOnly()) {
+        break;
+      }
       await host.handleDashboardStudioMessage(data);
       break;
     case 'runStudioAction':
+      if (host.isDashboardStudioSidebarOnly()) {
+        break;
+      }
       await host.handleDashboardStudioAction(data);
       break;
     case 'runAIActionContractCommand':
+      if (host.isDashboardStudioSidebarOnly()) {
+        break;
+      }
       await host.handleDashboardAIActionContractCommand(data);
       break;
     case 'copyCopilotContextPrompt':
@@ -225,6 +236,9 @@ export async function tryDispatchIncidentStudioWebviewMessage(
         resolveWorkspacePath: () => host.getSelectedWorkspaceInfo()?.path,
         resolveWorkspaceName: () => host.getSelectedWorkspaceInfo()?.name,
         extensionContext: host.context,
+      });
+      void recordRetentionMilestone(host.context, 'studio_opened', {
+        surface: 'studio',
       });
       break;
     case 'showWorkspaiEvidenceOutput':

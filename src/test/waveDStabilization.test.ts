@@ -37,6 +37,10 @@ describe('Wave D stabilization', () => {
     const extension = read('src/extension.ts');
     expect(extension).toContain('void showAIFeatureOnboarding(context)');
     expect(extension).not.toContain('await showAIFeatureOnboarding(context)');
+    expect(extension).toContain("config.get('showWelcomeOnStartup', true)");
+    expect(extension).toContain("config.get<boolean>('showOnboardingTips', true)");
+    expect(extension).toContain('workspai.onboarding.primary.dashboard_discovery');
+    expect(extension).toContain('The dashboard owns day-0 AI discovery');
   });
 
   it('removes unregistered template explorer tree view', () => {

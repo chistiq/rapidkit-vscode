@@ -12,6 +12,64 @@ export interface ChatTurn {
 }
 
 export type ChatSessionStatus = 'idle' | 'streaming' | 'done' | 'error';
+export type ChatSessionKind = 'global' | 'scope' | 'artifact' | 'editor-issue';
+export type ChatSessionIncidentRepairStatus = 'ready' | 'running' | 'review' | 'done' | 'blocked';
+
+export interface ChatSessionScopeSnapshot {
+  workspaceName?: string;
+  workspacePath?: string;
+  projectName?: string;
+  projectPath?: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
+export interface ChatSessionIncident {
+  key: string;
+  workspaceName?: string;
+  workspacePath?: string;
+  projectName?: string;
+  projectPath?: string;
+  cardId: string;
+  cardLabel?: string;
+  cardStatus?: 'pass' | 'warn' | 'fail' | 'missing';
+  scope?: 'workspace' | 'project';
+  blockers?: string[];
+  blockerSignature?: string;
+  commandRunCount?: number;
+  resolutionClass?: string;
+  resolutionHints?: unknown[];
+  studioMode?: string;
+  sourceCommand?: string;
+  artifactPath?: string;
+  verifyCommand?: string;
+  verifyArtifact?: string;
+  incidentSummary?: {
+    title: string;
+    phase: 'detect' | 'diagnose' | 'fix' | 'verify' | 'audit';
+    primaryAction: string;
+    verifyRequired: boolean;
+    auditStatus: 'not-started' | 'pending' | 'saved' | 'failed' | 'unknown';
+  };
+  repairStatus?: ChatSessionIncidentRepairStatus;
+  lastActionTitle?: string;
+  lastActionSummary?: string;
+  lastActionAt?: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
+export interface ChatSessionEditorIssue {
+  key: string;
+  filePath?: string;
+  fileName?: string;
+  languageId?: string;
+  diagnosticSignature?: string;
+  source?: string;
+  trigger?: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
 
 export interface ChatSession {
   sessionId: string;
@@ -22,6 +80,12 @@ export interface ChatSession {
   error?: string;
   /** Studio-only: the active mode for the session. */
   mode?: string;
+  /** Advisor/Studio: active workspace/project snapshot for ordinary scoped chats. */
+  scope?: ChatSessionScopeSnapshot;
+  /** Studio-only: card/artifact identity for dashboard-origin repair sessions. */
+  incident?: ChatSessionIncident;
+  /** Advisor/Studio: standalone editor diagnostic sessions, independent from workspace/project scope. */
+  editorIssue?: ChatSessionEditorIssue;
 }
 
 export interface SidebarPersistedState {
@@ -36,6 +100,74 @@ export function newSessionId(prefix: string): string {
 export function sessionTitle(question: string): string {
   const trimmed = question.trim().replace(/\s+/g, ' ');
   return trimmed.length > 48 ? `${trimmed.slice(0, 47)}…` : trimmed || 'New question';
+}
+
+export function basenameFromPath(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  return trimmed.split(/[\\/]/).filter(Boolean).pop();
+}
+
+export function chatSessionKind(session: ChatSession): ChatSessionKind {
+  if (session.editorIssue) {
+    return 'editor-issue';
+  }
+  if (session.incident) {
+    return 'artifact';
+  }
+  if (
+    session.scope?.workspaceName ||
+    session.scope?.workspacePath ||
+    session.scope?.projectName ||
+    session.scope?.projectPath
+  ) {
+    return 'scope';
+  }
+  return 'global';
+}
+
+export function chatSessionGroupLabel(kind: ChatSessionKind): string {
+  switch (kind) {
+    case 'editor-issue':
+      return 'Editor issues';
+    case 'artifact':
+      return 'Card fixes';
+    case 'scope':
+      return 'Workspace chats';
+    case 'global':
+    default:
+      return 'Global chats';
+  }
+}
+
+export function chatSessionContextLabel(session: ChatSession): string {
+  if (session.editorIssue) {
+    const file =
+      session.editorIssue.fileName ||
+      basenameFromPath(session.editorIssue.filePath) ||
+      'editor issue';
+    return session.editorIssue.languageId ? `${file} · ${session.editorIssue.languageId}` : file;
+  }
+  if (session.incident) {
+    const scope =
+      session.incident.projectName ||
+      session.incident.workspaceName ||
+      basenameFromPath(session.incident.projectPath) ||
+      basenameFromPath(session.incident.workspacePath) ||
+      'workspace';
+    return `${scope} · ${session.incident.cardLabel ?? session.incident.cardId}`;
+  }
+  if (session.scope) {
+    const workspace = session.scope.workspaceName || basenameFromPath(session.scope.workspacePath);
+    if (!workspace) {
+      return 'No workspace selected';
+    }
+    const project = session.scope.projectName || basenameFromPath(session.scope.projectPath);
+    return project ? `${workspace} / ${project}` : `${workspace} / workspace`;
+  }
+  return 'No workspace selected';
 }
 
 /** Last 8 turns, in the {role, content} shape the host expects for history. */

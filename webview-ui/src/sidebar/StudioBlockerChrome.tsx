@@ -11,6 +11,7 @@ import {
   studioVerifyFailureSummary,
   type StudioVerifyFailureView,
 } from '@/lib/studioVerifyFailure';
+import { buildStudioIncidentCopy } from '@/lib/dashboardIncidentContract';
 
 type StudioBlockerChromeProps = {
   handoff: StudioBlockerHandoffView | null;
@@ -43,7 +44,7 @@ export function StudioBlockerChrome({
 
   const headline = studioModeHeadline(handoff.studioMode);
   const detail = studioModeDetail(handoff);
-  const incident = handoff.incidentSummary;
+  const incident = buildStudioIncidentCopy({ handoff });
   const showAutoFix =
     handoff.studioMode === 'FIX' ||
     handoff.studioMode === 'RUN_ONCE' ||
@@ -72,26 +73,24 @@ export function StudioBlockerChrome({
         </div>
       </div>
 
-      {incident ? (
-        <div className="ws-sidebar__studio-incident" role="note" aria-label="Incident summary">
-          <div>
-            <span>Phase</span>
-            <strong>{incident.phase}</strong>
-          </div>
-          <div>
-            <span>Action</span>
-            <strong>{incident.primaryAction}</strong>
-          </div>
-          <div>
-            <span>Verify</span>
-            <strong>{incident.verifyRequired ? 'Required' : 'Optional'}</strong>
-          </div>
-          <div>
-            <span>Audit</span>
-            <strong>{incident.auditStatus}</strong>
-          </div>
+      <div className="ws-sidebar__studio-incident" role="note" aria-label="Incident summary">
+        <div>
+          <span>Phase</span>
+          <strong>{incident.phaseLabel}</strong>
         </div>
-      ) : null}
+        <div>
+          <span>Action</span>
+          <strong>{incident.primaryAction}</strong>
+        </div>
+        <div>
+          <span>Verify</span>
+          <strong>{incident.verifyLabel}</strong>
+        </div>
+        <div>
+          <span>Audit</span>
+          <strong>{incident.auditLabel}</strong>
+        </div>
+      </div>
 
       {handoff.blockers.length > 0 ? (
         <div className="ws-sidebar__studio-blockers" role="note">
@@ -139,11 +138,12 @@ export function StudioBlockerChrome({
       {verifyFailure ? (
         <div className="ws-sidebar__studio-verify-alert" role="alert">
           <strong>
-            Verify failed
+            {verifyFailure.title ?? 'Studio action failed'}
             {typeof verifyFailure.exitCode === 'number' ? ` · exit ${verifyFailure.exitCode}` : ''}
           </strong>
           <span>{studioVerifyFailureSummary(verifyFailure)}</span>
           {verifyFailure.commandText ? <code>{verifyFailure.commandText}</code> : null}
+          {verifyFailure.nextAction ? <small>{verifyFailure.nextAction}</small> : null}
         </div>
       ) : null}
     </div>
@@ -223,6 +223,7 @@ export function parseStudioBlockerHandoffView(value: unknown): StudioBlockerHand
       typeof record.commandRunCount === 'number' ? record.commandRunCount : undefined,
     resolutionClass:
       typeof record.resolutionClass === 'string' ? record.resolutionClass : undefined,
+    resolutionHints: Array.isArray(record.resolutionHints) ? record.resolutionHints : undefined,
     studioMode:
       record.studioMode === 'FIX' ||
       record.studioMode === 'RUN_ONCE' ||
@@ -234,6 +235,8 @@ export function parseStudioBlockerHandoffView(value: unknown): StudioBlockerHand
     verifyCommand: typeof record.verifyCommand === 'string' ? record.verifyCommand : undefined,
     verifyArtifact: typeof record.verifyArtifact === 'string' ? record.verifyArtifact : undefined,
     handoffSource: typeof record.handoffSource === 'string' ? record.handoffSource : undefined,
+    workspacePath: typeof record.workspacePath === 'string' ? record.workspacePath : undefined,
+    projectPath: typeof record.projectPath === 'string' ? record.projectPath : undefined,
   };
 }
 

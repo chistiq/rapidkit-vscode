@@ -270,6 +270,19 @@ describe('shared runtime command surface contract (extension)', () => {
     expect(importProject).toContain('runCanonicalNpmImport');
     expect(importProject).toContain('describeCanonicalCliFailure');
     expect(importProject).toContain('ensureWorkspaceSkeletonViaNpm');
+    expect(importProject).toContain('showImportWorkspaceResolutionHelp');
+    expect(importProject).toContain("const PICK_WORKSPACE_ACTION = 'Pick Workspace'");
+    expect(importProject).toContain("const CREATE_WORKSPACE_ACTION = 'Create Workspace'");
+    expect(importProject).toContain("const USE_DEFAULT_WORKSPACE_ACTION = 'Use Default Workspace'");
+    expect(importProject).toContain(
+      "vscode.commands.executeCommand('workspai.quickSwitchWorkspace')"
+    );
+    expect(importProject).toContain("vscode.commands.executeCommand('workspai.createWorkspace')");
+    expect(importProject).toContain(
+      "vscode.commands.executeCommand('workspai.selectWorkspace', ensured.path)"
+    );
+    expect(importProject).toContain('Project import needs a destination workspace.');
+    expect(importProject).toContain('Selected folder is not a governed Workspai workspace.');
     expect(importProject).not.toContain('fs.copy');
     expect(importProject).not.toContain('extension-fallback');
 

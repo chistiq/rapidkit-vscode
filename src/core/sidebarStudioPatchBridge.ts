@@ -6,12 +6,12 @@ import { prepareAIConversation } from './aiService.js';
 import {
   applyPatches,
   extractPatchesFromAiResponse,
+  normalizePatchesForWorkspaceScope,
   type FilePatch,
   type MultiFilePatchResult,
 } from './patchApplyEngine.js';
 import { loadAnalyzeReport } from '../ui/panels/incidentStudioAnalyze.js';
 import { classifyIncidentActionPolicy } from '../ui/panels/incidentStudioPromptPolicy.js';
-import { buildInlineQueryFromAction } from '../ui/panels/welcomePanelChatBrainInlineQuery.js';
 import type { StudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
 
 export type SidebarPatchBridgeResult = {
@@ -23,16 +23,69 @@ export type SidebarPatchBridgeResult = {
   appliedFixes?: Array<{ path: string; action: string; outcome: string }>;
 };
 
-function buildHandoffIssuePayload(handoff: StudioBlockerHandoff): Record<string, unknown> {
-  return {
-    issueSummary: [
-      handoff.cardLabel
-        ? `Evidence card: ${handoff.cardLabel}`
-        : `Evidence card: ${handoff.cardId}`,
-      ...handoff.blockers.slice(0, 6),
-    ].join('\n'),
-    logContext: handoff.resolutionHints?.[0]?.fixHints?.[0]?.detail,
-  };
+function buildSidebarCardRepairPatchPrompt(input: {
+  handoff: StudioBlockerHandoff;
+  analyzeContext?: string;
+}): string {
+  const { handoff } = input;
+  const primaryHint = handoff.resolutionHints?.[0];
+  const fixHints = primaryHint?.fixHints ?? [];
+  const lines = [
+    'You are Workspai Studio running inside VS Code.',
+    'Continue the active card repair session. Do not ask the user to restate the issue.',
+    'Use the blocker handoff and evidence below as the source of truth.',
+    '',
+    '## Active card',
+    `- Card: ${handoff.cardLabel ?? handoff.cardId}`,
+    `- Status: ${handoff.cardStatus}`,
+    `- Scope: ${handoff.scope}`,
+    `- Workspace: ${handoff.workspacePath ?? 'unknown'}`,
+    ...(handoff.projectPath ? [`- Project: ${handoff.projectPath}`] : []),
+    ...(handoff.artifactPath ? [`- Artifact: ${handoff.artifactPath}`] : []),
+    ...(handoff.verifyCommand ? [`- Verify after patch: ${handoff.verifyCommand}`] : []),
+    ...(handoff.blockers.length > 0
+      ? ['', '## Blockers', ...handoff.blockers.slice(0, 8).map((blocker) => `- ${blocker}`)]
+      : []),
+    ...(primaryHint
+      ? [
+          '',
+          '## Resolution hint',
+          `- Class: ${primaryHint.resolutionClass ?? handoff.resolutionClass ?? 'unknown'}`,
+          ...(primaryHint.commandRetryHint
+            ? [`- Retry hint: ${primaryHint.commandRetryHint}`]
+            : []),
+        ]
+      : []),
+    ...(fixHints.length > 0
+      ? [
+          '',
+          '## Fix hints',
+          ...fixHints
+            .slice(0, 5)
+            .map((hint, index) =>
+              [
+                `- Hint ${index + 1}: ${hint.actionKind}`,
+                ...(hint.detail ? [`  - Detail: ${hint.detail}`] : []),
+                ...(hint.targetPath ? [`  - Target: ${hint.targetPath}`] : []),
+              ].join('\n')
+            ),
+        ]
+      : []),
+    ...(input.analyzeContext
+      ? ['', '## Analyze context (advisory, not a blocker)', input.analyzeContext]
+      : []),
+    '',
+    '## Required output',
+    '- Produce the smallest source/config patch that addresses the active blocker.',
+    '- Only edit files needed for this blocker; do not scaffold unrelated frameworks or broad architecture.',
+    '- For every file you create or modify, output a fenced code block in exactly this format:',
+    '```<language> path: <relative/path/to/file>',
+    '// full patched file content or minimal replacement content',
+    '```',
+    '- After patches, include a short verify command and rollback note.',
+    '- Do not claim the patch was applied; Studio will apply it after extracting the patch blocks.',
+  ];
+  return lines.join('\n');
 }
 
 export async function executeSidebarApplyDebugPatch(input: {
@@ -47,28 +100,20 @@ export async function executeSidebarApplyDebugPatch(input: {
       input.handoff.cardLabel ?? input.handoff.cardId ?? path.basename(input.workspacePath),
   });
 
-  if (!report) {
-    return {
-      status: 'blocked',
-      summary:
-        error || 'Analyze report is missing. Run workspace analyze before apply-debug-patch.',
-    };
-  }
-
-  if (report.summary.verdict === 'blocked') {
-    return {
-      status: 'blocked',
-      summary:
-        'Analyze evidence is blocked — resolve analyze blockers before governed code changes.',
-    };
-  }
-
   const actionPolicy = classifyIncidentActionPolicy('apply-debug-patch');
-  const inlineQuery = await buildInlineQueryFromAction(
-    'apply-debug-patch',
-    buildHandoffIssuePayload(input.handoff),
-    input.handoff.scope === 'project' ? 'project' : 'workspace'
-  );
+  const analyzeContext = report
+    ? [
+        `Analyze verdict: ${report.summary.verdict}`,
+        `Analyze score: ${report.summary.score}`,
+        `Findings: ${report.summary.findings.fail} fail, ${report.summary.findings.warn} warn, ${report.summary.findings.info} info`,
+      ].join('\n')
+    : error
+      ? `Analyze report unavailable: ${error}`
+      : undefined;
+  const inlineQuery = buildSidebarCardRepairPatchPrompt({
+    handoff: input.handoff,
+    analyzeContext,
+  });
 
   try {
     const prepared = await prepareAIConversation('ask', inlineQuery, {
@@ -84,9 +129,13 @@ export async function executeSidebarApplyDebugPatch(input: {
     }
 
     const actionId = `sidebar-fix-${input.handoff.cardId}`;
-    const rawPatches = extractPatchesFromAiResponse(responseText, {
-      actionId,
+    const rawPatches = normalizePatchesForWorkspaceScope({
       workspacePath: input.workspacePath,
+      projectPath: input.projectPath ?? input.handoff.projectPath,
+      patches: extractPatchesFromAiResponse(responseText, {
+        actionId,
+        workspacePath: input.workspacePath,
+      }),
     });
 
     if (rawPatches.length === 0) {
@@ -113,7 +162,7 @@ export async function executeSidebarApplyDebugPatch(input: {
       workspacePath: input.workspacePath,
       patches: rawPatches,
       branchSafeApply: true,
-      verificationPassed: report.summary.verdict === 'ready',
+      verificationPassed: report?.summary.verdict === 'ready',
     });
 
     const appliedFixes = patchResult.patches

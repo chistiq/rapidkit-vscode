@@ -115,6 +115,7 @@ export async function sendExampleWorkspaces(
     host.postWebviewMessage('updateExampleWorkspaces', enrichedExamples);
   } catch (error) {
     console.error('[WelcomePanel] Failed to send example workspaces:', error);
+    host.postWebviewMessage('updateExampleWorkspaces', []);
   }
 }
 
@@ -229,9 +230,12 @@ export async function sendWorkspaceToolStatus(
 
 export async function sendWorkspaceStatus(
   host: BootstrapPayloadHost,
-  options?: { forceCapabilityRefresh?: boolean }
+  options?: {
+    forceCapabilityRefresh?: boolean;
+    workspaceOverride?: { name?: string; path: string } | null;
+  }
 ): Promise<void> {
-  const selectedWorkspace = host.getSelectedWorkspaceInfo();
+  const selectedWorkspace = options?.workspaceOverride ?? host.getSelectedWorkspaceInfo();
   const selectedProject = host.getSelectedProject();
   const fallbackWorkspacePath = selectedProject?.workspacePath;
   const fallbackWorkspaceName =

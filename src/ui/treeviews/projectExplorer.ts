@@ -330,6 +330,7 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
   private _projectsLoadInProgress = false;
   private _projectListSignature = '';
   private _treeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private _projectLoadError: string | null = null;
 
   constructor() {
     // NOTE: 'workspai.workspaceSelected' is registered once in extension.ts
@@ -345,6 +346,7 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
     // Clear cached project list so next render triggers a fresh background load
     this._projectsLoaded = false;
     this._projectListSignature = '';
+    this._projectLoadError = null;
     this._scheduleTreeRefresh();
   }
 
@@ -378,6 +380,7 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
     // Reset project cache so next render triggers a fresh load for the new workspace
     this._projectsLoaded = false;
     this._projectListSignature = '';
+    this._projectLoadError = null;
     this.projects = [];
 
     // Clear selected project when workspace changes
@@ -487,6 +490,14 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
   }
 
   private _buildProjectItems(): ProjectTreeItem[] {
+    if (this._projectLoadError && this.projects.length === 0) {
+      const item = new ProjectTreeItem(null, 'placeholder', false, 'Project scan failed');
+      item.description = 'Refresh workspace';
+      item.tooltip = `Workspai could not scan projects for this workspace: ${this._projectLoadError}`;
+      item.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('charts.yellow'));
+      return [item];
+    }
+
     return this.projects.map((project) => {
       const isRunning = runningServers.has(project.path);
       const isSelected = this.selectedProject?.path === project.path;
@@ -720,8 +731,10 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
       );
 
       this.projects = detected.filter((p): p is WorkspaiProject => p !== null);
+      this._projectLoadError = null;
     } catch (error) {
       console.error('Error loading projects:', error);
+      this._projectLoadError = error instanceof Error ? error.message : String(error);
     }
   }
 }

@@ -261,7 +261,7 @@ export function DashboardEvidenceSection({
     isEvidenceFullRefreshPending || pendingRefreshCardIds.length > 0;
 
   return (
-    <div className="dashboard-evidence-layout" data-evidence-view={evidenceViewMode}>
+    <div className="ws-dashboard-evidence-layout" data-evidence-view={evidenceViewMode}>
       <EvidenceBrief
         brief={brief}
         evidenceViewMode={evidenceViewMode}
@@ -273,7 +273,7 @@ export function DashboardEvidenceSection({
 
       {evidenceViewMode !== 'guided' ? <DashboardTrendChart trend={evidence?.trend} /> : null}
 
-      <div className="dashboard-evidence-toolbar">
+      <div className="ws-dashboard-evidence-toolbar">
         <div>
           <span className="ws-kicker">
             {evidenceViewMode === 'expanded'
@@ -283,11 +283,11 @@ export function DashboardEvidenceSection({
                 : 'Attention queue'}
           </span>
           <p>
-            {dashboardScopeLabel(scope)} · {dashboardScopeDetail(scope)} ·{' '}
+            {dashboardScopeLabel(scope)} · {dashboardScopeDetail(scope, { showPaths: false })} ·{' '}
             {EVIDENCE_VIEW_MODE_HINTS[evidenceViewMode]}
           </p>
         </div>
-        <div className="dashboard-evidence-toolbar__actions">
+        <div className="ws-dashboard-evidence-toolbar__actions">
           <EvidenceViewModeToggle value={evidenceViewMode} onChange={onEvidenceViewModeChange} />
         </div>
       </div>
@@ -313,7 +313,7 @@ export function DashboardEvidenceSection({
       ) : null}
 
       {showReleaseHub ? (
-        <div className="dashboard-evidence-layout__split release-only">
+        <div className="ws-dashboard-evidence-layout__split release-only">
           <ReleaseHub
             evidence={evidence}
             hasWorkspace={hasWorkspace}

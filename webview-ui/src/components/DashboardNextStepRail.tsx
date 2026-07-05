@@ -62,14 +62,14 @@ export function DashboardNextStepRail({
   const hiddenCount = Math.max(0, steps.length - visibleSteps.length);
 
   return (
-    <section className="dashboard-next-step-rail" aria-label="Recommended next steps">
-      <div className="dashboard-next-step-rail__head">
-        <span className="dashboard-next-step-rail__title">Next steps</span>
-        <span className="ws-kicker dashboard-next-step-rail__meta">
+    <section className="ws-dashboard-next-step-rail" aria-label="Recommended next steps">
+      <div className="ws-dashboard-next-step-rail__head">
+        <span className="ws-dashboard-next-step-rail__title">Next steps</span>
+        <span className="ws-kicker ws-dashboard-next-step-rail__meta">
           {WORKSPAI_DASHBOARD_NEXT_STEPS_META}
         </span>
       </div>
-      <div className="dashboard-next-step-rail__list">
+      <div className="ws-dashboard-next-step-rail__list">
         {visibleSteps.map((step) => {
           const Icon = priorityIcon[step.priority];
           const sectionLabel = step.section ? dashboardSectionLabel(step.section) : null;
@@ -95,26 +95,26 @@ export function DashboardNextStepRail({
             <button
               key={step.id}
               type="button"
-              className={`dashboard-next-step-rail__item dashboard-next-step-rail__item--${step.priority}`}
+              className={`ws-dashboard-next-step-rail__item ws-dashboard-next-step-rail__item--${step.priority}`}
               onClick={handleClick}
               title={step.detail}
             >
               <Icon size={13} aria-hidden="true" />
-              <span className="dashboard-next-step-rail__item-copy">
-                <span className="dashboard-next-step-rail__item-title-row">
+              <span className="ws-dashboard-next-step-rail__item-copy">
+                <span className="ws-dashboard-next-step-rail__item-title-row">
                   <strong>{step.title}</strong>
                   {sectionLabel ? (
-                    <span className="ws-chip ws-chip--muted dashboard-next-step-rail__section-badge">
+                    <span className="ws-chip ws-chip--muted ws-dashboard-next-step-rail__section-badge">
                       {sectionLabel}
                     </span>
                   ) : null}
                 </span>
                 <small>{step.detail}</small>
                 {actionHint ? (
-                  <span className="dashboard-next-step-rail__action-hint">{actionHint}</span>
+                  <span className="ws-dashboard-next-step-rail__action-hint">{actionHint}</span>
                 ) : null}
                 {actionContract ? (
-                  <span className="dashboard-next-step-rail__contract" aria-label="Action contract">
+                  <span className="ws-dashboard-next-step-rail__contract" aria-label="Action contract">
                     <span>{actionContract.executionScope}</span>
                     <span>{actionContract.artifactLabel}</span>
                   </span>
@@ -126,7 +126,7 @@ export function DashboardNextStepRail({
         })}
       </div>
       {hiddenCount > 0 || expanded ? (
-        <div className="dashboard-next-step-rail__footer">
+        <div className="ws-dashboard-next-step-rail__footer">
           <span>
             {expanded
               ? `${steps.length} recommendations shown`

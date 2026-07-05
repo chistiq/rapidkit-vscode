@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { compactStudioPathText } from '@/lib/studioDisplayText';
 
 export type SidebarPatchReviewItem = {
   relativePath: string;
@@ -47,45 +48,70 @@ export function StudioPatchReview({
   if (patches.length === 0) {
     return null;
   }
+  const selectedCount = selected.size;
+  const appliedCount = patches.filter((patch) => patch.status === 'applied').length;
+  const failedCount = patches.filter((patch) => patch.failReason).length;
 
   return (
-    <div className="ws-sidebar__studio-patch-review" role="region" aria-label="Patch review">
-      <strong>Patch review</strong>
-      {summary ? <p>{summary}</p> : null}
-      {riskSummary ? <p className="ws-sidebar__studio-patch-risk">{riskSummary}</p> : null}
-      <ul className="ws-sidebar__studio-patch-list">
-        {patches.map((patch) => {
-          const checked = selected.has(patch.relativePath);
-          const disabled = patch.status === 'applied' || busy;
-          return (
-            <li key={patch.relativePath} data-status={patch.status}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  disabled={disabled}
-                  onChange={() => togglePath(patch.relativePath)}
-                />
-                <code>{patch.relativePath}</code>
-                {patch.isNewFile ? <span className="ws-sidebar__studio-patch-tag">new</span> : null}
-                {patch.failReason ? <span>{patch.failReason}</span> : null}
-              </label>
-            </li>
-          );
-        })}
-      </ul>
-      <div className="ws-sidebar__studio-cta">
-        <button
-          type="button"
-          className="ws-sidebar__inline ws-sidebar__inline--primary"
-          disabled={busy || selected.size === 0}
-          onClick={() => onApply([...selected])}
-        >
-          {busy ? 'Applying…' : 'Apply selected'}
-        </button>
-        <button type="button" className="ws-sidebar__inline" disabled={busy} onClick={onReject}>
-          Reject all
-        </button>
+    <div
+      className="ws-sidebar__repair-bubble ws-sidebar__studio-patch-review"
+      role="region"
+      aria-label="Patch review"
+    >
+      <div className="ws-sidebar__studio-action-progress-copy">
+        <small className="ws-sidebar__studio-action-progress-kicker">Approval needed</small>
+        <strong>Studio found file changes</strong>
+        <span>
+          {summary ||
+            `${patches.length} file change${patches.length === 1 ? '' : 's'} extracted from the AI repair answer.`}
+        </span>
+        {riskSummary ? <span className="ws-sidebar__studio-patch-risk">{riskSummary}</span> : null}
+        <div className="ws-sidebar__studio-patch-summary" aria-label="Patch summary">
+          <span>{selectedCount} selected</span>
+          <span>{appliedCount} applied</span>
+          <span>{failedCount} blocked</span>
+        </div>
+
+        <div className="ws-sidebar__studio-cta">
+          <button
+            type="button"
+            className="ws-sidebar__inline ws-sidebar__inline--primary"
+            disabled={busy || selected.size === 0}
+            onClick={() => onApply([...selected])}
+          >
+            {busy ? 'Applying…' : 'Apply selected changes'}
+          </button>
+          <button type="button" className="ws-sidebar__inline" disabled={busy} onClick={onReject}>
+            Reject all
+          </button>
+        </div>
+
+        <details className="ws-sidebar__studio-patch-details">
+          <summary>Review files</summary>
+          <ul className="ws-sidebar__studio-patch-list">
+            {patches.map((patch) => {
+              const checked = selected.has(patch.relativePath);
+              const disabled = patch.status === 'applied' || busy;
+              const displayPath = compactStudioPathText(patch.relativePath);
+              const displayFailReason = compactStudioPathText(patch.failReason);
+              return (
+                <li key={patch.relativePath} data-status={patch.status}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={disabled}
+                      onChange={() => togglePath(patch.relativePath)}
+                    />
+                    <code title={displayPath}>{displayPath}</code>
+                    {patch.isNewFile ? <span className="ws-sidebar__studio-patch-tag">new</span> : null}
+                    {patch.failReason ? <span>{displayFailReason}</span> : null}
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </details>
       </div>
     </div>
   );

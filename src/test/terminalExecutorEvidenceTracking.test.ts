@@ -38,6 +38,10 @@ describe('terminalExecutor evidence tracking', () => {
 
     expect(terminal).toBe(createdTerminals[0]);
     expect(createdTerminals[0].env).toEqual({ RAPIDKIT_LOG_FORMAT: 'json' });
+    expect(createdTerminals[0].sendText).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('/workspaces/team-ws')
+    );
     expect(resolveWorkspacePathForEvidenceTerminal(terminal)).toBe('/workspaces/team-ws');
   });
 
@@ -49,6 +53,10 @@ describe('terminalExecutor evidence tracking', () => {
     });
 
     expect(createdTerminals[0].env).toBeUndefined();
+    expect(createdTerminals[0].sendText).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('/workspaces/team-ws/api')
+    );
     expect(resolveWorkspacePathForEvidenceTerminal(terminal)).toBeUndefined();
   });
 });

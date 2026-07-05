@@ -8,7 +8,10 @@ import { WorkspaceGovernancePanel } from '@/components/WorkspaceGovernancePanel'
 import { WorkspaceIntelligencePanel } from '@/components/WorkspaceIntelligencePanel';
 import type { DashboardEvidencePayload } from '@/lib/dashboardEvidence';
 import type { DashboardEvidenceCardId } from '@/lib/dashboardCommandRegistry';
-import type { DashboardOperateZone } from '@/lib/dashboardOperateZones';
+import {
+  DEFAULT_DASHBOARD_OPERATE_ZONE,
+  type DashboardOperateZone,
+} from '@/lib/dashboardOperateZones';
 import type { DashboardSection } from '@/lib/dashboardSections';
 import type { DashboardScopeDescriptor } from '@/lib/dashboardScope';
 import { dashboardScopeDetail, dashboardScopeLabel } from '@/lib/dashboardScope';
@@ -16,7 +19,7 @@ import type { ScaffoldFramework, WorkspaceStatus } from '@/types';
 
 type Framework = ScaffoldFramework;
 
-interface DashboardOperateSectionProps {
+export interface DashboardOperateSectionProps {
   hasWorkspace: boolean;
   scope: DashboardScopeDescriptor;
   workspaceStatus: WorkspaceStatus;
@@ -117,7 +120,9 @@ export function DashboardOperateSection({
   requestedOperateZone = null,
   onRequestedOperateZoneConsumed,
 }: DashboardOperateSectionProps) {
-  const [activeZone, setActiveZone] = useState<DashboardOperateZone>('quick');
+  const [activeZone, setActiveZone] = useState<DashboardOperateZone>(
+    DEFAULT_DASHBOARD_OPERATE_ZONE
+  );
 
   const activeZoneLabel =
     activeZone === 'quick'

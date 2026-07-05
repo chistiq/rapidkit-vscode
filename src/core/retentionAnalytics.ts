@@ -25,8 +25,62 @@ import {
  */
 
 export const ANALYTICS_LOCAL_SNAPSHOT_KEY = 'workspai.analytics.lastLocalSnapshot';
+export const RETENTION_ANALYTICS_REMOTE_TRANSPORT = 'disabled-for-rc';
+export const RETENTION_ANALYTICS_REMOTE_ENDPOINT: null = null;
+
+export const RETENTION_ANALYTICS_PRIVACY_CONTRACT = Object.freeze({
+  schemaVersion: 'retention-analytics-privacy-contract.v1',
+  remoteTransport: RETENTION_ANALYTICS_REMOTE_TRANSPORT,
+  remoteEndpoint: RETENTION_ANALYTICS_REMOTE_ENDPOINT,
+  decision: 'defer-remote-analytics-until-after-rc',
+  allowedData: ['counts', 'durations', 'boolean milestones', 'enum buckets'] as const,
+  deniedData: [
+    'paths',
+    'workspace names',
+    'project names',
+    'command arguments',
+    'free text',
+  ] as const,
+});
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const RETENTION_SIGNAL_SURFACES: ReadonlyArray<RetentionSignalSurface> = [
+  'dashboard',
+  'studio',
+  'advisor',
+  'setup',
+  'unknown',
+];
+
+export const RETENTION_ANALYTICS_ALLOWED_PAYLOAD_KEYS: ReadonlyArray<keyof RetentionCohortSummary> =
+  [
+    'schemaVersion',
+    'extensionVersion',
+    'daysSinceInstall',
+    'ttfvResolved',
+    'ttfvMs',
+    'ttfvPreexisting',
+    'registeredWorkspaceCount',
+    'activityEntryCount',
+    'activityDispatchedCount',
+    'activityCompletedCount',
+    'activityFailedCount',
+    'totalCommandRuns',
+    'firstArtifactGenerated',
+    'firstBlockerFixed',
+    'studioOpened',
+    'verifyPassAfterStudioFix',
+    'returnToDashboardAfterVerify',
+    'totalCommandFailures',
+    'commandFailuresBySurface',
+    'activationStage',
+    'repairLoopStage',
+    'activationCompletionScore',
+    'commandFailureRate',
+    'distinctFailureSurfaceCount',
+    'repeatedFailureFriction',
+    'nextRecommendedFocus',
+  ];
 
 export interface RetentionCohortSummary {
   schemaVersion: 'retention-cohort.v1';
@@ -46,6 +100,7 @@ export interface RetentionCohortSummary {
   totalCommandRuns: number;
   firstArtifactGenerated: boolean;
   firstBlockerFixed: boolean;
+  studioOpened: boolean;
   verifyPassAfterStudioFix: boolean;
   returnToDashboardAfterVerify: boolean;
   totalCommandFailures: number;
@@ -70,6 +125,7 @@ export type RetentionActivationStage =
   | 'not_started'
   | 'first_artifact'
   | 'first_blocker_fixed'
+  | 'studio_opened'
   | 'verify_passed'
   | 'returned_after_verify';
 
@@ -77,6 +133,7 @@ export type RetentionRepairLoopStage =
   | 'not_started'
   | 'needs_fix'
   | 'fix_recorded'
+  | 'studio_opened'
   | 'verify_passed'
   | 'returned_to_dashboard';
 
@@ -96,6 +153,43 @@ export interface RetentionCohortInput {
   registeredWorkspaceCount: number;
   activity: DashboardActivityEntry[];
   milestones?: RetentionMilestoneState | null;
+}
+
+export type RetentionAnalyticsContractValidation = {
+  ok: boolean;
+  violations: string[];
+};
+
+export function validateRetentionAnalyticsPayloadContract(
+  payload: RetentionCohortSummary
+): RetentionAnalyticsContractValidation {
+  const violations: string[] = [];
+  const allowedKeys = new Set<string>(RETENTION_ANALYTICS_ALLOWED_PAYLOAD_KEYS);
+  const payloadRecord = payload as unknown as Record<string, unknown>;
+  for (const key of Object.keys(payloadRecord)) {
+    if (!allowedKeys.has(key)) {
+      violations.push(`unexpected field: ${key}`);
+    }
+  }
+  const failuresBySurface = payload.commandFailuresBySurface;
+  if (failuresBySurface && typeof failuresBySurface === 'object') {
+    const allowedSurfaces = new Set<string>(RETENTION_SIGNAL_SURFACES);
+    for (const surface of Object.keys(failuresBySurface)) {
+      if (!allowedSurfaces.has(surface)) {
+        violations.push(`unexpected failure surface: ${surface}`);
+      }
+    }
+  }
+  if (
+    RETENTION_ANALYTICS_PRIVACY_CONTRACT.remoteTransport !== 'disabled-for-rc' ||
+    RETENTION_ANALYTICS_PRIVACY_CONTRACT.remoteEndpoint !== null
+  ) {
+    violations.push('remote analytics transport is not disabled for RC');
+  }
+  return {
+    ok: violations.length === 0,
+    violations,
+  };
 }
 
 function bucketActivity(activity: DashboardActivityEntry[]): {
@@ -137,6 +231,7 @@ function resolveActivationStage(input: {
   ttfvResolved: boolean;
   firstArtifactGenerated: boolean;
   firstBlockerFixed: boolean;
+  studioOpened: boolean;
   verifyPassAfterStudioFix: boolean;
   returnToDashboardAfterVerify: boolean;
 }): RetentionActivationStage {
@@ -145,6 +240,9 @@ function resolveActivationStage(input: {
   }
   if (input.verifyPassAfterStudioFix) {
     return 'verify_passed';
+  }
+  if (input.studioOpened) {
+    return 'studio_opened';
   }
   if (input.firstBlockerFixed) {
     return 'first_blocker_fixed';
@@ -157,6 +255,7 @@ function resolveActivationStage(input: {
 
 function resolveRepairLoopStage(input: {
   firstBlockerFixed: boolean;
+  studioOpened: boolean;
   verifyPassAfterStudioFix: boolean;
   returnToDashboardAfterVerify: boolean;
   activityFailedCount: number;
@@ -167,6 +266,9 @@ function resolveRepairLoopStage(input: {
   }
   if (input.verifyPassAfterStudioFix) {
     return 'verify_passed';
+  }
+  if (input.studioOpened) {
+    return 'studio_opened';
   }
   if (input.firstBlockerFixed) {
     return 'fix_recorded';
@@ -181,22 +283,25 @@ function activationCompletionScore(input: {
   ttfvResolved: boolean;
   firstArtifactGenerated: boolean;
   firstBlockerFixed: boolean;
+  studioOpened: boolean;
   verifyPassAfterStudioFix: boolean;
   returnToDashboardAfterVerify: boolean;
 }): number {
   const completed = [
     input.ttfvResolved || input.firstArtifactGenerated,
     input.firstBlockerFixed,
+    input.studioOpened,
     input.verifyPassAfterStudioFix,
     input.returnToDashboardAfterVerify,
   ].filter(Boolean).length;
-  return Math.round((completed / 4) * 100);
+  return Math.round((completed / 5) * 100);
 }
 
 function resolveRecommendedFocus(input: {
   ttfvResolved: boolean;
   firstArtifactGenerated: boolean;
   firstBlockerFixed: boolean;
+  studioOpened: boolean;
   verifyPassAfterStudioFix: boolean;
   returnToDashboardAfterVerify: boolean;
   repeatedFailureFriction: boolean;
@@ -209,6 +314,9 @@ function resolveRecommendedFocus(input: {
   }
   if (!input.firstBlockerFixed) {
     return input.repeatedFailureFriction ? 'reduce_command_failures' : 'fix_first_blocker';
+  }
+  if (!input.studioOpened) {
+    return 'fix_first_blocker';
   }
   if (!input.verifyPassAfterStudioFix) {
     return 'verify_fix';
@@ -235,6 +343,10 @@ export function buildRetentionCohortSummary(input: RetentionCohortInput): Retent
   const firstBlockerFixed = hasMilestone(milestones.firstBlockerFixedAt);
   const verifyPassAfterStudioFix = hasMilestone(milestones.verifyPassAfterStudioFixAt);
   const returnToDashboardAfterVerify = hasMilestone(milestones.returnToDashboardAfterVerifyAt);
+  const studioOpened =
+    hasMilestone(milestones.studioOpenedAt) ||
+    verifyPassAfterStudioFix ||
+    returnToDashboardAfterVerify;
   const totalCommandFailures = Math.max(0, Math.floor(milestones.totalCommandFailures));
   const commandFailureRate =
     input.activity.length > 0 ? Number((buckets.failed / input.activity.length).toFixed(4)) : 0;
@@ -246,11 +358,13 @@ export function buildRetentionCohortSummary(input: RetentionCohortInput): Retent
     ttfvResolved,
     firstArtifactGenerated,
     firstBlockerFixed,
+    studioOpened,
     verifyPassAfterStudioFix,
     returnToDashboardAfterVerify,
   });
   const repairLoopStage = resolveRepairLoopStage({
     firstBlockerFixed,
+    studioOpened,
     verifyPassAfterStudioFix,
     returnToDashboardAfterVerify,
     activityFailedCount: buckets.failed,
@@ -272,6 +386,7 @@ export function buildRetentionCohortSummary(input: RetentionCohortInput): Retent
     totalCommandRuns: buckets.totalRuns,
     firstArtifactGenerated,
     firstBlockerFixed,
+    studioOpened,
     verifyPassAfterStudioFix,
     returnToDashboardAfterVerify,
     totalCommandFailures,
@@ -282,6 +397,7 @@ export function buildRetentionCohortSummary(input: RetentionCohortInput): Retent
       ttfvResolved,
       firstArtifactGenerated,
       firstBlockerFixed,
+      studioOpened,
       verifyPassAfterStudioFix,
       returnToDashboardAfterVerify,
     }),
@@ -292,6 +408,7 @@ export function buildRetentionCohortSummary(input: RetentionCohortInput): Retent
       ttfvResolved,
       firstArtifactGenerated,
       firstBlockerFixed,
+      studioOpened,
       verifyPassAfterStudioFix,
       returnToDashboardAfterVerify,
       repeatedFailureFriction,
@@ -338,6 +455,13 @@ export async function sendRetentionAnalyticsPayload(
   payload: RetentionCohortSummary
 ): Promise<boolean> {
   if (!resolveAnalyticsOptIn()) {
+    return false;
+  }
+  const validation = validateRetentionAnalyticsPayloadContract(payload);
+  if (!validation.ok) {
+    Logger.getInstance().warn(
+      `[Analytics] Retention payload rejected by privacy contract: ${validation.violations.join(', ')}`
+    );
     return false;
   }
   await context.globalState.update(ANALYTICS_LOCAL_SNAPSHOT_KEY, {

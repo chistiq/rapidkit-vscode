@@ -58,6 +58,9 @@ export type CreateMessage =
       name?: string;
       kit?: string;
       summary?: string;
+      profile?: string;
+      workspacePath?: string;
+      projectPath?: string;
     }
   | {
       id: string;

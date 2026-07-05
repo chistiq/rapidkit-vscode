@@ -17,6 +17,8 @@ const BASE_ALLOWED_ROOT_COMMANDS = [
   'workspace',
   'analyze',
   'autopilot',
+  'bootstrap',
+  'setup',
   'init',
   'test',
   'build',
@@ -41,6 +43,10 @@ const ALLOWED_ROOT_COMMANDS = buildAllowedRootCommands();
 export type ParsedRapidkitInvocation = {
   rapidkitArgs: string[];
   displayCommand: string;
+  cwdHint?: string;
+  executable?: string;
+  args?: string[];
+  workspaceScoped?: boolean;
 };
 
 export type ResolveRapidkitExecutionPlanInput = {
@@ -103,6 +109,49 @@ function findLastRapidkitTokenIndex(tokens: string[]): number {
   return -1;
 }
 
+function parseTrustedEcosystemCommand(
+  tokens: string[]
+): Omit<ParsedRapidkitInvocation, 'cwdHint'> | { error: string } {
+  const executable = tokens[0];
+  const args = tokens.slice(1);
+  if (!executable) {
+    return { error: 'No command provided to run.' };
+  }
+
+  const allowed = (() => {
+    if (executable === 'dotnet') {
+      return args[0] === 'restore';
+    }
+    if (executable === 'npm') {
+      return ['install', 'ci', 'audit'].includes(args[0] ?? '');
+    }
+    if (executable === 'pnpm') {
+      return ['install', 'audit'].includes(args[0] ?? '');
+    }
+    if (executable === 'yarn') {
+      return ['install', 'audit'].includes(args[0] ?? '');
+    }
+    if (executable === 'poetry') {
+      return args[0] === 'install';
+    }
+    return false;
+  })();
+
+  if (!allowed) {
+    return {
+      error: 'Only RapidKit and trusted remediation commands are allowed from Incident Studio.',
+    };
+  }
+
+  return {
+    rapidkitArgs: [],
+    executable,
+    args,
+    displayCommand: [executable, ...args].join(' ').trim(),
+    workspaceScoped: false,
+  };
+}
+
 export function parseRapidkitInlineCommand(
   command: string
 ): ParsedRapidkitInvocation | { error: string } {
@@ -110,15 +159,25 @@ export function parseRapidkitInlineCommand(
   if (!trimmed) {
     return { error: 'No command provided to run.' };
   }
-  if (SHELL_METACHAR_PATTERN.test(trimmed)) {
+  const cdPrefix = trimmed.match(/^cd\s+(['"])(.*?)\1\s*&&\s*(.+)$/);
+  const cwdHint = cdPrefix?.[2]?.trim();
+  const commandBody = cdPrefix?.[3]?.trim() || trimmed;
+  if (SHELL_METACHAR_PATTERN.test(commandBody)) {
     return { error: 'Shell chaining and metacharacters are not allowed in Studio CLI commands.' };
   }
 
-  const pinned = toPinnedRapidkitExecutionCommand(trimmed).replace(/\s+/g, ' ').trim();
+  const pinned = toPinnedRapidkitExecutionCommand(commandBody).replace(/\s+/g, ' ').trim();
   const tokens = tokenizeCommandArgs(pinned);
   const rapidkitIndex = findLastRapidkitTokenIndex(tokens);
   if (rapidkitIndex < 0) {
-    return { error: 'Only RapidKit CLI commands are allowed from Incident Studio.' };
+    const ecosystem = parseTrustedEcosystemCommand(tokens);
+    if ('error' in ecosystem) {
+      return ecosystem;
+    }
+    if (cwdHint) {
+      return { ...ecosystem, cwdHint };
+    }
+    return ecosystem;
   }
 
   const rapidkitArgs = tokens.slice(rapidkitIndex + 1);
@@ -159,10 +218,14 @@ export function parseRapidkitInlineCommand(
     return { error: 'Cache commands must use the status subcommand.' };
   }
 
-  return {
+  const parsedInvocation: ParsedRapidkitInvocation = {
     rapidkitArgs,
     displayCommand: `rapidkit ${rapidkitArgs.join(' ')}`.trim(),
   };
+  if (cwdHint) {
+    parsedInvocation.cwdHint = cwdHint;
+  }
+  return parsedInvocation;
 }
 
 const WORKSPACE_SCOPED_ROOTS = new Set([
@@ -180,6 +243,10 @@ const WORKSPACE_SCOPED_ROOTS = new Set([
   'cache',
 ]);
 
+function isProjectScopedRapidkitInvocation(parsed: ParsedRapidkitInvocation): boolean {
+  return parsed.rapidkitArgs[0] === 'doctor' && parsed.rapidkitArgs[1] === 'project';
+}
+
 export async function resolveRapidkitExecutionPlan(
   input: ResolveRapidkitExecutionPlanInput
 ): Promise<RapidkitExecutionPlan | { error: string }> {
@@ -188,14 +255,50 @@ export async function resolveRapidkitExecutionPlan(
     return parsed;
   }
 
-  const isWorkspaceScoped = WORKSPACE_SCOPED_ROOTS.has(parsed.rapidkitArgs[0] ?? '');
+  const projectScopedRapidkit = isProjectScopedRapidkitInvocation(parsed);
+  const isWorkspaceScoped =
+    parsed.workspaceScoped ?? WORKSPACE_SCOPED_ROOTS.has(parsed.rapidkitArgs[0] ?? '');
+  const normalizedWorkspacePath = path.resolve(input.workspacePath);
+  const normalizedProjectPath = input.projectPath ? path.resolve(input.projectPath) : undefined;
+  const normalizedCwdHint = parsed.cwdHint ? path.resolve(parsed.cwdHint) : undefined;
+  if (
+    normalizedCwdHint &&
+    normalizedCwdHint !== normalizedWorkspacePath &&
+    normalizedCwdHint !== normalizedProjectPath
+  ) {
+    return { error: 'Command cwd is outside the active workspace or selected project.' };
+  }
   const effectiveCwd =
-    !isWorkspaceScoped && input.projectPath && input.projectBelongsToWorkspace
+    normalizedCwdHint ??
+    ((projectScopedRapidkit || !isWorkspaceScoped) &&
+    input.projectPath &&
+    input.projectBelongsToWorkspace
       ? input.projectPath
-      : input.workspacePath;
+      : input.workspacePath);
 
   if (input.projectPath && !input.projectBelongsToWorkspace) {
     return { error: 'Selected project is outside the active workspace.' };
+  }
+
+  if (parsed.executable) {
+    return {
+      executable: parsed.executable,
+      args: parsed.args ?? [],
+      cwd: effectiveCwd,
+      displayCommand: parsed.displayCommand,
+      shell: false,
+    };
+  }
+
+  if (isWorkspaceScoped) {
+    const execution = buildRapidkitExecutionSpec(parsed.rapidkitArgs);
+    return {
+      executable: execution.command,
+      args: execution.args,
+      cwd: effectiveCwd,
+      displayCommand: execution.displayCommand,
+      shell: execution.shell,
+    };
   }
 
   const projectLauncher =

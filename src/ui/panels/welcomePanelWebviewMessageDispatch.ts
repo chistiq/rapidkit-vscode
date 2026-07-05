@@ -14,18 +14,13 @@ import {
   tryDispatchAnalyzeReportWebviewMessage,
   type AnalyzeReportMessageHost,
 } from './welcomePanelAnalyzeReportMessages';
+import type { DashboardCommandHost } from './welcomePanelDashboardCommands';
+import type { DashboardLifecycleMessageHost } from './welcomePanelDashboardLifecycleMessages';
 import {
-  tryDispatchDashboardContractWebviewMessage,
-  type DashboardCommandHost,
-} from './welcomePanelDashboardCommands';
-import {
-  tryDispatchDashboardLifecycleWebviewMessage,
-  type DashboardLifecycleMessageHost,
-} from './welcomePanelDashboardLifecycleMessages';
-import {
-  tryDispatchDashboardShortcutWebviewMessage,
-  type DashboardShortcutMessageHost,
-} from './welcomePanelDashboardShortcutMessages';
+  tryDispatchDashboardWebviewMessage,
+  type DashboardMessageDispatchHost,
+} from './welcomePanelDashboardMessageDispatcher';
+import type { DashboardShortcutMessageHost } from './welcomePanelDashboardShortcutMessages';
 import {
   tryDispatchCatalogWebviewMessage,
   type ModulesCatalogHost,
@@ -74,7 +69,7 @@ export type WelcomePanelWebviewMessageDispatchHost = {
   getReadyMessageHost: () => ReadyMessageHost;
   getCreationNavigationMessageHost: () => CreationNavigationMessageHost;
   getAiCreationDispatchHost: () => AiCreationDispatchHost;
-};
+} & DashboardMessageDispatchHost;
 
 export async function runWelcomePanelOptionalMessageLane(
   laneName: string,
@@ -108,39 +103,13 @@ export async function dispatchWelcomePanelWebviewMessage(
     return;
   }
 
-  if (
-    await tryDispatchDashboardContractWebviewMessage(
-      host.getDashboardCommandHost(),
-      message.command,
-      asRecord(message.data)
-    )
-  ) {
-    return;
-  }
-
-  if (
-    await tryDispatchDashboardLifecycleWebviewMessage(
-      host.getDashboardLifecycleMessageHost(),
-      message.command,
-      message.data
-    )
-  ) {
+  if (await tryDispatchDashboardWebviewMessage(host, message.command, message.data)) {
     return;
   }
 
   if (
     await tryDispatchCatalogWebviewMessage(
       host.getModulesCatalogHost(),
-      message.command,
-      message.data
-    )
-  ) {
-    return;
-  }
-
-  if (
-    await tryDispatchDashboardShortcutWebviewMessage(
-      host.getDashboardShortcutMessageHost(),
       message.command,
       message.data
     )

@@ -16,22 +16,25 @@ function read(relPath: string): string {
 describe('React Create tab ↔ host protocol parity (roadmap 2.11d)', () => {
   const secondary = read('webview-ui/src/sidebar/SecondarySidebar.tsx');
   const provider = read('src/ui/webviews/actionsWebviewProvider.ts');
+  const dispatcher = read('src/ui/webviews/actionsWebviewMessageDispatcher.ts');
+  const welcomePanel = read('src/ui/panels/welcomePanel.ts');
+  const bootstrapPayload = read('src/ui/panels/welcomePanelBootstrapPayload.ts');
 
   it('posts the create outbound commands the host handles', () => {
     const outbound = [
       'sidebarAiCreatePlan',
       'sidebarAiCreateConfirm',
       'sidebarManualCreate',
+      'sidebarCreatedWorkspaceBootstrap',
       'sidebarFocusView',
+      'sidebarOpenDashboard',
       'sidebarRefreshScope',
       'sidebarRefreshModels',
       'setPreferredModel',
     ];
     for (const command of outbound) {
       expect(secondary, `React should post "${command}"`).toContain(`'${command}'`);
-      expect(provider, `host should handle "${command}"`).toContain(
-        `message.command === '${command}'`
-      );
+      expect(dispatcher, `host should handle "${command}"`).toContain(`command: '${command}'`);
     }
   });
 
@@ -106,8 +109,43 @@ describe('React Create tab ↔ host protocol parity (roadmap 2.11d)', () => {
     expect(provider).toContain("label: 'Preparing project scaffold…'");
     expect(provider).toContain("'Running RapidKit scaffold'");
     expect(provider).toContain('ensureManagedDefaultWorkspace');
+    expect(provider).toContain('workspacePath');
+    expect(provider).toContain('projectPath');
+    expect(provider).toContain('directWorkspacePath');
+    expect(provider).toContain('directWorkspacePath ?? workspacePath');
+    expect(provider).toContain('WelcomePanel.refreshDashboardForWorkspacePath(workspacePath)');
+    expect(provider).toContain('await syncWorkspaceAfterInlineCreate(workspacePath)');
+    expect(provider).toContain('_runSidebarCreatedWorkspaceBootstrap');
+    expect(provider).toContain("vscode.commands.executeCommand('workspai.workspaceBootstrap'");
+    expect(provider).toContain('workspacePath,');
+    expect(welcomePanel).toContain('workspaceOverride');
+    expect(bootstrapPayload).toContain(
+      'options?.workspaceOverride ?? host.getSelectedWorkspaceInfo()'
+    );
+    expect(secondary).toContain('sidebarCreatedWorkspaceBootstrap');
+    expect(secondary).toContain('handleBootstrapCreatedWorkspace');
+    expect(secondary).toContain('onBootstrapWorkspace={handleBootstrapCreatedWorkspace}');
+    const createTab = read('webview-ui/src/sidebar/CreateTab.tsx');
+    expect(createTab).toContain('Bootstrap workspace');
+    expect(createTab).toContain('message.workspacePath');
+    expect(createTab).toContain('const canBootstrapWorkspace = Boolean(message.workspacePath)');
+    expect(createTab).toContain(
+      "workspaceName: message.mode === 'workspace' ? message.name : undefined"
+    );
+    expect(createTab).not.toContain("message.mode === 'workspace' && message.workspacePath");
+    expect(createTab).toContain('function displayNameFromPath');
+    expect(createTab).toContain('Project: {projectLabel}');
+    expect(createTab).toContain('Workspace: {workspaceLabel}');
+    expect(createTab).not.toContain('message.projectPath\\n                ? message.projectPath');
     expect(secondary).toContain('createMode');
+    expect(secondary).toContain('setScope((previous)');
     expect(secondary).toContain('Create project "');
     expect(secondary).toContain('frameworkLabel');
+    expect(secondary).toContain('workspaceName: scope.workspaceName');
+    expect(secondary).toContain('workspacePath: scope.workspacePath');
+    expect(secondary).toContain('setScope((previous) => ({');
+    expect(secondary).toContain('workspacePath: input.workspacePath');
+    expect(provider).toContain('const scope = resolveExplicitWorkspaceScope(payloadRecord.scope)');
+    expect(provider).toContain('let workspacePath = scope.workspacePath');
   });
 });

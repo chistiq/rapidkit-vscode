@@ -3,9 +3,10 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
+import cp from 'child_process';
 import AdmZip from 'adm-zip';
-import { runTests } from '@vscode/test-electron';
+import { downloadAndUnzipVSCode } from '@vscode/test-electron';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -13,7 +14,7 @@ const repoRoot = path.resolve(__dirname, '..');
 function parseArgs(argv) {
   const options = {
     artifact: '',
-    version: process.env.WORKSPAI_VSCODE_TEST_VERSION || 'stable',
+    version: process.env.WORKSPAI_VSCODE_TEST_VERSION || '1.100.0',
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -140,6 +141,46 @@ function extractExtension(artifactPath, root) {
   };
 }
 
+function runVsCodeSmoke({ vscodeExecutablePath, extensionDir, extensionTestsPath, workspaceUri, env, root }) {
+  const childEnv = { ...process.env, ...env };
+  delete childEnv.ELECTRON_RUN_AS_NODE;
+  const args = [
+    '--no-sandbox',
+    '--disable-gpu-sandbox',
+    '--disable-updates',
+    '--skip-welcome',
+    '--skip-release-notes',
+    '--disable-workspace-trust',
+    `--extensionTestsPath=${extensionTestsPath}`,
+    `--extensionDevelopmentPath=${extensionDir}`,
+    `--extensions-dir=${path.join(root, 'extensions')}`,
+    `--user-data-dir=${path.join(root, 'user-data')}`,
+    '--folder-uri',
+    workspaceUri,
+  ];
+  return new Promise((resolve, reject) => {
+    const child = cp.spawn(vscodeExecutablePath, args, {
+      env: childEnv,
+      shell: process.platform === 'win32',
+      stdio: 'inherit',
+    });
+    child.on('error', reject);
+    child.on('close', (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(
+        new Error(
+          signal
+            ? `VSIX Electron smoke terminated with signal ${signal}`
+            : `VSIX Electron smoke failed with code ${code}`
+        )
+      );
+    });
+  });
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const artifactPath = path.resolve(
@@ -153,19 +194,18 @@ async function main() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-vsix-electron-'));
   const { extensionDir, extensionId } = extractExtension(artifactPath, tempRoot);
   const workspacePath = prepareSmokeWorkspace(tempRoot);
-
-  await runTests({
+  const workspaceUri = pathToFileURL(workspacePath).toString();
+  const vscodeExecutablePath = await downloadAndUnzipVSCode({
     version: options.version,
-    extensionDevelopmentPath: extensionDir,
+  });
+
+  await runVsCodeSmoke({
+    vscodeExecutablePath,
+    extensionDir,
     extensionTestsPath: path.join(repoRoot, 'scripts', 'vsix-electron-smoke-tests.cjs'),
-    launchArgs: [
-      workspacePath,
-      '--disable-workspace-trust',
-      '--skip-welcome',
-      '--disable-telemetry',
-      '--disable-updates',
-    ],
-    extensionTestsEnv: {
+    workspaceUri,
+    root: tempRoot,
+    env: {
       WORKSPAI_SMOKE_EXTENSION_ID: extensionId,
       WORKSPAI_SMOKE_WORKSPACE: workspacePath,
     },

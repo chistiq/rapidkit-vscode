@@ -9,6 +9,8 @@ export type DashboardOperateZone =
   | 'governance'
   | 'cli';
 
+export const DEFAULT_DASHBOARD_OPERATE_ZONE: DashboardOperateZone = 'quick';
+
 export type DashboardOperateZoneDefinition = {
   id: DashboardOperateZone;
   label: string;

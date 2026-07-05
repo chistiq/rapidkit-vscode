@@ -112,4 +112,61 @@ describe('workspace foundation ensure command', () => {
 
     expect(terminalMock).not.toHaveBeenCalled();
   });
+
+  it('bootstraps the explicit workspace payload instead of the previously selected workspace', async () => {
+    const { getCommand } = setupHarness();
+
+    showQuickPickMock.mockResolvedValueOnce({ value: 'minimal' });
+
+    await getCommand('workspai.workspaceBootstrap')({
+      path: '/tmp/newly-created-ws',
+      workspacePath: '/tmp/newly-created-ws',
+      name: 'newly-created-ws',
+      workspaceName: 'newly-created-ws',
+    });
+
+    expect(terminalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: '/tmp/newly-created-ws',
+        commands: [['bootstrap', '--profile', 'minimal']],
+      })
+    );
+  });
+
+  it('uses the created workspace profile payload without prompting or reading the selected workspace profile', async () => {
+    const { getCommand } = setupHarness();
+
+    await getCommand('workspai.workspaceBootstrap')({
+      path: '/tmp/newly-created-minimal-ws',
+      workspacePath: '/tmp/newly-created-minimal-ws',
+      name: 'newly-created-minimal-ws',
+      workspaceName: 'newly-created-minimal-ws',
+      profile: 'minimal',
+    });
+
+    expect(showQuickPickMock).not.toHaveBeenCalled();
+    expect(terminalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: '/tmp/newly-created-minimal-ws',
+        commands: [['bootstrap', '--profile', 'minimal']],
+      })
+    );
+  });
+
+  it('uses the explicit workspace basename when payload has no name', async () => {
+    const { getCommand } = setupHarness();
+
+    await getCommand('workspai.workspaceBootstrap')({
+      workspacePath: '/tmp/created-without-name',
+      profile: 'minimal',
+    });
+
+    expect(terminalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Workspai: Bootstrap — created-without-name',
+        cwd: '/tmp/created-without-name',
+        commands: [['bootstrap', '--profile', 'minimal']],
+      })
+    );
+  });
 });

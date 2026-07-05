@@ -89,6 +89,7 @@ export function createDoctorTelemetryRefreshController(
   const clearTimer = options.clearTimer ?? ((timer) => clearTimeout(timer));
   const onError = options.onError ?? (() => undefined);
   let timer: TimerHandle | undefined;
+  let pendingContext: DashboardEvidenceRefreshContext | undefined;
 
   return {
     schedule(filePath?: string) {
@@ -105,6 +106,7 @@ export function createDoctorTelemetryRefreshController(
               : {}),
           }
         : undefined;
+      pendingContext = mergeDashboardEvidenceRefreshContexts(pendingContext, context);
 
       if (timer) {
         clearTimer(timer);
@@ -112,7 +114,9 @@ export function createDoctorTelemetryRefreshController(
 
       timer = setTimer(() => {
         timer = undefined;
-        void Promise.resolve(options.onRefresh(context)).catch((error) => {
+        const contextToRefresh = pendingContext;
+        pendingContext = undefined;
+        void Promise.resolve(options.onRefresh(contextToRefresh)).catch((error) => {
           onError(error);
         });
       }, delayMs);
@@ -123,6 +127,33 @@ export function createDoctorTelemetryRefreshController(
       }
       clearTimer(timer);
       timer = undefined;
+      pendingContext = undefined;
     },
+  };
+}
+
+export function mergeDashboardEvidenceRefreshContexts(
+  current: DashboardEvidenceRefreshContext | undefined,
+  next: DashboardEvidenceRefreshContext | undefined
+): DashboardEvidenceRefreshContext | undefined {
+  if (!current) {
+    return next;
+  }
+  if (!next) {
+    return current;
+  }
+  if (current.workspacePath && next.workspacePath && current.workspacePath !== next.workspacePath) {
+    return next;
+  }
+
+  const cardIds = Array.from(new Set([...(current.cardIds ?? []), ...(next.cardIds ?? [])]));
+  return {
+    ...current,
+    ...next,
+    workspacePath: next.workspacePath ?? current.workspacePath,
+    projectPath: next.projectPath ?? current.projectPath,
+    projectName: next.projectName ?? current.projectName,
+    reportPath: next.reportPath ?? current.reportPath,
+    ...(cardIds.length > 0 ? { cardIds, refreshMode: 'patch' as const } : {}),
   };
 }

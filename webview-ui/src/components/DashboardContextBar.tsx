@@ -1,5 +1,6 @@
 import { ChevronRight, FolderKanban, GitBranch, Repeat2 } from 'lucide-react';
 import type { DashboardScopeDescriptor } from '@/lib/dashboardScope';
+import { compactStudioPathText } from '@/lib/studioDisplayText';
 
 interface DashboardContextBarProps {
   scope: DashboardScopeDescriptor;
@@ -15,10 +16,11 @@ interface DashboardContextBarProps {
 }
 
 function shortenPath(path: string, maxLength = 52): string {
-  if (path.length <= maxLength) {
-    return path;
+  const compact = compactStudioPathText(path, { keepSegments: 2 }) || path;
+  if (compact.length <= maxLength) {
+    return compact;
   }
-  return `…${path.slice(-(maxLength - 1))}`;
+  return `…${compact.slice(-(maxLength - 1))}`;
 }
 
 export function DashboardContextBar({
@@ -61,17 +63,17 @@ export function DashboardContextBar({
 
   return (
     <header
-      className={`dashboard-context-bar${showProjectScope ? ' dashboard-context-bar--dual' : ' dashboard-context-bar--workspace-first'}`}
+      className={`ws-dashboard-context-bar${showProjectScope ? ' ws-dashboard-context-bar--dual' : ' ws-dashboard-context-bar--workspace-first'}`}
       aria-label={showProjectScope ? 'Active workspace and project scope' : 'Active workspace scope'}
     >
-      <div className="dashboard-context-bar__trail" aria-label="Dashboard scope breadcrumb">
+      <div className="ws-dashboard-context-bar__trail" aria-label="Dashboard scope breadcrumb">
         <div
-          className={`dashboard-context-bar__scope dashboard-context-bar__scope--workspace${workspaceInteractive ? ' is-interactive' : ''}`}
+          className={`ws-dashboard-context-bar__scope ws-dashboard-context-bar__scope--workspace${workspaceInteractive ? ' is-interactive' : ''}`}
         >
           {workspaceInteractive ? (
             <button
               type="button"
-              className="dashboard-context-bar__scope-trigger"
+              className="ws-dashboard-context-bar__scope-trigger"
               onClick={handleWorkspaceActivate}
               title="Open workspace management"
             >
@@ -84,7 +86,7 @@ export function DashboardContextBar({
               />
               <ChevronRight
                 size={14}
-                className="dashboard-context-bar__chevron"
+                className="ws-dashboard-context-bar__chevron"
                 aria-hidden="true"
               />
             </button>
@@ -100,7 +102,7 @@ export function DashboardContextBar({
           {scope.workspace.active && onOpenWorkspaceInNewWindow ? (
             <button
               type="button"
-              className="dashboard-context-bar__switch"
+              className="ws-dashboard-context-bar__switch"
               onClick={onOpenWorkspaceInNewWindow}
               title="Open workspace in a new VS Code window"
             >
@@ -110,7 +112,7 @@ export function DashboardContextBar({
           {scope.workspace.active && onRevealWorkspaceFolder ? (
             <button
               type="button"
-              className="dashboard-context-bar__switch"
+              className="ws-dashboard-context-bar__switch"
               onClick={onRevealWorkspaceFolder}
               title="Reveal workspace in your file manager"
             >
@@ -120,7 +122,7 @@ export function DashboardContextBar({
           {onSwitchWorkspace ? (
             <button
               type="button"
-              className="dashboard-context-bar__switch"
+              className="ws-dashboard-context-bar__switch"
               onClick={onSwitchWorkspace}
               title="Switch or open another workspace"
             >
@@ -134,17 +136,17 @@ export function DashboardContextBar({
           <>
             <ChevronRight
               size={13}
-              className="dashboard-context-bar__separator"
+              className="ws-dashboard-context-bar__separator"
               aria-hidden="true"
             />
 
             <div
-              className={`dashboard-context-bar__scope dashboard-context-bar__scope--project${scope.project.active ? ' is-active' : ''}${projectInteractive ? ' is-interactive' : ''}`}
+              className={`ws-dashboard-context-bar__scope ws-dashboard-context-bar__scope--project${scope.project.active ? ' is-active' : ''}${projectInteractive ? ' is-interactive' : ''}`}
             >
               {projectInteractive ? (
                 <button
                   type="button"
-                  className="dashboard-context-bar__scope-trigger"
+                  className="ws-dashboard-context-bar__scope-trigger"
                   onClick={handleProjectActivate}
                   title={
                     scope.project.active
@@ -162,7 +164,7 @@ export function DashboardContextBar({
                   />
                   <ChevronRight
                     size={14}
-                    className="dashboard-context-bar__chevron"
+                    className="ws-dashboard-context-bar__chevron"
                     aria-hidden="true"
                   />
                 </button>
@@ -199,23 +201,23 @@ function ScopeWorkspaceBody({
 }) {
   return (
     <>
-      <div className="dashboard-context-bar__icon" aria-hidden="true">
+      <div className="ws-dashboard-context-bar__icon" aria-hidden="true">
         <FolderKanban size={15} />
       </div>
-      <div className="dashboard-context-bar__body">
-        <span className="dashboard-context-bar__label">Workspace</span>
-        <div className="dashboard-context-bar__title-row">
-          <strong className="dashboard-context-bar__title">{workspaceTitle}</strong>
+      <div className="ws-dashboard-context-bar__body">
+        <span className="ws-dashboard-context-bar__label">Workspace</span>
+        <div className="ws-dashboard-context-bar__title-row">
+          <strong className="ws-dashboard-context-bar__title">{workspaceTitle}</strong>
           {workspaceProfile ? (
-            <span className="dashboard-context-bar__badge">{workspaceProfile}</span>
+            <span className="ws-dashboard-context-bar__badge">{workspaceProfile}</span>
           ) : null}
         </div>
         {hasWorkspace && workspacePath && showScopePaths ? (
-          <code className="dashboard-context-bar__path" title={workspacePath}>
+          <code className="ws-dashboard-context-bar__path" title={workspacePath}>
             {shortenPath(workspacePath)}
           </code>
         ) : (
-          <span className="dashboard-context-bar__hint">
+          <span className="ws-dashboard-context-bar__hint">
             {hasWorkspace
               ? 'Workspace-level command center'
               : 'Open or switch a workspace to unlock dashboard actions'}
@@ -243,34 +245,34 @@ function ScopeProjectBody({
 }) {
   return (
     <>
-      <div className="dashboard-context-bar__icon" aria-hidden="true">
+      <div className="ws-dashboard-context-bar__icon" aria-hidden="true">
         <GitBranch size={15} />
       </div>
-      <div className="dashboard-context-bar__body">
-        <span className="dashboard-context-bar__label">Project</span>
-        <div className="dashboard-context-bar__title-row">
+      <div className="ws-dashboard-context-bar__body">
+        <span className="ws-dashboard-context-bar__label">Project</span>
+        <div className="ws-dashboard-context-bar__title-row">
           <strong
-            className={`dashboard-context-bar__title${hasProject ? '' : ' dashboard-context-bar__title--placeholder'}`}
+            className={`ws-dashboard-context-bar__title${hasProject ? '' : ' ws-dashboard-context-bar__title--placeholder'}`}
           >
             {hasProject ? projectName?.trim() || 'Selected project' : 'No project selected'}
           </strong>
           {hasProject && projectType ? (
-            <span className="dashboard-context-bar__badge dashboard-context-bar__badge--type">
+            <span className="ws-dashboard-context-bar__badge ws-dashboard-context-bar__badge--type">
               {projectType}
             </span>
           ) : null}
           {hasProject && projectScopeSource === 'analysis' ? (
-            <span className="dashboard-context-bar__badge dashboard-context-bar__badge--scope">
+            <span className="ws-dashboard-context-bar__badge ws-dashboard-context-bar__badge--scope">
               Studio scope
             </span>
           ) : null}
         </div>
         {hasProject && projectPath && showScopePaths ? (
-          <code className="dashboard-context-bar__path" title={projectPath}>
+          <code className="ws-dashboard-context-bar__path" title={projectPath}>
             {shortenPath(projectPath)}
           </code>
         ) : (
-          <span className="dashboard-context-bar__hint">
+          <span className="ws-dashboard-context-bar__hint">
             {hasProject
               ? 'Project lifecycle and module actions'
               : 'Select a project from PROJECTS to unlock project-scoped actions'}

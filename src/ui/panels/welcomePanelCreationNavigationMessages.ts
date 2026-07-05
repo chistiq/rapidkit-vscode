@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 
 import type { ScaffoldFramework } from '../../core/scaffoldKits';
+import { recordRetentionMilestone } from '../../core/retentionMilestones';
 import { asRecord } from './welcomePanel.shared.js';
 
 export type WorkspaceProjectSummary = {
@@ -221,9 +222,13 @@ export async function tryDispatchCreationNavigationWebviewMessage(
         initialQuery: payload?.initialQuery || payload?.initialTask,
         composerHandoff,
         studioMode,
+        shipLoopIntent: payload?.shipLoopIntent === 'release' ? 'release' : undefined,
         source: typeof payload?.source === 'string' ? payload.source : 'dashboard',
         trigger:
           typeof payload?.trigger === 'string' ? payload.trigger : 'dashboard-studio-handoff',
+      });
+      void recordRetentionMilestone(host.context, 'studio_opened', {
+        surface: 'studio',
       });
       break;
     }

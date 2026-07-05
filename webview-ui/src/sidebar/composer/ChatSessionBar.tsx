@@ -4,6 +4,7 @@ import type { ChatSession } from '../sidebarSessions';
 interface ChatSessionBarProps {
   activeSession: ChatSession | null;
   sessionCount: number;
+  compact?: boolean;
   onNewSession: () => void;
   onOpenHistory: () => void;
 }
@@ -11,6 +12,20 @@ interface ChatSessionBarProps {
 function sessionStatusLabel(session: ChatSession | null): string | null {
   if (!session) {
     return null;
+  }
+  if (session.incident?.repairStatus) {
+    const statusLabels: Record<string, string> = {
+      ready: 'Ready',
+      running: 'Running',
+      review: 'Needs review',
+      done: 'Done',
+      blocked: 'Blocked',
+    };
+    const label =
+      statusLabels[session.incident.repairStatus] ?? session.incident.repairStatus;
+    return session.incident.lastActionTitle
+      ? `${label} · ${session.incident.lastActionTitle}`
+      : label;
   }
   if (session.status === 'streaming') {
     return 'Replying…';
@@ -29,6 +44,7 @@ function sessionStatusLabel(session: ChatSession | null): string | null {
 export function ChatSessionBar({
   activeSession,
   sessionCount,
+  compact = false,
   onNewSession,
   onOpenHistory,
 }: ChatSessionBarProps) {
@@ -36,7 +52,11 @@ export function ChatSessionBar({
   const status = sessionStatusLabel(activeSession);
 
   return (
-    <div className="ws-session-bar" role="group" aria-label="Chat session">
+    <div
+      className={`ws-session-bar${compact ? ' ws-session-bar--compact' : ''}`}
+      role="group"
+      aria-label="Chat session"
+    >
       <button
         type="button"
         className="ws-session-bar__context"
@@ -57,7 +77,7 @@ export function ChatSessionBar({
           title="Start a new chat for a different topic"
         >
           <MessageSquarePlus size={13} aria-hidden={true} />
-          <span>New chat</span>
+          <span>{compact ? 'New' : 'New chat'}</span>
         </button>
         <button
           type="button"

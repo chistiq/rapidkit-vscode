@@ -18,13 +18,22 @@ describe('welcomePanelDashboardCommands webview dispatch', () => {
       path.resolve(currentDir, '../ui/panels/welcomePanelWebviewMessageDispatch.ts'),
       'utf8'
     );
-    const combinedWelcomePanelSource = `${welcomePanelSource}\n${dispatchSource}`;
+    const dashboardMessageDispatcherSource = readFileSync(
+      path.resolve(currentDir, '../ui/panels/welcomePanelDashboardMessageDispatcher.ts'),
+      'utf8'
+    );
+    const combinedWelcomePanelSource = `${welcomePanelSource}\n${dispatchSource}\n${dashboardMessageDispatcherSource}`;
 
     expect(dashboardSource).toContain(
       'export async function tryDispatchDashboardContractWebviewMessage'
     );
     expect(dashboardSource).toContain('resolveDashboardCommandContract(command)');
     expect(dashboardSource).toContain('await executeDashboardContractCommand(host, command, data)');
+    expect(dashboardSource).toContain('host.postDashboardCommandFailed(command, reason');
+    expect(dashboardSource).toContain('Open the mapped evidence card');
+    expect(dashboardSource).toContain('const workspacePath = explicitPath || selectedPath ||');
+    expect(dashboardSource).toContain("typeof data?.workspacePath === 'string'");
+    expect(dispatchSource).toContain('tryDispatchDashboardWebviewMessage');
     expect(combinedWelcomePanelSource).toContain('tryDispatchDashboardContractWebviewMessage(');
     expect(welcomePanelSource).toContain('dispatchWelcomePanelWebviewMessage');
     expect(welcomePanelSource).not.toContain("case 'workspaceAnalyze':");

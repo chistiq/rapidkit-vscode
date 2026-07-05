@@ -17,20 +17,21 @@ export const DASHBOARD_SECTIONS: ReadonlyArray<DashboardSectionDefinition> = [
   {
     id: 'overview',
     label: 'Home',
-    scope: 'home',
+    scope: 'status',
     description: 'Workspace status, create/import handoffs, and next action summary',
   },
   {
     id: 'operate',
     label: 'Run',
     scope: 'workspace',
-    description: 'Execute workspace commands — primary, build, intelligence, governance',
+    description: 'Generate and refresh workspace evidence: health, intelligence, and release gates',
   },
   {
     id: 'repair',
     label: 'Repair',
     scope: 'flow',
-    description: 'One safe path through blockers, commands, Studio, and artifacts',
+    description:
+      'Resolve blockers with evidence, Studio guidance, verification, and artifact refresh',
   },
   {
     id: 'evidence',

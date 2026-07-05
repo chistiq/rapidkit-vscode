@@ -42,14 +42,26 @@ function getDashboardWorkspacePayload(
   }
 
   const contract = resolveDashboardCommandContract(command);
-  const explicitPath = typeof data?.path === 'string' && data.path.trim() ? data.path.trim() : '';
+  const nestedWorkspace =
+    data?.workspace && typeof data.workspace === 'object'
+      ? (data.workspace as { path?: unknown; name?: unknown })
+      : undefined;
+  const explicitPath =
+    typeof data?.path === 'string' && data.path.trim()
+      ? data.path.trim()
+      : typeof data?.workspacePath === 'string' && data.workspacePath.trim()
+        ? data.workspacePath.trim()
+        : typeof nestedWorkspace?.path === 'string' && nestedWorkspace.path.trim()
+          ? nestedWorkspace.path.trim()
+          : '';
   const selectedWorkspace = host.getSelectedWorkspaceInfo();
   const selectedPath = selectedWorkspace?.path || '';
-  const workspacePath = selectedPath || explicitPath || '';
+  const workspacePath = explicitPath || selectedPath || '';
   const workspaceName =
-    (workspacePath === selectedPath ? selectedWorkspace?.name : undefined) ||
     (typeof data?.name === 'string' && data.name.trim()) ||
-    selectedWorkspace?.name ||
+    (typeof data?.workspaceName === 'string' && data.workspaceName.trim()) ||
+    (typeof nestedWorkspace?.name === 'string' && nestedWorkspace.name.trim()) ||
+    (workspacePath === selectedPath ? selectedWorkspace?.name : undefined) ||
     (workspacePath ? path.basename(workspacePath) : undefined);
 
   if (contract?.requiresWorkspace && !workspacePath) {
@@ -324,6 +336,16 @@ export async function tryDispatchDashboardContractWebviewMessage(
     console.log(`[WelcomePanel] ${debugLabel} requested for:`, data?.path);
   }
 
-  await executeDashboardContractCommand(host, command, data);
+  try {
+    await executeDashboardContractCommand(host, command, data);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const reason = `${contract.label} failed: ${message}`;
+    host.postDashboardCommandFailed(command, reason, {
+      suggestedNextAction:
+        'Open the mapped evidence card, then retry the command or send the blocker to Studio.',
+    });
+    void vscode.window.showErrorMessage(reason);
+  }
   return true;
 }

@@ -4,6 +4,7 @@
 .npmignore
 .yarnrc
 *.vsix
+!dist/**
 vsc-extension-quickstart.md
 **/tsconfig.json
 **/.eslintrc.json

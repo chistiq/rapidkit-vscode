@@ -11,7 +11,7 @@ import {
   shouldRefreshEvidenceOnTerminalClose,
 } from './core/workspaceIntelligenceRuntime';
 import { setWorkspaceEvidenceRefreshHandler } from './core/workspaceIntelligenceProgressRunner';
-import { presentCliVersionGate } from './core/cliVersionGate';
+import { presentCliVersionGate, resolveLinkedCliVersion } from './core/cliVersionGate';
 import { syncWalkthroughEvidenceContext } from './core/walkthroughEvidenceContext';
 import { ensureInstalledAt } from './core/ttfvBridge';
 import {
@@ -57,8 +57,6 @@ import { ConfigurationManager } from './core/configurationManager';
 import { WorkspaceDetector } from './core/workspaceDetector';
 import { Logger } from './utils/logger';
 import { WorkspaiCodeActionsProvider } from './providers/codeActionsProvider';
-import { WorkspaiArchitectureCodeLensProvider } from './providers/architectureLensCodeLensProvider';
-import { WorkspaiArchitectureInlineDecorationController } from './providers/architectureLensInlineDecorationController';
 import { WorkspaiCompletionProvider } from './providers/completionProvider';
 import { WorkspaiHoverProvider } from './providers/hoverProvider';
 import { WorkspaceUsageTracker } from './utils/workspaceUsageTracker';
@@ -77,6 +75,7 @@ import { registerAIFreeFeatureCommands } from './commands/aiFreeFeatures';
 import { WorkspaceMemoryService } from './core/workspaceMemoryService';
 import { registerWorkspaiChatParticipant } from './commands/chatParticipant';
 import { registerModelCacheConfigListener } from './core/aiModelSelection';
+import { WorkspaceManager } from './core/workspaceManager';
 import {
   buildWorkspaceShareBundleDashboardSummary,
   parseWorkspaceShareBundle,
@@ -91,7 +90,6 @@ let projectExplorer: ProjectExplorerProvider;
 let moduleExplorer: ModuleExplorerProvider;
 let doctorEvidenceExplorer: DoctorEvidenceProvider;
 let workspaceContractGraphExplorer: WorkspaceContractGraphProvider;
-let architectureInlineDecorations: WorkspaiArchitectureInlineDecorationController;
 // templateExplorer removed
 
 const PROJECT_WATCHER_REFRESH_DEBOUNCE_MS = 250;
@@ -197,6 +195,7 @@ function revealWorkspaceAdvisorForScope(input: {
   workspace?: AIContextWorkspace | null;
   project?: AIContextProject | null;
   initialQuestion?: string;
+  editorIssue?: Record<string, unknown>;
   source?: string;
   trigger?: string;
 }): void {
@@ -217,6 +216,7 @@ function revealWorkspaceAdvisorForScope(input: {
         }
       : null,
     initialQuestion: input.initialQuestion,
+    ...(input.editorIssue ? { editorIssue: input.editorIssue } : {}),
     source: input.source ?? 'extension-command',
     trigger: input.trigger ?? 'workspace-advisor',
   });
@@ -228,6 +228,7 @@ function revealStudioForScope(input: {
   initialTask?: string;
   composerHandoff?: 'prefill' | 'submit';
   studioMode?: 'investigate' | 'verify' | 'prepare';
+  editorIssue?: Record<string, unknown>;
   source?: string;
   trigger?: string;
   blockerHandoff?: Record<string, unknown>;
@@ -251,6 +252,7 @@ function revealStudioForScope(input: {
     initialTask: input.initialTask,
     composerHandoff: input.composerHandoff,
     studioMode: input.studioMode,
+    ...(input.editorIssue ? { editorIssue: input.editorIssue } : {}),
     source: input.source ?? 'extension-command',
     trigger: input.trigger ?? 'studio',
     ...(input.blockerHandoff ? { blockerHandoff: input.blockerHandoff } : {}),
@@ -306,6 +308,28 @@ function asWorkspaiWorkspace(value: unknown): WorkspaiWorkspace | null {
   } as WorkspaiWorkspace;
 }
 
+function refreshStatusBarAmbientTruth(workspace: WorkspaiWorkspace | null): void {
+  if (!statusBar) {
+    return;
+  }
+  const workspaceName = workspace?.name;
+  statusBar.updateAmbientTruth({ workspaceName });
+  if (!workspace?.path) {
+    return;
+  }
+  void resolveLinkedCliVersion(workspace.path)
+    .then((cliVersion) => {
+      const currentWorkspace = workspaceExplorer?.getSelectedWorkspace();
+      if (currentWorkspace?.path !== workspace.path) {
+        return;
+      }
+      statusBar.updateAmbientTruth({ workspaceName, cliVersion: cliVersion ?? undefined });
+    })
+    .catch((error) => {
+      console.warn('[Workspai] Failed to refresh status bar CLI version', error);
+    });
+}
+
 function parseUriListToFsPaths(uriList: string): string[] {
   return uriList
     .split(/\r?\n/)
@@ -346,6 +370,19 @@ async function showAIFeatureOnboarding(
   if (!force) {
     const showOnboardingTips = config.get<boolean>('showOnboardingTips', true);
     if (!showOnboardingTips) {
+      return;
+    }
+    if (config.get('showWelcomeOnStartup', true)) {
+      // The dashboard owns day-0 AI discovery when it opens on startup. Avoid
+      // stacking a toast on top of the Welcome surface while still recording
+      // this version as discovered through the in-dashboard Create/Advisor/Studio
+      // paths.
+      await context.globalState.update(AI_ONBOARDING_VERSION_KEY, AI_ONBOARDING_VERSION);
+      await WorkspaceUsageTracker.getInstance().trackCommandEvent(
+        'workspai.onboarding.primary.dashboard_discovery',
+        undefined,
+        { forced: force }
+      );
       return;
     }
 
@@ -476,6 +513,62 @@ async function runOptionalActivationLane(
   }
 }
 
+const WORKSPACE_DETECTION_DISMISSED_KEY = 'workspai.workspaceDetection.dismissedPaths';
+
+async function promptToRegisterDetectedWorkspaceRoots(
+  context: vscode.ExtensionContext,
+  workspaceExplorerProvider: WorkspaceExplorerProvider | undefined,
+  logger: Logger
+): Promise<void> {
+  const detector = WorkspaceDetector.getInstance();
+  const manager = WorkspaceManager.getInstance();
+  await manager.loadWorkspaces();
+
+  const registeredPaths = new Set(manager.getWorkspaces().map((workspace) => workspace.path));
+  const dismissedPaths = new Set(
+    context.globalState.get<string[]>(WORKSPACE_DETECTION_DISMISSED_KEY) ?? []
+  );
+  const candidates = (await detector.detectWorkspaceRoots()).filter(
+    (workspace) => !registeredPaths.has(workspace.path) && !dismissedPaths.has(workspace.path)
+  );
+
+  if (candidates.length === 0) {
+    return;
+  }
+
+  const candidate = candidates[0];
+  const addAction = 'Add to Workspai';
+  const notNowAction = 'Not now';
+  const choice = await vscode.window.showInformationMessage(
+    `RapidKit workspace detected: ${candidate.name}. Add it to Workspai?`,
+    addAction,
+    notNowAction
+  );
+
+  if (choice === notNowAction) {
+    await context.globalState.update(WORKSPACE_DETECTION_DISMISSED_KEY, [
+      ...new Set([...dismissedPaths, candidate.path]),
+    ]);
+    return;
+  }
+
+  if (choice !== addAction) {
+    return;
+  }
+
+  const workspace = await manager.addWorkspace(candidate.path);
+  if (!workspace) {
+    void vscode.window.showWarningMessage(
+      `Workspai could not register ${candidate.name}. Open Setup to inspect the workspace marker.`
+    );
+    return;
+  }
+
+  await workspaceExplorerProvider?.refresh();
+  await workspaceExplorerProvider?.selectWorkspace(workspace);
+  logger.info(`Registered detected Workspai workspace: ${candidate.path}`);
+}
+
 function registerProjectRefreshWatchers(
   context: vscode.ExtensionContext,
   config: vscode.WorkspaceConfiguration,
@@ -519,7 +612,7 @@ function registerProjectRefreshWatchers(
 
 export async function activate(context: vscode.ExtensionContext) {
   const logger = Logger.getInstance();
-  logger.info('🚀 Workspai extension is activating...');
+  logger.info('Workspai extension is activating...');
 
   // Record first-ever activation timestamp for Time-to-First-Value (roadmap 2.9).
   void ensureInstalledAt(context);
@@ -538,7 +631,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   try {
     // Register commands FIRST - these MUST succeed
-    logger.info('Step 1: Registering commands...');
+    logger.info('Activation: registering commands');
 
     context.subscriptions.push(
       ...registerCoreCommands({
@@ -681,8 +774,13 @@ export async function activate(context: vscode.ExtensionContext) {
             : record.studioMode === 'investigate'
               ? 'investigate'
               : undefined;
-        const project = contextItem?.project || projectExplorer?.getSelectedProject();
-        const ws = contextItem?.workspace || workspaceExplorer?.getSelectedWorkspace();
+        const isEditorCodeAction = record.source === 'code-action';
+        const project =
+          contextItem?.project ||
+          (isEditorCodeAction ? undefined : projectExplorer?.getSelectedProject());
+        const ws =
+          contextItem?.workspace ||
+          (isEditorCodeAction ? undefined : workspaceExplorer?.getSelectedWorkspace());
         revealStudioForScope({
           workspace: ws,
           project: project
@@ -696,6 +794,10 @@ export async function activate(context: vscode.ExtensionContext) {
           initialTask,
           composerHandoff,
           studioMode,
+          editorIssue:
+            record.editorIssue && typeof record.editorIssue === 'object'
+              ? (record.editorIssue as Record<string, unknown>)
+              : undefined,
           source: typeof record.source === 'string' ? record.source : 'activitybar',
           trigger: typeof record.trigger === 'string' ? record.trigger : 'open-studio',
           blockerHandoff:
@@ -743,8 +845,13 @@ export async function activate(context: vscode.ExtensionContext) {
             : typeof record.prefillQuestion === 'string'
               ? record.prefillQuestion
               : undefined;
-        const ws = contextItem?.workspace || workspaceExplorer?.getSelectedWorkspace();
-        const project = contextItem?.project || projectExplorer?.getSelectedProject();
+        const isEditorCodeAction = record.source === 'code-action';
+        const ws =
+          contextItem?.workspace ||
+          (isEditorCodeAction ? undefined : workspaceExplorer?.getSelectedWorkspace());
+        const project =
+          contextItem?.project ||
+          (isEditorCodeAction ? undefined : projectExplorer?.getSelectedProject());
         revealWorkspaceAdvisorForScope({
           workspace: ws,
           project: project
@@ -756,6 +863,10 @@ export async function activate(context: vscode.ExtensionContext) {
               }
             : null,
           initialQuestion,
+          editorIssue:
+            record.editorIssue && typeof record.editorIssue === 'object'
+              ? (record.editorIssue as Record<string, unknown>)
+              : undefined,
           source: typeof record.source === 'string' ? record.source : 'activitybar',
           trigger: typeof record.trigger === 'string' ? record.trigger : 'open-workspace-advisor',
         });
@@ -832,7 +943,7 @@ export async function activate(context: vscode.ExtensionContext) {
       })
     );
 
-    logger.info('✅ Commands registered successfully');
+    logger.info('Activation: commands registered');
 
     // Listen for terminal close events to update running servers
     context.subscriptions.push(
@@ -887,31 +998,8 @@ export async function activate(context: vscode.ExtensionContext) {
     });
     context.subscriptions.push({ dispose: () => setWorkspaceEvidenceRefreshHandler(undefined) });
 
-    // Runtime CLI version gate (roadmap 2.3): in the background, detect the
-    // linked rapidkit CLI version and warn (once) with an "Update CLI" action if
-    // it is older than the minimum the extension is verified against.
-    void runOptionalActivationLane(logger, 'cli-version-gate', async () => {
-      const cwd =
-        workspaceExplorer?.getSelectedWorkspace()?.path ??
-        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      await presentCliVersionGate({ cwd });
-    });
-
-    // Seed the evidence-driven Getting Started walkthrough (roadmap 2.7) so its
-    // checklist reflects existing artifacts on activation.
-    void runOptionalActivationLane(logger, 'walkthrough-evidence-context', async () => {
-      const cwd =
-        workspaceExplorer?.getSelectedWorkspace()?.path ??
-        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ??
-        null;
-      await syncWalkthroughEvidenceContext(cwd, {
-        context,
-        extensionVersion: context.extension.packageJSON.version,
-      });
-    });
-
     // Initialize configuration manager
-    logger.info('Step 2: Initializing configuration manager...');
+    logger.info('Activation: initializing configuration manager');
     const configManager = ConfigurationManager.getInstance();
     await configManager.initialize(context);
 
@@ -935,17 +1023,17 @@ export async function activate(context: vscode.ExtensionContext) {
     });
 
     // Ensure default workspace is registered
-    logger.info('Step 3.5: Checking default workspace...');
+    logger.info('Activation: checking default workspace');
     // NOTE: Do not auto-create default workspace - user should create workspace manually via command
     // await ensureDefaultWorkspace();
 
     // Initialize status bar
-    logger.info('Step 4: Initializing status bar...');
+    logger.info('Activation: initializing status bar');
     statusBar = new WorkspaiStatusBar();
     context.subscriptions.push(statusBar);
 
     // Initialize tree view providers
-    logger.info('Step 5: Initializing tree view providers...');
+    logger.info('Activation: initializing tree view providers');
     actionsWebviewProvider = new ActionsWebviewProvider(
       context.extensionUri,
       'activitybar',
@@ -975,10 +1063,25 @@ export async function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
       vscode.commands.registerCommand('workspai.getSelectedWorkspace', () => {
-        return projectExplorer?.getSelectedWorkspace() ?? null;
+        return workspaceExplorer?.getSelectedWorkspace() ?? null;
       }),
       vscode.commands.registerCommand('workspai.getSelectedProject', () => {
         return projectExplorer?.getSelectedProject() ?? null;
+      }),
+      // Refresh dependent surfaces whenever workspace selection changes. This
+      // command must be registered before the initial selection publish lane.
+      vscode.commands.registerCommand('workspai.workspaceSelected', async (workspace: unknown) => {
+        const selectedWorkspace = asWorkspaiWorkspace(workspace);
+        refreshStatusBarAmbientTruth(selectedWorkspace);
+        projectExplorer?.setWorkspace(selectedWorkspace);
+        doctorEvidenceExplorer.refresh();
+        workspaceContractGraphExplorer.refresh();
+        secondaryActionsWebviewProvider?.refreshScope();
+        await WelcomePanel.refreshDashboardForWorkspaceSelection();
+        await syncWalkthroughEvidenceContext(selectedWorkspace?.path ?? null, {
+          context,
+          extensionVersion: context.extension.packageJSON.version,
+        });
       })
     );
 
@@ -988,7 +1091,7 @@ export async function activate(context: vscode.ExtensionContext) {
     WelcomePanel.setExtensionContext(context);
 
     // Register tree views
-    logger.info('Step 6: Registering tree views...');
+    logger.info('Activation: registering tree views');
     context.subscriptions.push(
       vscode.window.registerWebviewViewProvider(
         ActionsWebviewProvider.viewType,
@@ -1183,24 +1286,33 @@ export async function activate(context: vscode.ExtensionContext) {
         async (item?: unknown) => {
           await vscode.commands.executeCommand('workspai.doctorEvidence.sendIssueToAdvisor', item);
         }
-      ),
-      // Refresh evidence panel whenever workspace selection changes
-      vscode.commands.registerCommand('workspai.workspaceSelected', async (workspace: unknown) => {
-        const selectedWorkspace = asWorkspaiWorkspace(workspace);
-        projectExplorer?.setWorkspace(selectedWorkspace);
-        doctorEvidenceExplorer.refresh();
-        workspaceContractGraphExplorer.refresh();
-        secondaryActionsWebviewProvider?.refreshScope();
-        await WelcomePanel.refreshDashboardForWorkspaceSelection();
-        await syncWalkthroughEvidenceContext(selectedWorkspace?.path ?? null, {
-          context,
-          extensionVersion: context.extension.packageJSON.version,
-        });
-      })
+      )
     );
 
+    // Publish the initial workspace after the command and views are registered.
+    // This keeps activation responsive even if workspace registry discovery is slow.
+    void runOptionalActivationLane(logger, 'initial-workspace-selection', async () => {
+      await workspaceExplorer.whenReady();
+      await workspaceExplorer.publishSelectedWorkspaceContext();
+
+      const cwd =
+        workspaceExplorer?.getSelectedWorkspace()?.path ??
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      await presentCliVersionGate({ cwd });
+
+      await syncWalkthroughEvidenceContext(cwd ?? null, {
+        context,
+        extensionVersion: context.extension.packageJSON.version,
+      });
+    });
+
+    void runOptionalActivationLane(logger, 'detected-workspace-registration', async () => {
+      await workspaceExplorer.whenReady();
+      await promptToRegisterDetectedWorkspaceRoots(context, workspaceExplorer, logger);
+    });
+
     // Register IntelliSense providers
-    logger.info('Step 7: Registering IntelliSense providers...');
+    logger.info('Activation: registering IntelliSense providers');
     context.subscriptions.push(
       // Code actions for configuration files + AI debug for source files
       vscode.languages.registerCodeActionsProvider(
@@ -1219,19 +1331,6 @@ export async function activate(context: vscode.ExtensionContext) {
         {
           providedCodeActionKinds: WorkspaiCodeActionsProvider.providedCodeActionKinds,
         }
-      ),
-
-      vscode.languages.registerCodeLensProvider(
-        [
-          { language: 'python' },
-          { language: 'typescript' },
-          { language: 'javascript' },
-          { language: 'go' },
-          { language: 'java' },
-          { language: 'typescriptreact' },
-          { language: 'javascriptreact' },
-        ],
-        new WorkspaiArchitectureCodeLensProvider()
       ),
 
       // Completion provider
@@ -1258,12 +1357,9 @@ export async function activate(context: vscode.ExtensionContext) {
       )
     );
 
-    architectureInlineDecorations = new WorkspaiArchitectureInlineDecorationController();
-    context.subscriptions.push(architectureInlineDecorations);
+    logger.info('Activation: IntelliSense providers registered');
 
-    logger.info('Step 8: IntelliSense providers registered');
-
-    logger.info('✅ Workspai commands registered successfully!');
+    logger.info('Activation: Workspai command surface ready');
     statusBar.updateStatus('ready');
 
     // Check for rapidkit npm updates (non-blocking, runs in background)
@@ -1277,16 +1373,17 @@ export async function activate(context: vscode.ExtensionContext) {
     // This allows commands to be available immediately even if initialization fails
     (async () => {
       try {
-        logger.info('Step 9: Initializing workspace selection...');
+        logger.info('Activation: initializing workspace selection');
         await workspaceExplorer.refresh();
 
         // Sync evidence panel with whatever workspace was auto-selected on load
         const initialWs = workspaceExplorer.getSelectedWorkspace();
+        refreshStatusBarAmbientTruth(initialWs);
         doctorEvidenceExplorer.setWorkspacePath(initialWs?.path ?? null);
         workspaceContractGraphExplorer.setWorkspacePath(initialWs?.path ?? null);
 
         // Show welcome page on first activation
-        logger.info('Step 10: Checking welcome page settings...');
+        logger.info('Activation: checking welcome page settings');
         const config = vscode.workspace.getConfiguration('workspai');
 
         // Always show welcome page on first activation or if configured
@@ -1295,12 +1392,11 @@ export async function activate(context: vscode.ExtensionContext) {
           await showWelcomeCommand(context);
         }
 
-        // Step 11: Initialize workspace usage tracking
-        logger.info('Step 11: Initializing workspace usage tracker...');
+        logger.info('Activation: initializing workspace usage tracker');
         const usageTracker = WorkspaceUsageTracker.getInstance();
         await usageTracker.initialize();
 
-        logger.info('✅ Workspai extension initialized successfully!');
+        logger.info('Activation: Workspai extension initialized');
 
         // Non-blocking: onboarding toast should not delay activation completion.
         void showAIFeatureOnboarding(context);

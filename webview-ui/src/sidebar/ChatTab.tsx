@@ -5,7 +5,11 @@ import { ChatSessionBar } from './composer/ChatSessionBar';
 import { ChatToolsDrawer } from './drawers/ChatToolsDrawer';
 import { SidebarMessage } from './SidebarMessage';
 import type { SidebarModel } from './sidebarModels';
-import type { ChatSession } from './sidebarSessions';
+import {
+  basenameFromPath,
+  chatSessionContextLabel,
+  type ChatSession,
+} from './sidebarSessions';
 import type { SidebarScope } from './sidebarTypes';
 
 interface ChatTabProps {
@@ -26,21 +30,70 @@ interface ChatTabProps {
   onRefreshModels?: () => void;
   toolbar?: ReactNode;
   headerChrome?: ReactNode;
+  streamChrome?: ReactNode;
   footerActions?: ReactNode;
   onRunCommand?: (command: string) => void;
   onCopyCommand?: (command: string) => void;
   composerPrefill?: string;
   composerPrefillKey?: number;
+  chromeMode?: 'default' | 'repair';
+}
+
+function scopeDisplayName(scope: SidebarScope): string {
+  const workspace = scopeWorkspaceName(scope);
+  if (!workspace) {
+    return 'No workspace selected';
+  }
+  const project = scope.projectName || basenameFromPath(scope.projectPath);
+  return project ? `${workspace} / ${project}` : `${workspace} / workspace`;
+}
+
+function scopeWorkspaceName(scope: SidebarScope): string | undefined {
+  return scope.workspaceName || basenameFromPath(scope.workspacePath);
+}
+
+function sessionScopeDisplayName(session: ChatSession | null, fallback: SidebarScope): string {
+  if (session?.editorIssue || session?.incident || session?.scope) {
+    return chatSessionContextLabel(session);
+  }
+  return scopeDisplayName(fallback);
+}
+
+function UserChatContent({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = content.length > 720 || content.split('\n').length > 10;
+  const visible = isLong && !expanded ? `${content.slice(0, 520).trimEnd()}…` : content;
+
+  return (
+    <div className="ws-sidebar__user-content">
+      <MarkdownRenderer content={visible} />
+      {isLong ? (
+        <button
+          type="button"
+          className="ws-sidebar__message-toggle"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? 'Show less' : 'Show full request'}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 export function ChatTab(props: ChatTabProps) {
   const { active, sessions, activeSessionId, composerPrefill, composerPrefillKey } = props;
+  const repairMode = props.chromeMode === 'repair';
+  const hasChromeContent = Boolean(props.headerChrome || props.streamChrome);
   const [prompt, setPrompt] = useState('');
   const [toolsOpen, setToolsOpen] = useState(false);
   const lastPrefillKeyRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     if (!composerPrefill?.trim()) {
+      if (repairMode && composerPrefillKey !== lastPrefillKeyRef.current) {
+        lastPrefillKeyRef.current = composerPrefillKey;
+        setPrompt('');
+      }
       return;
     }
     if (composerPrefillKey === lastPrefillKeyRef.current) {
@@ -48,9 +101,14 @@ export function ChatTab(props: ChatTabProps) {
     }
     lastPrefillKeyRef.current = composerPrefillKey;
     setPrompt(composerPrefill.trim());
-  }, [composerPrefill, composerPrefillKey]);
+  }, [composerPrefill, composerPrefillKey, repairMode]);
 
   const activeSession = sessions.find((s) => s.sessionId === activeSessionId) ?? null;
+  const composerScopeLabel = sessionScopeDisplayName(activeSession, props.scope);
+  const scopedPlaceholder =
+    composerScopeLabel && composerScopeLabel !== 'No workspace selected'
+      ? `${props.placeholder} · ${composerScopeLabel}`
+      : props.placeholder;
 
   const submit = (text?: string) => {
     const trimmed = (text ?? prompt).trim();
@@ -69,27 +127,33 @@ export function ChatTab(props: ChatTabProps) {
       scope={props.scope}
       sessions={sessions}
       activeSessionId={activeSessionId}
-      suggestions={props.suggestions}
       onClose={() => setToolsOpen(false)}
       onNewSession={props.onNewSession}
       onSelectSession={props.onSelectSession}
       onDeleteSession={props.onDeleteSession}
       onPickSuggestion={submit}
-      toolbar={props.toolbar}
-      footerActions={props.footerActions}
+      toolbar={repairMode ? undefined : props.toolbar}
+      footerActions={repairMode ? undefined : props.footerActions}
+      suggestions={repairMode ? [] : props.suggestions}
     />
   );
 
   return (
     <section
-      className="ws-sidebar__tabpanel ws-sidebar__tabpanel--chat"
+      className={`ws-sidebar__tabpanel ws-sidebar__tabpanel--chat${
+        props.chromeMode === 'repair' ? ' ws-sidebar__tabpanel--repair' : ''
+      }`}
       role="tabpanel"
       aria-label={props.contextLabel}
       hidden={!active}
     >
-      {props.headerChrome}
+      {props.headerChrome ? (
+        <div className="ws-sidebar__chat-chrome">{props.headerChrome}</div>
+      ) : null}
       <div className="ws-sidebar__stream" aria-live="polite">
+        {props.streamChrome}
         {!activeSession || activeSession.messages.length === 0 ? (
+          repairMode || hasChromeContent ? null : (
           <SidebarMessage role="ai">
             <strong>{props.contextLabel}</strong>
             <p>
@@ -97,6 +161,7 @@ export function ChatTab(props: ChatTabProps) {
               <strong>New chat</strong> when you switch topics.
             </p>
           </SidebarMessage>
+          )
         ) : (
           activeSession.messages.map((message, idx) => {
             const isLastAssistant =
@@ -116,7 +181,7 @@ export function ChatTab(props: ChatTabProps) {
                     onCopyCommand={props.onCopyCommand}
                   />
                 ) : (
-                  <p>{message.content}</p>
+                  <UserChatContent content={message.content} />
                 )}
               </SidebarMessage>
             );
@@ -124,7 +189,7 @@ export function ChatTab(props: ChatTabProps) {
         )}
         {activeSession?.status === 'error' && activeSession.error ? (
           <SidebarMessage role="ai">
-            <strong>Stopped.</strong>
+            <strong>Studio paused.</strong>
             <p>{activeSession.error}</p>
           </SidebarMessage>
         ) : null}
@@ -133,6 +198,7 @@ export function ChatTab(props: ChatTabProps) {
       <ChatSessionBar
         activeSession={activeSession}
         sessionCount={sessions.length}
+        compact={repairMode}
         onNewSession={() => {
           props.onNewSession();
           setPrompt('');
@@ -144,7 +210,7 @@ export function ChatTab(props: ChatTabProps) {
         value={prompt}
         onChange={setPrompt}
         onSubmit={() => submit()}
-        placeholder={props.placeholder}
+        placeholder={scopedPlaceholder}
         disabled={activeSession?.status === 'streaming'}
         models={props.models}
         selectedModelId={props.selectedModelId}
@@ -152,6 +218,7 @@ export function ChatTab(props: ChatTabProps) {
         onRefreshModels={props.onRefreshModels}
         onOpenAdd={() => setToolsOpen((v) => !v)}
         addLabel={`${props.contextLabel} tools`}
+        contextLabel={composerScopeLabel}
         drawer={drawerNode}
       />
     </section>

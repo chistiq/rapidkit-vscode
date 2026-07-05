@@ -18,7 +18,7 @@ export function WorkspaiBanner({
       <div className="workspai-banner__head">
         <h3 className="workspai-banner__title">{title}</h3>
         {onDismiss ? (
-          <button type="button" className="enterprise-button enterprise-button--secondary" onClick={onDismiss}>
+          <button type="button" className="ws-btn" onClick={onDismiss}>
             {dismissLabel}
           </button>
         ) : null}

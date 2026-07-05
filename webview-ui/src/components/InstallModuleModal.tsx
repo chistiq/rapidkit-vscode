@@ -54,14 +54,14 @@ export function InstallModuleModal({
         <div className="enterprise-modal-actions">
           <button
             type="button"
-            className="enterprise-button enterprise-button--secondary"
+            className="ws-btn"
             onClick={onClose}
           >
             Cancel
           </button>
           <button
             type="button"
-            className="enterprise-button enterprise-button--primary"
+            className="ws-btn ws-btn--primary"
             onClick={onConfirm}
           >
             <Download size={14} />
@@ -79,10 +79,10 @@ export function InstallModuleModal({
             <div className="modal-metadata-card__title">{moduleName}</div>
             <div className="modal-metadata-card__desc">{module.description}</div>
             <div className="modal-chip-row">
-              <span className="modal-chip">v{module.version}</span>
-              <span className="modal-chip">{module.category}</span>
+              <span className="ws-chip ws-chip--muted">v{module.version}</span>
+              <span className="ws-chip ws-chip--muted">{module.category}</span>
               {module.status && module.status !== 'stable' && (
-                <span className="modal-chip modal-chip--warning">{module.status}</span>
+                <span className="ws-chip ws-chip--warn">{module.status}</span>
               )}
             </div>
           </div>
@@ -108,7 +108,7 @@ export function InstallModuleModal({
             <strong>Dependencies will be installed with this module.</strong>
             <div className="modal-chip-row modal-chip-row--spaced">
               {module.dependencies.map((dep) => (
-                <span key={dep} className="modal-chip modal-chip--mono">
+                <span key={dep} className="ws-chip ws-chip--muted modal-chip--mono">
                   {dep}
                 </span>
               ))}

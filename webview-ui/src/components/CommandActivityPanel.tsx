@@ -19,6 +19,7 @@ import { evidenceCardPendingLabel } from '@/lib/dashboardEvidencePending';
 import { EvidenceCardActions } from '@/components/EvidenceCardActions';
 import { EvidenceCardLogDrawer } from '@/components/EvidenceCardLogDrawer';
 import { cardNeedsAgentAttention } from '@/lib/evidenceAgentContext';
+import { buildDashboardIncidentCopy } from '@/lib/dashboardIncidentContract';
 import type { EvidenceViewMode } from '@/lib/dashboardEvidenceViewMode';
 import {
   filterEvidenceCardsForViewMode,
@@ -56,6 +57,8 @@ const statusChipClass: Record<DashboardEvidenceStatus, string> = {
   missing: 'ws-chip ws-chip--muted',
 };
 
+const ARCHIVE_CARD_PAGE_SIZE = 12;
+
 export function CommandActivityPanel({
   evidence,
   pendingCardIds = [],
@@ -73,8 +76,13 @@ export function CommandActivityPanel({
   onClearActivity,
 }: CommandActivityPanelProps) {
   const [activityExpanded, setActivityExpanded] = useState(activityDefaultExpanded);
+  const [expandedVisibleCardCount, setExpandedVisibleCardCount] = useState(ARCHIVE_CARD_PAGE_SIZE);
   const allCards = evidence?.cards ?? [];
   const cards = filterEvidenceCardsForViewMode(allCards, viewMode);
+  const visibleCards =
+    viewMode === 'expanded' ? cards.slice(0, expandedVisibleCardCount) : cards;
+  const hiddenArchiveCardCount =
+    viewMode === 'expanded' ? Math.max(0, cards.length - visibleCards.length) : 0;
   const groupedCards =
     viewMode === 'balanced' ? groupEvidenceCardsForViewMode(allCards, viewMode) : [];
   const activity = evidence?.activity ?? [];
@@ -122,6 +130,7 @@ export function CommandActivityPanel({
                       pendingCardIds,
                       pendingRunCardIds,
                       pendingRefreshCardIds,
+                      viewMode,
                       workspace,
                       evidence,
                       onRunCommand,
@@ -140,12 +149,13 @@ export function CommandActivityPanel({
           </div>
         ) : (
           <div className="command-activity-panel__evidence">
-            {cards.map((card) =>
+            {visibleCards.map((card) =>
               renderEvidenceCard(
                 card,
                 pendingCardIds,
                 pendingRunCardIds,
                 pendingRefreshCardIds,
+                viewMode,
                 workspace,
                 evidence,
                 onRunCommand,
@@ -158,6 +168,17 @@ export function CommandActivityPanel({
                 statusChipClass
               )
             )}
+            {hiddenArchiveCardCount > 0 ? (
+              <button
+                type="button"
+                className="ws-btn ws-btn--ghost command-activity-panel__show-more"
+                onClick={() =>
+                  setExpandedVisibleCardCount((count) => count + ARCHIVE_CARD_PAGE_SIZE)
+                }
+              >
+                Show {Math.min(ARCHIVE_CARD_PAGE_SIZE, hiddenArchiveCardCount)} more artifacts
+              </button>
+            ) : null}
           </div>
         )
       ) : null}
@@ -202,6 +223,7 @@ function renderEvidenceCard(
   pendingCardIds: DashboardEvidenceCardId[],
   pendingRunCardIds: DashboardEvidenceCardId[],
   pendingRefreshCardIds: DashboardEvidenceCardId[],
+  viewMode: EvidenceViewMode,
   workspace: { path?: string; name?: string } | undefined,
   evidence: DashboardEvidencePayload | null,
   onRunCommand: (command: string, data?: Record<string, unknown>) => void,
@@ -215,6 +237,7 @@ function renderEvidenceCard(
 ) {
   const Icon = statusIconMap[card.status];
   const actionContract = buildDashboardEvidenceActionContract(card, { workspace, evidence });
+  const incident = buildDashboardIncidentCopy({ card, contract: actionContract });
   const runAction = actionContract.commandAction;
   const runPending = pendingRunCardIds.includes(card.id);
   const refreshPending = pendingRefreshCardIds.includes(card.id);
@@ -281,13 +304,12 @@ function renderEvidenceCard(
         executionChannel={actionContract.executionChannel}
       />
       <div className="command-activity-panel__card-contract" aria-label="Action contract">
-        <span>{actionContract.artifactLabel}</span>
-        <span>{actionContract.studioLabel}</span>
-        <span>{actionContract.copilotLabel}</span>
+        <span>{incident.compactLabel}</span>
       </div>
       <EvidenceCardLogDrawer
         card={card}
         activity={evidence?.activity}
+        defaultExpanded={viewMode === 'expanded'}
         onOpenOutputChannel={onShowEvidenceOutput}
         onRevealArtifact={onRevealArtifact}
       />

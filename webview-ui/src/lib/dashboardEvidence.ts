@@ -88,6 +88,55 @@ export type DashboardOnboardingState = {
   hasActiveWorkspace: boolean;
   /** Human-friendly Time-to-First-Value label once the first artifact is produced (roadmap 2.9). */
   ttfvLabel?: string | null;
+  /** Local-only, boolean milestone snapshot for first-value guidance. */
+  milestones?: {
+    firstArtifactGenerated?: boolean;
+    firstBlockerFixed?: boolean;
+    studioOpened?: boolean;
+    verifyPassAfterStudioFix?: boolean;
+    returnToDashboardAfterVerify?: boolean;
+  };
+  /** Anonymous, local-only cohort summary for dogfood/product guidance. */
+  cohortSummary?: DashboardRetentionCohortSummary | null;
+};
+
+export type DashboardRetentionCohortSummary = {
+  schemaVersion: 'retention-cohort.v1';
+  daysSinceInstall: number | null;
+  ttfvResolved: boolean;
+  ttfvMs: number | null;
+  ttfvPreexisting: boolean;
+  registeredWorkspaceCount: number;
+  activityEntryCount: number;
+  activityCompletedCount: number;
+  activityFailedCount: number;
+  totalCommandRuns: number;
+  activationStage:
+    | 'not_started'
+    | 'first_artifact'
+    | 'first_blocker_fixed'
+    | 'studio_opened'
+    | 'verify_passed'
+    | 'returned_after_verify';
+  repairLoopStage:
+    | 'not_started'
+    | 'needs_fix'
+    | 'fix_recorded'
+    | 'studio_opened'
+    | 'verify_passed'
+    | 'returned_to_dashboard';
+  activationCompletionScore: number;
+  commandFailureRate: number;
+  distinctFailureSurfaceCount: number;
+  repeatedFailureFriction: boolean;
+  nextRecommendedFocus:
+    | 'setup'
+    | 'generate_first_artifact'
+    | 'fix_first_blocker'
+    | 'verify_fix'
+    | 'return_to_dashboard'
+    | 'reduce_command_failures'
+    | 'sustain';
 };
 
 export type DashboardEvidenceRefreshMode = 'full' | 'patch';

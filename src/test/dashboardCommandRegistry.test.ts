@@ -76,9 +76,12 @@ describe('dashboardCommandRegistry', () => {
   it('keeps extension-host dashboard commands backed by WelcomePanel handlers', () => {
     const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
     const dispatchSource = read('src/ui/panels/welcomePanelWebviewMessageDispatch.ts');
+    const dashboardMessageDispatcherSource = read(
+      'src/ui/panels/welcomePanelDashboardMessageDispatcher.ts'
+    );
     const dashboardCommandsSource = read('src/ui/panels/welcomePanelDashboardCommands.ts');
     const modulesCatalogSource = read('src/ui/panels/welcomePanelModulesCatalog.ts');
-    const combined = `${welcomePanelSource}\n${dispatchSource}\n${dashboardCommandsSource}\n${modulesCatalogSource}`;
+    const combined = `${welcomePanelSource}\n${dispatchSource}\n${dashboardMessageDispatcherSource}\n${dashboardCommandsSource}\n${modulesCatalogSource}`;
 
     expect(combined).toContain('tryDispatchDashboardContractWebviewMessage(');
     expect(dashboardCommandsSource).toContain('resolveDashboardCommandContract(command)');
@@ -132,6 +135,7 @@ describe('dashboardCommandRegistry', () => {
     );
 
     expect(rapidkitCommands.length).toBeGreaterThan(10);
+    expect(DASHBOARD_COMMAND_CONTRACTS.workspaceBootstrap.cliArgs).toEqual(['bootstrap', '--ci']);
     for (const contract of rapidkitCommands) {
       expect(contract.cliArgs?.length, contract.id).toBeGreaterThan(0);
       expect(contract.trackActivity, contract.id).toBe(true);
@@ -288,8 +292,11 @@ describe('dashboardCommandRegistry', () => {
     const handoffSource = read('webview-ui/src/components/HomeImportAdoptHandoff.tsx');
     const welcomePanelSource = read('src/ui/panels/welcomePanel.ts');
     const dispatchSource = read('src/ui/panels/welcomePanelWebviewMessageDispatch.ts');
+    const dashboardMessageDispatcherSource = read(
+      'src/ui/panels/welcomePanelDashboardMessageDispatcher.ts'
+    );
     const dashboardCommandsSource = read('src/ui/panels/welcomePanelDashboardCommands.ts');
-    const combinedWelcomePanelSource = `${welcomePanelSource}\n${dispatchSource}`;
+    const combinedWelcomePanelSource = `${welcomePanelSource}\n${dispatchSource}\n${dashboardMessageDispatcherSource}`;
 
     expect(handoffSource).toContain("runHandoff('importProject')");
     expect(handoffSource).toContain("runHandoff('adoptProject')");

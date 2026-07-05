@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import { run } from './exec';
 import { Logger } from './logger';
 import { buildNpxRapidkitArgs } from './platformCapabilities';
+import { resolveLinkedCliVersion } from '../core/cliVersionGate';
 
 /**
  * Check if this is user's first time using Workspai extension
@@ -14,10 +15,16 @@ import { buildNpxRapidkitArgs } from './platformCapabilities';
 export async function isFirstTimeSetup(): Promise<boolean> {
   const logger = Logger.getInstance();
 
+  const linkedVersion = await resolveLinkedCliVersion();
+  if (linkedVersion) {
+    logger.debug(`RapidKit CLI detected for first-time setup: ${linkedVersion}`);
+    return false;
+  }
+
   // Check if rapidkit npm is available (cached by npx)
   try {
     const result = await run('npx', buildNpxRapidkitArgs(['--version']), {
-      timeout: 3000,
+      timeout: 10_000,
       stdio: 'pipe',
     });
 
@@ -131,10 +138,10 @@ export async function showFirstTimeSetupComplete(): Promise<void> {
   const message =
     '✅ Workspai setup complete!\n\n' +
     "You're now ready to:\n" +
-    '  • Create FastAPI & NestJS projects\n' +
-    '  • Add modules (auth, database, caching, etc.)\n' +
-    '  • Use the interactive TUI\n\n' +
-    'Get started by creating a workspace or project!';
+    '  • Create or import projects\n' +
+    '  • Generate workspace intelligence evidence\n' +
+    '  • Use Studio to repair blockers with verification\n\n' +
+    'Start by running Workspace Doctor or creating your first project.';
 
   const createWorkspaceAction = 'Create Workspace';
   const viewDocsAction = 'View Docs';

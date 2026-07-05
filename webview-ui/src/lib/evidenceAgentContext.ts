@@ -9,22 +9,82 @@ export type EvidenceAttentionItem = {
   card: DashboardEvidenceCard;
   severity: 'fail' | 'warn';
   blockerCount: number;
+  attentionScore: number;
+  rankReasons: string[];
 };
+
+const GOVERNANCE_IMPACT_SCORE: Partial<Record<DashboardEvidenceCard['id'], number>> = {
+  pipeline: 35,
+  readiness: 34,
+  autopilot: 32,
+  doctor: 30,
+  projectDoctor: 28,
+  analyze: 26,
+  workspaceRun: 24,
+  workspaceVerify: 24,
+  workspaceImpact: 20,
+  workspaceContextAgent: 18,
+  agentGrounding: 18,
+};
+
+function recencyScore(card: DashboardEvidenceCard, nowMs = Date.now()): number {
+  const generatedAt = typeof card.generatedAt === 'string' ? Date.parse(card.generatedAt) : NaN;
+  if (!Number.isFinite(generatedAt)) {
+    return 0;
+  }
+  const ageMs = Math.max(0, nowMs - generatedAt);
+  if (ageMs <= 15 * 60 * 1000) {
+    return 18;
+  }
+  if (ageMs <= 60 * 60 * 1000) {
+    return 12;
+  }
+  if (ageMs <= 24 * 60 * 60 * 1000) {
+    return 6;
+  }
+  return 0;
+}
+
+function buildAttentionRank(
+  card: DashboardEvidenceCard
+): Pick<EvidenceAttentionItem, 'attentionScore' | 'rankReasons'> {
+  const blockerCount = card.blockers?.length ?? 0;
+  const severityScore = card.status === 'fail' ? 100 : card.status === 'warn' ? 45 : 0;
+  const blockerScore = Math.min(blockerCount, 5) * 8;
+  const governanceScore = GOVERNANCE_IMPACT_SCORE[card.id] ?? 0;
+  const recency = recencyScore(card);
+  const attentionScore = severityScore + blockerScore + governanceScore + recency;
+  const rankReasons = [
+    card.status === 'fail' ? 'blocked' : card.status === 'warn' ? 'attention' : '',
+    blockerCount > 0 ? `${blockerCount} blocker${blockerCount === 1 ? '' : 's'}` : '',
+    governanceScore > 0 ? 'governance impact' : '',
+    recency > 0 ? 'recent evidence' : '',
+  ].filter(Boolean);
+
+  return { attentionScore, rankReasons };
+}
 
 export function buildEvidenceAttentionInbox(
   evidence: DashboardEvidencePayload | null | undefined
 ): EvidenceAttentionItem[] {
   return outcomeCards(evidence)
-    .map((card) => ({
-      card,
-      severity: card.status === 'fail' ? ('fail' as const) : ('warn' as const),
-      blockerCount: card.blockers?.length ?? 0,
-    }))
+    .map((card) => {
+      const blockerCount = card.blockers?.length ?? 0;
+      return {
+        card,
+        severity: card.status === 'fail' ? ('fail' as const) : ('warn' as const),
+        blockerCount,
+        ...buildAttentionRank(card),
+      };
+    })
     .sort((left, right) => {
+      if (left.attentionScore !== right.attentionScore) {
+        return right.attentionScore - left.attentionScore;
+      }
       if (left.severity !== right.severity) {
         return left.severity === 'fail' ? -1 : 1;
       }
-      return right.blockerCount - left.blockerCount;
+      return left.card.label.localeCompare(right.card.label);
     });
 }
 

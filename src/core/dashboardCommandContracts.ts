@@ -114,7 +114,7 @@ export const DASHBOARD_COMMAND_CONTRACTS = {
     executionMode: 'terminal-rapidkit',
     trackActivity: true,
     requiresWorkspace: true,
-    cliArgs: ['bootstrap'],
+    cliArgs: ['bootstrap', '--ci'],
     vscodeCommand: 'workspai.workspaceBootstrap',
   },
   workspaceSetup: {

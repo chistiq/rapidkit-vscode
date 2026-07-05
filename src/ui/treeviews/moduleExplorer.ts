@@ -30,6 +30,7 @@ export class ModuleExplorerProvider implements vscode.TreeDataProvider<ModuleTre
   private _modulesCatalog: ModuleData[] = MODULES;
   private _catalogLoaded = false;
   private _catalogLoadInProgress = false;
+  private _catalogLoadError: string | null = null;
 
   // Static instance for external access
   public static instance: ModuleExplorerProvider | null = null;
@@ -56,6 +57,7 @@ export class ModuleExplorerProvider implements vscode.TreeDataProvider<ModuleTre
     // Reset catalog loaded flag so catalog is re-fetched for the new project/workspace
     this._catalogLoaded = false;
     this._catalogLoadInProgress = false;
+    this._catalogLoadError = null;
     this._loadInstalledModules();
     this.refresh();
   }
@@ -110,6 +112,16 @@ export class ModuleExplorerProvider implements vscode.TreeDataProvider<ModuleTre
       }
 
       // Phase 2: catalog ready — show categories
+      if (this._catalogLoadError) {
+        const item = new vscode.TreeItem('Module catalog fallback active');
+        item.contextValue = 'placeholder';
+        item.description = 'Using bundled modules';
+        item.tooltip = `Workspai could not load the live module catalog: ${this._catalogLoadError}`;
+        item.collapsibleState = vscode.TreeItemCollapsibleState.None;
+        item.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('charts.yellow'));
+        return [new ModuleTreeItem(item, 'placeholder'), ...this.getModuleCategories()];
+      }
+
       return this.getModuleCategories();
     } else if (element.contextValue === 'category') {
       return this.getModulesInCategory(element.label as string);
@@ -310,10 +322,12 @@ export class ModuleExplorerProvider implements vscode.TreeDataProvider<ModuleTre
         this._modulesCatalog = MODULES;
       }
       this._catalogLoaded = true;
+      this._catalogLoadError = null;
     } catch (error) {
       console.error('[ModuleExplorer] Failed to load modules catalog:', error);
       this._modulesCatalog = MODULES;
       this._catalogLoaded = true;
+      this._catalogLoadError = error instanceof Error ? error.message : String(error);
     }
   }
 
