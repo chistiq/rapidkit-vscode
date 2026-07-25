@@ -17,12 +17,24 @@ import { buildDashboardNavigationTelemetryCommand } from '../../core/dashboardNa
 import { clearDashboardOpsChain } from '../../core/dashboardOpsChainBridge';
 import { WorkspaceUsageTracker } from '../../utils/workspaceUsageTracker';
 import type { DashboardEvidenceRefreshContext } from './doctorTelemetryRefresh';
+import type {
+  WorkspaceGraphRecordingFrameInput,
+  WorkspaceGraphRecordingStartInput,
+  WorkspaceGraphRecordingStopInput,
+} from '../../contracts/workspaceGraphRecording.js';
 
 export type DashboardLifecycleMessageHost = {
   context: vscode.ExtensionContext;
   sendDashboardEvidence: (context?: DashboardEvidenceRefreshContext) => Promise<void>;
   sendWorkspaceToolStatus: () => Promise<void>;
   resolveTelemetryWorkspacePath: () => string | undefined;
+  startWorkspaceGraphStream?: (workspacePath: string) => void;
+  stopWorkspaceGraphStream?: () => void;
+  resyncWorkspaceGraphStream?: () => void;
+  startWorkspaceGraphRecording?: (input: WorkspaceGraphRecordingStartInput) => Promise<void>;
+  appendWorkspaceGraphRecordingFrame?: (input: WorkspaceGraphRecordingFrameInput) => Promise<void>;
+  stopWorkspaceGraphRecording?: (input: WorkspaceGraphRecordingStopInput) => Promise<void>;
+  openWorkspaceGraphRecording?: () => Promise<void>;
   postDashboardEvidenceRefreshFailed?: (input: {
     reason: string;
     cardIds?: DashboardEvidenceRefreshContext['cardIds'];
@@ -40,6 +52,13 @@ const DASHBOARD_LIFECYCLE_WEBVIEW_COMMANDS = new Set([
   'dismissDashboardOpsChain',
   'trackDashboardCommand',
   'trackDashboardNavigation',
+  'startWorkspaceGraphStream',
+  'stopWorkspaceGraphStream',
+  'resyncWorkspaceGraphStream',
+  'startWorkspaceGraphRecording',
+  'appendWorkspaceGraphRecordingFrame',
+  'stopWorkspaceGraphRecording',
+  'openWorkspaceGraphRecording',
 ]);
 
 function failureMessage(error: unknown): string {
@@ -85,6 +104,73 @@ export async function tryDispatchDashboardLifecycleWebviewMessage(
       break;
     case 'requestWorkspaceToolStatus':
       await host.sendWorkspaceToolStatus();
+      break;
+    case 'startWorkspaceGraphStream': {
+      const payload = getWebviewMessageDataRecord({ command, data });
+      const workspacePath = readTrimmedStringField(payload, 'workspacePath');
+      if (workspacePath) {
+        host.startWorkspaceGraphStream?.(workspacePath);
+      }
+      break;
+    }
+    case 'stopWorkspaceGraphStream':
+      host.stopWorkspaceGraphStream?.();
+      break;
+    case 'resyncWorkspaceGraphStream':
+      host.resyncWorkspaceGraphStream?.();
+      break;
+    case 'startWorkspaceGraphRecording': {
+      const payload = getWebviewMessageDataRecord({ command, data });
+      const workspacePath = readTrimmedStringField(payload, 'workspacePath');
+      const initialRevision = readTrimmedStringField(payload, 'initialRevision');
+      const mode = readTrimmedStringField(payload, 'mode');
+      if (
+        workspacePath &&
+        initialRevision &&
+        (mode === 'manual' || mode === 'change-driven' || mode === 'scenario')
+      ) {
+        await host.startWorkspaceGraphRecording?.({ workspacePath, initialRevision, mode });
+      }
+      break;
+    }
+    case 'appendWorkspaceGraphRecordingFrame': {
+      const payload = getWebviewMessageDataRecord({ command, data });
+      const sessionId = readTrimmedStringField(payload, 'sessionId');
+      const revision = readTrimmedStringField(payload, 'revision');
+      const capturedAt = readTrimmedStringField(payload, 'capturedAt');
+      const pngDataUrl = readStringField(payload, 'pngDataUrl');
+      const width = readNumberField(payload, 'width');
+      const height = readNumberField(payload, 'height');
+      const change =
+        payload.change && typeof payload.change === 'object' && !Array.isArray(payload.change)
+          ? payload.change
+          : null;
+      if (sessionId && revision && capturedAt && pngDataUrl && width && height && change) {
+        await host.appendWorkspaceGraphRecordingFrame?.({
+          sessionId,
+          revision,
+          capturedAt,
+          pngDataUrl,
+          width,
+          height,
+          change: change as WorkspaceGraphRecordingFrameInput['change'],
+        });
+      }
+      break;
+    }
+    case 'stopWorkspaceGraphRecording': {
+      const payload = getWebviewMessageDataRecord({ command, data });
+      const sessionId = readTrimmedStringField(payload, 'sessionId');
+      if (sessionId) {
+        await host.stopWorkspaceGraphRecording?.({
+          sessionId,
+          webmDataUrl: readStringField(payload, 'webmDataUrl'),
+        });
+      }
+      break;
+    }
+    case 'openWorkspaceGraphRecording':
+      await host.openWorkspaceGraphRecording?.();
       break;
     case 'requestDashboardEvidence': {
       const payload = getWebviewMessageDataRecord({ command, data });

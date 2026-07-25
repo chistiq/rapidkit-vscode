@@ -31,6 +31,6 @@ Model selection is now more robust, context assembly is richer and safer, and re
 ## Links
 
 - 📦 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
-- 🐙 [GitHub Repository](https://github.com/rapidkitlabs/rapidkit-vscode)
+- 🐙 [GitHub Repository](https://github.com/chistiq/rapidkit-vscode)
 - 🌐 [Workspai Website](https://www.workspai.com/)
 - 🚀 [RapidKit CLI (npm)](https://www.npmjs.com/package/rapidkit)

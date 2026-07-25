@@ -15,6 +15,11 @@ describe('sidebarStudioFeedbackBridge (4.17)', () => {
         handoff: {
           scope: 'workspace',
           verifyCommand: 'npx rapidkit workspace verify --json',
+          dashboardCommandId: 'workspaceVerify',
+          executionChannel: 'background',
+          capabilityGate: 'workspace verify',
+          safetyRisk: 'write',
+          safetyRefreshCommands: ['npx rapidkit workspace verify --json'],
         } as never,
       },
       { sha256: 'abc', path: '.rapidkit/reports/workspace-verify-last-run.json' }
@@ -24,6 +29,13 @@ describe('sidebarStudioFeedbackBridge (4.17)', () => {
     expect(payload.actionId).toBe('studio-fix');
     expect(payload.outcome).toBe('ok');
     expect(payload.affectedFiles).toEqual(['config.yaml']);
+    expect(payload).toMatchObject({
+      dashboardCommandId: 'workspaceVerify',
+      executionChannel: 'background',
+      capabilityGate: 'workspace verify',
+      safetyRisk: 'write',
+      safetyRefreshCommands: ['npx rapidkit workspace verify --json'],
+    });
     expect(payload.verifyAfter).toContain('workspace verify');
   });
 

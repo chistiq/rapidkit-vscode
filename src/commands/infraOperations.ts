@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import path from 'path';
 import { Logger } from '../utils/logger';
-import { runRapidkitCommandsInTerminal } from '../utils/terminalExecutor';
+import { runGatedRapidkitCommandsInTerminal } from '../core/gatedRapidkitTerminal';
+import { appendWorkspaceCommandRefresh } from '../core/workspaceCommandSafety';
 
 type WorkspaceExplorerLike = {
   getSelectedWorkspace?: () => { path: string; name?: string } | null | undefined;
@@ -16,6 +17,18 @@ type InfraCommandItem = {
 type InfraAction = 'plan' | 'up' | 'down' | 'status' | 'open-compose';
 
 type InfraActionQuickPickItem = vscode.QuickPickItem & { value: InfraAction };
+
+async function runInfraRapidkitCommand(input: {
+  name: string;
+  workspacePath: string;
+  commands: string[][];
+}): Promise<boolean> {
+  return runGatedRapidkitCommandsInTerminal({
+    name: input.name,
+    cwd: input.workspacePath,
+    commands: input.commands,
+  });
+}
 
 function getItemWorkspacePath(item: unknown): string | undefined {
   if (typeof item === 'string') {
@@ -202,12 +215,14 @@ export function registerInfraOperationsCommands(options: {
       if (!flags) {
         return;
       }
-      runRapidkitCommandsInTerminal({
+      const ran = await runInfraRapidkitCommand({
         name: `Workspai: Infra Plan — ${workspaceName}`,
-        cwd: workspacePath,
+        workspacePath,
         commands: [['infra', 'plan', ...flags]],
       });
-      logger.info(`Running infra plan for workspace: ${workspacePath}`);
+      if (ran) {
+        logger.info(`Running infra plan for workspace: ${workspacePath}`);
+      }
       return;
     }
 
@@ -220,12 +235,14 @@ export function registerInfraOperationsCommands(options: {
       if (!flags) {
         return;
       }
-      runRapidkitCommandsInTerminal({
+      const ran = await runInfraRapidkitCommand({
         name: `Workspai: Infra Up — ${workspaceName}`,
-        cwd: workspacePath,
-        commands: [['infra', 'up', ...flags]],
+        workspacePath,
+        commands: appendWorkspaceCommandRefresh('infraUp', [['infra', 'up', ...flags]]),
       });
-      logger.info(`Running infra up for workspace: ${workspacePath}`);
+      if (ran) {
+        logger.info(`Running infra up for workspace: ${workspacePath}`);
+      }
       return;
     }
 
@@ -267,22 +284,26 @@ export function registerInfraOperationsCommands(options: {
         command.push('--volumes');
       }
 
-      runRapidkitCommandsInTerminal({
+      const ran = await runInfraRapidkitCommand({
         name: `Workspai: Infra Down — ${workspaceName}`,
-        cwd: workspacePath,
-        commands: [command],
+        workspacePath,
+        commands: appendWorkspaceCommandRefresh('infraDown', [command]),
       });
-      logger.info(`Running infra down for workspace: ${workspacePath}`);
+      if (ran) {
+        logger.info(`Running infra down for workspace: ${workspacePath}`);
+      }
       return;
     }
 
     // action === 'status'
-    runRapidkitCommandsInTerminal({
+    const ran = await runInfraRapidkitCommand({
       name: `Workspai: Infra Status — ${workspaceName}`,
-      cwd: workspacePath,
+      workspacePath,
       commands: [['infra', 'status']],
     });
-    logger.info(`Running infra status for workspace: ${workspacePath}`);
+    if (ran) {
+      logger.info(`Running infra status for workspace: ${workspacePath}`);
+    }
   };
 
   return [

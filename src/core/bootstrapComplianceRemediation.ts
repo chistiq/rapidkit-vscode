@@ -12,7 +12,7 @@ export type BootstrapComplianceRemediationResult = {
   rollbackCommand?: string;
 };
 
-const ENTERPRISE_BOOTSTRAP_BLOCKER_PATTERNS = [
+const FIXABLE_BOOTSTRAP_BLOCKER_PATTERNS = [
   'profile.enterprise.ci',
   'profile.enterprise.compatibility-matrix',
   'profile.enterprise.mirror-config',
@@ -21,19 +21,13 @@ const ENTERPRISE_BOOTSTRAP_BLOCKER_PATTERNS = [
 export function isBootstrapComplianceHandoff(
   handoff: Pick<StudioBlockerHandoff, 'cardId' | 'cardLabel' | 'blockers'>
 ): boolean {
-  if (handoff.cardId === 'bootstrap') {
-    return true;
-  }
-  if (/bootstrap compliance/i.test(handoff.cardLabel ?? '')) {
-    return true;
-  }
   return handoff.blockers.some((blocker) =>
-    ENTERPRISE_BOOTSTRAP_BLOCKER_PATTERNS.some((pattern) => blocker.includes(pattern))
+    FIXABLE_BOOTSTRAP_BLOCKER_PATTERNS.some((pattern) => blocker.includes(pattern))
   );
 }
 
 export function normalizeBootstrapComplianceCommand(command: string | undefined): string {
-  const trimmed = command?.trim() || 'npx rapidkit bootstrap';
+  const trimmed = command?.trim() || 'npx workspai bootstrap';
   const isBootstrapCommand = /(?:^|\s)(?:rapidkit\s+)?bootstrap(?:\s|$)/.test(trimmed);
   if (!isBootstrapCommand) {
     return trimmed;

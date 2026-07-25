@@ -29,6 +29,28 @@ export type CopilotChatOpenResult = {
   prefilled: boolean;
 };
 
+export async function buildEvidenceAgentHandoffPrompt(
+  input: EvidenceCardAgentContextInput
+): Promise<{ bundle: EvidenceAgentContextBundle; prompt: string }> {
+  const bundle = await buildEvidenceAgentContextBundle(input);
+  return { bundle, prompt: buildSendToCopilotPrompt(bundle) };
+}
+
+export async function copyEvidenceAgentHandoff(
+  input: EvidenceCardAgentContextInput
+): Promise<string> {
+  const { prompt } = await buildEvidenceAgentHandoffPrompt(input);
+  await vscode.env.clipboard.writeText(prompt);
+
+  const channel = getWorkspaiEvidenceOutputChannel();
+  const label = input.card?.label ?? 'Workspace intelligence';
+  channel.appendLine(`[${new Date().toISOString()}] Copy agent handoff · ${label}`);
+  channel.appendLine(prompt);
+  channel.appendLine('');
+  void vscode.window.showInformationMessage('Complete Workspai agent handoff copied.');
+  return prompt;
+}
+
 /** VS Code standard: prefill Copilot/Chat input without auto-submit. */
 export async function openCopilotChatWithPrompt(prompt: string): Promise<CopilotChatOpenResult> {
   const trimmed = prompt.trim();
@@ -60,7 +82,7 @@ export async function openCopilotChatWithPrompt(prompt: string): Promise<Copilot
 
 async function ensureWorkspaceAgentContextReport(workspacePath: string): Promise<boolean> {
   const reportPath = vscode.Uri.file(
-    `${workspacePath}/.rapidkit/reports/workspace-context-agent.json`
+    `${workspacePath}/.workspai/reports/workspace-context-agent.json`
   );
   try {
     await vscode.workspace.fs.stat(reportPath);
@@ -110,8 +132,7 @@ export async function sendEvidenceToCopilot(
 ): Promise<SendToCopilotResult> {
   const ensuredAgentContext = await ensureWorkspaceAgentContextReport(input.workspacePath);
   const ensuredAgentPack = await ensureAgentCustomizationPack(input.workspacePath);
-  const bundle = await buildEvidenceAgentContextBundle(input);
-  const prompt = buildSendToCopilotPrompt(bundle);
+  const { bundle, prompt } = await buildEvidenceAgentHandoffPrompt(input);
 
   const { opened: openedChat, prefilled: prefilledChat } = await openCopilotChatWithPrompt(prompt);
   if (!prefilledChat) {

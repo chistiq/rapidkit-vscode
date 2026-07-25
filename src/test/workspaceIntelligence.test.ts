@@ -18,27 +18,37 @@ describe('workspaceIntelligencePaths', () => {
     'workspace-model-snapshot.v1.json',
     'workspace-model.v1.json',
     'workspace-verify.v1.json',
+    'workspace-knowledge-graph.v1.json',
+    'workspace-knowledge-search.v1.json',
+    'workspace-knowledge-graph-change-overlay.v1.json',
+    'workspace-graph-token-efficiency.v1.json',
+    'model-usage-event.v1.json',
+    'workspace-intelligence-evaluation.v1.json',
+    'workspace-intelligence-evaluation-comparison.v1.json',
   ];
 
-  it('keeps report paths aligned with rapidkit-npm workspace intelligence artifacts', () => {
+  it('keeps report paths aligned with Workspai CLI workspace intelligence artifacts', () => {
     expect(WORKSPACE_INTELLIGENCE_REPORT_PATHS).toEqual([
-      '.rapidkit/reports/agent-customization-pack.json',
-      '.rapidkit/reports/INDEX.json',
-      '.rapidkit/reports/workspace-model.json',
-      '.rapidkit/reports/workspace-model-snapshot.json',
-      '.rapidkit/reports/workspace-model-diff-last-run.json',
-      '.rapidkit/reports/workspace-impact-last-run.json',
-      '.rapidkit/reports/workspace-verify-last-run.json',
-      '.rapidkit/reports/workspace-context-agent.json',
-      '.rapidkit/reports/workspace-skills-index.json',
-      '.rapidkit/reports/workspace-explain-last-run.json',
-      '.rapidkit/reports/workspace-why-last-run.json',
-      '.rapidkit/reports/workspace-trace-last-run.json',
-      '.rapidkit/reports/workspace-contract-verify-last-run.json',
+      '.workspai/reports/agent-customization-pack.json',
+      '.workspai/reports/INDEX.json',
+      '.workspai/reports/workspace-model.json',
+      '.workspai/reports/workspace-model-snapshot.json',
+      '.workspai/reports/workspace-model-diff-last-run.json',
+      '.workspai/reports/workspace-impact-last-run.json',
+      '.workspai/reports/workspace-verify-last-run.json',
+      '.workspai/reports/workspace-context-agent.json',
+      '.workspai/reports/workspace-skills-index.json',
+      '.workspai/reports/workspace-explain-last-run.json',
+      '.workspai/reports/workspace-why-last-run.json',
+      '.workspai/reports/workspace-trace-last-run.json',
+      '.workspai/reports/workspace-knowledge-graph.json',
+      '.workspai/reports/workspace-intelligence-evaluation-live.json',
+      '.workspai/reports/workspace-intelligence-evaluation-last-run.json',
+      '.workspai/reports/workspace-contract-verify-last-run.json',
     ]);
   });
 
-  it('ships workspace intelligence schemas in parity with rapidkit-npm', async () => {
+  it('ships workspace intelligence schemas in parity with Workspai CLI', async () => {
     const phase4Contracts = [
       'workspace-explain.v1.json',
       'workspace-skills-index.v1.json',
@@ -54,7 +64,7 @@ describe('workspaceIntelligencePaths', () => {
       );
       const npmContract = path.resolve(
         __dirname,
-        '../../../rapidkit-npm/contracts/workspace-intelligence',
+        '../../../workspai/packages/cli/contracts/workspace-intelligence',
         fileName
       );
 
@@ -77,8 +87,8 @@ describe('workspaceIntelligencePaths', () => {
       await import('../core/workspaceIntelligencePaths');
 
     expect(WORKSPACE_INTELLIGENCE_DIFF_FROM_CANDIDATES).toEqual([
-      '.rapidkit/reports/workspace-model-snapshot.json',
-      '.rapidkit/reports/workspace-model.json',
+      '.workspai/reports/workspace-model-snapshot.json',
+      '.workspai/reports/workspace-model.json',
     ]);
   });
 });
@@ -95,7 +105,7 @@ describe('workspaceAgentContextReader', () => {
     tempDirs.push(workspacePath);
     const reportPath = path.join(
       workspacePath,
-      '.rapidkit',
+      '.workspai',
       'reports',
       'workspace-context-agent.json'
     );
@@ -110,7 +120,7 @@ describe('workspaceAgentContextReader', () => {
           id: 'workspace.pipeline',
           scope: 'workspace',
           display: 'Governance pipeline',
-          execute: 'rapidkit pipeline --json --strict',
+          execute: 'workspai pipeline --json --strict',
         },
       ],
       validation: { status: 'passed', errors: 0, warnings: 0 },
@@ -121,7 +131,7 @@ describe('workspaceAgentContextReader', () => {
 
     expect(report?.agent).toBe('cursor');
     expect(section).toContain('WORKSPACE INTELLIGENCE');
-    expect(section).toContain('rapidkit pipeline --json --strict');
+    expect(section).toContain('workspai pipeline --json --strict');
     expect(section).toContain('workspace model');
   });
 });
@@ -132,13 +142,23 @@ describe('workspaceIntelligence commands source', () => {
       path.resolve(__dirname, '../commands/workspaceIntelligence.ts'),
       'utf8'
     );
+    const presetSource = await fs.readFile(
+      path.resolve(__dirname, '../core/workspaceCommandPresets.ts'),
+      'utf8'
+    );
 
-    expect(source).toContain("['workspace', 'model', '--json', '--write']");
+    expect(presetSource).toContain("args: ['workspace', 'model', '--json', '--write']");
     expect(source).toContain("['workspace', 'snapshot', '--json']");
-    expect(source).toContain("['workspace', 'diff', '--from', fromPath, '--json']");
-    expect(source).toContain("['workspace', 'impact', '--from', fromPath, '--json']");
-    expect(source).toContain('buildWorkspaceAgentContextCliArgs');
-    expect(source).toContain('buildWorkspaceAgentSyncCliArgs');
+    expect(presetSource).toContain(
+      "args: ['workspace', 'diff', '--from', '<baseline-report>', '--json']"
+    );
+    expect(presetSource).toContain(
+      "args: ['workspace', 'impact', '--from', '<change-report>', '--json']"
+    );
+    expect(presetSource).toContain(
+      "args: ['workspace', 'context', '--for-agent', '--json', '--write']"
+    );
+    expect(presetSource).toContain("'workspace',\n          'agent-sync',");
     expect(source).toContain('workspai.copyCopilotContextPrompt');
     expect(source).toContain('workspai.workspaceAgentSync');
     expect(source).toContain('workspai.workspaceContextAgent');
@@ -146,6 +166,8 @@ describe('workspaceIntelligence commands source', () => {
     expect(source).toContain('workspai.workspaceVerify');
     expect(source).toContain('workspai.workspaceImpactLens');
     expect(source).toContain('workspai.architectureImpactLens');
-    expect(source).toContain("['workspace', 'verify', '--from-impact', fromImpact, '--json']");
+    expect(presetSource).toContain(
+      "args: ['workspace', 'verify', '--from-impact', '<impact-report>', '--json']"
+    );
   });
 });

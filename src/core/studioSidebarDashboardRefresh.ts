@@ -44,7 +44,16 @@ export type StudioSidebarDashboardRefreshResult = {
   primaryCard?: DashboardEvidenceCard;
   refreshedCards: DashboardEvidenceCard[];
   ledger?: StudioBlockerLedgerReconcileResult;
+  evidenceOutcome: 'resolved' | 'blocking' | 'missing' | 'verify-failed';
 };
+
+/** A warning or advisory is not a failed repair merely because it is not `pass`. */
+export function dashboardEvidenceCardIsBlocking(card: DashboardEvidenceCard | undefined): boolean {
+  if (!card) {
+    return true;
+  }
+  return card.blocking ?? card.status === 'fail';
+}
 
 export async function refreshDashboardAfterStudioVerify(input: {
   context?: vscode.ExtensionContext;
@@ -72,9 +81,21 @@ export async function refreshDashboardAfterStudioVerify(input: {
   });
 
   const primaryCard = refreshedCards.find((card) => card.id === input.handoff.cardId);
+  // Workspai uses exit 2 for both a governed non-pass posture and a blocker.
+  // The refreshed artifact owns that semantic verdict. Other non-zero exits
+  // mean the producer itself failed and cannot authorize completion.
+  const verifyProducedEvidence = input.verifyExitCode === 0 || input.verifyExitCode === 2;
+  const evidenceOutcome: StudioSidebarDashboardRefreshResult['evidenceOutcome'] =
+    !verifyProducedEvidence
+      ? 'verify-failed'
+      : !primaryCard
+        ? 'missing'
+        : dashboardEvidenceCardIsBlocking(primaryCard)
+          ? 'blocking'
+          : 'resolved';
 
   let ledger: StudioBlockerLedgerReconcileResult | undefined;
-  if (input.context) {
+  if (input.context && primaryCard) {
     ledger = await reconcileStudioBlockerLedgerAfterVerify(input.context, {
       cardId: input.handoff.cardId,
       blockers: primaryCard?.blockers ?? input.handoff.blockers,
@@ -88,6 +109,7 @@ export async function refreshDashboardAfterStudioVerify(input: {
     primaryCard,
     refreshedCards,
     ledger,
+    evidenceOutcome,
   };
 }
 
@@ -96,6 +118,12 @@ export function formatStudioCardRefreshToast(input: {
   verifySucceeded: boolean;
 }): { kind: 'info' | 'warning' | 'error'; message: string } {
   const label = input.primaryCard?.label ?? 'Evidence card';
+  if (!input.primaryCard) {
+    return {
+      kind: 'error',
+      message: 'Verify completed, but refreshed evidence is missing. Studio kept the blocker open.',
+    };
+  }
   if (input.primaryCard?.status === 'pass') {
     return { kind: 'info', message: `Card refreshed: ${label} is ready.` };
   }
@@ -107,5 +135,7 @@ export function formatStudioCardRefreshToast(input: {
   }
   const topBlocker =
     input.primaryCard?.blockers?.[0] ?? input.primaryCard?.summary ?? 'still needs attention';
-  return { kind: 'warning', message: `Still blocked: ${topBlocker}` };
+  return dashboardEvidenceCardIsBlocking(input.primaryCard)
+    ? { kind: 'warning', message: `Still blocked: ${topBlocker}` }
+    : { kind: 'warning', message: `Verified with attention: ${topBlocker}` };
 }

@@ -154,7 +154,7 @@ describe('aiContextResolver', () => {
 
     expect(section).toContain('Active workspace root: /tmp/wsp');
     expect(section).toContain('Selected project root: /tmp/wsp/billing-api');
-    expect(section).toContain('npx rapidkit readiness');
+    expect(section).toContain('npx workspai readiness');
     expect(section).toContain('prefer project-scoped commands there');
   });
 

@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { computeBlockerSignature } from '../contracts/blocker-resolution-contract.js';
-import { reconcileStudioBlockerLedgerAfterVerify } from '../core/studioBlockerCommandLedger.js';
 import {
+  readStudioBlockerLedgerEntry,
+  reconcileStudioBlockerLedgerAfterVerify,
+  recordStudioBlockerCommandRun,
+} from '../core/studioBlockerCommandLedger.js';
+import {
+  dashboardEvidenceCardIsBlocking,
   formatStudioCardRefreshToast,
   refreshDashboardAfterStudioVerify,
   resolveDashboardCardIdsForStudioHandoff,
@@ -22,6 +27,12 @@ vi.mock('../core/dashboardEvidenceCardRefresh.js', () => ({
 }));
 
 describe('studio sidebar dashboard refresh', () => {
+  it('treats missing evidence as blocking', () => {
+    expect(dashboardEvidenceCardIsBlocking(undefined)).toBe(true);
+    expect(
+      formatStudioCardRefreshToast({ verifySucceeded: true, primaryCard: undefined })
+    ).toMatchObject({ kind: 'error' });
+  });
   it('resolves related dashboard card ids for verify handoffs', () => {
     expect(
       resolveDashboardCardIdsForStudioHandoff({
@@ -58,6 +69,29 @@ describe('studio sidebar dashboard refresh', () => {
         },
       }).kind
     ).toBe('warning');
+  });
+
+  it('keeps refreshed warning evidence out of the blocked repair loop', () => {
+    const advisoryCard = {
+      id: 'pipeline' as const,
+      label: 'Governance Gate',
+      status: 'warn' as const,
+      summary: '3 passed · 2 warn · 0 failed',
+      scope: 'workspace' as const,
+      blockers: ['Review analyze warnings before release.'],
+      blocking: false,
+    };
+
+    expect(dashboardEvidenceCardIsBlocking(advisoryCard)).toBe(false);
+    expect(
+      formatStudioCardRefreshToast({
+        verifySucceeded: true,
+        primaryCard: advisoryCard,
+      })
+    ).toEqual({
+      kind: 'warning',
+      message: 'Verified with attention: Review analyze warnings before release.',
+    });
   });
 
   it('resets ledger entries when blocker signature changes after verify', async () => {
@@ -97,6 +131,81 @@ describe('studio sidebar dashboard refresh', () => {
     expect(ledger.entries).toHaveLength(0);
   });
 
+  it('records dashboard command contract metadata in the Studio command ledger', async () => {
+    const store = new Map<string, unknown>();
+    const context = {
+      workspaceState: {
+        get: <T>(key: string) => store.get(key) as T | undefined,
+        update: async (key: string, value: unknown) => {
+          store.set(key, value);
+        },
+      },
+    } as never;
+
+    const entry = await recordStudioBlockerCommandRun(context, {
+      cardId: 'workspaceVerify',
+      sourceCommand: 'npx rapidkit workspace verify --json',
+      blockers: ['verify blocked'],
+      dashboardCommandId: 'workspaceVerify',
+      executionChannel: 'background',
+      capabilityGate: 'workspace verify',
+      safetyRisk: 'write',
+      safetyRefreshCommands: ['npx rapidkit workspace verify --json'],
+      exitCode: 1,
+    });
+
+    expect(entry).toMatchObject({
+      dashboardCommandId: 'workspaceVerify',
+      executionChannel: 'background',
+      capabilityGate: 'workspace verify',
+      safetyRisk: 'write',
+      safetyRefreshCommands: ['npx rapidkit workspace verify --json'],
+    });
+    expect(
+      readStudioBlockerLedgerEntry(context, {
+        cardId: 'workspaceVerify',
+        sourceCommand: 'npx rapidkit workspace verify --json',
+        blockerSignature: entry.blockerSignature,
+      })
+    ).toMatchObject({
+      dashboardCommandId: 'workspaceVerify',
+      executionChannel: 'background',
+      capabilityGate: 'workspace verify',
+      safetyRisk: 'write',
+      safetyRefreshCommands: ['npx rapidkit workspace verify --json'],
+    });
+  });
+
+  it('persists the handoff blocker signature across failed command exit metadata', async () => {
+    const store = new Map<string, unknown>();
+    const context = {
+      workspaceState: {
+        get: <T>(key: string) => store.get(key) as T | undefined,
+        update: async (key: string, value: unknown) => {
+          store.set(key, value);
+        },
+      },
+    } as never;
+    const blockerSignature = 'handoff-signature-1234';
+
+    await recordStudioBlockerCommandRun(context, {
+      cardId: 'workspaceVerify',
+      sourceCommand: 'npx workspai workspace verify --json',
+      blockers: ['verify blocked'],
+      blockerSignature,
+      exitCode: 1,
+      stderrTail: 'first failure',
+    });
+
+    expect(
+      readStudioBlockerLedgerEntry(context, {
+        cardId: 'workspaceVerify',
+        sourceCommand: 'npx workspai workspace verify --json',
+        blockerSignature,
+      })
+    ).toMatchObject({ blockerSignature, count: 1, lastExitCode: 1 });
+  });
+
   it('pins handoff schema used by card refresh payloads', () => {
     expect(STUDIO_BLOCKER_HANDOFF_SCHEMA_VERSION).toBe('rapidkit-studio-blocker-handoff-v1');
   });
@@ -124,5 +233,26 @@ describe('studio sidebar dashboard refresh', () => {
       cardIds: ['doctor'],
     });
     expect(result.primaryCard?.status).toBe('pass');
+  });
+
+  it('uses refreshed non-blocking evidence as authority when the CLI exits 2', async () => {
+    const result = await refreshDashboardAfterStudioVerify({
+      workspacePath: '/tmp/ws',
+      handoff: {
+        schemaVersion: STUDIO_BLOCKER_HANDOFF_SCHEMA_VERSION,
+        cardId: 'doctor',
+        cardStatus: 'fail',
+        blockers: ['previous blocker'],
+        artifactPath: '.workspai/reports/doctor-last-run.json',
+        sourceCommand: 'npx workspai doctor workspace --json',
+        scope: 'workspace',
+        blockerSignature: 'abc123456789abcd',
+      },
+      verifyExitCode: 2,
+      refreshDashboardCards: vi.fn(async () => undefined),
+    });
+
+    expect(result.primaryCard?.status).toBe('pass');
+    expect(result.evidenceOutcome).toBe('resolved');
   });
 });

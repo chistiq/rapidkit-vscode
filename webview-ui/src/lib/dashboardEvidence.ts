@@ -32,6 +32,8 @@ export type DashboardEvidenceCard = {
   artifactPath?: string;
   metrics?: Record<string, number | string>;
   blockers?: string[];
+  /** Contract-backed gate posture; advisory text in blockers does not imply release blocking. */
+  blocking?: boolean;
   detailSections?: Array<{ id: string; title: string; body: string }>;
   incidentSummary?: StudioIncidentSummaryView;
   incidentStudioTarget?:

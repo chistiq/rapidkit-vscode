@@ -69,6 +69,7 @@ export interface AIActionRegistry {
 }
 
 const MAX_REGISTRY_ENTRIES = 25;
+const registryWriteLocks = new Map<string, Promise<unknown>>();
 
 export function buildAIActionExecutionProofSummary(input: {
   operation: AIActionOperation;
@@ -197,10 +198,42 @@ function deriveLifecycleStatus(entry: Partial<AIActionRegistryEntry>): AIActionL
 
 async function writeRegistry(workspacePath: string, registry: AIActionRegistry): Promise<void> {
   const registryPath = getAIActionRegistryPath(workspacePath);
-  await fs.mkdir(path.dirname(registryPath), { recursive: true });
-  const tmpPath = `${registryPath}.tmp`;
+  const registryDir = path.dirname(registryPath);
+  await fs.mkdir(registryDir, { recursive: true });
+  const tmpPath = path.join(
+    registryDir,
+    `.${path.basename(registryPath)}.${process.pid}.${Date.now()}.${Math.random()
+      .toString(16)
+      .slice(2)}.tmp`
+  );
   await fs.writeFile(tmpPath, JSON.stringify(registry, null, 2), 'utf8');
   await fs.rename(tmpPath, registryPath);
+}
+
+async function withRegistryWriteLock<T>(
+  workspacePath: string,
+  action: () => Promise<T>
+): Promise<T> {
+  const key = path.resolve(workspacePath);
+  const previous = registryWriteLocks.get(key) ?? Promise.resolve();
+  let release: () => void = () => {};
+  const current = previous.then(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      })
+  );
+  registryWriteLocks.set(key, current);
+
+  await previous.catch(() => undefined);
+  try {
+    return await action();
+  } finally {
+    release();
+    if (registryWriteLocks.get(key) === current) {
+      registryWriteLocks.delete(key);
+    }
+  }
 }
 
 export async function readAIActionRegistry(workspacePath: string): Promise<AIActionRegistry> {
@@ -230,30 +263,32 @@ export async function recordAIActionContract(
     rawJson?: string | null;
   }
 ): Promise<AIActionRegistryEntry> {
-  const registry = await readAIActionRegistry(workspacePath);
-  const createdAt = new Date().toISOString();
-  const fingerprint = computeAIActionFingerprint(input.contract);
-  const preflight = await captureAIActionPreflightSnapshot(workspacePath, input.contract);
-  const entry: AIActionRegistryEntry = {
-    id: createActionId(createdAt, input.contract.summary),
-    createdAt,
-    provider: input.provider,
-    rawJson: input.rawJson,
-    fingerprint,
-    preflight,
-    lifecycleStatus: input.validation.status === 'blocked' ? 'blocked' : 'proposed',
-    contract: input.contract,
-    validation: input.validation,
-    executions: [],
-  };
+  return withRegistryWriteLock(workspacePath, async () => {
+    const registry = await readAIActionRegistry(workspacePath);
+    const createdAt = new Date().toISOString();
+    const fingerprint = computeAIActionFingerprint(input.contract);
+    const preflight = await captureAIActionPreflightSnapshot(workspacePath, input.contract);
+    const entry: AIActionRegistryEntry = {
+      id: createActionId(createdAt, input.contract.summary),
+      createdAt,
+      provider: input.provider,
+      rawJson: input.rawJson,
+      fingerprint,
+      preflight,
+      lifecycleStatus: input.validation.status === 'blocked' ? 'blocked' : 'proposed',
+      contract: input.contract,
+      validation: input.validation,
+      executions: [],
+    };
 
-  const nextRegistry: AIActionRegistry = {
-    schemaVersion: 'workspai.ai-action-registry.v1',
-    updatedAt: createdAt,
-    entries: [entry, ...registry.entries].slice(0, MAX_REGISTRY_ENTRIES),
-  };
-  await writeRegistry(workspacePath, nextRegistry);
-  return entry;
+    const nextRegistry: AIActionRegistry = {
+      schemaVersion: 'workspai.ai-action-registry.v1',
+      updatedAt: createdAt,
+      entries: [entry, ...registry.entries].slice(0, MAX_REGISTRY_ENTRIES),
+    };
+    await writeRegistry(workspacePath, nextRegistry);
+    return entry;
+  });
 }
 
 export async function recordAIActionExecution(
@@ -261,45 +296,47 @@ export async function recordAIActionExecution(
   actionId: string,
   execution: Omit<AIActionRegistryExecution, 'completedAt'>
 ): Promise<AIActionRegistry> {
-  const registry = await readAIActionRegistry(workspacePath);
-  const completedAt = new Date().toISOString();
-  const nextRegistry: AIActionRegistry = {
-    schemaVersion: 'workspai.ai-action-registry.v1',
-    updatedAt: completedAt,
-    entries: registry.entries.map((entry) =>
-      entry.id === actionId
-        ? (() => {
-            const nextEntry = {
-              ...entry,
-              executions: [
-                {
-                  ...execution,
-                  proof:
-                    execution.proof ||
-                    buildAIActionExecutionProofSummary({
-                      operation: execution.operation,
-                      ok: execution.ok,
-                      evidencePath: execution.evidencePath,
-                      evidenceSha256: execution.evidenceSha256,
-                      commandCount: execution.commandCount,
-                      failedCommandCount: execution.failedCommandCount,
-                      rollbackPlan: entry.contract.rollbackPlan,
-                    }),
-                  completedAt,
-                },
-                ...entry.executions,
-              ],
-            };
-            return {
-              ...nextEntry,
-              lifecycleStatus: deriveLifecycleStatus(nextEntry),
-            };
-          })()
-        : entry
-    ),
-  };
-  await writeRegistry(workspacePath, nextRegistry);
-  return nextRegistry;
+  return withRegistryWriteLock(workspacePath, async () => {
+    const registry = await readAIActionRegistry(workspacePath);
+    const completedAt = new Date().toISOString();
+    const nextRegistry: AIActionRegistry = {
+      schemaVersion: 'workspai.ai-action-registry.v1',
+      updatedAt: completedAt,
+      entries: registry.entries.map((entry) =>
+        entry.id === actionId
+          ? (() => {
+              const nextEntry = {
+                ...entry,
+                executions: [
+                  {
+                    ...execution,
+                    proof:
+                      execution.proof ||
+                      buildAIActionExecutionProofSummary({
+                        operation: execution.operation,
+                        ok: execution.ok,
+                        evidencePath: execution.evidencePath,
+                        evidenceSha256: execution.evidenceSha256,
+                        commandCount: execution.commandCount,
+                        failedCommandCount: execution.failedCommandCount,
+                        rollbackPlan: entry.contract.rollbackPlan,
+                      }),
+                    completedAt,
+                  },
+                  ...entry.executions,
+                ],
+              };
+              return {
+                ...nextEntry,
+                lifecycleStatus: deriveLifecycleStatus(nextEntry),
+              };
+            })()
+          : entry
+      ),
+    };
+    await writeRegistry(workspacePath, nextRegistry);
+    return nextRegistry;
+  });
 }
 
 export function getLatestRunnableAIAction(

@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs-extra';
 
 import type { StudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
+import { workspaceArtifactCandidates } from './workspaceIntelligencePaths.js';
 
 export const DOCTOR_REMEDIATION_PLAN_SCHEMA_VERSION = 'doctor-remediation-plan-v2' as const;
 export const ARTIFACT_REMEDIATION_PLAN_SCHEMA_VERSION = 'artifact-remediation-plan-v1' as const;
@@ -310,41 +311,87 @@ function resolvePlanArtifactCandidates(input: {
   const candidates: string[] = [];
   if (input.handoff.scope === 'project' && input.handoff.projectPath?.trim()) {
     candidates.push(
-      path.join(
-        input.handoff.projectPath.trim(),
-        '.rapidkit',
-        'reports',
-        'doctor-remediation-plan-last-run.json'
+      ...workspaceArtifactCandidates('.workspai/reports/doctor-remediation-plan-last-run.json').map(
+        (relativePath) => path.join(input.handoff.projectPath!.trim(), relativePath)
       )
     );
   }
   candidates.push(
-    path.join(input.workspacePath, '.rapidkit', 'reports', 'doctor-remediation-plan-last-run.json')
+    ...workspaceArtifactCandidates('.workspai/reports/doctor-remediation-plan-last-run.json').map(
+      (relativePath) => path.join(input.workspacePath, relativePath)
+    )
   );
   return [...new Set(candidates)];
 }
 
 function isDoctorRemediationHandoff(handoff: StudioBlockerHandoff): boolean {
-  const haystack = [
-    handoff.cardId,
-    handoff.cardLabel,
-    handoff.artifactPath,
-    handoff.sourceCommand,
-    handoff.verifyCommand,
-  ]
+  if (handoff.cardId === 'agentGrounding') {
+    return handoff.blockers.some((blocker) =>
+      /\bdoctor\b|virtual environment|dependencies? not installed|toolchain|runtime/i.test(blocker)
+    );
+  }
+  const haystack = [handoff.cardId, handoff.cardLabel, handoff.artifactPath, handoff.sourceCommand]
     .filter((value): value is string => typeof value === 'string')
     .join(' ')
     .toLowerCase();
-  return /\bdoctor\b/.test(haystack) || haystack.includes('doctor-last-run');
+  if (/\bdoctor\b/.test(haystack) || haystack.includes('doctor-last-run')) {
+    return true;
+  }
+  // Readiness, Verify, and other aggregate gates report failures owned by an
+  // upstream producer. Dependency/security blockers are repaired by Doctor's
+  // project-scoped capability, not by rerunning the aggregate gate.
+  return handoff.blockers.some((blocker) =>
+    /dependenc(?:y|ies).*vulnerabil|vulnerabil.*dependenc(?:y|ies)|security audit/i.test(blocker)
+  );
 }
 
-function resolveArtifactRemediationPlanPath(workspacePath: string): string {
-  return path.join(
-    workspacePath,
-    '.rapidkit',
-    'reports',
-    'artifact-remediation-plan-last-run.json'
+function isAggregateUpstreamDoctorHandoff(handoff: StudioBlockerHandoff): boolean {
+  if (handoff.cardId === 'agentGrounding') {
+    return true;
+  }
+  return handoff.blockers.some((blocker) =>
+    /dependenc(?:y|ies).*vulnerabil|vulnerabil.*dependenc(?:y|ies)|security audit/i.test(blocker)
   );
+}
+
+function artifactActionDirectlyMatchesBlocker(
+  action: ArtifactRemediationAction,
+  handoff: StudioBlockerHandoff
+): boolean {
+  const actionText = [
+    action.blocker,
+    action.title,
+    action.summary,
+    action.command,
+    action.verifyCommand,
+    ...action.files,
+    ...action.notes,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return handoff.blockers.some((blocker) => {
+    const normalized = blocker.toLowerCase();
+    const artifactNames = normalized.match(/[a-z0-9._-]+\.json\b/g) ?? [];
+    if (artifactNames.some((name) => actionText.includes(name))) {
+      return true;
+    }
+    const meaningfulTerms = normalized
+      .split(/[^a-z0-9_-]+/)
+      .filter(
+        (term) => term.length >= 7 && !['workspai', 'reports', 'report', 'blocked'].includes(term)
+      );
+    return (
+      meaningfulTerms.length >= 2 &&
+      meaningfulTerms.filter((term) => actionText.includes(term)).length >= 2
+    );
+  });
+}
+
+function resolveArtifactRemediationPlanCandidates(workspacePath: string): string[] {
+  return workspaceArtifactCandidates(
+    '.workspai/reports/artifact-remediation-plan-last-run.json'
+  ).map((relativePath) => path.join(workspacePath, relativePath));
 }
 
 function resolveHandoffArtifactPath(input: {
@@ -544,6 +591,9 @@ function artifactActionMatchesHandoff(
   action: ArtifactRemediationAction,
   handoff: StudioBlockerHandoff
 ): boolean {
+  if (action.scope !== handoff.scope) {
+    return false;
+  }
   if (action.cardId === handoff.cardId) {
     return true;
   }
@@ -596,7 +646,7 @@ function mapArtifactActionToStep(input: {
     files: action.files,
     verifyCommand: action.verifyCommand || undefined,
     refreshCommands: [
-      'npx rapidkit workspace remediation-plan --ci --json --write --include-paths',
+      'npx workspai workspace remediation-plan --ci --json --write --include-paths',
     ],
     blockedReason: action.status === 'blocked' ? action.summary : undefined,
     operation: action.operation,
@@ -608,8 +658,13 @@ function filterStepsForHandoff(
   steps: DoctorRemediationPlanStepView[],
   handoff: StudioBlockerHandoff
 ): DoctorRemediationPlanStepView[] {
-  if (handoff.scope !== 'project') {
+  if (isAggregateUpstreamDoctorHandoff(handoff)) {
     return steps;
+  }
+  if (handoff.scope !== 'project') {
+    return steps.filter(
+      (step) => !step.projectPath && (!step.projectName || step.projectName === 'workspace')
+    );
   }
   const projectPath = handoff.projectPath?.trim();
   const projectName = projectPath ? path.basename(projectPath) : '';
@@ -630,8 +685,18 @@ async function readArtifactRemediationPlanForStudio(input: {
   handoff: StudioBlockerHandoff;
   maxSteps: number;
 }): Promise<DoctorRemediationPlanView | null> {
-  const candidate = resolveArtifactRemediationPlanPath(input.workspacePath);
-  if (!(await fs.pathExists(candidate)) || !isAllowedPlanArtifactPath({ ...input, candidate })) {
+  const candidate = (
+    await Promise.all(
+      resolveArtifactRemediationPlanCandidates(input.workspacePath).map(async (candidatePath) => ({
+        candidatePath,
+        exists: await fs.pathExists(candidatePath),
+      }))
+    )
+  ).find(
+    ({ candidatePath, exists }) =>
+      exists && isAllowedPlanArtifactPath({ ...input, candidate: candidatePath })
+  )?.candidatePath;
+  if (!candidate) {
     return null;
   }
   const payload = (await fs.readJSON(candidate)) as unknown;
@@ -640,11 +705,15 @@ async function readArtifactRemediationPlanForStudio(input: {
   }
   const generatedAt = readString(payload.generatedAt);
   const rawActions = Array.isArray(payload.actions) ? payload.actions : [];
-  const actions = rawActions
+  const matchingActions = rawActions
     .map(normalizeArtifactAction)
     .filter((entry): entry is ArtifactRemediationAction => Boolean(entry))
     .filter((action) => artifactActionMatchesHandoff(action, input.handoff))
     .sort((a, b) => a.order - b.order);
+  const blockerFocusedActions = matchingActions.filter((action) =>
+    artifactActionDirectlyMatchesBlocker(action, input.handoff)
+  );
+  const actions = blockerFocusedActions.length > 0 ? blockerFocusedActions : matchingActions;
   if (actions.length === 0) {
     return null;
   }
@@ -696,6 +765,24 @@ export async function readDoctorRemediationPlanForStudio(input: {
   }
   if (cached) {
     doctorRemediationPlanCache.delete(cacheKey);
+  }
+
+  // Aggregate cards such as Readiness own their artifact remediation plan.
+  // A blocker may quote Doctor findings without transferring plan ownership.
+  if (!isDoctorRemediationHandoff(handoff)) {
+    const artifactPlan = await readArtifactRemediationPlanForStudio({
+      workspacePath,
+      handoff,
+      maxSteps,
+    });
+    if (artifactPlan) {
+      doctorRemediationPlanCache.set(cacheKey, {
+        expiresAt: Date.now() + DOCTOR_REMEDIATION_PLAN_CACHE_TTL_MS,
+        plan: artifactPlan,
+      });
+      return artifactPlan;
+    }
+    return null;
   }
 
   if (isDoctorRemediationHandoff(handoff)) {

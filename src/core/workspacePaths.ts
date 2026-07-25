@@ -5,17 +5,39 @@ import * as path from 'path';
 export const MANAGED_DEFAULT_WORKSPACE_NAME = 'workspai';
 export const MANAGED_DEFAULT_WORKSPACE_LABEL = 'Workspai';
 
+const PROJECT_METADATA_DIRECTORIES = ['.workspai', '.rapidkit'] as const;
+
+export function projectMetadataFileCandidates(
+  projectPath: string,
+  fileName: 'project.json' | 'context.json'
+): string[] {
+  return PROJECT_METADATA_DIRECTORIES.map((directory) =>
+    path.join(projectPath, directory, fileName)
+  );
+}
+
+export function resolveProjectMetadataFile(
+  projectPath: string,
+  fileName: 'project.json' | 'context.json'
+): string | undefined {
+  return projectMetadataFileCandidates(projectPath, fileName).find((candidate) =>
+    fs.existsSync(candidate)
+  );
+}
+
 export function hasWorkspaceRootMarkers(workspacePath: string): boolean {
   return (
+    fs.existsSync(path.join(workspacePath, '.workspai-workspace')) ||
+    fs.existsSync(path.join(workspacePath, '.workspai', 'workspace.json')) ||
     fs.existsSync(path.join(workspacePath, '.rapidkit-workspace')) ||
     fs.existsSync(path.join(workspacePath, '.rapidkit', 'workspace.json'))
   );
 }
 
 export function hasRapidkitProjectMarkers(projectPath: string): boolean {
-  return (
-    fs.existsSync(path.join(projectPath, '.rapidkit', 'project.json')) ||
-    fs.existsSync(path.join(projectPath, '.rapidkit', 'context.json'))
+  return Boolean(
+    resolveProjectMetadataFile(projectPath, 'project.json') ||
+    resolveProjectMetadataFile(projectPath, 'context.json')
   );
 }
 
@@ -89,10 +111,14 @@ export function resolveExplorerFolderContext(folderPath: string): ExplorerFolder
 }
 
 export function getCanonicalWorkspacesDirectory(homeDir: string = os.homedir()): string {
-  return path.join(homeDir, 'rapidkit', 'workspaces');
+  return path.join(homeDir, '.workspai', 'workspaces');
 }
 
 export function getLegacyWorkspacesDirectory(homeDir: string = os.homedir()): string {
+  return path.join(homeDir, 'rapidkit', 'workspaces');
+}
+
+export function getOlderLegacyWorkspacesDirectory(homeDir: string = os.homedir()): string {
   return path.join(homeDir, 'Workspai', 'rapidkits');
 }
 
@@ -110,6 +136,7 @@ export function getKnownWorkspaceLocationCandidates(
   return [
     resolveCanonicalWorkspacePath(workspaceName, homeDir),
     path.join(getLegacyWorkspacesDirectory(homeDir), workspaceName),
+    path.join(getOlderLegacyWorkspacesDirectory(homeDir), workspaceName),
   ];
 }
 
@@ -140,6 +167,7 @@ export function getManagedDefaultWorkspaceCandidates(homeDir: string = os.homedi
   return [
     path.join(getCanonicalWorkspacesDirectory(homeDir), MANAGED_DEFAULT_WORKSPACE_NAME),
     path.join(getLegacyWorkspacesDirectory(homeDir), MANAGED_DEFAULT_WORKSPACE_NAME),
+    path.join(getOlderLegacyWorkspacesDirectory(homeDir), MANAGED_DEFAULT_WORKSPACE_NAME),
   ];
 }
 
@@ -157,10 +185,13 @@ export function isLegacyWorkspacePath(
   workspacePath: string,
   homeDir: string = os.homedir()
 ): boolean {
-  const legacyParent = getLegacyWorkspacesDirectory(homeDir);
-  const relativePath = path.relative(legacyParent, path.resolve(workspacePath));
-  return (
-    relativePath.length > 0 && !relativePath.startsWith('..') && !path.isAbsolute(relativePath)
+  return [getLegacyWorkspacesDirectory(homeDir), getOlderLegacyWorkspacesDirectory(homeDir)].some(
+    (legacyParent) => {
+      const relativePath = path.relative(legacyParent, path.resolve(workspacePath));
+      return (
+        relativePath.length > 0 && !relativePath.startsWith('..') && !path.isAbsolute(relativePath)
+      );
+    }
   );
 }
 

@@ -49,7 +49,16 @@ export function resolveDashboardProjectContext(
   if (!selectedProject?.path) {
     return {};
   }
-  if (workspacePath && !isWorkspacePathAncestor(workspacePath, selectedProject.path)) {
+  const selectedProjectWorkspacePath = selectedProject.workspacePath?.trim();
+  const isRegisteredToWorkspace =
+    Boolean(workspacePath && selectedProjectWorkspacePath) &&
+    selectedProjectWorkspacePath === workspacePath;
+
+  if (
+    workspacePath &&
+    !isRegisteredToWorkspace &&
+    !isWorkspacePathAncestor(workspacePath, selectedProject.path)
+  ) {
     return {};
   }
   return {

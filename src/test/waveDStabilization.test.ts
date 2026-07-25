@@ -18,7 +18,9 @@ describe('Wave D stabilization', () => {
   it('mirrors npm contracts (including module-support) in the vscode sync script', () => {
     const syncScript = read('scripts/sync-import-stack-parity-snapshot.mjs');
     expect(syncScript).toContain('listJsonContracts');
-    expect(syncScript).toContain('rapidkit-npm/contracts');
+    expect(syncScript).toContain(
+      "path.resolve(extensionRoot, '..', 'workspai', 'packages', 'cli')"
+    );
     expect(fs.existsSync(path.join(repoRoot, 'contracts', 'module-support.v1.json'))).toBe(true);
   });
 

@@ -35,14 +35,14 @@ describe('bootstrap compliance remediation', () => {
     );
   });
 
-  it('recognizes bootstrap compliance handoffs by card or enterprise blocker', () => {
+  it('recognizes bootstrap compliance handoffs by deterministic enterprise blockers', () => {
     expect(
       isBootstrapComplianceHandoff({
         cardId: 'bootstrap',
         cardLabel: 'Bootstrap compliance',
         blockers: [],
       })
-    ).toBe(true);
+    ).toBe(false);
     expect(
       isBootstrapComplianceHandoff({
         cardId: 'unknown',
@@ -52,6 +52,24 @@ describe('bootstrap compliance remediation', () => {
         ],
       })
     ).toBe(true);
+  });
+
+  it('does not claim a source fix for profile mismatch blockers', async () => {
+    const result = await applyBootstrapComplianceRemediation({
+      workspacePath,
+      handoff: {
+        cardId: 'bootstrap',
+        cardLabel: 'Bootstrap compliance',
+        sourceCommand: 'npx rapidkit bootstrap --ci --json',
+        blockers: [
+          'profile.node-only: node-only profile mismatch: detected runtimes [node, python].',
+        ],
+      },
+    });
+
+    expect(result.handled).toBe(false);
+    expect(result.ok).toBe(false);
+    expect(result.appliedFixes).toEqual([]);
   });
 
   it('creates missing enterprise baseline files without invoking AI', async () => {

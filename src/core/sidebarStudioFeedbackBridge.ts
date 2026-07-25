@@ -13,6 +13,12 @@ export type AgentActionOutcomePayload = {
   outcome: 'ok' | 'failed';
   affectedFiles?: string[];
   commandsRun?: string[];
+  dashboardCommandId?: string;
+  executionChannel?: 'terminal' | 'background';
+  capabilityGate?: string;
+  safetyRisk?: 'read' | 'write' | 'destructive';
+  safetyConfirmation?: string;
+  safetyRefreshCommands?: string[];
   verifyAfter?: string;
   evidenceSha256?: string;
   evidencePath?: string;
@@ -27,6 +33,10 @@ export function buildAgentActionOutcomeFromAudit(
     .filter((entry) => entry.outcome === 'applied')
     .map((entry) => entry.path.trim())
     .filter(Boolean);
+  const commandsRun = [
+    input.handoff?.sourceCommand?.trim(),
+    input.handoff?.verifyCommand?.trim(),
+  ].filter((command): command is string => Boolean(command));
   return {
     schemaVersion: 'agent-action-outcome.v1',
     generatedAt: new Date().toISOString(),
@@ -35,7 +45,21 @@ export function buildAgentActionOutcomeFromAudit(
     summary: input.summary,
     outcome: input.ok ? 'ok' : 'failed',
     ...(affectedFiles.length > 0 ? { affectedFiles } : {}),
-    ...(input.handoff?.verifyCommand ? { commandsRun: [input.handoff.verifyCommand] } : {}),
+    ...(commandsRun.length > 0 ? { commandsRun: Array.from(new Set(commandsRun)) } : {}),
+    ...(input.handoff?.dashboardCommandId
+      ? { dashboardCommandId: input.handoff.dashboardCommandId }
+      : {}),
+    ...(input.handoff?.executionChannel
+      ? { executionChannel: input.handoff.executionChannel }
+      : {}),
+    ...(input.handoff?.capabilityGate ? { capabilityGate: input.handoff.capabilityGate } : {}),
+    ...(input.handoff?.safetyRisk ? { safetyRisk: input.handoff.safetyRisk } : {}),
+    ...(input.handoff?.safetyConfirmation
+      ? { safetyConfirmation: input.handoff.safetyConfirmation }
+      : {}),
+    ...(input.handoff?.safetyRefreshCommands?.length
+      ? { safetyRefreshCommands: input.handoff.safetyRefreshCommands }
+      : {}),
     ...(input.handoff?.verifyCommand ? { verifyAfter: input.handoff.verifyCommand } : {}),
     ...(evidence?.sha256 ? { evidenceSha256: evidence.sha256 } : {}),
     ...(evidence?.path ? { evidencePath: evidence.path } : {}),
@@ -92,7 +116,7 @@ export async function recordWorkspaceFeedbackViaCli(input: {
 export async function readFeedbackHistoryEntryCount(workspacePath: string): Promise<number> {
   const historyPath = path.join(
     workspacePath,
-    '.rapidkit/reports/workspace-intelligence-history.json'
+    '.workspai/reports/workspace-intelligence-history.json'
   );
   try {
     const raw = JSON.parse(await fs.readFile(historyPath, 'utf8')) as { entries?: unknown[] };

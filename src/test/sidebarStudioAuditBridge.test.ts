@@ -33,6 +33,12 @@ describe('sidebarStudioAuditBridge (roadmap 3.27)', () => {
       cardStatus: 'fail',
       blockers: ['env missing'],
       sourceCommand: 'rapidkit doctor --fix',
+      dashboardCommandId: 'projectDoctor',
+      executionChannel: 'background',
+      capabilityGate: 'doctor project',
+      safetyRisk: 'write',
+      safetyConfirmation: 'Apply Fix',
+      safetyRefreshCommands: ['npx rapidkit doctor workspace --json'],
       scope: 'workspace',
       blockerSignature: 'sig-verify',
       resolutionClass: 'config-fixable',
@@ -66,6 +72,24 @@ describe('sidebarStudioAuditBridge (roadmap 3.27)', () => {
     expect(registry.entries[0].executions).toHaveLength(1);
     expect(registry.entries[0].executions[0].operation).toBe('apply');
     expect(registry.entries[0].executions[0].ok).toBe(true);
+    expect(JSON.parse(registry.entries[0].rawJson)).toMatchObject({
+      dashboardCommandId: 'projectDoctor',
+      executionChannel: 'background',
+      capabilityGate: 'doctor project',
+      safetyRisk: 'write',
+      safetyConfirmation: 'Apply Fix',
+      safetyRefreshCommands: ['npx rapidkit doctor workspace --json'],
+    });
+    const feedbackPayload = JSON.parse(runRapidkitStreaming.mock.calls[0][0].stdin);
+    expect(feedbackPayload).toMatchObject({
+      dashboardCommandId: 'projectDoctor',
+      executionChannel: 'background',
+      capabilityGate: 'doctor project',
+      safetyRisk: 'write',
+      safetyConfirmation: 'Apply Fix',
+      safetyRefreshCommands: ['npx rapidkit doctor workspace --json'],
+      commandsRun: ['rapidkit doctor --fix', 'rapidkit workspace verify --json'],
+    });
   });
 
   it('hashes evidence artifact when present on disk', async () => {

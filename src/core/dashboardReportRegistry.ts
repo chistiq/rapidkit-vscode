@@ -18,9 +18,12 @@ export type DashboardReportKind =
   | 'share-bundle'
   | 'snapshot-last-run'
   | 'workspace-model'
+  | 'workspace-knowledge-graph'
+  | 'workspace-intelligence-evaluation'
   | 'workspace-model-snapshot'
   | 'workspace-model-diff'
   | 'workspace-impact'
+  | 'workspace-intelligence-run'
   | 'workspace-verify'
   | 'workspace-contract-verify'
   | 'workspace-explain'
@@ -28,7 +31,12 @@ export type DashboardReportKind =
   | 'workspace-trace'
   | 'workspace-skills-index'
   | 'workspace-context-agent'
+  | 'agent-customization-pack'
   | 'agent-reports-index'
+  | 'doctor-remediation-plan'
+  | 'artifact-remediation-plan'
+  | 'doctor-fix-result'
+  | 'rapidkit-mcp-design'
   | 'archive-manifest'
   | 'mirror-ops'
   | 'infra-plan';
@@ -145,6 +153,33 @@ const REPORT_BINDINGS: Array<{
     },
   },
   {
+    match: (name) => name === 'workspace-knowledge-graph.json',
+    binding: {
+      kind: 'workspace-knowledge-graph',
+      command: 'workspaceModel',
+      cardId: 'workspaceModel',
+      scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'workspace-intelligence-evaluation-live.json',
+    binding: {
+      kind: 'workspace-intelligence-evaluation',
+      command: 'workspaceEvaluationReport',
+      cardId: 'workspaceIntelligenceRun',
+      scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'workspace-intelligence-evaluation-last-run.json',
+    binding: {
+      kind: 'workspace-intelligence-evaluation',
+      command: 'workspaceEvaluationReport',
+      cardId: 'workspaceIntelligenceRun',
+      scope: 'workspace',
+    },
+  },
+  {
     match: (name) => name === 'workspace-model-snapshot.json',
     binding: {
       kind: 'workspace-model-snapshot',
@@ -172,6 +207,15 @@ const REPORT_BINDINGS: Array<{
     },
   },
   {
+    match: (name) => name === 'workspace-intelligence-run-last-run.json',
+    binding: {
+      kind: 'workspace-intelligence-run',
+      command: 'workspaceIntelligenceChain',
+      cardId: 'workspaceIntelligenceRun',
+      scope: 'workspace',
+    },
+  },
+  {
     match: (name) => name === 'workspace-context-agent.json',
     binding: {
       kind: 'workspace-context-agent',
@@ -181,11 +225,56 @@ const REPORT_BINDINGS: Array<{
     },
   },
   {
+    match: (name) => name === 'agent-customization-pack.json',
+    binding: {
+      kind: 'agent-customization-pack',
+      command: 'workspaceAgentSync',
+      cardId: 'agentGrounding',
+      scope: 'workspace',
+    },
+  },
+  {
     match: (name) => name === 'INDEX.json',
     binding: {
       kind: 'agent-reports-index',
       command: 'workspaceAgentSync',
       cardId: 'agentGrounding',
+      scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'workspai-mcp-design.json' || name === 'rapidkit-mcp-design.json',
+    binding: {
+      kind: 'rapidkit-mcp-design',
+      command: 'workspaceAgentSync',
+      cardId: 'agentGrounding',
+      scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'doctor-remediation-plan-last-run.json',
+    binding: {
+      kind: 'doctor-remediation-plan',
+      command: 'checkWorkspaceHealth',
+      cardId: 'doctor',
+      scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'artifact-remediation-plan-last-run.json',
+    binding: {
+      kind: 'artifact-remediation-plan',
+      command: 'workspaceRemediationPlan',
+      cardId: 'remediationPlan',
+      scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'doctor-fix-result-last-run.json',
+    binding: {
+      kind: 'doctor-fix-result',
+      command: 'checkWorkspaceHealth',
+      cardId: 'doctor',
       scope: 'workspace',
     },
   },
@@ -300,6 +389,7 @@ const EVIDENCE_CARD_COMMAND_FALLBACKS: Record<string, string> = {
   intelligenceSnapshot: 'workspaceIntelligenceSnapshot',
   workspaceDiff: 'workspaceDiff',
   workspaceImpact: 'workspaceImpact',
+  workspaceIntelligenceRun: 'workspaceIntelligenceChain',
   workspaceVerify: 'workspaceVerify',
   workspaceExplain: 'workspaceExplain',
   workspaceWhy: 'workspaceWhy',
@@ -333,6 +423,9 @@ export function resolveEvidenceCardIdsForDashboardCommand(command: string): stri
 }
 
 export function resolveDashboardCommandForEvidenceCard(cardId: string): string | undefined {
+  if (cardId === 'workspaceIntelligenceRun') {
+    return EVIDENCE_CARD_COMMAND_FALLBACKS[cardId];
+  }
   return (
     REPORT_BINDINGS.find((entry) => entry.binding.cardId === cardId)?.binding.command ??
     EVIDENCE_CARD_COMMAND_FALLBACKS[cardId]

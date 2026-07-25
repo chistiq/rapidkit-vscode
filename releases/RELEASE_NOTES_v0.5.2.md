@@ -231,8 +231,8 @@ code --install-extension rapidkit.rapidkit-vscode
 ## 💬 Feedback
 
 Found a bug or have a feature request?
-- GitHub Issues: https://github.com/rapidkitlabs/rapidkit-vscode/issues
-- Discussions: https://github.com/rapidkitlabs/rapidkit-vscode/discussions
+- GitHub Issues: https://github.com/chistiq/rapidkit-vscode/issues
+- Discussions: https://github.com/chistiq/rapidkit-vscode/discussions
 
 ---
 
@@ -242,4 +242,4 @@ Special thanks to all users who reported the npm caching issue and helped identi
 
 ---
 
-**Full Changelog**: https://github.com/rapidkitlabs/rapidkit-vscode/blob/main/CHANGELOG.md
+**Full Changelog**: https://github.com/chistiq/rapidkit-vscode/blob/main/CHANGELOG.md

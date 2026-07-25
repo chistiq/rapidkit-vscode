@@ -17,7 +17,7 @@ export function buildWorkspaceArchitectureBlock(
       '- Use the selected project path, framework files, dependency state, and launch blockers to guide the next action.'
     );
     lines.push(
-      '- Doctor evidence, when present, is stored at .rapidkit/reports/doctor-last-run.json.'
+      '- Doctor evidence, when present, is stored at .workspai/reports/doctor-last-run.json.'
     );
     return lines.join('\n');
   }

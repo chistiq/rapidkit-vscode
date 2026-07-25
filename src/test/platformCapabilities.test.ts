@@ -26,6 +26,7 @@ describe('platformCapabilities', () => {
 
   afterEach(() => {
     resetResolvedRapidkitNpmPackageSpecifier();
+    delete process.env.WORKSPAI_NPM_PACKAGE;
     delete process.env.RAPIDKIT_NPM_PACKAGE;
   });
 
@@ -66,72 +67,70 @@ describe('platformCapabilities', () => {
     expect(buildShellCommand('echo', ['a&b'], 'win32')).toBe('echo "a&b"');
   });
 
-  it('builds rapidkit commands with unpinned npx by default', () => {
+  it('builds Workspai commands with an explicit registry package by default', () => {
     expect(buildRapidkitCommand(['doctor', 'workspace'], 'linux')).toBe(
-      'npx --yes rapidkit doctor workspace'
+      'npx --yes --package workspai workspai doctor workspace'
     );
     expect(buildRapidkitCommand(['doctor', 'workspace'], 'win32')).toBe(
-      'npx --yes rapidkit doctor workspace'
+      'npx --yes --package workspai workspai doctor workspace'
     );
     expect(buildRapidkitCommand(['create', 'workspace', 'my folder'], 'linux')).toBe(
-      "npx --yes rapidkit create workspace 'my folder'"
+      "npx --yes --package workspai workspai create workspace 'my folder'"
     );
   });
 
-  it('pins to a linked npm package when resolved', () => {
+  it('ignores ambient linked packages but honors an explicit package override', () => {
     setResolvedRapidkitNpmPackageSpecifier('file:/tmp/rapidkit-npm');
-    expect(buildNpxRapidkitPrefix()).toEqual([
-      '--yes',
-      '--package',
-      'file:/tmp/rapidkit-npm',
-      'rapidkit',
-    ]);
+    expect(buildNpxRapidkitPrefix()).toEqual(['--yes', '--package', 'workspai', 'workspai']);
+    process.env.WORKSPAI_NPM_PACKAGE = 'file:/tmp/rapidkit-npm';
     expect(buildNpxRapidkitArgs(['adopt', '--help'])).toEqual([
       '--yes',
       '--package',
       'file:/tmp/rapidkit-npm',
-      'rapidkit',
+      'workspai',
       'adopt',
       '--help',
     ]);
   });
 
-  it('builds user-facing rapidkit display commands without pinned npm wrapper noise', () => {
+  it('builds user-facing Workspai display commands without pinned npm wrapper noise', () => {
     expect(buildRapidkitDisplayCommand(['doctor', 'workspace'], 'linux')).toBe(
-      'npx rapidkit doctor workspace'
+      'npx workspai doctor workspace'
     );
     expect(buildRapidkitDisplayCommand(['add', 'module', 'free/ai/agent_runtime'], 'win32')).toBe(
-      'npx rapidkit add module free/ai/agent_runtime'
+      'npx workspai add module free/ai/agent_runtime'
     );
     expect(buildRapidkitDisplayCommand(['create', 'workspace', 'my folder'], 'linux')).toBe(
-      "npx rapidkit create workspace 'my folder'"
+      "npx workspai create workspace 'my folder'"
     );
   });
 
   it('normalizes pinned execution commands for display only', () => {
     expect(
       toDisplayRapidkitCommand(
-        'Run npx --yes --package file:/tmp/rapidkit-npm rapidkit add module free/ai/agent_runtime'
+        'Run npx --yes --package file:/tmp/rapidkit-npm workspai add module free/ai/agent_runtime'
       )
-    ).toBe('Run npx rapidkit add module free/ai/agent_runtime');
-    expect(toDisplayRapidkitCommand('Run npx --yes rapidkit doctor workspace')).toBe(
-      'Run npx rapidkit doctor workspace'
+    ).toBe('Run npx workspai add module free/ai/agent_runtime');
+    expect(toDisplayRapidkitCommand('Run npx --yes workspai doctor workspace')).toBe(
+      'Run npx workspai doctor workspace'
     );
   });
 
   it('normalizes simple display commands back to the execution wrapper', () => {
-    expect(toPinnedRapidkitExecutionCommand('npx rapidkit doctor workspace')).toBe(
-      'npx --yes rapidkit doctor workspace'
+    expect(toPinnedRapidkitExecutionCommand('npx workspai doctor workspace')).toBe(
+      'npx --yes --package workspai workspai doctor workspace'
     );
     expect(
-      toPinnedRapidkitExecutionCommand('Run npx rapidkit add module free/ai/agent_runtime')
-    ).toBe('Run npx --yes rapidkit add module free/ai/agent_runtime');
+      toPinnedRapidkitExecutionCommand('Run npx workspai add module free/ai/agent_runtime')
+    ).toBe('Run npx --yes --package workspai workspai add module free/ai/agent_runtime');
   });
 
-  it('builds the unpinned npx rapidkit argument contract for extension host calls', () => {
+  it('builds the explicit npm package contract for extension host calls', () => {
     expect(buildNpxRapidkitArgs(['doctor', 'workspace'])).toEqual([
       '--yes',
-      'rapidkit',
+      '--package',
+      'workspai',
+      'workspai',
       'doctor',
       'workspace',
     ]);
@@ -144,12 +143,14 @@ describe('platformCapabilities', () => {
       args: [
         ...linuxInvocation.prefixArgs,
         '--yes',
-        'rapidkit',
+        '--package',
+        'workspai',
+        'workspai',
         'workspace',
         'verify',
         'my folder',
       ],
-      displayCommand: "npx rapidkit workspace verify 'my folder'",
+      displayCommand: "npx workspai workspace verify 'my folder'",
       shell: false,
     });
 
@@ -159,12 +160,14 @@ describe('platformCapabilities', () => {
       args: [
         ...windowsInvocation.prefixArgs,
         '--yes',
-        'rapidkit',
+        '--package',
+        'workspai',
+        'workspai',
         'workspace',
         'verify',
         'my folder',
       ],
-      displayCommand: 'npx rapidkit workspace verify "my folder"',
+      displayCommand: 'npx workspai workspace verify "my folder"',
       shell: true,
     });
   });
@@ -223,20 +226,20 @@ describe('platformCapabilities', () => {
     for (const scenario of noSpaceScenarios) {
       for (const platform of platforms) {
         expect(buildRapidkitCommand(scenario, platform)).toBe(
-          `npx --yes rapidkit ${scenario.join(' ')}`
+          `npx --yes --package workspai workspai ${scenario.join(' ')}`
         );
       }
     }
 
     expect(
       buildRapidkitCommand(['workspace', 'policy', 'set', 'team name', 'strict'], 'linux')
-    ).toBe("npx --yes rapidkit workspace policy set 'team name' strict");
+    ).toBe("npx --yes --package workspai workspai workspace policy set 'team name' strict");
     expect(
       buildRapidkitCommand(['workspace', 'policy', 'set', 'team name', 'strict'], 'darwin')
-    ).toBe("npx --yes rapidkit workspace policy set 'team name' strict");
+    ).toBe("npx --yes --package workspai workspai workspace policy set 'team name' strict");
     expect(
       buildRapidkitCommand(['workspace', 'policy', 'set', 'team name', 'strict'], 'win32')
-    ).toBe('npx --yes rapidkit workspace policy set "team name" strict');
+    ).toBe('npx --yes --package workspai workspai workspace policy set "team name" strict');
   });
 
   it('quotes snapshot command arguments without changing the CLI contract', () => {
@@ -246,7 +249,8 @@ describe('platformCapabilities', () => {
         'linux'
       )
     ).toBe(
-      'npx --yes rapidkit snapshot create ' + `'before upgrade' --reason 'owner'"'"'s release prep'`
+      'npx --yes --package workspai workspai snapshot create ' +
+        `'before upgrade' --reason 'owner'"'"'s release prep'`
     );
 
     expect(
@@ -255,16 +259,16 @@ describe('platformCapabilities', () => {
         'win32'
       )
     ).toBe(
-      'npx --yes rapidkit snapshot restore ' +
+      'npx --yes --package workspai workspai snapshot restore ' +
         '"before upgrade" --force --reason "rollback & verify"'
     );
   });
 
   it('uses unpinned npx args for npm CLI version probes only', () => {
-    expect(buildNpxRapidkitVersionProbeArgs()).toEqual(['--yes', 'rapidkit', '--version']);
+    expect(buildNpxRapidkitVersionProbeArgs()).toEqual(['--yes', 'workspai', '--version']);
     expect(buildNpmCliVersionVerifyCommands('linux')).toEqual([
-      'npx rapidkit --version',
-      'npm list -g rapidkit --depth=0',
+      'npx workspai --version',
+      'npm list -g workspai --depth=0',
     ]);
   });
 

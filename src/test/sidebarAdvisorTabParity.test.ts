@@ -80,7 +80,9 @@ describe('React Advisor tab ↔ host protocol parity (roadmap 2.11e)', () => {
     const sessionsHook = read('webview-ui/src/sidebar/useChatSessions.ts');
 
     expect(chatTab).toContain('ChatSessionBar');
+    expect(chatTab).toContain('allowNewSession={!repairMode}');
     expect(chatTab).toContain('New chat');
+    expect(sessionBar).toContain('allowNewSession = true');
     expect(sessionBar).toContain('New chat');
     expect(sessionBar).toContain('Session history');
     expect(sessionsHook).toContain('forceNew');

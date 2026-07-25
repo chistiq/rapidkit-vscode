@@ -124,6 +124,36 @@ describe('isIntelligenceChainVerdictExit', () => {
       )
     ).toBe(true);
   });
+
+  it.each([
+    ['Doctor Evidence', ['doctor', 'workspace', '--json'], { generatedAt: '2026-07-11T00:00:00Z' }],
+    [
+      'Contract Evidence',
+      ['workspace', 'contract', 'verify', '--strict', '--json'],
+      { evidencePath: '.workspai/reports/workspace-contract-verify-last-run.json' },
+    ],
+    ['Readiness Evidence', ['readiness', '--json'], { generatedAt: '2026-07-11T00:00:00Z' }],
+  ])(
+    'accepts a structured %s verdict without hiding command failures',
+    (label, command, result) => {
+      expect(
+        isIntelligenceChainVerdictExit({ command: command as string[], label }, {
+          exitCode: 1,
+          failed: true,
+          result,
+        } as StreamingRunResult)
+      ).toBe(true);
+    }
+  );
+
+  it('rejects non-zero evidence steps that did not return structured evidence', () => {
+    expect(
+      isIntelligenceChainVerdictExit(
+        { command: ['doctor', 'workspace', '--json'], label: 'Doctor Evidence' },
+        { exitCode: 2, failed: true, result: null, stderr: 'doctor crashed' } as StreamingRunResult
+      )
+    ).toBe(false);
+  });
 });
 
 describe('runWorkspaceIntelligenceSequenceWithProgress', () => {

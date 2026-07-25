@@ -38,6 +38,18 @@ describe('aiActionExecutor', () => {
     });
   });
 
+  it('allows deterministic RapidKit bootstrap compliance commands for Studio remediation', () => {
+    expect(validateAIActionCommandPolicy('npx rapidkit bootstrap --ci --json', 'verify')).toEqual({
+      allowed: true,
+    });
+    expect(validateAIActionCommandPolicy('rapidkit bootstrap --ci --json', 'apply')).toEqual({
+      allowed: true,
+    });
+    expect(validateAIActionCommandPolicy('npx rapidkit bootstrap', 'apply')).toMatchObject({
+      allowed: false,
+    });
+  });
+
   it('blocks package installation even through allowlisted binaries', () => {
     expect(validateAIActionCommandPolicy('npm install left-pad', 'apply')).toMatchObject({
       allowed: false,

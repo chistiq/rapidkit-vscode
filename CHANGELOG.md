@@ -11,6 +11,8 @@ Planned as extension **0.35.0** (after marketplace **0.34.0**). Aligns with Rapi
 
 ### Added
 
+* **Native Studio Agent runtime**: durable Agent / Ask / Plan sessions, governed Workspai tools, causal blocker traversal, source patch transactions, dependency-security repair, and evidence-derived completion.
+* **Callable model selector contract**: provider-qualified model identities with session-only transports excluded and retryable model failover for native Studio tool calls.
 * **Enterprise dashboard evidence loop**: Command → Evidence → Next Step with activity trail, outcome review, next-step rail, and contract-aware command dispatch (`dashboardCommandContracts`, `dashboardCommandRegistry`).
 * **Dashboard UX polish (v0.35)**: Studio Command Center handoff strip (Evidence · Run · Project · Home); Home Workspace Advisor entry and clickable health metrics; navigation telemetry dedup on re-selected tabs; responsive Run sub-nav scroll on narrow widths.
 * **Enterprise-minimal stabilization pass**: Evidence Guided mode now renders one current path instead of duplicating attention cards; Evidence view controls use compact `Guided / Workflows / All` labels; Studio uses a calmer panel workspace with carded chat/context/sidebar surfaces; Workspai now contributes a standard VS Code Secondary Sidebar tab plus Activity Bar fallback, with `Create with AI / Workspace Advisor / Studio` as the minimal AI surface and a live creation timeline.
@@ -38,6 +40,10 @@ Planned as extension **0.35.0** (after marketplace **0.34.0**). Aligns with Rapi
 
 ### Changed
 
+* Assistant Agent mode now owns the complete card incident graph and may finish only after a fresh, non-blocking verify observation; generated reports are refreshed through canonical producers rather than edited.
+* Studio turn limits are now explicit host/test boundaries only. Production Agent sessions compact into durable checkpoints and retain ownership until verified completion, cancellation, or a real provider/protocol failure.
+* Native tool execution is causal-generation aware: duplicate inspections, audits, remediations, and verifies are suppressed until source or governed evidence advances; source patch results refresh the generation before the next repair step.
+* Long-running Agent prompts retain causal tool and verify events while dropping duplicate request/status chatter, keeping repair sessions within provider context budgets.
 * Retired legacy **`AIIncidentStudio.tsx`** (~7.5k lines) in favor of **`IncidentStudioVNext`** and modular studio regions.
 * Replaced **`CommandReference`** with **`CommandCheatsheet`**; removed **`QuickLinks`**, **`HeroAction`**, and **`AIActions`** from the dashboard shell.
 * Reworked **`welcomePanel`** and **`App.tsx`** for dashboard dispatch, evidence refresh, and studio integration at scale.
@@ -50,6 +56,15 @@ Planned as extension **0.35.0** (after marketplace **0.34.0**). Aligns with Rapi
 
 ### Fixed
 
+* Fixed every multi-tool VS Code LM request failing before its first model turn because `LanguageModelChatToolMode.Required` was used with more than one tool.
+* Fixed `copilotcli` and other session-only providers appearing as runnable Workspai models even though they cannot answer extension LM requests.
+* Fixed missing/retired models and empty provider streams terminating Studio without trying another callable model.
+* Fixed Readiness repairs exhausting an arbitrary 80-turn budget after repeatedly auditing the same dependency advisory; duplicate observations now remain in the model ledger but are omitted from the user-facing timeline.
+* Fixed dependency repair retry state surviving a successful source patch, which could prevent the Agent from regenerating the lockfile after applying an evidence-supported manifest override.
+* Fixed underspecified native patch-tool input: models now receive the exact workspace-relative full-file replacement and source-hash contract.
+* Updated `adm-zip` and `axios` to patched releases and made security audit / VSIX packaging use the pinned Corepack package manager path instead of relying on a globally installed `npm` binary.
+* Raised the VS Code engine floor to `1.106.0`, where contributed Secondary Sidebar containers became stable, preventing Workspai from silently falling back into Explorer or requiring a proposed API.
+* Hardened Electron smoke so proposed-API rejection and missing Workspai view-container diagnostics fail the release even when the extension host exits with code zero.
 * Incident Studio stable wiring gaps (doctor scope payloads, sync graph, telemetry refresh).
 * AI creation intent planning and module suggestion boundaries for supported project types.
 * `UserMode` typing (`standard`) and shell-view lifecycle guards for Settings/Setup tabs.
@@ -71,7 +86,7 @@ Planned as extension **0.35.0** (after marketplace **0.34.0**). Aligns with Rapi
 ### Verification
 
 * `./node_modules/.bin/tsc --noEmit`
-* `./node_modules/.bin/vitest run` (208 files / 1639 tests)
+* `corepack npm test` (321 files / 2282 passed / 2 skipped)
 * `node scripts/release-stop-gate.mjs --skip-kpi`
 * `env PATH=/tmp:$PATH ./node_modules/.bin/vsce package --no-dependencies --out /tmp/workspai-0.35.0.vsix`
 
@@ -2237,36 +2252,36 @@ Welcome to RapidKit for Visual Studio Code! This is the first pre-release of the
 - Full mode will be available in future stable releases
 
 **Feedback:**
-We'd love to hear your feedback! Please report issues or suggestions on our [GitHub repository](https://github.com/rapidkitlabs/rapidkit-vscode/issues).
+We'd love to hear your feedback! Please report issues or suggestions on our [GitHub repository](https://github.com/chistiq/rapidkit-vscode/issues).
 
 Thank you for using RapidKit! 🚀
 
 ---
 
-[Unreleased]: https://github.com/rapidkitlabs/rapidkit-vscode/compare/v0.32.0...HEAD
-[0.32.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.32.0
-[0.31.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.31.0
-[0.30.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.30.0
-[0.29.1]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.29.1
-[0.29.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.29.0
-[0.28.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.28.0
-[0.27.3]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.27.3
-[0.24.1]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.24.1
-[0.24.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.24.0
-[0.18.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.18.0
-[0.12.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.12.0
-[0.6.1]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.6.1
-[0.4.5]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.4.5
-[0.4.4]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.4.4
-[0.4.3]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.4.3
-[0.4.2]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.4.2
-[0.4.1]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.4.1
-[0.4.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.4.0
-[0.3.2]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.3.2
-[0.3.1]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.3.1
-[0.3.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.3.0
-[0.2.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.2.0
-[0.1.3]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.1.3
-[0.1.2]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.1.2
-[0.1.1]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.1.1
-[0.1.0]: https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.1.0
+[Unreleased]: https://github.com/chistiq/rapidkit-vscode/compare/v0.32.0...HEAD
+[0.32.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.32.0
+[0.31.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.31.0
+[0.30.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.30.0
+[0.29.1]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.29.1
+[0.29.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.29.0
+[0.28.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.28.0
+[0.27.3]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.27.3
+[0.24.1]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.24.1
+[0.24.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.24.0
+[0.18.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.18.0
+[0.12.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.12.0
+[0.6.1]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.6.1
+[0.4.5]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.4.5
+[0.4.4]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.4.4
+[0.4.3]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.4.3
+[0.4.2]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.4.2
+[0.4.1]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.4.1
+[0.4.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.4.0
+[0.3.2]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.3.2
+[0.3.1]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.3.1
+[0.3.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.3.0
+[0.2.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.2.0
+[0.1.3]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.1.3
+[0.1.2]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.1.2
+[0.1.1]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.1.1
+[0.1.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.1.0

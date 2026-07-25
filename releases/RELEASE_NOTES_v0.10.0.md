@@ -428,4 +428,4 @@ Planned for v0.11.0:
 
 **Full Changelog:** [CHANGELOG.md](../CHANGELOG.md)  
 **Installation:** [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)  
-**GitHub:** [rapidkit-vscode](https://github.com/rapidkitlabs/rapidkit-vscode)
+**GitHub:** [rapidkit-vscode](https://github.com/chistiq/rapidkit-vscode)

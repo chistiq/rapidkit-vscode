@@ -201,7 +201,7 @@ Updated for bridge integration and workspace registry:
 ## 🔗 Links
 
 - **Marketplace**: [RapidKit Extension](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
-- **GitHub**: [rapidkit-vscode](https://github.com/rapidkitlabs/rapidkit-vscode)
+- **GitHub**: [rapidkit-vscode](https://github.com/chistiq/rapidkit-vscode)
 - **npm Package**: [rapidkit@0.16.0](https://www.npmjs.com/package/rapidkit)
 - **Core Engine**: [rapidkit-core](https://pypi.org/project/rapidkit-core/)
 - **Docs**: [www.workspai.com](https://www.workspai.com)

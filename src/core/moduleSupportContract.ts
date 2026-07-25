@@ -31,7 +31,7 @@ const EMBEDDED_MODULE_SUPPORT_CONTRACT: ModuleSupportContract = {
     'sveltekit',
   ],
   policyNote:
-    'RapidKit modules are Core-backed templates for FastAPI and NestJS backends only. Frontend scaffolds and extended backend kits use native package ecosystems.',
+    'RapidKit Core modules are Core-backed templates for FastAPI and NestJS backends only. Frontend scaffolds and extended backend kits use native package ecosystems.',
 };
 
 let cachedContract: ModuleSupportContract | null = null;

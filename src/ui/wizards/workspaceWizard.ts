@@ -1,7 +1,7 @@
 /**
  * Workspace Wizard
- * 5-step interactive wizard for workspace creation:
- *   1. Name  2. Profile  3. Location  4. Install Method  5. Options
+ * 6-step interactive wizard for workspace creation:
+ *   1. Name  2. Profile  3. Engine  4. Location  5. Install Method  6. Options
  */
 
 import * as vscode from 'vscode';
@@ -9,7 +9,9 @@ import * as path from 'path';
 import { WorkspaceConfig } from '../../types';
 import { resolveNewWorkspacePath } from '../../core/workspacePaths';
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 6;
+
+const PYTHON_ENGINE_REQUIRED_PROFILES = new Set(['python-only', 'polyglot', 'enterprise']);
 
 export class WorkspaceWizard {
   async show(): Promise<WorkspaceConfig | undefined> {
@@ -106,7 +108,39 @@ export class WorkspaceWizard {
       return undefined;
     }
 
-    // ── Step 3 of 5: Location ─────────────────────────────────────────────────
+    // ── Step 3 of 6: Optional Python engine ───────────────────────────────────
+    type EngineItem = vscode.QuickPickItem & { value: 'install' | 'skip' };
+    const defaultInstallPythonEngine = PYTHON_ENGINE_REQUIRED_PROFILES.has(profilePick.value);
+    const enginePick = await vscode.window.showQuickPick<EngineItem>(
+      [
+        {
+          label: '$(package) Install Python engine',
+          description: defaultInstallPythonEngine ? '(recommended)' : 'Optional',
+          detail: 'Adds rapidkit-core runtime files for Python-backed workspace tooling',
+          picked: defaultInstallPythonEngine,
+          value: 'install',
+        },
+        {
+          label: '$(zap) Lightweight workspace',
+          description: defaultInstallPythonEngine ? 'Skip optional engine' : '(recommended)',
+          detail:
+            'Creates workspace governance files without rapidkit-core/Python engine bootstrap',
+          picked: !defaultInstallPythonEngine,
+          value: 'skip',
+        },
+      ],
+      {
+        placeHolder: 'Choose Python engine posture',
+        title: `Step 3 of ${TOTAL_STEPS}: Python Engine  ·  ${name}`,
+        ignoreFocusOut: true,
+      }
+    );
+    if (!enginePick) {
+      return undefined;
+    }
+    const skipPythonEngine = enginePick.value === 'skip';
+
+    // ── Step 4 of 6: Location ─────────────────────────────────────────────────
     const defaultFull = resolveNewWorkspacePath(name);
 
     type LocationItem = vscode.QuickPickItem & { value: 'default' | 'browse' };
@@ -127,7 +161,7 @@ export class WorkspaceWizard {
       ],
       {
         placeHolder: 'Where should the workspace live?',
-        title: `Step 3 of ${TOTAL_STEPS}: Location  ·  ${name}`,
+        title: `Step 4 of ${TOTAL_STEPS}: Location  ·  ${name}`,
         ignoreFocusOut: true,
       }
     );
@@ -152,46 +186,48 @@ export class WorkspaceWizard {
       finalPath = defaultFull;
     }
 
-    // ── Step 4 of 5: Install Method ───────────────────────────────────────────
+    // ── Step 5 of 6: Install Method ───────────────────────────────────────────
     type InstMethodItem = vscode.QuickPickItem & { value: 'auto' | 'poetry' | 'venv' | 'pipx' };
-    const installPick = await vscode.window.showQuickPick<InstMethodItem>(
-      [
-        {
-          label: '$(search) Auto-detect',
-          description: 'Use Poetry if installed, otherwise fall back to venv  (recommended)',
-          detail: 'Same as running rapidkit create workspace without --install-method',
-          value: 'auto',
-        },
-        {
-          label: '$(package) Poetry',
-          description: 'Force Poetry as the dependency manager',
-          detail: 'If Poetry is not available, CLI can fallback to a compatible setup',
-          value: 'poetry',
-        },
-        {
-          label: '$(symbol-variable) venv',
-          description: 'Pure Python venv + pip — no extra tools needed',
-          detail: 'Simplest setup, runs on any Python 3.10+ installation',
-          value: 'venv',
-        },
-        {
-          label: '$(tools) pipx',
-          description: 'Manage packages in isolated pipx environments',
-          detail: 'Good for CLI-heavy workspaces; requires pipx to be installed',
-          value: 'pipx',
-        },
-      ],
-      {
-        placeHolder: 'Select Python install method',
-        title: `Step 4 of ${TOTAL_STEPS}: Install Method  ·  ${name}`,
-        ignoreFocusOut: true,
-      }
-    );
+    const installPick = skipPythonEngine
+      ? ({ value: 'auto' } as InstMethodItem)
+      : await vscode.window.showQuickPick<InstMethodItem>(
+          [
+            {
+              label: '$(search) Auto-detect',
+              description: 'Use Poetry if installed, otherwise fall back to venv  (recommended)',
+              detail: 'Same as running rapidkit create workspace without --install-method',
+              value: 'auto',
+            },
+            {
+              label: '$(package) Poetry',
+              description: 'Force Poetry as the dependency manager',
+              detail: 'If Poetry is not available, CLI can fallback to a compatible setup',
+              value: 'poetry',
+            },
+            {
+              label: '$(symbol-variable) venv',
+              description: 'Pure Python venv + pip - no extra tools needed',
+              detail: 'Simplest setup, runs on any Python 3.10+ installation',
+              value: 'venv',
+            },
+            {
+              label: '$(tools) pipx',
+              description: 'Manage packages in isolated pipx environments',
+              detail: 'Good for CLI-heavy workspaces; requires pipx to be installed',
+              value: 'pipx',
+            },
+          ],
+          {
+            placeHolder: 'Select Python install method',
+            title: `Step 5 of ${TOTAL_STEPS}: Install Method  ·  ${name}`,
+            ignoreFocusOut: true,
+          }
+        );
     if (!installPick) {
       return undefined;
     }
 
-    // ── Step 5 of 5: Options (multi-select) ──────────────────────────────────
+    // ── Step 6 of 6: Options (multi-select) ──────────────────────────────────
     type OptionItem = vscode.QuickPickItem & { id: 'git' | 'strict-policy' | 'dep-sharing' };
 
     const optionItems: OptionItem[] = [
@@ -223,7 +259,7 @@ export class WorkspaceWizard {
     const optionPicks = await vscode.window.showQuickPick<OptionItem>(optionItems, {
       canPickMany: true,
       placeHolder: 'Toggle workspace behaviour options  (Space to toggle, Enter to confirm)',
-      title: `Step 5 of ${TOTAL_STEPS}: Options  ·  ${name}`,
+      title: `Step 6 of ${TOTAL_STEPS}: Options  ·  ${name}`,
       ignoreFocusOut: true,
     });
     if (optionPicks === undefined) {
@@ -243,6 +279,7 @@ export class WorkspaceWizard {
       initGit,
       profile: profilePick.value,
       installMethod: installPick.value,
+      skipPythonEngine,
       policyMode,
       dependencySharing,
     };

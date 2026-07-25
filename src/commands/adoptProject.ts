@@ -12,7 +12,7 @@ import { resolveEnableModulesPreference } from '../core/moduleEnablementPrompt';
 import { refreshExtensionAfterNpmProjectOnboard } from '../core/npmProjectOnboardRefresh';
 import { gateCompatibleCliVersion } from '../core/cliVersionGate';
 import { gateAdoptCli } from '../core/rapidkitCliCapabilities';
-import { findWorkspaceRootUp } from '../core/workspacePaths';
+import { findWorkspaceRootUp, hasWorkspaceRootMarkers } from '../core/workspacePaths';
 
 interface AdoptProjectInput {
   projectPath: string;
@@ -22,6 +22,8 @@ interface AdoptProjectInput {
   enableModules?: boolean;
   useDefaultWorkspace?: boolean;
 }
+
+const IMPORT_WORKSPACE_ACTION = 'Import Workspace';
 
 function resolveExplicitWorkspacePath(input: AdoptProjectInput): string | undefined {
   if (input.useDefaultWorkspace) {
@@ -39,9 +41,21 @@ async function hasManagedMarker(projectPath: string): Promise<boolean> {
   return (await fs.pathExists(projectMarkerPath)) || (await fs.pathExists(contextMarkerPath));
 }
 
+async function showWorkspaceSourceAdoptRedirect(projectPath: string): Promise<void> {
+  const action = await vscode.window.showWarningMessage(
+    `This is a workspace. Import it as a workspace instead.\n${projectPath}`,
+    IMPORT_WORKSPACE_ACTION,
+    'Cancel'
+  );
+
+  if (action === IMPORT_WORKSPACE_ACTION) {
+    await vscode.commands.executeCommand('workspai.importWorkspace');
+  }
+}
+
 /**
- * Adopt an existing project via the canonical npm CLI (`npx rapidkit adopt`).
- * Workspace resolution (including managed default `~/rapidkit/workspaces/workspai`)
+ * Adopt an existing project via the canonical npm CLI (`npx workspai adopt`).
+ * Workspace resolution (including managed default `~/.workspai/workspaces/workspai`)
  * is delegated to npm unless an explicit workspacePath is supplied.
  */
 export async function adoptProjectCommand(input: AdoptProjectInput): Promise<boolean> {
@@ -57,16 +71,26 @@ export async function adoptProjectCommand(input: AdoptProjectInput): Promise<boo
   const explicitWorkspacePath = resolveExplicitWorkspacePath(input);
 
   try {
+    const stat = await fs.stat(projectPath).catch(() => null);
+    if (!stat || !stat.isDirectory()) {
+      vscode.window.showErrorMessage(`Project path is invalid: ${projectPath}`);
+      return false;
+    }
+
+    if (explicitWorkspacePath && path.resolve(explicitWorkspacePath) === projectPath) {
+      await showWorkspaceSourceAdoptRedirect(projectPath);
+      return false;
+    }
+
+    if (hasWorkspaceRootMarkers(projectPath)) {
+      await showWorkspaceSourceAdoptRedirect(projectPath);
+      return false;
+    }
+
     if (!(await gateCompatibleCliVersion({ cwd: projectPath, featureLabel: 'Adopt Project' }))) {
       return false;
     }
     if (!(await gateAdoptCli('Adopt Project', { cwd: projectPath }))) {
-      return false;
-    }
-
-    const stat = await fs.stat(projectPath).catch(() => null);
-    if (!stat || !stat.isDirectory()) {
-      vscode.window.showErrorMessage(`Project path is invalid: ${projectPath}`);
       return false;
     }
 
@@ -97,11 +121,11 @@ export async function adoptProjectCommand(input: AdoptProjectInput): Promise<boo
     const adoptionOutcome = await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `Adopting ${projectName} via RapidKit CLI...`,
+        title: `Adopting ${projectName} via Workspai CLI...`,
         cancellable: false,
       },
       async (progress) => {
-        progress.report({ increment: 20, message: 'Running npx rapidkit adopt...' });
+        progress.report({ increment: 20, message: 'Running npx workspai adopt...' });
 
         const adoptionResult = await runCanonicalNpmAdopt({
           projectPath,
@@ -143,7 +167,7 @@ export async function adoptProjectCommand(input: AdoptProjectInput): Promise<boo
         detectedType,
         runtime,
         supportTier,
-        adoptionEngine: 'rapidkit-npm',
+        adoptionEngine: 'workspai',
         intent: 'npm-adopt-handoff',
         workspaceResolution: adoptionOutcome.workspaceResolution,
       }

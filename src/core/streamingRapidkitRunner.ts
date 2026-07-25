@@ -40,7 +40,7 @@ export type RapidkitStreamingEnterpriseGate =
     }) => Promise<EnterpriseCliGateResult>);
 
 export interface StreamingRunOptions {
-  /** RapidKit CLI args, e.g. `['workspace', 'model', '--json', '--write']`. */
+  /** Workspai CLI args, e.g. `['workspace', 'model', '--json', '--write']`. */
   command: string[];
   cwd: string;
   /** Human label for enterprise version/capability gates. */
@@ -56,7 +56,7 @@ export interface StreamingRunOptions {
   signal?: { onCancelled(listener: () => void): void };
   /** Injectable spawn (defaults to execa). */
   spawn?: RapidkitSpawn;
-  /** Injectable enterprise gate; defaults to the shared fail-closed RapidKit CLI gate. */
+  /** Injectable enterprise gate; defaults to the shared fail-closed Workspai CLI gate. */
   enterpriseGate?: RapidkitStreamingEnterpriseGate;
 }
 
@@ -127,7 +127,7 @@ const defaultSpawn: RapidkitSpawn = (command, args, options) => {
 };
 
 /**
- * Run a single RapidKit CLI command programmatically, consuming the
+ * Run a single Workspai CLI command programmatically, consuming the
  * `cli-log-event.v1` NDJSON stream on stderr for real progress and the trailing
  * JSON document on stdout for the definitive result (roadmap item 2.2).
  *

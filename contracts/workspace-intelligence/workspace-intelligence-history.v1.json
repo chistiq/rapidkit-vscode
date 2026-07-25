@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://getrapidkit.com/schemas/workspace-intelligence-history.v1.json",
-  "title": "RapidKit Workspace Intelligence History",
+  "title": "Workspai Workspace Intelligence History",
   "type": "object",
   "required": ["schemaVersion", "retention", "entries"],
   "properties": {

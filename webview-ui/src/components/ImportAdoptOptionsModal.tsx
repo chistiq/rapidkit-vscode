@@ -83,7 +83,7 @@ export function ImportAdoptOptionsModal({
         </span>
       </EnterpriseModalNotice>
 
-      <EnterpriseModalSection title="Module command support" meta="RapidKit npm">
+      <EnterpriseModalSection title="Module command support" meta="Workspai CLI">
         <fieldset className="import-adopt-options__choices">
           <label className="import-adopt-options__choice">
             <input

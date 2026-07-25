@@ -1,4 +1,6 @@
 export type StudioBlockerExecutionMode = 'FIX' | 'RUN_ONCE' | 'VERIFY_ONLY' | 'EXPLAIN';
+export type StudioBlockerExecutionChannel = 'terminal' | 'background';
+export type StudioBlockerSafetyRisk = 'read' | 'write' | 'destructive';
 export type StudioIncidentPhase = 'detect' | 'diagnose' | 'fix' | 'verify' | 'audit';
 export type StudioIncidentAuditStatus = 'not-started' | 'pending' | 'saved' | 'failed' | 'unknown';
 
@@ -15,9 +17,16 @@ export type StudioBlockerHandoffView = {
   cardId: string;
   cardLabel?: string;
   cardStatus: 'pass' | 'warn' | 'fail' | 'missing';
+  blocking?: boolean;
   blockers: string[];
   artifactPath: string;
   sourceCommand: string;
+  dashboardCommandId?: string;
+  executionChannel?: StudioBlockerExecutionChannel;
+  capabilityGate?: string;
+  safetyRisk?: StudioBlockerSafetyRisk;
+  safetyConfirmation?: string;
+  safetyRefreshCommands?: string[];
   scope: 'workspace' | 'project';
   blockerSignature: string;
   commandRunCount?: number;

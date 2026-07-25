@@ -12,25 +12,21 @@ interface EvidenceViewModeToggleProps {
 
 export function EvidenceViewModeToggle({ value, onChange }: EvidenceViewModeToggleProps) {
   return (
-    <div className="evidence-view-mode" role="group" aria-label="Evidence display mode">
-      <span className="evidence-view-mode__label">View</span>
-      <div className="evidence-view-mode__options">
+    <label className="ws-view-select" title={EVIDENCE_VIEW_MODE_HINTS[value]}>
+      <span>Show</span>
+      <select
+        aria-label="Artifact detail level"
+        value={value}
+        onChange={(event) => onChange(event.target.value as EvidenceViewMode)}
+      >
         {EVIDENCE_VIEW_MODES.map((mode) => {
-          const active = value === mode;
           return (
-            <button
-              key={mode}
-              type="button"
-              className={`evidence-view-mode__option${active ? ' is-active' : ''}`}
-              aria-pressed={active}
-              title={EVIDENCE_VIEW_MODE_HINTS[mode]}
-              onClick={() => onChange(mode)}
-            >
+            <option key={mode} value={mode}>
               {EVIDENCE_VIEW_MODE_LABELS[mode]}
-            </button>
+            </option>
           );
         })}
-      </div>
-    </div>
+      </select>
+    </label>
   );
 }

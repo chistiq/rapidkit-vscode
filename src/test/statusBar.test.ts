@@ -27,6 +27,6 @@ describe('workspaiStatusBar', () => {
     expect(source).toContain('Top: none loaded');
     expect(source).toContain('compactStatusSegment');
     expect(source).toContain('Top blocker:');
-    expect(source).toContain('RapidKit CLI:');
+    expect(source).toContain('Workspai CLI:');
   });
 });

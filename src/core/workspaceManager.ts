@@ -9,12 +9,14 @@ import * as path from 'path';
 import * as os from 'os';
 import { WorkspaiWorkspace } from '../types';
 import { MARKERS } from '../utils/constants';
-import { hasWorkspaceRootMarkers } from './workspacePaths';
+import { hasRapidkitProjectMarkers, hasWorkspaceRootMarkers } from './workspacePaths';
+import { resolveWorkspaceMarkerPath } from './workspaceIntelligencePaths';
 import { getRegistryDir } from '../utils/registryPath';
 import {
   readImportedProjectsRegistry,
   resolveImportedProjectPath,
 } from '../utils/importedProjectsRegistry';
+import { readWorkspaceRegistrySummaryFromDisk } from './workspaceRegistrySummary';
 
 export class WorkspaceManager {
   private static instance: WorkspaceManager;
@@ -213,9 +215,9 @@ export class WorkspaceManager {
       return false;
     }
 
-    // Check for workspace root markers (.rapidkit-workspace or .rapidkit/workspace.json)
+    // Check canonical Workspai markers, with legacy RapidKit compatibility.
     if (hasWorkspaceRootMarkers(wsPath)) {
-      const markerPath = path.join(wsPath, '.rapidkit-workspace');
+      const markerPath = await resolveWorkspaceMarkerPath(wsPath);
       if (await fs.pathExists(markerPath)) {
         // Verify marker file content has valid signature
         try {
@@ -272,10 +274,21 @@ export class WorkspaceManager {
     };
 
     try {
+      const registrySummary = await readWorkspaceRegistrySummaryFromDisk(wsPath);
+      for (const project of registrySummary?.projects ?? []) {
+        const projectPath = path.resolve(wsPath, project.relativePath);
+        if ((await fs.pathExists(projectPath)) && !hasWorkspaceRootMarkers(projectPath)) {
+          addProject({
+            name: project.slug || path.basename(projectPath),
+            path: projectPath,
+          });
+        }
+      }
+
       const importedRegistryEntries = await readImportedProjectsRegistry(wsPath);
       for (const entry of importedRegistryEntries) {
         const projectPath = resolveImportedProjectPath(wsPath, entry.path);
-        if (await fs.pathExists(projectPath)) {
+        if ((await fs.pathExists(projectPath)) && !hasWorkspaceRootMarkers(projectPath)) {
           addProject({
             name: entry.name || path.basename(projectPath),
             path: projectPath,
@@ -287,11 +300,12 @@ export class WorkspaceManager {
       for (const entry of entries) {
         if (entry.isDirectory() && !entry.name.startsWith('.')) {
           const projectPath = path.join(wsPath, entry.name);
+          if (hasWorkspaceRootMarkers(projectPath)) {
+            continue;
+          }
 
           // Check for RapidKit project markers
-          const hasRapidKitMarker =
-            (await fs.pathExists(path.join(projectPath, '.rapidkit', 'project.json'))) ||
-            (await fs.pathExists(path.join(projectPath, '.rapidkit', 'context.json')));
+          const hasRapidKitMarker = hasRapidkitProjectMarkers(projectPath);
 
           if (hasRapidKitMarker) {
             addProject({

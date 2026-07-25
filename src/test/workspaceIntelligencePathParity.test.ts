@@ -25,16 +25,16 @@ describe('workspace intelligence host/webview path parity', () => {
 
   it('keeps Terminal Bridge snippets aligned with npm explainability commands', () => {
     expect(buildWorkspaceExplainCliSnippet()).toBe(
-      'npx rapidkit workspace explain release-blocked --json --write'
+      'npx workspai workspace explain release-blocked --json --write'
     );
     expect(buildWorkspaceWhyCliSnippet()).toBe(
-      'npx rapidkit workspace why release-blocked --json --write'
+      'npx workspai workspace why release-blocked --json --write'
     );
     expect(buildWorkspaceTraceCliSnippet()).toBe(
-      'npx rapidkit workspace trace --from .rapidkit/reports/workspace-model-diff-last-run.json --json --write'
+      'npx workspai workspace trace --from .workspai/reports/workspace-model-diff-last-run.json --json --write'
     );
     expect(buildWorkspaceGraphExplainCliSnippet('api')).toBe(
-      'npx rapidkit workspace graph explain api --json'
+      'npx workspai workspace graph explain api --json'
     );
   });
 
@@ -45,12 +45,12 @@ describe('workspace intelligence host/webview path parity', () => {
       ) ?? [];
 
     expect(workspaceCommands).toContain(
-      'rapidkit workspace explain release-blocked --json --write'
+      'workspai workspace explain release-blocked --json --write'
     );
-    expect(workspaceCommands).toContain('rapidkit workspace why release-blocked --json --write');
+    expect(workspaceCommands).toContain('workspai workspace why release-blocked --json --write');
     expect(workspaceCommands).toContain(
-      'rapidkit workspace trace --from .rapidkit/reports/workspace-model-diff-last-run.json --json --write'
+      'workspai workspace trace --from .workspai/reports/workspace-model-diff-last-run.json --json --write'
     );
-    expect(workspaceCommands).toContain('rapidkit workspace graph explain <project> --json');
+    expect(workspaceCommands).toContain('workspai workspace graph explain <project> --json');
   });
 });

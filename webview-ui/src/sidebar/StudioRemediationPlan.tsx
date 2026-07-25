@@ -1,8 +1,5 @@
-import { ListChecks, ShieldCheck, Terminal } from 'lucide-react';
-import {
-  remediationRiskLabel,
-  type DoctorRemediationPlanView,
-} from '@/lib/doctorRemediationPlan';
+import { ShieldCheck, Terminal } from 'lucide-react';
+import { remediationRiskLabel, type DoctorRemediationPlanView } from '@/lib/doctorRemediationPlan';
 import { compactStudioPathText } from '@/lib/studioDisplayText';
 import { deriveStudioRepairCapability } from '@/lib/studioRepairCapability';
 import type { StudioBlockerHandoffView } from '@/lib/studioBlockerHandoff';
@@ -69,9 +66,7 @@ export function StudioRemediationPlan({
   }
   const stale = plan.freshness.verdict === 'stale';
   const recommendedStep =
-    plan.visibleSteps.find((step) => step.canApply) ??
-    plan.visibleSteps.find((step) => step.executable) ??
-    plan.visibleSteps[0];
+    plan.visibleSteps.find((step) => step.canApply || step.executable) ?? plan.visibleSteps[0];
   const recommendedIdentity = stepIdentity(recommendedStep);
   const supportingSteps = plan.visibleSteps
     .filter((step) => stepIdentity(step) !== recommendedIdentity)
@@ -106,33 +101,40 @@ export function StudioRemediationPlan({
       aria-label="Doctor remediation plan"
       data-scope={plan.scope}
     >
-      <div className="ws-sidebar__repair-bubble ws-sidebar__repair-bubble--intro">
-        <span className="ws-sidebar__repair-avatar" aria-hidden="true">
-          <ListChecks size={14} strokeWidth={1.8} />
-        </span>
-        <div className="ws-sidebar__repair-copy">
-          <strong>
-            <span className="ws-sidebar__repair-live" aria-hidden="true" />
-            I’m on this card
-          </strong>
-          <p>{handoff?.cardLabel ?? 'This evidence card'} is in a focused repair session.</p>
-          <span className="ws-sidebar__repair-meta">
-            {recommendedStep.projectName || plan.scope} · {RISK_LABEL[recommendedStep.risk]} · evidence-backed
-          </span>
+      {handoff ? (
+        <div className="ws-sidebar__repair-bubble ws-sidebar__repair-bubble--intro">
+          <div className="ws-sidebar__repair-copy">
+            <strong>
+              <span className="ws-sidebar__repair-live" aria-hidden="true" />
+              I’m on this card
+            </strong>
+            <p>{handoff?.cardLabel ?? 'This evidence card'} is in a focused repair session.</p>
+            <span className="ws-sidebar__repair-meta">
+              {recommendedStep.projectName || plan.scope} · {RISK_LABEL[recommendedStep.risk]} ·
+              evidence-backed
+            </span>
+          </div>
         </div>
-      </div>
-      <div className="ws-sidebar__repair-bubble ws-sidebar__repair-bubble--finding">
-        <div className="ws-sidebar__repair-copy">
-          <strong>Current blocker</strong>
-          <p>
-            {displayBlockerSummary ||
-              `${handoff?.cardLabel ?? 'This card'} is blocked by the latest evidence.`}
-          </p>
+      ) : null}
+      {handoff ? (
+        <div className="ws-sidebar__repair-bubble ws-sidebar__repair-bubble--finding">
+          <div className="ws-sidebar__repair-copy">
+            <strong>Current blocker</strong>
+            <p>
+              {displayBlockerSummary ||
+                `${handoff?.cardLabel ?? 'This card'} is blocked by the latest evidence.`}
+            </p>
+          </div>
         </div>
-      </div>
+      ) : null}
       {plan.freshness.verdict !== 'fresh' ? (
-        <div className="ws-sidebar__repair-bubble ws-sidebar__remediation-freshness" data-verdict={plan.freshness.verdict}>
-          <strong>{plan.freshness.verdict === 'stale' ? 'Evidence changed' : 'Freshness unknown'}</strong>
+        <div
+          className="ws-sidebar__repair-bubble ws-sidebar__remediation-freshness"
+          data-verdict={plan.freshness.verdict}
+        >
+          <strong>
+            {plan.freshness.verdict === 'stale' ? 'Evidence changed' : 'Freshness unknown'}
+          </strong>
           <span>
             {plan.freshness.reason ||
               'Refresh the source evidence and npm repair plan before changing files or applying a repair.'}
@@ -174,7 +176,9 @@ export function StudioRemediationPlan({
         <div className="ws-sidebar__remediation-step-head">
           <span className="ws-sidebar__remediation-order">{recommendedStep.order || 1}</span>
           <div>
-            <strong>Next move: {recommendedStep.previewTitle || recommendedStep.primaryAction}</strong>
+            <strong>
+              Next move: {recommendedStep.previewTitle || recommendedStep.primaryAction}
+            </strong>
             <small>
               {STEP_STATE_LABEL[recommendedStep.studioState]} · {remediationRiskLabel(plan)}
             </small>
@@ -191,7 +195,8 @@ export function StudioRemediationPlan({
 
         {recommendedStep.files.length > 0 ? (
           <div className="ws-sidebar__repair-file-summary" aria-label="Files affected">
-            {recommendedStep.files.length} file hint{recommendedStep.files.length === 1 ? '' : 's'} ready
+            {recommendedStep.files.length} file hint{recommendedStep.files.length === 1 ? '' : 's'}{' '}
+            ready
           </div>
         ) : null}
 
@@ -203,7 +208,9 @@ export function StudioRemediationPlan({
               disabled={busy || (!stale && !canApplyCapability)}
               onClick={() => (stale ? onRefreshPlan() : onApplyStep(recommendedStep.id))}
             >
-              {stale ? 'Refresh evidence first' : (capability?.primaryLabel ?? repairActionLabel(recommendedStep))}
+              {stale
+                ? 'Refresh evidence first'
+                : (capability?.primaryLabel ?? repairActionLabel(recommendedStep))}
             </button>
           ) : null}
           {canRunDiagnostic ? (
@@ -226,9 +233,7 @@ export function StudioRemediationPlan({
         ) : null}
 
         {recommendedStep.blockedReason || recommendedStep.studioReason ? (
-          <small className="ws-sidebar__remediation-reason">
-            {displayBlockedReason}
-          </small>
+          <small className="ws-sidebar__remediation-reason">{displayBlockedReason}</small>
         ) : null}
       </div>
 
@@ -254,7 +259,9 @@ export function StudioRemediationPlan({
                     <div className="ws-sidebar__remediation-step-head">
                       <span className="ws-sidebar__remediation-order">{step.order || 1}</span>
                       <div>
-                        <strong>{compactStudioPathText(step.previewTitle || step.primaryAction)}</strong>
+                        <strong>
+                          {compactStudioPathText(step.previewTitle || step.primaryAction)}
+                        </strong>
                         <small>
                           {STEP_STATE_LABEL[step.studioState]} · {RISK_LABEL[step.risk]}
                         </small>

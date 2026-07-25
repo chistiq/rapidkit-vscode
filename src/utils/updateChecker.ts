@@ -1,5 +1,5 @@
 /**
- * Update Checker for RapidKit npm package
+ * Update checker for the Workspai npm CLI.
  * Checks for available updates and notifies users
  */
 
@@ -16,11 +16,11 @@ interface VersionInfo {
 }
 
 const UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
-const LAST_CHECK_KEY = 'rapidkit.lastUpdateCheck';
-const DISMISSED_VERSION_KEY = 'rapidkit.dismissedVersion';
+const LAST_CHECK_KEY = 'workspai.lastUpdateCheck';
+const DISMISSED_VERSION_KEY = 'workspai.dismissedVersion';
 
 /**
- * Get current installed rapidkit npm version
+ * Get the current Workspai npm version.
  */
 export async function getCurrentVersion(): Promise<string | null> {
   const logger = Logger.getInstance();
@@ -35,20 +35,20 @@ export async function getCurrentVersion(): Promise<string | null> {
       return result.stdout.trim();
     }
   } catch (error) {
-    logger.debug('Failed to get current rapidkit version', error);
+    logger.debug('Failed to get current Workspai version', error);
   }
 
   return null;
 }
 
 /**
- * Get latest rapidkit npm version from registry
+ * Get the latest Workspai npm version from the registry.
  */
 export async function getLatestVersion(): Promise<string | null> {
   const logger = Logger.getInstance();
 
   try {
-    const result = await run('npm', ['view', 'rapidkit', 'version'], {
+    const result = await run('npm', ['view', 'workspai', 'version'], {
       timeout: 10000,
       reject: false,
     });
@@ -57,7 +57,7 @@ export async function getLatestVersion(): Promise<string | null> {
       return result.stdout.trim();
     }
   } catch (error) {
-    logger.debug('Failed to get latest rapidkit version', error);
+    logger.debug('Failed to get latest Workspai version', error);
   }
 
   return null;
@@ -140,7 +140,7 @@ async function showUpdateNotification(
     return;
   }
 
-  const message = `🚀 RapidKit CLI update available for Workspai: v${versionInfo.latest} (current: v${versionInfo.current})`;
+  const message = `Workspai CLI update available: v${versionInfo.latest} (current: v${versionInfo.current})`;
   const updateAction = '📦 Update Now';
   const releaseNotesAction = '📋 Release Notes';
   const dismissAction = '⏭️ Skip This Version';
@@ -156,15 +156,15 @@ async function showUpdateNotification(
   if (selected === updateAction) {
     // Open terminal and run update command
     runShellCommandInTerminal({
-      name: '📦 RapidKit CLI Update',
+      name: 'Workspai CLI Update',
       command: 'npm',
-      args: ['install', '-g', 'rapidkit'],
+      args: ['install', '-g', 'workspai'],
     });
 
-    logger.info('User initiated rapidkit npm update');
+    logger.info('User initiated Workspai npm update');
   } else if (selected === releaseNotesAction) {
     // Open release notes
-    const url = `https://github.com/rapidkitlabs/rapidkit-npm/releases/tag/v${versionInfo.latest}`;
+    const url = `https://github.com/chistiq/workspai/releases/tag/v${versionInfo.latest}`;
     vscode.env.openExternal(vscode.Uri.parse(url));
 
     logger.info('User viewed release notes');
@@ -217,7 +217,7 @@ export async function forceCheckForUpdates(context: vscode.ExtensionContext): Pr
   await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
-      title: 'Checking RapidKit CLI updates for Workspai...',
+      title: 'Checking Workspai CLI updates...',
       cancellable: false,
     },
     async () => {
@@ -227,11 +227,11 @@ export async function forceCheckForUpdates(context: vscode.ExtensionContext): Pr
         await showUpdateNotification(context, versionInfo);
       } else if (versionInfo.current && versionInfo.latest) {
         vscode.window.showInformationMessage(
-          `✅ RapidKit CLI is up to date for Workspai (v${versionInfo.current})`
+          `Workspai CLI is up to date (v${versionInfo.current})`
         );
       } else {
         vscode.window.showWarningMessage(
-          '⚠️ Could not check RapidKit CLI updates. The rapidkit npm package may not be installed.'
+          'Could not check Workspai CLI updates. The workspai npm package may not be installed.'
         );
       }
 

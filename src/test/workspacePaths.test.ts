@@ -8,6 +8,7 @@ import {
   findExistingWorkspacePath,
   getCanonicalWorkspacesDirectory,
   getLegacyWorkspacesDirectory,
+  getOlderLegacyWorkspacesDirectory,
   getManagedDefaultWorkspaceCandidates,
   isCanonicalWorkspacePath,
   isDefaultWorkspaceCreationPath,
@@ -42,7 +43,7 @@ describe('workspacePaths', () => {
       resolveCanonicalWorkspacePath(MANAGED_DEFAULT_WORKSPACE_NAME, homeDir)
     );
     expect(getCanonicalWorkspacesDirectory(homeDir)).toBe(
-      path.join(homeDir, 'rapidkit', 'workspaces')
+      path.join(homeDir, '.workspai', 'workspaces')
     );
   });
 
@@ -77,6 +78,7 @@ describe('workspacePaths', () => {
     const candidates = getManagedDefaultWorkspaceCandidates(homeDir);
 
     expect(candidates).toEqual([
+      path.join(homeDir, '.workspai', 'workspaces', MANAGED_DEFAULT_WORKSPACE_NAME),
       path.join(homeDir, 'rapidkit', 'workspaces', MANAGED_DEFAULT_WORKSPACE_NAME),
       path.join(homeDir, 'Workspai', 'rapidkits', MANAGED_DEFAULT_WORKSPACE_NAME),
     ]);
@@ -85,9 +87,14 @@ describe('workspacePaths', () => {
   it('detects legacy and canonical workspace paths', () => {
     const homeDir = '/home/test-user';
     const legacyWorkspace = path.join(getLegacyWorkspacesDirectory(homeDir), 'my-mini-wsp');
+    const olderLegacyWorkspace = path.join(
+      getOlderLegacyWorkspacesDirectory(homeDir),
+      'my-mini-wsp'
+    );
     const canonicalWorkspace = resolveCanonicalWorkspacePath('my-mini-wsp', homeDir);
 
     expect(isLegacyWorkspacePath(legacyWorkspace, homeDir)).toBe(true);
+    expect(isLegacyWorkspacePath(olderLegacyWorkspace, homeDir)).toBe(true);
     expect(isLegacyWorkspacePath(canonicalWorkspace, homeDir)).toBe(false);
     expect(isCanonicalWorkspacePath(canonicalWorkspace, homeDir)).toBe(true);
     expect(isCanonicalWorkspacePath(legacyWorkspace, homeDir)).toBe(false);
@@ -96,7 +103,7 @@ describe('workspacePaths', () => {
   it('resolves new workspaces under the canonical parent by default', () => {
     const homeDir = '/home/test-user';
     expect(resolveNewWorkspacePath('my-mini-wsp', { homeDir })).toBe(
-      path.join(homeDir, 'rapidkit', 'workspaces', 'my-mini-wsp')
+      path.join(homeDir, '.workspai', 'workspaces', 'my-mini-wsp')
     );
   });
 

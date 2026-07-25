@@ -56,7 +56,7 @@ export function buildCopilotChatContextPrompt(userQuestion?: string): string {
 
 export function buildCopilotChatModelPrompt(): string {
   return [
-    '#file:.rapidkit/reports/workspace-model.json',
+    '#file:.workspai/reports/workspace-model.json',
     '',
     'Use this workspace model graph as the source of truth for project layout and commands.',
   ].join('\n');

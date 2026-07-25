@@ -17,11 +17,11 @@ export async function isFirstTimeSetup(): Promise<boolean> {
 
   const linkedVersion = await resolveLinkedCliVersion();
   if (linkedVersion) {
-    logger.debug(`RapidKit CLI detected for first-time setup: ${linkedVersion}`);
+    logger.debug(`Workspai CLI detected for first-time setup: ${linkedVersion}`);
     return false;
   }
 
-  // Check if rapidkit npm is available (cached by npx)
+  // Check if Workspai npm is available (cached by npx).
   try {
     const result = await run('npx', buildNpxRapidkitArgs(['--version']), {
       timeout: 10_000,
@@ -29,10 +29,10 @@ export async function isFirstTimeSetup(): Promise<boolean> {
     });
 
     const isCached = result.exitCode === 0 && result.stdout?.trim();
-    logger.debug(`RapidKit npm cached: ${isCached}`);
+    logger.debug(`Workspai npm cached: ${isCached}`);
     return !isCached;
   } catch {
-    logger.debug('RapidKit npm not cached, first-time setup');
+    logger.debug('Workspai npm not cached, first-time setup');
     return true;
   }
 }
@@ -51,7 +51,7 @@ export async function showFirstTimeSetupMessage(): Promise<boolean> {
   const message =
     '👋 Welcome to Workspai!\n\n' +
     'First-time setup will:\n' +
-    '  • Download RapidKit CLI (~5-10 seconds)\n' +
+    '  • Download Workspai CLI (~5-10 seconds)\n' +
     '  • Create a Python virtual environment\n' +
     '  • Install RapidKit Core engine\n\n' +
     'This may take 30-60 seconds. Ready to continue?';
@@ -89,7 +89,7 @@ export function getFirstTimeProgressMessage(
   stage: 'download' | 'venv' | 'core' | 'validate'
 ): string {
   const messages = {
-    download: 'Downloading RapidKit CLI from npm (first time only)...',
+    download: 'Downloading Workspai CLI from npm (first time only)...',
     venv: 'Creating Python virtual environment...',
     core: 'Installing RapidKit Core engine (this may take a minute)...',
     validate: 'Validating workspace setup...',
@@ -118,7 +118,7 @@ export async function estimateFirstTimeSetupDuration(): Promise<string> {
 async function checkNetworkSpeed(): Promise<boolean> {
   try {
     const start = Date.now();
-    const response = await fetch('https://registry.npmjs.org/rapidkit/latest', {
+    const response = await fetch('https://registry.npmjs.org/workspai/latest', {
       method: 'HEAD',
       signal: AbortSignal.timeout(3000),
     });

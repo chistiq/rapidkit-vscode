@@ -21,6 +21,9 @@ describe('incidentCliActionMatrix', () => {
     const agentContext = buildIncidentCliActionMatrix(false).workspace.find(
       (entry) => entry.id === 'workspace-context-agent-json'
     );
+    const archive = buildIncidentCliActionMatrix(false).workspace.find(
+      (entry) => entry.id === 'workspace-archive'
+    );
 
     expect(chain?.command).toBe(buildIntelligenceChainCliSnippet());
     expect(chain?.command).toContain(
@@ -33,8 +36,11 @@ describe('incidentCliActionMatrix', () => {
     expect(chain?.command).not.toContain('--for-agent cursor');
 
     expect(verify?.command).toBe(
-      `npx rapidkit workspace verify --from-impact ${WORKSPACE_IMPACT_REPORT_PATH} --json`
+      `npx workspai workspace verify --from-impact ${WORKSPACE_IMPACT_REPORT_PATH} --json`
     );
-    expect(agentContext?.command).toBe('npx rapidkit workspace context --for-agent --json --write');
+    expect(agentContext?.command).toBe('npx workspai workspace context --for-agent --json --write');
+    expect(archive?.command).toBe(
+      'npx workspai workspace export --output team-workspace.rapidkit-archive.zip --json'
+    );
   });
 });

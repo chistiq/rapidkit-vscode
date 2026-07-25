@@ -1,7 +1,7 @@
 import type * as vscode from 'vscode';
 
 import type { StudioBlockerHandoff } from '../../contracts/studio-blocker-handoff-contract.js';
-import type { SidebarPatchBridgeResult } from '../../core/sidebarStudioPatchBridge.js';
+import type { StudioPatchTransactionResult } from '../../core/studioPatchTransaction.js';
 import type { FilePatch } from '../../core/patchApplyEngine.js';
 import type { SidebarStudioPatchAuditMetadata } from '../../core/sidebarStudioAuditBridge.js';
 import type { StudioSidebarDashboardRefreshResult } from '../../core/studioSidebarDashboardRefresh.js';
@@ -17,12 +17,13 @@ export type ActionsWebviewStudioActionHost = {
   runSidebarAutoFix: (
     handoff: StudioBlockerHandoff,
     sessionId?: string,
-    payloadScope?: unknown
+    payloadScope?: unknown,
+    requestedModelId?: string
   ) => Promise<void>;
-  finalizeSidebarPatchBridgeResult: (
+  finalizeStudioPatchTransaction: (
     handoff: StudioBlockerHandoff,
     sessionId: string | undefined,
-    result: SidebarPatchBridgeResult,
+    result: StudioPatchTransactionResult,
     sourceAction: 'auto-fix' | 'apply-patch',
     scope?: { workspacePath?: string; projectPath?: string }
   ) => Promise<void>;

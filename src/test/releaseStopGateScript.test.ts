@@ -217,12 +217,12 @@ describe('extension package build contract', () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
     const scripts = packageJson.scripts ?? {};
 
-    expect(scripts['vscode:prepublish']).toBe('npm run build');
-    expect(scripts.prepackage).toBe('npm run build');
-    expect(scripts.build).toContain('npm run esbuild-base -- --production');
-    expect(scripts.build).toContain('npm run webview:build:production');
-    expect(scripts['webview:build:production']).toContain('npm run build -- --production');
-    expect(scripts.build).not.toContain('cd webview-ui && npm run build"');
+    expect(scripts['vscode:prepublish']).toBe('corepack npm run build');
+    expect(scripts.prepackage).toBe('corepack npm run build');
+    expect(scripts.build).toContain('corepack npm run esbuild-base -- --production');
+    expect(scripts.build).toContain('corepack npm run webview:build:production');
+    expect(scripts['webview:build:production']).toContain('corepack npm run build -- --production');
+    expect(scripts.build).not.toContain('cd webview-ui && corepack npm run build"');
   });
 });
 

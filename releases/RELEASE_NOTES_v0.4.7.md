@@ -130,4 +130,4 @@ See [CHANGELOG.md](../CHANGELOG.md) for complete version history.
 
 ## 🐛 Report Issues
 
-Found a bug? [Open an issue](https://github.com/rapidkitlabs/rapidkit-vscode/issues) on GitHub.
+Found a bug? [Open an issue](https://github.com/chistiq/rapidkit-vscode/issues) on GitHub.

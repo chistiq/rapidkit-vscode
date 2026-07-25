@@ -123,4 +123,38 @@ describe('importedProjectsRegistry', () => {
     const entries = await readImportedProjectsRegistry(workspacePath);
     expect(entries).toEqual([]);
   });
+
+  it('prefers the canonical .workspai registry and writes new state there', async () => {
+    const workspacePath = await createWorkspace();
+    const canonicalPath = path.join(workspacePath, '.workspai', 'imported-projects.json');
+    const legacyPath = path.join(workspacePath, '.rapidkit', 'imported-projects.json');
+    const baseEntry = {
+      path: path.join(workspacePath, 'web'),
+      stack: 'nextjs' as const,
+      confidence: 'high' as const,
+      importedAt: '2026-07-21T00:00:00.000Z',
+    };
+    await fs.ensureDir(path.dirname(legacyPath));
+    await fs.writeJSON(legacyPath, {
+      version: 1,
+      updatedAt: '2026-07-21T00:00:00.000Z',
+      projects: [{ ...baseEntry, name: 'legacy' }],
+    });
+    await fs.ensureDir(path.dirname(canonicalPath));
+    await fs.writeJSON(canonicalPath, {
+      version: 1,
+      updatedAt: '2026-07-21T00:00:00.000Z',
+      projects: [{ ...baseEntry, name: 'canonical' }],
+    });
+
+    expect(await readImportedProjectsRegistry(workspacePath)).toMatchObject([
+      { name: 'canonical' },
+    ]);
+
+    await upsertImportedProjectsRegistry(workspacePath, [
+      { ...baseEntry, name: 'updated', source: 'adopted-local' },
+    ]);
+    expect(await fs.pathExists(canonicalPath)).toBe(true);
+    expect((await fs.readJSON(canonicalPath)).projects[0].name).toBe('updated');
+  });
 });

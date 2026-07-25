@@ -99,9 +99,9 @@ export async function sendExampleWorkspaces(
         }
 
         const repoUrl = example.path
-          ? `https://github.com/rapidkitlabs/rapidkit-examples/tree/main/${example.path}`
-          : 'https://github.com/rapidkitlabs/rapidkit-examples';
-        const cloneUrl = 'https://github.com/rapidkitlabs/rapidkit-examples';
+          ? `https://github.com/chistiq/rapidkit-examples/tree/main/${example.path}`
+          : 'https://github.com/chistiq/rapidkit-examples';
+        const cloneUrl = 'https://github.com/chistiq/rapidkit-examples';
 
         return {
           ...example,

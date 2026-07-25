@@ -45,18 +45,19 @@ export const SHIP_LOOP_STEP_DEFINITIONS: Record<ShipLoopStepId, ShipLoopStepDefi
   readiness: {
     id: 'readiness',
     kind: 'inline-command',
-    inlineCommand: 'npx rapidkit readiness --json',
+    inlineCommand: 'npx workspai readiness --json',
   },
   archive: {
     id: 'archive',
     kind: 'inline-command',
-    inlineCommand: 'npx rapidkit workspace archive',
+    inlineCommand:
+      'npx workspai workspace export --output team-workspace.rapidkit-archive.zip --json',
     mutating: true,
   },
   'autopilot-release': {
     id: 'autopilot-release',
     kind: 'inline-command',
-    inlineCommand: 'npx rapidkit autopilot release',
+    inlineCommand: 'npx workspai autopilot release',
     mutating: true,
   },
 };

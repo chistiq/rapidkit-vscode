@@ -93,6 +93,23 @@ export interface SidebarPersistedState {
   workspaiStudio?: { sessions: ChatSession[]; activeId: string | null };
 }
 
+const MAX_PERSISTED_SESSIONS = 24;
+const MAX_PERSISTED_MESSAGES_PER_SESSION = 24;
+const MAX_PERSISTED_MESSAGE_CHARS = 24_000;
+
+function compactPersistedSessions(sessions: ChatSession[]): ChatSession[] {
+  return sessions.slice(0, MAX_PERSISTED_SESSIONS).map((session) => ({
+    ...session,
+    messages: session.messages.slice(-MAX_PERSISTED_MESSAGES_PER_SESSION).map((message) => ({
+      ...message,
+      content:
+        message.content.length > MAX_PERSISTED_MESSAGE_CHARS
+          ? message.content.slice(-MAX_PERSISTED_MESSAGE_CHARS)
+          : message.content,
+    })),
+  }));
+}
+
 export function newSessionId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -192,7 +209,7 @@ export function persistSessions(
   activeId: string | null
 ): void {
   const state = readState();
-  state[key] = { sessions, activeId };
+  state[key] = { sessions: compactPersistedSessions(sessions), activeId };
   vscode.setState(state);
 }
 

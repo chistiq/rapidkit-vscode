@@ -24,11 +24,16 @@ import {
 } from '@/components/DashboardModuleCatalogSurface';
 import { DashboardSubNav } from '@/components/DashboardSubNav';
 import { DashboardContextBar } from '@/components/DashboardContextBar';
-import { FreshInstallOnboarding } from '@/components/FreshInstallOnboarding';
 import { HomeCreateHandoff } from '@/components/HomeCreateHandoff';
 import { HomeImportAdoptHandoff } from '@/components/HomeImportAdoptHandoff';
 import { DashboardEvidenceArtifactsSection } from '@/components/DashboardEvidenceArtifactsSection';
 import { DashboardRepairPanel } from '@/components/DashboardRepairPanel';
+import { WorkspaceGraphExplorer } from '@/components/WorkspaceGraphExplorer';
+import type { WorkspaceGraphProjection } from '@workspai-contracts/workspaceGraphProjection';
+import type {
+  WorkspaceGraphRecordingFrameInput,
+  WorkspaceGraphRecordingState,
+} from '@workspai-contracts/workspaceGraphRecording';
 import { DashboardOperatePanel } from '@/components/DashboardOperatePanel';
 import {
   DashboardOverviewSection,
@@ -39,9 +44,7 @@ import { ProjectActions } from '@/components/ProjectActions';
 import { WorkspaiEmptyState } from '@/components/WorkspaiEmptyState';
 import { Footer } from '@/components/Footer';
 import { SetupExperience } from '@/components/SetupExperience';
-import {
-  type IncidentProjectSelection,
-} from '@/lib/incidentStudioPayload';
+import { type IncidentProjectSelection } from '@/lib/incidentStudioPayload';
 import { AICreateModal, AICreationPlan, AICreateFramework } from '@/components/AICreateModal';
 import { CreateWorkspaceModal, WorkspaceCreationConfig } from '@/components/CreateWorkspaceModal';
 import { CreateProjectModal } from '@/components/CreateProjectModal';
@@ -102,10 +105,10 @@ import type {
   DashboardEvidencePayload,
 } from '@/lib/dashboardEvidence';
 import {
-  countEvidenceAttention,
   countOperateAttention,
   filterOpsChainForActiveWorkspace,
 } from '@/lib/dashboardEvidence';
+import { countEvidenceAttentionBuckets } from '@/lib/evidenceAgentContext';
 import {
   applyDashboardCommandFailures,
   successfulEvidenceCardIds,
@@ -119,7 +122,6 @@ import {
   buildDashboardDispatchMessages,
 } from '@/lib/dashboardDispatch';
 import { dashboardWorkspaceScope } from '@/lib/dashboardScopePolicy';
-import { buildDashboardDay0Funnel } from '@/lib/dashboardDay0Funnel';
 
 function normalizeAvailableModels(
   raw: unknown
@@ -282,6 +284,23 @@ export function App() {
   const requestedOperateZoneRef = useRef<DashboardOperateZone | null>(requestedOperateZone);
   requestedOperateZoneRef.current = requestedOperateZone;
   const [dashboardEvidence, setDashboardEvidence] = useState<DashboardEvidencePayload | null>(null);
+  const [liveWorkspaceGraph, setLiveWorkspaceGraph] = useState<WorkspaceGraphProjection | null>(
+    null
+  );
+  const [workspaceGraphStreamStatus, setWorkspaceGraphStreamStatus] = useState('stopped');
+  const [workspaceGraphStreamStats, setWorkspaceGraphStreamStats] = useState<{
+    received: number;
+    emitted: number;
+    coalesced: number;
+  } | null>(null);
+  const [workspaceGraphMemorySample, setWorkspaceGraphMemorySample] = useState<{
+    estimatedBytes: number;
+    budgetBytes: number;
+    utilizationRatio: number;
+    exceeded: boolean;
+  } | null>(null);
+  const [workspaceGraphRecordingState, setWorkspaceGraphRecordingState] =
+    useState<WorkspaceGraphRecordingState | null>(null);
   const dashboardEvidenceRef = useRef<DashboardEvidencePayload | null>(dashboardEvidence);
   const effectiveDashboardEvidence = useMemo(
     () => applyDashboardCommandFailures(dashboardEvidence, dashboardCommandFailures),
@@ -461,7 +480,10 @@ export function App() {
     workspaceStatus.workspacePath || selectedWorkspaceForAnalysis || null;
   const visibleOpsChain = useMemo(
     () =>
-      filterOpsChainForActiveWorkspace(effectiveDashboardEvidence?.opsChain, activeDashboardWorkspacePath),
+      filterOpsChainForActiveWorkspace(
+        effectiveDashboardEvidence?.opsChain,
+        activeDashboardWorkspacePath
+      ),
     [effectiveDashboardEvidence?.opsChain, activeDashboardWorkspacePath]
   );
   const opsChainBlockedCardIdByStep: Record<DashboardOpsChainStep, DashboardEvidenceCardId> = {
@@ -514,8 +536,16 @@ export function App() {
         contextWorkspacePath ||
         currentWorkspacePath ||
         undefined,
-      projectPath: contextProjectPath || selectedProjectForAnalysisRef.current?.path || undefined,
-      projectName: contextProjectName || selectedProjectForAnalysisRef.current?.name || undefined,
+      projectPath:
+        contextProjectPath ||
+        selectedProjectForAnalysisRef.current?.path ||
+        currentWorkspaceStatus.projectPath ||
+        undefined,
+      projectName:
+        contextProjectName ||
+        selectedProjectForAnalysisRef.current?.name ||
+        currentWorkspaceStatus.projectName ||
+        undefined,
     };
   }, []);
   const requestDashboardEvidenceFull = useCallback(
@@ -599,34 +629,42 @@ export function App() {
       value: resetSection,
     });
   }, []);
-  const clearDashboardCommandFailuresForCards = useCallback((cardIds: DashboardEvidenceCardId[]) => {
-    if (cardIds.length === 0) {
-      return;
-    }
-    const cardIdSet = new Set(cardIds);
-    setDashboardCommandFailures((current) => {
-      let changed = false;
-      const next: DashboardCommandFailureMap = {};
-      for (const [cardId, failure] of Object.entries(current) as Array<
-        [DashboardEvidenceCardId, DashboardCommandFailure]
-      >) {
-        if (cardIdSet.has(cardId)) {
-          changed = true;
-          continue;
-        }
-        next[cardId] = failure;
+  const clearDashboardCommandFailuresForCards = useCallback(
+    (cardIds: DashboardEvidenceCardId[]) => {
+      if (cardIds.length === 0) {
+        return;
       }
-      return changed ? next : current;
-    });
-  }, []);
-  const reconcilePendingEvidenceCards = useCallback((payload?: DashboardEvidencePayload | null) => {
-    setPendingEvidenceCardIds((current) => reconcilePendingEvidenceCardIds(current, payload));
-    setPendingEvidenceRefreshCardIds((current) => reconcilePendingEvidenceCardIds(current, payload));
-    clearDashboardCommandFailuresForCards(successfulEvidenceCardIds(payload));
-    if (payload?.refreshMode === 'full') {
-      setIsEvidenceFullRefreshPending(false);
-    }
-  }, [clearDashboardCommandFailuresForCards]);
+      const cardIdSet = new Set(cardIds);
+      setDashboardCommandFailures((current) => {
+        let changed = false;
+        const next: DashboardCommandFailureMap = {};
+        for (const [cardId, failure] of Object.entries(current) as Array<
+          [DashboardEvidenceCardId, DashboardCommandFailure]
+        >) {
+          if (cardIdSet.has(cardId)) {
+            changed = true;
+            continue;
+          }
+          next[cardId] = failure;
+        }
+        return changed ? next : current;
+      });
+    },
+    []
+  );
+  const reconcilePendingEvidenceCards = useCallback(
+    (payload?: DashboardEvidencePayload | null) => {
+      setPendingEvidenceCardIds((current) => reconcilePendingEvidenceCardIds(current, payload));
+      setPendingEvidenceRefreshCardIds((current) =>
+        reconcilePendingEvidenceCardIds(current, payload)
+      );
+      clearDashboardCommandFailuresForCards(successfulEvidenceCardIds(payload));
+      if (payload?.refreshMode === 'full') {
+        setIsEvidenceFullRefreshPending(false);
+      }
+    },
+    [clearDashboardCommandFailuresForCards]
+  );
   const scheduleDashboardEvidenceFullRefresh = useCallback(
     (context?: Record<string, unknown>) => {
       dashboardEvidenceRefreshSchedulerRef.current.scheduleFull(() =>
@@ -710,6 +748,27 @@ export function App() {
     ]
   );
 
+  const copyEvidenceCardAgentHandoff = useCallback(
+    (card: DashboardEvidenceCard) => {
+      if (!workspaceStatus.workspacePath) {
+        vscode.postMessage('quickSwitchWorkspace');
+        return;
+      }
+      vscode.postMessage(
+        'copyEvidenceAgentHandoff',
+        buildEvidenceActionContract(card).copilotPayload
+      );
+    },
+    [
+      activeWorkspaceName,
+      effectiveDashboardEvidence?.projectName,
+      effectiveDashboardEvidence?.projectPath,
+      selectedProjectForAnalysis?.name,
+      selectedProjectForAnalysis?.path,
+      workspaceStatus.workspacePath,
+    ]
+  );
+
   const showWorkspaiEvidenceOutput = useCallback(() => {
     vscode.postMessage('showWorkspaiEvidenceOutput');
   }, []);
@@ -774,12 +833,14 @@ export function App() {
     }
   };
   const handleDashboardCommand = dispatchDashboardCommand;
-  const isFreshInstall =
-    effectiveDashboardEvidence?.onboarding?.isFreshInstall ??
-    (recentWorkspaces.length === 0 && !hasActiveWorkspace);
-  const setupRecoveryNeeded = installStatusChecked && !installStatus.coreInstalled;
+  const isEmptyWorkspaceHome = dashboardSection === 'overview' && !hasActiveWorkspace;
+  const showDashboardContextBar = dashboardSection !== 'catalog' && hasActiveWorkspace;
+  const showOverviewDiagnostics = dashboardSection === 'overview' && hasActiveWorkspace;
   const evidenceAttentionCount = useMemo(
-    () => countEvidenceAttention(effectiveDashboardEvidence),
+    () => {
+      const buckets = countEvidenceAttentionBuckets(effectiveDashboardEvidence);
+      return buckets.blocked + buckets.attention;
+    },
     [effectiveDashboardEvidence]
   );
   const operateAttentionCount = useMemo(
@@ -790,14 +851,6 @@ export function App() {
         mirrorStatus: activeWorkspace?.mirrorStatus,
       }),
     [effectiveDashboardEvidence, activeWorkspace?.complianceStatus, activeWorkspace?.mirrorStatus]
-  );
-  const day0Funnel = useMemo(
-    () =>
-      buildDashboardDay0Funnel({
-        workspaceStatus,
-        evidence: effectiveDashboardEvidence,
-      }),
-    [workspaceStatus, effectiveDashboardEvidence]
   );
   const dashboardScope = useMemo(
     () =>
@@ -977,6 +1030,13 @@ export function App() {
         case 'dashboardEvidence': {
           const incoming = (message.data ?? null) as DashboardEvidencePayload | null;
           const activeWorkspacePath = workspaceStatusRef.current.workspacePath;
+          const activeProjectPath =
+            typeof workspaceStatusRef.current.projectPath === 'string' &&
+            workspaceStatusRef.current.projectPath.trim().length > 0
+              ? workspaceStatusRef.current.projectPath.trim()
+              : workspaceStatusRef.current.hasProjectSelected !== false
+                ? selectedProjectForAnalysisRef.current?.path
+                : undefined;
 
           if (
             incoming?.workspacePath &&
@@ -991,6 +1051,7 @@ export function App() {
               const merged = current
                 ? applyDashboardEvidenceMessage(current, incoming, {
                     activeWorkspacePath,
+                    activeProjectPath,
                     allowMissingRequestId: true,
                   })
                 : incoming;
@@ -1021,6 +1082,7 @@ export function App() {
               applyDashboardEvidenceMessage(current, incoming, {
                 expectedRequestId: incoming?.requestId,
                 activeWorkspacePath,
+                activeProjectPath,
                 allowMissingRequestId: true,
               }) ?? incoming;
             if (incoming?.requestId !== null && incoming?.requestId !== undefined) {
@@ -1031,14 +1093,53 @@ export function App() {
           });
           break;
         }
+        case 'workspaceGraphProjectionLive': {
+          const projection = message.data?.projection as WorkspaceGraphProjection | undefined;
+          if (projection?.schemaVersion === 'workspace-graph-projection.v1') {
+            setLiveWorkspaceGraph(projection);
+          }
+          const streamStats = message.data?.streamStats;
+          if (
+            typeof streamStats?.received === 'number' &&
+            typeof streamStats?.emitted === 'number' &&
+            typeof streamStats?.coalesced === 'number'
+          ) {
+            setWorkspaceGraphStreamStats(streamStats);
+          }
+          break;
+        }
+        case 'workspaceGraphStreamStatus':
+          setWorkspaceGraphStreamStatus(
+            typeof message.data?.status === 'string' ? message.data.status : 'error'
+          );
+          break;
+        case 'workspaceGraphMemorySample': {
+          const sample = message.data;
+          if (
+            typeof sample?.estimatedBytes === 'number' &&
+            typeof sample?.budgetBytes === 'number' &&
+            typeof sample?.utilizationRatio === 'number' &&
+            typeof sample?.exceeded === 'boolean'
+          ) {
+            setWorkspaceGraphMemorySample(sample);
+          }
+          break;
+        }
+        case 'workspaceGraphRecordingState': {
+          const state = message.data as WorkspaceGraphRecordingState | undefined;
+          if (state?.schemaVersion === 'workspace-graph-recording.v1') {
+            setWorkspaceGraphRecordingState(state);
+          }
+          break;
+        }
         case 'dashboardCommandFailed': {
           const failedCommand =
             typeof message.data?.command === 'string' ? message.data.command : undefined;
           const failureReason =
             typeof message.data?.reason === 'string' ? message.data.reason.trim() : '';
           const failedCardIds = Array.isArray(message.data?.cardIds)
-            ? message.data.cardIds.filter((cardId): cardId is DashboardEvidenceCardId =>
-                typeof cardId === 'string'
+            ? message.data.cardIds.filter(
+                (cardId: unknown): cardId is DashboardEvidenceCardId => typeof cardId === 'string'
               )
             : failedCommand
               ? getDashboardCommandAffectedEvidenceCards(failedCommand)
@@ -1056,7 +1157,8 @@ export function App() {
               : undefined;
           if (failureReason.length > 0 && failedCardIds.length === 0) {
             setDashboardCommandNotice({
-              title: exitCode === undefined ? 'Dashboard command blocked' : 'Dashboard command failed',
+              title:
+                exitCode === undefined ? 'Dashboard command blocked' : 'Dashboard command failed',
               body: failureReason,
               exitCode,
               stderrTail,
@@ -1375,6 +1477,17 @@ export function App() {
   }, [showCreateModal]);
 
   useEffect(() => {
+    const workspacePath = workspaceStatus.workspacePath;
+    if (dashboardSection !== 'graph' || !workspacePath) {
+      setLiveWorkspaceGraph(null);
+      vscode.postMessage('stopWorkspaceGraphStream');
+      return;
+    }
+    vscode.postMessage('startWorkspaceGraphStream', { workspacePath });
+    return () => vscode.postMessage('stopWorkspaceGraphStream');
+  }, [dashboardSection, workspaceStatus.workspacePath]);
+
+  useEffect(() => {
     if (showProjectModal) {
       vscode.postMessage('requestWorkspaceToolStatus');
       // On-demand refresh: prevents first-open race where project modal appears
@@ -1674,28 +1787,34 @@ export function App() {
                   </WorkspaiBanner>
                 ) : null}
 
-                <DashboardContextBar
-                  scope={dashboardScope}
-                  showProjectScope={dashboardSection === 'console' || dashboardSection === 'catalog'}
-                  showScopePaths={dashboardSectionShowsScopePaths(dashboardSection)}
-                  onSwitchWorkspace={() => handleDashboardCommand('quickSwitchWorkspace')}
-                  onOpenWorkspaceInNewWindow={() =>
-                    vscode.postMessage('openWorkspaceInNewWindow', { path: workspaceStatus.workspacePath })
-                  }
-                  onRevealWorkspaceFolder={() =>
-                    vscode.postMessage('revealWorkspaceFolder', { path: workspaceStatus.workspacePath })
-                  }
-                  onOpenWorkspaces={() =>
-                    updateDashboardSection('catalog', { navigationSource: 'context_bar' })
-                  }
-                  onOpenProject={() =>
-                    updateDashboardSection('console', { navigationSource: 'context_bar' })
-                  }
-                  onFocusProjectExplorer={() => vscode.postMessage('focusProjectExplorer')}
-                />
+                {showDashboardContextBar ? (
+                  <DashboardContextBar
+                    scope={dashboardScope}
+                    showProjectScope={dashboardSection === 'console'}
+                    showScopePaths={dashboardSectionShowsScopePaths(dashboardSection)}
+                    onSwitchWorkspace={() => handleDashboardCommand('quickSwitchWorkspace')}
+                    onOpenWorkspaceInNewWindow={() =>
+                      vscode.postMessage('openWorkspaceInNewWindow', {
+                        path: workspaceStatus.workspacePath,
+                      })
+                    }
+                    onRevealWorkspaceFolder={() =>
+                      vscode.postMessage('revealWorkspaceFolder', {
+                        path: workspaceStatus.workspacePath,
+                      })
+                    }
+                    onOpenWorkspaces={() =>
+                      updateDashboardSection('catalog', { navigationSource: 'context_bar' })
+                    }
+                    onOpenProject={() =>
+                      updateDashboardSection('console', { navigationSource: 'context_bar' })
+                    }
+                    onFocusProjectExplorer={() => vscode.postMessage('focusProjectExplorer')}
+                  />
+                ) : null}
               </div>
 
-              {dashboardSection === 'overview' && !isFreshInstall && !setupRecoveryNeeded ? (
+              {dashboardSection === 'overview' ? (
                 <div className="home-onboarding-handoffs">
                   <HomeCreateHandoff
                     workspaceStatus={workspaceStatus}
@@ -1708,18 +1827,6 @@ export function App() {
                     onRunCommand={handleDashboardCommand}
                   />
                 </div>
-              ) : null}
-
-              {dashboardSection === 'overview' && (isFreshInstall || setupRecoveryNeeded) ? (
-                <FreshInstallOnboarding
-                  templateCount={exampleWorkspaces.length}
-                  mode={!isFreshInstall && setupRecoveryNeeded ? 'resume-setup' : 'fresh'}
-                  onOpenSetup={openSetupInDashboard}
-                  onCreateWithAI={handleOpenAICreateWorkspace}
-                  onBrowseCatalog={() =>
-                    updateDashboardSection('catalog', { navigationSource: 'onboarding' })
-                  }
-                />
               ) : null}
 
               {dashboardSection === 'operate' &&
@@ -1754,14 +1861,13 @@ export function App() {
                 />
               ) : null}
 
-              {dashboardSection === 'overview' ? (
+              {showOverviewDiagnostics ? (
                 <DashboardOverviewSection
                   workspaceStatus={workspaceStatus}
                   evidence={effectiveDashboardEvidence}
                   importedWorkspaceShare={importedWorkspaceShare}
                   evidenceAttentionCount={evidenceAttentionCount}
                   operateAttentionCount={operateAttentionCount}
-                  day0Funnel={day0Funnel}
                   onDismissImportedWorkspaceShare={() => setImportedWorkspaceShare(null)}
                   onOpenEvidence={() =>
                     updateDashboardSection('repair', { navigationSource: 'home_metric' })
@@ -1796,11 +1902,13 @@ export function App() {
                   onRefreshEvidenceCard={(cardId) => refreshDashboardEvidenceCard([cardId])}
                   onAskStudioAboutCard={askStudioAboutEvidenceCard}
                   onSendEvidenceToCopilot={sendEvidenceCardToCopilot}
+                  onCopyEvidenceAgentHandoff={copyEvidenceCardAgentHandoff}
                   onShowEvidenceOutput={showWorkspaiEvidenceOutput}
                   onRevealArtifact={(artifactPath) =>
                     vscode.postMessage('revealEvidence', {
                       path: artifactPath,
                       workspacePath: workspaceStatus.workspacePath,
+                      projectPath: dashboardProjectPath,
                     })
                   }
                   onOpenRunZone={openRunZone}
@@ -1831,12 +1939,14 @@ export function App() {
                   onRefreshEvidenceCard={(cardId) => refreshDashboardEvidenceCard([cardId])}
                   onAskStudioAboutCard={askStudioAboutEvidenceCard}
                   onSendEvidenceToCopilot={sendEvidenceCardToCopilot}
+                  onCopyEvidenceAgentHandoff={copyEvidenceCardAgentHandoff}
                   onShowEvidenceOutput={showWorkspaiEvidenceOutput}
                   onClearActivity={() => vscode.postMessage('clearDashboardActivity')}
                   onRevealArtifact={(artifactPath) =>
                     vscode.postMessage('revealEvidence', {
                       path: artifactPath,
                       workspacePath: workspaceStatus.workspacePath,
+                      projectPath: dashboardProjectPath,
                     })
                   }
                   onOpenIncidentStudio={openStudioForEvidence}
@@ -1856,6 +1966,47 @@ export function App() {
                     updateDashboardSection(section, { navigationSource: 'evidence' });
                   }}
                   onOpenRunZone={openRunZone}
+                />
+              ) : null}
+
+              {dashboardSection === 'graph' ? (
+                <WorkspaceGraphExplorer
+                  evidence={effectiveDashboardEvidence}
+                  liveGraph={liveWorkspaceGraph}
+                  streamStatus={workspaceGraphStreamStatus}
+                  streamStats={workspaceGraphStreamStats}
+                  memorySample={workspaceGraphMemorySample}
+                  recordingState={workspaceGraphRecordingState}
+                  workspacePath={workspaceStatus.workspacePath}
+                  hasWorkspace={hasActiveWorkspace}
+                  onRefresh={() => handleDashboardCommand('workspaceModel')}
+                  onSearchCanonical={() => handleDashboardCommand('workspaceGraphSearch')}
+                  onExport={(format) =>
+                    handleDashboardCommand(
+                      format === 'jsonld'
+                        ? 'workspaceGraphExportJsonLd'
+                        : format === 'graphml'
+                          ? 'workspaceGraphExportGraphMl'
+                          : 'workspaceGraphExportGexf'
+                    )
+                  }
+                  onRevealArtifact={(artifactPath) =>
+                    vscode.postMessage('revealEvidence', {
+                      path: artifactPath,
+                      workspacePath: workspaceStatus.workspacePath,
+                      projectPath: dashboardProjectPath,
+                    })
+                  }
+                  onStartRecording={(input) =>
+                    vscode.postMessage('startWorkspaceGraphRecording', input)
+                  }
+                  onAppendRecordingFrame={(input: WorkspaceGraphRecordingFrameInput) =>
+                    vscode.postMessage('appendWorkspaceGraphRecordingFrame', input)
+                  }
+                  onStopRecording={(input) =>
+                    vscode.postMessage('stopWorkspaceGraphRecording', input)
+                  }
+                  onOpenRecording={() => vscode.postMessage('openWorkspaceGraphRecording')}
                 />
               ) : null}
 
@@ -1955,7 +2106,7 @@ export function App() {
                   aria-labelledby="dashboard-tab-console"
                   className="ws-dashboard-panel ws-dashboard-panel--console"
                 >
-                  {!workspaceStatus.hasProjectSelected ? (
+                  {!hasDashboardProject ? (
                     <WorkspaiEmptyState
                       icon={<LayoutDashboard size={18} />}
                       title="No project selected"
@@ -2003,6 +2154,9 @@ export function App() {
                         onStop={() => dispatchDashboardCommand('projectStop')}
                         onTest={() => dispatchDashboardCommand('projectTest')}
                         onDoctor={() => dispatchDashboardCommand('projectDoctor')}
+                        onDoctorFix={() =>
+                          dispatchDashboardCommand('projectDoctor', { preferredAction: 'fix' })
+                        }
                         onArchitecture={() => dispatchDashboardCommand('projectArchitecture')}
                         onIncident={() => dispatchDashboardCommand('projectIncident')}
                         onAI={() => dispatchDashboardCommand('projectAI')}
@@ -2016,38 +2170,39 @@ export function App() {
                           vscode.postMessage('revealEvidence', {
                             path: artifactPath,
                             workspacePath: workspaceStatus.workspacePath,
+                            projectPath: dashboardProjectPath,
                           })
                         }
                       />
-                      {dashboardModulesReady
-                        ? (
-                          <DashboardModuleCatalogSurface
-                            {...dashboardModuleCatalogSurfaceProps}
-                            surface="console"
-                            onModuleDiff={(module) =>
-                              dispatchDashboardCommand('moduleDiff', {
-                                moduleSlug: module.slug,
-                                preferNonInteractive: true,
-                                ...workspaceCommandPayload(),
-                              })
-                            }
-                            onModuleRollback={(module) =>
-                              dispatchDashboardCommand('moduleRollback', {
-                                moduleSlug: module.slug,
-                                preferNonInteractive: true,
-                                ...workspaceCommandPayload(),
-                              })
-                            }
-                            onModuleUninstall={(module) =>
-                              dispatchDashboardCommand('moduleUninstall', {
-                                moduleSlug: module.slug,
-                                preferNonInteractive: true,
-                                ...workspaceCommandPayload(),
-                              })
-                            }
-                          />
-                        )
-                        : <DashboardCatalogLoadingShell variant="modules" />}
+                      {dashboardModulesReady ? (
+                        <DashboardModuleCatalogSurface
+                          {...dashboardModuleCatalogSurfaceProps}
+                          surface="console"
+                          onModuleDiff={(module) =>
+                            dispatchDashboardCommand('moduleDiff', {
+                              moduleSlug: module.slug,
+                              preferNonInteractive: true,
+                              ...workspaceCommandPayload(),
+                            })
+                          }
+                          onModuleRollback={(module) =>
+                            dispatchDashboardCommand('moduleRollback', {
+                              moduleSlug: module.slug,
+                              preferNonInteractive: true,
+                              ...workspaceCommandPayload(),
+                            })
+                          }
+                          onModuleUninstall={(module) =>
+                            dispatchDashboardCommand('moduleUninstall', {
+                              moduleSlug: module.slug,
+                              preferNonInteractive: true,
+                              ...workspaceCommandPayload(),
+                            })
+                          }
+                        />
+                      ) : (
+                        <DashboardCatalogLoadingShell variant="modules" />
+                      )}
                     </>
                   )}
                 </div>
@@ -2135,14 +2290,14 @@ export function App() {
                         updatingExample={updatingExample}
                       />
 
-                      {dashboardModulesReady
-                        ? (
-                          <DashboardModuleCatalogSurface
-                            {...dashboardModuleCatalogSurfaceProps}
-                            surface="catalog"
-                          />
-                        )
-                        : <DashboardCatalogLoadingShell variant="modules" />}
+                      {dashboardModulesReady ? (
+                        <DashboardModuleCatalogSurface
+                          {...dashboardModuleCatalogSurfaceProps}
+                          surface="catalog"
+                        />
+                      ) : (
+                        <DashboardCatalogLoadingShell variant="modules" />
+                      )}
                     </>
                   ) : (
                     <DashboardCatalogLoadingShell variant="templates" />

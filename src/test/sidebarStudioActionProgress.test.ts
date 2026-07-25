@@ -1,9 +1,40 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseSidebarStudioActionProgress } from '../../webview-ui/src/lib/sidebarStudioActionProgress';
+import {
+  enrichSidebarStudioActionProgressWithHandoff,
+  parseSidebarStudioActionProgress,
+  studioAgentToolProgressCopy,
+} from '../../webview-ui/src/lib/sidebarStudioActionProgress';
 import { parseStudioActionFailure } from '../../webview-ui/src/lib/studioVerifyFailure';
 
 describe('sidebarStudioActionProgress', () => {
+  it('uses concise Copilot-style labels for native Agent tool activity', () => {
+    expect(studioAgentToolProgressCopy('recover-active-blocker', 'running')).toEqual({
+      title: 'Resolving the active blocker',
+      phase: 'recover-active-blocker',
+    });
+    expect(studioAgentToolProgressCopy('inspect-dependency-security', 'running')).toEqual({
+      title: 'Auditing dependencies',
+      phase: 'inspect-dependency-security',
+    });
+    expect(studioAgentToolProgressCopy('repair-dependency-security', 'failed')).toEqual({
+      title: 'Dependency repair needs a source edit',
+      phase: 'repair-dependency-security',
+    });
+    expect(studioAgentToolProgressCopy('apply-workspace-patch', 'completed')).toEqual({
+      title: 'Applied source edit',
+      phase: 'apply-workspace-patch',
+    });
+    expect(studioAgentToolProgressCopy('run-workspace-command', 'running')).toEqual({
+      title: 'Running workspace command',
+      phase: 'run-workspace-command',
+    });
+    expect(studioAgentToolProgressCopy('delete-workspace-files', 'completed')).toEqual({
+      title: 'Removed inspected source',
+      phase: 'delete-workspace-files',
+    });
+  });
+
   it('maps apply-remediation verify progress to a user-visible status', () => {
     expect(
       parseSidebarStudioActionProgress({
@@ -84,6 +115,17 @@ describe('sidebarStudioActionProgress', () => {
       parseSidebarStudioActionProgress({
         action: 'refresh-remediation-plan',
         status: 'running',
+        phase: 'reading-evidence',
+      })
+    ).toMatchObject({
+      title: 'Reading repair evidence',
+      summary: 'Matching this card to source evidence and npm repair plans',
+    });
+
+    expect(
+      parseSidebarStudioActionProgress({
+        action: 'refresh-remediation-plan',
+        status: 'running',
         phase: 'refreshing-remediation-plan',
       })
     ).toMatchObject({
@@ -98,6 +140,30 @@ describe('sidebarStudioActionProgress', () => {
       })
     ).toMatchObject({
       title: 'Evidence refresh failed',
+    });
+  });
+
+  it('maps awaiting verify and verified phases without dropping progress copy', () => {
+    expect(
+      parseSidebarStudioActionProgress({
+        action: 'apply-remediation-step',
+        status: 'review',
+        phase: 'awaiting-verify',
+      })
+    ).toMatchObject({
+      title: 'Apply and verify needs review',
+      summary: 'Fix applied; verify is required before completion',
+    });
+
+    expect(
+      parseSidebarStudioActionProgress({
+        action: 'verify-handoff',
+        status: 'done',
+        phase: 'verified',
+      })
+    ).toMatchObject({
+      title: 'Verify complete',
+      summary: 'Verify passed and dashboard evidence can refresh',
     });
   });
 
@@ -137,18 +203,83 @@ describe('sidebarStudioActionProgress', () => {
     });
   });
 
+  it('keeps AI repair phases and real approval boundaries explicit', () => {
+    expect(
+      parseSidebarStudioActionProgress({
+        action: 'auto-fix',
+        status: 'running',
+        phase: 'requesting-ai-repair',
+      })
+    ).toMatchObject({
+      summary: 'AI is diagnosing the source issue',
+    });
+
+    expect(
+      parseSidebarStudioActionProgress({
+        action: 'apply-remediation-step',
+        status: 'review',
+        requiresApproval: true,
+        nextAction: 'continue-remediation',
+        nextActionLabel: 'Approve and continue',
+      })
+    ).toMatchObject({
+      requiresApproval: true,
+      nextAction: 'continue-remediation',
+      nextActionLabel: 'Approve and continue',
+    });
+  });
+
   it('maps handoff verify progress before the host responds', () => {
     expect(
       parseSidebarStudioActionProgress({
         action: 'verify-handoff',
         status: 'running',
         phase: 'verifying-handoff',
+        dashboardCommandId: 'workspaceVerify',
+        executionChannel: 'background',
+        capabilityGate: 'workspace verify',
       })
     ).toMatchObject({
       action: 'verify-handoff',
       status: 'running',
       title: 'Running verify',
       summary: 'Running the card verify command',
+      dashboardCommandId: 'workspaceVerify',
+      executionChannel: 'background',
+      capabilityGate: 'workspace verify',
+    });
+  });
+
+  it('inherits command contract metadata from the active Studio handoff', () => {
+    const progress = parseSidebarStudioActionProgress({
+      action: 'run-remediation-command',
+      status: 'running',
+      phase: 'running-remediation-command',
+    });
+
+    expect(progress).not.toBeNull();
+    expect(
+      enrichSidebarStudioActionProgressWithHandoff(progress!, {
+        schemaVersion: 'rapidkit-studio-blocker-handoff-v1',
+        cardId: 'workspace-verify',
+        cardStatus: 'fail',
+        blockers: ['verify blocked'],
+        artifactPath: '.rapidkit/reports/workspace-verify-last-run.json',
+        sourceCommand: 'npx rapidkit workspace verify --json',
+        dashboardCommandId: 'workspaceVerify',
+        executionChannel: 'background',
+        capabilityGate: 'workspace verify',
+        safetyRisk: 'write',
+        safetyRefreshCommands: ['npx rapidkit workspace verify --json'],
+        scope: 'workspace',
+        blockerSignature: 'abc123456789abcd',
+      })
+    ).toMatchObject({
+      dashboardCommandId: 'workspaceVerify',
+      executionChannel: 'background',
+      capabilityGate: 'workspace verify',
+      safetyRisk: 'write',
+      safetyRefreshCommands: ['npx rapidkit workspace verify --json'],
     });
   });
 
@@ -184,6 +315,24 @@ describe('sidebarStudioActionProgress', () => {
     ).toMatchObject({
       nextAction: 'continue-remediation',
       nextActionLabel: 'Continue repair',
+    });
+  });
+
+  it('preserves opaque Agent transaction identity for a live Undo action', () => {
+    expect(
+      parseSidebarStudioActionProgress({
+        action: 'apply-workspace-patch',
+        status: 'done',
+        title: 'Changed 2 files',
+        summary: 'Edit transaction applied.',
+        changedPaths: ['package.json', 'src/index.ts'],
+        invocationId: 'tool-call-123',
+        canUndo: true,
+      })
+    ).toMatchObject({
+      changedPaths: ['package.json', 'src/index.ts'],
+      invocationId: 'tool-call-123',
+      canUndo: true,
     });
   });
 });

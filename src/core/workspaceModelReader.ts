@@ -3,7 +3,10 @@ import * as path from 'path';
 import type { AnalyzeEvidenceSlice, AnalyzeProjectEvidenceSlice } from './aiArchitectureGrounding';
 import type { ProjectArchitectureFingerprint } from './aiWorkspaceArchitectureAtlas';
 import { resolveKitId } from './aiKitArchitectureCatalog';
-import { WORKSPACE_MODEL_REPORT_PATH } from './workspaceIntelligencePaths';
+import {
+  WORKSPACE_MODEL_REPORT_PATH,
+  workspaceArtifactCandidates,
+} from './workspaceIntelligencePaths';
 import {
   incompatibleJsonArtifact,
   isJsonArtifactReadFailure,
@@ -104,19 +107,27 @@ export async function readWorkspaceModelReportArtifact(
     return { kind: 'missing', artifactPath: reportPath };
   }
 
-  const result: JsonArtifactReadResult = await readJsonArtifact(reportPath);
-  if (isJsonArtifactReadFailure(result)) {
-    return result;
+  for (const relativePath of workspaceArtifactCandidates(WORKSPACE_MODEL_REPORT_PATH)) {
+    const result: JsonArtifactReadResult = await readJsonArtifact(
+      path.join(workspacePath, relativePath)
+    );
+    if (result.kind === 'missing') {
+      continue;
+    }
+    if (isJsonArtifactReadFailure(result)) {
+      return result;
+    }
+    if (!isWorkspaceModelReport(result.raw)) {
+      return incompatibleJsonArtifact({
+        artifactPath: result.artifactPath,
+        expectedSchemaVersion: WORKSPACE_MODEL_SCHEMA_VERSION,
+        actualSchemaVersion: result.raw.schemaVersion,
+        reason: 'Workspace model artifact must include generatedAt and projects[].',
+      });
+    }
+    return { kind: 'valid', artifactPath: result.artifactPath, report: result.raw };
   }
-  if (!isWorkspaceModelReport(result.raw)) {
-    return incompatibleJsonArtifact({
-      artifactPath: result.artifactPath,
-      expectedSchemaVersion: WORKSPACE_MODEL_SCHEMA_VERSION,
-      actualSchemaVersion: result.raw.schemaVersion,
-      reason: 'Workspace model artifact must include generatedAt and projects[].',
-    });
-  }
-  return { kind: 'valid', artifactPath: result.artifactPath, report: result.raw };
+  return { kind: 'missing', artifactPath: reportPath };
 }
 
 export function workspaceModelToAnalyzeEvidenceSlice(
@@ -226,7 +237,7 @@ export function buildWorkspaceModelPromptSection(report: WorkspaceModelReport | 
   }
 
   lines.push(
-    '- Prefer workspace model facts over heuristic scans when both are present. Refresh with `rapidkit workspace model --json --write`.'
+    '- Prefer workspace model facts over heuristic scans when both are present. Refresh with `workspai workspace model --json --write`.'
   );
 
   return lines.join('\n');

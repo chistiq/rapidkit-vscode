@@ -362,6 +362,22 @@ function scoreFrameworkInPrompt(promptLower: string, framework: ScaffoldFramewor
   );
 }
 
+/**
+ * Return only frameworks that the user named explicitly. Generic words such as
+ * "frontend" and "API" intentionally do not participate: those are useful for
+ * selecting defaults, but must not override a valid model choice.
+ */
+export function inferExplicitCreationFrameworks(prompt: string): ScaffoldFramework[] {
+  const promptLower = prompt.trim().toLowerCase();
+  if (!promptLower) {
+    return [];
+  }
+
+  return (Object.keys(FRAMEWORK_KEYWORDS) as ScaffoldFramework[]).filter(
+    (framework) => scoreFrameworkInPrompt(promptLower, framework) > 0
+  );
+}
+
 function bestFrontendFrameworkInPrompt(promptLower: string): ScaffoldFramework | undefined {
   let bestFramework: ScaffoldFramework | undefined;
   let bestScore = 0;

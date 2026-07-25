@@ -41,6 +41,7 @@ export const EVIDENCE_CARD_COMMANDS: Partial<Record<DashboardEvidenceCardId, Das
   intelligenceSnapshot: 'workspaceIntelligenceSnapshot',
   workspaceDiff: 'workspaceDiff',
   workspaceImpact: 'workspaceImpact',
+  workspaceIntelligenceRun: 'workspaceIntelligenceChain',
   workspaceVerify: 'workspaceVerify',
   workspaceExplain: 'workspaceExplain',
   workspaceWhy: 'workspaceWhy',
@@ -160,6 +161,7 @@ export function resolveIncidentStudioTargetFromCard(
       return 'analyze';
     case 'readiness':
     case 'pipeline':
+    case 'workspaceIntelligenceRun':
     case 'policy':
     case 'infra':
       return 'readiness';

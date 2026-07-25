@@ -2,8 +2,9 @@ import fs from 'fs-extra';
 import path from 'path';
 
 import registryContract from '../contracts/workspace-registry.v1.json';
+import { workspaceArtifactCandidates } from './workspaceIntelligencePaths';
 
-export const WORKSPACE_REGISTRY_SUMMARY_RELATIVE_PATH = '.rapidkit/workspace-registry.v1.json';
+export const WORKSPACE_REGISTRY_SUMMARY_RELATIVE_PATH = '.workspai/workspace-registry.v1.json';
 export const WORKSPACE_REGISTRY_SUMMARY_SCHEMA_VERSION =
   registryContract.properties.schemaVersion.const;
 
@@ -49,22 +50,24 @@ export type WorkspaceRegistrySummary = {
 export async function readWorkspaceRegistrySummaryFromDisk(
   workspacePath: string
 ): Promise<WorkspaceRegistrySummary | null> {
-  const summaryPath = path.join(
-    path.resolve(workspacePath),
+  for (const relativePath of workspaceArtifactCandidates(
     WORKSPACE_REGISTRY_SUMMARY_RELATIVE_PATH
-  );
-  if (!(await fs.pathExists(summaryPath))) {
-    return null;
-  }
-  try {
-    const payload = (await fs.readJSON(summaryPath)) as WorkspaceRegistrySummary;
-    if (payload?.schemaVersion !== WORKSPACE_REGISTRY_SUMMARY_SCHEMA_VERSION) {
+  )) {
+    const summaryPath = path.join(path.resolve(workspacePath), relativePath);
+    if (!(await fs.pathExists(summaryPath))) {
+      continue;
+    }
+    try {
+      const payload = (await fs.readJSON(summaryPath)) as WorkspaceRegistrySummary;
+      if (payload?.schemaVersion !== WORKSPACE_REGISTRY_SUMMARY_SCHEMA_VERSION) {
+        return null;
+      }
+      return payload;
+    } catch {
       return null;
     }
-    return payload;
-  } catch {
-    return null;
   }
+  return null;
 }
 
 export function formatWorkspaceRegistrySyncSummary(

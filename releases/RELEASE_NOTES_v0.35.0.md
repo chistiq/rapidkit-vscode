@@ -39,6 +39,13 @@ This note covers **nine local commits** ahead of `origin/main` plus the in-progr
 - **Studio actions**: `studioActionCommands` registry (analyze, impact, fix, verify-gates, terminal-bridge) with audit trail and approval posture.
 - **Guided / lite / responsive polish** (Wave Y): denser guided conversation, action outcome essentials, enterprise empty states, collapsible sections, responsive studio chrome.
 - **Studio first-view simplification**: Command Ribbon is the default action entry point; sidebar Action Matrix, CLI, Capability Map, and Action Audit details stay collapsed until opened; audit inspector is selection-driven instead of auto-expanded; chat, context, and sidebar regions now read as a calmer panel workspace.
+- **Native Studio Agent**: `Fix by Workspai` opens a durable Agent session backed by an allowlisted tool registry, canonical Workspace Intelligence producers, causal incident traversal, reversible patch transactions, and evidence-derived completion.
+- **End-to-end ownership**: model checkpoints compact durable context without terminating the repair; generation-aware deduplication prevents repeated audit/inspect churn, source edits refresh retry eligibility, and only current non-blocking verify evidence can complete the card.
+- **Copilot-level activity clarity**: native tools have explicit schemas and concise user-facing labels for reads, audits, edits, governed refreshes, and verification; internal duplicate attempts stay in the durable ledger without flooding the chat timeline.
+- **Agent / Ask / Plan selector**: mode contracts determine permissions and tools; Agent owns repair through verify, while Ask and Plan remain read-only.
+- **Model execution hardening**: provider-qualified selection excludes session-only transports such as `copilotcli`; VS Code multi-tool calls use `Auto` as required by the Copilot LM adapter; retired, unavailable, and empty endpoints fail over to another callable model.
+- **Long-session context discipline**: repeated request/status chatter is removed from model turns while causal tool, checkpoint, steering, and verify observations remain available.
+- **Correct host floor**: VS Code `1.106.0+` is required because that is where extension-contributed Secondary Sidebar containers became stable without a proposed API; older hosts no longer receive a misleading Explorer fallback.
 
 ### Workspai design system migration
 
@@ -146,6 +153,7 @@ New or expanded suites include:
 - `studioRedesignContracts.test.ts`, `designSystemDrift.test.ts`, `smokeStabilization.test.ts`
 - `incidentStudioShipLoopBridge.integration.test.ts`, `incidentStudioPolicyGateParity.test.ts`, `actionOutcomePanel.presentation.test.ts`
 - `aiActionContract.test.ts`, `aiProviderService.test.ts`, `platformCapabilities.test.ts` (npm verify probe)
+- `studioAgentSession.test.ts`, `studioAgentModelProtocol.test.ts`, `studioAgentWorkspaiTools.test.ts`, `studioIncidentGraph.test.ts`, `sidebarStudioPatchAutonomy.test.ts`
 - `workspaiSettingsBridge.test.ts`, `welcomePanelTelemetryWorkspace.test.ts`
 
 ```bash

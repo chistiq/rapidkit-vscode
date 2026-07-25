@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://getrapidkit.com/schemas/workspace-verify.v1.json",
-  "title": "RapidKit Workspace Verify Last Run",
+  "title": "Workspai Workspace Verify Last Run",
   "type": "object",
   "required": [
     "schemaVersion",

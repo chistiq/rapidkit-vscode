@@ -1,6 +1,6 @@
 const CHAT_BRAIN_DEBUG =
-  typeof import.meta !== 'undefined' &&
-  (import.meta as { env?: { DEV?: boolean } }).env?.DEV === true;
+  (globalThis as typeof globalThis & { __WORKSPAI_CHAT_DEBUG__?: boolean })
+    .__WORKSPAI_CHAT_DEBUG__ === true;
 
 /** Dev-only Chat Brain protocol logger (stripped in production builds). */
 export function logChatBrain(event: string, data?: unknown): void {

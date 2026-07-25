@@ -6,10 +6,10 @@ import {
 } from '../core/workspacePaths';
 
 describe('managed default workspace path (extension parity with npm)', () => {
-  it('targets ~/rapidkit/workspaces/workspai for fresh installs', () => {
+  it('targets ~/.workspai/workspaces/workspai for fresh installs', () => {
     const homeDir = '/home/test-user';
     expect(resolveManagedDefaultImportWorkspacePath(homeDir)).toBe(
-      `/home/test-user/rapidkit/workspaces/${MANAGED_DEFAULT_WORKSPACE_NAME}`
+      `/home/test-user/.workspai/workspaces/${MANAGED_DEFAULT_WORKSPACE_NAME}`
     );
   });
 });

@@ -29,7 +29,7 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
     framework: 'fastapi',
     moduleSupport: true,
     stability: 'stable',
-    createCommand: 'npx rapidkit create project fastapi.ddd <name> [--output <dir>] [--yes]',
+    createCommand: 'npx workspai create project fastapi.ddd <name> [--output <dir>] [--yes]',
     layout: `  src/
     app/
       config/            ← Pydantic-settings config loader (__init__.py)
@@ -74,7 +74,7 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
     framework: 'fastapi',
     moduleSupport: true,
     stability: 'stable',
-    createCommand: 'npx rapidkit create project fastapi.standard <name> [--output <dir>] [--yes]',
+    createCommand: 'npx workspai create project fastapi.standard <name> [--output <dir>] [--yes]',
     layout: `  src/
     modules/free/        ← Installed RapidKit modules (main feature code lives here)
     routing/             ← Root router; src/routing/__init__.py re-exports api_router
@@ -87,7 +87,7 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
   • Example routes: src/routing/examples.py, health: src/routing/health.py
   • Catalog modules: src/modules/free/{category}/{name}/ registered via src/routing/
   • Settings: src/modules/free/essentials/settings/settings.py → get_settings()
-  • After create, run \`npx rapidkit init\` in the project directory when dependencies are needed`,
+  • After create, run \`npx workspai init\` in the project directory when dependencies are needed`,
     injectionPoints: [
       'src/main.py → # <<<inject:imports>>> | # <<<inject:startup>>> | # <<<inject:shutdown>>> | # <<<inject:routes>>>',
       'src/routing/__init__.py → # <<<inject:router-imports>>> | # <<<inject:router-mount>>>',
@@ -102,7 +102,7 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
     framework: 'nestjs',
     moduleSupport: true,
     stability: 'stable',
-    createCommand: 'npx rapidkit create project nestjs.standard <name> [--output <dir>] [--yes]',
+    createCommand: 'npx workspai create project nestjs.standard <name> [--output <dir>] [--yes]',
     layout: `  src/
     app.module.ts        ← Root module; imports ConfigModule.forRoot({ isGlobal: true })
     app.controller.ts / app.service.ts
@@ -141,7 +141,7 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
     framework: 'gofiber',
     moduleSupport: false,
     stability: 'stable',
-    createCommand: 'npx rapidkit create project gofiber.standard <name> [--output <dir>]',
+    createCommand: 'npx workspai create project gofiber.standard <name> [--output <dir>]',
     layout: `  cmd/server/main.go     ← Entry; config.Load(), server.NewRouter(cfg), graceful shutdown
   internal/
     config/config.go       ← 12-factor env config
@@ -167,7 +167,7 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
     framework: 'gogin',
     moduleSupport: false,
     stability: 'stable',
-    createCommand: 'npx rapidkit create project gogin.standard <name> [--output <dir>]',
+    createCommand: 'npx workspai create project gogin.standard <name> [--output <dir>]',
     layout: `  cmd/server/main.go     ← Entry; config.Load(), server.NewRouter(cfg), graceful shutdown
   internal/
     config/config.go       ← 12-factor env config
@@ -193,7 +193,7 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
     moduleSupport: false,
     stability: 'stable',
     createCommand:
-      'npx rapidkit create project springboot.standard <name> [--java-version <major>] [--port <number>]',
+      'npx workspai create project springboot.standard <name> [--java-version <major>] [--port <number>]',
     layout: `  src/main/java/com/rapidkit/apps/{service}/
     AppApplication.java                     ← @SpringBootApplication entrypoint
     config/OpenApiConfiguration.java
@@ -220,7 +220,7 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
     moduleSupport: false,
     stability: 'preview',
     createCommand:
-      'npx rapidkit create project dotnet.webapi.clean <name> [--target-framework net8.0] [--port <number>]',
+      'npx workspai create project dotnet.webapi.clean <name> [--target-framework net8.0] [--port <number>]',
     layout: `  src/
     {Service}.Api/                 ← ASP.NET Core HTTP boundary (Program.cs)
     {Service}.Application/         ← Use cases, DTOs, validation contracts
@@ -358,7 +358,7 @@ export function buildKitBlueprintSection(kitId: string): string {
   const sections = [
     `ACTIVE KIT ARCHITECTURE: ${blueprint.id}`,
     blueprint.moduleSupport
-      ? 'Catalog modules: supported (npx rapidkit add module free/… from project root)'
+      ? 'Catalog modules: supported (npx workspai add module free/… from project root)'
       : 'Catalog modules: not supported for this kit',
     '',
     'Project layout (what the user sees after create):',

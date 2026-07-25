@@ -37,6 +37,7 @@ interface DashboardEvidenceSectionProps {
   onRefreshEvidenceCard: (cardId: DashboardEvidenceCardId) => void;
   onAskStudioAboutCard: (card: DashboardEvidenceCard) => void;
   onSendEvidenceToCopilot: (card: DashboardEvidenceCard) => void;
+  onCopyEvidenceAgentHandoff: (card: DashboardEvidenceCard) => void;
   onShowEvidenceOutput: () => void;
   onClearActivity: () => void;
   onRevealArtifact: (artifactPath: string) => void;
@@ -104,7 +105,11 @@ function EvidenceBrief({
           disabled={isRefreshing}
           aria-busy={isRefreshing || undefined}
         >
-          <RefreshCw size={13} aria-hidden="true" className={isRefreshing ? 'spinning' : undefined} />
+          <RefreshCw
+            size={13}
+            aria-hidden="true"
+            className={isRefreshing ? 'spinning' : undefined}
+          />
           {isRefreshing ? 'Refreshing…' : 'Refresh'}
         </button>
         <button type="button" className="ws-btn ws-btn--ghost" onClick={onOpenRepairFlow}>
@@ -142,6 +147,7 @@ export function DashboardEvidenceSection({
   onRefreshEvidenceCard,
   onAskStudioAboutCard,
   onSendEvidenceToCopilot,
+  onCopyEvidenceAgentHandoff,
   onShowEvidenceOutput,
   onClearActivity,
   onRevealArtifact,
@@ -155,6 +161,30 @@ export function DashboardEvidenceSection({
   onNavigateSection,
   onOpenRunZone,
 }: DashboardEvidenceSectionProps) {
+  if (!hasWorkspace) {
+    return (
+      <WorkspaiEmptyState
+        icon={<ClipboardCheck size={18} />}
+        title="No workspace selected"
+        description={
+          <>
+            Artifacts unlock after you create, import, or switch to a workspace. Command cards stay
+            hidden until there is a real workspace target.
+          </>
+        }
+        actions={
+          <button
+            type="button"
+            className="ws-btn ws-btn--primary"
+            onClick={() => onNavigateSection('overview')}
+          >
+            Back to Home
+          </button>
+        }
+      />
+    );
+  }
+
   const cards = evidence?.cards ?? [];
   const activity = evidence?.activity ?? [];
   const sparseWorkspaceEvidence = evidenceIsSparse(evidence, hasWorkspace);
@@ -257,8 +287,7 @@ export function DashboardEvidenceSection({
     );
   }
 
-  const isRefreshingEvidence =
-    isEvidenceFullRefreshPending || pendingRefreshCardIds.length > 0;
+  const isRefreshingEvidence = isEvidenceFullRefreshPending || pendingRefreshCardIds.length > 0;
 
   return (
     <div className="ws-dashboard-evidence-layout" data-evidence-view={evidenceViewMode}>
@@ -306,6 +335,7 @@ export function DashboardEvidenceSection({
           onRefreshEvidenceCard={onRefreshEvidenceCard}
           onAskStudioAboutCard={onAskStudioAboutCard}
           onSendEvidenceToCopilot={onSendEvidenceToCopilot}
+          onCopyEvidenceAgentHandoff={onCopyEvidenceAgentHandoff}
           onRevealArtifact={onRevealArtifact}
           onOpenProjectLifecycle={() => onNavigateSection('console')}
           onShowAll={() => onEvidenceViewModeChange('balanced')}
@@ -342,6 +372,7 @@ export function DashboardEvidenceSection({
           onRefreshEvidenceCard={onRefreshEvidenceCard}
           onAskStudioAboutCard={onAskStudioAboutCard}
           onSendEvidenceToCopilot={onSendEvidenceToCopilot}
+          onCopyEvidenceAgentHandoff={onCopyEvidenceAgentHandoff}
           onShowEvidenceOutput={onShowEvidenceOutput}
           onClearActivity={onClearActivity}
           onRevealArtifact={onRevealArtifact}

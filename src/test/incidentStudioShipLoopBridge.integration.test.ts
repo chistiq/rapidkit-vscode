@@ -101,7 +101,25 @@ describe('dispatchIncidentStudioShipLoopStep integration', () => {
     expect(result.success).toBe(true);
     expect(mocks.runIncidentInlineCommand).toHaveBeenCalledWith(
       expect.objectContaining({
-        command: 'npx rapidkit readiness --json',
+        command: 'npx workspai readiness --json',
+        workspacePath: '/tmp/ws',
+      })
+    );
+  });
+
+  it('runs archive via npm workspace export with an explicit output path', async () => {
+    const result = await dispatchIncidentStudioShipLoopStep({
+      stepId: 'archive',
+      webview,
+      context,
+      workspace,
+    });
+
+    expect(result.success).toBe(true);
+    expect(mocks.runIncidentInlineCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command:
+          'npx workspai workspace export --output team-workspace.rapidkit-archive.zip --json',
         workspacePath: '/tmp/ws',
       })
     );

@@ -6,6 +6,7 @@ export type SidebarPatchReviewItem = {
   status: string;
   isNewFile?: boolean;
   failReason?: string;
+  diffLines?: Array<{ type: 'added' | 'removed' | 'unchanged'; content: string }>;
 };
 
 type StudioPatchReviewProps = {
@@ -107,6 +108,16 @@ export function StudioPatchReview({
                     {patch.isNewFile ? <span className="ws-sidebar__studio-patch-tag">new</span> : null}
                     {patch.failReason ? <span>{displayFailReason}</span> : null}
                   </label>
+                  {patch.diffLines?.length ? (
+                    <pre className="ws-sidebar__studio-patch-diff" aria-label={`Diff for ${displayPath}`}>
+                      {patch.diffLines.map((line, index) => (
+                        <span key={`${line.type}-${index}`} data-type={line.type}>
+                          {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
+                          {line.content}
+                        </span>
+                      ))}
+                    </pre>
+                  ) : null}
                 </li>
               );
             })}

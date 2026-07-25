@@ -8,6 +8,7 @@ import {
   WORKSPACE_INTELLIGENCE_REPORT_PATHS,
   WORKSPACE_MODEL_DIFF_REPORT_PATH,
   WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH,
+  WORKSPACE_VERIFY_REPORT_PATH,
 } from '../../core/workspaceIntelligencePaths';
 import { DASHBOARD_COMMAND_CONTRACTS } from '../../core/dashboardCommandContracts';
 import {
@@ -36,6 +37,8 @@ export type E2ECliStep = {
   requiresProjects?: boolean;
   /** Run once per project (args may use {projectName}). */
   perProject?: boolean;
+  /** Execute from the target project root instead of the workspace root. */
+  cwd?: 'workspace' | 'project';
 };
 
 export type E2EStepContext = {
@@ -56,6 +59,10 @@ export type E2EStepResult = {
   artifactsMissing: string[];
   outputTail: string;
   projectName?: string;
+  verification?: {
+    verdict: 'ready' | 'needs-attention' | 'blocked';
+    blockingReasons: string[];
+  };
 };
 
 export type E2EScenarioResult = {
@@ -71,17 +78,17 @@ export type E2EScenarioResult = {
 
 export type E2EReport = {
   generatedAt: string;
-  rapidkitDist: string;
+  workspaiDist: string;
   scenarios: E2EScenarioResult[];
   analysis: string;
 };
 
 const GOVERNANCE_ARTIFACTS = [
-  '.rapidkit/reports/doctor-last-run.json',
-  '.rapidkit/reports/analyze-last-run.json',
-  '.rapidkit/reports/release-readiness-last-run.json',
-  '.rapidkit/reports/pipeline-last-run.json',
-  '.rapidkit/reports/workspace-contract-verify-last-run.json',
+  '.workspai/reports/doctor-last-run.json',
+  '.workspai/reports/analyze-last-run.json',
+  '.workspai/reports/release-readiness-last-run.json',
+  '.workspai/reports/pipeline-last-run.json',
+  '.workspai/reports/workspace-contract-verify-last-run.json',
 ] as const;
 
 /** Commands aligned with dashboard cards + Phase 4 intelligence surface. */
@@ -102,24 +109,10 @@ export function buildWorkspaceIntelligenceE2ESteps(): E2ECliStep[] {
       required: true,
     },
     {
-      id: 'doctorWorkspace',
-      label: DASHBOARD_COMMAND_CONTRACTS.checkWorkspaceHealth.label,
-      args: ['doctor', 'workspace', '--json'],
-      cardIds: ['doctor'],
-      required: true,
-    },
-    {
       id: 'analyze',
       label: DASHBOARD_COMMAND_CONTRACTS.workspaceAnalyze.label,
       args: ['analyze', '--json'],
       cardIds: ['analyze'],
-      required: false,
-    },
-    {
-      id: 'contractVerify',
-      label: DASHBOARD_COMMAND_CONTRACTS.workspaceContractVerify.label,
-      args: ['workspace', 'contract', 'verify', '--strict', '--json'],
-      cardIds: ['contract'],
       required: false,
     },
     {
@@ -145,44 +138,44 @@ export function buildWorkspaceIntelligenceE2ESteps(): E2ECliStep[] {
     {
       id: 'workspaceDiff',
       label: DASHBOARD_COMMAND_CONTRACTS.workspaceDiff.label,
-      args: () => [
-        'workspace',
-        'diff',
-        '--from',
-        WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH,
-        '--json',
-        '--write',
-      ],
+      args: () => ['workspace', 'diff', '--from', WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH, '--json'],
       cardIds: ['workspaceDiff'],
       required: true,
     },
     {
       id: 'workspaceImpact',
       label: DASHBOARD_COMMAND_CONTRACTS.workspaceImpact.label,
-      args: () => [
-        'workspace',
-        'impact',
-        '--from',
-        WORKSPACE_MODEL_DIFF_REPORT_PATH,
-        '--json',
-        '--write',
-      ],
+      args: () => ['workspace', 'impact', '--from', WORKSPACE_MODEL_DIFF_REPORT_PATH, '--json'],
       cardIds: ['workspaceImpact'],
       required: true,
     },
     {
+      id: 'doctorWorkspace',
+      label: DASHBOARD_COMMAND_CONTRACTS.checkWorkspaceHealth.label,
+      args: ['doctor', 'workspace', '--json'],
+      cardIds: ['doctor'],
+      required: true,
+    },
+    {
+      id: 'contractVerify',
+      label: DASHBOARD_COMMAND_CONTRACTS.workspaceContractVerify.label,
+      args: ['workspace', 'contract', 'verify', '--strict', '--json'],
+      cardIds: ['contract'],
+      required: false,
+    },
+    {
+      id: 'readiness',
+      label: DASHBOARD_COMMAND_CONTRACTS.workspaceReadiness.label,
+      args: ['readiness', '--json'],
+      cardIds: ['readiness'],
+      required: false,
+    },
+    {
       id: 'workspaceVerify',
       label: DASHBOARD_COMMAND_CONTRACTS.workspaceVerify.label,
-      args: () => [
-        'workspace',
-        'verify',
-        '--from-impact',
-        WORKSPACE_IMPACT_REPORT_PATH,
-        '--json',
-        '--write',
-      ],
+      args: () => ['workspace', 'verify', '--from-impact', WORKSPACE_IMPACT_REPORT_PATH, '--json'],
       cardIds: ['workspaceVerify'],
-      requiredWhenProjects: true,
+      required: false,
     },
     {
       id: 'workspaceContextAgent',
@@ -230,13 +223,6 @@ export function buildWorkspaceIntelligenceE2ESteps(): E2ECliStep[] {
       required: false,
     },
     {
-      id: 'readiness',
-      label: DASHBOARD_COMMAND_CONTRACTS.workspaceReadiness.label,
-      args: ['readiness', '--json'],
-      cardIds: ['readiness'],
-      required: false,
-    },
-    {
       id: 'pipeline',
       label: DASHBOARD_COMMAND_CONTRACTS.workspacePipeline.label,
       args: ['pipeline', '--json', '--strict'],
@@ -253,11 +239,12 @@ export function buildWorkspaceIntelligenceE2ESteps(): E2ECliStep[] {
     {
       id: 'doctorProject',
       label: DASHBOARD_COMMAND_CONTRACTS.projectDoctor.label,
-      args: (_ctx, projectName) => ['doctor', 'project', projectName ?? '', '--json'],
+      args: ['doctor', 'project', '--json'],
       cardIds: ['projectDoctor'],
       required: false,
       requiresProjects: true,
       perProject: true,
+      cwd: 'project',
     },
     {
       id: 'explainProject',
@@ -353,25 +340,26 @@ export function intelligenceArtifactPaths(): string[] {
   return [
     ...WORKSPACE_INTELLIGENCE_REPORT_PATHS,
     ...GOVERNANCE_ARTIFACTS,
-    '.rapidkit/reports/workspace-intelligence-history.json',
+    '.workspai/reports/workspace-intelligence-history.json',
   ];
 }
 
-export function resolveRapidkitNpmDist(): string {
-  const npmRoot = path.resolve(__dirname, '..', '..', '..', '..', 'rapidkit-npm');
-  const distPath = path.join(npmRoot, 'dist', 'index.js');
+export function resolveWorkspaiCliDist(): string {
+  const npmRoot = path.resolve(__dirname, '..', '..', '..', '..', 'workspai');
+  const cliRoot = path.join(npmRoot, 'packages', 'cli');
+  const distPath = path.join(cliRoot, 'dist', 'index.js');
   if (!fs.existsSync(distPath)) {
-    const build = spawnSync('npm', ['run', 'build'], {
+    const build = spawnSync('corepack', ['npm', 'run', 'build'], {
       cwd: npmRoot,
       stdio: 'inherit',
       encoding: 'utf8',
     });
     if (build.status !== 0) {
-      throw new Error(`Failed to build rapidkit-npm dist at ${npmRoot}`);
+      throw new Error(`Failed to build Workspai CLI dist at ${cliRoot}`);
     }
   }
   if (!fs.existsSync(distPath)) {
-    throw new Error(`rapidkit-npm dist missing at ${distPath}`);
+    throw new Error(`Workspai CLI dist missing at ${distPath}`);
   }
   return distPath;
 }
@@ -389,7 +377,7 @@ export function buildIsolatedCliEnv(homeDir: string): NodeJS.ProcessEnv {
   return env;
 }
 
-export function runRapidkitCli(
+export function runWorkspaiCli(
   dist: string,
   args: string[],
   cwd: string,
@@ -418,12 +406,12 @@ export async function promoteWorkspaceProfile(input: {
   profile: 'minimal' | 'polyglot';
   env: NodeJS.ProcessEnv;
 }): Promise<void> {
-  const workspaceJsonPath = path.join(input.workspacePath, '.rapidkit', 'workspace.json');
+  const workspaceJsonPath = path.join(input.workspacePath, '.workspai', 'workspace.json');
   const workspaceJson = (await fs.readJson(workspaceJsonPath)) as Record<string, unknown>;
   workspaceJson.profile = input.profile;
   await fs.writeJson(workspaceJsonPath, workspaceJson, { spaces: 2 });
 
-  const sync = runRapidkitCli(
+  const sync = runWorkspaiCli(
     input.dist,
     ['workspace', 'sync', '--json'],
     input.workspacePath,
@@ -444,7 +432,7 @@ export async function createWorkspaceViaCli(input: {
   cwd: string;
 }): Promise<string> {
   const createProfile = input.profile === 'polyglot' ? 'minimal' : input.profile;
-  const create = runRapidkitCli(
+  const create = runWorkspaiCli(
     input.dist,
     ['create', 'workspace', input.name, '--yes', '--profile', createProfile, '--skip-git'],
     input.cwd,
@@ -457,7 +445,7 @@ export async function createWorkspaceViaCli(input: {
   }
 
   const homeDir = input.env.HOME ?? input.env.USERPROFILE ?? '';
-  const workspacePath = path.join(homeDir, 'rapidkit', 'workspaces', input.name);
+  const workspacePath = path.join(homeDir, '.workspai', 'workspaces', input.name);
   if (!(await fs.pathExists(workspacePath))) {
     throw new Error(`Expected workspace at ${workspacePath} after create`);
   }
@@ -550,9 +538,9 @@ export async function seedPolyglotProjectsObserved(workspacePath: string): Promi
 
   for (const project of projects) {
     const projectRoot = path.join(workspacePath, project.relativePath);
-    await fs.ensureDir(path.join(projectRoot, '.rapidkit'));
+    await fs.ensureDir(path.join(projectRoot, '.workspai'));
     await fs.writeJson(
-      path.join(projectRoot, '.rapidkit', 'project.json'),
+      path.join(projectRoot, '.workspai', 'project.json'),
       {
         name: project.name,
         runtime: project.runtime,
@@ -591,15 +579,23 @@ export async function createPolyglotProjects(input: {
 }): Promise<{ projectNames: string[]; scaffoldMode: 'cli' | 'observed-fixture' }> {
   const planned = [
     { kit: 'frontend.nextjs', name: 'web' },
-    { kit: 'nestjs.standard', name: 'api' },
-    { kit: 'fastapi.standard', name: 'service' },
+    { kit: 'nestjs.standard', name: 'api', port: '3001' },
+    { kit: 'fastapi.standard', name: 'service', port: '8000' },
   ] as const;
 
   const created: string[] = [];
   for (const project of planned) {
-    const create = runRapidkitCli(
+    const create = runWorkspaiCli(
       input.dist,
-      ['create', 'project', project.kit, project.name, '--yes', '--skip-install'],
+      [
+        'create',
+        'project',
+        project.kit,
+        project.name,
+        '--yes',
+        '--skip-install',
+        ...('port' in project ? ['--port', project.port] : []),
+      ],
       input.workspacePath,
       input.env
     );
@@ -609,7 +605,7 @@ export async function createPolyglotProjects(input: {
     }
 
     const seeded = await seedPolyglotProjectsObserved(input.workspacePath);
-    const sync = runRapidkitCli(
+    const sync = runWorkspaiCli(
       input.dist,
       ['workspace', 'sync', '--json'],
       input.workspacePath,
@@ -633,7 +629,7 @@ export async function createProjectViaCli(input: {
   name: string;
   env: NodeJS.ProcessEnv;
 }): Promise<void> {
-  const create = runRapidkitCli(
+  const create = runWorkspaiCli(
     input.dist,
     ['create', 'project', input.kit, input.name, '--yes', '--skip-install'],
     input.workspacePath,
@@ -650,7 +646,7 @@ export async function listWorkspaceProjects(workspacePath: string): Promise<stri
   const names = new Set<string>();
 
   async function walk(dir: string): Promise<void> {
-    const projectJsonPath = path.join(dir, '.rapidkit', 'project.json');
+    const projectJsonPath = path.join(dir, '.workspai', 'project.json');
     if (await fs.pathExists(projectJsonPath)) {
       const projectJson = (await fs.readJson(projectJsonPath)) as { name?: string };
       if (typeof projectJson.name === 'string' && projectJson.name.trim()) {
@@ -670,7 +666,7 @@ export async function listWorkspaceProjects(workspacePath: string): Promise<stri
       if (!entry.isDirectory()) {
         continue;
       }
-      if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.rapidkit') {
+      if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.workspai') {
         continue;
       }
       await walk(path.join(dir, entry.name));
@@ -679,11 +675,7 @@ export async function listWorkspaceProjects(workspacePath: string): Promise<stri
 
   await walk(workspacePath);
 
-  if (names.size > 0) {
-    return [...names].sort();
-  }
-
-  const registryPath = path.join(workspacePath, '.rapidkit', 'workspace-registry.v1.json');
+  const registryPath = path.join(workspacePath, '.workspai', 'workspace-registry.v1.json');
   if (await fs.pathExists(registryPath)) {
     const registry = (await fs.readJson(registryPath)) as {
       projects?: Array<{ slug?: string; name?: string }>;
@@ -691,12 +683,62 @@ export async function listWorkspaceProjects(workspacePath: string): Promise<stri
     for (const project of registry.projects ?? []) {
       const name = project.slug ?? project.name;
       if (typeof name === 'string' && name.trim()) {
-        names.add(name.trim());
+        const normalizedName = name.trim();
+        const identity = path.basename(normalizedName);
+        const alreadyDiscovered = [...names].some(
+          (existing) => path.basename(existing) === identity
+        );
+        if (!alreadyDiscovered) {
+          names.add(normalizedName);
+        }
       }
     }
   }
 
   return [...names].sort();
+}
+
+async function resolveProjectRootByName(
+  workspacePath: string,
+  projectName: string
+): Promise<string> {
+  const directCandidate = path.resolve(workspacePath, projectName);
+  const directRelative = path.relative(path.resolve(workspacePath), directCandidate);
+  if (
+    directRelative &&
+    !directRelative.startsWith('..') &&
+    !path.isAbsolute(directRelative) &&
+    (await fs.pathExists(path.join(directCandidate, '.workspai', 'project.json')))
+  ) {
+    return directCandidate;
+  }
+  const queue = [workspacePath];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) {
+      continue;
+    }
+    const markerPath = path.join(current, '.workspai', 'project.json');
+    if (await fs.pathExists(markerPath)) {
+      const marker = (await fs.readJson(markerPath)) as { name?: string };
+      if (marker.name === projectName || path.basename(current) === projectName) {
+        return current;
+      }
+      continue;
+    }
+    const entries = await fs.readdir(current, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (
+        entry.isDirectory() &&
+        entry.name !== '.workspai' &&
+        entry.name !== '.git' &&
+        entry.name !== 'node_modules'
+      ) {
+        queue.push(path.join(current, entry.name));
+      }
+    }
+  }
+  throw new Error(`Could not resolve project root for ${projectName} in ${workspacePath}`);
 }
 
 function resolveStepArgs(step: E2ECliStep, ctx: E2EStepContext, projectName?: string): string[] {
@@ -708,24 +750,24 @@ function resolveStepArgs(step: E2ECliStep, ctx: E2EStepContext, projectName?: st
 
 function artifactsForStep(step: E2ECliStep): string[] {
   const cardArtifactMap: Record<string, string[]> = {
-    workspaceModel: ['.rapidkit/reports/workspace-model.json'],
-    intelligenceSnapshot: ['.rapidkit/reports/workspace-model-snapshot.json'],
-    workspaceDiff: ['.rapidkit/reports/workspace-model-diff-last-run.json'],
-    workspaceImpact: ['.rapidkit/reports/workspace-impact-last-run.json'],
-    workspaceVerify: ['.rapidkit/reports/workspace-verify-last-run.json'],
-    workspaceContextAgent: ['.rapidkit/reports/workspace-context-agent.json'],
+    workspaceModel: ['.workspai/reports/workspace-model.json'],
+    intelligenceSnapshot: ['.workspai/reports/workspace-model-snapshot.json'],
+    workspaceDiff: ['.workspai/reports/workspace-model-diff-last-run.json'],
+    workspaceImpact: ['.workspai/reports/workspace-impact-last-run.json'],
+    workspaceVerify: ['.workspai/reports/workspace-verify-last-run.json'],
+    workspaceContextAgent: ['.workspai/reports/workspace-context-agent.json'],
     agentGrounding: [
-      '.rapidkit/reports/agent-customization-pack.json',
-      '.rapidkit/reports/INDEX.json',
+      '.workspai/reports/agent-customization-pack.json',
+      '.workspai/reports/INDEX.json',
     ],
-    workspaceExplain: ['.rapidkit/reports/workspace-explain-last-run.json'],
-    workspaceWhy: ['.rapidkit/reports/workspace-why-last-run.json'],
-    workspaceTrace: ['.rapidkit/reports/workspace-trace-last-run.json'],
-    doctor: ['.rapidkit/reports/doctor-last-run.json'],
-    analyze: ['.rapidkit/reports/analyze-last-run.json'],
-    readiness: ['.rapidkit/reports/release-readiness-last-run.json'],
-    pipeline: ['.rapidkit/reports/pipeline-last-run.json'],
-    contract: ['.rapidkit/reports/workspace-contract-verify-last-run.json'],
+    workspaceExplain: ['.workspai/reports/workspace-explain-last-run.json'],
+    workspaceWhy: ['.workspai/reports/workspace-why-last-run.json'],
+    workspaceTrace: ['.workspai/reports/workspace-trace-last-run.json'],
+    doctor: ['.workspai/reports/doctor-last-run.json'],
+    analyze: ['.workspai/reports/analyze-last-run.json'],
+    readiness: ['.workspai/reports/release-readiness-last-run.json'],
+    pipeline: ['.workspai/reports/pipeline-last-run.json'],
+    contract: ['.workspai/reports/workspace-contract-verify-last-run.json'],
   };
 
   const paths = new Set<string>();
@@ -787,9 +829,30 @@ export async function runIntelligenceScenario(input: {
         (step.required ?? false) ||
         ((step.requiredWhenProjects ?? false) && projectNames.length > 0);
 
-      const run = runRapidkitCli(input.dist, cliArgs, input.workspacePath, input.env);
+      const executionCwd =
+        step.cwd === 'project' && target.projectName
+          ? await resolveProjectRootByName(input.workspacePath, target.projectName)
+          : input.workspacePath;
+      const run = runWorkspaiCli(input.dist, cliArgs, executionCwd, input.env);
       const artifactPaths = artifactsForStep(step);
       const { present, missing } = await checkArtifacts(input.workspacePath, artifactPaths);
+      let verification: E2EStepResult['verification'];
+      if (step.id === 'workspaceVerify') {
+        const verifyPath = path.join(input.workspacePath, WORKSPACE_VERIFY_REPORT_PATH);
+        const verifyPayload = (await fs.readJson(verifyPath).catch(() => null)) as {
+          summary?: { verdict?: unknown };
+          blockingReasons?: unknown[];
+        } | null;
+        const verdict = verifyPayload?.summary?.verdict;
+        if (verdict === 'ready' || verdict === 'needs-attention' || verdict === 'blocked') {
+          verification = {
+            verdict,
+            blockingReasons: (verifyPayload?.blockingReasons ?? []).filter(
+              (reason): reason is string => typeof reason === 'string'
+            ),
+          };
+        }
+      }
 
       results.push({
         id: step.perProject && target.projectName ? `${step.id}:${target.projectName}` : step.id,
@@ -802,6 +865,7 @@ export async function runIntelligenceScenario(input: {
         artifactsMissing: missing,
         outputTail: run.cliOutput.slice(-1200),
         projectName: target.projectName,
+        ...(verification ? { verification } : {}),
       });
     }
   }
@@ -832,7 +896,7 @@ export function analyzeE2EReport(report: E2EReport): string {
     '# Workspace Intelligence Local E2E — Analysis',
     '',
     `Generated: ${report.generatedAt}`,
-    `CLI: ${report.rapidkitDist}`,
+    `CLI: ${report.workspaiDist}`,
     '',
   ];
 

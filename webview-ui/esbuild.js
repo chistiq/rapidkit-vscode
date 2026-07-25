@@ -46,6 +46,7 @@ async function main() {
     entryPoints: {
       webview: 'src/index.tsx',
       sidebar: 'src/sidebar/index.tsx',
+      graphWorker: 'src/workers/workspaceGraphLayout.worker.ts',
     },
     bundle: true,
     format: 'iife',

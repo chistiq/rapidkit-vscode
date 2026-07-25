@@ -156,7 +156,7 @@ export function buildWorkspaceAgentContextPromptSection(
   }
 
   lines.push(
-    '- Prefer deterministic workspace intelligence commands over heuristic guesses: `rapidkit workspace model`, `workspace snapshot`, `workspace diff`, `workspace impact`, `workspace context --for-agent`.'
+    '- Prefer deterministic workspace intelligence commands over heuristic guesses: `workspai workspace model`, `workspace snapshot`, `workspace diff`, `workspace impact`, `workspace context --for-agent`.'
   );
 
   return lines.join('\n');

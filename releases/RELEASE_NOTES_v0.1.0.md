@@ -33,7 +33,7 @@ Welcome to the first pre-release of the official RapidKit extension for Visual S
 ### ⚠️ Important Notes
 
 - This is a **pre-release** version for early testing
-- Please report any issues on [GitHub Issues](https://github.com/rapidkitlabs/rapidkit-vscode/issues)
+- Please report any issues on [GitHub Issues](https://github.com/chistiq/rapidkit-vscode/issues)
 - Demo mode is enabled by default for easy testing
 
 ### 📦 Installation
@@ -53,4 +53,4 @@ Or install from VS Code:
 
 We'd love to hear your feedback! Please report issues or suggestions on our GitHub repository.
 
-**Full Changelog**: https://github.com/rapidkitlabs/rapidkit-vscode/blob/main/CHANGELOG.md
+**Full Changelog**: https://github.com/chistiq/rapidkit-vscode/blob/main/CHANGELOG.md

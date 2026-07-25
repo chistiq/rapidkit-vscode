@@ -35,14 +35,14 @@ describe('Wave E — Studio vs Dashboard AI narrative', () => {
     expect(narrativeLib).toContain('WORKSPAI_STUDIO_GUIDED_EMPTY_BODY');
     expect(narrativeLib).toContain('WORKSPAI_GUIDED_CHIP_VERIFY_DETAIL');
     expect(secondarySidebar).toContain("id: 'studio'");
-    expect(secondarySidebar).toContain("label: 'Studio'");
+    expect(secondarySidebar).toContain("label: 'Assistant'");
     expect(projectActions).toContain('WORKSPAI_INCIDENT_STUDIO_PROJECT_TILE_DETAIL');
     expect(projectActions).toContain('WORKSPAI_AI_ASSISTANT_TILE_DETAIL');
     expect(enterpriseFlow).toContain('WORKSPAI_INCIDENT_STUDIO_WORKSPACE_TILE_DETAIL');
     expect(extension).toContain('WORKSPAI_AI_FLOWS_ONBOARDING_HEADLINE');
   });
 
-  it('separates Incident Studio repair loop from Workspace Advisor guidance entry', () => {
+  it('preserves distinct repair and guidance capabilities behind the unified Assistant', () => {
     expect(WORKSPAI_AI_NARRATIVE.incidentStudio.label).toBe('Incident Studio');
     expect(WORKSPAI_AI_NARRATIVE.aiAssistant.label).toBe('Workspace Advisor');
     expect(WORKSPAI_AI_NARRATIVE.incidentStudio.workspaceTileDetail).toContain('Evidence');

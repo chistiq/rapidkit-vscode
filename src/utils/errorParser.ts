@@ -1,5 +1,5 @@
 /**
- * Error Parser - Extract useful information from RapidKit CLI errors
+ * Error Parser - Extract useful information from Workspai CLI errors
  */
 
 import { Logger } from './logger';
@@ -16,7 +16,7 @@ export interface ParsedError {
 }
 
 /**
- * Parse error output from RapidKit npm package
+ * Parse error output from Workspai CLI.
  */
 export function parseRapidKitError(stderr: string, stdout: string = ''): ParsedError {
   const fullOutput = `${stderr}\n${stdout}`.toLowerCase();

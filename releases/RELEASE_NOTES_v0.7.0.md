@@ -232,9 +232,9 @@ See [CHANGELOG.md](../CHANGELOG.md) for complete details.
 ## 🔗 Links
 
 - **Marketplace:** https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode
-- **GitHub Repository:** https://github.com/rapidkitlabs/rapidkit-vscode
+- **GitHub Repository:** https://github.com/chistiq/rapidkit-vscode
 - **Documentation:** https://docs.rapidkit.dev
-- **Report Issues:** https://github.com/rapidkitlabs/rapidkit-vscode/issues
+- **Report Issues:** https://github.com/chistiq/rapidkit-vscode/issues
 
 ---
 

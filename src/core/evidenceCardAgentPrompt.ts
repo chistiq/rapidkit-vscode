@@ -1,5 +1,7 @@
 import type { DashboardEvidenceCard } from './dashboardEvidenceBridge.js';
+import { resolveDashboardCommandExecutionPlan } from './dashboardCommandExecutionPlan.js';
 import { resolveDashboardCommandForEvidenceCard } from './dashboardReportRegistry.js';
+import { buildStudioSourceCommandForCard } from './studioCardSourceShell.js';
 import type { StudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
 import {
   buildAgentPackHandoffSummaryLines,
@@ -28,9 +30,9 @@ function buildCardSpecificStudioGuidance(
         '## Impact card semantics',
         '- This card measures blast-radius / drift from the workspace model diff — not doctor health or test pass/fail.',
         '- `affectedProjects: 0` with many workspace-level items usually means git-untracked governance files (AGENTS.md, Copilot/Cursor hooks) after agent-sync — not a broken atlas-api project.',
-        '- Do NOT delete `workspace-impact-last-run.json` and do NOT run `rapidkit doctor` to fix this card — doctor does not regenerate impact.',
+        '- Do NOT delete `workspace-impact-last-run.json` and do NOT run `workspai doctor` to fix this card — doctor does not regenerate impact.',
         '- Prefer: inspect workspace-level samples in the impact artifact, then either commit the expected grounding files or refresh baseline via snapshot + diff + impact.',
-        '- Recommended verify path: `npx rapidkit workspace verify --from-impact .rapidkit/reports/workspace-impact-last-run.json --json`.',
+        '- Recommended verify path: `npx workspai workspace verify --from-impact .workspai/reports/workspace-impact-last-run.json --json`.',
       ];
     case 'workspaceVerify':
       return [
@@ -54,7 +56,7 @@ function buildWorkspaceImpactCardStudioSection(report: WorkspaceImpactReport | n
     return [
       '',
       '## Impact artifact',
-      '- Impact report missing on disk. Run: `npx rapidkit workspace impact --from .rapidkit/reports/workspace-model-diff-last-run.json --json --write`',
+      '- Impact report missing on disk. Run: `npx workspai workspace impact --from .workspai/reports/workspace-model-diff-last-run.json --json`',
     ].join('\n');
   }
 
@@ -117,6 +119,7 @@ export function buildEvidenceCardStudioPrompt(input: EvidenceCardAgentContextInp
     ].join('\n');
   }
   const commandId = resolveDashboardCommandForEvidenceCard(card.id);
+  const commandPlan = commandId ? resolveDashboardCommandExecutionPlan(commandId) : undefined;
   const blockers = card.blockers ?? [];
   const stderrTail =
     typeof card.metrics?.stderrTail === 'string' ? card.metrics.stderrTail.trim() : '';
@@ -139,6 +142,28 @@ export function buildEvidenceCardStudioPrompt(input: EvidenceCardAgentContextInp
   }
   if (commandId) {
     lines.push(`- Source command: ${commandId}`);
+  }
+  if (commandPlan?.cliArgs.length) {
+    lines.push(`- Workspai CLI: npx workspai ${commandPlan.cliArgs.join(' ')}`);
+  }
+  if (commandPlan?.executionChannel) {
+    lines.push(`- Execution channel: ${commandPlan.executionChannel}`);
+  }
+  if (commandPlan?.capabilityRequirement) {
+    lines.push(`- Capability gate: ${commandPlan.capabilityRequirement.label}`);
+  }
+  if (commandPlan?.safetyPolicy) {
+    lines.push(`- Command risk: ${commandPlan.safetyPolicy.risk}`);
+    if (commandPlan.safetyPolicy.confirmation) {
+      lines.push(`- Requires confirmation: ${commandPlan.safetyPolicy.confirmation.confirmLabel}`);
+    }
+    if (commandPlan.safetyPolicy.refreshCommands?.length) {
+      lines.push(
+        `- Refresh after run: ${commandPlan.safetyPolicy.refreshCommands
+          .map((command) => `npx workspai ${command.join(' ')}`)
+          .join(' ; ')}`
+      );
+    }
   }
   if (card.artifactPath?.trim()) {
     lines.push(`- Artifact: ${card.artifactPath.trim()}`);
@@ -166,7 +191,8 @@ export function buildEvidenceCardStudioPrompt(input: EvidenceCardAgentContextInp
     '1. Identify the root cause using the attached workspace intelligence and this card evidence.',
     '2. Propose the safest fix path (commands + file edits) without re-scanning the entire repository.',
     '3. Call out any missing prerequisite command if evidence is stale or incomplete.',
-    '4. Return one recommended next action the operator can run immediately.'
+    `4. Prefer the mapped source command when refreshing this evidence: \`${buildStudioSourceCommandForCard(card.id)}\`.`,
+    '5. Return one recommended next action the operator can run immediately.'
   );
 
   lines.push(...buildCardSpecificStudioGuidance(card));

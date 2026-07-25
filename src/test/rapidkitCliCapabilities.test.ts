@@ -27,13 +27,22 @@ vi.mock('../utils/platformCapabilities', async (importOriginal) => {
 
 import { run } from '../utils/exec';
 import * as vscode from 'vscode';
+import { resolvePackageRunnerInvocation } from '../utils/platformCapabilities';
 import {
+  gateCoreBackedRapidkitCli,
   gateCreateFrontendCli,
+  gateImportCli,
+  gateProjectScopedRapidkitCli,
+  gateRootRapidkitCli,
   gateTopLevelRapidkitCli,
   gateWorkspaceSubcommandCli,
   gateWorkspaceIntelligenceCli,
   probeAdoptCliCapabilities,
+  probeCoreBackedCliCapability,
   probeCreateFrontendCliCapabilities,
+  probeImportCliCapabilities,
+  probeProjectScopedCliCapability,
+  probeRootCliCapability,
   probeTopLevelCliCapability,
   probeWorkspaceSubcommandCliCapability,
   probeWorkspaceIntelligenceCliCapabilities,
@@ -53,6 +62,8 @@ function commandsJson(
     workspaceSubcommands?: string[];
     intelligenceSubcommands?: string[];
     commandMap?: string[];
+    coreBacked?: string[];
+    projectScoped?: string[];
     schemaVersion?: string;
   } = {}
 ): string {
@@ -67,6 +78,7 @@ function commandsJson(
   const commandMapIds = overrides.commandMap ?? [
     'create',
     'adopt',
+    'import',
     'workspace',
     'project',
     'readiness',
@@ -84,7 +96,11 @@ function commandsJson(
       cliLogEvent: 'cli-log-event-v1',
       freshnessMetadata: 'rapidkit-freshness-metadata-v1',
     },
-    commands: { npmOwned: [], coreBacked: [], projectScoped: [] },
+    commands: {
+      npmOwned: [],
+      coreBacked: overrides.coreBacked ?? [],
+      projectScoped: overrides.projectScoped ?? [],
+    },
     workspace: {
       command: 'workspace',
       subcommands: workspaceSubcommands,
@@ -102,7 +118,7 @@ describe('rapidkitCliCapabilities (commands --json driven)', () => {
     vi.mocked(vscode.window.showErrorMessage).mockReset();
   });
 
-  it('detects workspace intelligence from rapidkit commands --json', async () => {
+  it('detects workspace intelligence from workspai commands --json', async () => {
     mockedRun.mockResolvedValueOnce({
       stdout: commandsJson(),
       stderr: '',
@@ -114,7 +130,7 @@ describe('rapidkitCliCapabilities (commands --json driven)', () => {
     expect(probe.missingFeatures).toEqual([]);
   });
 
-  it('runs `rapidkit commands --json` via npx (no --help regex probing)', async () => {
+  it('runs `workspai commands --json` through the portable npx resolver', async () => {
     mockedRun.mockResolvedValueOnce({
       stdout: commandsJson(),
       stderr: '',
@@ -123,8 +139,10 @@ describe('rapidkitCliCapabilities (commands --json driven)', () => {
 
     await probeWorkspaceIntelligenceCliCapabilities({ forceRefresh: true });
     expect(mockedRun).toHaveBeenCalledTimes(1);
-    expect(path.basename(mockedRun.mock.calls[0]?.[0] ?? '')).toBe('npx');
+    const invocation = resolvePackageRunnerInvocation('npx');
+    expect(mockedRun.mock.calls[0]?.[0]).toBe(invocation.command);
     const args = mockedRun.mock.calls[0]?.[1] as string[];
+    expect(args).toEqual(expect.arrayContaining([...invocation.prefixArgs, '--yes', 'workspai']));
     expect(args).toContain('commands');
     expect(args).toContain('--json');
     expect(args).not.toContain('--help');
@@ -168,7 +186,7 @@ describe('rapidkitCliCapabilities (commands --json driven)', () => {
     expect(probe.available).toBe(false);
   });
 
-  it('detects create-frontend and adopt support from the command map', async () => {
+  it('detects create-frontend, import, and adopt support from the command map', async () => {
     mockedRun.mockResolvedValue({
       stdout: commandsJson(),
       stderr: '',
@@ -176,6 +194,9 @@ describe('rapidkitCliCapabilities (commands --json driven)', () => {
     });
 
     await expect(probeCreateFrontendCliCapabilities({ forceRefresh: true })).resolves.toEqual({
+      available: true,
+    });
+    await expect(probeImportCliCapabilities({ forceRefresh: true })).resolves.toEqual({
       available: true,
     });
     await expect(probeAdoptCliCapabilities({ forceRefresh: true })).resolves.toEqual({
@@ -187,6 +208,8 @@ describe('rapidkitCliCapabilities (commands --json driven)', () => {
     mockedRun.mockResolvedValue({
       stdout: commandsJson({
         workspaceSubcommands: [...REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS, 'archive', 'graph'],
+        projectScoped: ['test', 'build'],
+        coreBacked: ['diff', 'rollback'],
       }),
       stderr: '',
       exitCode: 0,
@@ -198,11 +221,20 @@ describe('rapidkitCliCapabilities (commands --json driven)', () => {
     await expect(
       probeWorkspaceSubcommandCliCapability('archive', { forceRefresh: true })
     ).resolves.toEqual({ available: true });
+    await expect(probeProjectScopedCliCapability('test', { forceRefresh: true })).resolves.toEqual({
+      available: true,
+    });
+    await expect(probeCoreBackedCliCapability('diff', { forceRefresh: true })).resolves.toEqual({
+      available: true,
+    });
+    await expect(probeRootCliCapability('diff', { forceRefresh: true })).resolves.toEqual({
+      available: true,
+    });
   });
 
   it('reports create-frontend unavailable when the CLI omits the create command', async () => {
     mockedRun.mockResolvedValueOnce({
-      stdout: commandsJson({ commandMap: ['adopt', 'workspace'] }),
+      stdout: commandsJson({ commandMap: ['adopt', 'import', 'workspace'] }),
       stderr: '',
       exitCode: 0,
     });
@@ -239,10 +271,22 @@ describe('rapidkitCliCapabilities gates', () => {
     await expect(gateCreateFrontendCli('Create Frontend Project')).resolves.toBe(true);
   });
 
+  it('allows import when the CLI exposes the import command', async () => {
+    mockedRun.mockResolvedValueOnce({
+      stdout: commandsJson(),
+      stderr: '',
+      exitCode: 0,
+    });
+
+    await expect(gateImportCli('Import Project')).resolves.toBe(true);
+  });
+
   it('allows Studio enterprise commands advertised by the runtime surface', async () => {
     mockedRun.mockResolvedValue({
       stdout: commandsJson({
         workspaceSubcommands: [...REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS, 'archive', 'graph'],
+        projectScoped: ['test'],
+        coreBacked: ['diff'],
       }),
       stderr: '',
       exitCode: 0,
@@ -250,6 +294,9 @@ describe('rapidkitCliCapabilities gates', () => {
 
     await expect(gateTopLevelRapidkitCli('Studio readiness', 'readiness')).resolves.toBe(true);
     await expect(gateWorkspaceSubcommandCli('Studio archive', 'archive')).resolves.toBe(true);
+    await expect(gateProjectScopedRapidkitCli('Project Test', 'test')).resolves.toBe(true);
+    await expect(gateCoreBackedRapidkitCli('Module Diff', 'diff')).resolves.toBe(true);
+    await expect(gateRootRapidkitCli('Module Diff', 'diff')).resolves.toBe(true);
   });
 
   it('blocks workspace intelligence when required capabilities are missing', async () => {
@@ -270,6 +317,8 @@ describe('rapidkitCliCapabilities gates', () => {
     mockedRun.mockResolvedValue({
       stdout: commandsJson({
         workspaceSubcommands: [...REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS, 'contract'],
+        projectScoped: ['test'],
+        coreBacked: ['diff'],
       }),
       stderr: '',
       exitCode: 0,
@@ -280,6 +329,39 @@ describe('rapidkitCliCapabilities gates', () => {
         args: ['workspace', 'verify', '--json'],
         cwd: '/tmp/ws',
         featureLabel: 'Workspace Verify',
+      })
+    ).resolves.toEqual({ allowed: true });
+    await expect(
+      gateRapidkitCliArgs({
+        args: ['test'],
+        cwd: '/tmp/ws',
+        featureLabel: 'Project Test',
+      })
+    ).resolves.toEqual({ allowed: true });
+    await expect(
+      gateRapidkitCliArgs({
+        args: ['diff', 'module', 'auth'],
+        cwd: '/tmp/ws',
+        featureLabel: 'Module Diff',
+      })
+    ).resolves.toEqual({ allowed: true });
+  });
+
+  it('allows Studio root commands when the CLI advertises them as top-level instead of core-backed', async () => {
+    mockedRun.mockResolvedValue({
+      stdout: commandsJson({
+        commandMap: ['workspace', 'version'],
+        coreBacked: [],
+      }),
+      stderr: '',
+      exitCode: 0,
+    });
+
+    await expect(
+      gateRapidkitCliArgs({
+        args: ['version'],
+        cwd: '/tmp/ws',
+        featureLabel: 'Studio Version',
       })
     ).resolves.toEqual({ allowed: true });
   });

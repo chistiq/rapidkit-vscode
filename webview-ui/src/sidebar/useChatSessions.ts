@@ -426,6 +426,20 @@ export function useChatSessions(key: StoreKey, idPrefix: string) {
     [update]
   );
 
+  const steerSession = useCallback(
+    (sessionId: string, message: string) => {
+      const normalized = message.trim();
+      if (!normalized) {
+        return;
+      }
+      update(sessionId, (session) => ({
+        ...session,
+        messages: [...session.messages, { role: 'user', content: normalized }],
+      }));
+    },
+    [update]
+  );
+
   return {
     sessions,
     activeId,
@@ -441,5 +455,6 @@ export function useChatSessions(key: StoreKey, idPrefix: string) {
     appendChunk,
     finishStreaming,
     failSession,
+    steerSession,
   };
 }

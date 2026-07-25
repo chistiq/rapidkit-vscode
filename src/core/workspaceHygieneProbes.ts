@@ -2,7 +2,7 @@
  * Workspace Hygiene Probes
  *
  * Lightweight, in-process checks that surface common workspace quality issues
- * without requiring the RapidKit CLI.  These complement the CLI's doctor output
+ * without requiring Workspai CLI. These complement the CLI's doctor output
  * and fill the gaps identified in the workspace analysis:
  *
  *  - Duplicate-dependency probe: detects packages listed in both `dependencies`

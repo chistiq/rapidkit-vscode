@@ -4,8 +4,8 @@ import type { WorkspaceToolStatus } from '@/types';
 import { vscode } from '@/vscode';
 import {
   MANUAL_STACK_LANES,
+  defaultInstallPythonEngineForProfile,
   defaultProfileForStackLane,
-  profileRequiresPythonInstallMethod,
   recommendedProfilesForStackLane,
   resolveDefaultWorkspaceName,
   stackLaneGuidance,
@@ -28,6 +28,7 @@ export interface WorkspaceCreationConfig {
     name: string;
     profile: WorkspaceProfile;
     installMethod: WorkspaceInstallMethod;
+    skipPythonEngine: boolean;
     initGit: boolean;
     policyMode: 'warn' | 'strict';
     dependencySharing: 'isolated' | 'shared';
@@ -66,6 +67,8 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, 
     const [stackLane, setStackLane] = useState<CreationStackLane>('balanced');
     const [profile, setProfile] = useState<WorkspaceProfile>('minimal');
     const [installMethod, setInstallMethod] = useState<WorkspaceInstallMethod>('auto');
+    const [installPythonEngine, setInstallPythonEngine] = useState(false);
+    const [installPythonEngineTouched, setInstallPythonEngineTouched] = useState(false);
     const [initGit, setInitGit] = useState(true);
     const [strictPolicy, setStrictPolicy] = useState(false);
     const [depSharing, setDepSharing] = useState(false);
@@ -105,6 +108,8 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, 
             setStackLane('balanced');
             setProfile('minimal');
             setInstallMethod(toolStatus?.preferredInstallMethod ?? 'auto');
+            setInstallPythonEngine(defaultInstallPythonEngineForProfile('minimal'));
+            setInstallPythonEngineTouched(false);
             setInitGit(true);
             setStrictPolicy(false);
             setDepSharing(false);
@@ -123,6 +128,13 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, 
         setWorkspaceName(suggestedWorkspaceName);
         validateName(suggestedWorkspaceName);
     }, [isOpen, nameTouched, suggestedWorkspaceName]);
+
+    useEffect(() => {
+        if (!isOpen || installPythonEngineTouched) {
+            return;
+        }
+        setInstallPythonEngine(defaultInstallPythonEngineForProfile(profile));
+    }, [isOpen, installPythonEngineTouched, profile]);
 
     const isInstallMethodEnabled = (method: WorkspaceInstallMethod): boolean => {
         if (!toolStatus || method === 'auto') {
@@ -185,6 +197,7 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, 
             name: workspaceName,
             profile,
             installMethod,
+            skipPythonEngine: !installPythonEngine,
             initGit,
             policyMode: strictPolicy ? 'strict' : 'warn',
             dependencySharing: depSharing ? 'shared' : 'isolated',
@@ -201,7 +214,7 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, 
     const needsJava = profile === 'java-only' || profile === 'polyglot' || profile === 'enterprise';
     const needsDotnet =
         profile === 'dotnet-only' || profile === 'polyglot' || profile === 'enterprise';
-    const showInstallMethod = profileRequiresPythonInstallMethod(profile);
+    const showInstallMethod = installPythonEngine;
     const canCreate = workspaceName.trim() && !error;
 
     return (
@@ -280,7 +293,7 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, 
                             {error}
                         </span>
                     ) : workspaceName ? (
-                        <span className="modal-field__hint">~/rapidkit/workspaces/{workspaceName}</span>
+                        <span className="modal-field__hint">~/.workspai/workspaces/{workspaceName}</span>
                     ) : null}
                 </label>
 
@@ -380,6 +393,15 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate, onSwitchToAI, 
                     <span>Options</span>
                     <div className="modal-check-list">
                         {[
+                            {
+                                checked: installPythonEngine,
+                                toggle: () => {
+                                    setInstallPythonEngineTouched(true);
+                                    setInstallPythonEngine((value) => !value);
+                                },
+                                label: 'Install RapidKit Core',
+                                desc: 'Required for Python/FastAPI, polyglot, and enterprise profiles; keep off for lightweight Node, Go, Java, .NET, or minimal workspaces'
+                            },
                             { checked: initGit, toggle: () => setInitGit((value) => !value), label: 'Initialize Git repository', desc: 'Run git init and create an initial commit' },
                             { checked: strictPolicy, toggle: () => setStrictPolicy((value) => !value), label: 'Strict policy enforcement', desc: 'Fail CI on any violation' },
                             { checked: depSharing, toggle: () => setDepSharing((value) => !value), label: 'Enable dependency sharing', desc: 'Share packages across projects' },

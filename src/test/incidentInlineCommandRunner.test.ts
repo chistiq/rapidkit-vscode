@@ -7,28 +7,30 @@ import {
   parseRapidkitInlineCommand,
   resolveRapidkitExecutionPlan,
 } from '../core/incidentInlineCommandRunner';
+import { resolveDashboardCommandExecutionPlan } from '../core/dashboardCommandExecutionPlan';
+import { buildRapidkitCommand } from '../utils/platformCapabilities';
 
 describe('incidentInlineCommandRunner', () => {
-  it('parses allowed rapidkit commands without shell metacharacters', () => {
+  it('accepts legacy rapidkit commands but normalizes display to Workspai', () => {
     expect(parseRapidkitInlineCommand('npx rapidkit doctor workspace --json')).toEqual({
       rapidkitArgs: ['doctor', 'workspace', '--json'],
-      displayCommand: 'rapidkit doctor workspace --json',
+      displayCommand: 'workspai doctor workspace --json',
     });
   });
 
-  it('normalizes safe cd-prefixed RapidKit commands into cwd hints', () => {
+  it('normalizes safe cd-prefixed Workspai commands into cwd hints', () => {
     expect(
-      parseRapidkitInlineCommand('cd "/ws/api" && npx rapidkit doctor project --json')
+      parseRapidkitInlineCommand('cd "/ws/api" && npx workspai doctor project --json')
     ).toEqual({
       rapidkitArgs: ['doctor', 'project', '--json'],
-      displayCommand: 'rapidkit doctor project --json',
+      displayCommand: 'workspai doctor project --json',
       cwdHint: '/ws/api',
     });
   });
 
   it('runs safe cd-prefixed remediation commands from the selected project cwd', async () => {
     const plan = await resolveRapidkitExecutionPlan({
-      command: 'cd "/ws/api" && npx rapidkit doctor project --json',
+      command: 'cd "/ws/api" && npx workspai doctor project --json',
       workspacePath: '/ws',
       projectPath: '/ws/api',
       projectBelongsToWorkspace: true,
@@ -36,13 +38,13 @@ describe('incidentInlineCommandRunner', () => {
 
     expect(plan).toMatchObject({
       cwd: '/ws/api',
-      displayCommand: expect.stringContaining('rapidkit doctor project --json'),
+      displayCommand: expect.stringContaining('workspai doctor project --json'),
     });
   });
 
   it('runs doctor project verification from the selected project cwd without requiring a cd prefix', async () => {
     const plan = await resolveRapidkitExecutionPlan({
-      command: 'npx rapidkit doctor project --json',
+      command: 'npx workspai doctor project --json',
       workspacePath: '/ws',
       projectPath: '/ws/api',
       projectBelongsToWorkspace: true,
@@ -50,7 +52,7 @@ describe('incidentInlineCommandRunner', () => {
 
     expect(plan).toMatchObject({
       cwd: '/ws/api',
-      displayCommand: expect.stringContaining('rapidkit doctor project --json'),
+      displayCommand: expect.stringContaining('workspai doctor project --json'),
     });
   });
 
@@ -62,21 +64,21 @@ describe('incidentInlineCommandRunner', () => {
     );
 
     const plan = await resolveRapidkitExecutionPlan({
-      command: 'rapidkit workspace run test --json',
+      command: 'workspai workspace run test --json',
       workspacePath,
       projectBelongsToWorkspace: false,
     });
 
     expect(plan).toMatchObject({
       cwd: workspacePath,
-      displayCommand: expect.stringContaining('rapidkit workspace run test --json'),
+      displayCommand: expect.stringContaining('workspai workspace run test --json'),
     });
     expect('executable' in plan ? plan.executable : '').not.toBe('poetry');
   });
 
   it('runs workspace remediation-plan from the workspace cwd with include-paths for Studio repair evidence', async () => {
     const plan = await resolveRapidkitExecutionPlan({
-      command: 'npx rapidkit workspace remediation-plan --ci --json --write --include-paths',
+      command: 'npx workspai workspace remediation-plan --ci --json --write --include-paths',
       workspacePath: '/ws',
       projectPath: '/ws/api',
       projectBelongsToWorkspace: true,
@@ -85,8 +87,24 @@ describe('incidentInlineCommandRunner', () => {
     expect(plan).toMatchObject({
       cwd: '/ws',
       displayCommand: expect.stringContaining(
-        'rapidkit workspace remediation-plan --ci --json --write --include-paths'
+        'workspai workspace remediation-plan --ci --json --write --include-paths'
       ),
+    });
+  });
+
+  it('accepts the centrally planned workspace remediation command used by Studio refresh', () => {
+    const plan = resolveDashboardCommandExecutionPlan('workspaceRemediationPlan');
+    const command = buildRapidkitCommand(plan.cliArgs);
+
+    expect(parseRapidkitInlineCommand(command)).toMatchObject({
+      rapidkitArgs: [
+        'workspace',
+        'remediation-plan',
+        '--ci',
+        '--json',
+        '--write',
+        '--include-paths',
+      ],
     });
   });
 
@@ -114,17 +132,17 @@ describe('incidentInlineCommandRunner', () => {
   });
 
   it('rejects shell chaining and unknown roots', () => {
-    expect(parseRapidkitInlineCommand('npx rapidkit doctor workspace; rm -rf /')).toMatchObject({
+    expect(parseRapidkitInlineCommand('npx workspai doctor workspace; rm -rf /')).toMatchObject({
       error: expect.stringContaining('metacharacters'),
     });
-    expect(parseRapidkitInlineCommand('npx rapidkit deploy workspace')).toMatchObject({
+    expect(parseRapidkitInlineCommand('npx workspai deploy workspace')).toMatchObject({
       error: expect.stringContaining('not allowed'),
     });
   });
 
   it('rejects cd-prefixed commands outside the active workspace and project', async () => {
     const plan = await resolveRapidkitExecutionPlan({
-      command: 'cd "/other/api" && npx rapidkit doctor project --json',
+      command: 'cd "/other/api" && npx workspai doctor project --json',
       workspacePath: '/ws',
       projectPath: '/ws/api',
       projectBelongsToWorkspace: true,
@@ -137,7 +155,7 @@ describe('incidentInlineCommandRunner', () => {
 
   it('rejects projects outside the active workspace', async () => {
     const plan = await resolveRapidkitExecutionPlan({
-      command: 'npx rapidkit test',
+      command: 'npx workspai test',
       workspacePath: '/ws',
       projectPath: '/other/project',
       projectBelongsToWorkspace: false,

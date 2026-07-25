@@ -9,11 +9,11 @@ interface HomeImportAdoptHandoffProps {
 /**
  * Home handoff for onboarding existing code.
  *
- * Import → `workspai.importProject` (copy/clone via RapidKit CLI `import`)
- * Adopt  → `workspai.adoptProject` (in-place link via RapidKit CLI `adopt`)
+ * Import Projects → `workspai.importProject` (copy/clone via Workspai CLI `import`)
+ * Adopt Projects  → `workspai.adoptProject` (in-place link via Workspai CLI `adopt`)
  *
  * When no workspace is active yet, the extension creates or reuses the managed
- * default slot (`~/rapidkit/workspaces/workspai`) — same as the npm CLI.
+ * default slot (`~/.workspai/workspaces/workspai`) — same as the npm CLI.
  */
 export function HomeImportAdoptHandoff({
   workspaceStatus,
@@ -45,7 +45,7 @@ export function HomeImportAdoptHandoff({
       <div className="home-create-handoff__head">
         <FolderOpen size={14} aria-hidden="true" />
         <div>
-          <strong className="home-create-handoff__title">Import &amp; Adopt</strong>
+          <strong className="home-create-handoff__title">Import / Adopt Projects</strong>
           <small className="home-create-handoff__hint">
             Onboard existing code into workspace intelligence
           </small>

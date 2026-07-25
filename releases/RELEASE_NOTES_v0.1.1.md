@@ -83,9 +83,9 @@ Or in VS Code:
 
 ### 🔗 Resources
 
-- **GitHub Repository:** https://github.com/rapidkitlabs/rapidkit-vscode
-- **Report Issues:** https://github.com/rapidkitlabs/rapidkit-vscode/issues
-- **Previous Release:** [v0.1.0](https://github.com/rapidkitlabs/rapidkit-vscode/releases/tag/v0.1.0)
+- **GitHub Repository:** https://github.com/chistiq/rapidkit-vscode
+- **Report Issues:** https://github.com/chistiq/rapidkit-vscode/issues
+- **Previous Release:** [v0.1.0](https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.1.0)
 
 ### 🙏 Feedback
 

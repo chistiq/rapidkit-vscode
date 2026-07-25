@@ -20,6 +20,8 @@ export type RunIncidentInlineCommandOptions = {
   actionId?: string;
   cliActionId?: string;
   telemetryMetadata?: Record<string, unknown>;
+  /** Keep bounded stdout for trusted structured consumers such as npm audit parsers. */
+  captureStdout?: boolean;
 };
 
 export type RunIncidentInlineCommandResult = {
@@ -29,6 +31,7 @@ export type RunIncidentInlineCommandResult = {
   error?: string;
   exitCode?: number | null;
   stderrTail?: string;
+  capturedStdout?: string;
   executionTranscript?: IncidentStudioExecutionTranscript;
 };
 
@@ -360,6 +363,7 @@ export async function runIncidentInlineCommand(
       command: inlineCommand,
       success,
       output: success ? truncatedOutput : undefined,
+      ...(options.captureStdout ? { capturedStdout: result.stdout.slice(0, 256 * 1024) } : {}),
       error: failureSummary?.error,
       exitCode: result.exitCode,
       stderrTail: failureSummary?.stderrTail,

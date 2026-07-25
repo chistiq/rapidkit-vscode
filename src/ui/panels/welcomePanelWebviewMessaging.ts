@@ -47,9 +47,19 @@ export function postWelcomePanelWebviewMessage<C extends string, D = unknown>(
     webview?: vscode.Webview;
   }
 ): void {
-  (options?.webview ?? panelWebview).postMessage(
-    createExtensionWebviewMessage(command, data, options?.meta, options?.error)
-  );
+  try {
+    const delivery = (options?.webview ?? panelWebview).postMessage(
+      createExtensionWebviewMessage(command, data, options?.meta, options?.error)
+    );
+    void Promise.resolve(delivery).catch(() => {
+      // A renderer can dispose a webview between scheduling and delivery.
+      // Treat that race as cancellation; never surface an unhandled rejection
+      // into the extension host while the window is closing or reloading.
+    });
+  } catch {
+    // Accessing a disposed webview may throw synchronously on some VS Code
+    // builds. The target no longer exists, so there is nothing useful to retry.
+  }
 }
 
 export function postWelcomePanelChatBrainWebviewMessage(

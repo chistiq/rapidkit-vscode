@@ -7,27 +7,36 @@ import {
 
 /**
  * Canonical workspace intelligence chain the extension depends on. Detection is
- * driven by the structured `rapidkit commands --json` surface
+ * driven by the structured `workspai commands --json` surface
  * (`workspace.intelligenceSubcommands`) and the bundled
  * `runtime-command-surface.v1` contract — never by regex-parsing `--help` text
  * (roadmap item 2.1). A drift-guard test pins this list to the contract.
  */
 export const REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS = [
+  'intelligence',
   'model',
   'snapshot',
   'diff',
   'impact',
+  'contract',
   'verify',
+  'graph',
+  'watch',
   'context',
   'agent-sync',
   'remediation-plan',
   'explain',
   'why',
   'trace',
+  'feedback',
+  'eval',
+  'mcp',
 ] as const;
 
 /** Top-level command that backs the create-frontend flow. */
 const CREATE_COMMAND_ID = 'create';
+/** Top-level command that backs the import flow. */
+const IMPORT_COMMAND_ID = 'import';
 /** Top-level command that backs the adopt flow. */
 const ADOPT_COMMAND_ID = 'adopt';
 
@@ -90,6 +99,18 @@ export async function probeAdoptCliCapabilities(options?: {
   return { available: Boolean(surface?.topLevelCommands.includes(ADOPT_COMMAND_ID)) };
 }
 
+export async function probeImportCliCapabilities(options?: {
+  cwd?: string;
+  forceRefresh?: boolean;
+}): Promise<{ available: boolean }> {
+  const surface = await fetchRuntimeCommandSurface({
+    cwd: options?.cwd,
+    forceRefresh: options?.forceRefresh,
+  });
+
+  return { available: Boolean(surface?.topLevelCommands.includes(IMPORT_COMMAND_ID)) };
+}
+
 export async function probeTopLevelCliCapability(
   commandId: string,
   options?: {
@@ -120,6 +141,56 @@ export async function probeWorkspaceSubcommandCliCapability(
   return { available: Boolean(surface?.workspaceSubcommands.includes(subcommand)) };
 }
 
+export async function probeProjectScopedCliCapability(
+  commandId: string,
+  options?: {
+    cwd?: string;
+    forceRefresh?: boolean;
+  }
+): Promise<{ available: boolean }> {
+  const surface = await fetchRuntimeCommandSurface({
+    cwd: options?.cwd,
+    forceRefresh: options?.forceRefresh,
+  });
+
+  return { available: Boolean(surface?.projectScopedCommands.includes(commandId)) };
+}
+
+export async function probeCoreBackedCliCapability(
+  commandId: string,
+  options?: {
+    cwd?: string;
+    forceRefresh?: boolean;
+  }
+): Promise<{ available: boolean }> {
+  const surface = await fetchRuntimeCommandSurface({
+    cwd: options?.cwd,
+    forceRefresh: options?.forceRefresh,
+  });
+
+  return { available: Boolean(surface?.coreBackedCommands.includes(commandId)) };
+}
+
+export async function probeRootCliCapability(
+  commandId: string,
+  options?: {
+    cwd?: string;
+    forceRefresh?: boolean;
+  }
+): Promise<{ available: boolean }> {
+  const surface = await fetchRuntimeCommandSurface({
+    cwd: options?.cwd,
+    forceRefresh: options?.forceRefresh,
+  });
+
+  return {
+    available: Boolean(
+      surface?.topLevelCommands.includes(commandId) ||
+      surface?.coreBackedCommands.includes(commandId)
+    ),
+  };
+}
+
 async function showCliCapabilityGate(
   featureLabel: string,
   missingFeatures: string[]
@@ -129,7 +200,7 @@ async function showCliCapabilityGate(
   }
 
   const choice = await vscode.window.showErrorMessage(
-    `${featureLabel} is blocked because your linked rapidkit CLI does not advertise required capabilities: ${missingFeatures.join(', ')}. Verify with \`npx rapidkit commands --json\`, link or install the latest rapidkit package, then reload the window.`,
+    `${featureLabel} is blocked because your linked Workspai CLI does not advertise required capabilities: ${missingFeatures.join(', ')}. Verify with \`npx workspai commands --json\`, link or install the latest workspai package, then reload the window.`,
     'Open Setup'
   );
 
@@ -173,6 +244,17 @@ export async function gateAdoptCli(
   return showCliCapabilityGate(featureLabel, ['adopt']);
 }
 
+export async function gateImportCli(
+  featureLabel: string,
+  options?: { cwd?: string }
+): Promise<boolean> {
+  const probe = await probeImportCliCapabilities({ cwd: options?.cwd });
+  if (probe.available) {
+    return true;
+  }
+  return showCliCapabilityGate(featureLabel, ['import']);
+}
+
 export async function gateTopLevelRapidkitCli(
   featureLabel: string,
   commandId: string,
@@ -197,6 +279,42 @@ export async function gateWorkspaceSubcommandCli(
     return true;
   }
   return showCliCapabilityGate(featureLabel, [workspaceFeatureLabel(subcommand)]);
+}
+
+export async function gateProjectScopedRapidkitCli(
+  featureLabel: string,
+  commandId: string,
+  options?: { cwd?: string }
+): Promise<boolean> {
+  const probe = await probeProjectScopedCliCapability(commandId, { cwd: options?.cwd });
+  if (probe.available) {
+    return true;
+  }
+  return showCliCapabilityGate(featureLabel, [`project ${commandId}`]);
+}
+
+export async function gateCoreBackedRapidkitCli(
+  featureLabel: string,
+  commandId: string,
+  options?: { cwd?: string }
+): Promise<boolean> {
+  const probe = await probeCoreBackedCliCapability(commandId, { cwd: options?.cwd });
+  if (probe.available) {
+    return true;
+  }
+  return showCliCapabilityGate(featureLabel, [topLevelFeatureLabel(commandId)]);
+}
+
+export async function gateRootRapidkitCli(
+  featureLabel: string,
+  commandId: string,
+  options?: { cwd?: string }
+): Promise<boolean> {
+  const probe = await probeRootCliCapability(commandId, { cwd: options?.cwd });
+  if (probe.available) {
+    return true;
+  }
+  return showCliCapabilityGate(featureLabel, [topLevelFeatureLabel(commandId)]);
 }
 
 /** Test/diagnostic helper: drop any cached command-surface resolution. */

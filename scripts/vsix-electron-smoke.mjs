@@ -14,7 +14,7 @@ const repoRoot = path.resolve(__dirname, '..');
 function parseArgs(argv) {
   const options = {
     artifact: '',
-    version: process.env.WORKSPAI_VSCODE_TEST_VERSION || '1.100.0',
+    version: process.env.WORKSPAI_VSCODE_TEST_VERSION || '1.106.0',
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -141,7 +141,14 @@ function extractExtension(artifactPath, root) {
   };
 }
 
-function runVsCodeSmoke({ vscodeExecutablePath, extensionDir, extensionTestsPath, workspaceUri, env, root }) {
+function runVsCodeSmoke({
+  vscodeExecutablePath,
+  extensionDir,
+  extensionTestsPath,
+  workspaceUri,
+  env,
+  root,
+}) {
   const childEnv = { ...process.env, ...env };
   delete childEnv.ELECTRON_RUN_AS_NODE;
   const args = [
@@ -162,10 +169,28 @@ function runVsCodeSmoke({ vscodeExecutablePath, extensionDir, extensionTestsPath
     const child = cp.spawn(vscodeExecutablePath, args, {
       env: childEnv,
       shell: process.platform === 'win32',
-      stdio: 'inherit',
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
+    let output = '';
+    const forward = (stream, target) => {
+      stream?.on('data', (chunk) => {
+        const text = String(chunk);
+        output = `${output}${text}`.slice(-1024 * 1024);
+        target.write(chunk);
+      });
+    };
+    forward(child.stdout, process.stdout);
+    forward(child.stderr, process.stderr);
     child.on('error', reject);
     child.on('close', (code, signal) => {
+      const invalidHostRegistration =
+        /CANNOT use API proposal:\s*contribSecondarySidebar|View container 'workspai-native-sidebar' does not exist/i.exec(
+          output
+        );
+      if (invalidHostRegistration) {
+        reject(new Error(`VSIX host registration failed: ${invalidHostRegistration[0]}`));
+        return;
+      }
       if (code === 0) {
         resolve();
         return;

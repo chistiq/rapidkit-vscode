@@ -3,6 +3,7 @@ import {
   ClipboardCheck,
   FolderKanban,
   LayoutGrid,
+  Network,
   Package,
   Play,
   Wrench,
@@ -14,6 +15,7 @@ const SECTION_ICONS: Record<DashboardSection, typeof LayoutGrid> = {
   overview: LayoutGrid,
   repair: Wrench,
   evidence: ClipboardCheck,
+  graph: Network,
   operate: Play,
   console: TerminalSquare,
   catalog: Package,
@@ -90,8 +92,10 @@ export function DashboardSubNav({
             type="button"
             role="tab"
             aria-selected={isActive}
-            aria-controls={`dashboard-panel-${section.id}`}
-            id={`dashboard-tab-${section.id}`}
+            aria-controls={
+              section.id === 'graph' ? 'ws-graph-panel' : `dashboard-panel-${section.id}`
+            }
+            id={section.id === 'graph' ? 'ws-dashboard-tab-graph' : `dashboard-tab-${section.id}`}
             ref={(node) => {
               tabRefs.current[section.id] = node;
             }}

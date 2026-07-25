@@ -2,11 +2,11 @@
  * Verify-Pack Contract Exporter
  *
  * Runs the verify-pack simulation for a project and persists the resulting
- * VerifyPackOutputContract to the workspace's `.rapidkit/reports/` directory.
+ * VerifyPackOutputContract to the workspace's `.workspai/reports/` directory.
  *
  * This closes the workspace-readiness blocker:
  *   `npx --yes --package rapidkit rapidkit readiness` requires `*verify-pack-contract*.json` to exist in
- *   `.rapidkit/reports/`.  The extension generates this artifact via the sandbox
+ *   `.workspai/reports/`. The extension generates this artifact via the sandbox
  *   simulation engine and writes it to the canonical location so the CLI gate
  *   can evaluate it.
  */
@@ -21,7 +21,7 @@ import type { VerifyPackOutputContract } from './verifyPackContract';
 // ── Public types ──────────────────────────────────────────────────────────────
 
 export interface VerifyPackContractExportInput {
-  /** Absolute path to the workspace root (contains `.rapidkit/`). */
+  /** Absolute path to the workspace root (contains `.workspai/`). */
   workspacePath: string;
   /**
    * Absolute path to the project directory where verify commands run.
@@ -80,7 +80,7 @@ function buildActionId(): string {
 
 /**
  * Run the verify-pack simulation for a project and write the resulting contract
- * to `{workspacePath}/.rapidkit/reports/{actionId}-verify-pack-contract.json`.
+ * to `{workspacePath}/.workspai/reports/{actionId}-verify-pack-contract.json`.
  *
  * The function is pure side-effectful (creates a directory + writes a file) and
  * is designed to be testable via the `deps.commandRunner` injection point.
@@ -116,7 +116,7 @@ export async function exportVerifyPackContractToWorkspace(
   );
 
   // Ensure the reports directory exists (idempotent, safe even on first run).
-  const reportsDir = path.join(input.workspacePath, '.rapidkit', 'reports');
+  const reportsDir = path.join(input.workspacePath, '.workspai', 'reports');
   await fs.ensureDir(reportsDir);
 
   const contractFileName = `${actionId}${CONTRACT_FILE_SUFFIX}`;

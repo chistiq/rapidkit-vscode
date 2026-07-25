@@ -338,6 +338,10 @@ export type DashboardHostWebviewMessage =
   | WebviewFromExtensionMessage<'aiContextContract', AIContextContractHostData>
   | WebviewFromExtensionMessage<'aiModelUsed', AIModelUsedHostData>
   | WebviewFromExtensionMessage<'workspaceToolStatus', WorkspaceToolStatusHostData>
+  | WebviewFromExtensionMessage<'workspaceGraphProjectionLive', Record<string, unknown>>
+  | WebviewFromExtensionMessage<'workspaceGraphStreamStatus', Record<string, unknown>>
+  | WebviewFromExtensionMessage<'workspaceGraphMemorySample', Record<string, unknown>>
+  | WebviewFromExtensionMessage<'workspaceGraphRecordingState', WorkspaceGraphRecordingState>
   | WebviewFromExtensionMessage<'workspaiSettings', WorkspaiSettingsHostData>
   | WebviewFromExtensionMessage<'updateVersion', UpdateVersionHostData>
   | WebviewFromExtensionMessage<'openIncidentStudio', Record<string, unknown>>
@@ -368,6 +372,18 @@ export type DashboardEvidenceWebviewMessage =
   | WebviewToExtensionMessage<'dismissDashboardOpsChain'>
   | WebviewToExtensionMessage<'trackDashboardCommand', TrackDashboardCommandData>
   | WebviewToExtensionMessage<'trackDashboardNavigation', TrackDashboardNavigationData>;
+
+export type WorkspaceGraphStreamWebviewMessage =
+  | WebviewToExtensionMessage<'startWorkspaceGraphStream', { workspacePath: string }>
+  | WebviewToExtensionMessage<'stopWorkspaceGraphStream'>
+  | WebviewToExtensionMessage<'resyncWorkspaceGraphStream'>
+  | WebviewToExtensionMessage<'startWorkspaceGraphRecording', WorkspaceGraphRecordingStartInput>
+  | WebviewToExtensionMessage<
+      'appendWorkspaceGraphRecordingFrame',
+      WorkspaceGraphRecordingFrameInput
+    >
+  | WebviewToExtensionMessage<'stopWorkspaceGraphRecording', WorkspaceGraphRecordingStopInput>
+  | WebviewToExtensionMessage<'openWorkspaceGraphRecording'>;
 
 export type AIWebviewMessage =
   | WebviewToExtensionMessage<'aiCancelQuery', AICancelQueryData>
@@ -583,3 +599,9 @@ export function readIncidentFeedbackRating(
 ): 'helpful' | 'not-helpful' {
   return data.rating === 'not-helpful' ? 'not-helpful' : 'helpful';
 }
+import type {
+  WorkspaceGraphRecordingFrameInput,
+  WorkspaceGraphRecordingStartInput,
+  WorkspaceGraphRecordingState,
+  WorkspaceGraphRecordingStopInput,
+} from './workspaceGraphRecording.js';

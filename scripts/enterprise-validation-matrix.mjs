@@ -69,16 +69,16 @@ function validatePackageScripts(repoRoot, errors) {
   const packageJson = readJson(path.resolve(repoRoot, 'package.json'));
   const scripts = packageJson.scripts ?? {};
   const requiredScripts = {
-    'typecheck': 'tsc --noEmit',
-    'lint': 'eslint src --ext ts',
-    'test': 'vitest run',
+    typecheck: 'tsc --noEmit && corepack npm run webview:typecheck',
+    lint: 'eslint src --ext ts',
+    test: 'vitest run',
     'package:ci':
-      'npm run build && vsce package --no-dependencies --out rapidkit-vscode-${npm_package_version}.vsix',
+      'corepack npm run build && node scripts/vsce-package-runner.mjs package --no-dependencies --out rapidkit-vscode-${npm_package_version}.vsix',
     'smoke:vsix-artifact':
       'node scripts/inspect-vsix-artifact.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix',
     'release:audit-gate': 'node scripts/npm-audit-gate.mjs --level high',
     'publish:ci':
-      'npm run publish:guard && vsce publish --packagePath rapidkit-vscode-${npm_package_version}.vsix',
+      'corepack npm run publish:guard && vsce publish --packagePath rapidkit-vscode-${npm_package_version}.vsix',
   };
 
   for (const [scriptName, expected] of Object.entries(requiredScripts)) {
@@ -89,11 +89,20 @@ function validatePackageScripts(repoRoot, errors) {
 }
 
 function validateNpmBaseline(repoRoot, matrix, errors) {
-  const npmPackagePath = path.resolve(repoRoot, '..', 'rapidkit-npm', 'package.json');
+  const npmPackagePath = path.resolve(
+    repoRoot,
+    '..',
+    'workspai',
+    'packages',
+    'cli',
+    'package.json'
+  );
   const npmCompatibilityPath = path.resolve(
     repoRoot,
     '..',
-    'rapidkit-npm',
+    'workspai',
+    'packages',
+    'cli',
     'contracts',
     'extension-cli-compatibility.v1.json'
   );
@@ -104,7 +113,9 @@ function validateNpmBaseline(repoRoot, matrix, errors) {
   );
 
   if (!fs.existsSync(npmPackagePath) || !fs.existsSync(npmCompatibilityPath)) {
-    errors.push('Cannot verify npm truth baseline: sibling rapidkit-npm package/contracts missing.');
+    errors.push(
+      'Cannot verify npm truth baseline: sibling Workspai CLI package/contracts missing.'
+    );
     return;
   }
 
@@ -112,10 +123,14 @@ function validateNpmBaseline(repoRoot, matrix, errors) {
   const npmCompatibility = readJson(npmCompatibilityPath).minimumVerifiedCliVersion;
   const extensionCompatibility = readJson(extensionCompatibilityPath).minimumVerifiedCliVersion;
   if (matrix.npmTruthBaseline !== npmVersion) {
-    errors.push(`Matrix npmTruthBaseline ${matrix.npmTruthBaseline} does not match npm ${npmVersion}.`);
+    errors.push(
+      `Matrix npmTruthBaseline ${matrix.npmTruthBaseline} does not match npm ${npmVersion}.`
+    );
   }
   if (npmCompatibility !== npmVersion) {
-    errors.push(`npm extension-cli-compatibility ${npmCompatibility} does not match npm ${npmVersion}.`);
+    errors.push(
+      `npm extension-cli-compatibility ${npmCompatibility} does not match npm ${npmVersion}.`
+    );
   }
   if (extensionCompatibility !== npmCompatibility) {
     errors.push(

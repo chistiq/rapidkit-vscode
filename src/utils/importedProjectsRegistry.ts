@@ -48,7 +48,14 @@ interface ImportedProjectsRegistryFile {
 }
 
 function registryFilePath(workspacePath: string): string {
-  return path.join(workspacePath, '.rapidkit', 'imported-projects.json');
+  return path.join(workspacePath, '.workspai', 'imported-projects.json');
+}
+
+function registryFileCandidates(workspacePath: string): string[] {
+  return [
+    registryFilePath(workspacePath),
+    path.join(workspacePath, '.rapidkit', 'imported-projects.json'),
+  ];
 }
 
 export function resolveImportedProjectPath(workspacePath: string, projectPath: string): string {
@@ -60,34 +67,35 @@ export function resolveImportedProjectPath(workspacePath: string, projectPath: s
 export async function readImportedProjectsRegistry(
   workspacePath: string
 ): Promise<ImportedProjectRegistryEntry[]> {
-  const filePath = registryFilePath(workspacePath);
-  if (!(await fs.pathExists(filePath))) {
-    return [];
+  for (const filePath of registryFileCandidates(workspacePath)) {
+    if (!(await fs.pathExists(filePath))) {
+      continue;
+    }
+    try {
+      const raw: unknown = await fs.readJSON(filePath);
+      const projects: unknown[] = Array.isArray((raw as { projects?: unknown[] })?.projects)
+        ? ((raw as { projects?: unknown[] }).projects as unknown[])
+        : [];
+
+      return projects.filter((item: unknown): item is ImportedProjectRegistryEntry => {
+        if (!item || typeof item !== 'object') {
+          return false;
+        }
+
+        const candidate = item as ImportedProjectRegistryEntry;
+        return (
+          typeof candidate.name === 'string' &&
+          typeof candidate.path === 'string' &&
+          typeof candidate.stack === 'string' &&
+          typeof candidate.confidence === 'string' &&
+          typeof candidate.importedAt === 'string'
+        );
+      });
+    } catch {
+      continue;
+    }
   }
-
-  try {
-    const raw: unknown = await fs.readJSON(filePath);
-    const projects: unknown[] = Array.isArray((raw as { projects?: unknown[] })?.projects)
-      ? ((raw as { projects?: unknown[] }).projects as unknown[])
-      : [];
-
-    return projects.filter((item: unknown): item is ImportedProjectRegistryEntry => {
-      if (!item || typeof item !== 'object') {
-        return false;
-      }
-
-      const candidate = item as ImportedProjectRegistryEntry;
-      return (
-        typeof candidate.name === 'string' &&
-        typeof candidate.path === 'string' &&
-        typeof candidate.stack === 'string' &&
-        typeof candidate.confidence === 'string' &&
-        typeof candidate.importedAt === 'string'
-      );
-    });
-  } catch {
-    return [];
-  }
+  return [];
 }
 
 export async function upsertImportedProjectsRegistry(

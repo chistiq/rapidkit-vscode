@@ -40,8 +40,10 @@ describe('buildReactWebviewCsp', () => {
     const csp = buildReactWebviewCsp(createFakeWebview(), 'NONCE123');
     expect(csp).toContain("default-src 'none'");
     expect(csp).toContain("script-src 'nonce-NONCE123'");
+    expect(csp).toContain('connect-src vscode-resource://fake');
     expect(csp).toContain("style-src vscode-resource://fake 'unsafe-inline'");
     expect(csp).toContain('img-src vscode-resource://fake https: data:');
+    expect(csp).toContain('worker-src vscode-resource://fake blob:');
   });
 });
 

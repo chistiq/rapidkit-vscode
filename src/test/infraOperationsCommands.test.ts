@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   registeredCommands,
+  executeCommandMock,
   terminalMock,
   showQuickPickMock,
   showWarningMock,
@@ -10,6 +11,7 @@ const {
   execaMock,
 } = vi.hoisted(() => ({
   registeredCommands: new Map<string, (...args: unknown[]) => unknown>(),
+  executeCommandMock: vi.fn(),
   terminalMock: vi.fn(),
   showQuickPickMock: vi.fn(),
   showWarningMock: vi.fn(),
@@ -24,6 +26,7 @@ vi.mock('vscode', () => ({
       registeredCommands.set(id, handler);
       return { dispose: vi.fn() };
     },
+    executeCommand: executeCommandMock,
   },
   window: {
     showQuickPick: showQuickPickMock,
@@ -44,8 +47,8 @@ vi.mock('vscode', () => ({
   },
 }));
 
-vi.mock('../utils/terminalExecutor', () => ({
-  runRapidkitCommandsInTerminal: terminalMock,
+vi.mock('../core/gatedRapidkitTerminal', () => ({
+  runGatedRapidkitCommandsInTerminal: terminalMock.mockResolvedValue(true),
 }));
 
 vi.mock('execa', () => ({
@@ -62,6 +65,7 @@ import { registerInfraOperationsCommands } from '../commands/infraOperations';
 
 function setupHarness() {
   registeredCommands.clear();
+  executeCommandMock.mockClear();
   terminalMock.mockClear();
   showQuickPickMock.mockReset();
   showWarningMock.mockReset();
@@ -146,7 +150,10 @@ describe('infra operations commands', () => {
     expect(terminalMock).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: '/tmp/team-ws',
-        commands: [['infra', 'up', '--build']],
+        commands: [
+          ['infra', 'up', '--build'],
+          ['infra', 'status'],
+        ],
       })
     );
   });
@@ -178,7 +185,10 @@ describe('infra operations commands', () => {
     );
     expect(terminalMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        commands: [['infra', 'down', '--volumes']],
+        commands: [
+          ['infra', 'down', '--volumes'],
+          ['infra', 'status'],
+        ],
       })
     );
   });
@@ -203,7 +213,10 @@ describe('infra operations commands', () => {
 
     expect(terminalMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        commands: [['infra', 'down']],
+        commands: [
+          ['infra', 'down'],
+          ['infra', 'status'],
+        ],
       })
     );
   });

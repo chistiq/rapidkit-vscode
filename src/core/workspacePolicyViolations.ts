@@ -3,7 +3,7 @@ import type { WorkspaceVerifyPolicyViolation } from './workspaceVerifyReader';
 /**
  * Normalized policy-violation model shared by the Workspace Health tree and the
  * dashboard (roadmap item 2.5). Mirrors the `policyViolations[]` block of the
- * `workspace-verify.v1` contract emitted by `rapidkit workspace verify`.
+ * `workspace-verify.v1` contract emitted by `workspai workspace verify`.
  */
 export type PolicyViolationSource = 'model' | 'contract';
 export type PolicyViolationSeverity = 'error' | 'warning';

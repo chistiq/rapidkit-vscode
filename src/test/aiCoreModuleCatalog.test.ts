@@ -17,7 +17,7 @@ describe('aiCoreModuleCatalog', () => {
 
   it('platform contract has no developer-repo or engine checkout paths', () => {
     const section = buildWorkspaiPlatformContract();
-    expect(section).toContain('npx rapidkit');
+    expect(section).toContain('npx workspai');
     expect(section).toContain('never cite a fixed engine path');
     expect(section).not.toContain('core/src/');
     expect(section).not.toContain('rapidkit-npm/src/');

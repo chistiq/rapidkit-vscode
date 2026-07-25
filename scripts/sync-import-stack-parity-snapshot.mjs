@@ -10,7 +10,7 @@ const SRC_CONTRACT_MIRROR_FILES = [
 
 const args = new Set(process.argv.slice(2));
 const checkOnly = args.has('--check');
-// CI gate flag: fail (instead of skip) when the canonical rapidkit-npm repo is
+// CI gate flag: fail (instead of skip) when the canonical Workspai CLI repo is
 // not present. Use this in a dedicated job that checks out both repos so cross-
 // repo contract drift fails the build. The default (resilient) behavior lets the
 // in-repo `validate:contracts` step run in an isolated extension checkout where
@@ -18,16 +18,16 @@ const checkOnly = args.has('--check');
 const requireCanonical = args.has('--require-canonical');
 
 const extensionRoot = path.resolve(process.cwd());
-const npmRoot = process.env.RAPIDKIT_NPM_REPO_PATH
-  ? path.resolve(process.env.RAPIDKIT_NPM_REPO_PATH)
-  : path.resolve(extensionRoot, '..', 'rapidkit-npm');
+const workspaiCliRoot = process.env.WORKSPAI_CLI_REPO_PATH
+  ? path.resolve(process.env.WORKSPAI_CLI_REPO_PATH)
+  : path.resolve(extensionRoot, '..', 'workspai', 'packages', 'cli');
 
 function readCanonical(fileName) {
-  const canonicalPath = path.resolve(npmRoot, 'contracts', fileName);
+  const canonicalPath = path.resolve(workspaiCliRoot, 'contracts', fileName);
   if (!fs.existsSync(canonicalPath)) {
-    console.error(`Canonical contract missing in rapidkit-npm: ${canonicalPath}`);
+    console.error(`Canonical contract missing in Workspai CLI: ${canonicalPath}`);
     console.error(
-      'Edit rapidkit-npm/contracts/, then run: npm run sync:shared-contracts (from npm repo)'
+      'Edit workspai/packages/cli/contracts/, then run: npm run sync:shared-contracts (from Workspai repo)'
     );
     process.exit(1);
   }
@@ -51,7 +51,7 @@ function verifyTarget(targetPath, content) {
   const targetContent = fs.readFileSync(targetPath, 'utf-8');
   if (targetContent !== content) {
     console.error(`Extension contract copy is out of sync: ${targetPath}`);
-    console.error('From rapidkit-npm run: npm run sync:shared-contracts');
+    console.error('From rapidkit-vscode run: npm run sync:shared-contracts');
     process.exit(1);
   }
 }
@@ -74,16 +74,16 @@ function listJsonContracts(dir, prefix = '') {
     .sort();
 }
 
-const npmContractsRoot = path.resolve(npmRoot, 'contracts');
-const canonicalRepoPresent = fs.existsSync(npmContractsRoot);
+const workspaiContractsRoot = path.resolve(workspaiCliRoot, 'contracts');
+const canonicalRepoPresent = fs.existsSync(workspaiContractsRoot);
 
 if (!canonicalRepoPresent) {
-  const message = `Canonical rapidkit-npm contracts not found at: ${npmContractsRoot}`;
+  const message = `Canonical Workspai CLI contracts not found at: ${workspaiContractsRoot}`;
   if (requireCanonical) {
     console.error(message);
     console.error(
-      'This gate requires the rapidkit-npm repo. Check it out next to rapidkit-vscode, ' +
-        'or set RAPIDKIT_NPM_REPO_PATH to its location.'
+      'This gate requires the workspai repo. Check it out next to rapidkit-vscode, ' +
+        'or set WORKSPAI_CLI_REPO_PATH to packages/cli.'
     );
     process.exit(1);
   }
@@ -94,10 +94,10 @@ if (!canonicalRepoPresent) {
   process.exit(0);
 }
 
-const mirrorFiles = listJsonContracts(npmContractsRoot);
+const mirrorFiles = listJsonContracts(workspaiContractsRoot);
 
 if (mirrorFiles.length === 0) {
-  console.error(`No canonical JSON contracts found in rapidkit-npm: ${npmContractsRoot}`);
+  console.error(`No canonical JSON contracts found in Workspai CLI: ${workspaiContractsRoot}`);
   process.exit(1);
 }
 
@@ -130,5 +130,5 @@ for (const fileName of SRC_CONTRACT_MIRROR_FILES) {
 }
 
 if (checkOnly) {
-  console.log('Extension contracts match rapidkit-npm/contracts/ canonical source.');
+  console.log('Extension contracts match Workspai CLI contracts canonical source.');
 }

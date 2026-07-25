@@ -1,17 +1,18 @@
 # Workspai Command Surface Audit
 
 This document records the extension command surface that must stay aligned with
-RapidKit npm, the dashboard, and the secondary Workspai sidebar.
+the canonical Workspai CLI live inventory, its contracts and artifacts, the
+dashboard, and the secondary Workspai sidebar.
 
 ## Surfaces
 
-| Surface | Owner | Role |
-| --- | --- | --- |
-| Dashboard | `WelcomePanel` + dashboard React app | Workspace status, run/repair/artifact navigation, evidence refresh |
-| Create | secondary sidebar Create tab | Workspace/project creation and bootstrap handoff |
-| Advisor | secondary sidebar Advisor tab | Explain, clarify, and route context to Studio when a fix is needed |
-| Studio | secondary sidebar Studio tab | Card/editor repair sessions, safe commands, patch review, verify, rollback |
-| Primary sidebar | workspace/project/tree providers | Workspace and project selection, artifact access, module/library navigation |
+| Surface         | Owner                                | Role                                                                        |
+| --------------- | ------------------------------------ | --------------------------------------------------------------------------- |
+| Dashboard       | `WelcomePanel` + dashboard React app | Workspace status, run/repair/artifact navigation, evidence refresh          |
+| Create          | secondary sidebar Create tab         | Workspace/project creation and bootstrap handoff                            |
+| Advisor         | secondary sidebar Advisor tab        | Explain, clarify, and route context to Studio when a fix is needed          |
+| Studio          | secondary sidebar Studio tab         | Card/editor repair sessions, safe commands, patch review, verify, rollback  |
+| Primary sidebar | workspace/project/tree providers     | Workspace and project selection, artifact access, module/library navigation |
 
 ## Inbound Webview Commands
 
@@ -19,30 +20,42 @@ All secondary-sidebar inbound commands are routed through
 `actionsWebviewMessageDispatcher.ts`. The host must explicitly handle each of
 these messages:
 
-| Command | Purpose |
-| --- | --- |
-| `sidebarAiCreatePlan` | Plan workspace/project creation from Create chat |
-| `sidebarAiCreateConfirm` | Execute an approved Create plan |
-| `sidebarManualCreate` | Execute manual workspace/project creation |
+| Command                            | Purpose                                                                     |
+| ---------------------------------- | --------------------------------------------------------------------------- |
+| `sidebarAiCreatePlan`              | Plan workspace/project creation from Create chat                            |
+| `sidebarAiCreateConfirm`           | Execute an approved Create plan                                             |
+| `sidebarManualCreate`              | Execute manual workspace/project creation                                   |
 | `sidebarCreatedWorkspaceBootstrap` | Bootstrap the workspace just created, not the previously selected workspace |
-| `sidebarImpactQuery` | Advisor impact/explain question |
-| `sidebarAdvisorAction` | Advisor action such as handoff to Studio |
-| `sidebarStudioQuery` | Studio chat question |
-| `sidebarStudioAction` | Studio repair, verify, copy, audit, and ship-loop actions |
-| `sidebarFocusView` | Focus the primary workspace/project tree |
-| `sidebarOpenDashboard` | Open the Dashboard to a specific section after Studio closure |
-| `sidebarRefreshScope` | Refresh active workspace/project scope in the sidebar |
-| `sidebarRefreshModels` | Refresh available AI models |
-| `setPreferredModel` | Persist selected model |
+| `sidebarImpactQuery`               | Advisor impact/explain question                                             |
+| `sidebarAdvisorAction`             | Advisor action such as handoff to Studio                                    |
+| `sidebarStudioQuery`               | Studio chat question                                                        |
+| `sidebarStudioAction`              | Studio repair, verify, copy, audit, and ship-loop actions                   |
+| `sidebarFocusView`                 | Focus the primary workspace/project tree                                    |
+| `sidebarOpenDashboard`             | Open the Dashboard to a specific section after Studio closure               |
+| `sidebarRefreshScope`              | Refresh active workspace/project scope in the sidebar                       |
+| `sidebarRefreshModels`             | Refresh available AI models                                                 |
+| `setPreferredModel`                | Persist selected model                                                      |
 
 ## Safety Rules
 
-- Dashboard diagnoses and routes; Studio fixes; Advisor explains; Create builds.
+- Dashboard detects and routes; Studio diagnoses, plans, fixes, verifies, and
+  records the outcome; Advisor explains; Create builds.
 - `Fix by Workspai` starts or resumes one card-scoped Studio session.
+- Sending a fail/warn card to Studio is repair intent. Studio must consume the
+  card handoff, exact artifact paths, resolution hints, project scope, and
+  verify command before asking the user for more context.
+- Fresh npm-authored operations may continue automatically only when they are
+  `safe`, `ready`, approval-free, and not low-confidence. Automatic continuation
+  is bounded and must stop if the same failure repeats.
+- AI patches may apply automatically only when every file is an exact CLI hint
+  target, remains inside scope, is non-sensitive, meets file/size limits, and
+  has a verify command. Every other mutation pauses at one focused review step.
+- Guarded, review-required, invasive, destructive, external, or ambiguous
+  actions always remain explicit authorization boundaries.
 - Editor `Fix with Workspai` starts an editor-issue Studio session independent
   of the active workspace/project selection.
 - Editor `Explain with Workspai` routes to Advisor, not Studio.
-- Studio command execution must use approved RapidKit/npm command routing and
+- Studio command execution must use approved Workspai/npm command routing and
   must not execute shell-chained commands as trusted remediation.
 - Create workspace/project commands must use the explicit target workspace path
   returned by the creation flow.
@@ -58,5 +71,10 @@ Before publishing the extension:
   `sidebarCreateTabParity.test.ts`, `sidebarSessionContract.test.ts`,
   `sidebarStudioTabParity.test.ts`, and `dashboardMinimalUx.test.ts`.
 - Confirm `src/contracts/*command-surface*` and shared npm contracts are synced.
+- Confirm `REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS` exactly equals the
+  canonical `workspaceIntelligenceSubcommands` contract, including contract,
+  graph, watch, feedback, and MCP capabilities.
+- Run the autonomous remediation policy and AI patch-boundary tests; verify that
+  safe operations continue without clicks and guarded writes pause for review.
 - Confirm every fail/warn dashboard card has a visible primary action and no
   critical command is hidden behind overflow-only UI.

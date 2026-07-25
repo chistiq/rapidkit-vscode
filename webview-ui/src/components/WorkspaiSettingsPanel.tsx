@@ -1,4 +1,12 @@
-import { ExternalLink, KeyRound, Loader2, Palette, RefreshCw, Settings2, Sparkles } from 'lucide-react';
+import {
+  ExternalLink,
+  KeyRound,
+  Loader2,
+  Palette,
+  RefreshCw,
+  Settings2,
+  Sparkles,
+} from 'lucide-react';
 import { useState } from 'react';
 import { ModelSelect } from '@/components/ModelSelect';
 import type { ThemeMode } from '@/components/StudioRedesign/styles/themeSystem';
@@ -94,7 +102,7 @@ export function WorkspaiSettingsPanel({
             <Sparkles size={15} />
             <div>
               <h3>AI &amp; Models</h3>
-              <p>Default model for Create with AI, Workspace Advisor, Studio, and background AI flows.</p>
+              <p>Default model for Create with AI, Assistant modes, and background AI flows.</p>
             </div>
           </div>
 
@@ -125,7 +133,11 @@ export function WorkspaiSettingsPanel({
               onClick={onRefreshModels}
               disabled={modelsLoading}
             >
-              {modelsLoading ? <Loader2 size={13} className="workspai-spinner" /> : <RefreshCw size={13} />}
+              {modelsLoading ? (
+                <Loader2 size={13} className="workspai-spinner" />
+              ) : (
+                <RefreshCw size={13} />
+              )}
               Refresh entitled models
             </button>
             <span className="ws-settings-meta">

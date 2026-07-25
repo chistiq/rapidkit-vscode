@@ -102,7 +102,7 @@ function tokenizeCommandArgs(input: string): string[] {
 
 function findLastRapidkitTokenIndex(tokens: string[]): number {
   for (let index = tokens.length - 1; index >= 0; index -= 1) {
-    if (tokens[index] === 'rapidkit') {
+    if (tokens[index] === 'workspai' || tokens[index] === 'rapidkit') {
       return index;
     }
   }
@@ -126,10 +126,10 @@ function parseTrustedEcosystemCommand(
       return ['install', 'ci', 'audit'].includes(args[0] ?? '');
     }
     if (executable === 'pnpm') {
-      return ['install', 'audit'].includes(args[0] ?? '');
+      return ['install', 'add', 'audit'].includes(args[0] ?? '');
     }
     if (executable === 'yarn') {
-      return ['install', 'audit'].includes(args[0] ?? '');
+      return ['install', 'add', 'audit'].includes(args[0] ?? '');
     }
     if (executable === 'poetry') {
       return args[0] === 'install';
@@ -139,7 +139,7 @@ function parseTrustedEcosystemCommand(
 
   if (!allowed) {
     return {
-      error: 'Only RapidKit and trusted remediation commands are allowed from Incident Studio.',
+      error: 'Only Workspai and trusted remediation commands are allowed from Incident Studio.',
     };
   }
 
@@ -182,12 +182,12 @@ export function parseRapidkitInlineCommand(
 
   const rapidkitArgs = tokens.slice(rapidkitIndex + 1);
   if (rapidkitArgs.length === 0) {
-    return { error: 'RapidKit command is missing subcommands.' };
+    return { error: 'Workspai command is missing subcommands.' };
   }
 
   const root = rapidkitArgs[0];
   if (!ALLOWED_ROOT_COMMANDS.has(root)) {
-    return { error: `RapidKit command "${root}" is not allowed from Incident Studio.` };
+    return { error: `Workspai command "${root}" is not allowed from Incident Studio.` };
   }
 
   if (root === 'doctor' && rapidkitArgs[1] && !['workspace', 'project'].includes(rapidkitArgs[1])) {
@@ -220,7 +220,7 @@ export function parseRapidkitInlineCommand(
 
   const parsedInvocation: ParsedRapidkitInvocation = {
     rapidkitArgs,
-    displayCommand: `rapidkit ${rapidkitArgs.join(' ')}`.trim(),
+    displayCommand: `workspai ${rapidkitArgs.join(' ')}`.trim(),
   };
   if (cwdHint) {
     parsedInvocation.cwdHint = cwdHint;

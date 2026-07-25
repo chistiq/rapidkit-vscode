@@ -15,7 +15,11 @@ import {
   Sparkles,
   Terminal,
 } from 'lucide-react';
-import { AGENT_REPORTS_INDEX_PATH } from '@/lib/workspaceIntelligencePaths';
+import {
+  AGENT_REPORTS_INDEX_PATH,
+  WORKSPACE_MODEL_DIFF_REPORT_PATH,
+  WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH,
+} from '@/lib/workspaceIntelligencePaths';
 import type { DashboardEvidenceCardId } from '@/lib/dashboardCommandRegistry';
 import type { DashboardEvidenceCard, DashboardEvidencePayload } from '@/lib/dashboardEvidence';
 import {
@@ -73,7 +77,10 @@ function basenameFromArtifact(artifactPath?: string): string {
   return parts[parts.length - 1] || 'Artifact ready';
 }
 
-function explainabilitySource(card: DashboardEvidenceCard | undefined, dedicatedLabel: string): string {
+function explainabilitySource(
+  card: DashboardEvidenceCard | undefined,
+  dedicatedLabel: string
+): string {
   if (!card || card.status === 'missing') {
     return 'Pending';
   }
@@ -130,6 +137,7 @@ export function WorkspaceIntelligencePanel({
   const snapshotCard = findEvidenceCard(evidence, 'intelligenceSnapshot');
   const diffCard = findEvidenceCard(evidence, 'workspaceDiff');
   const impactCard = findEvidenceCard(evidence, 'workspaceImpact');
+  const intelligenceRunCard = findEvidenceCard(evidence, 'workspaceIntelligenceRun');
   const contextCard = findEvidenceCard(evidence, 'workspaceContextAgent');
   const groundingCard = findEvidenceCard(evidence, 'agentGrounding');
   const verifyCard = findEvidenceCard(evidence, 'workspaceVerify');
@@ -157,7 +165,9 @@ export function WorkspaceIntelligencePanel({
           icon={<Sparkles size={15} />}
           label="Intelligence Chain"
           detail="Model → snapshot → diff → impact → verify → agent context → grounding → explain → why → trace"
+          evidenceStatus={intelligenceRunCard?.status}
           pending={
+            isPending('workspaceIntelligenceRun') ||
             isPending('workspaceModel') ||
             isPending('intelligenceSnapshot') ||
             isPending('workspaceDiff') ||
@@ -170,6 +180,7 @@ export function WorkspaceIntelligencePanel({
             isPending('workspaceTrace')
           }
           stateLabel={
+            isPending('workspaceIntelligenceRun') ||
             isPending('workspaceModel') ||
             isPending('intelligenceSnapshot') ||
             isPending('workspaceDiff') ||
@@ -189,7 +200,7 @@ export function WorkspaceIntelligencePanel({
             'workspaceIntelligenceChain',
             !hasWorkspace ? 'Select a workspace' : undefined
           )}
-          title="rapidkit workspace model/snapshot/diff/impact/verify/context"
+          title="workspai: model → snapshot → diff → impact → evidence refresh → verify → context"
         />
         <ActionTile
           icon={<Network size={15} />}
@@ -207,7 +218,7 @@ export function WorkspaceIntelligencePanel({
             'workspaceModel',
             !hasWorkspace ? 'Select a workspace' : undefined
           )}
-          title="rapidkit workspace model --json --write"
+          title="workspai workspace model --json --write"
         />
         {modelGraph ? (
           <div className="workspace-intelligence-panel__graph">
@@ -239,7 +250,7 @@ export function WorkspaceIntelligencePanel({
             'workspaceVerify',
             !hasWorkspace ? 'Select a workspace' : undefined
           )}
-          title="rapidkit workspace verify --from-impact --json"
+          title="workspai workspace verify --json"
         />
         {onWorkspaceExplain ? (
           <ActionTile
@@ -258,7 +269,7 @@ export function WorkspaceIntelligencePanel({
               'workspaceExplain',
               !hasWorkspace ? 'Select a workspace' : undefined
             )}
-            title="rapidkit workspace explain release-blocked --json --write"
+            title="workspai workspace explain release-blocked --json --write"
           />
         ) : null}
         {onWorkspaceWhy ? (
@@ -278,7 +289,7 @@ export function WorkspaceIntelligencePanel({
               'workspaceWhy',
               !hasWorkspace ? 'Select a workspace' : undefined
             )}
-            title="rapidkit workspace why release-blocked --json --write"
+            title="workspai workspace why release-blocked --json --write"
           />
         ) : null}
         {onWorkspaceTrace ? (
@@ -298,7 +309,7 @@ export function WorkspaceIntelligencePanel({
               'workspaceTrace',
               !hasWorkspace ? 'Select a workspace' : undefined
             )}
-            title="rapidkit workspace trace --from workspace-model-diff-last-run.json --json --write"
+            title="workspai workspace trace --from workspace-model-diff-last-run.json --json --write"
           />
         ) : null}
         {onWorkspaceExplain || onWorkspaceWhy || onWorkspaceTrace ? (
@@ -309,7 +320,9 @@ export function WorkspaceIntelligencePanel({
               </span>
               <span>
                 <strong>Explainability stack</strong>
-                <small>Explain what is blocked, why it matters, and where the evidence came from.</small>
+                <small>
+                  Explain what is blocked, why it matters, and where the evidence came from.
+                </small>
               </span>
             </div>
             <div className="workspace-explainability-stack__grid">
@@ -385,7 +398,7 @@ export function WorkspaceIntelligencePanel({
               'workspaceWatch',
               !hasWorkspace ? 'Select a workspace' : undefined
             )}
-            title="rapidkit workspace watch --once --json"
+            title="workspai workspace watch --once --json"
           />
         ) : null}
         {onWorkspaceMcp ? (
@@ -402,7 +415,7 @@ export function WorkspaceIntelligencePanel({
               'workspaceMcp',
               !hasWorkspace ? 'Select a workspace' : undefined
             )}
-            title="rapidkit workspace mcp serve"
+            title="workspai workspace mcp serve"
           />
         ) : null}
         {onWorkspaceImpactLens ? (
@@ -459,7 +472,7 @@ export function WorkspaceIntelligencePanel({
             'workspaceContextAgent',
             !hasWorkspace ? 'Select a workspace' : undefined
           )}
-          title="rapidkit workspace context --for-agent --json --write"
+          title="workspai workspace context --for-agent --json --write"
         />
         <ActionTile
           icon={<Files size={15} />}
@@ -477,7 +490,7 @@ export function WorkspaceIntelligencePanel({
             'workspaceAgentSync',
             !hasWorkspace ? 'Select a workspace' : undefined
           )}
-          title="rapidkit workspace agent-sync --write --refresh-context --preset enterprise --target vscode --json"
+          title="workspai workspace agent-sync --write --refresh-context --preset enterprise --target vscode --json"
         />
         {groundingCard?.detailSections && groundingCard.detailSections.length > 0 ? (
           <IntelligenceDetailAccordion
@@ -515,7 +528,7 @@ export function WorkspaceIntelligencePanel({
                 'workspaceIntelligenceSnapshot',
                 !hasWorkspace ? 'Select a workspace' : undefined
               )}
-              title="rapidkit workspace snapshot --json"
+              title="workspai workspace snapshot --json"
             />
             <ActionTile
               icon={<GitCompare size={15} />}
@@ -533,7 +546,7 @@ export function WorkspaceIntelligencePanel({
                 'workspaceDiff',
                 !hasWorkspace ? 'Select a workspace' : undefined
               )}
-              title="rapidkit workspace diff --from <snapshot> --json"
+              title={`workspai workspace diff --from ${WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH} --json`}
             />
             <ActionTile
               icon={<Radar size={15} />}
@@ -551,7 +564,7 @@ export function WorkspaceIntelligencePanel({
                 !hasWorkspace ? 'Select a workspace' : undefined
               )}
               disabled={!hasWorkspace}
-              title="rapidkit workspace impact --from <diff> --json"
+              title={`workspai workspace impact --from ${WORKSPACE_MODEL_DIFF_REPORT_PATH} --json`}
             />
             {onRunImpactLensCli ? (
               <ActionTile
@@ -570,7 +583,7 @@ export function WorkspaceIntelligencePanel({
                   'workspaceImpactLensCli',
                   !hasWorkspace ? 'Select a workspace' : undefined
                 )}
-                title="rapidkit workspace snapshot → diff → impact"
+                title="workspai workspace snapshot → diff → impact"
               />
             ) : null}
             {onSendWorkspaceToCopilot ? (

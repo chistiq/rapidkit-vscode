@@ -247,6 +247,52 @@ describe('createWorkspaceCommand profile-aware Python gating', () => {
       expect.objectContaining({
         name: 'ws-node',
         profile: 'node-only',
+        skipPythonEngine: true,
+      })
+    );
+  });
+
+  it('respects explicit Python engine installation for Python-free profiles', async () => {
+    const configPath = '/home/test/rapidkit/workspaces/ws-node-engine';
+    const markerPath = `${configPath}/.rapidkit-workspace`;
+    const pathCallCounts = new Map<string, number>();
+
+    pathExistsMock.mockImplementation(async (targetPath: string) => {
+      const seen = (pathCallCounts.get(targetPath) ?? 0) + 1;
+      pathCallCounts.set(targetPath, seen);
+
+      if (targetPath === configPath) {
+        return seen >= 2;
+      }
+      if (targetPath === markerPath) {
+        return false;
+      }
+      if (targetPath === `${configPath}/.rapidkit`) {
+        return false;
+      }
+      return false;
+    });
+
+    checkPythonEnvironmentCachedMock.mockResolvedValue({
+      available: true,
+      meetsMinimumVersion: true,
+      venvSupport: true,
+      version: '3.12.0',
+    });
+
+    await createWorkspaceCommand({
+      name: 'ws-node-engine',
+      profile: 'node-only',
+      installMethod: 'venv',
+      skipPythonEngine: false,
+    });
+
+    expect(createWorkspaceMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'ws-node-engine',
+        profile: 'node-only',
+        installMethod: 'venv',
+        skipPythonEngine: false,
       })
     );
   });

@@ -65,8 +65,9 @@ import {
   WORKSPAI_AI_FLOWS_ONBOARDING_HEADLINE,
 } from './core/workspaiAiNarrative';
 import { WelcomePanel } from './ui/panels/welcomePanel';
+import { clearLegacyWorkspaceGraphState } from './ui/panels/welcomePanelChatBrainLifecycle';
 import { ModulesCatalogService } from './core/modulesCatalogService';
-import { runRapidkitCommandsInTerminal } from './utils/terminalExecutor';
+import { runGatedRapidkitCommandsInTerminal } from './core/gatedRapidkitTerminal';
 import { ExamplesService } from './core/examplesService';
 import { KitsService } from './core/kitsService';
 import { registerAIDebuggerCommand } from './commands/aiDebugger';
@@ -613,6 +614,11 @@ function registerProjectRefreshWatchers(
 export async function activate(context: vscode.ExtensionContext) {
   const logger = Logger.getInstance();
   logger.info('Workspai extension is activating...');
+
+  // Older builds persisted full workspace graphs in VS Code globalState,
+  // inflating renderer synchronization on every activation. Graphs are now
+  // held in a bounded in-memory cache, so remove the legacy payloads eagerly.
+  await clearLegacyWorkspaceGraphState(context);
 
   // Record first-ever activation timestamp for Time-to-First-Value (roadmap 2.9).
   void ensureInstalledAt(context);
@@ -1191,7 +1197,7 @@ export async function activate(context: vscode.ExtensionContext) {
           vscode.window.showWarningMessage('Select a workspace first.');
           return;
         }
-        runRapidkitCommandsInTerminal({
+        await runGatedRapidkitCommandsInTerminal({
           name: `Workspai Doctor - ${ws.name ?? ws.path}`,
           cwd: ws.path,
           commands: [['doctor', 'workspace']],
@@ -1204,7 +1210,7 @@ export async function activate(context: vscode.ExtensionContext) {
           vscode.window.showWarningMessage('Select a workspace first.');
           return;
         }
-        runRapidkitCommandsInTerminal({
+        await runGatedRapidkitCommandsInTerminal({
           name: `Workspai Doctor Fix - ${ws.name ?? ws.path}`,
           cwd: ws.path,
           commands: [['doctor', 'workspace', '--fix']],
@@ -1362,7 +1368,7 @@ export async function activate(context: vscode.ExtensionContext) {
     logger.info('Activation: Workspai command surface ready');
     statusBar.updateStatus('ready');
 
-    // Check for rapidkit npm updates (non-blocking, runs in background)
+    // Check for Workspai CLI updates (non-blocking, runs in background).
     await runOptionalActivationLane(logger, 'update-check', async () => {
       checkAndNotifyUpdates(context).catch((err) => {
         logger.error('Update check failed', err);

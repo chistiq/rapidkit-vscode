@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  defaultInstallPythonEngineForProfile,
   defaultProfileForStackLane,
   profileRequiresPythonInstallMethod,
   recommendedProfilesForStackLane,
@@ -46,5 +47,16 @@ describe('creationPresets manual workspace helpers', () => {
     expect(profileRequiresPythonInstallMethod('minimal')).toBe(false);
     expect(profileRequiresPythonInstallMethod('polyglot')).toBe(true);
     expect(profileRequiresPythonInstallMethod('enterprise')).toBe(true);
+  });
+
+  it('defaults optional Python engine installation from the selected profile', () => {
+    expect(defaultInstallPythonEngineForProfile('minimal')).toBe(false);
+    expect(defaultInstallPythonEngineForProfile('node-only')).toBe(false);
+    expect(defaultInstallPythonEngineForProfile('go-only')).toBe(false);
+    expect(defaultInstallPythonEngineForProfile('java-only')).toBe(false);
+    expect(defaultInstallPythonEngineForProfile('dotnet-only')).toBe(false);
+    expect(defaultInstallPythonEngineForProfile('python-only')).toBe(true);
+    expect(defaultInstallPythonEngineForProfile('polyglot')).toBe(true);
+    expect(defaultInstallPythonEngineForProfile('enterprise')).toBe(true);
   });
 });

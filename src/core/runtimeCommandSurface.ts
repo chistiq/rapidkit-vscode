@@ -20,6 +20,10 @@ export interface RuntimeCommandSurfaceSnapshot {
   contracts: Record<string, string>;
   /** Top-level command ids advertised by `commands --json` (`commandMap` keys). */
   topLevelCommands: string[];
+  /** Runtime project commands advertised by `commands --json` (`commands.projectScoped`). */
+  projectScopedCommands: string[];
+  /** Core-backed commands advertised by `commands --json` (`commands.coreBacked`). */
+  coreBackedCommands: string[];
   /** Full workspace subcommand surface (`workspace.subcommands`). */
   workspaceSubcommands: string[];
   /** Workspace intelligence chain subset (`workspace.intelligenceSubcommands`). */
@@ -31,6 +35,10 @@ type RawCommandCapabilities = {
   cli?: unknown;
   version?: unknown;
   contracts?: unknown;
+  commands?: {
+    coreBacked?: unknown;
+    projectScoped?: unknown;
+  };
   commandMap?: unknown;
   workspace?: {
     subcommands?: unknown;
@@ -87,10 +95,12 @@ function toSnapshot(parsed: RawCommandCapabilities): RuntimeCommandSurfaceSnapsh
 
   return {
     schemaVersion: COMMAND_CAPABILITIES_SCHEMA_VERSION,
-    cli: typeof parsed.cli === 'string' ? parsed.cli : 'rapidkit-npm',
+    cli: typeof parsed.cli === 'string' ? parsed.cli : 'workspai',
     version: typeof parsed.version === 'string' ? parsed.version : '',
     contracts: normalizeContracts(parsed.contracts),
     topLevelCommands: commandMap,
+    coreBackedCommands: normalizeStringArray(parsed.commands?.coreBacked),
+    projectScopedCommands: normalizeStringArray(parsed.commands?.projectScoped),
     workspaceSubcommands: normalizeStringArray(parsed.workspace?.subcommands),
     workspaceIntelligenceSubcommands: normalizeStringArray(
       parsed.workspace?.intelligenceSubcommands
@@ -99,8 +109,8 @@ function toSnapshot(parsed: RawCommandCapabilities): RuntimeCommandSurfaceSnapsh
 }
 
 /**
- * Resolve the runtime command surface from the linked RapidKit CLI via
- * `rapidkit commands --json`. Returns `null` when the CLI cannot be reached,
+ * Resolve the runtime command surface from the linked Workspai CLI via
+ * `workspai commands --json`. Returns `null` when the CLI cannot be reached,
  * exits non-zero, or does not publish the `rapidkit-command-capabilities-v1`
  * surface (e.g. an older CLI) — callers treat that as "capability unavailable".
  */

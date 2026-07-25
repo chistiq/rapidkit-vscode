@@ -46,14 +46,16 @@ describe('shared contracts workflow (Wave A + B)', () => {
     'workspace-run-last.v1.json',
   ];
 
-  it('checks extension copies against rapidkit-npm canonical contracts', () => {
+  it('checks extension copies against Workspai CLI canonical contracts', () => {
     const packageJson = JSON.parse(read('package.json'));
     const syncScript = read('scripts/sync-import-stack-parity-snapshot.mjs');
     const preCommit = read('.husky/pre-commit');
     const npmSyncScriptPath = path.resolve(
       repoRoot,
       '..',
-      'rapidkit-npm',
+      'workspai',
+      'packages',
+      'cli',
       'scripts',
       'sync-shared-contracts.mjs'
     );
@@ -64,14 +66,18 @@ describe('shared contracts workflow (Wave A + B)', () => {
     expect(packageJson.scripts['check:shared-contracts']).toBe(
       'node scripts/sync-import-stack-parity-snapshot.mjs --check'
     );
-    expect(packageJson.scripts['sync:parity-snapshot']).toBe('npm run sync:shared-contracts');
-    expect(packageJson.scripts['check:parity-snapshot']).toBe('npm run check:shared-contracts');
+    expect(packageJson.scripts['sync:parity-snapshot']).toBe(
+      'corepack npm run sync:shared-contracts'
+    );
+    expect(packageJson.scripts['check:parity-snapshot']).toBe(
+      'corepack npm run check:shared-contracts'
+    );
     expect(packageJson.scripts['validate:contracts']).toContain('check:shared-contracts');
     expect(packageJson.scripts['validate:contracts']).toContain(
       'runtimeCommandSurfaceParity.test.ts'
     );
     expect(packageJson.scripts['validate:contracts']).toContain('npmContractSupportMatrix.test.ts');
-    expect(syncScript).toContain('rapidkit-npm/contracts/');
+    expect(syncScript).toContain('Workspai CLI contracts');
     expect(syncScript).toContain('listJsonContracts');
     expect(syncScript).toContain('SRC_CONTRACT_MIRROR_FILES');
     expect(syncScript).toContain('agent-customization-pack.v1.json');
@@ -86,7 +92,14 @@ describe('shared contracts workflow (Wave A + B)', () => {
   });
 
   it('ships every canonical npm contract consumed by the enterprise dashboard', () => {
-    const npmContractsRoot = path.resolve(repoRoot, '..', 'rapidkit-npm', 'contracts');
+    const npmContractsRoot = path.resolve(
+      repoRoot,
+      '..',
+      'workspai',
+      'packages',
+      'cli',
+      'contracts'
+    );
     const contractFiles = listJsonContracts(npmContractsRoot);
 
     expect(contractFiles.length).toBeGreaterThanOrEqual(canonicalContractFiles.length);
@@ -101,7 +114,7 @@ describe('shared contracts workflow (Wave A + B)', () => {
     }
   });
 
-  it('keeps runtime-consumed src contract copies aligned with rapidkit-npm', () => {
+  it('keeps runtime-consumed src contract copies aligned with Workspai CLI', () => {
     const srcMirroredContracts = [
       'agent-customization-pack.v1.json',
       'create-planner-capabilities.v1.json',
@@ -114,7 +127,9 @@ describe('shared contracts workflow (Wave A + B)', () => {
       const npmContractPath = path.resolve(
         repoRoot,
         '..',
-        'rapidkit-npm',
+        'workspai',
+        'packages',
+        'cli',
         'contracts',
         contractFile
       );
@@ -137,5 +152,33 @@ describe('shared contracts workflow (Wave A + B)', () => {
         true
       );
     }
+  });
+
+  it('accounts for every extension-owned contract outside the CLI canonical mirror', () => {
+    const npmContractsRoot = path.resolve(
+      repoRoot,
+      '..',
+      'workspai',
+      'packages',
+      'cli',
+      'contracts'
+    );
+    const npmContracts = new Set(listJsonContracts(npmContractsRoot));
+    const extensionContracts = listJsonContracts(path.join(repoRoot, 'contracts'));
+    const extensionOwned = extensionContracts.filter((contract) => !npmContracts.has(contract));
+
+    expect(extensionOwned).toEqual([
+      'workspace-intelligence/workspace-graph-recording.v1.json',
+      'workspai-ai-narrative.v1.json',
+    ]);
+    expect(read('src/core/workspaceGraphRecordingManager.ts')).toContain(
+      'WORKSPACE_GRAPH_RECORDING_SCHEMA_VERSION'
+    );
+    expect(read('src/core/workspaiAiNarrative.ts')).toContain(
+      '../../contracts/workspai-ai-narrative.v1.json'
+    );
+    expect(read('webview-ui/src/lib/workspaiAiNarrative.ts')).toContain(
+      '../../../contracts/workspai-ai-narrative.v1.json'
+    );
   });
 });

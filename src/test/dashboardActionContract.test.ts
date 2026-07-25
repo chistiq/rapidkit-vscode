@@ -316,6 +316,7 @@ describe('dashboard action contract', () => {
       expect(contract.commandState, cardId).toBe('ready');
       expect(contract.commandAction?.command, cardId).toBeTruthy();
       expect(contract.commandAction?.label, cardId).toBeTruthy();
+      expect(contract.executionChannel, cardId).toMatch(/^(terminal|background)$/);
       expect(contract.artifactState, cardId).toBe('ready');
       expect(contract.artifactLabel, cardId).toBe(`${cardId}.json`);
       expect(contract.studioTarget?.target, cardId).toBeTruthy();

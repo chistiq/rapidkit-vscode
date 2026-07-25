@@ -5,6 +5,7 @@ import type { DashboardEvidenceCard, DashboardEvidencePayload } from '@/lib/dash
 import {
   buildEvidenceAttentionInbox,
   countEvidenceAttentionBuckets,
+  evidenceAttentionVisibleLimit,
   type EvidenceAttentionItem,
 } from '@/lib/evidenceAgentContext';
 import { evidenceCardStatusLabel } from '@/lib/dashboardEvidence';
@@ -12,7 +13,11 @@ import { resolveEvidenceFreshness } from '@/lib/dashboardEvidence';
 import { buildDashboardEvidenceActionContract } from '@/lib/dashboardActionContract';
 import type { EvidenceWorkspaceContext } from '@/lib/dashboardEvidenceDirectRun';
 import { resolveEvidenceProjectAttribution } from '@/lib/dashboardEvidenceProjectAttribution';
-import { buildDashboardIncidentCopy } from '@/lib/dashboardIncidentContract';
+import { buildDashboardRepairCardCopy } from '@/lib/dashboardRepairCardCopy';
+import {
+  effectiveCardBlockers,
+  resolveWorkspaceProjectCountFromEvidence,
+} from '@/lib/dashboardScaffoldEvidence';
 
 interface EvidenceAttentionInboxProps {
   evidence: DashboardEvidencePayload | null;
@@ -27,9 +32,33 @@ interface EvidenceAttentionInboxProps {
   onRefreshEvidenceCard?: (cardId: DashboardEvidenceCard['id']) => void;
   onAskStudioAboutCard?: (card: DashboardEvidenceCard) => void;
   onSendEvidenceToCopilot?: (card: DashboardEvidenceCard) => void;
+  onCopyEvidenceAgentHandoff?: (card: DashboardEvidenceCard) => void;
   onRevealArtifact?: (artifactPath: string) => void;
   onOpenProjectLifecycle?: () => void;
   onShowAll?: () => void;
+}
+
+function EvidenceBucketSummary({
+  buckets,
+}: {
+  buckets: ReturnType<typeof countEvidenceAttentionBuckets>;
+}) {
+  return (
+    <>
+      <span className="evidence-attention-inbox__metric evidence-attention-inbox__metric--fail">
+        {buckets.blocked} blocked
+      </span>
+      <span className="evidence-attention-inbox__metric evidence-attention-inbox__metric--warn">
+        {buckets.attention} attention
+      </span>
+      <span className="evidence-attention-inbox__metric evidence-attention-inbox__metric--missing">
+        {buckets.missing} missing
+      </span>
+      <span className="evidence-attention-inbox__metric evidence-attention-inbox__metric--ok">
+        {buckets.ok} ok
+      </span>
+    </>
+  );
 }
 
 function AttentionRow({
@@ -44,6 +73,7 @@ function AttentionRow({
   onRefreshEvidenceCard,
   onAskStudio,
   onSendToCopilot,
+  onCopyAgentHandoff,
   onRevealArtifact,
   onOpenProjectLifecycle,
 }: {
@@ -58,14 +88,21 @@ function AttentionRow({
   onRefreshEvidenceCard?: (cardId: DashboardEvidenceCard['id']) => void;
   onAskStudio?: () => void;
   onSendToCopilot?: () => void;
+  onCopyAgentHandoff?: () => void;
   onRevealArtifact?: (artifactPath: string) => void;
   onOpenProjectLifecycle?: () => void;
 }) {
   const Icon = item.severity === 'fail' ? ShieldAlert : AlertTriangle;
   const freshness = resolveEvidenceFreshness(item.card);
   const actionContract = buildDashboardEvidenceActionContract(item.card, { evidence, workspace });
-  const incident = buildDashboardIncidentCopy({ card: item.card, contract: actionContract });
   const commandAction = actionContract.commandAction;
+  const workspaceProjectCount = resolveWorkspaceProjectCountFromEvidence(evidence);
+  const copy = buildDashboardRepairCardCopy({
+    card: item.card,
+    blockers: effectiveCardBlockers(item.card, workspaceProjectCount),
+    actionLabel: actionContract.commandLabel,
+    blocking: item.severity === 'fail',
+  });
   const projectAttribution = resolveEvidenceProjectAttribution(item.card, evidence);
   const pendingLabel = evidenceCardPendingLabel(
     item.card.id,
@@ -77,7 +114,8 @@ function AttentionRow({
       <Icon size={14} aria-hidden="true" />
       <span className="evidence-attention-inbox__copy">
         <strong>{item.card.label}</strong>
-        <small>{pendingLabel ? `${pendingLabel}…` : item.card.summary}</small>
+        <small>{pendingLabel ? `${pendingLabel}…` : copy.issue}</small>
+        {!pendingLabel ? <small>{copy.guidance}</small> : null}
         {commandAction ? (
           <small className="evidence-attention-inbox__next">Run: {commandAction.label}</small>
         ) : null}
@@ -86,12 +124,6 @@ function AttentionRow({
             Project · {projectAttribution.label}
           </small>
         ) : null}
-        <small className="evidence-attention-inbox__trail">
-          <span>Incident</span>
-          <span>{incident.phaseLabel}</span>
-          <span>{incident.primaryAction}</span>
-          <span>{incident.artifactLabel}</span>
-        </small>
         {!pending && freshness.status === 'stale' ? (
           <small className={`evidence-freshness evidence-freshness--${freshness.status}`}>
             {freshness.label} · {freshness.detail}
@@ -147,6 +179,7 @@ function AttentionRow({
             onRevealArtifact={onRevealArtifact}
             onAskStudio={onAskStudio}
             onSendToCopilot={onSendToCopilot}
+            onCopyAgentHandoff={onCopyAgentHandoff}
           />
           {projectAttribution && onOpenProjectLifecycle ? (
             <button
@@ -178,14 +211,15 @@ export function EvidenceAttentionInbox({
   onRefreshEvidenceCard,
   onAskStudioAboutCard,
   onSendEvidenceToCopilot,
+  onCopyEvidenceAgentHandoff,
   onRevealArtifact,
   onOpenProjectLifecycle,
   onShowAll,
 }: EvidenceAttentionInboxProps) {
   const items = buildEvidenceAttentionInbox(evidence);
   const buckets = countEvidenceAttentionBuckets(evidence);
-  const visibleItems =
-    typeof maxItems === 'number' && maxItems > 0 ? items.slice(0, maxItems) : items;
+  const visibleLimit = evidenceAttentionVisibleLimit(items.length, buckets.blocked, maxItems);
+  const visibleItems = visibleLimit < items.length ? items.slice(0, visibleLimit) : items;
   const hiddenCount = Math.max(0, items.length - visibleItems.length);
 
   if (items.length === 0) {
@@ -195,9 +229,7 @@ export function EvidenceAttentionInbox({
         aria-label="Attention inbox"
       >
         <div className="evidence-attention-inbox__summary">
-          <span className="evidence-attention-inbox__metric evidence-attention-inbox__metric--ok">
-            {buckets.ok} healthy
-          </span>
+          <EvidenceBucketSummary buckets={buckets} />
           <span className="ws-kicker">No blocked or warning evidence cards right now.</span>
         </div>
       </section>
@@ -207,21 +239,7 @@ export function EvidenceAttentionInbox({
   return (
     <section className="evidence-attention-inbox" aria-label="Attention inbox">
       <div className="evidence-attention-inbox__summary">
-        {buckets.blocked > 0 ? (
-          <span className="evidence-attention-inbox__metric evidence-attention-inbox__metric--fail">
-            {buckets.blocked} blocked
-          </span>
-        ) : null}
-        {buckets.attention > 0 ? (
-          <span className="evidence-attention-inbox__metric evidence-attention-inbox__metric--warn">
-            {buckets.attention} attention
-          </span>
-        ) : null}
-        {buckets.ok > 0 ? (
-          <span className="evidence-attention-inbox__metric evidence-attention-inbox__metric--ok">
-            {buckets.ok} ok
-          </span>
-        ) : null}
+        <EvidenceBucketSummary buckets={buckets} />
       </div>
       <div className="evidence-attention-inbox__list">
         {visibleItems.map((item) => (
@@ -244,6 +262,11 @@ export function EvidenceAttentionInbox({
             onSendToCopilot={
               showItemActions && onSendEvidenceToCopilot
                 ? () => onSendEvidenceToCopilot(item.card)
+                : undefined
+            }
+            onCopyAgentHandoff={
+              showItemActions && onCopyEvidenceAgentHandoff
+                ? () => onCopyEvidenceAgentHandoff(item.card)
                 : undefined
             }
             onRevealArtifact={showItemActions ? onRevealArtifact : undefined}

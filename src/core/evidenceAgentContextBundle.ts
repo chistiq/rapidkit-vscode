@@ -19,12 +19,15 @@ import {
   AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
   AGENT_REPORTS_INDEX_PATH,
   AGENTS_MD_PATH,
+  RAPIDKIT_MCP_DESIGN_REPORT_PATH,
   WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
   WORKSPACE_CONTRACT_VERIFY_REPORT_PATH,
   WORKSPACE_EXPLAIN_REPORT_PATH,
   WORKSPACE_HISTORY_PATH,
   WORKSPACE_IMPACT_REPORT_PATH,
   WORKSPACE_MODEL_REPORT_PATH,
+  WORKSPACE_MODEL_DIFF_REPORT_PATH,
+  WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH,
   WORKSPACE_TRACE_REPORT_PATH,
   WORKSPACE_VERIFY_REPORT_PATH,
   WORKSPACE_WHY_REPORT_PATH,
@@ -36,6 +39,8 @@ export type EvidenceAgentAttachment = {
   label: string;
   required: boolean;
   exists: boolean;
+  validity?: 'valid' | 'invalid' | 'uncontracted' | 'missing';
+  validationError?: string;
 };
 
 export type EvidenceAgentContextBundle = {
@@ -58,6 +63,26 @@ export type EvidenceAgentContextBundle = {
 const INTELLIGENCE_ATTACHMENTS: Array<{ relativePath: string; label: string; required: boolean }> =
   [
     {
+      relativePath: '.workspai/reports/doctor-remediation-plan-last-run.json',
+      label: 'Doctor remediation plan',
+      required: false,
+    },
+    {
+      relativePath: '.workspai/reports/artifact-remediation-plan-last-run.json',
+      label: 'Artifact remediation plan',
+      required: false,
+    },
+    {
+      relativePath: '.workspai/reports/doctor-fix-result-last-run.json',
+      label: 'Doctor fix result',
+      required: false,
+    },
+    {
+      relativePath: '.workspai/reports/analyze-last-run.json',
+      label: 'Analyze evidence',
+      required: false,
+    },
+    {
       relativePath: AGENT_REPORTS_INDEX_PATH,
       label: 'Agent reports index',
       required: false,
@@ -75,6 +100,16 @@ const INTELLIGENCE_ATTACHMENTS: Array<{ relativePath: string; label: string; req
     {
       relativePath: WORKSPACE_MODEL_REPORT_PATH,
       label: 'Workspace model graph',
+      required: false,
+    },
+    {
+      relativePath: WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH,
+      label: 'Workspace model snapshot',
+      required: false,
+    },
+    {
+      relativePath: WORKSPACE_MODEL_DIFF_REPORT_PATH,
+      label: 'Workspace model diff',
       required: false,
     },
     {
@@ -115,6 +150,11 @@ const INTELLIGENCE_ATTACHMENTS: Array<{ relativePath: string; label: string; req
     {
       relativePath: WORKSPACE_SKILLS_INDEX_PATH,
       label: 'Operational skills index',
+      required: false,
+    },
+    {
+      relativePath: RAPIDKIT_MCP_DESIGN_REPORT_PATH,
+      label: 'MCP tool design',
       required: false,
     },
     {
@@ -172,6 +212,87 @@ export async function buildEvidenceAgentContextBundle(
     }
   }
 
+  // INDEX.json is the CLI-authored consumer manifest. Merge its complete,
+  // ordered report catalog instead of forcing every extension consumer to
+  // maintain a second artifact registry.
+  let reportReadOrder: string[] = [];
+  try {
+    const indexPath = path.join(input.workspacePath, AGENT_REPORTS_INDEX_PATH);
+    const index = (await fs.readJson(indexPath)) as {
+      readOrder?: unknown;
+      reports?: unknown;
+    };
+    reportReadOrder = Array.isArray(index.readOrder)
+      ? index.readOrder.filter((entry): entry is string => typeof entry === 'string')
+      : [];
+    const reports = Array.isArray(index.reports) ? index.reports : [];
+    for (const rawReport of reports) {
+      if (!rawReport || typeof rawReport !== 'object' || Array.isArray(rawReport)) {
+        continue;
+      }
+      const report = rawReport as Record<string, unknown>;
+      if (typeof report.path !== 'string' || !report.path.trim()) {
+        continue;
+      }
+      const relativePath = report.path.replace(/\\/g, '/').replace(/^\.\//, '');
+      const absolutePath = path.resolve(input.workspacePath, relativePath);
+      const workspaceRelative = path.relative(path.resolve(input.workspacePath), absolutePath);
+      if (workspaceRelative.startsWith('..') || path.isAbsolute(workspaceRelative)) {
+        continue;
+      }
+      const exists = await fs.pathExists(absolutePath);
+      const required = report.required === true;
+      const validity =
+        report.validity === 'valid' ||
+        report.validity === 'invalid' ||
+        report.validity === 'uncontracted' ||
+        report.validity === 'missing'
+          ? report.validity
+          : undefined;
+      // INDEX.json is the canonical catalog, but an older producer could write
+      // it immediately before creating workspace-skills-index.json. Reconcile
+      // that known stale `missing` observation with current disk state so a
+      // present artifact cannot prevent Studio from reaching AI repair.
+      const reconciledValidity = validity === 'missing' && exists ? undefined : validity;
+      const descriptor: EvidenceAgentAttachment = {
+        relativePath,
+        label:
+          typeof report.label === 'string' && report.label.trim()
+            ? report.label.trim()
+            : relativePath,
+        required,
+        exists,
+        ...(reconciledValidity ? { validity: reconciledValidity } : {}),
+        ...(typeof report.validationError === 'string' && report.validationError.trim()
+          ? { validationError: report.validationError.trim() }
+          : {}),
+      };
+      const existingIndex = attachments.findIndex(
+        (attachment) => attachment.relativePath === relativePath
+      );
+      if (existingIndex >= 0) {
+        attachments[existingIndex] = descriptor;
+      } else {
+        attachments.push(descriptor);
+      }
+      if (required && (!exists || validity === 'invalid')) {
+        missingRequired.push(relativePath);
+      }
+    }
+  } catch {
+    // The static baseline above remains available when an older workspace has
+    // not generated the contract-backed reports index yet.
+  }
+
+  if (reportReadOrder.length > 0) {
+    const order = new Map(reportReadOrder.map((relativePath, index) => [relativePath, index]));
+    attachments.sort(
+      (left, right) =>
+        (order.get(left.relativePath) ?? Number.MAX_SAFE_INTEGER) -
+        (order.get(right.relativePath) ?? Number.MAX_SAFE_INTEGER)
+    );
+  }
+
   const cardArtifactRelative = relativeArtifactPath(input.workspacePath, input.card?.artifactPath);
   if (cardArtifactRelative) {
     const exists = await fs.pathExists(path.join(input.workspacePath, cardArtifactRelative));
@@ -196,7 +317,7 @@ export async function buildEvidenceAgentContextBundle(
       : undefined,
     ...(input.card?.blockers ?? []).slice(0, 8).map((blocker) => `Blocker: ${blocker}`),
     missingRequired.length > 0
-      ? `Missing intelligence: ${missingRequired.join(', ')} (run workspace context/model first)`
+      ? `Missing or invalid intelligence: ${Array.from(new Set(missingRequired)).join(', ')} (run workspace context/model first)`
       : undefined,
     ...buildAgentPackHandoffSummaryLines(agentPack, agentPackSummary),
   ].filter((line): line is string => Boolean(line));
@@ -208,7 +329,7 @@ export async function buildEvidenceAgentContextBundle(
     projectName: input.projectName,
     card: input.card,
     attachments,
-    missingRequired,
+    missingRequired: Array.from(new Set(missingRequired)),
     summaryLines,
     agentPack,
     agentPackSummary,
@@ -226,7 +347,7 @@ export function buildSendToCopilotPrompt(bundle: EvidenceAgentContextBundle): st
     '## Workspai workspace root (READ THIS FIRST)',
     `- Absolute path: \`${workspaceRoot}\``,
     '- All evidence artifacts live under this directory. The VS Code multi-root folder may differ — trust this path.',
-    '- Run shell commands with `cwd` set to this path. Do not edit sibling repos (e.g. rapidkit-npm) unless they are projects inside this workspace.',
+    '- Run shell commands with `cwd` set to this path. Do not edit sibling repositories unless they are registered projects inside this workspace.',
     ...(bundle.projectPath
       ? [
           '',

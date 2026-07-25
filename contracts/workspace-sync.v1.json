@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "workspacePath",
+    "registry",
+    "contractSynced",
+    "registrySummary"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "rapidkit-workspace-sync-v1"
+    },
+    "workspacePath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "registry": {
+      "type": "object"
+    },
+    "contractSynced": {
+      "type": "boolean"
+    },
+    "registrySummary": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true
+}

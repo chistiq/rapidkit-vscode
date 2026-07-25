@@ -30,6 +30,15 @@ describe('Workspai chat session contract', () => {
     expect(sessions).toContain("return 'global'");
   });
 
+  it('shares session chrome with Create while keeping its rich lifecycle messages', () => {
+    const createTab = read('webview-ui/src/sidebar/CreateTab.tsx');
+    const createSessions = read('webview-ui/src/sidebar/useCreateSessions.ts');
+    expect(createTab).toContain("import { ChatSessionBar } from './composer/ChatSessionBar'");
+    expect(createTab).toContain('<ChatSessionBar');
+    expect(createSessions).toContain('import type { CreateMessage, CreateSession');
+    expect(createSessions).toContain('messages: session.messages.slice(-MAX_MESSAGES)');
+  });
+
   it('stores scoped chat snapshots so active workspace switches do not rewrite old sessions', () => {
     expect(sessions).toContain('scope?: ChatSessionScopeSnapshot');
     expect(sessionHook).toContain('type StartQueryOptions');
@@ -84,7 +93,7 @@ describe('Workspai chat session contract', () => {
     expect(provider).toContain('resolveEditorIssueContext(payloadRecord.editorIssue)');
     expect(provider).toContain('scopeMode: payloadRecord.scopeMode');
     expect(provider).toContain(
-      'workspacePath: handoff.workspacePath ?? aiContext.workspaceRootPath'
+      'const autonomousWorkspacePath = handoff?.workspacePath ?? aiContext.workspaceRootPath'
     );
     expect(secondary).toContain("if (data.scopeMode !== 'none')");
     expect(provider).toContain('const isEditorIssueHandoff');

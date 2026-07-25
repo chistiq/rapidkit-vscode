@@ -9,7 +9,7 @@ import {
 } from '../core/npmContractSupportMatrix';
 
 const repoRoot = path.resolve(__dirname, '../..');
-const npmContractsRoot = path.resolve(repoRoot, '..', 'rapidkit-npm', 'contracts');
+const npmContractsRoot = path.resolve(repoRoot, '..', 'workspai', 'packages', 'cli', 'contracts');
 
 function listJsonContracts(dir: string, prefix = ''): string[] {
   if (!fs.existsSync(dir)) {

@@ -6,7 +6,9 @@ import {
   DASHBOARD_COMMAND_CONTRACTS,
   resolveDashboardCommandContract,
 } from '../core/dashboardCommandContracts';
+import { resolveDashboardCommandExecutionChannel } from '../contracts/dashboardCommandExecutionChannel';
 import {
+  resolveReportBinding,
   resolveDashboardCommandForEvidenceCard,
   resolveEvidenceCardIdsForDashboardCommand,
 } from '../core/dashboardReportRegistry';
@@ -43,6 +45,27 @@ function uniqueMatches(source: string, regex: RegExp): string[] {
     match = regex.exec(source);
   }
   return [...matches].sort();
+}
+
+function collectTypeScriptSources(relativeDir: string): string {
+  const root = path.join(repoRoot, relativeDir);
+  const sources: string[] = [];
+
+  function visit(dir: string): void {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const absolutePath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        visit(absolutePath);
+        continue;
+      }
+      if (entry.isFile() && /\.(ts|tsx)$/.test(entry.name)) {
+        sources.push(fs.readFileSync(absolutePath, 'utf8'));
+      }
+    }
+  }
+
+  visit(root);
+  return sources.join('\n');
 }
 
 describe('dashboardCommandRegistry', () => {
@@ -108,6 +131,8 @@ describe('dashboardCommandRegistry', () => {
     expect(appSource).toContain('scheduleDashboardEvidenceFullRefresh(payload)');
     expect(appSource).toContain("typeof context?.projectPath === 'string'");
     expect(appSource).toContain("typeof context?.path === 'string'");
+    expect(appSource).toContain('currentWorkspaceStatus.projectPath');
+    expect(appSource).toContain('currentWorkspaceStatus.projectName');
   });
 
   it('keeps webview command metadata aligned with host command contracts', () => {
@@ -155,6 +180,62 @@ describe('dashboardCommandRegistry', () => {
     }
   });
 
+  it('keeps host-dispatched dashboard contract commands contributed in package.json', () => {
+    const packageJson = JSON.parse(read('package.json')) as {
+      contributes?: { commands?: Array<{ command?: string }> };
+    };
+    const contributedCommands = new Set(
+      (packageJson.contributes?.commands ?? [])
+        .map((entry) => entry.command)
+        .filter((command): command is string => typeof command === 'string')
+    );
+
+    const missing = Object.values(DASHBOARD_COMMAND_CONTRACTS)
+      .map((contract) => ({
+        id: contract.id,
+        vscodeCommand: contract.vscodeCommand,
+        executionMode: contract.executionMode,
+      }))
+      .filter((entry) => {
+        if (
+          !entry.vscodeCommand ||
+          entry.executionMode === 'webview-local' ||
+          entry.executionMode === 'extension-host-handler'
+        ) {
+          return false;
+        }
+        return !contributedCommands.has(entry.vscodeCommand);
+      })
+      .map((entry) => `${entry.id}:${entry.vscodeCommand}`);
+
+    expect(missing).toEqual([]);
+  });
+
+  it('keeps host-dispatched dashboard contract commands registered by the extension', () => {
+    const source = collectTypeScriptSources('src');
+    const missing = Object.values(DASHBOARD_COMMAND_CONTRACTS)
+      .map((contract) => ({
+        id: contract.id,
+        vscodeCommand: contract.vscodeCommand,
+        executionMode: contract.executionMode,
+      }))
+      .filter((entry) => {
+        if (
+          !entry.vscodeCommand ||
+          entry.executionMode === 'webview-local' ||
+          entry.executionMode === 'extension-host-handler'
+        ) {
+          return false;
+        }
+
+        const escaped = entry.vscodeCommand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return !new RegExp(`registerCommand\\s*\\(\\s*['"]${escaped}['"]`).test(source);
+      })
+      .map((entry) => `${entry.id}:${entry.vscodeCommand}`);
+
+    expect(missing).toEqual([]);
+  });
+
   it('keeps every evidence card mapped to a valid command for terminal, Studio, and Copilot handoff', () => {
     for (const cardId of DASHBOARD_EVIDENCE_CARD_IDS) {
       const cardCommand = EVIDENCE_CARD_COMMANDS[cardId];
@@ -168,6 +249,14 @@ describe('dashboardCommandRegistry', () => {
         `${cardId}:${hostCommand}`
       ).toBeDefined();
 
+      const hostContract = resolveDashboardCommandContract(hostCommand!);
+      if (hostContract?.cliArgs && hostContract.cliArgs.length > 0) {
+        expect(
+          resolveDashboardCommandExecutionChannel(hostCommand!),
+          `${cardId}:${hostCommand}`
+        ).toBeDefined();
+      }
+
       if (cardId === 'workspaceRun') {
         expect(hostCommand).toBe('workspaceRunTest');
         expect(cardCommand).toBe('workspaceRunTest');
@@ -177,6 +266,33 @@ describe('dashboardCommandRegistry', () => {
 
       expect(resolveEvidenceCardIdsForDashboardCommand(hostCommand!), hostCommand).toContain(
         cardId
+      );
+    }
+  });
+
+  it('keeps workspace intelligence artifacts mapped to valid dashboard command contracts', () => {
+    const artifactSamples = [
+      ['workspace-model.json', 'workspaceModel'],
+      ['workspace-knowledge-graph.json', 'workspaceModel'],
+      ['workspace-intelligence-evaluation-live.json', 'workspaceEvaluationReport'],
+      ['workspace-intelligence-evaluation-last-run.json', 'workspaceEvaluationReport'],
+      ['workspace-model-snapshot.json', 'workspaceIntelligenceSnapshot'],
+      ['workspace-model-diff-last-run.json', 'workspaceDiff'],
+      ['workspace-impact-last-run.json', 'workspaceImpact'],
+      ['workspace-intelligence-run-last-run.json', 'workspaceIntelligenceChain'],
+      ['workspace-verify-last-run.json', 'workspaceVerify'],
+      ['workspace-context-agent.json', 'workspaceContextAgent'],
+      ['agent-customization-pack.json', 'workspaceAgentSync'],
+      ['doctor-remediation-plan-last-run.json', 'checkWorkspaceHealth'],
+      ['artifact-remediation-plan-last-run.json', 'workspaceRemediationPlan'],
+    ] as const;
+
+    for (const [artifact, command] of artifactSamples) {
+      const binding = resolveReportBinding(path.join('/tmp/ws/.rapidkit/reports', artifact));
+      expect(binding?.command, artifact).toBe(command);
+      expect(resolveDashboardCommandContract(command), artifact).toBeDefined();
+      expect(resolveEvidenceCardIdsForDashboardCommand(command), command).toContain(
+        binding?.cardId
       );
     }
   });
@@ -192,6 +308,8 @@ describe('dashboardCommandRegistry', () => {
     expect(combined).toContain('tryDispatchDashboardContractWebviewMessage(');
     expect(dashboardCommandsSource).toContain('getDashboardWorkspacePayload(');
     expect(dashboardCommandsSource).toContain('getDashboardProjectPayload(');
+    expect(dashboardCommandsSource).toContain("typeof data?.projectPath === 'string'");
+    expect(dashboardCommandsSource).toContain('explicitProjectPath');
     expect(welcomePanelSource).toContain('dispatchWelcomePanelWebviewMessage');
     expect(welcomePanelSource).not.toContain("case 'projectTerminal':");
 
@@ -277,12 +395,10 @@ describe('dashboardCommandRegistry', () => {
     expect(appSource).toContain(
       'projectName: selectedProjectForAnalysis?.name || workspaceStatus.projectName'
     );
-    expect(appSource).toContain(
-      'contextProjectPath || selectedProjectForAnalysisRef.current?.path'
-    );
-    expect(appSource).toContain(
-      'contextProjectName || selectedProjectForAnalysisRef.current?.name'
-    );
+    expect(appSource).toContain('selectedProjectForAnalysisRef.current?.path');
+    expect(appSource).toContain('currentWorkspaceStatus.projectPath');
+    expect(appSource).toContain('selectedProjectForAnalysisRef.current?.name');
+    expect(appSource).toContain('currentWorkspaceStatus.projectName');
     expect(appSource).toContain("typeof context?.projectPath === 'string'");
     expect(appSource).toContain("typeof context?.projectName === 'string'");
   });
@@ -580,6 +696,73 @@ describe('dashboardCommandRegistry', () => {
         trackActivity: meta?.trackActivity,
       });
     }
+  });
+
+  it('binds agent-sync primary artifacts to the Agent Grounding evidence card', () => {
+    expect(
+      resolveReportBinding('/workspace/.rapidkit/reports/agent-customization-pack.json')
+    ).toMatchObject({
+      kind: 'agent-customization-pack',
+      command: 'workspaceAgentSync',
+      cardId: 'agentGrounding',
+      scope: 'workspace',
+    });
+    expect(resolveReportBinding('/workspace/.rapidkit/reports/INDEX.json')).toMatchObject({
+      kind: 'agent-reports-index',
+      command: 'workspaceAgentSync',
+      cardId: 'agentGrounding',
+      scope: 'workspace',
+    });
+    expect(
+      resolveReportBinding('/workspace/.rapidkit/reports/rapidkit-mcp-design.json')
+    ).toMatchObject({
+      kind: 'rapidkit-mcp-design',
+      command: 'workspaceAgentSync',
+      cardId: 'agentGrounding',
+      scope: 'workspace',
+    });
+    expect(
+      resolveReportBinding('/workspace/.workspai/reports/workspai-mcp-design.json')
+    ).toMatchObject({
+      kind: 'rapidkit-mcp-design',
+      command: 'workspaceAgentSync',
+      cardId: 'agentGrounding',
+      scope: 'workspace',
+    });
+    expect(resolveEvidenceCardIdsForDashboardCommand('workspaceAgentSync')).toContain(
+      'agentGrounding'
+    );
+  });
+
+  it('binds npm remediation artifacts to Studio-aware dashboard commands', () => {
+    expect(
+      resolveReportBinding('/workspace/.rapidkit/reports/artifact-remediation-plan-last-run.json')
+    ).toMatchObject({
+      kind: 'artifact-remediation-plan',
+      command: 'workspaceRemediationPlan',
+      cardId: 'remediationPlan',
+      scope: 'workspace',
+    });
+    expect(
+      resolveReportBinding('/workspace/.rapidkit/reports/doctor-remediation-plan-last-run.json')
+    ).toMatchObject({
+      kind: 'doctor-remediation-plan',
+      command: 'checkWorkspaceHealth',
+      cardId: 'doctor',
+      scope: 'workspace',
+    });
+    expect(
+      resolveReportBinding('/workspace/.rapidkit/reports/doctor-fix-result-last-run.json')
+    ).toMatchObject({
+      kind: 'doctor-fix-result',
+      command: 'checkWorkspaceHealth',
+      cardId: 'doctor',
+      scope: 'workspace',
+    });
+    expect(resolveEvidenceCardIdsForDashboardCommand('workspaceRemediationPlan')).toContain(
+      'remediationPlan'
+    );
+    expect(resolveDashboardCommandForEvidenceCard('workspaceExplain')).toBe('workspaceExplain');
   });
 
   it('marks full-refresh commands pending against current evidence cards', () => {

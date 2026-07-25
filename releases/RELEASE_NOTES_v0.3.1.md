@@ -59,8 +59,8 @@ This is a maintenance release focusing on code quality. All functionality from v
 
 ## 🙏 Thank You
 
-Thank you for using RapidKit! If you encounter any issues or have suggestions, please [open an issue on GitHub](https://github.com/rapidkitlabs/rapidkit-vscode/issues).
+Thank you for using RapidKit! If you encounter any issues or have suggestions, please [open an issue on GitHub](https://github.com/chistiq/rapidkit-vscode/issues).
 
 ---
 
-**Full Changelog:** https://github.com/rapidkitlabs/rapidkit-vscode/blob/main/CHANGELOG.md
+**Full Changelog:** https://github.com/chistiq/rapidkit-vscode/blob/main/CHANGELOG.md

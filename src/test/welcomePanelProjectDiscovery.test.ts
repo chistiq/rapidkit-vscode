@@ -98,7 +98,7 @@ describe('welcomePanelProjectDiscovery', () => {
       fromWorkspaceRegistry: true,
     });
     expect(candidates[0].evidenceSources).toEqual(
-      expect.arrayContaining(['framework-markers', 'rapidkit-context', 'workspace-registry'])
+      expect.arrayContaining(['framework-markers', 'workspai-context', 'workspace-registry'])
     );
   });
 

@@ -289,7 +289,7 @@ export async function handleViewProjectDoctorReportMessage(
   }
 
   output.appendLine('');
-  output.appendLine(`Reports directory: ${path.basename(projectPath)}/.rapidkit/reports`);
+  output.appendLine(`Reports directory: ${path.basename(projectPath)}/.workspai/reports`);
   output.show();
 
   if (workspacePath) {

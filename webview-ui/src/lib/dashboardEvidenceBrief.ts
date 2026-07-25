@@ -1,8 +1,4 @@
-import type {
-  DashboardEvidenceCard,
-  DashboardEvidencePayload,
-  DashboardEvidenceStatus,
-} from './dashboardEvidence';
+import type { DashboardEvidenceCard, DashboardEvidencePayload } from './dashboardEvidence';
 import {
   buildEvidenceGuidedSteps,
   buildGuidedStepFocusCard,
@@ -10,7 +6,7 @@ import {
   pickGuidedStepPrimaryCard,
   type EvidenceGuidedStep,
 } from './dashboardEvidenceViewMode';
-import { outcomeCards, resolveEvidenceFreshness } from './dashboardEvidence';
+import { countEvidenceAttentionBuckets } from './evidenceAgentContext';
 import {
   cardCountsAsReleaseBlocker,
   resolveWorkspaceProjectCountFromEvidence,
@@ -34,13 +30,6 @@ export type EvidenceBriefView = {
   primaryCard?: DashboardEvidenceCard;
 };
 
-function countCardsByStatus(
-  cards: DashboardEvidenceCard[],
-  status: DashboardEvidenceStatus
-): number {
-  return cards.filter((card) => card.status === status).length;
-}
-
 export function buildDashboardEvidenceBrief(input: {
   evidence: DashboardEvidencePayload | null | undefined;
   hasWorkspace: boolean;
@@ -52,11 +41,7 @@ export function buildDashboardEvidenceBrief(input: {
   const releaseBlockingCards = cards.filter((card) =>
     cardCountsAsReleaseBlocker(card, workspaceProjectCount)
   );
-  const failed = releaseBlockingCards.filter((card) => card.status === 'fail').length;
-  const warnings = countCardsByStatus(cards, 'warn');
-  const missing = countCardsByStatus(cards, 'missing');
-  const stale = cards.filter((card) => resolveEvidenceFreshness(card).status === 'stale').length;
-  const outcomes = outcomeCards(evidence);
+  const buckets = countEvidenceAttentionBuckets(evidence);
   const guidedSteps = buildEvidenceGuidedSteps({ evidence, hasProject });
   const currentStep =
     guidedSteps.find((step) => step.state === 'attention') ??
@@ -83,7 +68,7 @@ export function buildDashboardEvidenceBrief(input: {
     };
   }
 
-  if (failed > 0 || releaseBlockingCards.length > 0) {
+  if (buckets.blocked > 0) {
     return {
       posture: 'blocked',
       label: 'Blocked',
@@ -95,16 +80,24 @@ export function buildDashboardEvidenceBrief(input: {
         ? `${currentStep.title}: ${currentStep.detail}`
         : 'Open the highest priority blocker before continuing.',
       metrics: [
-        { label: 'blocked', value: Math.max(failed, releaseBlockingCards.length), tone: 'danger' },
-        { label: 'attention', value: warnings, tone: warnings > 0 ? 'warn' : 'neutral' },
-        { label: 'stale', value: stale, tone: stale > 0 ? 'warn' : 'good' },
+        { label: 'blocked', value: buckets.blocked, tone: 'danger' },
+        {
+          label: 'attention',
+          value: buckets.attention,
+          tone: buckets.attention > 0 ? 'warn' : 'neutral',
+        },
+        {
+          label: 'missing',
+          value: buckets.missing,
+          tone: buckets.missing > 0 ? 'neutral' : 'good',
+        },
       ],
       currentStep,
       primaryCard,
     };
   }
 
-  if (warnings > 0 || stale > 0 || outcomes.length > 0 || missing > 0) {
+  if (buckets.attention > 0 || buckets.missing > 0) {
     const emptyShell = workspaceProjectCount === 0;
     return {
       posture: 'attention',
@@ -118,9 +111,13 @@ export function buildDashboardEvidenceBrief(input: {
         ? `${currentStep.title}: ${currentStep.detail}`
         : 'Review warning and stale evidence before release.',
       metrics: [
-        { label: 'attention', value: warnings + stale, tone: 'warn' },
+        { label: 'attention', value: buckets.attention, tone: 'warn' },
         { label: 'blocked', value: 0, tone: 'good' },
-        { label: 'missing', value: missing, tone: missing > 0 ? 'neutral' : 'good' },
+        {
+          label: 'missing',
+          value: buckets.missing,
+          tone: buckets.missing > 0 ? 'neutral' : 'good',
+        },
       ],
       currentStep,
       primaryCard,
@@ -128,18 +125,22 @@ export function buildDashboardEvidenceBrief(input: {
   }
 
   return {
-    posture: missing === cards.length && cards.length > 0 ? 'empty' : 'healthy',
-    label: missing === cards.length && cards.length > 0 ? 'Not populated' : 'Healthy',
+    posture: buckets.missing === cards.length && cards.length > 0 ? 'empty' : 'healthy',
+    label: buckets.missing === cards.length && cards.length > 0 ? 'Not populated' : 'Healthy',
     summary:
-      missing === cards.length && cards.length > 0
+      buckets.missing === cards.length && cards.length > 0
         ? 'No evidence artifacts have been generated yet.'
         : 'No blockers or warning evidence cards are active.',
     detail: currentStep
       ? `${currentStep.title}: ${currentStep.detail}`
       : 'Continue through the guided evidence loop when ready.',
     metrics: [
-      { label: 'healthy', value: countCardsByStatus(cards, 'pass'), tone: 'good' },
-      { label: 'missing', value: missing, tone: missing > 0 ? 'neutral' : 'good' },
+      { label: 'healthy', value: buckets.ok, tone: 'good' },
+      {
+        label: 'missing',
+        value: buckets.missing,
+        tone: buckets.missing > 0 ? 'neutral' : 'good',
+      },
       { label: 'actions', value: evidence?.activity.length ?? 0, tone: 'neutral' },
     ],
     currentStep,

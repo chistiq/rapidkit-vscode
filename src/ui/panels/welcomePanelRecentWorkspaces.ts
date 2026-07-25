@@ -3,6 +3,11 @@ import fs from 'fs-extra';
 
 import { CoreVersionService } from '../../core/coreVersionService';
 import { WorkspaceManager } from '../../core/workspaceManager';
+import {
+  resolveWorkspaceArtifactPath,
+  resolveWorkspaceReportsDir,
+} from '../../core/workspaceIntelligencePaths';
+import { hasRapidkitProjectMarkers } from '../../core/workspacePaths';
 
 export type RecentWorkspaceProjectStats = {
   fastapi?: number;
@@ -79,9 +84,7 @@ export async function buildRecentWorkspaces(
               if (entry.isDirectory() && !entry.name.startsWith('.')) {
                 const projectPath = path.join(ws.path, entry.name);
 
-                const hasRapidKitMarker =
-                  (await fs.pathExists(path.join(projectPath, '.rapidkit', 'project.json'))) ||
-                  (await fs.pathExists(path.join(projectPath, '.rapidkit', 'context.json')));
+                const hasRapidKitMarker = hasRapidkitProjectMarkers(projectPath);
 
                 if (hasRapidKitMarker) {
                   count++;
@@ -148,7 +151,10 @@ export async function buildRecentWorkspaces(
           let complianceStatus: RecentWorkspaceEntry['complianceStatus'];
           let mirrorStatus: RecentWorkspaceEntry['mirrorStatus'];
           try {
-            const manifestPath = path.join(ws.path, '.rapidkit', 'workspace.json');
+            const manifestPath = await resolveWorkspaceArtifactPath(
+              ws.path,
+              '.workspai/workspace.json'
+            );
             if (await fs.pathExists(manifestPath)) {
               const manifest = await fs.readJSON(manifestPath).catch(() => null);
               if (manifest) {
@@ -156,7 +162,10 @@ export async function buildRecentWorkspaces(
               }
             }
 
-            const policiesPath = path.join(ws.path, '.rapidkit', 'policies.yml');
+            const policiesPath = await resolveWorkspaceArtifactPath(
+              ws.path,
+              '.workspai/policies.yml'
+            );
             if (await fs.pathExists(policiesPath)) {
               const policyContent = await fs.readFile(policiesPath, 'utf-8');
 
@@ -178,7 +187,7 @@ export async function buildRecentWorkspaces(
               }
             }
 
-            const reportsDir = path.join(ws.path, '.rapidkit', 'reports');
+            const reportsDir = await resolveWorkspaceReportsDir(ws.path);
             if (await fs.pathExists(reportsDir)) {
               const reportFiles = await fs.readdir(reportsDir);
               const latestCompliance = reportFiles

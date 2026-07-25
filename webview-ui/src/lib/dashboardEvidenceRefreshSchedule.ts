@@ -26,7 +26,9 @@ export function createDashboardEvidenceRefreshScheduler(options?: {
   let fullDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let fullFollowupTimer: ReturnType<typeof setTimeout> | null = null;
   let cardDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let cardFollowupTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingFullRun: (() => void) | null = null;
+  let pendingCardRun: (() => void) | null = null;
 
   const cancel = () => {
     if (fullDebounceTimer != null) {
@@ -40,6 +42,10 @@ export function createDashboardEvidenceRefreshScheduler(options?: {
     if (cardDebounceTimer != null) {
       clearTimer(cardDebounceTimer);
       cardDebounceTimer = null;
+    }
+    if (cardFollowupTimer != null) {
+      clearTimer(cardFollowupTimer);
+      cardFollowupTimer = null;
     }
   };
 
@@ -68,12 +74,21 @@ export function createDashboardEvidenceRefreshScheduler(options?: {
   };
 
   const scheduleCards = (run: () => void) => {
+    pendingCardRun = run;
     if (cardDebounceTimer != null) {
       clearTimer(cardDebounceTimer);
+    }
+    if (cardFollowupTimer != null) {
+      clearTimer(cardFollowupTimer);
+      cardFollowupTimer = null;
     }
     cardDebounceTimer = setTimer(() => {
       cardDebounceTimer = null;
       run();
+      cardFollowupTimer = setTimer(() => {
+        cardFollowupTimer = null;
+        pendingCardRun?.();
+      }, followupMs);
     }, cardDebounceMs);
   };
 

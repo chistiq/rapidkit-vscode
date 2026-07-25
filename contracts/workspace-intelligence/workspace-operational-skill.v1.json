@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://getrapidkit.com/schemas/workspace-operational-skill.v1.json",
-  "title": "RapidKit Workspace Operational Skill",
+  "title": "Workspai Workspace Operational Skill",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -18,7 +18,7 @@
   "properties": {
     "schemaVersion": { "const": "workspace-operational-skill.v1" },
     "skillId": { "type": "string", "minLength": 1 },
-    "canonicalPath": { "type": "string", "pattern": "^\\.rapidkit/skills/[^/]+\\.md$" },
+    "canonicalPath": { "type": "string", "pattern": "^\\.workspai/skills/[^/]+\\.md$" },
     "title": { "type": "string" },
     "triggers": { "type": "array", "items": { "type": "string" } },
     "requiredReports": { "type": "array", "items": { "type": "string" } },

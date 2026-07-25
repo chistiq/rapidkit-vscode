@@ -15,10 +15,14 @@ function handoff(overrides: Partial<StudioBlockerHandoffView> = {}): StudioBlock
     blockers: ['doctor failed'],
     artifactPath: '.rapidkit/reports/doctor-last-run.json',
     sourceCommand: 'npx rapidkit doctor --json',
+    dashboardCommandId: 'projectDoctor',
+    executionChannel: 'background',
+    capabilityGate: 'doctor project',
     scope: 'workspace',
     blockerSignature: 'abc123456789abcd',
     studioMode: 'FIX',
-    verifyCommand: 'npx rapidkit workspace verify --json --write',
+    verifyCommand:
+      'npx rapidkit workspace verify --from-impact .rapidkit/reports/workspace-impact-last-run.json --json',
     verifyArtifact: '.rapidkit/reports/workspace-verify-last-run.json',
     incidentSummary: {
       title: 'Workspace Doctor',
@@ -64,6 +68,9 @@ describe('Studio blocker verify gate', () => {
     });
 
     expect(merged?.verifyCommand).toBe('npx rapidkit doctor workspace --json');
+    expect(merged?.dashboardCommandId).toBe('projectDoctor');
+    expect(merged?.executionChannel).toBe('background');
+    expect(merged?.capabilityGate).toBe('doctor project');
     expect(merged?.incidentSummary?.phase).toBe('audit');
     expect(merged?.incidentSummary?.primaryAction).toBe('Verify applied fix');
     expect(

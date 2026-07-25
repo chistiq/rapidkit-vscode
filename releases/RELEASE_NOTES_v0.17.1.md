@@ -47,4 +47,4 @@ A `_schedule*` method runs async I/O in the background and fires `_onDidChangeTr
 ## Links
 
 - 📦 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
-- 🐙 [GitHub Repository](https://github.com/rapidkitlabs/rapidkit-vscode)
+- 🐙 [GitHub Repository](https://github.com/chistiq/rapidkit-vscode)

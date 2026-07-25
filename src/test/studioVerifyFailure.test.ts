@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  enrichStudioActionFailureWithHandoff,
   parseStudioActionFailure,
   parseStudioVerifyFailure,
   studioVerifyFailureSummary,
@@ -11,7 +12,13 @@ describe('studio verify failure view', () => {
     const failure = parseStudioVerifyFailure({
       action: 'verify-handoff',
       status: 'failed',
-      commandText: 'npx rapidkit workspace verify --json --write',
+      commandText:
+        'npx rapidkit workspace verify --from-impact .rapidkit/reports/workspace-impact-last-run.json --json',
+      dashboardCommandId: 'workspaceVerify',
+      executionChannel: 'background',
+      capabilityGate: 'workspace verify',
+      safetyRisk: 'write',
+      safetyRefreshCommands: ['npx rapidkit workspace verify --json'],
       rollbackCommand: 'git checkout -- "src/config.ts"',
       exitCode: 2,
       stderrTail: 'workspaceVerify: gate blocked',
@@ -22,7 +29,14 @@ describe('studio verify failure view', () => {
     expect(failure).toEqual({
       title: 'Verify failed',
       action: 'verify-handoff',
-      commandText: 'npx rapidkit workspace verify --json --write',
+      commandText:
+        'npx rapidkit workspace verify --from-impact .rapidkit/reports/workspace-impact-last-run.json --json',
+      dashboardCommandId: 'workspaceVerify',
+      executionChannel: 'background',
+      capabilityGate: 'workspace verify',
+      safetyRisk: 'write',
+      safetyConfirmation: undefined,
+      safetyRefreshCommands: ['npx rapidkit workspace verify --json'],
       rollbackCommand: 'git checkout -- "src/config.ts"',
       exitCode: 2,
       stderrTail: 'workspaceVerify: gate blocked',
@@ -53,6 +67,12 @@ describe('studio verify failure view', () => {
       title: 'Auto-fix failed',
       action: 'auto-fix',
       commandText: undefined,
+      dashboardCommandId: undefined,
+      executionChannel: undefined,
+      capabilityGate: undefined,
+      safetyRisk: undefined,
+      safetyConfirmation: undefined,
+      safetyRefreshCommands: undefined,
       rollbackCommand: undefined,
       exitCode: undefined,
       stderrTail: undefined,
@@ -64,6 +84,41 @@ describe('studio verify failure view', () => {
     expect(failure ? studioVerifyFailureSummary(failure) : null).toBe(
       'Patch bridge refused unsafe change'
     );
+  });
+
+  it('inherits failure command contract metadata from the active handoff', () => {
+    const failure = parseStudioActionFailure({
+      action: 'run-remediation-command',
+      status: 'failed',
+      summary: 'Repair command exited 1.',
+    });
+
+    expect(failure).not.toBeNull();
+    expect(
+      enrichStudioActionFailureWithHandoff(failure!, {
+        schemaVersion: 'rapidkit-studio-blocker-handoff-v1',
+        cardId: 'workspace-verify',
+        cardStatus: 'fail',
+        blockers: ['verify blocked'],
+        artifactPath: '.rapidkit/reports/workspace-verify-last-run.json',
+        sourceCommand: 'npx rapidkit workspace verify --json',
+        dashboardCommandId: 'workspaceVerify',
+        executionChannel: 'background',
+        capabilityGate: 'workspace verify',
+        safetyRisk: 'write',
+        safetyConfirmation: 'Run Verify',
+        safetyRefreshCommands: ['npx rapidkit workspace verify --json'],
+        scope: 'workspace',
+        blockerSignature: 'abc123456789abcd',
+      })
+    ).toMatchObject({
+      dashboardCommandId: 'workspaceVerify',
+      executionChannel: 'background',
+      capabilityGate: 'workspace verify',
+      safetyRisk: 'write',
+      safetyConfirmation: 'Run Verify',
+      safetyRefreshCommands: ['npx rapidkit workspace verify --json'],
+    });
   });
 
   it('preserves host-provided title and next action for generic Studio failures', () => {

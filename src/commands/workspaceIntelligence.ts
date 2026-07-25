@@ -15,15 +15,16 @@ import {
   WORKSPACE_INTELLIGENCE_IMPACT_FROM_CANDIDATES,
   WORKSPACE_MODEL_DIFF_REPORT_PATH,
   WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH,
-  WORKSPACE_IMPACT_REPORT_PATH,
+  WORKSPAI_REPORTS_DIR,
 } from '../core/workspaceIntelligencePaths';
-import {
-  buildWorkspaceAgentContextCliArgs,
-  buildWorkspaceAgentSyncCliArgs,
-} from '../core/agentContextPack';
-import { resolveAgentSyncCliOptions } from '../core/agentSyncSettings';
 import { sendWorkspaceIntelligenceToCopilot } from '../core/sendToCopilot';
 import { ensureFreshEvidenceForAIAction } from '../core/workspaceEvidenceFreshnessGate';
+import {
+  getWorkspaceCommandPreset,
+  getWorkspaceCommandPresetGroup,
+  shouldPromptForWorkspaceCommandPreset,
+  type WorkspaceCommandPreset,
+} from '../core/workspaceCommandPresets';
 
 type WorkspaceExplorerLike = {
   getSelectedWorkspace?: () => { path: string; name?: string } | null | undefined;
@@ -36,6 +37,11 @@ type WorkspaceCommandItem = {
   from?: unknown;
   scope?: unknown;
   target?: unknown;
+  source?: unknown;
+  preset?: unknown;
+  forcePresetPrompt?: unknown;
+  experimentalHooks?: unknown;
+  query?: unknown;
 };
 
 type WorkspaceTarget = {
@@ -194,7 +200,7 @@ async function resolveIntelligenceFromPath(input: {
     canSelectFiles: true,
     canSelectFolders: false,
     canSelectMany: false,
-    defaultUri: vscode.Uri.file(path.join(input.workspacePath, '.rapidkit', 'reports')),
+    defaultUri: vscode.Uri.file(path.join(input.workspacePath, WORKSPAI_REPORTS_DIR)),
     openLabel: 'Select baseline report',
     title: input.title,
   });
@@ -207,13 +213,204 @@ async function resolveIntelligenceFromPath(input: {
   return toPosixRelativePath(input.workspacePath, filePath);
 }
 
+async function resolveWorkspaceCommandPreset(input: {
+  commandId: string;
+  item?: unknown;
+  workspaceName: string;
+}): Promise<WorkspaceCommandPreset | undefined> {
+  const typed = asWorkspaceCommandItem(input.item);
+  const presetId =
+    input.commandId === 'workspaceAgentSync' && typed?.experimentalHooks === true
+      ? 'hooks'
+      : typeof typed?.preset === 'string'
+        ? typed.preset.trim()
+        : '';
+  const explicitPreset = getWorkspaceCommandPreset(input.commandId, presetId);
+  if (explicitPreset) {
+    return explicitPreset;
+  }
+
+  const group = getWorkspaceCommandPresetGroup(input.commandId);
+  if (!group) {
+    return undefined;
+  }
+
+  if (
+    !shouldPromptForWorkspaceCommandPreset({
+      source: typed?.source,
+      preset: typed?.preset,
+      forcePresetPrompt: typed?.forcePresetPrompt,
+    })
+  ) {
+    return group.presets[0];
+  }
+
+  const picked = await vscode.window.showQuickPick<WorkspaceCommandPreset>(group.presets, {
+    title: `${group.title} — ${input.workspaceName}`,
+    placeHolder: group.placeHolder,
+    ignoreFocusOut: true,
+  });
+  return picked;
+}
+
+function appendScopeArg(command: string[], scope?: string): string[] {
+  if (scope?.trim()) {
+    command.push('--scope', scope.trim());
+  }
+  return command;
+}
+
+function applyCommandPlaceholders(
+  args: string[],
+  replacements: Record<string, string | undefined>
+): string[] {
+  return args.map((arg) => replacements[arg] ?? arg);
+}
+
 export function registerWorkspaceIntelligenceCommands(options: {
   logger: Logger;
   getWorkspaceExplorer: () => WorkspaceExplorerLike | undefined;
 }): vscode.Disposable[] {
   const { logger, getWorkspaceExplorer } = options;
 
+  const exportWorkspaceGraph = async (
+    format: 'jsonld' | 'graphml' | 'gexf',
+    item?: unknown
+  ): Promise<void> => {
+    const target = requireWorkspaceTarget(item, getWorkspaceExplorer());
+    if (!target) {
+      return;
+    }
+    if (
+      !(await requireWorkspaceIntelligenceCli(
+        `Workspace Graph ${format.toUpperCase()} Export`,
+        target.workspacePath
+      ))
+    ) {
+      return;
+    }
+    const output = await vscode.window.showSaveDialog({
+      title: `Export Workspace Graph as ${format.toUpperCase()}`,
+      defaultUri: vscode.Uri.file(
+        path.join(target.workspacePath, WORKSPAI_REPORTS_DIR, `workspace-graph.${format}`)
+      ),
+      saveLabel: 'Export graph',
+      filters: { [format.toUpperCase()]: [format] },
+    });
+    if (!output) {
+      return;
+    }
+    await runWorkspaceIntelligenceCommandWithProgress({
+      command: ['workspace', 'graph', format, '--output', output.fsPath, '--json'],
+      cwd: target.workspacePath,
+      title: `Graph Export — ${target.workspaceName}`,
+      featureLabel: `Workspace Graph ${format.toUpperCase()} Export`,
+    });
+    logger.info(`Workspace graph ${format} export dispatched for ${target.workspacePath}`);
+  };
+
   return [
+    vscode.commands.registerCommand('workspai.workspaceGraphSearch', async (item?: unknown) => {
+      const target = requireWorkspaceTarget(item, getWorkspaceExplorer());
+      if (!target) {
+        return;
+      }
+      if (
+        !(await requireWorkspaceIntelligenceCli('Workspace Graph Search', target.workspacePath))
+      ) {
+        return;
+      }
+      const typed = asWorkspaceCommandItem(item);
+      const explicitQuery =
+        typeof typed?.query === 'string'
+          ? typed.query.trim()
+          : typeof typed?.target === 'string'
+            ? typed.target.trim()
+            : '';
+      const query =
+        explicitQuery ||
+        (
+          await vscode.window.showInputBox({
+            title: 'Search Workspace Graph',
+            prompt: 'Find projects, services, APIs, symbols, ownership, or evidence',
+            placeHolder: 'e.g. authentication API dependencies',
+            ignoreFocusOut: true,
+            validateInput: (value) => (value.trim() ? undefined : 'Enter a graph search query.'),
+          })
+        )?.trim();
+      if (!query) {
+        return;
+      }
+      await runWorkspaceIntelligenceCommandWithProgress({
+        command: ['workspace', 'graph', 'search', query, '--limit', '12', '--json'],
+        cwd: target.workspacePath,
+        title: `Graph Search — ${target.workspaceName}`,
+        featureLabel: 'Workspace Graph Search',
+      });
+      logger.info(`Workspace graph search dispatched for ${target.workspacePath}`);
+    }),
+
+    vscode.commands.registerCommand('workspai.workspaceGraphExport.jsonld', (item?: unknown) =>
+      exportWorkspaceGraph('jsonld', item)
+    ),
+    vscode.commands.registerCommand('workspai.workspaceGraphExport.graphml', (item?: unknown) =>
+      exportWorkspaceGraph('graphml', item)
+    ),
+    vscode.commands.registerCommand('workspai.workspaceGraphExport.gexf', (item?: unknown) =>
+      exportWorkspaceGraph('gexf', item)
+    ),
+
+    vscode.commands.registerCommand(
+      'workspai.workspaceEvaluationStatus',
+      async (item?: unknown) => {
+        const target = requireWorkspaceTarget(item, getWorkspaceExplorer());
+        if (!target) {
+          return;
+        }
+        if (
+          !(await requireWorkspaceIntelligenceCli(
+            'Workspace Evaluation Status',
+            target.workspacePath
+          ))
+        ) {
+          return;
+        }
+        await runWorkspaceIntelligenceCommandWithProgress({
+          command: ['workspace', 'eval', 'status', '--json'],
+          cwd: target.workspacePath,
+          title: `Evaluation Status — ${target.workspaceName}`,
+          featureLabel: 'Workspace Evaluation Status',
+          suppressFailureMessage: true,
+        });
+        logger.info(`Workspace evaluation status dispatched for ${target.workspacePath}`);
+      }
+    ),
+
+    vscode.commands.registerCommand(
+      'workspai.workspaceEvaluationReport',
+      async (item?: unknown) => {
+        const target = requireWorkspaceTarget(item, getWorkspaceExplorer());
+        if (!target) {
+          return;
+        }
+        if (
+          !(await requireWorkspaceIntelligenceCli(
+            'Workspace Evaluation Report',
+            target.workspacePath
+          ))
+        ) {
+          return;
+        }
+        await runWorkspaceIntelligenceCommandWithProgress({
+          command: ['workspace', 'eval', 'report', '--json'],
+          cwd: target.workspacePath,
+          title: `Evaluation Report — ${target.workspaceName}`,
+          featureLabel: 'Workspace Evaluation Report',
+        });
+        logger.info(`Workspace evaluation report dispatched for ${target.workspacePath}`);
+      }
+    ),
+
     vscode.commands.registerCommand('workspai.workspaceModel', async (item?: unknown) => {
       const workspaceExplorer = getWorkspaceExplorer();
       const target = requireWorkspaceTarget(item, workspaceExplorer);
@@ -225,8 +422,17 @@ export function registerWorkspaceIntelligenceCommands(options: {
         return;
       }
 
+      const preset = await resolveWorkspaceCommandPreset({
+        commandId: 'workspaceModel',
+        item,
+        workspaceName: target.workspaceName,
+      });
+      if (!preset) {
+        return;
+      }
+
       await runWorkspaceIntelligenceCommandWithProgress({
-        command: ['workspace', 'model', '--json', '--write'],
+        command: [...preset.args],
         cwd: target.workspacePath,
         title: `Workspace Model — ${target.workspaceName}`,
         featureLabel: 'Workspace Model',
@@ -270,6 +476,15 @@ export function registerWorkspaceIntelligenceCommands(options: {
         return;
       }
 
+      const preset = await resolveWorkspaceCommandPreset({
+        commandId: 'workspaceDiff',
+        item,
+        workspaceName: target.workspaceName,
+      });
+      if (!preset) {
+        return;
+      }
+
       const fromPath = await resolveIntelligenceFromPath({
         workspacePath: target.workspacePath,
         item,
@@ -283,9 +498,12 @@ export function registerWorkspaceIntelligenceCommands(options: {
         );
         return;
       }
+      const command = applyCommandPlaceholders([...preset.args], {
+        '<baseline-report>': fromPath,
+      });
 
       await runWorkspaceIntelligenceCommandWithProgress({
-        command: ['workspace', 'diff', '--from', fromPath, '--json'],
+        command,
         cwd: target.workspacePath,
         title: `Workspace Diff — ${target.workspaceName}`,
         featureLabel: 'Workspace Diff',
@@ -310,6 +528,15 @@ export function registerWorkspaceIntelligenceCommands(options: {
           ? typed.scope.trim()
           : undefined;
 
+      const preset = await resolveWorkspaceCommandPreset({
+        commandId: 'workspaceImpact',
+        item,
+        workspaceName: target.workspaceName,
+      });
+      if (!preset) {
+        return;
+      }
+
       const fromPath = await resolveIntelligenceFromPath({
         workspacePath: target.workspacePath,
         item,
@@ -324,10 +551,12 @@ export function registerWorkspaceIntelligenceCommands(options: {
         return;
       }
 
-      const command: string[] = ['workspace', 'impact', '--from', fromPath, '--json'];
-      if (scope) {
-        command.push('--scope', scope);
-      }
+      const command = appendScopeArg(
+        applyCommandPlaceholders([...preset.args], {
+          '<change-report>': fromPath,
+        }),
+        scope
+      );
 
       await runWorkspaceIntelligenceCommandWithProgress({
         command,
@@ -355,7 +584,15 @@ export function registerWorkspaceIntelligenceCommands(options: {
           ? typed.scope.trim()
           : undefined;
 
-      const command = buildWorkspaceAgentContextCliArgs(scope);
+      const preset = await resolveWorkspaceCommandPreset({
+        commandId: 'workspaceContextAgent',
+        item,
+        workspaceName: target.workspaceName,
+      });
+      if (!preset) {
+        return;
+      }
+      const command = appendScopeArg([...preset.args], scope);
 
       await runWorkspaceIntelligenceCommandWithProgress({
         command,
@@ -382,18 +619,15 @@ export function registerWorkspaceIntelligenceCommands(options: {
         typeof typed?.scope === 'string' && typed.scope.trim().length > 0
           ? typed.scope.trim()
           : undefined;
-      const record =
-        item && typeof item === 'object' ? (item as Record<string, unknown>) : undefined;
-      const presetOverride = record?.preset === 'minimal' ? 'minimal' : undefined;
-      const experimentalHooksOverride = record?.experimentalHooks === true ? true : undefined;
-
-      const command = buildWorkspaceAgentSyncCliArgs(
-        resolveAgentSyncCliOptions({
-          scope,
-          preset: presetOverride,
-          experimentalHooks: experimentalHooksOverride,
-        })
-      );
+      const preset = await resolveWorkspaceCommandPreset({
+        commandId: 'workspaceAgentSync',
+        item,
+        workspaceName: target.workspaceName,
+      });
+      if (!preset) {
+        return;
+      }
+      const command = appendScopeArg([...preset.args], scope);
 
       await runWorkspaceIntelligenceCommandWithProgress({
         command,
@@ -440,13 +674,46 @@ export function registerWorkspaceIntelligenceCommands(options: {
       const fromImpact =
         typeof typed?.from === 'string' && typed.from.trim().length > 0
           ? toPosixRelativePath(target.workspacePath, typed.from.trim())
-          : WORKSPACE_IMPACT_REPORT_PATH;
+          : undefined;
       const scope =
         typeof typed?.scope === 'string' && typed.scope.trim().length > 0
           ? typed.scope.trim()
           : undefined;
 
-      const command: string[] = ['workspace', 'verify', '--from-impact', fromImpact, '--json'];
+      const preset = await resolveWorkspaceCommandPreset({
+        commandId: 'workspaceVerify',
+        item,
+        workspaceName: target.workspaceName,
+      });
+      if (!preset) {
+        return;
+      }
+
+      let resolvedFromImpact = fromImpact;
+      if (preset.requiresArtifact && !resolvedFromImpact) {
+        resolvedFromImpact = await resolveIntelligenceFromPath({
+          workspacePath: target.workspacePath,
+          item,
+          candidates: WORKSPACE_INTELLIGENCE_IMPACT_FROM_CANDIDATES,
+          title: 'Workspace Verify',
+          prompt: 'Select workspace impact report',
+        });
+        if (!resolvedFromImpact) {
+          vscode.window.showWarningMessage(
+            'Workspace verify from impact requires a workspace impact report.'
+          );
+          return;
+        }
+      }
+
+      const command: string[] = ['workspace', 'verify'];
+      if (preset.id === 'strict') {
+        command.push('--strict');
+      }
+      if (resolvedFromImpact) {
+        command.push('--from-impact', resolvedFromImpact);
+      }
+      command.push('--json');
       if (scope) {
         command.push('--scope', scope);
       }
@@ -476,9 +743,20 @@ export function registerWorkspaceIntelligenceCommands(options: {
         typeof typed?.target === 'string' && typed.target.trim().length > 0
           ? typed.target.trim()
           : 'release-blocked';
+      const preset = await resolveWorkspaceCommandPreset({
+        commandId: 'workspaceExplain',
+        item,
+        workspaceName: target.workspaceName,
+      });
+      if (!preset) {
+        return;
+      }
+      const command = applyCommandPlaceholders([...preset.args], {
+        '<target>': explainTarget,
+      });
 
       await runWorkspaceIntelligenceCommandWithProgress({
-        command: ['workspace', 'explain', explainTarget, '--json', '--write'],
+        command,
         cwd: target.workspacePath,
         title: `Workspace Explain — ${target.workspaceName}`,
         featureLabel: 'Workspace Explain',
@@ -502,9 +780,20 @@ export function registerWorkspaceIntelligenceCommands(options: {
         typeof typed?.target === 'string' && typed.target.trim().length > 0
           ? typed.target.trim()
           : 'release-blocked';
+      const preset = await resolveWorkspaceCommandPreset({
+        commandId: 'workspaceWhy',
+        item,
+        workspaceName: target.workspaceName,
+      });
+      if (!preset) {
+        return;
+      }
+      const command = applyCommandPlaceholders([...preset.args], {
+        '<target>': explainTarget,
+      });
 
       await runWorkspaceIntelligenceCommandWithProgress({
-        command: ['workspace', 'why', explainTarget, '--json', '--write'],
+        command,
         cwd: target.workspacePath,
         title: `Workspace Why — ${target.workspaceName}`,
         featureLabel: 'Workspace Why',
@@ -523,19 +812,67 @@ export function registerWorkspaceIntelligenceCommands(options: {
         return;
       }
 
-      const typed = asWorkspaceCommandItem(item);
-      const fromRef =
-        typeof typed?.from === 'string' && typed.from.trim().length > 0
-          ? typed.from.trim()
-          : WORKSPACE_MODEL_DIFF_REPORT_PATH;
+      const preset = await resolveWorkspaceCommandPreset({
+        commandId: 'workspaceTrace',
+        item,
+        workspaceName: target.workspaceName,
+      });
+      if (!preset) {
+        return;
+      }
+      const fromRef = await resolveIntelligenceFromPath({
+        workspacePath: target.workspacePath,
+        item,
+        candidates: [WORKSPACE_MODEL_DIFF_REPORT_PATH],
+        title: 'Workspace Trace',
+        prompt: 'Select workspace diff report',
+      });
+      if (!fromRef) {
+        vscode.window.showWarningMessage(
+          `Workspace trace requires a diff report (e.g. ${WORKSPACE_MODEL_DIFF_REPORT_PATH}).`
+        );
+        return;
+      }
+      const command = applyCommandPlaceholders([...preset.args], {
+        '<diff-report>': fromRef,
+      });
 
       await runWorkspaceIntelligenceCommandWithProgress({
-        command: ['workspace', 'trace', '--from', `trace:${fromRef}`, '--json', '--write'],
+        command,
         cwd: target.workspacePath,
         title: `Workspace Trace — ${target.workspaceName}`,
         featureLabel: 'Workspace Trace',
       });
       logger.info(`Workspace trace dispatched for ${target.workspacePath}`);
+    }),
+
+    vscode.commands.registerCommand('workspai.workspaceRemediationPlan', async (item?: unknown) => {
+      const workspaceExplorer = getWorkspaceExplorer();
+      const target = requireWorkspaceTarget(item, workspaceExplorer);
+      if (!target) {
+        return;
+      }
+
+      if (!(await requireWorkspaceIntelligenceCli('Workspace Repair Plan', target.workspacePath))) {
+        return;
+      }
+
+      const preset = await resolveWorkspaceCommandPreset({
+        commandId: 'workspaceRemediationPlan',
+        item,
+        workspaceName: target.workspaceName,
+      });
+      if (!preset) {
+        return;
+      }
+
+      await runWorkspaceIntelligenceCommandWithProgress({
+        command: [...preset.args],
+        cwd: target.workspacePath,
+        title: `Workspace Repair Plan — ${target.workspaceName}`,
+        featureLabel: 'Workspace Repair Plan',
+      });
+      logger.info(`Workspace repair plan dispatched for ${target.workspacePath}`);
     }),
 
     vscode.commands.registerCommand('workspai.workspaceImpactLens', async (item?: unknown) => {

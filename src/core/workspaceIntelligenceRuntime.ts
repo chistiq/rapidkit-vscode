@@ -1,12 +1,7 @@
 import {
-  WORKSPACE_IMPACT_REPORT_PATH,
   WORKSPACE_MODEL_DIFF_REPORT_PATH,
   WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH,
 } from './workspaceIntelligencePaths';
-import {
-  buildWorkspaceAgentContextCliArgs,
-  buildWorkspaceAgentSyncCliArgs,
-} from './agentContextPack';
 export {
   resolveWorkspacePathForEvidenceTerminal,
   shouldRefreshEvidenceOnTerminalClose,
@@ -14,24 +9,21 @@ export {
 } from './evidenceTerminalTracker';
 import { fetchRuntimeCommandSurface } from './runtimeCommandSurface';
 import {
+  runWorkspaceIntelligenceCommandWithProgress,
   runWorkspaceIntelligenceSequenceWithProgress,
   type IntelligenceSequenceStep,
 } from './workspaceIntelligenceProgressRunner';
+import { getWorkspaceIntelligenceChainSteps } from './workspaceIntelligenceChainContract';
 
 /** Phase 4 narrative steps — optional; gated by workspace subcommand surface, not intelligence gate. */
 export const WORKSPACE_INTELLIGENCE_PHASE4_SUBCOMMANDS = ['why', 'trace'] as const;
 
+export function buildWorkspaceIntelligenceUnifiedRunnerCommand(): string[] {
+  return ['workspace', 'intelligence', 'run', '--for-agent', 'vscode', '--json'];
+}
+
 export function buildWorkspaceIntelligenceCoreChainCommands(): string[][] {
-  return [
-    ['workspace', 'model', '--json', '--write'],
-    ['workspace', 'snapshot', '--json'],
-    ['workspace', 'diff', '--from', WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH, '--json'],
-    ['workspace', 'impact', '--from', WORKSPACE_MODEL_DIFF_REPORT_PATH, '--json'],
-    ['workspace', 'verify', '--from-impact', WORKSPACE_IMPACT_REPORT_PATH, '--json'],
-    buildWorkspaceAgentContextCliArgs(),
-    buildWorkspaceAgentSyncCliArgs(),
-    ['workspace', 'explain', 'release-blocked', '--json', '--write'],
-  ];
+  return getWorkspaceIntelligenceChainSteps().map((step) => step.command);
 }
 
 export function buildWorkspaceIntelligencePhase4ChainCommands(): string[][] {
@@ -81,21 +73,20 @@ export function buildWorkspaceImpactLensCommands(scope?: string): string[][] {
   ];
 }
 
-const WORKSPACE_INTELLIGENCE_CHAIN_LABELS = [
-  'Model',
-  'Snapshot',
-  'Diff',
-  'Impact',
-  'Verify',
-  'Agent Context',
-  'Agent Grounding',
-  'Explain',
-  'Why',
-  'Trace',
-];
-
 function labelForCommand(command: string[], fallback: string): string {
   const [, subcommand] = command;
+  if (command[0] === 'doctor') {
+    return 'Doctor Evidence';
+  }
+  if (command[0] === 'readiness') {
+    return 'Readiness Evidence';
+  }
+  if (command[0] === 'analyze') {
+    return 'Analyze Evidence';
+  }
+  if (command[0] === 'workspace' && command[1] === 'contract') {
+    return 'Contract Evidence';
+  }
   switch (subcommand) {
     case 'model':
       return 'Model';
@@ -122,14 +113,36 @@ function labelForCommand(command: string[], fallback: string): string {
   }
 }
 
-function toSequenceSteps(commands: string[][]): IntelligenceSequenceStep[] {
-  return commands.map((command, index) => ({
-    command,
-    label: labelForCommand(
+function commandsAddressSameStage(left: string[], right: string[]): boolean {
+  if (left[0] !== right[0]) {
+    return false;
+  }
+  if (left[0] !== 'workspace') {
+    return left[0] === 'doctor' ? left[1] === right[1] : true;
+  }
+  if (left[1] !== right[1]) {
+    return false;
+  }
+  if (left[1] === 'contract') {
+    return left[2] === right[2];
+  }
+  return true;
+}
+
+export function toWorkspaceIntelligenceSequenceSteps(
+  commands: string[][]
+): IntelligenceSequenceStep[] {
+  const contractedSteps = getWorkspaceIntelligenceChainSteps();
+  return commands.map((command, index) => {
+    const contractedStep = contractedSteps.find((step) =>
+      commandsAddressSameStage(step.command, command)
+    );
+    return {
       command,
-      WORKSPACE_INTELLIGENCE_CHAIN_LABELS[index] ?? `Step ${index + 1}`
-    ),
-  }));
+      label: contractedStep?.label ?? labelForCommand(command, `Step ${index + 1}`),
+      ...(contractedStep ? { exitPolicy: contractedStep.exitPolicy } : {}),
+    };
+  });
 }
 
 export async function dispatchWorkspaceIntelligenceChain(input: {
@@ -138,10 +151,20 @@ export async function dispatchWorkspaceIntelligenceChain(input: {
   label?: string;
 }): Promise<void> {
   const includePhase4 = await resolveWorkspaceIntelligencePhase4Available(input.workspacePath);
-  await runWorkspaceIntelligenceSequenceWithProgress({
+  const result = await runWorkspaceIntelligenceCommandWithProgress({
     title: input.label ?? `Intelligence Chain — ${input.workspaceName}`,
     cwd: input.workspacePath,
-    steps: toSequenceSteps(buildWorkspaceIntelligenceChainCommands({ includePhase4 })),
+    command: buildWorkspaceIntelligenceUnifiedRunnerCommand(),
+    featureLabel: 'Workspace Intelligence',
+    suppressFailureMessage: true,
+  });
+  if (!includePhase4 || !result || result.failed) {
+    return;
+  }
+  await runWorkspaceIntelligenceSequenceWithProgress({
+    title: `${input.label ?? `Intelligence Chain — ${input.workspaceName}`} · Narrative`,
+    cwd: input.workspacePath,
+    steps: toWorkspaceIntelligenceSequenceSteps(buildWorkspaceIntelligencePhase4ChainCommands()),
   });
 }
 
@@ -154,6 +177,6 @@ export async function dispatchWorkspaceImpactLens(input: {
   await runWorkspaceIntelligenceSequenceWithProgress({
     title: input.label ?? `Workspace Advisor — ${input.workspaceName}`,
     cwd: input.workspacePath,
-    steps: toSequenceSteps(buildWorkspaceImpactLensCommands(input.scope)),
+    steps: toWorkspaceIntelligenceSequenceSteps(buildWorkspaceImpactLensCommands(input.scope)),
   });
 }

@@ -42,6 +42,6 @@ export const MARKERS = {
 export const URLS = {
   DOCS: 'https://www.workspai.com/docs',
   TROUBLESHOOTING: 'https://www.workspai.com/docs/troubleshooting',
-  GITHUB: 'https://github.com/rapidkitlabs/rapidkit-vscode',
+  GITHUB: 'https://github.com/chistiq/rapidkit-vscode',
   MARKETPLACE: 'https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode',
 } as const;

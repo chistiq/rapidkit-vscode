@@ -1,9 +1,9 @@
 /**
- * RapidKit CLI Wrapper
+ * Workspai CLI wrapper with an explicit RapidKit Core compatibility path.
  * Wraps the rapidkit NPM package for use in VS Code extension.
  *
- * Execution uses unpinned `npx --yes rapidkit ...` (see platformCapabilities).
- * Frontend kits: `create frontend <id>`; backend kits: `create project <kit>`.
+ * Execution uses unpinned `npx --yes workspai ...` (see platformCapabilities).
+ * Frontend generators: `create frontend <id>`; backend kits: `create project <kit>`.
  */
 
 import {
@@ -29,6 +29,8 @@ export interface CreateWorkspaceOptions {
   parentPath: string;
   skipGit?: boolean;
   dryRun?: boolean;
+  /** Skip optional rapidkit-core/Python engine files during workspace bootstrap. */
+  skipPythonEngine?: boolean;
   /** Preferred install backend. Passed as --install-method to npm CLI. */
   installMethod?: 'poetry' | 'venv' | 'pipx';
   /** Bootstrap profile written into .rapidkit/workspace.json. Passed as --profile to npm CLI. */
@@ -70,7 +72,7 @@ export interface BuildProjectScaffoldArgsInput {
 }
 
 /**
- * Frontend kits use canonical `create frontend <id>` (npm-owned generators).
+ * Frontend generators use canonical `create frontend <id>` (official ecosystem generators).
  * Backend kits use `create project <kit>`; npm runs init separately when needed.
  */
 export function buildProjectScaffoldArgs(input: BuildProjectScaffoldArgsInput): string[] {
@@ -127,12 +129,11 @@ export class WorkspaiCLI {
 
   /**
    * Create a new RapidKit workspace using npm package
-   * Uses: npx --yes --package rapidkit rapidkit <workspace-name> [--yes] [--skip-git]
+   * Uses the canonical first-install-safe Workspai CLI command.
    * Creates workspace at the specified parent path
    */
   async createWorkspace(options: CreateWorkspaceOptions): Promise<ExecaReturnValue> {
-    // Use: npx --yes --package rapidkit rapidkit create workspace <name> --yes  (skip interactive prompts)
-    const args = ['create', 'workspace', options.name, '--yes'];
+    const args = ['create', 'workspace', options.name, '--yes', '--output', options.parentPath];
 
     if (options.installMethod) {
       args.push('--install-method', options.installMethod);
@@ -140,6 +141,10 @@ export class WorkspaiCLI {
 
     if (options.profile) {
       args.push('--profile', options.profile);
+    }
+
+    if (options.skipPythonEngine) {
+      args.push('--skip-python-engine');
     }
 
     if (options.skipGit) {
@@ -157,14 +162,15 @@ export class WorkspaiCLI {
       options.parentPath
     );
 
-    return await run('npx', this.buildPortableNpxRapidkitArgs(args), {
+    const runOptions = {
       cwd: options.parentPath,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,
         FORCE_COLOR: '1',
       },
-    });
+    };
+    return await run('npx', this.buildPortableNpxRapidkitArgs(args), runOptions);
   }
 
   /**
@@ -191,7 +197,7 @@ export class WorkspaiCLI {
       },
     });
 
-    if (!options.skipInstall && !isFrontendScaffoldKit(options.kit)) {
+    if (result.exitCode === 0 && !options.skipInstall && !isFrontendScaffoldKit(options.kit)) {
       const projectPath = (await import('path')).join(options.parentPath, options.name);
       await run('npx', this.buildPortableNpxRapidkitArgs(['init', projectPath]), {
         cwd: options.parentPath,
@@ -250,7 +256,7 @@ export class WorkspaiCLI {
       },
     });
 
-    if (!options.skipInstall && !isFrontendScaffoldKit(options.kit)) {
+    if (result.exitCode === 0 && !options.skipInstall && !isFrontendScaffoldKit(options.kit)) {
       const projectPath = path.join(outputParentPath, options.name);
 
       this.logger.info('Running rapidkit init in project:', projectPath);
@@ -270,15 +276,15 @@ export class WorkspaiCLI {
   }
 
   /**
-   * Check if rapidkit CLI is available
+   * Check if the Workspai npm CLI is available.
    */
   async isAvailable(): Promise<boolean> {
-    // Prefer direct `rapidkit` binary if available (user-installed global),
-    // fallback to `npx --yes --package rapidkit rapidkit` otherwise. This avoids environment/path
+    // Prefer direct `workspai` binary if available (user-installed global),
+    // fallback to npx otherwise. This avoids environment/path
     // differences between VS Code extension host and the user's interactive shell.
     try {
       // Try direct executable first
-      const direct = await run('rapidkit', ['--version'], { stdio: 'pipe', timeout: 3000 });
+      const direct = await run('workspai', ['--version'], { stdio: 'pipe', timeout: 3000 });
       if (direct && typeof direct.stdout === 'string' && direct.stdout.trim()) {
         return true;
       }
@@ -293,18 +299,18 @@ export class WorkspaiCLI {
       });
       return true;
     } catch (error) {
-      this.logger.debug('RapidKit CLI not available', error);
+      this.logger.debug('Workspai CLI not available', error);
       return false;
     }
   }
 
   /**
-   * Get RapidKit npm package version
+   * Get the Workspai npm package version.
    */
   async getVersion(): Promise<string | null> {
     try {
       // Prefer direct binary
-      const direct = await run('rapidkit', ['--version'], { stdio: 'pipe', timeout: 3000 });
+      const direct = await run('workspai', ['--version'], { stdio: 'pipe', timeout: 3000 });
       if (direct && direct.stdout) {
         return normalizeRapidkitNpmVersion(direct.stdout);
       }
@@ -319,7 +325,7 @@ export class WorkspaiCLI {
       });
       return normalizeRapidkitNpmVersion(result.stdout);
     } catch (error) {
-      this.logger.error('Failed to get RapidKit version', error);
+      this.logger.error('Failed to get Workspai CLI version', error);
       return null;
     }
   }
@@ -333,7 +339,7 @@ export class WorkspaiCLI {
     useNpx = true,
     preferredExecutable?: string
   ): Promise<ExecaReturnValue> {
-    this.logger.debug('Running rapidkit with args:', args);
+    this.logger.debug('Running Workspai CLI with args:', args);
     const workingDir = cwd || process.cwd();
 
     if (preferredExecutable) {
@@ -357,11 +363,12 @@ export class WorkspaiCLI {
           stdio: 'pipe',
         });
       } catch (error) {
-        this.logger.debug('npx rapidkit execution failed; trying local rapidkit runners.', error);
+        this.logger.error('Workspai npm CLI execution failed.', error);
+        throw error;
       }
     }
 
-    // Priority 1: Try to find workspace .venv rapidkit runner (walk up from project to workspace root)
+    // Explicit Python/Core compatibility path. This is never an implicit npm fallback.
     let currentDir = workingDir;
     let venvRapidkit: string | null = null;
     const fs = require('fs');
@@ -423,7 +430,7 @@ export class WorkspaiCLI {
     this.logger.info('Adding module to project:', { projectPath, moduleSlug });
 
     // Run from project directory - npm package will auto-detect workspace
-    // Equivalent command from that directory: npx --yes --package rapidkit rapidkit add module <moduleSlug>
+    // Equivalent command: npx --yes --package workspai workspai add module <moduleSlug>
     return await this.run(['add', 'module', moduleSlug], projectPath, true);
   }
 }

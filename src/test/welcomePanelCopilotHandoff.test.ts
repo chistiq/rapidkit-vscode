@@ -9,6 +9,7 @@ vi.mock('vscode', () => ({
 }));
 
 vi.mock('../core/sendToCopilot.js', () => ({
+  copyEvidenceAgentHandoff: vi.fn(),
   sendEvidenceToCopilot: vi.fn(),
   sendWorkspaceIntelligenceToCopilot: vi.fn(),
 }));
@@ -122,5 +123,30 @@ describe('welcomePanelCopilotHandoff', () => {
     expect(buildStudioBlockerHandoff).toHaveBeenCalledWith(
       expect.objectContaining({ handoffSource: 'repair' })
     );
+  });
+
+  it('copies the complete agent handoff without opening an agent surface', async () => {
+    const { copyEvidenceAgentHandoff } = await import('../core/sendToCopilot.js');
+    const { handleWelcomePanelCopyEvidenceAgentHandoff } =
+      await import('../ui/panels/welcomePanelCopilotHandoff.js');
+
+    await handleWelcomePanelCopyEvidenceAgentHandoff(
+      {
+        workspacePath: '/tmp/ws',
+        card: { id: 'doctor', label: 'Doctor', status: 'fail', summary: 'x', scope: 'workspace' },
+      },
+      {
+        resolveWorkspacePath: () => '/tmp/ws',
+        resolveWorkspaceName: () => 'demo',
+      }
+    );
+
+    expect(copyEvidenceAgentHandoff).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspacePath: '/tmp/ws',
+        card: expect.objectContaining({ id: 'doctor' }),
+      })
+    );
+    expect(executeCommand).not.toHaveBeenCalled();
   });
 });

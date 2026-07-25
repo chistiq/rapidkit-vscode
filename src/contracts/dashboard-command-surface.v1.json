@@ -169,6 +169,28 @@
       "handler": "extension-host",
       "trackActivity": true
     },
+    "workspaceContract": {
+      "id": "workspaceContract",
+      "label": "Workspace Contract",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "contract"
+      ],
+      "refreshEvidence": false
+    },
+    "workspaceContractOpen": {
+      "id": "workspaceContractOpen",
+      "label": "Open Workspace Contract",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "contract"
+      ],
+      "refreshEvidence": false
+    },
     "workspaceRunTest": {
       "id": "workspaceRunTest",
       "label": "Workspace Test",
@@ -205,6 +227,28 @@
     "workspaceRunStart": {
       "id": "workspaceRunStart",
       "label": "Workspace Start",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "workspaceRun"
+      ],
+      "refreshEvidence": true
+    },
+    "workspaceRunStage": {
+      "id": "workspaceRunStage",
+      "label": "Workspace Run Stage",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "workspaceRun"
+      ],
+      "refreshEvidence": true
+    },
+    "workspaceInit": {
+      "id": "workspaceInit",
+      "label": "Workspace Init",
       "scope": "workspace",
       "handler": "extension-host",
       "trackActivity": true,
@@ -268,6 +312,72 @@
         "workspaceModel"
       ],
       "refreshEvidence": true
+    },
+    "workspaceEvaluationReport": {
+      "id": "workspaceEvaluationReport",
+      "label": "Finalize Agent Evaluation",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "workspaceIntelligenceRun"
+      ],
+      "refreshEvidence": true
+    },
+    "workspaceEvaluationStatus": {
+      "id": "workspaceEvaluationStatus",
+      "label": "Agent Evaluation Status",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "workspaceIntelligenceRun"
+      ],
+      "refreshEvidence": true
+    },
+    "workspaceGraphSearch": {
+      "id": "workspaceGraphSearch",
+      "label": "Search Workspace Graph",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "workspaceModel"
+      ],
+      "refreshEvidence": false
+    },
+    "workspaceGraphExportJsonLd": {
+      "id": "workspaceGraphExportJsonLd",
+      "label": "Export Workspace Graph as JSON-LD",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "workspaceModel"
+      ],
+      "refreshEvidence": false
+    },
+    "workspaceGraphExportGraphMl": {
+      "id": "workspaceGraphExportGraphMl",
+      "label": "Export Workspace Graph as GraphML",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "workspaceModel"
+      ],
+      "refreshEvidence": false
+    },
+    "workspaceGraphExportGexf": {
+      "id": "workspaceGraphExportGexf",
+      "label": "Export Workspace Graph as GEXF",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "workspaceModel"
+      ],
+      "refreshEvidence": false
     },
     "workspaceIntelligenceSnapshot": {
       "id": "workspaceIntelligenceSnapshot",
@@ -354,6 +464,19 @@
       ],
       "refreshEvidence": true
     },
+    "workspaceRemediationPlan": {
+      "id": "workspaceRemediationPlan",
+      "label": "Workspace Repair Plan",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "doctor",
+        "workspaceExplain",
+        "workspaceTrace"
+      ],
+      "refreshEvidence": true
+    },
     "workspaceWatch": {
       "id": "workspaceWatch",
       "label": "Workspace Watch",
@@ -435,6 +558,7 @@
       "handler": "extension-host",
       "trackActivity": true,
       "affectedEvidenceCardIds": [
+        "workspaceIntelligenceRun",
         "workspaceModel",
         "intelligenceSnapshot",
         "workspaceDiff",
@@ -538,6 +662,17 @@
       ],
       "refreshEvidence": true
     },
+    "workspacePolicySet": {
+      "id": "workspacePolicySet",
+      "label": "Policy Update",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "policy"
+      ],
+      "refreshEvidence": true
+    },
     "mirrorSync": {
       "id": "mirrorSync",
       "label": "Mirror Sync",
@@ -571,9 +706,64 @@
       ],
       "refreshEvidence": true
     },
+    "mirrorVerify": {
+      "id": "mirrorVerify",
+      "label": "Mirror Verify",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "mirror"
+      ],
+      "refreshEvidence": true
+    },
+    "mirrorRotate": {
+      "id": "mirrorRotate",
+      "label": "Mirror Rotate",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "mirror"
+      ],
+      "refreshEvidence": true
+    },
     "cacheStatus": {
       "id": "cacheStatus",
       "label": "Cache Status",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "cache"
+      ],
+      "refreshEvidence": true
+    },
+    "cacheClear": {
+      "id": "cacheClear",
+      "label": "Cache Clear",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "cache"
+      ],
+      "refreshEvidence": true
+    },
+    "cachePrune": {
+      "id": "cachePrune",
+      "label": "Cache Prune",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "cache"
+      ],
+      "refreshEvidence": true
+    },
+    "cacheRepair": {
+      "id": "cacheRepair",
+      "label": "Cache Repair",
       "scope": "workspace",
       "handler": "extension-host",
       "trackActivity": true,
@@ -592,6 +782,61 @@
         "infra"
       ],
       "refreshEvidence": true
+    },
+    "infraPlan": {
+      "id": "infraPlan",
+      "label": "Infra Plan",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "infra"
+      ],
+      "refreshEvidence": true
+    },
+    "infraUp": {
+      "id": "infraUp",
+      "label": "Infra Up",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "infra"
+      ],
+      "refreshEvidence": true
+    },
+    "infraDown": {
+      "id": "infraDown",
+      "label": "Infra Down",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "infra"
+      ],
+      "refreshEvidence": true
+    },
+    "infraStatus": {
+      "id": "infraStatus",
+      "label": "Infra Status",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "infra"
+      ],
+      "refreshEvidence": true
+    },
+    "infraOpenCompose": {
+      "id": "infraOpenCompose",
+      "label": "Infra Open Compose",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true,
+      "affectedEvidenceCardIds": [
+        "infra"
+      ],
+      "refreshEvidence": false
     },
     "workspaceArchive": {
       "id": "workspaceArchive",

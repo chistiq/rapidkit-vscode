@@ -148,4 +148,20 @@ describe('sidebarStudioFixPrompt', () => {
     );
     expect(prompt).toContain('If deterministic steps are exhausted or blocked');
   });
+
+  it('uses standalone workspace verify as the verify-only fallback', () => {
+    const prompt = buildSidebarStudioPrompt({
+      task: 'verify this card',
+      handoff: {
+        ...handoff,
+        studioMode: 'VERIFY_ONLY',
+        verifyCommand: undefined,
+      },
+      remediationPlan,
+      studioMode: 'verify',
+    });
+
+    expect(prompt).toContain('Only recommend: workspace verify --json');
+    expect(prompt).not.toContain('Only recommend: workspace verify --from-impact');
+  });
 });

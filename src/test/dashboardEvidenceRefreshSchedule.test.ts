@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createDashboardEvidenceRefreshScheduler } from '../../webview-ui/src/lib/dashboardEvidenceRefreshSchedule';
 
 describe('dashboardEvidenceRefreshSchedule', () => {
-  it('runs card refresh once without follow-up', () => {
+  it('runs card refresh with follow-up for terminal-backed artifacts', () => {
     vi.useFakeTimers();
     const run = vi.fn();
     const scheduler = createDashboardEvidenceRefreshScheduler({
@@ -15,7 +15,7 @@ describe('dashboardEvidenceRefreshSchedule', () => {
     vi.advanceTimersByTime(100);
     expect(run).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(5000);
-    expect(run).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledTimes(2);
 
     scheduler.cancel();
     vi.useRealTimers();

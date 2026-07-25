@@ -52,7 +52,7 @@ describe('dashboardScaffoldEvidence', () => {
     expect(evidenceCardVisualTone(warnCard, 2)).toBe('warn');
   });
 
-  it('keeps real blockers for populated workspaces', () => {
+  it('keeps failed gates as real blockers for populated workspaces', () => {
     const dependencyCard: DashboardEvidenceCard = {
       id: 'readiness',
       label: 'Release Readiness',
@@ -64,6 +64,38 @@ describe('dashboardScaffoldEvidence', () => {
 
     expect(cardCountsAsReleaseBlocker(dependencyCard, 2)).toBe(true);
     expect(evidenceCardVisualTone(dependencyCard, 2)).toBe('danger');
+  });
+
+  it('uses explicit blocking posture for guarded warning gates', () => {
+    const guardedCard: DashboardEvidenceCard = {
+      id: 'readiness',
+      label: 'Release Readiness',
+      status: 'warn',
+      summary: 'Approval is required before release.',
+      scope: 'workspace',
+      blockers: ['Production approval is required'],
+      blocking: true,
+    };
+
+    expect(cardCountsAsReleaseBlocker(guardedCard, 2)).toBe(true);
+    expect(evidenceCardVisualTone(guardedCard, 2)).toBe('danger');
+    expect(evidenceCardStatusLabelForWorkspace(guardedCard, 2)).toBe('Blocked');
+  });
+
+  it('does not promote advisory blocker text into release-blocking posture', () => {
+    const advisoryCard: DashboardEvidenceCard = {
+      id: 'workspaceImpact',
+      label: 'Workspace Impact',
+      status: 'warn',
+      summary: 'Review the verification plan.',
+      scope: 'workspace',
+      blockers: ['Use the verification plan before release actions.'],
+      blocking: false,
+    };
+
+    expect(cardCountsAsReleaseBlocker(advisoryCard, 2)).toBe(false);
+    expect(evidenceCardVisualTone(advisoryCard, 2)).toBe('warn');
+    expect(evidenceCardStatusLabelForWorkspace(advisoryCard, 2)).toBe('Attention');
   });
 
   it('does not treat scaffold-only fail cards as release blockers for empty workspaces', () => {
@@ -112,6 +144,6 @@ describe('dashboardScaffoldEvidence', () => {
       blockers: ['Run workspace contract verify to publish verify evidence.'],
     };
     expect(cardCountsAsReleaseBlocker(contractCard, 0)).toBe(false);
-    expect(cardCountsAsReleaseBlocker(contractCard, 2)).toBe(true);
+    expect(cardCountsAsReleaseBlocker(contractCard, 2)).toBe(false);
   });
 });

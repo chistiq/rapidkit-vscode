@@ -2,6 +2,7 @@ export type DashboardSection =
   | 'overview'
   | 'repair'
   | 'evidence'
+  | 'graph'
   | 'operate'
   | 'console'
   | 'catalog';
@@ -40,6 +41,12 @@ export const DASHBOARD_SECTIONS: ReadonlyArray<DashboardSectionDefinition> = [
     description: 'Evidence artifacts, command history, and release records',
   },
   {
+    id: 'graph',
+    label: 'Graph',
+    scope: 'workspace',
+    description: 'Explore the canonical evidence-backed workspace graph and proof paths',
+  },
+  {
     id: 'console',
     label: 'Project',
     scope: 'lifecycle',
@@ -59,6 +66,7 @@ export function normalizeDashboardSection(value: unknown): DashboardSection {
   }
   if (
     value === 'evidence' ||
+    value === 'graph' ||
     value === 'repair' ||
     value === 'operate' ||
     value === 'console' ||

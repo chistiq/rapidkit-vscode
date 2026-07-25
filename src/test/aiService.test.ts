@@ -45,6 +45,14 @@ vi.mock('vscode', () => ({
       this.value = value;
     }
   },
+  LanguageModelToolCallPart: class {
+    constructor(
+      public callId: string,
+      public name: string,
+      public input: Record<string, unknown>
+    ) {}
+  },
+  LanguageModelChatToolMode: { Auto: 1, Required: 2 },
   CancellationTokenSource: class {
     private _isCancellationRequested = false;
     private readonly _listeners = new Set<() => void>();
@@ -100,9 +108,11 @@ import {
   parseCreationIntent,
   prepareAIConversation,
   resetAIServiceCaches,
+  requestAIModelToolAction,
   selectModelWithPreference,
   streamAIResponse,
   UnsupportedCreationStackError,
+  validateCreationPlanForExecution,
 } from '../core/aiService';
 import * as vscode from 'vscode';
 
@@ -285,7 +295,7 @@ describe('aiService', () => {
 
     expect(prepared.validation.clarificationNeeded).toBe(true);
     expect(prepared.validation.clarificationReason).toContain(
-      'run `npx rapidkit doctor workspace`'
+      'run `npx workspai doctor workspace`'
     );
     expect(prepared.contract.evidence_confidence).toBe('none');
   });
@@ -495,6 +505,193 @@ describe('aiService', () => {
     expect(done).toBe(0);
   });
 
+  it('passes Studio tools through the native LM API and returns a structured tool call', async () => {
+    const model = {
+      id: 'auto',
+      vendor: 'copilot',
+      name: 'Auto',
+      sendRequest: vi.fn(async () => ({
+        stream: (async function* () {
+          yield new vscode.LanguageModelToolCallPart('call-1', 'inspect-remediation-plan', {});
+        })(),
+      })),
+    };
+    mockSelectChatModels.mockResolvedValue([model]);
+
+    await expect(
+      requestAIModelToolAction(
+        [{ role: 'user', content: 'Repair readiness' }],
+        [
+          {
+            name: 'inspect-remediation-plan',
+            description: 'Inspect the governed remediation plan',
+            inputSchema: { type: 'object', additionalProperties: false },
+          },
+        ],
+        undefined,
+        'copilot/auto'
+      )
+    ).resolves.toEqual({
+      type: 'tool',
+      modelId: 'copilot/auto',
+      toolName: 'inspect-remediation-plan',
+      input: {},
+    });
+    expect(model.sendRequest).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        toolMode: 2,
+        tools: [expect.objectContaining({ name: 'inspect-remediation-plan' })],
+      }),
+      expect.any(Object)
+    );
+  });
+
+  it('uses automatic tool selection when Studio exposes more than one governed tool', async () => {
+    const model = {
+      id: 'auto',
+      vendor: 'copilot',
+      name: 'Auto',
+      sendRequest: vi.fn(async () => ({
+        stream: (async function* () {
+          yield new vscode.LanguageModelToolCallPart('call-1', 'verify-blocker', {});
+        })(),
+      })),
+    };
+    mockSelectChatModels.mockResolvedValue([model]);
+
+    await expect(
+      requestAIModelToolAction(
+        [{ role: 'user', content: 'Repair readiness' }],
+        [
+          { name: 'inspect-evidence', description: 'Inspect evidence' },
+          { name: 'verify-blocker', description: 'Verify the active blocker' },
+        ],
+        undefined,
+        'copilot/auto'
+      )
+    ).resolves.toMatchObject({
+      type: 'tool',
+      toolName: 'verify-blocker',
+    });
+    expect(model.sendRequest).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        toolMode: 1,
+        tools: [
+          expect.objectContaining({ name: 'inspect-evidence' }),
+          expect.objectContaining({ name: 'verify-blocker' }),
+        ],
+      }),
+      expect.any(Object)
+    );
+  });
+
+  it('ignores a selected session-only model and uses a callable LM provider', async () => {
+    const sessionOnly = {
+      id: 'auto',
+      vendor: 'copilotcli',
+      name: 'Copilot CLI Auto',
+      sendRequest: vi.fn(),
+    };
+    const callable = {
+      id: 'gpt-5.4',
+      vendor: 'copilot',
+      name: 'GPT-5.4',
+      sendRequest: vi.fn(async () => ({
+        stream: (async function* () {
+          yield new vscode.LanguageModelToolCallPart('call-1', 'verify-blocker', {});
+        })(),
+      })),
+    };
+    mockSelectChatModels.mockResolvedValue([sessionOnly, callable]);
+
+    await expect(
+      requestAIModelToolAction(
+        [{ role: 'user', content: 'Repair readiness' }],
+        [{ name: 'verify-blocker', description: 'Verify' }],
+        undefined,
+        'copilotcli/auto'
+      )
+    ).resolves.toMatchObject({
+      type: 'tool',
+      modelId: 'copilot/gpt-5.4',
+      toolName: 'verify-blocker',
+    });
+    expect(sessionOnly.sendRequest).not.toHaveBeenCalled();
+    expect(callable.sendRequest).toHaveBeenCalledOnce();
+  });
+
+  it('falls back to another callable model when the selected tool model is unavailable', async () => {
+    const unavailable = {
+      id: 'retired-model',
+      vendor: 'copilot',
+      name: 'Retired model',
+      sendRequest: vi.fn(async () => {
+        throw new Error('model_not_supported: The requested model is not supported.');
+      }),
+    };
+    const fallback = {
+      id: 'gpt-5.4',
+      vendor: 'copilot',
+      name: 'GPT-5.4',
+      sendRequest: vi.fn(async () => ({
+        stream: (async function* () {
+          yield new vscode.LanguageModelToolCallPart('call-2', 'verify-blocker', {});
+        })(),
+      })),
+    };
+    mockSelectChatModels.mockResolvedValue([unavailable, fallback]);
+
+    await expect(
+      requestAIModelToolAction(
+        [{ role: 'user', content: 'Repair readiness' }],
+        [{ name: 'verify-blocker', description: 'Verify' }],
+        undefined,
+        'copilot/retired-model'
+      )
+    ).resolves.toMatchObject({
+      type: 'tool',
+      modelId: 'copilot/gpt-5.4',
+      toolName: 'verify-blocker',
+    });
+    expect(unavailable.sendRequest).toHaveBeenCalledOnce();
+    expect(fallback.sendRequest).toHaveBeenCalledOnce();
+  });
+
+  it('falls back when a registered model returns an empty response stream', async () => {
+    const empty = {
+      id: 'empty',
+      vendor: 'byok',
+      name: 'Empty provider',
+      sendRequest: vi.fn(async () => ({ stream: (async function* () {})() })),
+    };
+    const fallback = {
+      id: 'gpt-5.4',
+      vendor: 'copilot',
+      name: 'GPT-5.4',
+      sendRequest: vi.fn(async () => ({
+        stream: (async function* () {
+          yield new vscode.LanguageModelToolCallPart('call-3', 'inspect-evidence', {});
+        })(),
+      })),
+    };
+    mockSelectChatModels.mockResolvedValue([empty, fallback]);
+
+    await expect(
+      requestAIModelToolAction(
+        [{ role: 'user', content: 'Inspect readiness' }],
+        [{ name: 'inspect-evidence', description: 'Inspect evidence' }],
+        undefined,
+        'byok/empty'
+      )
+    ).resolves.toMatchObject({
+      type: 'tool',
+      modelId: 'copilot/gpt-5.4',
+      toolName: 'inspect-evidence',
+    });
+  });
+
   it('falls back to another model when initial request fails with retryable rate-limit error', async () => {
     const autoModel = {
       id: 'auto',
@@ -656,10 +853,10 @@ describe('aiService', () => {
       name: 'UnsupportedCreationStackError',
       stackLabel: 'Laravel',
       capability: {
-        lane: 'external-create-adopt',
+        lane: 'official',
         resolved: 'laravel',
         canExecuteCreate: false,
-        fallbackLane: 'adopt-only',
+        fallbackLane: 'existing',
       },
     });
 
@@ -678,10 +875,10 @@ describe('aiService', () => {
       name: 'UnsupportedCreationStackError',
       stackLabel: 'WordPress',
       capability: {
-        lane: 'external-create-adopt',
+        lane: 'official',
         resolved: 'wordpress-site',
         canExecuteCreate: false,
-        fallbackLane: 'adopt-only',
+        fallbackLane: 'existing',
       },
     });
 
@@ -695,7 +892,7 @@ describe('aiService', () => {
       name: 'UnsupportedCreationStackError',
       stackLabel: 'PHP',
       capability: {
-        lane: 'adopt-only',
+        lane: 'existing',
         resolved: 'php',
         canExecuteCreate: false,
       },
@@ -761,6 +958,79 @@ describe('aiService', () => {
     expect(plan.secondaryProject?.framework).toBe('nextjs');
     expect(plan.secondaryProject?.kit).toBe('frontend.nextjs');
     expect(plan.secondaryProject?.projectName).toMatch(/-app$/);
+  });
+
+  it('locks explicitly requested Next.js and NestJS lanes when the model invents FastAPI', async () => {
+    const { plan, planSource } = await parseCreationIntent(
+      'Polyglot workspace: Next.js frontend + NestJS API with shared governance',
+      'workspace',
+      undefined,
+      tempProjectPath,
+      undefined,
+      async () => ({
+        modelId: 'vscode-lm',
+        text: JSON.stringify({
+          workspaceName: 'polyglot-workspace',
+          profile: 'enterprise',
+          installMethod: 'auto',
+          framework: 'nestjs',
+          kit: 'nestjs.standard',
+          projectName: 'api-service',
+          suggestedModules: ['free/essentials/settings'],
+          description: 'Shared governance workspace.',
+          secondaryProject: {
+            framework: 'fastapi',
+            kit: 'fastapi.standard',
+            projectName: 'frontend-app',
+          },
+        }),
+      })
+    );
+
+    expect(planSource).toBe('llm');
+    expect(plan.profile).toBe('polyglot');
+    expect(plan.framework).toBe('nestjs');
+    expect(plan.kit).toBe('nestjs.standard');
+    expect(plan.secondaryProject).toEqual({
+      framework: 'nextjs',
+      kit: 'frontend.nextjs',
+      projectName: 'frontend-app',
+    });
+  });
+
+  it('rejects framework and kit drift again at the execution boundary', () => {
+    expect(() =>
+      validateCreationPlanForExecution({
+        type: 'workspace',
+        workspaceName: 'invalid-workspace-wsp',
+        profile: 'polyglot',
+        installMethod: 'auto',
+        framework: 'nextjs',
+        kit: 'fastapi.standard',
+        projectName: 'frontend-app',
+        suggestedModules: [],
+        description: 'Invalid cross-lane plan.',
+      })
+    ).toThrow(/does not belong to framework nextjs/);
+
+    expect(() =>
+      validateCreationPlanForExecution({
+        type: 'workspace',
+        workspaceName: 'duplicate-lane-wsp',
+        profile: 'node-only',
+        installMethod: 'auto',
+        framework: 'nestjs',
+        kit: 'nestjs.standard',
+        projectName: 'api-service',
+        suggestedModules: ['free/essentials/settings'],
+        description: 'Invalid duplicate companion lane.',
+        secondaryProject: {
+          framework: 'nestjs',
+          kit: 'nestjs.standard',
+          projectName: 'second-api',
+        },
+      })
+    ).toThrow(/must use different framework lanes/);
   });
 
   it('injects workspace-installed module signals into AI creation prompt', async () => {

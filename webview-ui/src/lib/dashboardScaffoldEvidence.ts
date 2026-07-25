@@ -1,9 +1,13 @@
 /**
  * Scaffold vs release-blocker semantics for empty workspaces — dashboard webview UI.
- * Keep patterns aligned with rapidkit-npm/src/workspace-scaffold.ts.
+ * Keep patterns aligned with the Workspai CLI workspace scaffold contract.
  */
 
-import type { DashboardEvidenceCard, DashboardEvidenceStatus } from './dashboardEvidence';
+import type {
+  DashboardEvidenceCard,
+  DashboardEvidencePayload,
+  DashboardEvidenceStatus,
+} from './dashboardEvidence';
 import { workspaceRegisteredProjectCount } from './dashboardReleaseReadiness';
 
 export function isEmptyWorkspaceScaffoldBlocker(text: string): boolean {
@@ -45,7 +49,8 @@ export function isEmptyWorkspaceScaffoldBlocker(text: string): boolean {
     lower.includes('infra dependencies') ||
     lower.includes('contract verify') ||
     lower.includes('contract inspect') ||
-    lower.includes('publish verify evidence')
+    lower.includes('publish verify evidence') ||
+    lower.includes('rapidkit core not installed')
   );
 }
 
@@ -86,18 +91,18 @@ export function cardCountsAsReleaseBlocker(
 ): boolean {
   const effectiveBlockers = effectiveCardBlockers(card, workspaceProjectCount);
   if (workspaceProjectCount === 0) {
-    return effectiveBlockers.length > 0;
+    if (effectiveBlockers.length === 0) {
+      return false;
+    }
+    return card.blocking ?? card.status === 'fail';
   }
-  if (card.status === 'fail') {
-    return true;
+  if (card.blocking !== undefined) {
+    return card.blocking;
   }
-  if (
-    effectiveBlockers.length > 0 &&
-    effectiveBlockers.every((blocker) => isFreshnessOnlyBlocker(blocker))
-  ) {
+  if (effectiveBlockers.length > 0 && effectiveBlockers.every(isFreshnessOnlyBlocker)) {
     return false;
   }
-  return effectiveBlockers.length > 0;
+  return card.status === 'fail';
 }
 
 export function evidenceCardVisualTone(
@@ -112,13 +117,13 @@ export function evidenceCardVisualTone(
       return 'warn';
     }
   }
+  if (cardCountsAsReleaseBlocker(card, workspaceProjectCount)) {
+    return 'danger';
+  }
   if (card.status === 'fail') {
     return 'danger';
   }
   if (card.status === 'warn') {
-    return 'warn';
-  }
-  if (cardCountsAsReleaseBlocker(card, workspaceProjectCount)) {
     return 'warn';
   }
   if (card.status === 'pass') {
@@ -152,7 +157,7 @@ export function evidenceCardStatusLabelForWorkspace(
 }
 
 export function resolveWorkspaceProjectCountFromEvidence(
-  evidence: { cards?: DashboardEvidenceCard[] } | null | undefined
+  evidence: DashboardEvidencePayload | null | undefined
 ): number | null {
   return workspaceRegisteredProjectCount(evidence ?? null);
 }

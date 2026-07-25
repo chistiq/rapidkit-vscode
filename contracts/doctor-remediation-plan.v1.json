@@ -1,7 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://rapidkit.dev/contracts/doctor-remediation-plan.v1.json",
-  "title": "RapidKit Doctor Remediation Plan",
+  "title": "RapidKit Doctor Remediation Plan v2 Legacy Path Alias",
+  "description": "Deprecated compatibility path. New consumers must resolve contracts/doctor-remediation-plan.v2.json.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -142,7 +143,15 @@
     "repairIntent": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode", "primaryAction", "requiresApproval"],
+      "required": [
+        "mode",
+        "confidence",
+        "primaryActionLabel",
+        "requiresApproval",
+        "requiresFreshEvidence",
+        "reason",
+        "relatedCommands"
+      ],
       "properties": {
         "mode": {
           "enum": [
@@ -155,7 +164,7 @@
             "manual-guidance"
           ]
         },
-        "primaryAction": {
+        "primaryActionLabel": {
           "type": "string"
         },
         "requiresApproval": {
@@ -164,7 +173,13 @@
         "confidence": {
           "enum": ["high", "medium", "low"]
         },
-        "notes": {
+        "requiresFreshEvidence": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "relatedCommands": {
           "type": "array",
           "items": {
             "type": "string"

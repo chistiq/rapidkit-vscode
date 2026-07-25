@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://getrapidkit.com/schemas/workspace-graph-recording.v1.json",
+  "title": "Workspai Workspace Graph Recording",
+  "description": "A bounded, change-driven visual timeline derived from canonical Workspace Graph revisions.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "sessionId",
+    "mode",
+    "status",
+    "workspace",
+    "startedAt",
+    "initialRevision",
+    "frames",
+    "outputs",
+    "limits",
+    "retainedBytes"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "workspace-graph-recording.v1" },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "mode": { "enum": ["manual", "change-driven", "scenario"] },
+    "status": { "enum": ["recording", "completed", "error"] },
+    "workspace": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "initialRevision": { "type": "string", "minLength": 1 },
+    "frames": {
+      "type": "array",
+      "maxItems": 180,
+      "items": { "$ref": "#/$defs/frame" }
+    },
+    "outputs": {
+      "type": "object",
+      "required": ["manifest", "frames"],
+      "properties": {
+        "manifest": { "const": "recording.json" },
+        "frames": { "const": "frames" },
+        "webm": { "const": "graph-story.webm" }
+      },
+      "additionalProperties": false
+    },
+    "limits": { "$ref": "#/$defs/limits" },
+    "retainedBytes": { "type": "integer", "minimum": 0, "maximum": 67108864 },
+    "error": { "type": "string" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "change": {
+      "type": "object",
+      "required": [
+        "kind",
+        "title",
+        "revision",
+        "entitiesAdded",
+        "entitiesRemoved",
+        "entitiesChanged",
+        "relationsAdded",
+        "relationsRemoved",
+        "relationsChanged",
+        "highlightedEntityIds"
+      ],
+      "properties": {
+        "kind": { "enum": ["baseline", "revision"] },
+        "title": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 1 },
+        "previousRevision": { "type": "string", "minLength": 1 },
+        "entitiesAdded": { "type": "integer", "minimum": 0 },
+        "entitiesRemoved": { "type": "integer", "minimum": 0 },
+        "entitiesChanged": { "type": "integer", "minimum": 0 },
+        "relationsAdded": { "type": "integer", "minimum": 0 },
+        "relationsRemoved": { "type": "integer", "minimum": 0 },
+        "relationsChanged": { "type": "integer", "minimum": 0 },
+        "highlightedEntityIds": {
+          "type": "array",
+          "maxItems": 50,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "frame": {
+      "type": "object",
+      "required": ["index", "path", "revision", "capturedAt", "width", "height", "bytes", "change"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 1, "maximum": 180 },
+        "path": { "type": "string", "pattern": "^frames/frame-[0-9]{4}\\.png$" },
+        "revision": { "type": "string", "minLength": 1 },
+        "capturedAt": { "type": "string", "format": "date-time" },
+        "width": { "type": "integer", "minimum": 320, "maximum": 4096 },
+        "height": { "type": "integer", "minimum": 180, "maximum": 2160 },
+        "bytes": { "type": "integer", "minimum": 1, "maximum": 6291456 },
+        "change": { "$ref": "#/$defs/change" }
+      },
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object",
+      "required": [
+        "maxFrames",
+        "maxFrameBytes",
+        "maxRetainedBytes",
+        "maxWebmBytes",
+        "maxDurationMs",
+        "stableFrameDelayMs"
+      ],
+      "properties": {
+        "maxFrames": { "const": 180 },
+        "maxFrameBytes": { "const": 6291456 },
+        "maxRetainedBytes": { "const": 67108864 },
+        "maxWebmBytes": { "const": 33554432 },
+        "maxDurationMs": { "const": 600000 },
+        "stableFrameDelayMs": { "const": 420 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

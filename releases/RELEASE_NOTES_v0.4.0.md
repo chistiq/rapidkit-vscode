@@ -328,7 +328,7 @@ Ctrl+Shift+P → RapidKit: Generate Demo Project
 
 - **Documentation:** https://www.workspai.com/docs
 - **npm Package:** https://www.npmjs.com/package/rapidkit
-- **GitHub:** https://github.com/rapidkitlabs/rapidkit-vscode
+- **GitHub:** https://github.com/chistiq/rapidkit-vscode
 - **Troubleshooting:** https://www.workspai.com/docs/troubleshooting
 
 ---
@@ -345,8 +345,8 @@ Ctrl+Shift+P → RapidKit: Generate Demo Project
 
 We'd love to hear your thoughts!
 
-- **Issues:** [GitHub Issues](https://github.com/rapidkitlabs/rapidkit-vscode/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/rapidkitlabs/rapidkit-vscode/discussions)
+- **Issues:** [GitHub Issues](https://github.com/chistiq/rapidkit-vscode/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/chistiq/rapidkit-vscode/discussions)
 - **Email:** support@rapidkitlabs.com
 
 ---
@@ -362,4 +362,4 @@ We'd love to hear your thoughts!
 
 **Made with 🚀 by [RapidKit](https://www.workspai.com)**
 
-⭐ Star us on [GitHub](https://github.com/rapidkitlabs/rapidkit-vscode)
+⭐ Star us on [GitHub](https://github.com/chistiq/rapidkit-vscode)

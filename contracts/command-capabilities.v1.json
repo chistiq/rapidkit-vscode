@@ -1,0 +1,303 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/command-capabilities.v1.json",
+  "title": "Workspai Command Capabilities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "scope",
+    "cli",
+    "version",
+    "cwd",
+    "contracts",
+    "contractCatalog",
+    "commands",
+    "workspace",
+    "commandMap",
+    "runtimeInventory"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "rapidkit-command-capabilities-v1"
+    },
+    "scope": {
+      "const": "global"
+    },
+    "cli": {
+      "const": "workspai"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cwd": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "contractCatalog": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "commands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "npmOwned",
+        "coreBacked",
+        "projectScoped"
+      ],
+      "properties": {
+        "npmOwned": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "coreBacked": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "projectScoped": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "subcommands",
+        "intelligenceSubcommands"
+      ],
+      "properties": {
+        "command": {
+          "const": "workspace"
+        },
+        "subcommands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "intelligenceSubcommands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "commandMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "command",
+          "owner",
+          "status",
+          "scope"
+        ],
+        "properties": {
+          "command": {
+            "type": "string",
+            "minLength": 1
+          },
+          "owner": {
+            "enum": [
+              "npm-wrapper",
+              "python-core",
+              "runtime-adapter"
+            ]
+          },
+          "status": {
+            "enum": [
+              "supported",
+              "delegated",
+              "runtime-dependent"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "runtimeInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "commands",
+        "topLevelCommands",
+        "integrity"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "workspai-cli-runtime-command-inventory-v1"
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "command",
+              "parent",
+              "registrationKind",
+              "aliases",
+              "description",
+              "hidden",
+              "arguments",
+              "options"
+            ],
+            "properties": {
+              "path": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "parent": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "registrationKind": {
+                "enum": [
+                  "commander",
+                  "manual-handler"
+                ]
+              },
+              "aliases": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "description": {
+                "type": "string"
+              },
+              "hidden": {
+                "type": "boolean"
+              },
+              "arguments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "required",
+                    "variadic"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "variadic": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "flags",
+                    "attributeName"
+                  ],
+                  "properties": {
+                    "flags": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "attributeName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "topLevelCommands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "integrity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ok",
+            "registeredButUndeclared",
+            "declaredButUnregistered",
+            "registeredScopedButUndeclared",
+            "declaredScopedButUnregistered"
+          ],
+          "properties": {
+            "ok": {
+              "type": "boolean"
+            },
+            "registeredButUndeclared": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "declaredButUnregistered": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "registeredScopedButUndeclared": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "declaredScopedButUnregistered": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

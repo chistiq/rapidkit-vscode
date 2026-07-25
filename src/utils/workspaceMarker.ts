@@ -1,6 +1,6 @@
 /**
  * Workspace Marker Types and Utilities
- * Standardized structure for .rapidkit-workspace files
+ * Standardized structure for canonical `.workspai-workspace` files.
  *
  * This module defines the canonical workspace marker format used across
  * all Workspai tools (npm, VS Code Extension, future CLI tools, etc.)
@@ -14,7 +14,7 @@ export interface WorkspaceMarker {
   signature: 'RAPIDKIT_WORKSPACE';
 
   /** Tool that originally created this workspace */
-  createdBy: 'rapidkit-npm' | 'rapidkit-vscode' | 'rapidkit-cli';
+  createdBy: 'workspai-cli' | 'rapidkit-npm' | 'rapidkit-vscode' | 'rapidkit-cli';
 
   /** Version of the tool that created the workspace */
   version: string;
@@ -83,9 +83,11 @@ export interface PythonMetadata {
  * Read workspace marker from a directory
  */
 export async function readWorkspaceMarker(workspacePath: string): Promise<WorkspaceMarker | null> {
-  const markerPath = path.join(workspacePath, '.rapidkit-workspace');
+  const canonicalPath = path.join(workspacePath, '.workspai-workspace');
+  const legacyPath = path.join(workspacePath, '.rapidkit-workspace');
 
   try {
+    const markerPath = (await fs.pathExists(canonicalPath)) ? canonicalPath : legacyPath;
     if (await fs.pathExists(markerPath)) {
       const content = await fs.readJson(markerPath);
       return content as WorkspaceMarker;
@@ -106,7 +108,7 @@ export async function writeWorkspaceMarker(
   workspacePath: string,
   marker: WorkspaceMarker
 ): Promise<void> {
-  const markerPath = path.join(workspacePath, '.rapidkit-workspace');
+  const markerPath = path.join(workspacePath, '.workspai-workspace');
 
   // Read existing marker to preserve metadata
   const existing = await readWorkspaceMarker(workspacePath);

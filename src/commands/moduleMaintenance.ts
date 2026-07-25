@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import path from 'path';
 import { Logger } from '../utils/logger';
-import { runRapidkitCommandsInTerminal } from '../utils/terminalExecutor';
+import { runGatedRapidkitCommandsInTerminal } from '../core/gatedRapidkitTerminal';
 
 type ProjectExplorerLike = {
   getSelectedProject?: () => { path?: string; name?: string } | null | undefined;
@@ -161,12 +161,12 @@ async function promptModuleSlug(input: {
   return manual?.trim() || undefined;
 }
 
-function runInNpmTerminal(input: {
+async function runInNpmTerminal(input: {
   name: string;
   projectPath: string;
   commands: string[][];
-}): void {
-  runRapidkitCommandsInTerminal({
+}): Promise<boolean> {
+  return runGatedRapidkitCommandsInTerminal({
     name: input.name,
     cwd: input.projectPath,
     commands: input.commands,
@@ -211,12 +211,14 @@ export function registerModuleMaintenanceCommands(options: {
           return;
         }
 
-        runInNpmTerminal({
+        const ran = await runInNpmTerminal({
           name: terminalName(projectName, action),
           projectPath,
           commands: [['upgrade', 'module', slug]],
         });
-        logger.info(`Running module upgrade (${slug}) for project: ${projectPath}`);
+        if (ran) {
+          logger.info(`Running module upgrade (${slug}) for project: ${projectPath}`);
+        }
         return;
       }
 
@@ -258,23 +260,27 @@ export function registerModuleMaintenanceCommands(options: {
         }
       }
 
-      runInNpmTerminal({
+      const ran = await runInNpmTerminal({
         name: terminalName(projectName, action),
         projectPath,
         commands: [command],
       });
-      logger.info(`Running module upgrade (${slug}) for project: ${projectPath}`);
+      if (ran) {
+        logger.info(`Running module upgrade (${slug}) for project: ${projectPath}`);
+      }
       return;
     }
 
     if (action === 'diff') {
       if (dashboard) {
-        runInNpmTerminal({
+        const ran = await runInNpmTerminal({
           name: terminalName(projectName, action),
           projectPath,
           commands: [['diff', 'module', slug]],
         });
-        logger.info(`Running module diff (${slug}) for project: ${projectPath}`);
+        if (ran) {
+          logger.info(`Running module diff (${slug}) for project: ${projectPath}`);
+        }
         return;
       }
 
@@ -307,12 +313,14 @@ export function registerModuleMaintenanceCommands(options: {
         command.push('--patch');
       }
 
-      runInNpmTerminal({
+      const ran = await runInNpmTerminal({
         name: terminalName(projectName, action),
         projectPath,
         commands: [command],
       });
-      logger.info(`Running module diff (${slug}) for project: ${projectPath}`);
+      if (ran) {
+        logger.info(`Running module diff (${slug}) for project: ${projectPath}`);
+      }
       return;
     }
 
@@ -327,12 +335,14 @@ export function registerModuleMaintenanceCommands(options: {
           return;
         }
 
-        runInNpmTerminal({
+        const ran = await runInNpmTerminal({
           name: terminalName(projectName, action),
           projectPath,
           commands: [['rollback', 'module', slug]],
         });
-        logger.info(`Running module rollback (${slug}) for project: ${projectPath}`);
+        if (ran) {
+          logger.info(`Running module rollback (${slug}) for project: ${projectPath}`);
+        }
         return;
       }
 
@@ -374,12 +384,14 @@ export function registerModuleMaintenanceCommands(options: {
         }
       }
 
-      runInNpmTerminal({
+      const ran = await runInNpmTerminal({
         name: terminalName(projectName, action),
         projectPath,
         commands: [command],
       });
-      logger.info(`Running module rollback (${slug}) for project: ${projectPath}`);
+      if (ran) {
+        logger.info(`Running module rollback (${slug}) for project: ${projectPath}`);
+      }
       return;
     }
 
@@ -394,12 +406,14 @@ export function registerModuleMaintenanceCommands(options: {
           return;
         }
 
-        runInNpmTerminal({
+        const ran = await runInNpmTerminal({
           name: terminalName(projectName, action),
           projectPath,
           commands: [['uninstall', 'module', slug]],
         });
-        logger.info(`Running module uninstall (${slug}) for project: ${projectPath}`);
+        if (ran) {
+          logger.info(`Running module uninstall (${slug}) for project: ${projectPath}`);
+        }
         return;
       }
 
@@ -441,22 +455,26 @@ export function registerModuleMaintenanceCommands(options: {
         }
       }
 
-      runInNpmTerminal({
+      const ran = await runInNpmTerminal({
         name: terminalName(projectName, action),
         projectPath,
         commands: [command],
       });
-      logger.info(`Running module uninstall (${slug}) for project: ${projectPath}`);
+      if (ran) {
+        logger.info(`Running module uninstall (${slug}) for project: ${projectPath}`);
+      }
       return;
     }
 
     // action === 'checkpoint'
-    runInNpmTerminal({
+    const ran = await runInNpmTerminal({
       name: terminalName(projectName, action),
       projectPath,
       commands: [['checkpoint', 'module', slug]],
     });
-    logger.info(`Running module checkpoint (${slug}) for project: ${projectPath}`);
+    if (ran) {
+      logger.info(`Running module checkpoint (${slug}) for project: ${projectPath}`);
+    }
   };
 
   return [

@@ -63,22 +63,22 @@ function levelFromScore(score: number): IncidentStudioCompletenessLevel {
 
 function recommendedCommandForMissing(missing: IncidentEvidenceArtifactKey[]): string | undefined {
   if (missing.includes('doctor')) {
-    return 'npx rapidkit doctor workspace --json';
+    return 'npx workspai doctor workspace --json';
   }
   if (missing.includes('analyze')) {
-    return 'npx rapidkit analyze --json';
+    return 'npx workspai analyze --json';
   }
   if (missing.includes('workspaceModel')) {
-    return 'npx rapidkit workspace model --write --json';
+    return 'npx workspai workspace model --json --write';
   }
   if (missing.includes('workspaceDiff') || missing.includes('workspaceImpact')) {
-    return 'npx rapidkit workspace intelligence-chain --json';
+    return 'npx workspai workspace snapshot --json';
   }
   if (missing.includes('workspaceVerify')) {
-    return 'npx rapidkit workspace verify --from-impact .rapidkit/reports/workspace-impact-last-run.json --json';
+    return 'npx workspai workspace verify --json';
   }
   if (missing.includes('workspaceContextAgent')) {
-    return 'npx rapidkit workspace agent-sync --json';
+    return 'npx workspai workspace agent-sync --write --refresh-context --preset enterprise --target vscode --json';
   }
   if (missing.includes('git')) {
     return 'git status --short';

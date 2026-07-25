@@ -53,6 +53,19 @@ import {
   type ChatBrainExecuteActionHost,
 } from './welcomePanelChatBrainExecuteAction';
 import { buildWorkspaceGraphSnapshot } from './welcomePanelWorkspaceGraphSnapshot';
+import { WorkspaceGraphStreamSupervisor } from '../../core/workspaceGraphStreamSupervisor.js';
+import { buildWorkspaceGraphProjection } from '../../core/workspaceGraphProjection.js';
+import { WorkspaceGraphProjectionCoalescer } from '../../core/workspaceGraphProjectionCoalescer.js';
+import { WorkspaceGraphRecordingManager } from '../../core/workspaceGraphRecordingManager.js';
+import type {
+  WorkspaceGraphStreamEnvelope,
+  WorkspaceGraphStreamState,
+} from '../../contracts/workspaceGraphStream.js';
+import {
+  DEFAULT_WORKSPACE_GRAPH_RECORDING_LIMITS,
+  WORKSPACE_GRAPH_RECORDING_SCHEMA_VERSION,
+  type WorkspaceGraphRecordingState,
+} from '../../contracts/workspaceGraphRecording.js';
 import type { AiModalMessageHost } from './welcomePanelAiModalMessages';
 import type { ReadyMessageHost } from './welcomePanelReadyMessages';
 import type { CreationNavigationMessageHost } from './welcomePanelCreationNavigationMessages';
@@ -1075,9 +1088,88 @@ export class WelcomePanel {
   }
 
   private _dashboardLifecycleMessageHost(): DashboardLifecycleMessageHost {
-    return buildWelcomePanelDashboardLifecycleMessageHost(this._dashboardHostBindings(), () =>
-      this._dashboardEvidenceHost()
-    );
+    return {
+      ...buildWelcomePanelDashboardLifecycleMessageHost(this._dashboardHostBindings(), () =>
+        this._dashboardEvidenceHost()
+      ),
+      startWorkspaceGraphStream: (workspacePath) =>
+        this._workspaceGraphStreamSupervisor.start(workspacePath),
+      stopWorkspaceGraphStream: () => {
+        this._workspaceGraphProjectionCoalescer.clear();
+        this._workspaceGraphStreamSupervisor.stop();
+      },
+      resyncWorkspaceGraphStream: () => {
+        this._workspaceGraphProjectionCoalescer.clear();
+        this._workspaceGraphStreamSupervisor.resync();
+      },
+      startWorkspaceGraphRecording: async (input) => {
+        try {
+          const selectedWorkspacePath = this._resolveTelemetryWorkspacePath();
+          if (
+            !selectedWorkspacePath ||
+            path.resolve(selectedWorkspacePath) !== path.resolve(input.workspacePath)
+          ) {
+            throw new Error('Recording target does not match the selected Workspai workspace.');
+          }
+          const state = await this._workspaceGraphRecordingManager.start(input);
+          this._postWebviewMessage('workspaceGraphRecordingState', state);
+        } catch (error) {
+          this._postWorkspaceGraphRecordingError(error, input.mode);
+        }
+      },
+      appendWorkspaceGraphRecordingFrame: async (input) => {
+        try {
+          const state = await this._workspaceGraphRecordingManager.appendFrame(input);
+          this._postWebviewMessage('workspaceGraphRecordingState', state);
+        } catch (error) {
+          const state = await this._workspaceGraphRecordingManager
+            .fail(input.sessionId, error)
+            .catch(() => null);
+          if (state) {
+            this._postWebviewMessage('workspaceGraphRecordingState', state);
+          } else {
+            this._postWorkspaceGraphRecordingError(error);
+          }
+        }
+      },
+      stopWorkspaceGraphRecording: async (input) => {
+        try {
+          const state = await this._workspaceGraphRecordingManager.stop(input);
+          this._postWebviewMessage('workspaceGraphRecordingState', state);
+        } catch (error) {
+          const state = await this._workspaceGraphRecordingManager
+            .fail(input.sessionId, error)
+            .catch(() => null);
+          if (state) {
+            this._postWebviewMessage('workspaceGraphRecordingState', state);
+          } else {
+            this._postWorkspaceGraphRecordingError(error);
+          }
+        }
+      },
+      openWorkspaceGraphRecording: async () => {
+        const outputPath = this._workspaceGraphRecordingManager.latestOutputPath();
+        if (outputPath) {
+          await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(outputPath));
+        }
+      },
+    };
+  }
+
+  private _postWorkspaceGraphRecordingError(
+    error: unknown,
+    mode: WorkspaceGraphRecordingState['mode'] = 'change-driven'
+  ): void {
+    this._postWebviewMessage('workspaceGraphRecordingState', {
+      schemaVersion: WORKSPACE_GRAPH_RECORDING_SCHEMA_VERSION,
+      status: 'error',
+      mode,
+      frameCount: 0,
+      maxFrames: DEFAULT_WORKSPACE_GRAPH_RECORDING_LIMITS.maxFrames,
+      retainedBytes: 0,
+      maxRetainedBytes: DEFAULT_WORKSPACE_GRAPH_RECORDING_LIMITS.maxRetainedBytes,
+      message: error instanceof Error ? error.message : String(error),
+    } satisfies WorkspaceGraphRecordingState);
   }
 
   private _analyzeReportMessageHost(): AnalyzeReportMessageHost {
@@ -1203,6 +1295,54 @@ export class WelcomePanel {
   /** Per-workspace system graph watchers for incremental refresh on file change. */
   private _systemGraphWatcherByPath = new Map<string, ProjectSystemGraphWatcherHandle>();
   private _dashboardEvidenceSendGeneration = 0;
+  private readonly _workspaceGraphProjectionCoalescer = new WorkspaceGraphProjectionCoalescer<{
+    event: WorkspaceGraphStreamEnvelope;
+    state: WorkspaceGraphStreamState;
+  }>(({ event, state }, streamStats) => {
+    const changedRecords = [
+      event.payload.entitiesAdded,
+      event.payload.entitiesUpdated,
+      event.payload.relationsAdded,
+      event.payload.relationsUpdated,
+    ].flatMap((value) => (Array.isArray(value) ? value : []));
+    const focusEntityIds = changedRecords.flatMap((value) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return [];
+      }
+      const record = value as Record<string, unknown>;
+      return [record.id, record.from, record.to].filter(
+        (entry): entry is string => typeof entry === 'string' && entry.length > 0
+      );
+    });
+    const projection = buildWorkspaceGraphProjection(
+      {
+        schemaVersion: 'workspace-knowledge-graph.v1',
+        generatedAt: new Date().toISOString(),
+        source: { hash: state.graphHash },
+        entities: [...state.entities.values()],
+        relations: [...state.relations.values()],
+        proofs: [...state.proofs.values()],
+        providers: [...state.providers.values()],
+        quality: state.quality,
+        diagnostics: state.diagnostics,
+      },
+      { focusEntityIds }
+    );
+    this._postWebviewMessage('workspaceGraphProjectionLive', {
+      projection,
+      revision: state.revision,
+      generation: state.generation,
+      sessionId: state.sessionId,
+      streamStats,
+    });
+  });
+  private readonly _workspaceGraphRecordingManager = new WorkspaceGraphRecordingManager();
+  private readonly _workspaceGraphStreamSupervisor = new WorkspaceGraphStreamSupervisor({
+    onEvent: (event, state) => this._workspaceGraphProjectionCoalescer.push({ event, state }),
+    onStatus: (status, detail) =>
+      this._postWebviewMessage('workspaceGraphStreamStatus', { status, detail }),
+    onMemorySample: (sample) => this._postWebviewMessage('workspaceGraphMemorySample', sample),
+  });
   private _doctorTelemetryRefreshController = createDoctorTelemetryRefreshController({
     onRefresh: (context) => {
       void this._sendDashboardEvidence(context);
@@ -1864,6 +2004,11 @@ export class WelcomePanel {
     this._systemGraphWatcherByPath.clear();
 
     this._doctorTelemetryRefreshController.dispose();
+    this._workspaceGraphStreamSupervisor.stop(false);
+    this._workspaceGraphProjectionCoalescer.dispose();
+    void this._workspaceGraphRecordingManager.abort(
+      'Dashboard closed before the graph recording was finalized.'
+    );
 
     this._panel.dispose();
 

@@ -150,8 +150,8 @@ After installation, verify:
 
 Thank you for testing and providing feedback! 
 
-If you encounter any issues, please report them on our [GitHub Issues](https://github.com/rapidkitlabs/rapidkit-vscode/issues) page.
+If you encounter any issues, please report them on our [GitHub Issues](https://github.com/chistiq/rapidkit-vscode/issues) page.
 
 ---
 
-**Full Changelog:** [v0.1.2...v0.1.3](https://github.com/rapidkitlabs/rapidkit-vscode/compare/v0.1.2...v0.1.3)
+**Full Changelog:** [v0.1.2...v0.1.3](https://github.com/chistiq/rapidkit-vscode/compare/v0.1.2...v0.1.3)

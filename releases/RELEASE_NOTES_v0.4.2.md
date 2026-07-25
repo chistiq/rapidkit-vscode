@@ -90,7 +90,7 @@ const channel = logger.getOutputChannel();
 ## 🔗 Links
 
 - 📦 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
-- 🐙 [GitHub Repository](https://github.com/rapidkitlabs/rapidkit-vscode)
+- 🐙 [GitHub Repository](https://github.com/chistiq/rapidkit-vscode)
 - 📚 [Documentation](https://www.workspai.com/docs)
 - 🚀 [npm Package](https://www.npmjs.com/package/rapidkit)
 

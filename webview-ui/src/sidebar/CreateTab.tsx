@@ -1,16 +1,17 @@
 import { Check } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ComposerShell } from './composer/ComposerShell';
+import { ChatSessionBar } from './composer/ChatSessionBar';
+import { CreateTargetSelector, type CreateTarget } from './composer/CreateTargetSelector';
 import { CreateAddDrawer, type CreateDrawerId } from './drawers/CreateAddDrawer';
+import { CreateSessionsDrawer } from './drawers/CreateSessionsDrawer';
 import { ManualProjectDrawer } from './drawers/ManualProjectDrawer';
-import {
-  ManualWorkspaceDrawer,
-  type ManualWorkspaceInput,
-} from './drawers/ManualWorkspaceDrawer';
+import { ManualWorkspaceDrawer, type ManualWorkspaceInput } from './drawers/ManualWorkspaceDrawer';
 import { SidebarMessage } from './SidebarMessage';
 import type { SidebarModel } from './sidebarModels';
 import type { SidebarScope } from './sidebarTypes';
-import type { CreateMessage, CreationPlan } from './createTypes';
+import type { CreateMessage, CreationPlan, CreateSession } from './createTypes';
+import type { ChatSession } from './sidebarSessions';
 import {
   resolveWorkspacePlaceholder,
   stackLaneLabel,
@@ -21,6 +22,11 @@ interface CreateTabProps {
   active: boolean;
   busy: boolean;
   messages: CreateMessage[];
+  sessions: CreateSession[];
+  activeSessionId: string | null;
+  onNewSession: () => void;
+  onSelectSession: (sessionId: string) => void;
+  onDeleteSession: (sessionId: string) => void;
   models: SidebarModel[];
   selectedModelId: string | null;
   onSelectModel: (id: string | null) => void;
@@ -28,10 +34,12 @@ interface CreateTabProps {
   scope: SidebarScope;
   initialDrawer?: CreateDrawerId;
   initialDrawerKey?: number;
-  onSubmitPrompt: (prompt: string, stackFocus: string) => void;
+  onSubmitPrompt: (prompt: string, stackFocus: string, target: CreateTarget) => void;
   onApprovePlan: (plan: CreationPlan) => void;
   onRevisePlan: () => void;
-  onManualCreate: (input: ManualWorkspaceInput | { mode: 'project'; name: string; framework: string }) => void;
+  onManualCreate: (
+    input: ManualWorkspaceInput | { mode: 'project'; name: string; framework: string }
+  ) => void;
   onBootstrapWorkspace: (input: {
     workspacePath: string;
     workspaceName?: string;
@@ -44,7 +52,9 @@ export function CreateTab(props: CreateTabProps) {
   const { active, busy, messages, models, selectedModelId, onSelectModel, scope } = props;
   const [prompt, setPrompt] = useState('');
   const [stackLane, setStackLane] = useState<CreationStackLane>('balanced');
+  const [createTarget, setCreateTarget] = useState<CreateTarget>('workspace');
   const [drawer, setDrawer] = useState<CreateDrawerId>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     if (!active || !props.initialDrawer || !props.initialDrawerKey) {
@@ -60,7 +70,7 @@ export function CreateTab(props: CreateTabProps) {
     if (!trimmed || busy) {
       return;
     }
-    props.onSubmitPrompt(trimmed, stackLaneLabel(stackLane));
+    props.onSubmitPrompt(trimmed, stackLaneLabel(stackLane), createTarget);
     setPrompt('');
     closeDrawer();
   };
@@ -107,8 +117,50 @@ export function CreateTab(props: CreateTabProps) {
         onClose={closeDrawer}
         onCreate={handleProjectCreate}
       />
+      <CreateSessionsDrawer
+        open={historyOpen}
+        sessions={props.sessions}
+        activeSessionId={props.activeSessionId}
+        onClose={() => setHistoryOpen(false)}
+        onNewSession={() => {
+          props.onNewSession();
+          setPrompt('');
+          setHistoryOpen(false);
+        }}
+        onSelectSession={props.onSelectSession}
+        onDeleteSession={props.onDeleteSession}
+      />
     </>
   );
+
+  const activeCreateSession =
+    props.sessions.find((session) => session.sessionId === props.activeSessionId) ?? null;
+  const activeBarSession: ChatSession | null = activeCreateSession
+    ? {
+        sessionId: activeCreateSession.sessionId,
+        title: activeCreateSession.title,
+        status:
+          activeCreateSession.status === 'planning' || activeCreateSession.status === 'running'
+            ? 'streaming'
+            : activeCreateSession.status === 'error'
+              ? 'error'
+              : activeCreateSession.status === 'done'
+                ? 'done'
+                : 'idle',
+        messages: [],
+      }
+    : null;
+  const activeStatusText = activeCreateSession
+    ? `${
+        {
+          planning: 'Planning',
+          ready: 'Ready to create',
+          running: 'Creating',
+          done: 'Done',
+          error: 'Stopped',
+        }[activeCreateSession.status]
+      } · ${activeCreateSession.method === 'ai' ? 'AI' : 'Manual'} ${activeCreateSession.target}`
+    : null;
 
   return (
     <section
@@ -140,6 +192,17 @@ export function CreateTab(props: CreateTabProps) {
         ))}
       </div>
 
+      <ChatSessionBar
+        activeSession={activeBarSession}
+        sessionCount={props.sessions.length}
+        statusText={activeStatusText}
+        onNewSession={() => {
+          props.onNewSession();
+          setPrompt('');
+        }}
+        onOpenHistory={() => setHistoryOpen(true)}
+      />
+
       <ComposerShell
         value={prompt}
         onChange={setPrompt}
@@ -153,6 +216,9 @@ export function CreateTab(props: CreateTabProps) {
         onOpenAdd={() => setDrawer((d) => (d === 'add' ? null : 'add'))}
         addLabel="Create options"
         drawer={drawerNode}
+        modeSelector={
+          <CreateTargetSelector value={createTarget} onChange={setCreateTarget} disabled={busy} />
+        }
       />
     </section>
   );
@@ -175,7 +241,7 @@ function displayNameFromPath(value: string | undefined): string | undefined {
   }
   const normalized = trimmed.replace(/[\\/]+$/, '');
   const segments = normalized.split(/[\\/]/).filter(Boolean);
-  return segments.at(-1) ?? normalized;
+  return segments.length > 0 ? segments[segments.length - 1] : normalized;
 }
 
 function CreateMessageView({
@@ -202,7 +268,7 @@ function CreateMessageView({
   const role = message.role === 'user' ? 'user' : 'ai';
 
   return (
-    <SidebarMessage role={role} agentActive={agentActive}>
+    <SidebarMessage role={role}>
       {renderCreateBody(
         message,
         { onApprove, onRevise, onFocus, onCreateManual, onBootstrapWorkspace },
@@ -242,7 +308,12 @@ function renderCreateBody(
         <>
           <p className={`ws-sidebar__thinking${agentActive ? '' : ' ws-sidebar__thinking--done'}`}>
             {!agentActive ? (
-              <Check size={12} strokeWidth={2.5} aria-hidden="true" className="ws-sidebar__step-check" />
+              <Check
+                size={12}
+                strokeWidth={2.5}
+                aria-hidden="true"
+                className="ws-sidebar__step-check"
+              />
             ) : null}
             <strong>
               {message.title}
@@ -285,7 +356,11 @@ function renderCreateBody(
           </div>
           {message.resolved ? null : (
             <div className="ws-sidebar__inline-actions">
-              <button type="button" className="ws-sidebar__inline" onClick={() => actions.onApprove(plan)}>
+              <button
+                type="button"
+                className="ws-sidebar__inline"
+                onClick={() => actions.onApprove(plan)}
+              >
                 Approve and continue
               </button>
               <button type="button" className="ws-sidebar__inline" onClick={actions.onRevise}>
@@ -302,31 +377,45 @@ function renderCreateBody(
         <>
           <strong>Workspace and project are ready.</strong>
           <div className="ws-sidebar__inline-actions">
-            <button type="button" className="ws-sidebar__inline" onClick={() => actions.onFocus('workspaces')}>
+            <button
+              type="button"
+              className="ws-sidebar__inline"
+              onClick={() => actions.onFocus('workspaces')}
+            >
               Show Workspaces
             </button>
-            <button type="button" className="ws-sidebar__inline" onClick={() => actions.onFocus('projects')}>
+            <button
+              type="button"
+              className="ws-sidebar__inline"
+              onClick={() => actions.onFocus('projects')}
+            >
               Show Projects
             </button>
           </div>
           {projects.length > 0 ? (
             <div className="ws-sidebar__plan">
               {projects.map((p, i) => (
-                <PlanItem key={i} label="Project" value={`${p.name ?? 'Project'} · ${p.framework ?? ''}`} />
+                <PlanItem
+                  key={i}
+                  label="Project"
+                  value={`${p.name ?? 'Project'} · ${p.framework ?? ''}`}
+                />
               ))}
             </div>
           ) : null}
         </>
       );
     }
-    case 'manual-done':
+    case 'manual-done': {
       const canBootstrapWorkspace = Boolean(message.workspacePath);
       const workspaceLabel =
         message.mode === 'workspace'
           ? message.name || displayNameFromPath(message.workspacePath)
           : displayNameFromPath(message.workspacePath);
       const projectLabel =
-        message.mode === 'project' ? message.name || displayNameFromPath(message.projectPath) : undefined;
+        message.mode === 'project'
+          ? message.name || displayNameFromPath(message.projectPath)
+          : undefined;
       return (
         <>
           <strong>{message.mode === 'project' ? 'Project created.' : 'Workspace created.'}</strong>
@@ -357,13 +446,16 @@ function renderCreateBody(
             <button
               type="button"
               className="ws-sidebar__inline"
-              onClick={() => actions.onFocus(message.mode === 'project' ? 'projects' : 'workspaces')}
+              onClick={() =>
+                actions.onFocus(message.mode === 'project' ? 'projects' : 'workspaces')
+              }
             >
               {message.mode === 'project' ? 'Show Projects' : 'Show Workspaces'}
             </button>
           </div>
         </>
       );
+    }
     case 'error':
       if (message.unsupportedStack) {
         return (

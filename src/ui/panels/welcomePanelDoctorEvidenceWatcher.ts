@@ -5,7 +5,7 @@ export function registerWelcomePanelDoctorEvidenceWatcher(
   scheduleRefresh: (filePath?: string) => void
 ): void {
   const watcher = vscode.workspace.createFileSystemWatcher(
-    '**/.rapidkit/reports/**/*.json',
+    '**/{.workspai,.rapidkit}/reports/**/*.json',
     false,
     false,
     true

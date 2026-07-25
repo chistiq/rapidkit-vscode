@@ -1,9 +1,7 @@
 import { DashboardOverviewQuickNav } from '@/components/DashboardOverviewQuickNav';
-import { DashboardRetentionSummary } from '@/components/DashboardRetentionSummary';
 import { WorkspaceOverview } from '@/components/WorkspaceOverview';
 import { WorkspaiBanner } from '@/components/WorkspaiBanner';
 import type { WorkspaceStatus } from '@/types';
-import type { DashboardDay0Funnel } from '@/lib/dashboardDay0Funnel';
 import type { DashboardEvidencePayload } from '@/lib/dashboardEvidence';
 import type { DashboardSection } from '@/lib/dashboardSections';
 
@@ -29,7 +27,6 @@ export type DashboardOverviewSectionProps = {
   importedWorkspaceShare: ImportedWorkspaceShareSummary | null;
   evidenceAttentionCount: number;
   operateAttentionCount: number;
-  day0Funnel?: DashboardDay0Funnel;
   onDismissImportedWorkspaceShare: () => void;
   onOpenEvidence: () => void;
   onOpenRunGovernance: () => void;
@@ -42,7 +39,6 @@ export function DashboardOverviewSection({
   importedWorkspaceShare,
   evidenceAttentionCount,
   operateAttentionCount,
-  day0Funnel,
   onDismissImportedWorkspaceShare,
   onOpenEvidence,
   onOpenRunGovernance,
@@ -94,14 +90,10 @@ export function DashboardOverviewSection({
       />
 
       <DashboardOverviewQuickNav
-        evidence={evidence}
         evidenceAttentionCount={evidenceAttentionCount}
         operateAttentionCount={operateAttentionCount}
-        day0Funnel={day0Funnel}
         onNavigate={onNavigate}
       />
-
-      <DashboardRetentionSummary summary={evidence?.onboarding.cohortSummary} />
     </div>
   );
 }

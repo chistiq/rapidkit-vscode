@@ -1,14 +1,17 @@
 import * as vscode from 'vscode';
 import path from 'path';
 import { Logger } from '../utils/logger';
-import {
-  runRapidkitCommandsInTerminal,
-  runShellCommandInTerminal,
-} from '../utils/terminalExecutor';
+import { runShellCommandInTerminal } from '../utils/terminalExecutor';
 import { evaluateWorkspaiContractRuntime } from '../core/workspaiContractRuntime';
 import { exportVerifyPackContractToWorkspace } from '../core/verifyPackContractExporter';
 import { runWorkspaceHygieneProbes } from '../core/workspaceHygieneProbes';
 import { runGovernanceGate } from '../core/governanceGate';
+import { shouldPromptForWorkspaceCommandPreset } from '../core/workspaceCommandPresets';
+import { runGatedRapidkitCommandsInTerminal as runRapidkitCommandsInTerminal } from '../core/gatedRapidkitTerminal';
+import {
+  appendWorkspaceCommandRefresh,
+  confirmWorkspaceCommandSafety,
+} from '../core/workspaceCommandSafety';
 
 type WorkspaceExplorerLike = {
   getSelectedWorkspace?: () => { path: string; name?: string } | null | undefined;
@@ -32,6 +35,7 @@ type WorkspaceCommandItem = {
   preferProfileSetupRuntimes?: unknown;
   setupRuntime?: unknown;
   profile?: unknown;
+  source?: unknown;
 };
 
 type WorkspaceTarget = {
@@ -886,7 +890,7 @@ export function registerWorkspaceOperationsCommands(options: {
     runRapidkitCommandsInTerminal({
       name: `Workspai: Snapshot Restore — ${workspaceName}`,
       cwd: workspacePath,
-      commands: [command],
+      commands: appendWorkspaceCommandRefresh('workspaceSnapshotRestore', [command]),
     });
   };
 
@@ -930,7 +934,10 @@ export function registerWorkspaceOperationsCommands(options: {
     runRapidkitCommandsInTerminal({
       name: `Workspai: Contract ${action} — ${workspaceName}`,
       cwd: workspacePath,
-      commands: [command],
+      commands:
+        action === 'init'
+          ? appendWorkspaceCommandRefresh('workspaceContractInit', [command])
+          : [command],
     });
   };
 
@@ -1065,7 +1072,13 @@ export function registerWorkspaceOperationsCommands(options: {
       const commandItem = asWorkspaceCommandItem(item);
       const existingProfile = await readWorkspaceBootstrapProfile(workspacePath);
       const profileHint = readBootstrapProfileHint(commandItem);
-      const forceProfilePrompt = commandItem?.forceProfilePrompt === true;
+      const forceProfilePrompt =
+        commandItem?.forceProfilePrompt === true ||
+        shouldPromptForWorkspaceCommandPreset({
+          source: commandItem?.source,
+          preset: profileHint,
+          forcePresetPrompt: commandItem?.forceProfilePrompt,
+        });
 
       let selectedProfile: WorkspaceBootstrapProfile | undefined;
 
@@ -1301,7 +1314,7 @@ export function registerWorkspaceOperationsCommands(options: {
         runRapidkitCommandsInTerminal({
           name: `Workspai: Foundation — ${workspaceName}`,
           cwd: workspacePath,
-          commands: [command],
+          commands: appendWorkspaceCommandRefresh('workspaceFoundationEnsure', [command]),
         });
         logger.info(`Running workspace foundation ensure for: ${workspacePath}`);
       }
@@ -1637,13 +1650,21 @@ export function registerWorkspaceOperationsCommands(options: {
         return;
       }
 
+      if (
+        !(await confirmWorkspaceCommandSafety({
+          commandId: 'workspacePolicySet',
+          workspaceName: wsName,
+        }))
+      ) {
+        return;
+      }
+
       runRapidkitCommandsInTerminal({
         name: `Workspai: Policy — ${wsName}`,
         cwd: workspacePath,
-        commands: [
+        commands: appendWorkspaceCommandRefresh('workspacePolicySet', [
           ['workspace', 'policy', 'set', policyKey.label, policyValue],
-          ['workspace', 'policy', 'show'],
-        ],
+        ]),
       });
     }),
 
@@ -1668,19 +1689,19 @@ export function registerWorkspaceOperationsCommands(options: {
         vscode.window.showErrorMessage('No workspace selected.');
         return;
       }
-      const confirm = await vscode.window.showWarningMessage(
-        `Clear all caches for "${workspaceName || path.basename(workspacePath)}"? This cannot be undone.`,
-        { modal: true },
-        'Clear Cache',
-        'Cancel'
-      );
-      if (confirm !== 'Clear Cache') {
+      const wsName = workspaceName || path.basename(workspacePath);
+      if (
+        !(await confirmWorkspaceCommandSafety({
+          commandId: 'cacheClear',
+          workspaceName: wsName,
+        }))
+      ) {
         return;
       }
       runRapidkitCommandsInTerminal({
-        name: `Workspai: Cache — ${workspaceName || path.basename(workspacePath)}`,
+        name: `Workspai: Cache — ${wsName}`,
         cwd: workspacePath,
-        commands: [['cache', 'clear']],
+        commands: appendWorkspaceCommandRefresh('cacheClear', [['cache', 'clear']]),
       });
     }),
 
@@ -1694,7 +1715,7 @@ export function registerWorkspaceOperationsCommands(options: {
       runRapidkitCommandsInTerminal({
         name: `Workspai: Cache — ${workspaceName || path.basename(workspacePath)}`,
         cwd: workspacePath,
-        commands: [['cache', 'prune']],
+        commands: appendWorkspaceCommandRefresh('cachePrune', [['cache', 'prune']]),
       });
     }),
 
@@ -1708,7 +1729,7 @@ export function registerWorkspaceOperationsCommands(options: {
       runRapidkitCommandsInTerminal({
         name: `Workspai: Cache — ${workspaceName || path.basename(workspacePath)}`,
         cwd: workspacePath,
-        commands: [['cache', 'repair']],
+        commands: appendWorkspaceCommandRefresh('cacheRepair', [['cache', 'repair']]),
       });
     }),
 
@@ -1755,13 +1776,12 @@ export function registerWorkspaceOperationsCommands(options: {
 
       const wsName = workspaceName || path.basename(workspacePath);
       if (selection.action === 'rotate') {
-        const confirm = await vscode.window.showWarningMessage(
-          `Rotate signing keys for mirror in "${wsName}"?\n\nThis re-signs all pinned artifacts. Existing rotation snapshots will be archived.`,
-          { modal: true },
-          'Rotate Keys',
-          'Cancel'
-        );
-        if (confirm !== 'Rotate Keys') {
+        if (
+          !(await confirmWorkspaceCommandSafety({
+            commandId: 'mirrorRotate',
+            workspaceName: wsName,
+          }))
+        ) {
           return;
         }
       }
@@ -1769,7 +1789,16 @@ export function registerWorkspaceOperationsCommands(options: {
       runRapidkitCommandsInTerminal({
         name: `Workspai: Mirror — ${wsName}`,
         cwd: workspacePath,
-        commands: [['mirror', selection.action]],
+        commands: appendWorkspaceCommandRefresh(
+          selection.action === 'rotate'
+            ? 'mirrorRotate'
+            : selection.action === 'sync'
+              ? 'mirrorSync'
+              : selection.action === 'verify'
+                ? 'mirrorVerify'
+                : 'mirrorStatus',
+          [['mirror', selection.action]]
+        ),
       });
     }),
 
@@ -1797,7 +1826,7 @@ export function registerWorkspaceOperationsCommands(options: {
       runRapidkitCommandsInTerminal({
         name: `Workspai: Mirror — ${workspaceName || path.basename(workspacePath)}`,
         cwd: workspacePath,
-        commands: [['mirror', 'sync']],
+        commands: appendWorkspaceCommandRefresh('mirrorSync', [['mirror', 'sync']]),
       });
     }),
 
@@ -1811,7 +1840,7 @@ export function registerWorkspaceOperationsCommands(options: {
       runRapidkitCommandsInTerminal({
         name: `Workspai: Mirror — ${workspaceName || path.basename(workspacePath)}`,
         cwd: workspacePath,
-        commands: [['mirror', 'verify']],
+        commands: appendWorkspaceCommandRefresh('mirrorVerify', [['mirror', 'verify']]),
       });
     }),
 
@@ -1823,19 +1852,18 @@ export function registerWorkspaceOperationsCommands(options: {
         return;
       }
       const wsName = workspaceName || path.basename(workspacePath);
-      const confirm = await vscode.window.showWarningMessage(
-        `Rotate signing keys for mirror in "${wsName}"?\n\nThis re-signs all pinned artifacts. Existing rotation snapshots will be archived.`,
-        { modal: true },
-        'Rotate Keys',
-        'Cancel'
-      );
-      if (confirm !== 'Rotate Keys') {
+      if (
+        !(await confirmWorkspaceCommandSafety({
+          commandId: 'mirrorRotate',
+          workspaceName: wsName,
+        }))
+      ) {
         return;
       }
       runRapidkitCommandsInTerminal({
         name: `Workspai: Mirror — ${wsName}`,
         cwd: workspacePath,
-        commands: [['mirror', 'rotate']],
+        commands: appendWorkspaceCommandRefresh('mirrorRotate', [['mirror', 'rotate']]),
       });
     }),
 

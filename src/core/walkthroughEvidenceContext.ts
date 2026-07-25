@@ -7,6 +7,7 @@ import {
   AGENTS_MD_PATH,
   AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
   WORKSPACE_MODEL_REPORT_PATH,
+  workspaceArtifactCandidates,
 } from './workspaceIntelligencePaths';
 import {
   evaluateAgentCustomizationPackSynced,
@@ -75,6 +76,19 @@ async function readJsonSafe(filePath: string): Promise<unknown> {
   }
 }
 
+async function firstExistingArtifactPath(
+  workspacePath: string,
+  relativePath: string
+): Promise<string> {
+  for (const candidate of workspaceArtifactCandidates(relativePath)) {
+    const absolutePath = path.join(workspacePath, candidate);
+    if (await fileExists(absolutePath)) {
+      return absolutePath;
+    }
+  }
+  return path.join(workspacePath, relativePath);
+}
+
 /** Resolve the walkthrough checklist state from on-disk evidence. */
 export async function resolveWalkthroughEvidenceState(
   workspacePath: string | null | undefined
@@ -83,12 +97,19 @@ export async function resolveWalkthroughEvidenceState(
     return { ...EMPTY_STATE };
   }
 
+  const [modelPath, doctorPath, indexPath, packPath] = await Promise.all([
+    firstExistingArtifactPath(workspacePath, WORKSPACE_MODEL_REPORT_PATH),
+    firstExistingArtifactPath(workspacePath, '.workspai/reports/doctor-last-run.json'),
+    firstExistingArtifactPath(workspacePath, AGENT_REPORTS_INDEX_PATH),
+    firstExistingArtifactPath(workspacePath, AGENT_CUSTOMIZATION_PACK_REPORT_PATH),
+  ]);
+
   const [hasWorkspaceModel, doctorReport, hasIndex, hasAgentsMd, packRaw] = await Promise.all([
-    fileExists(path.join(workspacePath, WORKSPACE_MODEL_REPORT_PATH)),
-    readJsonSafe(path.join(workspacePath, '.rapidkit', 'reports', 'doctor-last-run.json')),
-    fileExists(path.join(workspacePath, AGENT_REPORTS_INDEX_PATH)),
+    fileExists(modelPath),
+    readJsonSafe(doctorPath),
+    fileExists(indexPath),
     fileExists(path.join(workspacePath, AGENTS_MD_PATH)),
-    readJsonSafe(path.join(workspacePath, AGENT_CUSTOMIZATION_PACK_REPORT_PATH)),
+    readJsonSafe(packPath),
   ]);
 
   const pack = parseAgentCustomizationPack(packRaw);

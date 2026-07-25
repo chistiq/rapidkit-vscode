@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://getrapidkit.com/schemas/workspace-model.v1.json",
-  "title": "RapidKit Workspace Intelligence Model",
+  "title": "Workspai Workspace Intelligence Model",
   "type": "object",
   "required": [
     "schemaVersion",

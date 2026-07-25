@@ -21,6 +21,35 @@ import type { ChatBrainConversation } from './welcomePanelChatBrainQuery';
 import type { IncidentStudioUiPreferences } from './incidentStudioUiPreferencesBridge';
 import type { IncidentWorkspaceGraphSnapshot } from './welcomePanel.shared.js';
 
+type WorkspaceGraphCacheEntry = {
+  graph: IncidentWorkspaceGraphSnapshot;
+  timestamp: number;
+};
+
+const MAX_WORKSPACE_GRAPH_CACHE_ENTRIES = 4;
+const workspaceGraphCache = new Map<string, WorkspaceGraphCacheEntry>();
+
+export async function clearLegacyWorkspaceGraphState(
+  context: vscode.ExtensionContext
+): Promise<void> {
+  const legacyKeys = context.globalState
+    .keys()
+    .filter((key) => key.startsWith('chat-brain-workspace-graph-'));
+  await Promise.all(legacyKeys.map((key) => context.globalState.update(key, undefined)));
+}
+
+function setWorkspaceGraphCache(key: string, entry: WorkspaceGraphCacheEntry): void {
+  workspaceGraphCache.delete(key);
+  workspaceGraphCache.set(key, entry);
+  while (workspaceGraphCache.size > MAX_WORKSPACE_GRAPH_CACHE_ENTRIES) {
+    const oldestKey = workspaceGraphCache.keys().next().value;
+    if (typeof oldestKey !== 'string') {
+      break;
+    }
+    workspaceGraphCache.delete(oldestKey);
+  }
+}
+
 export type ImportedIncidentReplay = {
   packId: string;
   actionType: string;
@@ -213,10 +242,12 @@ export async function handleAiChatSyncWorkspace(
     });
   };
 
-  const cached = host.context.globalState.get<{
-    graph: IncidentWorkspaceGraphSnapshot;
-    timestamp: number;
-  }>(cacheKey);
+  const legacyCached = host.context.globalState.get<WorkspaceGraphCacheEntry>(cacheKey);
+  if (legacyCached) {
+    setWorkspaceGraphCache(cacheKey, legacyCached);
+    await host.context.globalState.update(cacheKey, undefined);
+  }
+  const cached = workspaceGraphCache.get(cacheKey);
   if (!forceRefresh && cached && now - cached.timestamp < cacheTtl) {
     await postSyncedPayload(cached.graph, true);
     return;
@@ -232,7 +263,7 @@ export async function handleAiChatSyncWorkspace(
     projectType: explicitProjectType,
     scopeIntent: selectedProjectPath ? 'project' : 'workspace',
   });
-  await host.context.globalState.update(cacheKey, { graph, timestamp: now });
+  setWorkspaceGraphCache(cacheKey, { graph, timestamp: now });
 
   await postSyncedPayload(graph, false);
 }
@@ -323,8 +354,8 @@ export function ensureSystemGraphWatcher(
   if (host.systemGraphWatcherByPath.has(workspacePath)) {
     return;
   }
-  // Start watcher in background; on any update, bust the globalState cache so
-  // the next sync request re-indexes rather than serving a stale snapshot.
+  // Start watcher in background; on any update, bust the bounded in-memory
+  // cache so the next sync request re-indexes rather than serving stale data.
   void createProjectSystemGraphWatcher({
     workspacePath,
     useIncrementalCache: true,
@@ -333,7 +364,7 @@ export function ensureSystemGraphWatcher(
       if (update.reason === 'initial') {
         return;
       }
-      void host.context.globalState.update(cacheKey, undefined);
+      workspaceGraphCache.delete(cacheKey);
     },
   })
     .then((handle) => {

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://getrapidkit.com/schemas/workspace-impact.v1.json",
-  "title": "RapidKit Workspace Impact",
+  "title": "Workspai Workspace Impact",
   "type": "object",
   "required": [
     "schemaVersion",

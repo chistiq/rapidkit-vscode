@@ -293,9 +293,7 @@
 }
 
 .evidence-card-actions__run,
-.evidence-card-actions__done,
-.repair-flow__path-run,
-.repair-flow__decision-run {
+.evidence-card-actions__done {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -834,22 +832,7 @@
 /* ─── Onboarding + Overview (Epic 5.4–5.5) ─────────────────────────────────── */
 
 .ws-onboarding-shell,
-.fresh-install-onboarding {
-  border-color: var(--ws-border-subtle);
-  border-radius: var(--ws-radius-lg);
-  background: color-mix(in srgb, var(--ws-accent) 8%, transparent);
-}
-
-.fresh-install-onboarding__hero h2 {
-  color: var(--ws-text);
-}
-
-.fresh-install-onboarding__hero p {
-  color: var(--ws-text-muted);
-}
-
-.ws-onboarding-card,
-.fresh-install-onboarding__card {
+.ws-onboarding-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -864,44 +847,14 @@
   cursor: pointer;
 }
 
-.ws-onboarding-card:hover,
-.fresh-install-onboarding__card:hover {
+.ws-onboarding-card:hover {
   border-color: var(--ws-focus);
   background: var(--ws-surface-hover);
 }
 
-.ws-onboarding-card--primary,
-.fresh-install-onboarding__card--primary {
+.ws-onboarding-card--primary {
   border-color: color-mix(in srgb, var(--ws-accent) 42%, var(--ws-border-subtle));
   background: color-mix(in srgb, var(--ws-accent) 8%, var(--ws-surface));
-}
-
-.fresh-install-onboarding__card-copy small {
-  color: var(--ws-text-muted);
-}
-
-.fresh-install-onboarding__details {
-  color: var(--ws-text-muted);
-  font-size: 12px;
-}
-
-.fresh-install-onboarding__details summary {
-  cursor: pointer;
-  color: var(--ws-text);
-  font-weight: 700;
-}
-
-.fresh-install-onboarding__details-body {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  margin-top: 6px;
-}
-
-.fresh-install-onboarding__details-body p {
-  flex-basis: 100%;
-  margin: 0;
 }
 
 .ws-overview-shell,
@@ -1218,6 +1171,11 @@
 .evidence-attention-inbox__metric--warn {
   color: var(--ws-warn);
   border-color: color-mix(in srgb, var(--ws-warn) 32%, var(--ws-border-subtle));
+}
+
+.evidence-attention-inbox__metric--missing {
+  color: var(--ws-text-muted);
+  border-color: var(--ws-border-subtle);
 }
 
 .evidence-attention-inbox__metric--ok {
@@ -2208,6 +2166,645 @@
   font-size: 9px;
 }
 
+/* Workspace Graph Explorer — projection state only; canonical semantics stay in the CLI. */
+.workspace-graph-explorer {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px 28px;
+}
+
+.workspace-graph-explorer__header,
+.workspace-graph-explorer__toolbar,
+.workspace-graph-explorer__quality,
+.workspace-graph-explorer__body {
+  border: 1px solid var(--vscode-panel-border);
+  background: color-mix(in srgb, var(--vscode-editor-background) 94%, transparent);
+}
+
+.workspace-graph-explorer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 16px;
+  border-radius: 10px;
+}
+
+.workspace-graph-explorer__header h2,
+.workspace-graph-explorer__header p,
+.workspace-graph-explorer__drawer h3 {
+  margin: 0;
+}
+
+.workspace-graph-explorer__header h2 {
+  margin-top: 3px;
+  font-size: 17px;
+}
+
+.workspace-graph-explorer__header p {
+  margin-top: 5px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+.workspace-graph-explorer__eyebrow {
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workspace-graph-explorer__revision {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+
+.workspace-graph-explorer__revision svg {
+  color: var(--vscode-testing-iconPassed);
+}
+
+.workspace-graph-explorer__revision code {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--vscode-textCodeBlock-background);
+}
+
+.workspace-graph-explorer__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  border-radius: 8px;
+}
+
+.workspace-graph-explorer__search {
+  display: flex;
+  flex: 1 1 240px;
+  align-items: center;
+  gap: 7px;
+  min-width: 160px;
+  padding: 0 9px;
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  border-radius: 5px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+}
+
+.workspace-graph-explorer__search:focus-within {
+  border-color: var(--vscode-focusBorder);
+}
+
+.workspace-graph-explorer__search input {
+  width: 100%;
+  padding: 7px 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.workspace-graph-explorer__toolbar select {
+  min-height: 30px;
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
+  border-radius: 5px;
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+}
+
+.workspace-graph-recording-button {
+  white-space: nowrap;
+}
+
+.workspace-graph-recording-button > svg {
+  color: var(--vscode-testing-iconFailed);
+}
+
+.workspace-graph-recording-button.is-recording {
+  border-color: color-mix(
+    in srgb,
+    var(--vscode-testing-iconFailed) 65%,
+    var(--vscode-button-border, transparent)
+  );
+  color: var(--vscode-testing-iconFailed);
+}
+
+.workspace-graph-recording-button.is-recording > svg {
+  animation: workspace-graph-recording-pulse 1.6s ease-in-out infinite;
+}
+
+.workspace-graph-recording-status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 75%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 68%, transparent);
+  font-size: 11px;
+}
+
+.workspace-graph-recording-status > span {
+  font-weight: 650;
+}
+
+.workspace-graph-recording-status > small {
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-graph-recording-status.is-recording > span {
+  color: var(--vscode-testing-iconFailed);
+}
+
+.workspace-graph-recording-status.is-ready > span {
+  color: var(--vscode-testing-iconPassed);
+}
+
+.workspace-graph-recording-status.is-error > span {
+  color: var(--vscode-errorForeground);
+}
+
+@keyframes workspace-graph-recording-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.workspace-graph-explorer__modes {
+  display: flex;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--vscode-editorWidget-background);
+}
+
+.workspace-graph-explorer__modes button,
+.workspace-graph-explorer__export summary,
+.workspace-graph-explorer__export button {
+  border: 0;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+}
+
+.workspace-graph-explorer__modes button {
+  padding: 6px 9px;
+  border-radius: 4px;
+}
+
+.workspace-graph-explorer__modes button.is-active {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.workspace-graph-explorer__export {
+  position: relative;
+}
+
+.workspace-graph-explorer__export summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px;
+  list-style: none;
+}
+
+.workspace-graph-explorer__export > div {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  min-width: 110px;
+  padding: 5px;
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 6px;
+  background: var(--vscode-menu-background);
+  box-shadow: 0 6px 18px color-mix(in srgb, #000 28%, transparent);
+}
+
+.workspace-graph-explorer__export button {
+  padding: 6px 9px;
+  text-align: left;
+  color: var(--vscode-menu-foreground);
+}
+
+.workspace-graph-explorer__export button:hover {
+  background: var(--vscode-menu-selectionBackground);
+  color: var(--vscode-menu-selectionForeground);
+}
+
+.workspace-graph-explorer__quality {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+.workspace-graph-explorer__quality span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  font-size: 10px;
+}
+
+.workspace-graph-explorer__quality span.is-danger {
+  background: color-mix(in srgb, var(--vscode-testing-iconFailed) 18%, transparent);
+  color: var(--vscode-testing-iconFailed);
+}
+
+.workspace-graph-explorer__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 30%);
+  min-height: 430px;
+  overflow: hidden;
+  border-radius: 10px;
+  transition:
+    grid-template-columns 180ms ease,
+    min-height 180ms ease;
+}
+
+.workspace-graph-explorer__body.is-presentation {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: min(720px, calc(100vh - 270px));
+  border-color: color-mix(in srgb, var(--vscode-focusBorder) 45%, var(--vscode-panel-border));
+  box-shadow:
+    0 18px 55px color-mix(in srgb, #000 24%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 7%, transparent);
+}
+
+.workspace-graph-explorer__body.is-presentation .workspace-graph-explorer__drawer {
+  display: none;
+}
+
+.workspace-graph-explorer__body.is-presentation .workspace-graph-canvas {
+  min-height: min(660px, calc(100vh - 330px));
+}
+
+.workspace-graph-explorer__canvas {
+  min-width: 0;
+  padding: 13px;
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--vscode-foreground) 12%, transparent) 0.7px,
+    transparent 0.7px
+  );
+  background-size: 18px 18px;
+}
+
+.workspace-graph-explorer__canvas-meta {
+  display: flex;
+  justify-content: space-between;
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+}
+
+.workspace-graph-canvas {
+  position: relative;
+  width: 100%;
+  min-height: 390px;
+  margin-top: 10px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 75%, transparent);
+  border-radius: 9px;
+  background:
+    radial-gradient(
+      circle at 50% 38%,
+      color-mix(in srgb, var(--vscode-focusBorder) 8%, transparent),
+      transparent 48%
+    ),
+    color-mix(in srgb, var(--vscode-editor-background) 91%, #020617);
+}
+
+.workspace-graph-webgl {
+  position: relative;
+  width: 100%;
+  min-height: 390px;
+  margin-top: 10px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 40%, var(--vscode-panel-border));
+  border-radius: 9px;
+  background:
+    radial-gradient(circle at 50% 45%, rgb(34 211 238 / 10%), transparent 46%),
+    radial-gradient(circle at 28% 72%, rgb(168 85 247 / 8%), transparent 38%),
+    color-mix(in srgb, var(--vscode-editor-background) 94%, #020617);
+  box-shadow: inset 0 0 80px rgb(2 6 23 / 35%);
+}
+
+.workspace-graph-webgl canvas {
+  display: block;
+  max-width: 100%;
+  outline: none;
+  cursor: grab;
+  touch-action: none;
+}
+
+.workspace-graph-webgl__labels {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+}
+
+.workspace-graph-webgl canvas:active {
+  cursor: grabbing;
+}
+
+.workspace-graph-webgl canvas:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--vscode-focusBorder);
+}
+
+.workspace-graph-webgl__chrome {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 7px 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 35%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 80%, transparent);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 20%);
+  color: var(--vscode-descriptionForeground);
+  font-size: 9px;
+  backdrop-filter: blur(12px);
+}
+
+.workspace-graph-webgl__chrome strong {
+  color: var(--vscode-focusBorder);
+  letter-spacing: 0.04em;
+}
+
+.workspace-graph-webgl__chrome button {
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  font: inherit;
+  cursor: pointer;
+}
+
+.workspace-graph-explorer__body.is-presentation .workspace-graph-webgl {
+  min-height: min(660px, calc(100vh - 330px));
+}
+
+.workspace-graph-canvas canvas {
+  display: block;
+  max-width: 100%;
+  outline: none;
+  cursor: grab;
+  touch-action: none;
+}
+
+.workspace-graph-canvas canvas:active {
+  cursor: grabbing;
+}
+
+.workspace-graph-canvas canvas:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--vscode-focusBorder);
+}
+
+.workspace-graph-canvas__chrome {
+  position: absolute;
+  z-index: 2;
+  top: 9px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 6px 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 74%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 82%, transparent);
+  box-shadow: 0 8px 22px color-mix(in srgb, #000 17%, transparent);
+  color: var(--vscode-descriptionForeground);
+  font-size: 9px;
+  backdrop-filter: blur(10px);
+}
+
+.workspace-graph-canvas__chrome span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.workspace-graph-canvas__chrome i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--vscode-foreground);
+  box-shadow: 0 0 8px currentColor;
+}
+
+.workspace-graph-canvas__chrome i.is-core {
+  background: var(--vscode-focusBorder);
+  color: var(--vscode-focusBorder);
+}
+
+.workspace-graph-canvas__chrome i.is-api {
+  background: #4ec9b0;
+  color: #4ec9b0;
+}
+
+.workspace-graph-canvas__chrome i.is-data {
+  background: #c586c0;
+  color: #c586c0;
+}
+
+.workspace-graph-canvas__chrome button {
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-button-secondaryBackground) 80%, transparent);
+  color: var(--vscode-button-secondaryForeground);
+  font: inherit;
+  cursor: pointer;
+}
+
+.workspace-graph-canvas__chrome button:hover,
+.workspace-graph-canvas__chrome button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+}
+
+.workspace-graph-canvas__hint {
+  position: absolute;
+  right: 9px;
+  bottom: 8px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 88%, transparent);
+  color: var(--vscode-descriptionForeground);
+  font-size: 9px;
+  pointer-events: none;
+}
+
+.workspace-graph-explorer__entity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 9px;
+  margin-top: 13px;
+}
+
+.workspace-graph-explorer__entity-grid > button {
+  display: grid;
+  gap: 6px;
+  min-height: 82px;
+  padding: 10px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 92%, transparent);
+  color: var(--vscode-foreground);
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-graph-explorer__entity-grid > button:hover,
+.workspace-graph-explorer__entity-grid > button.is-selected {
+  border-color: var(--vscode-focusBorder);
+  background: color-mix(
+    in srgb,
+    var(--vscode-list-activeSelectionBackground) 45%,
+    var(--vscode-editorWidget-background)
+  );
+}
+
+.workspace-graph-explorer__entity-grid small,
+.workspace-graph-explorer__drawer small {
+  color: var(--vscode-descriptionForeground);
+}
+
+.workspace-graph-explorer__entity-kind {
+  width: fit-content;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-charts-blue) 18%, transparent);
+  color: var(--vscode-charts-blue);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.workspace-graph-explorer__drawer {
+  min-width: 0;
+  padding: 14px;
+  border-left: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-sideBar-background);
+}
+
+.workspace-graph-explorer__drawer > code {
+  display: block;
+  margin-top: 7px;
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  text-overflow: ellipsis;
+}
+
+.workspace-graph-explorer__drawer dl {
+  display: grid;
+  gap: 5px;
+  margin: 14px 0;
+}
+
+.workspace-graph-explorer__focus-action {
+  width: 100%;
+  justify-content: center;
+}
+
+.workspace-graph-explorer__drawer dl > div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.workspace-graph-explorer__drawer dt,
+.workspace-graph-explorer__drawer dd {
+  margin: 0;
+  font-size: 11px;
+}
+
+.workspace-graph-explorer__drawer dt {
+  color: var(--vscode-descriptionForeground);
+}
+
+.workspace-graph-explorer__drawer-section {
+  display: grid;
+  gap: 6px;
+  margin-top: 15px;
+}
+
+.workspace-graph-explorer__drawer-section > span,
+.workspace-graph-explorer__drawer-section > button {
+  display: grid;
+  gap: 2px;
+  padding: 7px;
+  overflow: hidden;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 10px;
+  text-align: left;
+  text-overflow: ellipsis;
+}
+
+.workspace-graph-explorer__drawer-section > button:not(:disabled) {
+  cursor: pointer;
+}
+
+.workspace-graph-explorer__drawer-empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  height: 100%;
+  color: var(--vscode-descriptionForeground);
+  text-align: center;
+}
+
+.workspace-graph-explorer__no-results {
+  padding: 50px 15px;
+  color: var(--vscode-descriptionForeground);
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .workspace-graph-explorer__toolbar {
+    flex-wrap: wrap;
+  }
+
+  .workspace-graph-explorer__body {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-graph-explorer__drawer {
+    min-height: 220px;
+    border-top: 1px solid var(--vscode-panel-border);
+    border-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-graph-explorer__body {
+    transition: none;
+  }
+}
+
 .import-adopt-options__choices {
   display: flex;
   flex-direction: column;
@@ -3034,7 +3631,7 @@
   flex-wrap: wrap;
 }
 
-/* ─── Professional chat composer (Workspace Advisor + Studio) ─────────────────── */
+/* ─── Professional chat composer (Assistant: Agent / Ask / Plan) ─────────────── */
 
 .ws-chat-composer {
   width: 100%;
@@ -3973,7 +4570,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 132px;
+  min-height: 116px;
   padding: 10px;
   border: 1px solid var(--ws-border-subtle);
   border-radius: var(--ws-radius-md);
@@ -4011,7 +4608,7 @@
   font-size: 11.5px;
   font-weight: 800;
   line-height: 1.25;
-  text-align: right;
+  text-align: left;
   cursor: pointer;
 }
 
@@ -4019,12 +4616,19 @@
   cursor: default;
 }
 
-.repair-flow__card-summary {
-  flex: 1;
+.repair-flow__card-issue {
   margin: 0;
+  color: var(--ws-text);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.repair-flow__card-guidance {
+  display: block;
   color: var(--ws-text-muted);
   font-size: 10px;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 .repair-flow__card-actions {
@@ -4045,167 +4649,88 @@
   font-size: 10px;
 }
 
-.repair-flow__active-actions .ws-btn,
-.repair-flow__decision-actions .ws-btn {
+.repair-flow__active-actions .ws-btn {
   min-height: 32px;
+}
+
+.repair-flow__decision-tools {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+}
+
+.ws-view-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid var(--ws-border-subtle);
+  border-radius: var(--ws-radius-sm);
+  background: color-mix(in srgb, var(--ws-surface-raised, var(--ws-surface)) 76%, transparent);
+  color: var(--ws-text-muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.ws-view-select select {
+  min-height: 22px;
+  padding: 1px 22px 1px 6px;
+  border: 0;
+  border-radius: calc(var(--ws-radius-sm) - 2px);
+  outline: 0;
+  background: var(--vscode-dropdown-background, var(--ws-surface));
+  color: var(--vscode-dropdown-foreground, var(--ws-text));
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.ws-view-select select:focus-visible {
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, var(--ws-accent));
+}
+
+.repair-flow__active-issue {
+  color: var(--ws-text) !important;
+  font-size: 12px !important;
+  font-weight: 650;
+}
+
+.repair-flow__active-guidance {
+  display: block;
+  color: var(--ws-text-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.repair-flow__technical {
+  border-top: 1px solid var(--ws-border-subtle);
+  padding-top: 8px;
+}
+
+.repair-flow__technical > summary {
+  width: fit-content;
+  color: var(--ws-text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.repair-flow__technical[open] > summary {
+  margin-bottom: 8px;
+  color: var(--ws-text);
+}
+
+.repair-flow__technical .repair-flow__incident-summary {
+  margin-top: 8px;
 }
 
 @media (max-width: 720px) {
   .repair-flow__stack-grid {
     grid-template-columns: 1fr;
   }
-}
 
-.repair-flow__path {
-  display: grid;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--ws-border-subtle);
-  border-radius: var(--ws-radius-md);
-  background: color-mix(in srgb, var(--ws-surface) 94%, transparent);
-}
-
-.repair-flow__path-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.repair-flow__path-head-trail {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.repair-flow__path-progress {
-  color: var(--ws-text-muted);
-  font-size: 10.5px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.repair-flow__path-run {
-  min-height: 28px;
-  padding: 4px 10px;
-  font-size: 10.5px;
-}
-
-.repair-flow__path-track {
-  height: 3px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--ws-border-subtle) 80%, transparent);
-  overflow: hidden;
-}
-
-.repair-flow__path-track-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: color-mix(in srgb, var(--ws-accent) 82%, transparent);
-  transition: width 220ms ease;
-}
-
-.repair-flow__path-rail {
-  min-width: 0;
-}
-
-.repair-flow__path-focus {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  padding: 10px 12px;
-  border: 1px solid var(--ws-border-subtle);
-  border-radius: var(--ws-radius-sm);
-  background: color-mix(in srgb, var(--ws-surface-raised, var(--ws-surface)) 55%, transparent);
-}
-
-.repair-flow__path-focus-copy {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.repair-flow__path-focus-copy h4 {
-  margin: 0;
-  font-size: 12.5px;
-  font-weight: 800;
-}
-
-.repair-flow__path-focus-copy p {
-  margin: 0;
-  color: var(--ws-text-muted);
-  font-size: 10px;
-  line-height: 1.35;
-}
-
-.repair-flow__path-badge {
-  display: inline-flex;
-  width: fit-content;
-  padding: 2px 7px;
-  border-radius: 999px;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-.repair-flow__path-badge--attention {
-  color: #fff;
-  background: color-mix(in srgb, var(--ws-error, #f14c4c) 82%, transparent);
-}
-
-.repair-flow__path-badge--current {
-  color: var(--ws-text);
-  background: color-mix(in srgb, var(--ws-accent) 16%, transparent);
-}
-
-.repair-flow__path-badge--complete {
-  color: var(--ws-success, #13c659);
-  background: color-mix(in srgb, var(--ws-success, #13c659) 14%, transparent);
-}
-
-.repair-flow__path-badge--locked {
-  color: var(--ws-text-muted);
-  background: color-mix(in srgb, var(--ws-text-muted) 12%, transparent);
-}
-
-.repair-flow__path-focus-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: flex-end;
-}
-
-.repair-flow__path-focus-actions .ws-btn {
-  min-height: 32px;
-}
-
-.repair-flow__path-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--ws-text-muted);
-  font-size: 10px;
-  font-weight: 650;
-}
-
-.repair-flow__path-hint--good {
-  color: var(--ws-success, #13c659);
-}
-
-@media (max-width: 980px) {
-  .repair-flow__path-focus {
-    grid-template-columns: 1fr;
-    align-items: start;
-  }
-
-  .repair-flow__path-focus-actions {
-    justify-content: flex-start;
+  .repair-flow__decision-tools {
+    justify-items: start;
   }
 }

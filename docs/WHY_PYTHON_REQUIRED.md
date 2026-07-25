@@ -107,7 +107,7 @@ Even though Python needs manual installation, the extension handles:
 4. ✅ **Dependency Management** - Manages all Python dependencies automatically
 5. ✅ **Environment Validation** - Checks Python 3.10+ and venv support
 6. ✅ **Auto-fix Capabilities** - Can install python3-venv on Ubuntu/Debian
-7. ✅ **Doctor (Workspace + Project scope)** - Validates health, writes evidence to `.rapidkit/reports/`
+7. ✅ **Doctor (Workspace + Project scope)** - Validates health, writes evidence to `.workspai/reports/`
 8. ✅ **Fleet Stage Execution** - Runs init/test/build/start across all projects in a workspace
 
 **The extension removes 99% of manual setup - you just need Python 3.10+ installed.**
@@ -142,11 +142,11 @@ RapidKit Core uses modern Python features:
 
 ### npm Package (CLI)
 ```bash
-npx rapidkit my-workspace
-npx rapidkit create workspace my-project
-npx rapidkit doctor workspace
-npx rapidkit doctor project
-npx rapidkit workspace run test --affected --parallel
+npx workspai my-workspace
+npx workspai create workspace my-project
+npx workspai doctor workspace
+npx workspai doctor project
+npx workspai workspace run test --affected --parallel
 ```
 - Cross-platform CLI — works in CI/CD, scripts, terminal
 - Supports all flags: `--affected`, `--since`, `--max-workers`, `--parallel`, `--strict`, etc.
@@ -293,7 +293,7 @@ The extension will automatically:
 **A:** Install Python 3.10+ alongside it. Multiple Python versions coexist safely. The extension auto-detects the highest compatible version.
 
 ### Q: Does the doctor command also require Python?
-**A:** Yes. Both `npx rapidkit doctor workspace` and `npx rapidkit doctor project` invoke the Python engine via the workspace venv. Python must be present and the workspace must be initialized first.
+**A:** Yes. Both `npx workspai doctor workspace` and `npx workspai doctor project` invoke the Python engine via the workspace venv. Python must be present and the workspace must be initialized first.
 
 ---
 

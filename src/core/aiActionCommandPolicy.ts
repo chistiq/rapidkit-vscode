@@ -99,6 +99,16 @@ function hasGitRollbackShape(tokens: string[]): boolean {
   return separatorIndex >= 2 && separatorIndex < tokens.length - 1;
 }
 
+function hasRapidkitBootstrapCiJsonShape(tokens: string[]): boolean {
+  const rapidkitIndex =
+    tokens[0] === 'rapidkit' ? 0 : tokens[0] === 'npx' && tokens[1] === 'rapidkit' ? 1 : -1;
+  if (rapidkitIndex < 0 || tokens[rapidkitIndex + 1] !== 'bootstrap') {
+    return false;
+  }
+  const flags = new Set(tokens.slice(rapidkitIndex + 2));
+  return flags.has('--ci') && flags.has('--json');
+}
+
 export function validateAIActionCommandPolicy(
   command: string,
   operation: AIActionCommandOperation
@@ -123,6 +133,9 @@ export function validateAIActionCommandPolicy(
 
   const commandText = tokens.join(' ');
   if (operation === 'verify') {
+    if (hasRapidkitBootstrapCiJsonShape(tokens)) {
+      return { allowed: true };
+    }
     return VERIFY_KEYWORD_RE.test(commandText)
       ? { allowed: true }
       : {
@@ -133,6 +146,9 @@ export function validateAIActionCommandPolicy(
   }
 
   if (operation === 'apply') {
+    if (hasRapidkitBootstrapCiJsonShape(tokens)) {
+      return { allowed: true };
+    }
     return APPLY_KEYWORD_RE.test(commandText)
       ? { allowed: true }
       : {

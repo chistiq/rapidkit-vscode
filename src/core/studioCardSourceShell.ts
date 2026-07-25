@@ -1,24 +1,21 @@
 import { DASHBOARD_EVIDENCE_CARD_IDS } from '../contracts/dashboardEvidenceCards.js';
-import {
-  resolveDashboardCommandContract,
-  type DashboardCommandContract,
-} from './dashboardCommandContracts.js';
+import type { DashboardCommandExecutionPlan } from './dashboardCommandExecutionPlan.js';
+import { resolveDashboardCommandExecutionPlan } from './dashboardCommandExecutionPlan.js';
 import { resolveDashboardCommandForEvidenceCard } from './dashboardReportRegistry.js';
 import {
   WORKSPACE_MODEL_DIFF_REPORT_PATH,
   WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH,
 } from './workspaceIntelligencePaths.js';
 
-const DEFAULT_VERIFY_COMMAND =
-  'npx rapidkit workspace verify --from-impact .rapidkit/reports/workspace-impact-last-run.json --json';
+const DEFAULT_VERIFY_COMMAND = 'npx workspai workspace verify --json';
 
 /** Intelligence-chain `--from` paths not expressed in generic dashboard cliArgs. */
 const CARD_SOURCE_SHELL_OVERRIDES: Record<string, string> = {
-  bootstrap: 'npx rapidkit bootstrap --ci --json',
-  workspaceDiff: `npx rapidkit workspace diff --from ${WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH} --json`,
-  workspaceImpact: `npx rapidkit workspace impact --from ${WORKSPACE_MODEL_DIFF_REPORT_PATH} --json`,
-  share: 'npx rapidkit workspace share --output .rapidkit/reports/share-bundle.json --json',
-  archive: 'npx rapidkit workspace export --output team-workspace.rapidkit-archive.zip --json',
+  bootstrap: 'npx workspai bootstrap --ci --json',
+  workspaceDiff: `npx workspai workspace diff --from ${WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH} --json`,
+  workspaceImpact: `npx workspai workspace impact --from ${WORKSPACE_MODEL_DIFF_REPORT_PATH} --json`,
+  share: 'npx workspai workspace share --output .workspai/reports/share-bundle.json --json',
+  archive: 'npx workspai workspace export --output team-workspace.rapidkit-archive.zip --json',
 };
 
 function appendJsonFlag(cliArgs: string[]): string[] {
@@ -29,12 +26,12 @@ function appendJsonFlag(cliArgs: string[]): string[] {
 }
 
 function buildShellFromCliArgs(cliArgs: string[]): string {
-  return `npx rapidkit ${appendJsonFlag(cliArgs).join(' ')}`;
+  return `npx workspai ${appendJsonFlag(cliArgs).join(' ')}`;
 }
 
-function buildShellFromContract(contract: DashboardCommandContract): string | undefined {
-  if (Array.isArray(contract.cliArgs) && contract.cliArgs.length > 0) {
-    return buildShellFromCliArgs(contract.cliArgs);
+function buildShellFromExecutionPlan(plan: DashboardCommandExecutionPlan): string | undefined {
+  if (plan.cliArgs.length > 0) {
+    return buildShellFromCliArgs(plan.cliArgs);
   }
   return undefined;
 }
@@ -47,19 +44,20 @@ export function buildStudioSourceCommandForCard(cardId: string): string {
 
   const dashboardCommandId = resolveDashboardCommandForEvidenceCard(cardId);
   if (!dashboardCommandId) {
-    return 'npx rapidkit doctor workspace --json';
+    return 'npx workspai doctor workspace --json';
   }
 
-  const contract = resolveDashboardCommandContract(dashboardCommandId);
-  const fromContract = contract ? buildShellFromContract(contract) : undefined;
+  const fromContract = buildShellFromExecutionPlan(
+    resolveDashboardCommandExecutionPlan(dashboardCommandId)
+  );
   if (fromContract) {
     return fromContract;
   }
 
-  return 'npx rapidkit doctor workspace --json';
+  return 'npx workspai doctor workspace --json';
 }
 
-/** Executable RapidKit CLI snippet per evidence card — derived from dashboard command contracts. */
+/** Executable Workspai CLI snippet per evidence card — derived from dashboard command contracts. */
 export const CARD_SOURCE_SHELL: Record<string, string> = Object.fromEntries(
   DASHBOARD_EVIDENCE_CARD_IDS.map((cardId) => [cardId, buildStudioSourceCommandForCard(cardId)])
 );

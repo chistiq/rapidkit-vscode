@@ -16,5 +16,5 @@
     "astro",
     "sveltekit"
   ],
-  "policyNote": "RapidKit modules are Core-backed templates for FastAPI and NestJS backends only. Frontend scaffolds and extended backend kits use native package ecosystems."
+  "policyNote": "RapidKit Core modules are Core-backed templates for FastAPI and NestJS backends only. Frontend scaffolds and extended backend kits use native package ecosystems."
 }

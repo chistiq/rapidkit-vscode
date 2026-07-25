@@ -12,7 +12,7 @@ import {
   buildDay0DashboardE2ESteps,
   createWorkspaceViaCli,
   isLocalCliE2EEnabled,
-  resolveRapidkitNpmDist,
+  resolveWorkspaiCliDist,
   runIntelligenceScenario,
 } from './helpers/localCliE2E';
 
@@ -35,7 +35,7 @@ describeLocal('day-0 dashboard acceptance on freshly created workspace', () => {
   });
 
   it('creates a minimal workspace, runs core day-0 commands, and satisfies dashboard UX expectations', async () => {
-    const dist = resolveRapidkitNpmDist();
+    const dist = resolveWorkspaiCliDist();
     const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-day0-'));
     tempRoots.push(sandboxRoot);
 

@@ -5,11 +5,7 @@ import { ChatSessionBar } from './composer/ChatSessionBar';
 import { ChatToolsDrawer } from './drawers/ChatToolsDrawer';
 import { SidebarMessage } from './SidebarMessage';
 import type { SidebarModel } from './sidebarModels';
-import {
-  basenameFromPath,
-  chatSessionContextLabel,
-  type ChatSession,
-} from './sidebarSessions';
+import { basenameFromPath, chatSessionContextLabel, type ChatSession } from './sidebarSessions';
 import type { SidebarScope } from './sidebarTypes';
 
 interface ChatTabProps {
@@ -37,6 +33,10 @@ interface ChatTabProps {
   composerPrefill?: string;
   composerPrefillKey?: number;
   chromeMode?: 'default' | 'repair';
+  activityActive?: boolean;
+  composerModeSelector?: ReactNode;
+  onSteer?: (message: string) => void;
+  onCancel?: () => void;
 }
 
 function scopeDisplayName(scope: SidebarScope): string {
@@ -87,6 +87,7 @@ export function ChatTab(props: ChatTabProps) {
   const [prompt, setPrompt] = useState('');
   const [toolsOpen, setToolsOpen] = useState(false);
   const lastPrefillKeyRef = useRef<number | undefined>(undefined);
+  const streamEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!composerPrefill?.trim()) {
@@ -104,18 +105,30 @@ export function ChatTab(props: ChatTabProps) {
   }, [composerPrefill, composerPrefillKey, repairMode]);
 
   const activeSession = sessions.find((s) => s.sessionId === activeSessionId) ?? null;
+  useEffect(() => {
+    if (!active || (!props.activityActive && activeSession?.status !== 'streaming')) {
+      return;
+    }
+    streamEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [active, activeSession?.messages, activeSession?.status, props.activityActive]);
   const composerScopeLabel = sessionScopeDisplayName(activeSession, props.scope);
   const scopedPlaceholder =
-    composerScopeLabel && composerScopeLabel !== 'No workspace selected'
+    !repairMode && composerScopeLabel && composerScopeLabel !== 'No workspace selected'
       ? `${props.placeholder} · ${composerScopeLabel}`
       : props.placeholder;
 
   const submit = (text?: string) => {
     const trimmed = (text ?? prompt).trim();
-    if (!trimmed || activeSession?.status === 'streaming') {
+    if (!trimmed) {
       return;
     }
-    props.onSubmit(trimmed);
+    if (activeSession?.status === 'streaming' && props.onSteer) {
+      props.onSteer(trimmed);
+    } else if (activeSession?.status !== 'streaming') {
+      props.onSubmit(trimmed);
+    } else {
+      return;
+    }
     setPrompt('');
     setToolsOpen(false);
   };
@@ -151,16 +164,15 @@ export function ChatTab(props: ChatTabProps) {
         <div className="ws-sidebar__chat-chrome">{props.headerChrome}</div>
       ) : null}
       <div className="ws-sidebar__stream" aria-live="polite">
-        {props.streamChrome}
         {!activeSession || activeSession.messages.length === 0 ? (
           repairMode || hasChromeContent ? null : (
-          <SidebarMessage role="ai">
-            <strong>{props.contextLabel}</strong>
-            <p>
-              Ask about this scope. Follow-ups stay in the same thread — use{' '}
-              <strong>New chat</strong> when you switch topics.
-            </p>
-          </SidebarMessage>
+            <SidebarMessage role="ai">
+              <strong>{props.contextLabel}</strong>
+              <p>
+                Ask about this scope. Follow-ups stay in the same thread — use{' '}
+                <strong>New chat</strong> when you switch topics.
+              </p>
+            </SidebarMessage>
           )
         ) : (
           activeSession.messages.map((message, idx) => {
@@ -168,11 +180,7 @@ export function ChatTab(props: ChatTabProps) {
               message.role === 'assistant' && idx === activeSession.messages.length - 1;
             const agentActive = isLastAssistant && activeSession.status === 'streaming';
             return (
-              <SidebarMessage
-                key={idx}
-                role={message.role === 'user' ? 'user' : 'ai'}
-                agentActive={agentActive}
-              >
+              <SidebarMessage key={idx} role={message.role === 'user' ? 'user' : 'ai'}>
                 {message.role === 'assistant' ? (
                   <MarkdownRenderer
                     content={message.content}
@@ -193,12 +201,19 @@ export function ChatTab(props: ChatTabProps) {
             <p>{activeSession.error}</p>
           </SidebarMessage>
         ) : null}
+        {props.streamChrome ? (
+          <SidebarMessage role="ai">
+            <div className="ws-sidebar__studio-live-activity">{props.streamChrome}</div>
+          </SidebarMessage>
+        ) : null}
+        <div ref={streamEndRef} aria-hidden="true" />
       </div>
 
       <ChatSessionBar
         activeSession={activeSession}
         sessionCount={sessions.length}
         compact={repairMode}
+        allowNewSession={!repairMode}
         onNewSession={() => {
           props.onNewSession();
           setPrompt('');
@@ -211,15 +226,18 @@ export function ChatTab(props: ChatTabProps) {
         onChange={setPrompt}
         onSubmit={() => submit()}
         placeholder={scopedPlaceholder}
-        disabled={activeSession?.status === 'streaming'}
+        disabled={activeSession?.status === 'streaming' && !props.onSteer}
+        running={activeSession?.status === 'streaming'}
+        onCancel={props.onCancel}
         models={props.models}
         selectedModelId={props.selectedModelId}
         onSelectModel={props.onSelectModel}
         onRefreshModels={props.onRefreshModels}
-        onOpenAdd={() => setToolsOpen((v) => !v)}
-        addLabel={`${props.contextLabel} tools`}
+        onOpenAdd={repairMode ? undefined : () => setToolsOpen((v) => !v)}
+        addLabel={repairMode ? undefined : `${props.contextLabel} tools`}
         contextLabel={composerScopeLabel}
         drawer={drawerNode}
+        modeSelector={props.composerModeSelector}
       />
     </section>
   );

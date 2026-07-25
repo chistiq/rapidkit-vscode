@@ -120,4 +120,101 @@ describe('WorkspaceManager (Go support)', () => {
     fs.rmSync(workspacePath, { recursive: true, force: true });
     fs.rmSync(externalProjectPath, { recursive: true, force: true });
   });
+
+  it('does not treat nested workspace roots as workspace projects', async () => {
+    const manager = WorkspaceManager.getInstance();
+    const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-workspace-'));
+    const nestedWorkspacePath = path.join(workspacePath, 'nested-workspace');
+
+    fs.mkdirSync(path.join(workspacePath, '.rapidkit'), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspacePath, '.rapidkit', 'imported-projects.json'),
+      JSON.stringify(
+        {
+          version: 1,
+          updatedAt: '2026-07-06T10:00:00.000Z',
+          projects: [
+            {
+              name: 'nested-workspace',
+              path: nestedWorkspacePath,
+              stack: 'unknown',
+              confidence: 'medium',
+              source: 'local-folder',
+              importedAt: '2026-07-06T10:00:00.000Z',
+            },
+          ],
+        },
+        null,
+        2
+      )
+    );
+    fs.mkdirSync(path.join(nestedWorkspacePath, '.rapidkit'), { recursive: true });
+    fs.writeFileSync(
+      path.join(nestedWorkspacePath, '.rapidkit', 'workspace.json'),
+      JSON.stringify({ workspace_name: 'nested-workspace' }, null, 2)
+    );
+    fs.writeFileSync(
+      path.join(nestedWorkspacePath, 'pyproject.toml'),
+      '[tool.poetry]\nname="ws"\n'
+    );
+
+    const projects = await (manager as any).getWorkspaceProjects(workspacePath);
+
+    expect(projects).not.toContainEqual({
+      name: 'nested-workspace',
+      path: nestedWorkspacePath,
+    });
+
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+  });
+
+  it('uses the canonical workspace registry summary as a project discovery authority', async () => {
+    const manager = WorkspaceManager.getInstance();
+    const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-workspace-'));
+    const projectPath = path.join(workspacePath, 'contract-only-project');
+
+    fs.mkdirSync(path.join(workspacePath, '.workspai'), { recursive: true });
+    fs.mkdirSync(projectPath, { recursive: true });
+    fs.writeFileSync(
+      path.join(workspacePath, '.workspai', 'workspace-registry.v1.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 'workspace-registry.v1',
+          kind: 'rapidkit.workspace.registry',
+          generatedAt: '2026-07-25T00:00:00.000Z',
+          workspacePath,
+          workspaceName: 'contract-workspace',
+          projectCount: 1,
+          authority: 'workspace.contract.json',
+          contractPath: '.workspai/workspace.contract.json',
+          registrySummaryPath: '.workspai/workspace-registry.v1.json',
+          projects: [
+            {
+              slug: 'contract-only-project',
+              relativePath: 'contract-only-project',
+              framework: 'generic',
+              kit: 'generic.imported',
+              source: 'workspace',
+            },
+          ],
+          sources: {
+            contract: { exists: true, projectCount: 1 },
+            globalRegistry: { exists: false, projectCount: 0 },
+            legacyWorkspaceJson: { exists: false, projectCount: 0 },
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    const projects = await (manager as any).getWorkspaceProjects(workspacePath);
+
+    expect(projects).toContainEqual({
+      name: 'contract-only-project',
+      path: projectPath,
+    });
+
+    fs.rmSync(workspacePath, { recursive: true, force: true });
+  });
 });

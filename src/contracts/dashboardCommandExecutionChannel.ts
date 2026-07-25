@@ -13,8 +13,17 @@ function isDashboardCommand(command: string): command is DashboardCommand {
  * Mirrors handlers in workspaceIntelligence.ts, governanceGate.ts, and related modules.
  */
 export const DASHBOARD_BACKGROUND_COMMANDS = new Set<DashboardCommand>([
+  'importProject',
+  'adoptProject',
+  'exportWorkspace',
   'workspacePipeline',
   'workspaceModel',
+  'workspaceEvaluationReport',
+  'workspaceEvaluationStatus',
+  'workspaceGraphSearch',
+  'workspaceGraphExportJsonLd',
+  'workspaceGraphExportGraphMl',
+  'workspaceGraphExportGexf',
   'workspaceIntelligenceSnapshot',
   'workspaceDiff',
   'workspaceImpact',
@@ -24,9 +33,14 @@ export const DASHBOARD_BACKGROUND_COMMANDS = new Set<DashboardCommand>([
   'workspaceExplain',
   'workspaceWhy',
   'workspaceTrace',
+  'workspaceRemediationPlan',
   'workspaceIntelligenceChain',
   'workspaceImpactLens',
   'workspaceImpactLensCli',
+  'workspaceArchive',
+  'workspaceArchiveVerify',
+  'workspaceArchiveInspect',
+  'workspaceArchiveDoctor',
 ]);
 
 /** Rapidkit CLI commands that normally open an integrated terminal (unless evidence direct-run). */
@@ -43,17 +57,33 @@ export const DASHBOARD_TERMINAL_RAPIDKIT_COMMANDS = new Set<DashboardCommand>([
   'workspaceRunInit',
   'workspaceRunBuild',
   'workspaceRunStart',
+  'workspaceRunStage',
+  'workspaceInit',
   'workspaceWatch',
   'workspaceMcp',
   'workspaceAnalyze',
   'workspaceReadiness',
   'workspaceAutopilotRelease',
+  'workspaceSnapshot',
   'workspaceSnapshotCreate',
+  'workspaceSnapshotList',
+  'workspaceSnapshotInspect',
+  'workspaceSnapshotRestore',
   'workspacePolicyShow',
+  'workspacePolicySet',
+  'cacheClear',
+  'cachePrune',
+  'cacheRepair',
   'mirrorSync',
   'mirrorStatus',
+  'mirrorVerify',
+  'mirrorRotate',
   'cacheStatus',
   'workspaceInfra',
+  'infraPlan',
+  'infraUp',
+  'infraDown',
+  'infraStatus',
   'projectInit',
   'projectDev',
   'projectTest',
@@ -61,16 +91,26 @@ export const DASHBOARD_TERMINAL_RAPIDKIT_COMMANDS = new Set<DashboardCommand>([
   'projectBuild',
   'projectLint',
   'projectFormat',
+  'moduleDiff',
+  'moduleRollback',
+  'moduleUninstall',
+  'moduleUpgrade',
+  'moduleCheckpoint',
 ]);
 
 export const DASHBOARD_TERMINAL_SHELL_COMMANDS = new Set<DashboardCommand>([
   'workspaceTerminal',
   'projectTerminal',
+  'projectStop',
 ]);
 
 /** VS Code handlers that still dispatch CLI into a terminal (not silent background). */
 export const DASHBOARD_TERMINAL_VSCODE_COMMANDS = new Set<DashboardCommand>([
   'checkWorkspaceHealth',
+  'workspaceShare',
+  'mirrorOps',
+  'workspaceContractOpen',
+  'infraOpenCompose',
 ]);
 
 export function resolveDashboardCommandExecutionChannel(

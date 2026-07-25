@@ -70,6 +70,25 @@ export function auditGateVerdict(report, options = {}) {
   };
 }
 
+export function resolvePackageManagerInvocation(options = {}) {
+  const packageManager = options.packageManager ?? 'npm';
+  const env = options.env ?? process.env;
+  const platform = options.platform ?? process.platform;
+  if (packageManager !== 'npm') {
+    return { command: packageManager, prefixArgs: [] };
+  }
+  if (typeof env.npm_execpath === 'string' && env.npm_execpath.trim()) {
+    return {
+      command: env.npm_node_execpath || process.execPath,
+      prefixArgs: [env.npm_execpath],
+    };
+  }
+  return {
+    command: platform === 'win32' ? 'corepack.cmd' : 'corepack',
+    prefixArgs: ['npm'],
+  };
+}
+
 function parseAuditJson(stdout, stderr) {
   const combined = `${stdout ?? ''}\n${stderr ?? ''}`;
   const firstBrace = combined.indexOf('{');
@@ -83,16 +102,25 @@ function parseAuditJson(stdout, stderr) {
 export function runNpmAuditGate(options = {}) {
   const level = normalizeLevel(options.level ?? 'high');
   const packageManager = options.packageManager ?? 'npm';
-  const result = spawnSync(packageManager, ['audit', '--json', `--audit-level=${level}`], {
-    cwd: options.cwd ?? process.cwd(),
-    encoding: 'utf8',
-    shell: process.platform === 'win32',
-    env: {
-      ...process.env,
-      npm_config_fund: 'false',
-      npm_config_audit: 'true',
-    },
+  const invocation = resolvePackageManagerInvocation({
+    packageManager,
+    env: options.env ?? process.env,
+    platform: options.platform ?? process.platform,
   });
+  const result = spawnSync(
+    invocation.command,
+    [...invocation.prefixArgs, 'audit', '--json', `--audit-level=${level}`],
+    {
+      cwd: options.cwd ?? process.cwd(),
+      encoding: 'utf8',
+      shell: (options.platform ?? process.platform) === 'win32',
+      env: {
+        ...process.env,
+        npm_config_fund: 'false',
+        npm_config_audit: 'true',
+      },
+    }
+  );
 
   if (result.error) {
     throw result.error;
@@ -123,7 +151,9 @@ function main() {
     }
     console.log(`npm audit gate passed: ${summary}`);
   } catch (error) {
-    console.error(`npm audit gate failed: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `npm audit gate failed: ${error instanceof Error ? error.message : String(error)}`
+    );
     process.exitCode = 1;
   }
 }

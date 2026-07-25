@@ -2,17 +2,19 @@ import fs from 'fs-extra';
 import path from 'path';
 
 import agentCustomizationPackContract from '../contracts/agent-customization-pack.v1.json';
+import {
+  AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
+  RAPIDKIT_MCP_DESIGN_REPORT_PATH,
+  workspaceArtifactCandidates,
+} from './workspaceIntelligencePaths';
+
+export { AGENT_CUSTOMIZATION_PACK_REPORT_PATH, RAPIDKIT_MCP_DESIGN_REPORT_PATH };
 
 export const AGENT_CUSTOMIZATION_PACK_SCHEMA = 'rapidkit-agent-customization-pack.v1';
 
 /** Canonical section order from `agent-customization-pack.v1` — keep handoff prompts aligned with CLI. */
 export const AGENT_STANDARD_ANSWER_CONTRACT: readonly string[] =
   agentCustomizationPackContract.standardAnswerContract;
-
-export const AGENT_CUSTOMIZATION_PACK_REPORT_PATH =
-  '.rapidkit/reports/agent-customization-pack.json';
-
-export const RAPIDKIT_MCP_DESIGN_REPORT_PATH = '.rapidkit/reports/rapidkit-mcp-design.json';
 
 export type AgentCustomizationPackPreset = 'minimal' | 'enterprise';
 
@@ -120,15 +122,18 @@ export function agentCustomizationPackStatus(
 export async function readAgentCustomizationPackReport(
   workspacePath: string
 ): Promise<AgentCustomizationPackReport | null> {
-  const absolutePath = path.join(workspacePath, AGENT_CUSTOMIZATION_PACK_REPORT_PATH);
-  if (!(await fs.pathExists(absolutePath))) {
-    return null;
+  for (const relativePath of workspaceArtifactCandidates(AGENT_CUSTOMIZATION_PACK_REPORT_PATH)) {
+    const absolutePath = path.join(workspacePath, relativePath);
+    if (!(await fs.pathExists(absolutePath))) {
+      continue;
+    }
+    try {
+      return parseAgentCustomizationPack(await fs.readJson(absolutePath));
+    } catch {
+      return null;
+    }
   }
-  try {
-    return parseAgentCustomizationPack(await fs.readJson(absolutePath));
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 export function buildStandardAnswerContractPromptLines(): string[] {
@@ -150,7 +155,7 @@ export function buildAgentPackHandoffSummaryLines(
 ): string[] {
   if (!pack || !summary) {
     return [
-      'Agent customization pack: missing — run Agent Grounding Sync (`rapidkit workspace agent-sync --preset enterprise --target vscode --write`).',
+      'Agent customization pack: missing — run Agent Grounding Sync (`workspai workspace agent-sync --preset enterprise --target vscode --write`).',
     ];
   }
 

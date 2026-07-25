@@ -29,7 +29,7 @@ export type WorkspaceVerifyPolicyViolation = {
 };
 
 export type WorkspaceVerifyFreshness = {
-  /** Graph-aware transitive freshness verdict from rapidkit workspace verify. */
+  /** Graph-aware transitive freshness verdict from workspai workspace verify. */
   verdict?: 'fresh' | 'stale' | 'unknown';
   baseline?: string | null;
   changed?: string[];

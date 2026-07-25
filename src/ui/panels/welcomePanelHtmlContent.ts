@@ -16,6 +16,7 @@ export function buildWelcomePanelHtmlContent(
   const goIconUri = asUri('media', 'icons', 'go.svg');
   const springbootIconUri = asUri('media', 'icons', 'springboot.svg');
   const dotnetIconUri = asUri('media', 'icons', 'dotnet.svg');
+  const graphWorkerUri = asUri('dist', 'graphWorker.js');
 
   const headExtras = `<style>
         @font-face {
@@ -49,6 +50,7 @@ export function buildWelcomePanelHtmlContent(
       GO_ICON_URI: goIconUri.toString(),
       SPRINGBOOT_ICON_URI: springbootIconUri.toString(),
       DOTNET_ICON_URI: dotnetIconUri.toString(),
+      WORKSPAI_GRAPH_WORKER_URI: graphWorkerUri.toString(),
     },
   });
 }

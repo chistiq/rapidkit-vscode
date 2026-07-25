@@ -1,6 +1,6 @@
 import contract from './create-planner-capabilities.v1.json';
 
-export type CreatePlannerLane = 'native-create' | 'external-create-adopt' | 'adopt-only';
+export type CreatePlannerLane = 'native' | 'official' | 'existing';
 
 export type CreatePlannerStatus = 'available' | 'planned';
 
@@ -11,29 +11,32 @@ export type CreatePlannerCapability = {
   requested: string;
   resolved?: string;
   officialCommands?: string[];
-  fallbackLane?: 'adopt-only';
+  fallbackLane?: 'existing';
   reason: string;
 };
 
-type ExternalCreateAdoptCandidate = {
+type OfficialCreateCandidate = {
   id: string;
   aliases: string[];
   ecosystem: string;
-  status: 'planned';
+  status: CreatePlannerStatus;
+  canExecuteCreate: boolean;
   officialCommands: string[];
   adoptAfterCreate: true;
 };
 
 const nativeKitIds = new Set(contract.nativeCreate.map((entry) => entry.id.toLowerCase()));
-const externalCandidates = contract.externalCreateAdopt as ExternalCreateAdoptCandidate[];
-const externalByAlias = new Map<string, ExternalCreateAdoptCandidate>();
-for (const candidate of externalCandidates) {
-  externalByAlias.set(candidate.id.toLowerCase(), candidate);
+const officialCandidates = contract.officialCreate as OfficialCreateCandidate[];
+const officialByAlias = new Map<string, OfficialCreateCandidate>();
+for (const candidate of officialCandidates) {
+  officialByAlias.set(candidate.id.toLowerCase(), candidate);
   for (const alias of candidate.aliases) {
-    externalByAlias.set(alias.toLowerCase(), candidate);
+    officialByAlias.set(alias.toLowerCase(), candidate);
   }
 }
-const adoptOnlyRuntimes = new Set(contract.adoptOnlyRuntimes.map((entry) => entry.toLowerCase()));
+const existingRuntimeSignals = new Set(
+  contract.existingRuntimeSignals.map((entry) => entry.toLowerCase())
+);
 
 function normalizeSignal(value: string | undefined): string | undefined {
   const normalized = value?.trim().toLowerCase();
@@ -72,7 +75,7 @@ export function resolveCreatePlannerCapability(input: {
 
   if (input.projectExists) {
     return {
-      lane: 'adopt-only',
+      lane: 'existing',
       status: 'available',
       canExecuteCreate: false,
       requested,
@@ -83,38 +86,40 @@ export function resolveCreatePlannerCapability(input: {
   const kitId = normalizeSignal(input.kitId);
   if (kitId && nativeKitIds.has(kitId)) {
     return {
-      lane: 'native-create',
+      lane: 'native',
       status: 'available',
       canExecuteCreate: true,
       requested,
       resolved: kitId,
       reason:
-        'RapidKit owns the create contract, project marker, registry, doctor, and workspace model path.',
+        'Workspai owns the create contract, project marker, registry, doctor, and workspace model path.',
     };
   }
 
-  const external =
-    externalByAlias.get(requested) ??
-    externalByAlias.get(normalizeSignal(input.framework) ?? '') ??
-    externalByAlias.get(normalizeSignal(input.runtime) ?? '');
-  if (external) {
+  const official =
+    officialByAlias.get(requested) ??
+    officialByAlias.get(normalizeSignal(input.framework) ?? '') ??
+    officialByAlias.get(normalizeSignal(input.runtime) ?? '');
+  if (official) {
     return {
-      lane: 'external-create-adopt',
-      status: 'planned',
-      canExecuteCreate: false,
+      lane: 'official',
+      status: official.status,
+      canExecuteCreate: official.canExecuteCreate,
       requested,
-      resolved: external.id,
-      officialCommands: [...external.officialCommands],
-      fallbackLane: 'adopt-only',
+      resolved: official.id,
+      officialCommands: [...official.officialCommands],
+      fallbackLane: official.canExecuteCreate ? undefined : 'existing',
       reason:
-        'External generator support is planned but not enabled; use adopt/import until RapidKit owns the post-create contract.',
+        official.status === 'available'
+          ? 'Workspai runs the official ecosystem generator, then registers the project in Workspace Intelligence.'
+          : 'Official generator support is planned but not enabled; use adopt/import until Workspai owns the post-create contract.',
     };
   }
 
   const runtime = normalizeSignal(input.runtime);
-  if (runtime && adoptOnlyRuntimes.has(runtime)) {
+  if (runtime && existingRuntimeSignals.has(runtime)) {
     return {
-      lane: 'adopt-only',
+      lane: 'existing',
       status: 'available',
       canExecuteCreate: false,
       requested,
@@ -125,7 +130,7 @@ export function resolveCreatePlannerCapability(input: {
   }
 
   return {
-    lane: 'adopt-only',
+    lane: 'existing',
     status: 'available',
     canExecuteCreate: false,
     requested,
@@ -140,13 +145,13 @@ export function resolveCreateCapabilityFromPrompt(
 ): CreatePlannerCapability | undefined {
   const text = `${prompt} ${frameworkHint ?? ''}`.toLowerCase();
 
-  for (const candidate of externalCandidates) {
+  for (const candidate of officialCandidates) {
     if (candidate.aliases.some((alias) => containsSignal(text, alias))) {
       return resolveCreatePlannerCapability({ framework: candidate.id });
     }
   }
 
-  for (const runtime of adoptOnlyRuntimes) {
+  for (const runtime of existingRuntimeSignals) {
     if (containsSignal(text, runtime)) {
       return resolveCreatePlannerCapability({ runtime });
     }

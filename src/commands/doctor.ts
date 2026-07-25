@@ -300,15 +300,15 @@ async function runSystemChecks(
     });
   }
 
-  progress.report({ increment: 85, message: 'Checking RapidKit npm...' });
+  progress.report({ increment: 85, message: 'Checking Workspai CLI...' });
 
-  // Check RapidKit npm package - distinguish global vs npx cache
+  // Check the Workspai npm package - distinguish global vs npx cache.
   try {
     let isGlobal = false;
     let version: string | null = null;
 
     try {
-      const direct = await run('rapidkit', ['--version'], { stdio: 'pipe', timeout: 5000 });
+      const direct = await run('workspai', ['--version'], { stdio: 'pipe', timeout: 5000 });
       version = normalizeRapidkitNpmVersion(direct.stdout);
       isGlobal = !!version;
     } catch {
@@ -320,7 +320,7 @@ async function runSystemChecks(
     }
 
     if (!version) {
-      throw new Error('RapidKit npm not found');
+      throw new Error('Workspai CLI not found');
     }
 
     let npmMessage = formatRapidkitNpmVersionLabel(version);
@@ -333,7 +333,7 @@ async function runSystemChecks(
     // Check for newer version
     try {
       const data = await fetchJson<{ version?: string }>(
-        'https://registry.npmjs.org/rapidkit/latest'
+        'https://registry.npmjs.org/workspai/latest'
       );
       const latestVersion = data.version;
       if (typeof latestVersion === 'string' && isNewerVersion(version, latestVersion)) {
@@ -344,14 +344,14 @@ async function runSystemChecks(
     }
 
     result.checks.push({
-      name: 'RapidKit npm',
+      name: 'Workspai CLI',
       status: isGlobal ? 'pass' : 'fail',
       message: npmMessage + (isGlobal ? '' : ' - global installation recommended'),
     });
   } catch {
     result.passed = false;
     result.checks.push({
-      name: 'RapidKit npm',
+      name: 'Workspai CLI',
       status: 'fail',
       message: 'Not found - install globally or ensure npx can resolve rapidkit',
     });

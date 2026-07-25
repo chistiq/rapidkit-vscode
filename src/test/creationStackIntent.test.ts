@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   inferFrameworkFromCreationPrompt,
+  inferExplicitCreationFrameworks,
   inferStackIntentFromPrompt,
   inferPolyglotCompanionProject,
   inferWorkspaceProfileFromCreationPrompt,
@@ -46,6 +47,15 @@ describe('creationStackIntent', () => {
     expect(['nextjs', 'nestjs']).toContain(primary);
     expect(companion?.framework).toBe(primary === 'nextjs' ? 'nestjs' : 'nextjs');
     expect(companion?.projectName).toMatch(/-(app|api)$/);
+  });
+
+  it('distinguishes explicit frameworks from generic frontend and API signals', () => {
+    expect(
+      inferExplicitCreationFrameworks(
+        'Polyglot workspace: Next.js frontend + NestJS API with shared governance'
+      )
+    ).toEqual(expect.arrayContaining(['nextjs', 'nestjs']));
+    expect(inferExplicitCreationFrameworks('frontend connected to an API')).toEqual([]);
   });
 
   it('prefers polyglot over governance-only enterprise cues when both stacks are mentioned', () => {

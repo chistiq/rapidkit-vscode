@@ -86,6 +86,6 @@ describe('agentContextPack', () => {
       `#file:${WORKSPACE_CONTRACT_VERIFY_REPORT_PATH}`
     );
     expect(buildCopilotChatContextPrompt('debug auth')).toContain('debug auth');
-    expect(buildCopilotChatModelPrompt()).toContain('#file:.rapidkit/reports/workspace-model.json');
+    expect(buildCopilotChatModelPrompt()).toContain('#file:.workspai/reports/workspace-model.json');
   });
 });

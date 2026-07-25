@@ -96,6 +96,8 @@ export interface WorkspaceConfig {
     | 'enterprise';
   /** Python install backend. 'auto' = let CLI probe; explicit value overrides CLI detection. */
   installMethod?: 'auto' | 'poetry' | 'venv' | 'pipx';
+  /** Skip optional rapidkit-core/Python engine bootstrap files. */
+  skipPythonEngine?: boolean;
   /** Policy enforcement mode written to .rapidkit/policies.yml after creation. */
   policyMode?: 'strict' | 'warn' | 'disabled';
   /** Dependency sharing written to .rapidkit/workspace.json after creation. */

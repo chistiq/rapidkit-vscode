@@ -94,7 +94,7 @@ describe('service timeout config', () => {
 
     expect(mockRun).toHaveBeenCalledWith(
       'npx',
-      ['--yes', 'rapidkit', 'list', '--json'],
+      ['--yes', '--package', 'workspai', 'workspai', 'list', '--json'],
       expect.objectContaining({ timeout: 60000 })
     );
   });
@@ -123,7 +123,7 @@ describe('service timeout config', () => {
 
     expect(mockRun).toHaveBeenCalledWith(
       'npx',
-      ['--yes', 'rapidkit', 'list', '--json'],
+      ['--yes', '--package', 'workspai', 'workspai', 'list', '--json'],
       expect.objectContaining({ timeout: 15000 })
     );
   });
@@ -140,7 +140,7 @@ describe('service timeout config', () => {
       data: {
         version: '1.0.0',
         lastUpdated: '2026-01-01T00:00:00.000Z',
-        repository: 'https://github.com/rapidkitlabs/rapidkit-examples',
+        repository: 'https://github.com/chistiq/rapidkit-examples',
         workspaces: [],
       },
     });

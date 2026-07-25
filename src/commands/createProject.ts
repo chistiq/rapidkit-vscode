@@ -153,7 +153,7 @@ export async function createProjectCommand(
             {
               label: '$(home) Default Location',
               description: 'Recommended for quick start',
-              detail: '~/rapidkit/workspaces/',
+              detail: '~/.workspai/workspaces/',
               value: 'default',
             },
             {
@@ -221,7 +221,7 @@ export async function createProjectCommand(
               {
                 label: '$(file-directory) Create Standalone Project',
                 description: 'Without workspace',
-                detail: 'Create project directly in ~/rapidkit/workspaces/',
+                detail: 'Create project directly in ~/.workspai/workspaces/',
                 value: 'standalone',
               },
               {
@@ -327,7 +327,7 @@ export async function createProjectCommand(
         const { WorkspaiCLI } = await import('../core/rapidkitCLI.js');
         const cli = new WorkspaiCLI();
 
-        progress.report({ increment: 20, message: 'Running rapidkit CLI...' });
+        progress.report({ increment: 20, message: 'Running Workspai CLI...' });
 
         let result: CliExecutionResult;
         let projectPath: string;
@@ -396,7 +396,7 @@ export async function createProjectCommand(
         // Refresh views
         await vscode.commands.executeCommand('workspai.refreshProjects');
 
-        // Keep the extension registry aligned with RapidKit npm.
+        // Keep the extension registry aligned with Workspai CLI.
         // Standalone creation uses the managed default workspace root.
         if (!isStandaloneMode) {
           const manager = WorkspaceManager.getInstance();

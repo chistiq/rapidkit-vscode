@@ -1,5 +1,9 @@
 import fs from 'fs-extra';
 import path from 'path';
+import {
+  resolveWorkspaceArtifactPath,
+  resolveWorkspaceReportsDir,
+} from '../../core/workspaceIntelligencePaths';
 
 export type DoctorEvidenceSnapshot = {
   contract?: {
@@ -113,11 +117,17 @@ async function readInstalledModules(
 ): Promise<Array<{ slug: string; version: string; display_name: string }>> {
   try {
     const primaryRegistryPath = path.join(projectPath, 'registry.json');
+    const workspaiRegistryPath = path.join(projectPath, '.workspai', 'registry.json');
     const legacyRegistryPath = path.join(projectPath, '.rapidkit', 'registry.json');
     const primaryExists = await fs.pathExists(primaryRegistryPath);
+    const workspaiExists = await fs.pathExists(workspaiRegistryPath);
     const legacyExists = await fs.pathExists(legacyRegistryPath);
-    const registryPath = primaryExists ? primaryRegistryPath : legacyRegistryPath;
-    const exists = primaryExists || legacyExists;
+    const registryPath = primaryExists
+      ? primaryRegistryPath
+      : workspaiExists
+        ? workspaiRegistryPath
+        : legacyRegistryPath;
+    const exists = primaryExists || workspaiExists || legacyExists;
 
     if (exists) {
       const content = await fs.readFile(registryPath, 'utf-8');
@@ -204,8 +214,14 @@ async function loadScopedProjectDoctorRaw(
   projectPath: string
 ): Promise<Record<string, unknown> | undefined> {
   const candidates = [
-    path.join(projectPath, '.rapidkit', 'reports', 'doctor-project-last-run.json'),
-    path.join(workspacePath, '.rapidkit', 'reports', 'doctor-project-last-run.json'),
+    await resolveWorkspaceArtifactPath(
+      projectPath,
+      '.workspai/reports/doctor-project-last-run.json'
+    ),
+    await resolveWorkspaceArtifactPath(
+      workspacePath,
+      '.workspai/reports/doctor-project-last-run.json'
+    ),
   ];
 
   for (const candidate of candidates) {
@@ -240,7 +256,8 @@ export async function readDoctorEvidenceSnapshot(
     return undefined;
   }
 
-  const evidencePath = path.join(workspacePath, '.rapidkit', 'reports', 'doctor-last-run.json');
+  const reportsDir = await resolveWorkspaceReportsDir(workspacePath);
+  const evidencePath = path.join(reportsDir, 'doctor-last-run.json');
   const workspaceRaw = await readJsonIfExists(evidencePath);
   const scopedProjectPath = options?.projectPath?.trim();
   const scopedProjectRaw = scopedProjectPath

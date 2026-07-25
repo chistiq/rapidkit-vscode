@@ -1,6 +1,6 @@
 /**
  * Read-only consumer helpers for workspace-run-last.json (workspace-run-v1 aggregate).
- * Mirrors rapidkit-npm src/utils/workspace-run-evidence.ts — extension reads, CLI writes.
+ * Mirrors the Workspai CLI workspace-run evidence contract: extension reads, CLI writes.
  */
 
 export type WorkspaceRunStage = 'init' | 'test' | 'build' | 'start';

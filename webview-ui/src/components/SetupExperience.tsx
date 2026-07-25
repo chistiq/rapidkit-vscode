@@ -658,7 +658,7 @@ function renderAdvancedConfiguration({
                     {([
                         ['python', 'Python'],
                         ['core', 'RapidKit Core'],
-                        ['cli', 'RapidKit CLI'],
+                        ['cli', 'Workspai CLI'],
                         ['go', 'Go'],
                         ['dotnet', '.NET'],
                         ['java', 'Java'],
@@ -867,7 +867,7 @@ export function SetupExperience({
             },
             {
                 key: 'cli', monogram: 'WS', iconSrc: window.NPM_ICON_URI, color: wsBrand.cli,
-                title: 'RapidKit CLI', subtitle: 'Node.js bridge for workspace commands',
+                title: 'Workspai CLI', subtitle: 'Workspace Intelligence command engine',
                 required: true, installed: Boolean(s?.npmInstalled || s?.npmAvailableViaNpx), version: s?.npmVersion,
                 detection: s?.detections?.cli,
                 hint: 'Install globally via npm',

@@ -90,8 +90,9 @@ describe('actionsWebviewProvider — sidebar protocol handlers', () => {
 
     expect(auditDoc).toContain('Workspai Command Surface Audit');
     expect(auditDoc).toContain(
-      'Dashboard diagnoses and routes; Studio fixes; Advisor explains; Create builds.'
+      'Dashboard detects and routes; Studio diagnoses, plans, fixes, verifies, and'
     );
+    expect(auditDoc).toContain('Sending a fail/warn card to Studio is repair intent.');
     for (const command of [
       'sidebarAiCreatePlan',
       'sidebarAiCreateConfirm',
@@ -143,6 +144,8 @@ describe('actionsWebviewProvider — sidebar protocol handlers', () => {
     expect(source).toContain("action === 'verify-handoff'");
     expect(source).toContain("action === 'run-command'");
     expect(source).toContain("action === 'copy-command'");
+    expect(source).toContain('gateIncidentStudioRapidkitCommand');
+    expect(source).toContain("featureLabel: 'Studio command'");
     expect(source).toContain('resolveRapidkitExecutionPlan');
     expect(source).toContain('runCommandsInTerminal');
     expect(source).toContain('exitCode: execution.exitCode');
@@ -150,6 +153,65 @@ describe('actionsWebviewProvider — sidebar protocol handlers', () => {
     expect(source).toContain(
       'topBlocker: execution.success ? undefined : (execution.error ?? handoff.blockers[0])'
     );
+  });
+
+  it('keeps RUN_ONCE Studio source commands project-scoped when a handoff has a project path', () => {
+    const runOnceBranch = source.slice(
+      source.indexOf("if (mode === 'RUN_ONCE')"),
+      source.indexOf('if (execution.success && handoff.verifyCommand)')
+    );
+
+    expect(runOnceBranch).toContain('this._assertSidebarStudioMutationAllowed({');
+    expect(runOnceBranch.indexOf('this._assertSidebarStudioMutationAllowed({')).toBeLessThan(
+      runOnceBranch.indexOf('runIncidentInlineCommand({')
+    );
+    expect(runOnceBranch).toContain('command: handoff.sourceCommand');
+    expect(runOnceBranch).toContain('workspacePath');
+    expect(runOnceBranch).toContain('projectPath');
+    expect(runOnceBranch).toContain('actionId: `run-once-${handoff.cardId}`');
+  });
+
+  it('keeps mutating Studio repair paths behind the enterprise mutation gate', () => {
+    expect(source).toContain('private async _assertSidebarStudioMutationAllowed(');
+    expect(source).toContain('resolveIncidentStudioTelemetry({');
+    expect(source).toContain('resolveStudioMutationBlockReason(telemetry)');
+
+    for (const label of [
+      'Studio remediation evidence refresh',
+      'Studio remediation plan refresh',
+      'Studio remediation apply',
+      'Studio internal remediation apply',
+      'Studio remediation command',
+      'Studio patch apply',
+      'Studio command',
+      'Studio run-once source command',
+      'Studio auto-fix',
+    ]) {
+      expect(source, label).toContain(`actionLabel: '${label}'`);
+    }
+    expect(source).toContain("actionLabel: 'Studio Agent workspace patch'");
+    expect(source).toContain('resolveGovernedStudioRepairMutationBlockReason({');
+    expect(source).toContain('contractAuthorized: true');
+    expect(source).toContain('reversible: true');
+    expect(source).toContain('actionLabel: `Studio Agent ${request.commandId}`');
+  });
+
+  it('grants dynamic patch authority only after exact source inspection and SHA capture', () => {
+    expect(source).toContain('const inspectedSource = new Map<string, string | null>();');
+    expect(source).toContain('inspectedSource.set(observation.path, observation.sha256);');
+    expect(source).toContain(
+      'const staticTargets = new Set(repairEvidence.autonomousTargetPaths);'
+    );
+    expect(source).toContain('authorizeStudioWorkspacePatchTargets({');
+    expect(source).toContain('repairEvidence.expectedBaseSha256[entry] = hash;');
+    expect(source).not.toContain('repairEvidence.autonomousTargetPaths.push(observation.path)');
+  });
+
+  it('recovers stale dependency evidence through Doctor before returning control to the model', () => {
+    expect(source).toContain('const refreshDependencyDoctorEvidence = async');
+    expect(source).toContain("resolveDashboardCommandExecutionPlan('checkWorkspaceHealth')");
+    expect(source).toContain("actionId: 'studio-session-dependency-doctor-refresh'");
+    expect(source).toContain("nextAction: 'verify-blocker'");
   });
 
   it('routes Studio actions through a typed host facade', () => {
@@ -162,7 +224,7 @@ describe('actionsWebviewProvider — sidebar protocol handlers', () => {
     for (const hostCall of [
       'studioHost.retryLastSidebarStudioAudit(',
       'studioHost.runSidebarAutoFix(',
-      'studioHost.finalizeSidebarPatchBridgeResult(',
+      'studioHost.finalizeStudioPatchTransaction(',
       'studioHost.auditSidebarStudioFix(',
       'studioHost.refreshSidebarShipLoop(',
       'studioHost.finalizeStudioVerifyHandoff(',
@@ -201,6 +263,10 @@ describe('actionsWebviewProvider — contract-driven quick actions', () => {
     expect(source).toContain('private async _runSidebarAction');
     expect(source).toContain('this._trackSidebarAction(action)');
     expect(source).toContain('await vscode.env.openExternal');
+    expect(source).toContain(
+      'resolveDashboardCommandContractByVscodeCommand(action.vscodeCommand)'
+    );
+    expect(source).toContain('await gateDashboardCommandCapability({');
     expect(source).toContain('await vscode.commands.executeCommand');
     expect(source).toContain('[Workspai] Sidebar action failed');
   });
@@ -256,10 +322,10 @@ describe('actionsWebviewProvider — manifest + command alignment', () => {
 
   it('keeps README sidebar naming aligned with the Workspai surface', () => {
     const readme = read('README.md');
-    expect(readme).toContain('| **Quick Actions** |');
-    expect(readme).toContain('| **Workspai** |');
+    expect(readme).toContain('**Quick Actions**');
+    expect(readme).toContain('**Workspai**');
     expect(readme).toContain('Home, Run, Repair, Artifacts, Project, and Library');
-    expect(readme).toContain('Secondary sidebar: Create · Advisor · Studio');
+    expect(readme).toContain('Secondary sidebar: Create · Assistant (Agent / Ask / Plan)');
     expect(readme).toContain('Workspai Studio');
     expect(readme).toContain('not** another AI coding assistant');
     expect(readme).toContain('not** another agent framework');
@@ -270,8 +336,8 @@ describe('actionsWebviewProvider — manifest + command alignment', () => {
     expect(readme).toContain('Artifact refresh');
     expect(readme).toContain('every stack in the workspace');
     expect(readme).toContain('generation depth');
-    expect(readme).toContain('Workspai checks the linked RapidKit CLI capability surface');
-    expect(readme).toContain('Latest recommended for enterprise Dashboard, Repair, Studio');
+    expect(readme).toContain('workspai commands --json');
+    expect(readme).toContain('0.49.0+');
     expect(readme).not.toContain('Incident Studio VNext');
     expect(readme).not.toContain('Home, Evidence, Run, Project, and Library');
   });
@@ -288,6 +354,7 @@ describe('actionsWebviewProvider — manifest + command alignment', () => {
 
   it('keeps manifest and host copy aligned with the Workspai surface', () => {
     const packageJson = JSON.parse(read('package.json')) as {
+      engines?: { vscode?: string };
       contributes?: {
         viewsContainers?: Record<string, Array<{ id?: string; title?: string }>>;
         views?: Record<string, Array<{ id?: string; name?: string; contextualTitle?: string }>>;
@@ -313,6 +380,7 @@ describe('actionsWebviewProvider — manifest + command alignment', () => {
       (view) => view.id === 'workspaiSecondarySidebar'
     );
 
+    expect(packageJson.engines?.vscode).toBe('^1.106.0');
     expect(activityContainer?.title).toBe('Workspai');
     expect(duplicateActivityContainer).toBeUndefined();
     expect(nativeSidebarContainer?.title).toBe('Workspai');

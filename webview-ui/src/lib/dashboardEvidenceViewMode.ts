@@ -7,6 +7,7 @@ import type {
 } from './dashboardEvidence';
 import { findEvidenceCard, isBootstrapPendingCard } from './dashboardEvidence';
 import { workspaceRegisteredProjectCount } from './dashboardReleaseReadiness';
+import { cardCountsAsReleaseBlocker } from './dashboardScaffoldEvidence';
 
 export type EvidenceViewMode = 'guided' | 'balanced' | 'expanded';
 
@@ -17,9 +18,9 @@ export const EVIDENCE_VIEW_MODES: ReadonlyArray<EvidenceViewMode> = [
 ];
 
 export const EVIDENCE_VIEW_MODE_LABELS: Record<EvidenceViewMode, string> = {
-  guided: 'Attention',
-  balanced: 'Gates',
-  expanded: 'Archive',
+  guided: 'Needs action',
+  balanced: 'Release checks',
+  expanded: 'All evidence',
 };
 
 export const EVIDENCE_VIEW_MODE_HINTS: Record<EvidenceViewMode, string> = {
@@ -60,6 +61,7 @@ const CARD_MIN_VIEW_MODE: Partial<Record<DashboardEvidenceCardId, EvidenceViewMo
   intelligenceSnapshot: 'balanced',
   workspaceDiff: 'balanced',
   workspaceImpact: 'balanced',
+  workspaceIntelligenceRun: 'guided',
   workspaceExplain: 'balanced',
   workspaceWhy: 'balanced',
   workspaceTrace: 'balanced',
@@ -138,6 +140,7 @@ export const EVIDENCE_WORKFLOW_GROUPS: ReadonlyArray<EvidenceWorkflowGroup> = [
       'intelligenceSnapshot',
       'workspaceDiff',
       'workspaceImpact',
+      'workspaceIntelligenceRun',
       'workspaceVerify',
       'workspaceExplain',
       'workspaceWhy',
@@ -307,7 +310,12 @@ function healthStepComplete(evidence: DashboardEvidencePayload | null | undefine
   const doctor = findEvidenceCard(evidence, 'doctor');
   const bootstrap = findEvidenceCard(evidence, 'bootstrap');
   const setup = findEvidenceCard(evidence, 'setup');
-  if (!doctor || doctor.status === 'fail' || doctor.status === 'missing') {
+  const projectCount = workspaceRegisteredProjectCount(evidence);
+  if (
+    !doctor ||
+    doctor.status === 'missing' ||
+    (doctor.status === 'fail' && cardCountsAsReleaseBlocker(doctor, projectCount))
+  ) {
     return false;
   }
   if (
@@ -329,8 +337,9 @@ function healthStepNeedsAttention(evidence: DashboardEvidencePayload | null | un
   const bootstrap = findEvidenceCard(evidence, 'bootstrap');
   const setup = findEvidenceCard(evidence, 'setup');
   const workspaceSync = findEvidenceCard(evidence, 'workspaceSync');
+  const projectCount = workspaceRegisteredProjectCount(evidence);
   return (
-    doctor?.status === 'fail' ||
+    (doctor?.status === 'fail' && cardCountsAsReleaseBlocker(doctor, projectCount)) ||
     doctor?.status === 'warn' ||
     isBootstrapPendingCard(bootstrap) ||
     bootstrap?.status === 'fail' ||
@@ -449,7 +458,7 @@ export function buildEvidenceGuidedSteps(input: {
       title: 'Verify gates',
       detail: impactReady
         ? 'Run workspace verify or open Studio for telemetry verify gates.'
-        : 'Run the intelligence chain first (model → snapshot → diff → impact), then verify.',
+        : 'Run the intelligence chain first (model → snapshot → diff → impact → evidence refresh), then verify.',
       cardIds: impactReady
         ? ['workspaceVerify']
         : [

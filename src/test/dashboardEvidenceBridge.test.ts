@@ -3,7 +3,10 @@ import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { buildDashboardEvidenceBundle } from '../core/dashboardEvidenceBridge';
+import {
+  buildDashboardEvidenceBundle,
+  resolveCardForReportKind,
+} from '../core/dashboardEvidenceBridge';
 
 describe('dashboardEvidenceBridge', () => {
   const tempDirs: string[] = [];
@@ -17,7 +20,7 @@ describe('dashboardEvidenceBridge', () => {
   ): Promise<string> {
     const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'rapidkit-evidence-'));
     tempDirs.push(workspacePath);
-    const reportsDir = path.join(workspacePath, '.rapidkit', 'reports');
+    const reportsDir = path.join(workspacePath, '.workspai', 'reports');
     await fs.ensureDir(reportsDir);
     for (const [fileName, payload] of Object.entries(reports)) {
       await fs.writeJSON(path.join(reportsDir, fileName), payload);
@@ -28,7 +31,7 @@ describe('dashboardEvidenceBridge', () => {
   async function createWorkspaceWithRawReports(reports: Record<string, string>): Promise<string> {
     const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'rapidkit-evidence-'));
     tempDirs.push(workspacePath);
-    const reportsDir = path.join(workspacePath, '.rapidkit', 'reports');
+    const reportsDir = path.join(workspacePath, '.workspai', 'reports');
     await fs.ensureDir(reportsDir);
     for (const [fileName, payload] of Object.entries(reports)) {
       await fs.writeFile(path.join(reportsDir, fileName), payload, 'utf8');
@@ -81,6 +84,85 @@ describe('dashboardEvidenceBridge', () => {
     expect(pipeline?.status).toBe('pass');
     expect(analyze?.status).toBe('pass');
     expect(readiness?.status).toBe('pass');
+  });
+
+  it('publishes the authoritative unified intelligence runner artifact as a dashboard card', async () => {
+    const stageIds = [
+      'model',
+      'diff',
+      'impact',
+      'doctor-evidence',
+      'contract-evidence',
+      'analyze-evidence',
+      'readiness-evidence',
+      'verify',
+      'context',
+      'agent-sync',
+      'explain',
+    ];
+    const workspacePath = await createWorkspaceWithReports({
+      'workspace-intelligence-run-last-run.json': {
+        schemaVersion: 'workspace-intelligence-run.v1',
+        chainSchemaVersion: 'workspai-workspace-intelligence-chain-v1',
+        generatedAt: '2026-07-19T12:00:00.000Z',
+        workspacePath: '/workspace',
+        baselineCreated: false,
+        preflight: [
+          { id: 'sync', status: 'passed', result: 'synchronized' },
+          { id: 'baseline', status: 'passed', result: 'reused' },
+        ],
+        status: 'passed',
+        exitCode: 0,
+        artifactPath: '.workspai/reports/workspace-intelligence-run-last-run.json',
+        stages: stageIds.map((id) => ({
+          id,
+          status: 'passed',
+          durationMs: 1,
+          artifacts: [`.workspai/reports/${id}.json`],
+          exitCode: 0,
+          message: `${id} passed`,
+        })),
+      },
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+    const run = findEvidenceCard(bundle, 'workspaceIntelligenceRun');
+
+    expect(run).toMatchObject({
+      status: 'pass',
+      metrics: {
+        stagesPassed: 11,
+        stagesBlocked: 0,
+        stagesFailed: 0,
+        exitCode: 0,
+      },
+    });
+    expect(run?.artifactPath).toContain('workspace-intelligence-run-last-run.json');
+    expect(run?.detailSections).toHaveLength(11);
+  });
+
+  it('rejects semantically inconsistent unified intelligence runner evidence', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'workspace-intelligence-run-last-run.json': {
+        schemaVersion: 'workspace-intelligence-run.v1',
+        chainSchemaVersion: 'workspai-workspace-intelligence-chain-v1',
+        generatedAt: '2026-07-19T12:00:00.000Z',
+        workspacePath: '/workspace',
+        baselineCreated: false,
+        preflight: [{ id: 'sync', status: 'passed' }],
+        status: 'passed',
+        exitCode: 0,
+        artifactPath: '.workspai/reports/workspace-intelligence-run-last-run.json',
+        stages: [{ id: 'model', status: 'blocked', message: 'model blocked' }],
+      },
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+    const run = findEvidenceCard(bundle, 'workspaceIntelligenceRun');
+
+    expect(run?.status).toBe('fail');
+    expect(run?.blockers).toContain('Unified runner artifact violates its semantic contract.');
+    expect(run?.blockers).toContain('model: model blocked');
   });
 
   it('maps blocked pipeline verdicts to fail evidence status', async () => {
@@ -227,7 +309,7 @@ describe('dashboardEvidenceBridge', () => {
     const projectPath = path.join(workspacePath, 'api');
     const reportPath = path.join(
       projectPath,
-      '.rapidkit',
+      '.workspai',
       'reports',
       'doctor-project-last-run.json'
     );
@@ -249,8 +331,8 @@ describe('dashboardEvidenceBridge', () => {
 
   it('describes pending bootstrap compliance when profile exists but report is missing', async () => {
     const workspacePath = await createWorkspaceWithReports({});
-    await fs.ensureDir(path.join(workspacePath, '.rapidkit'));
-    await fs.writeJSON(path.join(workspacePath, '.rapidkit', 'workspace.json'), {
+    await fs.ensureDir(path.join(workspacePath, '.workspai'));
+    await fs.writeJSON(path.join(workspacePath, '.workspai', 'workspace.json'), {
       schema_version: '1.0',
       workspace_name: 'demo-ws',
       profile: 'polyglot',
@@ -273,9 +355,9 @@ describe('dashboardEvidenceBridge', () => {
       },
     });
     const projectPath = path.join(workspacePath, 'api');
-    await fs.ensureDir(path.join(projectPath, '.rapidkit', 'reports'));
+    await fs.ensureDir(path.join(projectPath, '.workspai', 'reports'));
     await fs.writeJSON(
-      path.join(projectPath, '.rapidkit', 'reports', 'doctor-project-last-run.json'),
+      path.join(projectPath, '.workspai', 'reports', 'doctor-project-last-run.json'),
       {
         generatedAt: '2026-06-10T10:15:00.000Z',
         healthScore: { passed: 5, warnings: 0, errors: 1, total: 6 },
@@ -393,7 +475,7 @@ describe('dashboardEvidenceBridge', () => {
         experimental: { mcpReady: true },
         outputInventory: [{ path: 'AGENTS.md', status: 'written' }],
       },
-      'rapidkit-mcp-design.json': {
+      'workspai-mcp-design.json': {
         schemaVersion: 'rapidkit-mcp-design.v1',
         mode: 'read-mostly',
         candidateTools: [
@@ -590,7 +672,7 @@ describe('dashboardEvidenceBridge', () => {
     const projectPath = path.join(workspacePath, 'catalog-api');
     await fs.ensureDir(projectPath);
     await fs.writeJSON(
-      path.join(workspacePath, '.rapidkit', 'reports', 'doctor-project-last-run.json'),
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-project-last-run.json'),
       {
         generatedAt: '2026-06-10T10:15:00.000Z',
         schemaVersion: 'doctor-project-evidence-v1',
@@ -638,7 +720,7 @@ describe('dashboardEvidenceBridge', () => {
     const projectPath = path.join(workspacePath, 'api');
     await fs.ensureDir(projectPath);
     await fs.writeJSON(
-      path.join(workspacePath, '.rapidkit', 'reports', 'doctor-project-last-run.json'),
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-project-last-run.json'),
       {
         generatedAt: '2026-06-10T10:15:00.000Z',
         schemaVersion: 'doctor-project-evidence-v1',
@@ -660,7 +742,7 @@ describe('dashboardEvidenceBridge', () => {
 
     expect(projectDoctor?.status).toBe('pass');
     expect(projectDoctor?.artifactPath).toBe(
-      path.join(workspacePath, '.rapidkit', 'reports', 'doctor-project-last-run.json')
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-project-last-run.json')
     );
   });
 
@@ -722,7 +804,7 @@ describe('dashboardEvidenceBridge', () => {
     const projectPath = path.join(workspacePath, 'api');
     await fs.ensureDir(projectPath);
     await fs.writeJSON(
-      path.join(workspacePath, '.rapidkit', 'reports', 'doctor-project-last-run.json'),
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-project-last-run.json'),
       {
         generatedAt: '2026-06-10T10:15:00.000Z',
         healthScore: { passed: 6, warnings: 0, errors: 0, total: 6 },
@@ -744,7 +826,7 @@ describe('dashboardEvidenceBridge', () => {
     const otherProjectPath = path.join(workspacePath, 'worker');
     await fs.ensureDir(projectPath);
     await fs.writeJSON(
-      path.join(workspacePath, '.rapidkit', 'reports', 'doctor-project-last-run.json'),
+      path.join(workspacePath, '.workspai', 'reports', 'doctor-project-last-run.json'),
       {
         generatedAt: '2026-06-10T10:15:00.000Z',
         schemaVersion: 'doctor-project-evidence-v1',
@@ -778,27 +860,27 @@ describe('dashboardEvidenceBridge', () => {
         services: [{ name: 'postgres' }, { name: 'redis' }],
       },
     });
-    await fs.writeFile(path.join(workspacePath, '.rapidkit-workspace'), '{}', 'utf8');
-    await fs.writeJSON(path.join(workspacePath, '.rapidkit', 'workspace.json'), {
+    await fs.writeFile(path.join(workspacePath, '.workspai-workspace'), '{}', 'utf8');
+    await fs.writeJSON(path.join(workspacePath, '.workspai', 'workspace.json'), {
       projects: [{ name: 'api', path: 'api' }],
     });
-    await fs.writeJSON(path.join(workspacePath, '.rapidkit', 'toolchain.lock'), {
+    await fs.writeJSON(path.join(workspacePath, '.workspai', 'toolchain.lock'), {
       node: '20',
     });
-    await fs.writeJSON(path.join(workspacePath, '.rapidkit', 'workspace.contract.json'), {
+    await fs.writeJSON(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
       projects: [{ name: 'api', path: 'api' }],
     });
     await fs.writeFile(
-      path.join(workspacePath, '.rapidkit', 'policies.yml'),
+      path.join(workspacePath, '.workspai', 'policies.yml'),
       'mode: warn\n',
       'utf8'
     );
     await fs.writeFile(
-      path.join(workspacePath, '.rapidkit', 'cache-config.yml'),
+      path.join(workspacePath, '.workspai', 'cache-config.yml'),
       'strategy: shared\n',
       'utf8'
     );
-    await fs.writeJSON(path.join(workspacePath, '.rapidkit', 'workspace-registry.v1.json'), {
+    await fs.writeJSON(path.join(workspacePath, '.workspai', 'workspace-registry.v1.json'), {
       schemaVersion: 'workspace-registry.v1',
       kind: 'rapidkit.workspace.registry',
       generatedAt: '2026-06-11T10:00:00.000Z',
@@ -806,8 +888,8 @@ describe('dashboardEvidenceBridge', () => {
       workspaceName: path.basename(workspacePath),
       projectCount: 1,
       authority: 'workspace.contract.json',
-      contractPath: '.rapidkit/workspace.contract.json',
-      registrySummaryPath: '.rapidkit/workspace-registry.v1.json',
+      contractPath: '.workspai/workspace.contract.json',
+      registrySummaryPath: '.workspai/workspace-registry.v1.json',
       projects: [{ slug: 'api', relativePath: 'api' }],
       sources: {
         contract: { exists: true, projectCount: 1 },
@@ -816,12 +898,12 @@ describe('dashboardEvidenceBridge', () => {
       },
     });
     await fs.writeJSON(
-      path.join(workspacePath, '.rapidkit', 'reports', 'workspace-contract-verify-last-run.json'),
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-contract-verify-last-run.json'),
       {
         schemaVersion: 'workspace-contract-verify.v1',
         generatedAt: '2026-06-11T10:00:00.000Z',
         status: 'passed',
-        contractPath: '.rapidkit/workspace.contract.json',
+        contractPath: '.workspai/workspace.contract.json',
         projectCount: 1,
         violations: [],
         checks: [],
@@ -890,27 +972,27 @@ describe('dashboardEvidenceBridge', () => {
 
   it('reads canonical workspace registry summary for sync evidence', async () => {
     const workspacePath = await createWorkspaceWithReports({});
-    await fs.writeFile(path.join(workspacePath, '.rapidkit-workspace'), '{}', 'utf8');
-    await fs.writeJSON(path.join(workspacePath, '.rapidkit', 'workspace.json'), {
+    await fs.writeFile(path.join(workspacePath, '.workspai-workspace'), '{}', 'utf8');
+    await fs.writeJSON(path.join(workspacePath, '.workspai', 'workspace.json'), {
       schema_version: '1.0',
       workspace_name: 'polyglot-ws',
       profile: 'polyglot',
     });
-    await fs.writeJSON(path.join(workspacePath, '.rapidkit', 'workspace.contract.json'), {
+    await fs.writeJSON(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
       projects: [
         { slug: 'api', relativePath: 'api' },
         { slug: 'nest', relativePath: 'nest' },
       ],
     });
-    await fs.writeJSON(path.join(workspacePath, '.rapidkit', 'toolchain.lock'), {
+    await fs.writeJSON(path.join(workspacePath, '.workspai', 'toolchain.lock'), {
       node: '20',
     });
     await fs.writeFile(
-      path.join(workspacePath, '.rapidkit', 'policies.yml'),
+      path.join(workspacePath, '.workspai', 'policies.yml'),
       'mode: warn\n',
       'utf8'
     );
-    await fs.writeJSON(path.join(workspacePath, '.rapidkit', 'workspace-registry.v1.json'), {
+    await fs.writeJSON(path.join(workspacePath, '.workspai', 'workspace-registry.v1.json'), {
       schemaVersion: 'workspace-registry.v1',
       kind: 'rapidkit.workspace.registry',
       generatedAt: '2026-06-16T00:00:00.000Z',
@@ -919,14 +1001,14 @@ describe('dashboardEvidenceBridge', () => {
       profile: 'polyglot',
       projectCount: 2,
       authority: 'workspace.contract.json',
-      contractPath: '.rapidkit/workspace.contract.json',
-      registrySummaryPath: '.rapidkit/workspace-registry.v1.json',
+      contractPath: '.workspai/workspace.contract.json',
+      registrySummaryPath: '.workspai/workspace-registry.v1.json',
       projects: [
         { slug: 'api', relativePath: 'api' },
         { slug: 'nest', relativePath: 'nest' },
       ],
       sources: {
-        contract: { exists: true, projectCount: 2, path: '.rapidkit/workspace.contract.json' },
+        contract: { exists: true, projectCount: 2, path: '.workspai/workspace.contract.json' },
         globalRegistry: { exists: false, projectCount: 0 },
         legacyWorkspaceJson: { exists: true, projectCount: 0, path: '.rapidkit/workspace.json' },
       },
@@ -943,12 +1025,12 @@ describe('dashboardEvidenceBridge', () => {
 
   it('warns when canonical registry summary artifact is missing', async () => {
     const workspacePath = await createWorkspaceWithReports({});
-    await fs.writeJSON(path.join(workspacePath, '.rapidkit', 'workspace.json'), {
+    await fs.writeJSON(path.join(workspacePath, '.workspai', 'workspace.json'), {
       schema_version: '1.0',
       profile: 'polyglot',
     });
-    await fs.writeJSON(path.join(workspacePath, '.rapidkit', 'toolchain.lock'), { node: '20' });
-    await fs.writeFile(path.join(workspacePath, '.rapidkit-workspace'), '{}', 'utf8');
+    await fs.writeJSON(path.join(workspacePath, '.workspai', 'toolchain.lock'), { node: '20' });
+    await fs.writeFile(path.join(workspacePath, '.workspai-workspace'), '{}', 'utf8');
 
     const bundle = await buildDashboardEvidenceBundle({ workspacePath });
     const syncCard = findEvidenceCard(bundle, 'workspaceSync');
@@ -972,17 +1054,17 @@ describe('dashboardEvidenceBridge', () => {
         gates: { blocked: false },
       },
     });
-    await fs.writeJSON(path.join(workspacePath, '.rapidkit', 'workspace.json'), {
+    await fs.writeJSON(path.join(workspacePath, '.workspai', 'workspace.json'), {
       profile: 'polyglot',
       profile_requested: 'polyglot',
     });
-    await fs.writeJSON(path.join(workspacePath, '.rapidkit', 'toolchain.lock'), {
+    await fs.writeJSON(path.join(workspacePath, '.workspai', 'toolchain.lock'), {
       runtime: {
         node: { version: '20.12.0' },
         python: { version: null },
       },
     });
-    await fs.writeFile(path.join(workspacePath, '.rapidkit-workspace'), '{}', 'utf8');
+    await fs.writeFile(path.join(workspacePath, '.workspai-workspace'), '{}', 'utf8');
 
     const projectPath = path.join(workspacePath, 'api');
     await fs.ensureDir(path.join(projectPath, '.rapidkit'));
@@ -1031,6 +1113,46 @@ describe('dashboardEvidenceBridge', () => {
     const bundle = await buildDashboardEvidenceBundle({ workspacePath });
     expect(findEvidenceCard(bundle, 'workspaceRun')?.status).toBe('warn');
     expect(findEvidenceCard(bundle, 'workspaceRun')?.summary).toContain('build');
+  });
+
+  it('carries concrete readiness failures into a gate-blocked workspace run card', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'workspace-run-last.json': {
+        schemaVersion: 'workspace-run-v1',
+        generatedAt: '2026-07-16T11:13:31.189Z',
+        workspacePath: '/ws',
+        latestStage: 'test',
+        stages: {
+          test: {
+            stage: 'test',
+            generatedAt: '2026-07-16T11:13:31.189Z',
+            summary: { passed: 0, failed: 0, skipped: 3, selectedCount: 3, exitCode: 0 },
+            projects: [],
+            gates: { blocked: true, blockingGate: 'readiness' },
+          },
+        },
+      },
+      'release-readiness-last-run.json': {
+        schemaVersion: 'release-readiness-v1',
+        overallStatus: 'fail',
+        blockingReasons: [
+          'verify: Workspace contract verification failed (CLI cache)',
+          'dependency: 2 dependency vulnerability(ies) reported',
+        ],
+      },
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+    const workspaceRun = findEvidenceCard(bundle, 'workspaceRun');
+
+    expect(workspaceRun?.status).toBe('fail');
+    expect(workspaceRun?.blockers).toEqual(
+      expect.arrayContaining([
+        'Blocked by readiness',
+        'verify: Workspace contract verification failed (CLI cache)',
+        'dependency: 2 dependency vulnerability(ies) reported',
+      ])
+    );
   });
 
   it('builds workspace run card from workspace-run-v1 aggregate with test and build stages', async () => {
@@ -1084,6 +1206,100 @@ describe('dashboardEvidenceBridge', () => {
     expect(workspaceRun?.metrics?.stageCount).toBe(2);
     expect(workspaceRun?.metrics?.testPassed).toBe(2);
     expect(workspaceRun?.metrics?.buildPassed).toBe(1);
+  });
+
+  it('publishes proof-backed graph and live model-usage evaluation metrics', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'workspace-knowledge-graph.json': {
+        schemaVersion: 'workspace-knowledge-graph.v1',
+        generatedAt: '2026-07-22T10:00:00.000Z',
+        quality: {
+          entityCount: 42,
+          relationCount: 61,
+          proofCount: 73,
+          entityProofCoverageRatio: 0.95,
+        },
+        diagnostics: [],
+      },
+      'workspace-intelligence-evaluation-live.json': {
+        schemaVersion: 'workspace-intelligence-evaluation.v1',
+        status: 'live',
+        updatedAt: '2026-07-22T10:01:00.000Z',
+        summary: {
+          modelCalls: 4,
+          toolCalls: 9,
+          tokens: { observedTotal: 1280 },
+          outcome: { status: 'unknown', verified: false, blockersResolved: 1 },
+        },
+      },
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+    const graph = findEvidenceCard(bundle, 'workspaceModel');
+    const evaluation = findEvidenceCard(bundle, 'workspaceIntelligenceRun');
+
+    expect(graph).toMatchObject({
+      metrics: {
+        graphEntities: 42,
+        graphRelations: 61,
+        graphProofs: 73,
+        graphProofCoverage: 0.95,
+      },
+    });
+    expect(graph?.summary).toContain('graph 42/61/73');
+    expect(evaluation).toMatchObject({
+      metrics: {
+        observedTokens: 1280,
+        modelCalls: 4,
+        toolCalls: 9,
+        blockersResolved: 1,
+        evaluationOutcome: 'unknown',
+      },
+    });
+    expect(evaluation?.summary).toContain('eval live · 1280 tokens');
+  });
+
+  it('maps every multi-artifact producer back to its canonical dashboard card', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'workspace-knowledge-graph.json': {
+        schemaVersion: 'workspace-knowledge-graph.v1',
+        generatedAt: '2026-07-25T10:00:00.000Z',
+        quality: { entityCount: 1, relationCount: 0, proofCount: 1 },
+        diagnostics: [],
+      },
+      'workspace-intelligence-evaluation-live.json': {
+        schemaVersion: 'workspace-intelligence-evaluation.v1',
+        status: 'live',
+        updatedAt: '2026-07-25T10:01:00.000Z',
+        summary: {
+          modelCalls: 1,
+          toolCalls: 1,
+          tokens: { observedTotal: 10 },
+          outcome: { status: 'unknown', verified: false, blockersResolved: 0 },
+        },
+      },
+      'agent-customization-pack.json': {
+        schemaVersion: 'rapidkit-agent-customization-pack.v1',
+        generatedAt: '2026-07-25T10:02:00.000Z',
+        preset: 'enterprise',
+        targets: ['vscode'],
+        summary: { written: 0, total: 0 },
+        outputs: [],
+      },
+    });
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+
+    expect(resolveCardForReportKind(bundle, 'workspace-knowledge-graph')?.id).toBe(
+      'workspaceModel'
+    );
+    expect(resolveCardForReportKind(bundle, 'workspace-intelligence-evaluation')?.id).toBe(
+      'workspaceIntelligenceRun'
+    );
+    expect(resolveCardForReportKind(bundle, 'workspace-intelligence-run')?.id).toBe(
+      'workspaceIntelligenceRun'
+    );
+    expect(resolveCardForReportKind(bundle, 'agent-customization-pack')?.id).toBe('agentGrounding');
+    expect(resolveCardForReportKind(bundle, 'rapidkit-mcp-design')?.id).toBe('agentGrounding');
   });
 });
 

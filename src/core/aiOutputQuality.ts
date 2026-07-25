@@ -231,7 +231,7 @@ export function getAIOutputQualityContract(mode: 'ask' | 'debug', kitLabel: stri
     '- Do not claim fixed, shipped, production-ready, or complete unless verification evidence is already present.',
     '- For mutating advice, include the safest next step, a deterministic verify command, and rollback note.',
     '- If the context is insufficient, ask for the missing evidence instead of guessing.',
-    '- DOMAIN feature module questions → scaffold like src/examples/; CATALOG module questions → npx rapidkit add module <slug>. Never mix.',
+    '- DOMAIN feature module questions → scaffold like src/examples/; CATALOG module questions → npx workspai add module <slug>. Never mix.',
     '- Do not recommend /api routes for NestJS unless setGlobalPrefix or existing controllers use that prefix.',
     '- Do not recommend Docker/K8s/uvicorn deploy when analyze shows no Dockerfile and no src/main entrypoint.',
   ];

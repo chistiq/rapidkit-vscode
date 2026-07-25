@@ -6,6 +6,7 @@ import {
   STUDIO_CARD_FIX_ROUTING,
   normalizeStudioHandoffSource,
   resolveStudioFixActionForHandoff,
+  shouldUseEvidencePatchRepair,
 } from '../core/studioBlockerFixRouting.js';
 import { DASHBOARD_EVIDENCE_CARD_IDS } from '../contracts/dashboardEvidenceCards.js';
 import { pickStudioFixActionId } from '../core/studioBlockerHandoffBuilder.js';
@@ -35,6 +36,7 @@ describe('studioBlockerFixRouting', () => {
     expect(STUDIO_CARD_FIX_ROUTING.workspaceVerify).toBe('verify-gates');
     expect(STUDIO_CARD_FIX_ROUTING.workspaceImpact).toBe('fix-lens');
     expect(STUDIO_CARD_FIX_ROUTING.workspaceRun).toBe('verify-gates');
+    expect(STUDIO_CARD_FIX_ROUTING.snapshot).toBe('verify-gates');
     expect(STUDIO_CARD_FIX_ROUTING.mirror).toBe('verify-gates');
     expect(STUDIO_CARD_FIX_ROUTING.contract).toBe('verify-gates');
     expect(STUDIO_CARD_FIX_ROUTING.analyze).toBe('run-analyze');
@@ -46,7 +48,7 @@ describe('studioBlockerFixRouting', () => {
       blockers: ['Workspace-level items: 1169.', 'Git untracked grounding files'],
       resolutionClass: 'semantic-attention',
       sourceCommand:
-        'npx rapidkit workspace impact --from .rapidkit/reports/workspace-model-diff-last-run.json --json --write',
+        'npx rapidkit workspace impact --from .rapidkit/reports/workspace-model-diff-last-run.json --json',
     });
 
     expect(resolveStudioFixActionForHandoff(handoff)).toBe('fix-lens');
@@ -68,6 +70,28 @@ describe('studioBlockerFixRouting', () => {
       sourceCommand: 'npx rapidkit workspace contract verify --strict --json',
     });
     expect(resolveStudioFixActionForHandoff(handoff)).toBe('verify-gates');
+  });
+
+  it('does not mistake verification-only routing for a source fix', () => {
+    const handoff = baseHandoff({
+      cardId: 'agentGrounding',
+      blockers: ['Blocked by readiness'],
+      artifactPath: '.workspai/reports/agent-customization-pack.json',
+      sourceCommand: 'npx workspai workspace agent-sync --write --json',
+      studioMode: 'FIX',
+    });
+
+    const fixAction = resolveStudioFixActionForHandoff(handoff);
+    expect(fixAction).toBe('verify-gates');
+    expect(shouldUseEvidencePatchRepair(handoff, fixAction)).toBe(true);
+  });
+
+  it('hands repeated deterministic failures to the evidence-backed model', () => {
+    for (const fixAction of ['doctor-fix', 'fix-lens'] as const) {
+      expect(shouldUseEvidencePatchRepair(baseHandoff({ commandRunCount: 1 }), fixAction)).toBe(
+        true
+      );
+    }
   });
 
   it('prefers CLI resolution hint studioActionId over card table', () => {

@@ -76,8 +76,8 @@ All commands and features have been tested and verified working in the packaged 
 
 Thank you to everyone who reported this issue and tested the pre-release versions. Your feedback is invaluable!
 
-If you encounter any issues, please report them on our [GitHub Issues](https://github.com/rapidkitlabs/rapidkit-vscode/issues) page.
+If you encounter any issues, please report them on our [GitHub Issues](https://github.com/chistiq/rapidkit-vscode/issues) page.
 
 ---
 
-**Full Changelog:** [v0.1.1...v0.1.2](https://github.com/rapidkitlabs/rapidkit-vscode/compare/v0.1.1...v0.1.2)
+**Full Changelog:** [v0.1.1...v0.1.2](https://github.com/chistiq/rapidkit-vscode/compare/v0.1.1...v0.1.2)

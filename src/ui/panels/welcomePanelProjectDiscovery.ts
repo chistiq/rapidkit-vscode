@@ -5,6 +5,7 @@ import {
   readImportedProjectsRegistry,
   resolveImportedProjectPath,
 } from '../../utils/importedProjectsRegistry';
+import { resolveWorkspaceMarkerPath } from '../../core/workspaceIntelligencePaths';
 
 export type WorkspaceMarkerSnapshot = {
   signature?: string;
@@ -58,7 +59,7 @@ export async function readWorkspaceMarkerSnapshot(
   workspacePath: string
 ): Promise<WorkspaceMarkerSnapshot | undefined> {
   try {
-    const markerPath = path.join(workspacePath, '.rapidkit-workspace');
+    const markerPath = await resolveWorkspaceMarkerPath(workspacePath);
     if (!(await fs.pathExists(markerPath))) {
       return undefined;
     }
@@ -115,7 +116,7 @@ export async function discoverRapidkitProjectPaths(workspacePath: string): Promi
       if (!entry.isDirectory()) {
         continue;
       }
-      if (entry.name.startsWith('.') && entry.name !== '.rapidkit') {
+      if (entry.name.startsWith('.') && entry.name !== '.workspai' && entry.name !== '.rapidkit') {
         continue;
       }
       if (ignoredDirNames.has(entry.name)) {
@@ -127,12 +128,15 @@ export async function discoverRapidkitProjectPaths(workspacePath: string): Promi
         continue;
       }
 
-      const [hasProjectJson, hasContextJson] = await Promise.all([
-        fs.pathExists(path.join(candidatePath, '.rapidkit', 'project.json')),
-        fs.pathExists(path.join(candidatePath, '.rapidkit', 'context.json')),
-      ]);
+      const [hasProjectJson, hasContextJson, hasLegacyProjectJson, hasLegacyContextJson] =
+        await Promise.all([
+          fs.pathExists(path.join(candidatePath, '.workspai', 'project.json')),
+          fs.pathExists(path.join(candidatePath, '.workspai', 'context.json')),
+          fs.pathExists(path.join(candidatePath, '.rapidkit', 'project.json')),
+          fs.pathExists(path.join(candidatePath, '.rapidkit', 'context.json')),
+        ]);
 
-      if (hasProjectJson || hasContextJson) {
+      if (hasProjectJson || hasContextJson || hasLegacyProjectJson || hasLegacyContextJson) {
         discovered.add(candidatePath);
       }
 
@@ -264,9 +268,12 @@ export async function rankWorkspaceProjectCandidates(
 
     const [
       hasPrimaryRegistry,
+      hasWorkspaiRegistry,
       hasLegacyRegistry,
       hasProjectJson,
       hasContextJson,
+      hasLegacyProjectJson,
+      hasLegacyContextJson,
       hasPyproject,
       hasPackageJson,
       hasGoMod,
@@ -279,7 +286,10 @@ export async function rankWorkspaceProjectCandidates(
       hasNodeModules,
     ] = await Promise.all([
       fs.pathExists(path.join(candidatePath, 'registry.json')),
+      fs.pathExists(path.join(candidatePath, '.workspai', 'registry.json')),
       fs.pathExists(path.join(candidatePath, '.rapidkit', 'registry.json')),
+      fs.pathExists(path.join(candidatePath, '.workspai', 'project.json')),
+      fs.pathExists(path.join(candidatePath, '.workspai', 'context.json')),
       fs.pathExists(path.join(candidatePath, '.rapidkit', 'project.json')),
       fs.pathExists(path.join(candidatePath, '.rapidkit', 'context.json')),
       fs.pathExists(path.join(candidatePath, 'pyproject.toml')),
@@ -294,7 +304,7 @@ export async function rankWorkspaceProjectCandidates(
       fs.pathExists(path.join(candidatePath, 'node_modules')),
     ]);
 
-    const hasRegistry = hasPrimaryRegistry || hasLegacyRegistry;
+    const hasRegistry = hasPrimaryRegistry || hasWorkspaiRegistry || hasLegacyRegistry;
     const hasFrameworkMarkers =
       hasPyproject || hasPackageJson || hasGoMod || hasPom || hasGradle || hasGradleKts;
     const hasRuntimeReadyMarkers = hasVenv || hasNodeModules;
@@ -314,9 +324,9 @@ export async function rankWorkspaceProjectCandidates(
       score += 40;
       evidenceSources.add('project-registry');
     }
-    if (hasProjectJson || hasContextJson) {
+    if (hasProjectJson || hasContextJson || hasLegacyProjectJson || hasLegacyContextJson) {
       score += 25;
-      evidenceSources.add('rapidkit-context');
+      evidenceSources.add('workspai-context');
     }
     if (inferredType) {
       score += 30;

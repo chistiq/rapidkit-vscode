@@ -67,10 +67,10 @@ Subsequent runs take ~5–10 s (npm cache + venv reuse).
 CLI equivalents (both are valid):
 ```bash
 # Explicit command
-npx rapidkit create workspace my-workspace
+npx workspai create workspace my-workspace
 
 # Direct workspace shortcut
-npx rapidkit my-workspace
+npx workspai my-workspace
 ```
 
 Interactive wizard flow during workspace creation:
@@ -98,16 +98,16 @@ The extension generates the project, installs its dependencies, and opens the fo
 CLI interactive flow after entering workspace:
 ```bash
 cd my-workspace
-npx rapidkit create project
+npx workspai create project
 ```
 
 CLI direct kit flow (non-interactive):
 ```bash
-npx rapidkit create project fastapi.standard my-api --yes --skip-install
-npx rapidkit create project fastapi.ddd my-api --yes --skip-install
-npx rapidkit create project nestjs.standard my-nest --yes --skip-install
-npx rapidkit create project springboot.standard my-spring --yes --skip-install
-npx rapidkit create project gofiber.standard my-fiber --yes --skip-install
+npx workspai create project fastapi.standard my-api --yes --skip-install
+npx workspai create project fastapi.ddd my-api --yes --skip-install
+npx workspai create project nestjs.standard my-nest --yes --skip-install
+npx workspai create project springboot.standard my-spring --yes --skip-install
+npx workspai create project gofiber.standard my-fiber --yes --skip-install
 ```
 
 ---
@@ -124,10 +124,10 @@ Or from the terminal:
 
 ```bash
 # Full workspace-level health check
-npx rapidkit doctor workspace
+npx workspai doctor workspace
 
 # Project-level health check (run inside a project folder)
-npx rapidkit doctor project
+npx workspai doctor project
 ```
 
 The extension surfaces both scopes. In the sidebar, right-click any workspace → **Check Health (Doctor)**, or right-click a project → **Project Health Check (Doctor)**.
@@ -141,10 +141,10 @@ The extension surfaces both scopes. In the sidebar, right-click any workspace �
 Run lifecycle stages across all projects in a workspace fleet:
 
 ```bash
-npx rapidkit workspace run init    # set up all projects
-npx rapidkit workspace run test    # run all test suites
-npx rapidkit workspace run build   # build all projects
-npx rapidkit workspace run start   # start all services
+npx workspai workspace run init    # set up all projects
+npx workspai workspace run test    # run all test suites
+npx workspai workspace run build   # build all projects
+npx workspai workspace run start   # start all services
 ```
 
 From the extension, use the Command Palette or right-click the workspace tree:
@@ -193,7 +193,7 @@ Scoped health check for a single project (separate from workspace-level doctor):
 
 ```bash
 # inside project root
-npx rapidkit doctor project
+npx workspai doctor project
 ```
 
 From the extension:
@@ -201,7 +201,7 @@ From the extension:
 Ctrl+Shift+P → Workspai: Project Health Check (Doctor)
 ```
 
-Choose **Check** (read-only report) or **Fix** (auto-remediation). Evidence file is written to `.rapidkit/reports/doctor-project-last-run.json` inside the project.
+Choose **Check** (read-only report) or **Fix** (auto-remediation). Evidence file is written to `.workspai/reports/doctor-project-last-run.json` inside the project.
 
 ---
 
@@ -211,7 +211,7 @@ Choose **Check** (read-only report) or **Fix** (auto-remediation). Evidence file
 VS Code Extension  (UI, commands, tree views)
        │
        ▼
-npx rapidkit       (auto-downloaded via npx cache)
+npx workspai       (auto-downloaded via npx cache)
        │
        ▼
 Poetry / venv      (isolated per workspace)
@@ -233,39 +233,39 @@ Your Projects      (FastAPI, NestJS, …)
 
 ```bash
 # Root usage / quick shortcut
-npx rapidkit <workspace-name> [options]
+npx workspai <workspace-name> [options]
 
 # Guided create flow (prompts: workspace | project)
-npx rapidkit create
+npx workspai create
 
 # Workspace management
-npx rapidkit create workspace <name> [--profile <profile>] [--yes]
-npx rapidkit bootstrap [--profile <profile>] [--json]
-npx rapidkit setup <python|node|go|java> [--warm-deps]
-npx rapidkit readiness [--json] [--strict]
-npx rapidkit workspace list
-npx rapidkit workspace share [--output <file>] [--include-paths] [--no-doctor]
-npx rapidkit workspace policy show
-npx rapidkit workspace policy set <key> <value>
-npx rapidkit workspace init
+npx workspai create workspace <name> [--profile <profile>] [--yes]
+npx workspai bootstrap [--profile <profile>] [--json]
+npx workspai setup <python|node|go|java> [--warm-deps]
+npx workspai readiness [--json] [--strict]
+npx workspai workspace list
+npx workspai workspace share [--output <file>] [--include-paths] [--no-doctor]
+npx workspai workspace policy show
+npx workspai workspace policy set <key> <value>
+npx workspai workspace init
 
 # Doctor (health checks)
-npx rapidkit doctor
-npx rapidkit doctor workspace
-npx rapidkit doctor project
+npx workspai doctor
+npx workspai doctor workspace
+npx workspai doctor project
 
 # Fleet stage execution
-npx rapidkit workspace run init   [flags]
-npx rapidkit workspace run test   [flags]
-npx rapidkit workspace run build  [flags]
-npx rapidkit workspace run start  [flags]
+npx workspai workspace run init   [flags]
+npx workspai workspace run test   [flags]
+npx workspai workspace run build  [flags]
+npx workspai workspace run start  [flags]
 
 # Project scaffolding
-npx rapidkit create project
-npx rapidkit create project fastapi.standard <name> [--yes] [--skip-install]
-npx rapidkit create project nestjs.standard <name> [--yes] [--skip-install]
-npx rapidkit create project springboot.standard <name> [--yes] [--skip-install]
-npx rapidkit create project gofiber.standard <name> [--yes] [--skip-install]
+npx workspai create project
+npx workspai create project fastapi.standard <name> [--yes] [--skip-install]
+npx workspai create project nestjs.standard <name> [--yes] [--skip-install]
+npx workspai create project springboot.standard <name> [--yes] [--skip-install]
+npx workspai create project gofiber.standard <name> [--yes] [--skip-install]
 ```
 
 Useful workspace creation options:
@@ -282,7 +282,7 @@ Useful workspace creation options:
 
 Pre-install globally to skip npx download overhead:
 ```bash
-npm install -g rapidkit
+npm install -g workspai
 ```
 
 ---
@@ -304,7 +304,7 @@ python3 -m venv --help             # verify
 
 ### "RapidKit CLI download failed"
 - Check internet connection, try again (npx retries automatically)
-- Or pre-install globally: `npm install -g rapidkit`
+- Or pre-install globally: `npm install -g workspai`
 
 ### "Workspace validation failed"
 ```
@@ -315,8 +315,8 @@ Run this to get a detailed report. Fix any flagged items, then recreate the work
 ### Doctor returns stale results
 Delete the evidence file and re-run:
 ```bash
-rm .rapidkit/reports/doctor-last-run.json
-npx rapidkit doctor workspace
+rm .workspai/reports/doctor-last-run.json
+npx workspai doctor workspace
 ```
 
 ---
@@ -368,7 +368,7 @@ Workspai: Create Project
 ```
 For CLI-first flows, use:
 ```bash
-npx rapidkit create project <kit> <name> [--yes] [--skip-install]
+npx workspai create project <kit> <name> [--yes] [--skip-install]
 ```
 
 ## Next Steps After Setup
@@ -377,15 +377,15 @@ npx rapidkit create project <kit> <name> [--yes] [--skip-install]
 2. ✅ First project created
 3. 📖 Read [Project Documentation](https://www.workspai.com/docs)
 4. 🧩 Add modules: `Workspai: Add Module`
-5. 🚀 Start dev server: `npx rapidkit dev`
+5. 🚀 Start dev server: `npx workspai dev`
 6. 🎨 Customize your project
 
 ## Support
 
 - 📚 [Documentation](https://www.workspai.com/docs)
-- 💬 [GitHub Discussions](https://github.com/rapidkitlabs/rapidkit-vscode/discussions)
-- 🐛 [Report Issues](https://github.com/rapidkitlabs/rapidkit-vscode/issues)
-- 💡 [Feature Requests](https://github.com/rapidkitlabs/rapidkit-vscode/issues)
+- 💬 [GitHub Discussions](https://github.com/chistiq/rapidkit-vscode/discussions)
+- 🐛 [Report Issues](https://github.com/chistiq/rapidkit-vscode/issues)
+- 💡 [Feature Requests](https://github.com/chistiq/rapidkit-vscode/issues)
 
 ---
 

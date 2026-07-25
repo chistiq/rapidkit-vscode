@@ -10,7 +10,7 @@ import {
   createWorkspaceViaCli,
   isLocalCliE2EEnabled,
   LOCAL_E2E_ENV_FLAG,
-  resolveRapidkitNpmDist,
+  resolveWorkspaiCliDist,
   runIntelligenceScenario,
   writeE2EReport,
   type E2EReport,
@@ -18,26 +18,8 @@ import {
 import { DASHBOARD_COMMAND_CONTRACTS } from '../core/dashboardCommandContracts';
 import { EVIDENCE_CARD_COMMANDS } from '@/lib/dashboardEvidenceActions';
 
-const CORE_REQUIRED_STEP_IDS = [
-  'workspaceSync',
-  'foundationEnsure',
-  'doctorWorkspace',
-  'workspaceModel',
-  'intelligenceSnapshot',
-  'workspaceDiff',
-  'workspaceImpact',
-  'workspaceContextAgent',
-  'workspaceAgentSync',
-  'workspaceExplain',
-] as const;
-
 function failedCoreSteps(scenario: E2EReport['scenarios'][number]): string[] {
-  return scenario.steps
-    .filter(
-      (step) =>
-        (CORE_REQUIRED_STEP_IDS as readonly string[]).includes(step.id) && step.exitCode !== 0
-    )
-    .map((step) => step.id);
+  return scenario.failedRequiredSteps;
 }
 
 const INTELLIGENCE_CARD_IDS = [
@@ -56,7 +38,8 @@ const INTELLIGENCE_CARD_IDS = [
 
 describe('workspace intelligence E2E plan (offline)', () => {
   it('covers every intelligence dashboard card command in the local CLI plan', () => {
-    const stepIds = new Set(buildWorkspaceIntelligenceE2ESteps().map((step) => step.id));
+    const steps = buildWorkspaceIntelligenceE2ESteps();
+    const stepIds = new Set(steps.map((step) => step.id));
     const cardCommandIds = INTELLIGENCE_CARD_IDS.map((cardId) => EVIDENCE_CARD_COMMANDS[cardId]);
     for (const commandId of cardCommandIds) {
       expect(commandId, `missing dashboard mapping for intelligence card`).toBeTruthy();
@@ -70,6 +53,19 @@ describe('workspace intelligence E2E plan (offline)', () => {
     expect(stepIds.has('workspaceWhy')).toBe(true);
     expect(stepIds.has('workspaceTrace')).toBe(true);
     expect(stepIds.has('workspaceWatch')).toBe(true);
+
+    const canonicalAutoWritingSteps = new Set([
+      'workspaceDiff',
+      'workspaceImpact',
+      'workspaceVerify',
+    ]);
+    for (const step of steps.filter((candidate) => canonicalAutoWritingSteps.has(candidate.id))) {
+      const args =
+        typeof step.args === 'function'
+          ? step.args({ workspacePath: '.', projectNames: [] })
+          : step.args;
+      expect(args, `${step.id} must not send the removed --write option`).not.toContain('--write');
+    }
   });
 
   it('documents how to run the local-only CLI E2E', () => {
@@ -97,7 +93,7 @@ describeLocal('workspace intelligence local CLI E2E', () => {
   });
 
   it('runs full workspace intelligence cycle on minimal, polyglot-empty, and polyglot+3-project workspaces', async () => {
-    const dist = resolveRapidkitNpmDist();
+    const dist = resolveWorkspaiCliDist();
     const sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-wi-e2e-'));
     tempRoots.push(sandboxRoot);
 
@@ -163,8 +159,39 @@ describeLocal('workspace intelligence local CLI E2E', () => {
     polyglotScenario.scaffoldMode = scaffoldMode;
     scenarios.push(polyglotScenario);
 
-    expect(projectNames.sort()).toEqual(['api', 'service', 'web'].sort());
+    expect(projectNames.map((name) => path.basename(name)).sort()).toEqual(
+      ['api', 'service', 'web'].sort()
+    );
+    expect(polyglotScenario.projectNames.map((name) => path.basename(name)).sort()).toEqual(
+      ['api', 'service', 'web'].sort()
+    );
     expect(failedCoreSteps(polyglotScenario), 'polyglot core intelligence steps').toEqual([]);
+
+    const contractVerifyStep = polyglotScenario.steps.find((step) => step.id === 'contractVerify');
+    expect(contractVerifyStep?.exitCode, 'generated project contract should verify').toBe(0);
+    const workspaceContract = (await fs.readJson(
+      path.join(polyglotWorkspace, '.workspai', 'workspace.contract.json')
+    )) as { projects?: Array<{ slug?: string; ports?: Array<{ port?: number }> }> };
+    const declaredPorts = (workspaceContract.projects ?? []).flatMap((project) =>
+      (project.ports ?? []).map((port) => port.port).filter((port): port is number => !!port)
+    );
+    expect(new Set(declaredPorts).size, 'generated project ports must not collide').toBe(
+      declaredPorts.length
+    );
+
+    const verifyStep = polyglotScenario.steps.find((step) => step.id === 'workspaceVerify');
+    expect(
+      verifyStep,
+      'workspace verify step must be present in the executed E2E plan'
+    ).toBeDefined();
+    expect(
+      verifyStep?.verification,
+      `workspace verify must emit a contract-valid report: ${JSON.stringify(verifyStep)}`
+    ).toBeDefined();
+    expect(verifyStep?.verification?.verdict).toMatch(/^(ready|needs-attention|blocked)$/);
+    if (verifyStep?.verification?.verdict === 'blocked') {
+      expect(verifyStep.verification.blockingReasons.length).toBeGreaterThan(0);
+    }
 
     const advisoryFailures = polyglotScenario.steps
       .filter((step) => step.exitCode !== 0)
@@ -181,7 +208,7 @@ describeLocal('workspace intelligence local CLI E2E', () => {
 
     const report: E2EReport = {
       generatedAt: new Date().toISOString(),
-      rapidkitDist: dist,
+      workspaiDist: dist,
       scenarios,
       analysis: '',
     };

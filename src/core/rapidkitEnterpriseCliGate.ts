@@ -1,6 +1,8 @@
 import { parseRapidkitInlineCommand } from './incidentInlineCommandRunner';
 import { gateCompatibleCliVersion } from './cliVersionGate';
 import {
+  gateProjectScopedRapidkitCli,
+  gateRootRapidkitCli,
   gateTopLevelRapidkitCli,
   gateWorkspaceIntelligenceCli,
   gateWorkspaceSubcommandCli,
@@ -10,6 +12,33 @@ import {
 const WORKSPACE_INTELLIGENCE_SUBCOMMANDS = new Set<string>(
   REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS
 );
+
+const PROJECT_SCOPED_COMMANDS = new Set([
+  'init',
+  'dev',
+  'start',
+  'build',
+  'test',
+  'lint',
+  'format',
+]);
+const CORE_BACKED_COMMANDS = new Set([
+  'add',
+  'checkpoint',
+  'diff',
+  'frameworks',
+  'info',
+  'license',
+  'list',
+  'merge',
+  'modules',
+  'optimize',
+  'reconcile',
+  'rollback',
+  'uninstall',
+  'upgrade',
+  'version',
+]);
 
 function isRapidkitCommand(command: string): boolean {
   return /(?:^|\s)(?:npx\s+(?:--yes\s+)?rapidkit|rapidkit)\b/i.test(command.trim());
@@ -45,7 +74,7 @@ export async function gateIncidentStudioRapidkitCommand(input: {
   if (!versionAllowed) {
     return {
       allowed: false,
-      error: `${input.featureLabel} is blocked until the linked RapidKit CLI is updated.`,
+      error: `${input.featureLabel} is blocked until the linked Workspai CLI is updated.`,
     };
   }
 
@@ -57,7 +86,33 @@ export async function gateIncidentStudioRapidkitCommand(input: {
     if (!capabilityAllowed) {
       return {
         allowed: false,
-        error: `${input.featureLabel} is blocked because the linked RapidKit CLI does not advertise workspace ${subcommand}.`,
+        error: `${input.featureLabel} is blocked because the linked Workspai CLI does not advertise workspace ${subcommand}.`,
+      };
+    }
+    return { allowed: true };
+  }
+
+  if (PROJECT_SCOPED_COMMANDS.has(root)) {
+    const capabilityAllowed = await gateProjectScopedRapidkitCli(input.featureLabel, root, {
+      cwd: input.cwd,
+    });
+    if (!capabilityAllowed) {
+      return {
+        allowed: false,
+        error: `${input.featureLabel} is blocked because the linked Workspai CLI does not advertise project ${root}.`,
+      };
+    }
+    return { allowed: true };
+  }
+
+  if (CORE_BACKED_COMMANDS.has(root)) {
+    const capabilityAllowed = await gateRootRapidkitCli(input.featureLabel, root, {
+      cwd: input.cwd,
+    });
+    if (!capabilityAllowed) {
+      return {
+        allowed: false,
+        error: `${input.featureLabel} is blocked because the linked Workspai CLI does not advertise ${root}.`,
       };
     }
     return { allowed: true };
@@ -69,7 +124,7 @@ export async function gateIncidentStudioRapidkitCommand(input: {
   if (!capabilityAllowed) {
     return {
       allowed: false,
-      error: `${input.featureLabel} is blocked because the linked RapidKit CLI does not advertise ${root}.`,
+      error: `${input.featureLabel} is blocked because the linked Workspai CLI does not advertise ${root}.`,
     };
   }
 
@@ -85,7 +140,7 @@ export async function gateRapidkitCliArgs(input: {
   if (!root) {
     return {
       allowed: false,
-      error: `${input.featureLabel} is blocked because no RapidKit CLI command was provided.`,
+      error: `${input.featureLabel} is blocked because no Workspai CLI command was provided.`,
     };
   }
 
@@ -96,7 +151,7 @@ export async function gateRapidkitCliArgs(input: {
   if (!versionAllowed) {
     return {
       allowed: false,
-      error: `${input.featureLabel} is blocked until the linked RapidKit CLI is updated.`,
+      error: `${input.featureLabel} is blocked until the linked Workspai CLI is updated.`,
     };
   }
 
@@ -107,7 +162,33 @@ export async function gateRapidkitCliArgs(input: {
     if (!capabilityAllowed) {
       return {
         allowed: false,
-        error: `${input.featureLabel} is blocked because the linked RapidKit CLI does not advertise workspace ${subcommand}.`,
+        error: `${input.featureLabel} is blocked because the linked Workspai CLI does not advertise workspace ${subcommand}.`,
+      };
+    }
+    return { allowed: true };
+  }
+
+  if (PROJECT_SCOPED_COMMANDS.has(root)) {
+    const capabilityAllowed = await gateProjectScopedRapidkitCli(input.featureLabel, root, {
+      cwd: input.cwd,
+    });
+    if (!capabilityAllowed) {
+      return {
+        allowed: false,
+        error: `${input.featureLabel} is blocked because the linked Workspai CLI does not advertise project ${root}.`,
+      };
+    }
+    return { allowed: true };
+  }
+
+  if (CORE_BACKED_COMMANDS.has(root)) {
+    const capabilityAllowed = await gateRootRapidkitCli(input.featureLabel, root, {
+      cwd: input.cwd,
+    });
+    if (!capabilityAllowed) {
+      return {
+        allowed: false,
+        error: `${input.featureLabel} is blocked because the linked Workspai CLI does not advertise ${root}.`,
       };
     }
     return { allowed: true };
@@ -119,7 +200,7 @@ export async function gateRapidkitCliArgs(input: {
   if (!capabilityAllowed) {
     return {
       allowed: false,
-      error: `${input.featureLabel} is blocked because the linked RapidKit CLI does not advertise ${root}.`,
+      error: `${input.featureLabel} is blocked because the linked Workspai CLI does not advertise ${root}.`,
     };
   }
 

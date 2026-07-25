@@ -448,6 +448,7 @@ export function ModuleBrowser({
             onStop={onProjectStop}
             onTest={onProjectTest}
             onDoctor={onProjectDoctor}
+            onDoctorFix={onProjectDoctor}
             onArchitecture={onProjectArchitecture}
             onIncident={onProjectIncident}
             onAI={onProjectAI}

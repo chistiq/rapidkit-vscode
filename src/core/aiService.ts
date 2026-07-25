@@ -6,6 +6,10 @@
 
 import * as vscode from 'vscode';
 import { Logger } from '../utils/logger';
+import {
+  languageModelSelectionIdentifier,
+  languageModelSupportsExtensionRequests,
+} from './aiModelIdentity.js';
 import { ModulesCatalogService } from './modulesCatalogService';
 import { run } from '../utils/exec';
 import { buildNpxRapidkitArgs } from '../utils/platformCapabilities';
@@ -38,7 +42,11 @@ import {
   type CreatePlannerCapability,
 } from '../contracts/createPlannerCapabilities';
 import { buildHeuristicCreationDraft } from './aiCreationHeuristic';
-import { inferPolyglotCompanionProject } from './creationStackIntent';
+import {
+  inferExplicitCreationFrameworks,
+  inferPolyglotCompanionProject,
+  inferStackIntentFromPrompt,
+} from './creationStackIntent';
 import { getCanonicalWorkspacesDirectory } from './workspacePaths';
 import { readLanguageModelResponseText } from './languageModelResponse';
 import { buildAIModalUserMessage as buildAIModalUserMessageInternal } from './aiPromptMessageBuilder';
@@ -84,17 +92,175 @@ export interface AvailableModel {
   vendor: string;
 }
 
+export interface AIModelToolDefinition {
+  name: string;
+  description: string;
+  inputSchema?: Record<string, unknown>;
+}
+
+export type AIModelToolActionResponse =
+  | { type: 'tool'; modelId: string; toolName: string; input: Record<string, unknown> }
+  | { type: 'text'; modelId: string; text: string };
+
+function isRetryableToolModelError(error: unknown): boolean {
+  const raw = error instanceof Error ? `${error.name} ${error.message}` : String(error ?? '');
+  return /(?:\b(429|rate\s*limit|quota|resource\s*exhausted|temporar(?:y|ily)|unavailable|overloaded|busy|too\s*many\s*requests|service\s*unavailable|model\s*not\s*available|model\s*unavailable|requested\s*model\s*is\s*not\s*supported)\b|model_not_supported)/i.test(
+    raw
+  );
+}
+
 /**
  * Return all language models currently registered in VS Code.
  * Safe to call repeatedly — results stream directly from the LM registry.
  */
 export async function listAvailableModels(): Promise<AvailableModel[]> {
-  const all = await vscode.lm.selectChatModels();
+  const all = (await vscode.lm.selectChatModels()).filter(languageModelSupportsExtensionRequests);
   return all.map((m) => ({
-    id: m.id,
+    id: languageModelSelectionIdentifier(m),
     name: m.name ?? m.id,
     vendor: m.vendor ?? '',
   }));
+}
+
+/**
+ * Request one native, schema-constrained tool action from the VS Code LM API.
+ * Studio Agent uses this path instead of asking models to serialize executable
+ * actions into prose. The tool itself is still executed by Studio's governed
+ * registry; the model only selects an allowlisted action and its validated input.
+ */
+export async function requestAIModelToolAction(
+  messages: AIMessage[],
+  tools: AIModelToolDefinition[],
+  token?: vscode.CancellationToken,
+  preferredModelId?: string
+): Promise<AIModelToolActionResponse> {
+  const all = (await vscode.lm.selectChatModels()).filter(languageModelSupportsExtensionRequests);
+  const preferred = preferredModelId?.trim();
+  let model = preferred
+    ? all.find(
+        (candidate) =>
+          languageModelSelectionIdentifier(candidate) === preferred ||
+          candidate.id === preferred ||
+          candidate.name === preferred
+      )
+    : undefined;
+  if (!model) {
+    model = (await selectModelAuto()).model;
+  }
+
+  const lmMessages = messages.map((message) =>
+    message.role === 'user'
+      ? vscode.LanguageModelChatMessage.User(sanitizePromptText(message.content, 96 * 1024))
+      : vscode.LanguageModelChatMessage.Assistant(sanitizePromptText(message.content, 96 * 1024))
+  );
+  const requestTokenSource = new vscode.CancellationTokenSource();
+  const cancellation = token?.onCancellationRequested(() => requestTokenSource.cancel());
+  const timeoutMs = getAIStreamTimeoutMs();
+  const timeout = setTimeout(() => requestTokenSource.cancel(), timeoutMs);
+  const fallbackModels = all.filter(
+    (candidate) =>
+      languageModelSelectionIdentifier(candidate) !== languageModelSelectionIdentifier(model)
+  );
+  const candidates = [model, ...fallbackModels];
+
+  // VS Code only permits Required when exactly one tool is exposed. Studio
+  // intentionally gives the model a governed toolset, so multi-tool turns
+  // must use Auto and let the session contract reject prose/completion until
+  // verified evidence exists. Passing Required with multiple tools terminates
+  // the request before the model sees the incident.
+  const toolMode =
+    tools.length === 1
+      ? vscode.LanguageModelChatToolMode.Required
+      : vscode.LanguageModelChatToolMode.Auto;
+
+  try {
+    let lastError: unknown;
+    for (const [index, candidateModel] of candidates.entries()) {
+      const modelId = languageModelSelectionIdentifier(candidateModel);
+      let text = '';
+      try {
+        const response = await candidateModel.sendRequest(
+          lmMessages,
+          {
+            justification: 'Resolve the selected Workspai incident through governed Studio tools.',
+            tools: tools.map((tool) => ({
+              name: tool.name,
+              description: tool.description,
+              ...(tool.inputSchema ? { inputSchema: tool.inputSchema } : {}),
+            })),
+            toolMode,
+          },
+          requestTokenSource.token
+        );
+
+        for await (const part of response.stream) {
+          if (requestTokenSource.token.isCancellationRequested) {
+            break;
+          }
+          const candidate = part as {
+            name?: unknown;
+            input?: unknown;
+            callId?: unknown;
+            value?: unknown;
+          };
+          const isNativeToolCall =
+            (typeof vscode.LanguageModelToolCallPart === 'function' &&
+              part instanceof vscode.LanguageModelToolCallPart) ||
+            (typeof candidate.name === 'string' &&
+              typeof candidate.callId === 'string' &&
+              candidate.input !== null &&
+              typeof candidate.input === 'object');
+          if (isNativeToolCall && typeof candidate.name === 'string') {
+            return {
+              type: 'tool',
+              modelId,
+              toolName: candidate.name,
+              input:
+                candidate.input &&
+                typeof candidate.input === 'object' &&
+                !Array.isArray(candidate.input)
+                  ? (candidate.input as Record<string, unknown>)
+                  : {},
+            };
+          }
+          if (part instanceof vscode.LanguageModelTextPart) {
+            text += part.value;
+          } else if (typeof candidate.value === 'string') {
+            text += candidate.value;
+          }
+        }
+        if (requestTokenSource.token.isCancellationRequested && !token?.isCancellationRequested) {
+          throw new Error(
+            `AI tool request timed out after ${timeoutMs}ms for model ${candidateModel.id}.`
+          );
+        }
+        // Text may contain the strict JSON fallback understood by the Studio
+        // model protocol. An empty response, however, proves this endpoint
+        // cannot participate and should fall through to the next live model.
+        if (text.trim()) {
+          return { type: 'text', modelId, text };
+        }
+        lastError = new Error(`Model ${modelId} returned no tool call or text.`);
+      } catch (error) {
+        lastError = error;
+        if (
+          token?.isCancellationRequested ||
+          requestTokenSource.token.isCancellationRequested ||
+          !isRetryableToolModelError(error)
+        ) {
+          throw error;
+        }
+      }
+      if (index === candidates.length - 1) {
+        throw lastError;
+      }
+    }
+    throw lastError ?? new Error('No callable AI model completed the Studio tool request.');
+  } finally {
+    clearTimeout(timeout);
+    cancellation?.dispose();
+    requestTokenSource.dispose();
+  }
 }
 
 /**
@@ -117,7 +283,7 @@ export async function streamAIResponse(
 
   const isRetryableModelRequestError = (err: unknown): boolean => {
     const raw = err instanceof Error ? `${err.name} ${err.message}` : String(err ?? '');
-    return /\b(429|rate\s*limit|quota|resource\s*exhausted|temporar(?:y|ily)|unavailable|overloaded|busy|too\s*many\s*requests|service\s*unavailable|model\s*not\s*available|model\s*unavailable)\b/i.test(
+    return /(?:\b(429|rate\s*limit|quota|resource\s*exhausted|temporar(?:y|ily)|unavailable|overloaded|busy|too\s*many\s*requests|service\s*unavailable|model\s*not\s*available|model\s*unavailable|requested\s*model\s*is\s*not\s*supported)\b|model_not_supported)/i.test(
       raw
     );
   };
@@ -178,7 +344,10 @@ export async function streamAIResponse(
     if (normalizedPreferredModelId) {
       const all = await vscode.lm.selectChatModels();
       const found = all.find(
-        (m) => m.id === normalizedPreferredModelId || (m.name ?? '') === normalizedPreferredModelId
+        (m) =>
+          languageModelSelectionIdentifier(m) === normalizedPreferredModelId ||
+          m.id === normalizedPreferredModelId ||
+          (m.name ?? '') === normalizedPreferredModelId
       );
       if (found) {
         model = found;
@@ -202,8 +371,8 @@ export async function streamAIResponse(
 
   const lmMessages = messages.map((m) =>
     m.role === 'user'
-      ? vscode.LanguageModelChatMessage.User(sanitizePromptText(m.content, 20000))
-      : vscode.LanguageModelChatMessage.Assistant(sanitizePromptText(m.content, 20000))
+      ? vscode.LanguageModelChatMessage.User(sanitizePromptText(m.content, 96 * 1024))
+      : vscode.LanguageModelChatMessage.Assistant(sanitizePromptText(m.content, 96 * 1024))
   );
 
   const requestTimeoutMs = getAIStreamTimeoutMs();
@@ -323,6 +492,8 @@ export interface AIModalContext {
   moduleDescription?: string;
   workspaceRootPath?: string;
   projectRootPath?: string;
+  /** Internal bounded override for evidence-rich Studio repair prompts. */
+  questionMaxChars?: number;
   prefillQuestion?: string;
   prefillMode?: AIConversationMode;
 }
@@ -1096,7 +1267,10 @@ export async function prepareAIConversation(
     content: sanitizePromptText(entry.content, 8000),
   }));
 
-  const sanitizedQuestion = sanitizePromptText(question, 8000);
+  const sanitizedQuestion = sanitizePromptText(
+    question,
+    Math.min(Math.max(ctx.questionMaxChars ?? 8000, 1000), 96 * 1024)
+  );
 
   const workspacePath =
     resolveWorkspacePathForGrounding(ctx) ??
@@ -1391,8 +1565,30 @@ function normalizeSecondaryProject(
   const heuristicFallback = () =>
     inferPolyglotCompanionProject(prompt, primaryFramework, stackIntent);
 
+  const reconcileWithExplicitIntent = (
+    candidate: AICreationPlan['secondaryProject'] | undefined
+  ): AICreationPlan['secondaryProject'] | undefined => {
+    const explicitFrameworks = inferExplicitCreationFrameworks(prompt);
+    const explicitCompanion = explicitFrameworks.find(
+      (framework) => framework !== primaryFramework
+    );
+    if (!explicitCompanion) {
+      return candidate;
+    }
+
+    const fallback = heuristicFallback();
+    const projectName = sanitizeKebab(
+      candidate?.projectName || fallback?.projectName || 'companion-project'
+    );
+    return {
+      framework: explicitCompanion,
+      kit: normalizeCreationKit(undefined, explicitCompanion),
+      projectName,
+    };
+  };
+
   if (!raw || typeof raw !== 'object') {
-    return heuristicFallback();
+    return reconcileWithExplicitIntent(heuristicFallback());
   }
 
   const record = raw as Record<string, unknown>;
@@ -1403,10 +1599,38 @@ function normalizeSecondaryProject(
   );
 
   if (framework === primaryFramework) {
-    return heuristicFallback();
+    return reconcileWithExplicitIntent(heuristicFallback());
   }
 
-  return { framework, kit, projectName };
+  return reconcileWithExplicitIntent({ framework, kit, projectName });
+}
+
+export function validateCreationPlanForExecution(plan: AICreationPlan): AICreationPlan {
+  if (!isCreateFramework(plan.framework)) {
+    throw new Error(`Unsupported project framework in creation plan: ${String(plan.framework)}`);
+  }
+  if (!FRAMEWORK_TO_KITS[plan.framework].includes(plan.kit)) {
+    throw new Error(
+      `Creation plan kit ${plan.kit} does not belong to framework ${plan.framework}.`
+    );
+  }
+  if (plan.secondaryProject) {
+    const secondary = plan.secondaryProject;
+    if (!isCreateFramework(secondary.framework)) {
+      throw new Error(
+        `Unsupported companion framework in creation plan: ${String(secondary.framework)}`
+      );
+    }
+    if (!FRAMEWORK_TO_KITS[secondary.framework].includes(secondary.kit)) {
+      throw new Error(
+        `Companion kit ${secondary.kit} does not belong to framework ${secondary.framework}.`
+      );
+    }
+    if (secondary.framework === plan.framework) {
+      throw new Error('Primary and companion projects must use different framework lanes.');
+    }
+  }
+  return plan;
 }
 
 function normalizeSuggestedModules(
@@ -1667,18 +1891,26 @@ Rules:
     planSource = 'heuristic';
   }
 
-  const fw = normalizeCreationFramework(parsed.framework, frameworkHint);
+  const heuristicDraft = buildHeuristicCreationDraft(prompt, mode, frameworkHint, stackIntent);
+  const explicitFrameworks = inferExplicitCreationFrameworks(prompt);
+  const parsedFramework = normalizeCreationFramework(parsed.framework, frameworkHint);
+  const fw =
+    explicitFrameworks.length > 0 && !explicitFrameworks.includes(parsedFramework)
+      ? heuristicDraft.framework
+      : parsedFramework;
   const rawName = addWspSuffix(sanitizeKebab(parsed.workspaceName ?? 'my-workspace'));
   const uniqueName = await resolveUniqueWorkspaceName(rawName);
-  const heuristicDraft = buildHeuristicCreationDraft(prompt, mode, frameworkHint, stackIntent);
   const heuristicProfile = heuristicDraft.profile;
+  const inferredStackIntent = inferStackIntentFromPrompt(prompt.toLowerCase(), stackIntent);
   const companionStackIntent = stackIntent;
   const plan: AICreationPlan = {
     type: mode,
     workspaceName: uniqueName,
     profile:
       mode === 'workspace'
-        ? normalizeCreationProfile(parsed.profile ?? heuristicProfile, fw)
+        ? inferredStackIntent === 'polyglot'
+          ? 'polyglot'
+          : normalizeCreationProfile(parsed.profile ?? heuristicProfile, fw)
         : normalizeCreationProfile(parsed.profile, fw),
     installMethod: normalizeInstallMethod(parsed.installMethod),
     framework: fw,
@@ -1695,12 +1927,12 @@ Rules:
         : undefined,
   };
 
-  return { plan, modelId, planSource };
+  return { plan: validateCreationPlanForExecution(plan), modelId, planSource };
 }
 
 /**
  * Resolve a unique workspace name by checking if the default installation
- * directory (~/rapidkit/workspaces/<name>) already exists on disk.
+ * directory (~/.workspai/workspaces/<name>) already exists on disk.
  * If it does, append -2, -3, ... until a free slot is found.
  */
 async function resolveUniqueWorkspaceName(name: string): Promise<string> {

@@ -6,13 +6,13 @@
 
 One workspace. One truth. Humans and AI aligned.
 
-Workspai is the VS Code surface for RapidKit, making shared workspace understanding visible and actionable inside the IDE.
+Workspai for VS Code is the IDE consumer of the canonical Workspai CLI contracts, making shared workspace understanding visible and actionable.
 
-[![Version](https://img.shields.io/visual-studio-marketplace/v/rapidkit.rapidkit-vscode?style=flat-square\&color=6C5CE7)](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/rapidkit.rapidkit-vscode?style=flat-square\&color=00CFC1)](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
-[![npm](https://img.shields.io/npm/v/rapidkit?style=flat-square\&color=CB3837\&label=rapidkit)](https://www.npmjs.com/package/rapidkit)
+[![Version](https://img.shields.io/visual-studio-marketplace/v/rapidkit.rapidkit-vscode?style=flat-square&color=6C5CE7)](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/rapidkit.rapidkit-vscode?style=flat-square&color=00CFC1)](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
+[![npm](https://img.shields.io/npm/v/workspai?style=flat-square&color=CB3837&label=workspai)](https://www.npmjs.com/package/workspai)
 
-[Install](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode) · [Docs](https://www.workspai.com/) · [Changelog](CHANGELOG.md) · [Issues](https://github.com/rapidkitlabs/rapidkit-vscode/issues)
+[Install](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode) · [Docs](https://www.workspai.com/) · [Changelog](CHANGELOG.md) · [Issues](https://github.com/chistiq/rapidkit-vscode/issues)
 
 </div>
 
@@ -20,9 +20,9 @@ Workspai is the VS Code surface for RapidKit, making shared workspace understand
 
 ## At a glance
 
-Workspai is the VS Code surface for RapidKit workspace intelligence.
+Workspai is the VS Code surface for Workspai Workspace Intelligence.
 
-The name comes from Workspace + Intelligence: the IDE surface where RapidKit's shared workspace understanding becomes visible and actionable.
+The name comes from Workspace + Intelligence: the IDE surface where the CLI's shared workspace understanding becomes visible and actionable.
 
 Instead of treating AI as a file-level assistant, Workspai operates on the workspace itself — projects, dependencies, architecture, operational context, evidence, and release readiness.
 
@@ -30,20 +30,20 @@ Developers, CI pipelines, IDEs, and AI agents all work from the same workspace m
 
 Workspai supports:
 
-* Backend services
-* Frontend applications
-* Imported repositories
-* Polyglot workspaces
-* Workspace-aware AI workflows
+- Backend services
+- Frontend applications
+- Imported repositories
+- Polyglot workspaces
+- Workspace-aware AI workflows
 
-| You get                    | Why it matters                                                                               |
-| -------------------------- | -------------------------------------------------------------------------------------------- |
-| **Workspace intelligence** | Model, context, diff, impact, and verification operate on the entire workspace               |
-| **Enterprise dashboard**   | Home, Run, Repair, Artifacts, Project, and Library surfaces with contextual actions          |
-| **Incident evidence loop** | Commands generate evidence, Studio resolves blockers, and verify refreshes the dashboard     |
-| **Sidebar control plane**  | Workspaces, projects, modules, health, contracts, and operational state                      |
-| **Workspai Studio**        | Sidebar-first diagnosis, repair workflows, patch review, verify, and audit visibility        |
-| **Canonical CLI bridge**   | Delegates to `rapidkit` npm CLI for adoption, creation, lifecycle, governance, and CI operations |
+| You get                    | Why it matters                                                                                         |
+| -------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Workspace intelligence** | Model, context, diff, impact, and verification operate on the entire workspace                         |
+| **Enterprise dashboard**   | Home, Run, Repair, Artifacts, Project, and Library surfaces with contextual actions                    |
+| **Incident evidence loop** | Commands generate evidence, Studio resolves blockers, and verify refreshes the dashboard               |
+| **Sidebar control plane**  | Workspaces, projects, modules, health, contracts, and operational state                                |
+| **Workspai Studio**        | Sidebar-first diagnosis, repair workflows, patch review, verify, and audit visibility                  |
+| **Canonical CLI bridge**   | Delegates to the `workspai` npm CLI and verifies its live command inventory before governed operations |
 
 ### What this is not
 
@@ -76,8 +76,6 @@ flowchart LR
 
 Run generates or refreshes evidence. Repair routes blockers into Studio. Verify proves whether the fix worked. Refreshed artifacts update the dashboard and the context agents receive.
 
-
-
 ### The two-layer model
 
 RapidKit does **not** pretend every framework is a native kit. The product strategy is:
@@ -100,17 +98,17 @@ flowchart TB
   subgraph Workspai["Workspai VS Code Extension"]
     Sidebar["Sidebar: Workspaces · Projects · Modules · Health · Graph"]
     Dashboard["Dashboard: Home · Run · Repair · Artifacts · Project · Library"]
-    Studio["Secondary sidebar: Create · Advisor · Studio"]
+    Studio["Secondary sidebar: Create · Assistant (Agent / Ask / Plan)"]
   end
 
-  subgraph CLI["RapidKit npm CLI"]
+  subgraph CLI["Workspai npm CLI"]
     Gov["Governance: sync · doctor · analyze · pipeline · readiness"]
-    Intel["Intelligence: model · context · diff · impact"]
+    Intel["Intelligence: model · snapshot · diff · impact · contract · verify · graph · watch · context · agent-sync · explain · feedback · MCP"]
     Ops["Project ops: adopt · import · project commands"]
   end
 
   subgraph Artifacts["Shared workspace artifacts"]
-    Reports[".rapidkit/reports/*"]
+    Reports[".workspai/reports/*"]
     Contract["workspace.contract.json"]
     Markers["workspace + project markers"]
   end
@@ -159,7 +157,7 @@ Commands dispatch through contract-aware bridges so the UI only offers actions t
 Workspai closes the ops loop inside the IDE:
 
 1. Run a governed command (`doctor`, `analyze`, `pipeline`, archive, release, …)
-2. Read structured evidence from `.rapidkit/reports/*`
+2. Read contract-governed evidence from `.workspai/reports/*`
 3. Open Repair or Studio with the exact blocker, artifact, and verify context
 4. Apply or guide the smallest safe fix, then run verify
 5. Return the refreshed truth to the dashboard and agent context
@@ -172,15 +170,15 @@ Workspai closes the ops loop inside the IDE:
 
 Everyday operations stay one click away:
 
-| Panel | Purpose |
-|-------|---------|
-| **Quick Actions** | Minimal command launcher for `Dashboard / Create / Advisor / Studio / Doctor` |
-| **Workspai** | AI sidebar with `Create with AI / Workspace Advisor / Studio` tabs, including a live creation timeline, architecture prompts, and Studio handoff |
-| **Workspaces** | Switch and manage RapidKit workspaces |
-| **Projects** | Select a project; lifecycle menus respect CLI capabilities |
-| **Available Modules** | Browse and install modules for supported backends |
-| **Workspace Health** | Doctor evidence without an extra CLI call |
-| **Contract Graph** | Services, ports, dependencies, events, and ownership |
+| Panel                 | Purpose                                                                                                                                          |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Quick Actions**     | Minimal command launcher for `Dashboard / Create / Advisor / Studio / Doctor`                                                                    |
+| **Workspai**          | AI sidebar with `Create with AI / Workspace Advisor / Studio` tabs, including a live creation timeline, architecture prompts, and Studio handoff |
+| **Workspaces**        | Switch and manage RapidKit workspaces                                                                                                            |
+| **Projects**          | Select a project; lifecycle menus respect CLI capabilities                                                                                       |
+| **Available Modules** | Browse and install modules for supported backends                                                                                                |
+| **Workspace Health**  | Doctor evidence without an extra CLI call                                                                                                        |
+| **Contract Graph**    | Services, ports, dependencies, events, and ownership                                                                                             |
 
 ### Workspai Studio
 
@@ -193,9 +191,11 @@ Workspai Studio is the sidebar-first workspace-aware repair environment:
 - Root-cause analysis with scoped workspace/project context
 - Handoff from dashboard cards with blocker, artifact, and verify context
 - Run-once, fix, explain, and verify-only modes based on the active blocker
-- Patch review and rollback hints before mutating code
+- Automatic safe deterministic remediation, bounded continuation, verify, and audit
+- One focused approval boundary for guarded, invasive, destructive, external, or AI-unscoped writes
+- Exact-target AI patches may apply automatically only when CLI hints, scope, size limits, and verify contract all agree
 - Ship loop: analyze → verify-gates → readiness → archive
-- CLI surface with allowlisted RapidKit commands and mutation gates
+- CLI surface derived from the Workspai live command inventory with allowlists and mutation gates
 - Visible failure, verify, and audit states without relying on developer console output
 
 ---
@@ -204,20 +204,21 @@ Workspai Studio is the sidebar-first workspace-aware repair environment:
 
 Workspai supports the same polyglot surface as the RapidKit CLI:
 
-| Layer | Stacks | What you get |
-|-------|--------|--------------|
-| **Engine kits + modules** | FastAPI, NestJS | Scaffold, lifecycle, RapidKit module marketplace |
-| **Backend intelligence** | Spring Boot, Go (Fiber/Gin), .NET, Express, Django, and more | Adopt, import, detect, lifecycle, evidence, agent context |
+| Layer                     | Stacks                                                                         | What you get                                                                |
+| ------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| **Engine kits + modules** | FastAPI, NestJS                                                                | Scaffold, lifecycle, RapidKit module marketplace                            |
+| **Backend intelligence**  | Spring Boot, Go (Fiber/Gin), .NET, Express, Django, and more                   | Adopt, import, detect, lifecycle, evidence, agent context                   |
 | **Frontend intelligence** | Next.js, Remix, Vite (React/Vue/Svelte/Solid), Nuxt, Angular, Astro, SvelteKit | Official generators, adopt/import, workspace model, evidence, agent context |
 
 RapidKit modules remain Core-backed templates for **FastAPI** and **NestJS** only. Frontend and extended backend stacks are fully supported through **Workspace Intelligence** — not through pretending they share the same module runtime.
 
-Capability gating is driven by the canonical CLI:
+Capability gating is driven by the canonical CLI and includes the complete Workspace Intelligence surface:
 
 ```bash
-npx rapidkit project commands --json
-npx rapidkit workspace model --json
-npx rapidkit workspace context --for-agent --json
+npx workspai commands --json
+npx workspai project commands --json
+npx workspai workspace model --json --write
+npx workspai workspace context --for-agent --json --write
 ```
 
 The extension uses those surfaces for dashboard buttons, sidebar menus, module install guards, and AI context.
@@ -230,14 +231,14 @@ The extension uses those surfaces for dashboard buttons, sidebar menus, module i
 
 [Install from the Marketplace](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode), then reload VS Code.
 
-### 2. Verify the RapidKit CLI bridge
+### 2. Verify the Workspai CLI bridge
 
-Workspai uses the canonical RapidKit npm CLI for enterprise workflows. Install or update it before running create, adopt, governance, Repair, or Studio actions:
+The extension uses the canonical Workspai npm CLI for enterprise workflows. Install or update it before running create, adopt, governance, Repair, or Studio actions:
 
 ```bash
-npm install -g rapidkit@latest
-rapidkit --version --json
-rapidkit commands --json
+npm install -g workspai@latest
+workspai --version --json
+workspai commands --json
 ```
 
 Workspai checks the linked RapidKit CLI capability surface before enterprise workflows run.
@@ -276,12 +277,12 @@ Workspai: Run System Check
 ### CLI equivalents
 
 ```bash
-npx rapidkit doctor workspace
-npx rapidkit init
-npx rapidkit dev
-npx rapidkit test
-npx rapidkit pipeline --json --strict
-npx rapidkit add module <module-slug>   # FastAPI / NestJS only
+npx workspai doctor workspace --json
+npx workspai init
+npx workspai dev
+npx workspai test
+npx workspai pipeline --json --strict
+npx workspai add module <module-slug>   # FastAPI / NestJS only
 ```
 
 ---
@@ -290,55 +291,55 @@ npx rapidkit add module <module-slug>   # FastAPI / NestJS only
 
 Workspai AI features use the language models available in your VS Code environment (for example GitHub Copilot models where enabled).
 
-| Tool | Purpose |
-|------|---------|
-| **Create with AI** | Plan and create a workspace from intent |
-| **AI Project Builder** | Scaffold a project inside the active workspace |
-| **Incident Studio** | Diagnose, explain, and repair with scoped evidence |
-| **Fix Preview** | Review the smallest safe patch before applying changes |
-| **Change Impact** | Understand blast radius and rollout risk |
-| **Terminal Bridge** | Turn terminal failures into structured next steps |
-| **Workspace Memory** | Keep local conventions aligned across AI answers |
+| Tool                   | Purpose                                                |
+| ---------------------- | ------------------------------------------------------ |
+| **Create with AI**     | Plan and create a workspace from intent                |
+| **AI Project Builder** | Scaffold a project inside the active workspace         |
+| **Incident Studio**    | Diagnose, explain, and repair with scoped evidence     |
+| **Fix Preview**        | Review the smallest safe patch before applying changes |
+| **Change Impact**      | Understand blast radius and rollout risk               |
+| **Terminal Bridge**    | Turn terminal failures into structured next steps      |
+| **Workspace Memory**   | Keep local conventions aligned across AI answers       |
 
 ---
 
 ## Workspace operations
 
-| Surface | What it does |
-|---------|--------------|
-| **Doctor** | Workspace and project readiness checks |
-| **Graph** | Service, dependency, event, and port topology |
-| **Analyze** | Architecture and health analysis with scoped reports |
-| **Pipeline** | Governance pipeline with strict JSON verdict |
-| **Test** | Run the selected workspace/project test path |
-| **Archive / Export** | Package a workspace for handoff |
-| **Verify Archive** | Integrity check before sharing |
-| **Release** | Autopilot release gate and readiness evidence |
-| **Terminal** | Open a terminal at workspace or project root |
+| Surface              | What it does                                         |
+| -------------------- | ---------------------------------------------------- |
+| **Doctor**           | Workspace and project readiness checks               |
+| **Graph**            | Service, dependency, event, and port topology        |
+| **Analyze**          | Architecture and health analysis with scoped reports |
+| **Pipeline**         | Governance pipeline with strict JSON verdict         |
+| **Test**             | Run the selected workspace/project test path         |
+| **Archive / Export** | Package a workspace for handoff                      |
+| **Verify Archive**   | Integrity check before sharing                       |
+| **Release**          | Autopilot release gate and readiness evidence        |
+| **Terminal**         | Open a terminal at workspace or project root         |
 
 ---
 
 ## Keyboard shortcuts
 
-| Shortcut | Action |
-|----------|--------|
+| Shortcut                    | Action           |
+| --------------------------- | ---------------- |
 | `Ctrl+Shift+R Ctrl+Shift+W` | Create Workspace |
-| `Ctrl+Shift+R Ctrl+Shift+P` | Create Project |
-| `Ctrl+Shift+R Ctrl+Shift+M` | Add Module |
-| `Ctrl+Shift+R Ctrl+Shift+D` | Debug with AI |
+| `Ctrl+Shift+R Ctrl+Shift+P` | Create Project   |
+| `Ctrl+Shift+R Ctrl+Shift+M` | Add Module       |
+| `Ctrl+Shift+R Ctrl+Shift+D` | Debug with AI    |
 
 ---
 
 ## Requirements
 
-| Tool | Version |
-|------|---------|
-| VS Code | 1.100+ |
-| Node.js | 18+ |
-| RapidKit npm CLI | Latest recommended for enterprise Dashboard, Repair, Studio, create, and adopt workflows |
-| Python | 3.10+ for FastAPI projects |
-| Go | 1.21+ for Go projects |
-| Java | 17+ for Spring Boot projects |
+| Tool             | Version                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------- |
+| VS Code          | 1.100+                                                                                |
+| Node.js          | 18+                                                                                   |
+| Workspai npm CLI | `0.49.0+`, verified through `workspai commands --json` and the compatibility contract |
+| Python           | 3.10+ for FastAPI projects                                                            |
+| Go               | 1.21+ for Go projects                                                                 |
+| Java             | 17+ for Spring Boot projects                                                          |
 
 Run `Workspai: Run System Check` to verify local tooling.
 
@@ -346,12 +347,12 @@ Run `Workspai: Run System Check` to verify local tooling.
 
 ## Ecosystem
 
-| Component | Role |
-|-----------|------|
-| [rapidkit-vscode](https://github.com/rapidkitlabs/rapidkit-vscode) | Workspai VS Code extension |
-| [rapidkit npm CLI](https://www.npmjs.com/package/rapidkit) | Workspace and project CLI bridge |
-| [rapidkit-core](https://pypi.org/project/rapidkit-core/) | Python generation engine and module runtime |
-| [rapidkit-examples](https://github.com/rapidkitlabs/rapidkit-examples) | Starter and reference workspaces |
+| Component                                                              | Role                                                                              |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [rapidkit-vscode](https://github.com/chistiq/rapidkit-vscode)     | Workspai VS Code extension                                                        |
+| [workspai npm CLI](https://www.npmjs.com/package/workspai)             | Canonical command, contract, artifact, and Workspace Intelligence source of truth |
+| [rapidkit-core](https://pypi.org/project/rapidkit-core/)               | Python generation engine and module runtime                                       |
+| [rapidkit-examples](https://github.com/chistiq/rapidkit-examples) | Starter and reference workspaces                                                  |
 
 ---
 
@@ -375,7 +376,7 @@ Select a FastAPI or NestJS project in the Projects panel. Frontend and extended 
 
 **Project creation or adopt fails**
 
-Open `View → Output → Workspai`, inspect the command output, then run `Workspai: Run System Check`. Create and adopt workflows require a compatible `rapidkit` npm CLI; update with `npm install -g rapidkit@latest` when the CLI gate reports an older or missing version.
+Open `View → Output → Workspai`, inspect the command output, then run `Workspai: Run System Check`. Create and adopt workflows require a compatible `workspai` npm CLI; update with `npm install -g workspai@latest` when the CLI gate reports an older or missing version.
 
 ---
 
@@ -390,7 +391,7 @@ README illustrations live in [`media/readme/`](media/readme/). Marketplace captu
 
 ## Links
 
-[Documentation](https://www.workspai.com/) · [Marketplace](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode) · [npm](https://www.npmjs.com/package/rapidkit) · [PyPI](https://pypi.org/project/rapidkit-core/) · [Issues](https://github.com/rapidkitlabs/rapidkit-vscode/issues) · [Changelog](CHANGELOG.md)
+[Documentation](https://www.workspai.com/) · [Marketplace](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode) · [npm](https://www.npmjs.com/package/rapidkit) · [PyPI](https://pypi.org/project/rapidkit-core/) · [Issues](https://github.com/chistiq/rapidkit-vscode/issues) · [Changelog](CHANGELOG.md)
 
 ---
 

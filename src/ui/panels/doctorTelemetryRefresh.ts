@@ -4,19 +4,22 @@ import * as path from 'path';
 import type { DashboardEvidenceCardId } from '../../contracts/dashboardEvidenceCards.js';
 import { resolveReportBinding } from '../../core/dashboardReportRegistry.js';
 
-const WORKSPACE_DOCTOR_SUFFIX = `${path.sep}.rapidkit${path.sep}reports${path.sep}doctor-last-run.json`;
-const PROJECT_DOCTOR_SUFFIX = `${path.sep}.rapidkit${path.sep}reports${path.sep}doctor-project-last-run.json`;
+const METADATA_DIRS = ['.workspai', '.rapidkit'] as const;
 
 export function extractWorkspacePathFromDoctorReportPath(filePath: string): string | undefined {
-  const workspaceIdx = filePath.lastIndexOf(WORKSPACE_DOCTOR_SUFFIX);
-  if (workspaceIdx > 0) {
-    return filePath.slice(0, workspaceIdx);
-  }
+  for (const metadataDir of METADATA_DIRS) {
+    const workspaceSuffix = `${path.sep}${metadataDir}${path.sep}reports${path.sep}doctor-last-run.json`;
+    const workspaceIdx = filePath.lastIndexOf(workspaceSuffix);
+    if (workspaceIdx > 0) {
+      return filePath.slice(0, workspaceIdx);
+    }
 
-  const projectIdx = filePath.lastIndexOf(PROJECT_DOCTOR_SUFFIX);
-  if (projectIdx > 0) {
-    const projectRoot = filePath.slice(0, projectIdx);
-    return findWorkspaceRootSync(projectRoot) ?? projectRoot;
+    const projectSuffix = `${path.sep}${metadataDir}${path.sep}reports${path.sep}doctor-project-last-run.json`;
+    const projectIdx = filePath.lastIndexOf(projectSuffix);
+    if (projectIdx > 0) {
+      const projectRoot = filePath.slice(0, projectIdx);
+      return findWorkspaceRootSync(projectRoot) ?? projectRoot;
+    }
   }
 
   return undefined;
@@ -27,7 +30,10 @@ function findWorkspaceRootSync(startPath: string): string | undefined {
   const root = path.parse(current).root;
 
   while (current && current !== root) {
-    if (fs.existsSync(path.join(current, '.rapidkit-workspace'))) {
+    if (
+      fs.existsSync(path.join(current, '.workspai-workspace')) ||
+      fs.existsSync(path.join(current, '.rapidkit-workspace'))
+    ) {
       return current;
     }
     const parent = path.dirname(current);
@@ -41,21 +47,23 @@ function findWorkspaceRootSync(startPath: string): string | undefined {
 }
 
 export function extractWorkspacePathFromReportPath(filePath: string): string | undefined {
-  const reportsMarker = `${path.sep}.rapidkit${path.sep}reports${path.sep}`;
-  const reportsIdx = filePath.lastIndexOf(reportsMarker);
-  if (reportsIdx > 0) {
-    const rootCandidate = filePath.slice(0, reportsIdx);
-    const fileName = path.basename(filePath);
-    if (fileName === 'doctor-project-last-run.json') {
-      return findWorkspaceRootSync(rootCandidate) ?? rootCandidate;
+  for (const metadataDir of METADATA_DIRS) {
+    const reportsMarker = `${path.sep}${metadataDir}${path.sep}reports${path.sep}`;
+    const reportsIdx = filePath.lastIndexOf(reportsMarker);
+    if (reportsIdx > 0) {
+      const rootCandidate = filePath.slice(0, reportsIdx);
+      const fileName = path.basename(filePath);
+      if (fileName === 'doctor-project-last-run.json') {
+        return findWorkspaceRootSync(rootCandidate) ?? rootCandidate;
+      }
+      return rootCandidate;
     }
-    return rootCandidate;
-  }
 
-  const archiveSuffix = `${path.sep}.rapidkit${path.sep}archive-manifest.json`;
-  const archiveIdx = filePath.lastIndexOf(archiveSuffix);
-  if (archiveIdx > 0) {
-    return filePath.slice(0, archiveIdx);
+    const archiveSuffix = `${path.sep}${metadataDir}${path.sep}archive-manifest.json`;
+    const archiveIdx = filePath.lastIndexOf(archiveSuffix);
+    if (archiveIdx > 0) {
+      return filePath.slice(0, archiveIdx);
+    }
   }
 
   return extractWorkspacePathFromDoctorReportPath(filePath);

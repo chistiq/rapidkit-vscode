@@ -14,6 +14,7 @@
  *    workspace is not a Git repo.
  */
 
+import * as crypto from 'node:crypto';
 import * as path from 'path';
 import { WorkspaceUsageTracker } from '../utils/workspaceUsageTracker';
 import { run, type ExecaResult } from '../utils/exec';
@@ -30,6 +31,10 @@ export type FilePatchHunk = {
 
 export type FilePatch = {
   relativePath: string;
+  /** Explicit delete transactions are created only by the inspected-file host. */
+  operation?: 'write' | 'delete';
+  /** Hash of the exact source supplied to the model; null means absent. */
+  baseSha256?: string | null;
   language?: string;
   isNewFile: boolean;
   originalContent?: string;
@@ -50,6 +55,12 @@ export type MultiFilePatchResult = {
   appliedCount: number;
   rejectedCount: number;
   failedCount: number;
+};
+
+export type PatchRollbackResult = {
+  ok: boolean;
+  restoredPaths: string[];
+  failedPaths: Array<{ path: string; reason: string }>;
 };
 
 // ─── Extraction ───────────────────────────────────────────────────────────────
@@ -213,6 +224,7 @@ export type CommandRunner = (
 export interface PatchApplyDeps {
   readFile?: (absPath: string) => Promise<string | null>;
   writeFile?: (absPath: string, content: string) => Promise<void>;
+  deleteFile?: (absPath: string) => Promise<void>;
   commandRunner?: CommandRunner;
   telemetry?: {
     trackCommandEvent: (
@@ -252,6 +264,39 @@ async function defaultWriteFile(absPath: string, content: string): Promise<void>
   await fs.writeFile(absPath, content, 'utf8');
 }
 
+async function defaultDeleteFile(absPath: string): Promise<void> {
+  const fs = await import('fs-extra');
+  await fs.remove(absPath);
+}
+
+async function hasSymlinkPathComponent(
+  workspacePath: string,
+  targetPath: string
+): Promise<boolean> {
+  const fs = await import('node:fs/promises');
+  const workspaceRoot = path.resolve(workspacePath);
+  const relative = path.relative(workspaceRoot, targetPath);
+  let cursor = workspaceRoot;
+  for (const segment of relative.split(path.sep).filter(Boolean)) {
+    cursor = path.join(cursor, segment);
+    try {
+      if ((await fs.lstat(cursor)).isSymbolicLink()) {
+        return true;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return false;
+      }
+      throw error;
+    }
+  }
+  return false;
+}
+
+function contentSha256(content: string): string {
+  return crypto.createHash('sha256').update(content, 'utf8').digest('hex');
+}
+
 export interface PatchApplyInput {
   actionId: string;
   workspacePath: string;
@@ -262,6 +307,60 @@ export interface PatchApplyInput {
   acceptedPaths?: string[];
   verificationNote?: string;
   verificationPassed?: boolean;
+  /**
+   * Source hashes captured before AI generation. A null value means the file
+   * was absent. Writes are rejected if the source changed while the model was
+   * reasoning, preventing stale full-file replacements.
+   */
+  expectedBaseSha256?: Record<string, string | null>;
+}
+
+/** Prepare immutable before/after data for review without writing any file. */
+export async function preparePatchesForReview(
+  input: Pick<PatchApplyInput, 'workspacePath' | 'patches' | 'expectedBaseSha256'>,
+  deps: Pick<PatchApplyDeps, 'readFile'> = {}
+): Promise<FilePatch[]> {
+  const readFile = deps.readFile ?? defaultReadFile;
+  const expectedHashes = new Map(
+    Object.entries(input.expectedBaseSha256 ?? {}).map(
+      ([relativePath, hash]) => [path.normalize(relativePath), hash] as const
+    )
+  );
+  return Promise.all(
+    input.patches.map(async (patch) => {
+      const absolutePath = path.resolve(input.workspacePath, patch.relativePath);
+      if (!isChildPathOf(input.workspacePath, absolutePath)) {
+        return { ...patch, status: 'failed' as const, failReason: 'Outside workspace boundary.' };
+      }
+      const originalContent = await readFile(absolutePath);
+      const expectedHash =
+        patch.baseSha256 ?? expectedHashes.get(path.normalize(patch.relativePath));
+      if (
+        (patch.baseSha256 !== undefined ||
+          expectedHashes.has(path.normalize(patch.relativePath))) &&
+        (originalContent === null ? null : contentSha256(originalContent)) !== expectedHash
+      ) {
+        return {
+          ...patch,
+          status: 'failed' as const,
+          failReason: 'Source changed after AI grounding.',
+        };
+      }
+      return {
+        ...patch,
+        isNewFile: originalContent === null,
+        originalContent: originalContent ?? undefined,
+        hunks: [
+          {
+            startLine: 1,
+            removedLines: originalContent?.split('\n') ?? [],
+            addedLines: patch.patchedContent.split('\n'),
+          },
+        ],
+        status: patch.status === 'failed' ? patch.status : ('pending' as const),
+      };
+    })
+  );
 }
 
 /**
@@ -281,6 +380,8 @@ export async function applyPatches(
   const runner = deps.commandRunner ?? defaultRunner;
   const readFile = deps.readFile ?? defaultReadFile;
   const writeFile = deps.writeFile ?? defaultWriteFile;
+  const deleteFile =
+    deps.deleteFile ?? (deps.writeFile ? async () => undefined : defaultDeleteFile);
   const telemetry = deps.telemetry ?? WorkspaceUsageTracker.getInstance();
   const now = deps.now ?? (() => new Date());
   const patchIdGen = deps.patchId ?? (() => `patch-${input.actionId}-${Date.now().toString(36)}`);
@@ -300,15 +401,45 @@ export async function applyPatches(
     });
     if (result.exitCode === 0) {
       branchCreated = branchName;
+    } else {
+      const failedPatches = input.patches.map((patch) => ({
+        ...patch,
+        status: 'failed' as const,
+        failReason: `Required Git branch isolation failed: ${result.stderr || 'unknown Git error'}`,
+      }));
+      return {
+        patchId,
+        generatedAt,
+        actionId: input.actionId,
+        patches: failedPatches,
+        appliedCount: 0,
+        rejectedCount: 0,
+        failedCount: failedPatches.length,
+      };
     }
   }
 
   const acceptedSet = input.acceptedPaths ? new Set(input.acceptedPaths) : null;
+  const expectedHashes = new Map([
+    ...input.patches
+      .filter((patch) => patch.baseSha256 !== undefined)
+      .map((patch) => [path.normalize(patch.relativePath), patch.baseSha256 ?? null] as const),
+    ...Object.entries(input.expectedBaseSha256 ?? {}).map(
+      ([relativePath, hash]) => [path.normalize(relativePath), hash] as const
+    ),
+  ]);
 
-  // Steps 2-3: Read original + write patches
-  const resultPatches: FilePatch[] = await Promise.all(
-    input.patches.map(async (patch): Promise<FilePatch> => {
-      // Skip non-accepted patches
+  // Step 2: preflight every patch before the first write. This makes path and
+  // concurrent-source failures all-or-nothing instead of partially mutating a
+  // workspace before a later file is rejected.
+  const absolutePaths = new Map<number, string>();
+  const targetCounts = new Map<string, number>();
+  for (const patch of input.patches) {
+    const target = path.resolve(input.workspacePath, patch.relativePath);
+    targetCounts.set(target, (targetCounts.get(target) ?? 0) + 1);
+  }
+  let resultPatches: FilePatch[] = await Promise.all(
+    input.patches.map(async (patch, index): Promise<FilePatch> => {
       if (acceptedSet !== null && !acceptedSet.has(patch.relativePath)) {
         return { ...patch, status: 'rejected' };
       }
@@ -324,12 +455,59 @@ export async function applyPatches(
           failReason: `Refusing to apply patch outside workspace boundary: ${patch.relativePath}`,
         };
       }
+      if (
+        !deps.readFile &&
+        !deps.writeFile &&
+        (await hasSymlinkPathComponent(input.workspacePath, absPath))
+      ) {
+        return {
+          ...patch,
+          status: 'failed',
+          failReason: `Refusing patch through a symbolic link: ${patch.relativePath}`,
+        };
+      }
+      if ((targetCounts.get(absPath) ?? 0) > 1) {
+        return {
+          ...patch,
+          status: 'failed',
+          failReason: `Duplicate patch target in one transaction: ${patch.relativePath}`,
+        };
+      }
+      if (patch.patchedContent.includes('\u0000')) {
+        return {
+          ...patch,
+          status: 'failed',
+          failReason: `Refusing patch content containing NUL bytes: ${patch.relativePath}`,
+        };
+      }
+      if (path.extname(absPath).toLowerCase() === '.json') {
+        try {
+          JSON.parse(patch.patchedContent);
+        } catch (error) {
+          return {
+            ...patch,
+            status: 'failed',
+            failReason: `Invalid JSON patch for ${patch.relativePath}: ${error instanceof Error ? error.message : String(error)}`,
+          };
+        }
+      }
+      absolutePaths.set(index, absPath);
       const originalContent = await readFile(absPath);
-      const isNewFile = originalContent === null;
+      const expectedHash = expectedHashes.get(path.normalize(patch.relativePath));
+      if (expectedHashes.has(path.normalize(patch.relativePath))) {
+        const actualHash = originalContent === null ? null : contentSha256(originalContent);
+        if (actualHash !== expectedHash) {
+          return {
+            ...patch,
+            status: 'failed',
+            failReason: `Source changed after AI grounding; refusing stale patch: ${patch.relativePath}`,
+          };
+        }
+      }
 
-      const enrichedPatch: FilePatch = {
+      return {
         ...patch,
-        isNewFile,
+        isNewFile: originalContent === null,
         originalContent: originalContent ?? undefined,
         hunks: [
           {
@@ -338,20 +516,80 @@ export async function applyPatches(
             addedLines: patch.patchedContent.split('\n'),
           },
         ],
+        status: 'pending',
       };
-
-      try {
-        await writeFile(absPath, patch.patchedContent);
-        return { ...enrichedPatch, status: 'applied' };
-      } catch (err) {
-        return {
-          ...enrichedPatch,
-          status: 'failed',
-          failReason: err instanceof Error ? err.message : String(err),
-        };
-      }
     })
   );
+
+  const preflightFailure = resultPatches.find((patch) => patch.status === 'failed');
+  if (preflightFailure) {
+    resultPatches = resultPatches.map((patch) =>
+      patch.status === 'pending'
+        ? {
+            ...patch,
+            status: 'failed',
+            failReason: `Patch transaction aborted: ${preflightFailure.failReason}`,
+          }
+        : patch
+    );
+  } else {
+    // Step 3: write sequentially and compensate every prior write if any file
+    // fails. Successful return therefore means the complete patch set landed.
+    const writtenIndexes: number[] = [];
+    for (let index = 0; index < resultPatches.length; index += 1) {
+      const patch = resultPatches[index];
+      if (patch.status !== 'pending') {
+        continue;
+      }
+      const absPath = absolutePaths.get(index);
+      if (!absPath) {
+        continue;
+      }
+      try {
+        await writeFile(absPath, patch.patchedContent);
+        resultPatches[index] = { ...patch, status: 'applied' };
+        writtenIndexes.push(index);
+      } catch (error) {
+        const failure = error instanceof Error ? error.message : String(error);
+        const rollbackIndexes = [...writtenIndexes, index].reverse();
+        const rollbackErrors: string[] = [];
+        for (const rollbackIndex of rollbackIndexes) {
+          const rollbackPatch = resultPatches[rollbackIndex];
+          const rollbackPath = absolutePaths.get(rollbackIndex);
+          if (!rollbackPath) {
+            continue;
+          }
+          try {
+            if (rollbackPatch.isNewFile) {
+              await deleteFile(rollbackPath);
+            } else {
+              await writeFile(rollbackPath, rollbackPatch.originalContent ?? '');
+            }
+          } catch (rollbackError) {
+            rollbackErrors.push(
+              `${rollbackPatch.relativePath}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
+            );
+          }
+        }
+        const rollbackSuffix =
+          rollbackErrors.length > 0 ? ` Rollback errors: ${rollbackErrors.join('; ')}` : '';
+        resultPatches = resultPatches.map((candidate, candidateIndex) => {
+          if (candidate.status === 'rejected') {
+            return candidate;
+          }
+          return {
+            ...candidate,
+            status: 'failed',
+            failReason:
+              candidateIndex === index
+                ? `${failure}.${rollbackSuffix}`
+                : `Patch transaction rolled back after ${patch.relativePath} failed.${rollbackSuffix}`,
+          };
+        });
+        break;
+      }
+    }
+  }
 
   const appliedCount = resultPatches.filter((p) => p.status === 'applied').length;
   const rejectedCount = resultPatches.filter((p) => p.status === 'rejected').length;
@@ -380,6 +618,74 @@ export async function applyPatches(
     rejectedCount,
     failedCount,
   };
+}
+
+/**
+ * Compensate an AI patch only when every target still equals the content that
+ * Studio wrote. This prevents rollback from overwriting edits made by the user
+ * or by verify hooks after patch application.
+ */
+export async function rollbackAppliedPatches(
+  input: { workspacePath: string; patches: FilePatch[] },
+  deps: Pick<PatchApplyDeps, 'readFile' | 'writeFile' | 'deleteFile'> = {}
+): Promise<PatchRollbackResult> {
+  const readFile = deps.readFile ?? defaultReadFile;
+  const writeFile = deps.writeFile ?? defaultWriteFile;
+  const deleteFile =
+    deps.deleteFile ?? (deps.writeFile ? async () => undefined : defaultDeleteFile);
+  const candidates = input.patches.filter((patch) => patch.status === 'applied');
+  const failedPaths: PatchRollbackResult['failedPaths'] = [];
+
+  for (const patch of candidates) {
+    const absolutePath = path.resolve(input.workspacePath, patch.relativePath);
+    if (!isChildPathOf(input.workspacePath, absolutePath)) {
+      failedPaths.push({ path: patch.relativePath, reason: 'outside workspace boundary' });
+      continue;
+    }
+    if (
+      !deps.readFile &&
+      !deps.writeFile &&
+      (await hasSymlinkPathComponent(input.workspacePath, absolutePath))
+    ) {
+      failedPaths.push({ path: patch.relativePath, reason: 'symbolic-link target refused' });
+      continue;
+    }
+    const currentContent = await readFile(absolutePath);
+    const sourceMatchesAppliedState =
+      patch.operation === 'delete'
+        ? currentContent === null
+        : currentContent === patch.patchedContent;
+    if (!sourceMatchesAppliedState) {
+      failedPaths.push({
+        path: patch.relativePath,
+        reason: 'source changed after patch apply; automatic rollback refused',
+      });
+    }
+  }
+  if (failedPaths.length > 0) {
+    return { ok: false, restoredPaths: [], failedPaths };
+  }
+
+  const restoredPaths: string[] = [];
+  for (const patch of [...candidates].reverse()) {
+    const absolutePath = path.resolve(input.workspacePath, patch.relativePath);
+    try {
+      if (patch.isNewFile) {
+        await deleteFile(absolutePath);
+      } else {
+        await writeFile(absolutePath, patch.originalContent ?? '');
+      }
+      restoredPaths.push(patch.relativePath);
+    } catch (error) {
+      failedPaths.push({
+        path: patch.relativePath,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      break;
+    }
+  }
+
+  return { ok: failedPaths.length === 0, restoredPaths, failedPaths };
 }
 
 // ─── Log/Trace Ingestion (A03) ────────────────────────────────────────────────

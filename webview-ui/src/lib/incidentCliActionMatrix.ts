@@ -16,7 +16,7 @@ export type IncidentCliActionEntry = {
   actionTypes?: string[];
 };
 
-// Source-driven from rapidkit-npm command surface:
+// Source-driven from the Workspai CLI command surface:
 // doctor [scope], readiness, workspace <action>, workspace run <stage>, init/dev/build/test/shell.
 const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
   {
@@ -24,7 +24,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Run workspace doctor',
     detail: 'Deterministic workspace health check from doctor evidence pipeline.',
-    command: 'npx rapidkit doctor workspace',
+    command: 'npx workspai doctor workspace',
     stability: 'stable',
     actionTypes: ['doctor-workspace-check'],
   },
@@ -33,7 +33,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Apply doctor safe fixes',
     detail: 'Runs doctor autofix for known, safe remediation paths.',
-    command: 'npx rapidkit doctor workspace --fix',
+    command: 'npx workspai doctor workspace --fix',
     stability: 'stable',
     actionTypes: ['doctor-fix', 'doctor-workspace-fix'],
   },
@@ -42,7 +42,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Generate readiness JSON',
     detail: 'Machine-readable release readiness artifact for CI and governance.',
-    command: 'npx rapidkit readiness --json',
+    command: 'npx workspai readiness --json',
     stability: 'stable',
     actionTypes: ['release-readiness-commander'],
   },
@@ -52,7 +52,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     label: 'Run governance pipeline',
     detail:
       'Orchestrates sync, doctor, analyze, readiness, and autopilot with pipeline-last-run.json evidence.',
-    command: 'npx rapidkit pipeline --json --strict',
+    command: 'npx workspai pipeline --json --strict',
     stability: 'stable',
     actionTypes: ['release-readiness-commander', 'governance-pipeline'],
   },
@@ -61,7 +61,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Build customer archive',
     detail: 'Create workspace archive manifest for ship handoff evidence.',
-    command: 'npx rapidkit workspace archive',
+    command: 'npx workspai workspace export --output team-workspace.rapidkit-archive.zip --json',
     stability: 'stable',
   },
   {
@@ -69,7 +69,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Run autopilot release',
     detail: 'Execute fleet autopilot release gate after readiness and verify evidence.',
-    command: 'npx rapidkit autopilot release',
+    command: 'npx workspai autopilot release',
     stability: 'stable',
     actionTypes: ['release-readiness-commander'],
   },
@@ -78,7 +78,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Run workspace analyze',
     detail: 'Strict analyze report used by verify-gates and release posture.',
-    command: 'npx rapidkit analyze --json',
+    command: 'npx workspai analyze --json',
     stability: 'stable',
   },
   {
@@ -86,7 +86,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Show workspace policy',
     detail: 'Inspect effective workspace policy and governance posture.',
-    command: 'npx rapidkit workspace policy show',
+    command: 'npx workspai workspace policy show',
     stability: 'advanced',
     actionTypes: ['view-compliance-report'],
   },
@@ -95,7 +95,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Sync workspace projects',
     detail: 'Refresh workspace project inventory from filesystem state.',
-    command: 'npx rapidkit workspace sync',
+    command: 'npx workspai workspace sync',
     stability: 'advanced',
   },
   {
@@ -122,7 +122,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Agent context pack',
     detail: 'Write workspace-context-agent.json for Workspai AI and Copilot Chat #file attachment.',
-    command: 'npx rapidkit workspace context --for-agent --json --write',
+    command: 'npx workspai workspace context --for-agent --json --write',
     stability: 'advanced',
     actionTypes: ['workspace-context-agent', 'agent-context'],
   },
@@ -131,7 +131,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Workspace verify',
     detail: 'Evaluate Workspace Advisor verification evidence from workspace-impact-last-run.json.',
-    command: `npx rapidkit workspace verify --from-impact ${WORKSPACE_IMPACT_REPORT_PATH} --json`,
+    command: `npx workspai workspace verify --from-impact ${WORKSPACE_IMPACT_REPORT_PATH} --json`,
     stability: 'stable',
     actionTypes: ['workspace-verify', 'verify-pack-autopilot'],
   },
@@ -140,7 +140,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Workspace model',
     detail: 'Canonical workspace project graph and command surface artifact.',
-    command: 'npx rapidkit workspace model --json --write',
+    command: 'npx workspai workspace model --json --write',
     stability: 'advanced',
     actionTypes: ['workspace-model'],
   },
@@ -149,8 +149,8 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Run workspace init',
     detail:
-      'Mirrored full-init alias (same behavior as `rapidkit init` and `rapidkit workspace init` at workspace root).',
-    command: 'npx rapidkit workspace run init',
+      'Mirrored full-init alias (same behavior as `workspai init` and `workspai workspace init` at workspace root).',
+    command: 'npx workspai workspace run init',
     stability: 'advanced',
   },
   {
@@ -158,7 +158,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Run workspace test',
     detail: 'Execute workspace-wide test stage across selected projects.',
-    command: 'npx rapidkit workspace run test',
+    command: 'npx workspai workspace run test',
     stability: 'advanced',
   },
   {
@@ -166,7 +166,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Run workspace build',
     detail: 'Execute workspace-wide build stage across selected projects.',
-    command: 'npx rapidkit workspace run build',
+    command: 'npx workspai workspace run build',
     stability: 'advanced',
   },
   {
@@ -174,7 +174,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Run workspace start',
     detail: 'Execute workspace-wide start stage across selected projects.',
-    command: 'npx rapidkit workspace run start',
+    command: 'npx workspai workspace run start',
     stability: 'advanced',
   },
   {
@@ -182,7 +182,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'project',
     label: 'Initialize project dependencies',
     detail: 'Install and align project dependencies for local execution.',
-    command: 'npx rapidkit init',
+    command: 'npx workspai init',
     stability: 'stable',
     actionTypes: ['project-init'],
   },
@@ -191,7 +191,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'project',
     label: 'Run project doctor',
     detail: 'Deterministic project health check for the selected service scope.',
-    command: 'npx rapidkit doctor project',
+    command: 'npx workspai doctor project',
     stability: 'stable',
     actionTypes: ['doctor-project-check'],
   },
@@ -200,7 +200,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'project',
     label: 'Run project tests',
     detail: 'Execute project test suite as deterministic verification.',
-    command: 'npx rapidkit test',
+    command: 'npx workspai test',
     stability: 'stable',
     actionTypes: ['project-test', 'verify-pack-autopilot'],
   },
@@ -209,7 +209,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'project',
     label: 'Build project',
     detail: 'Compile/build project artifacts and detect build-time regressions.',
-    command: 'npx rapidkit build',
+    command: 'npx workspai build',
     stability: 'stable',
     actionTypes: ['project-build'],
   },
@@ -218,7 +218,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'project',
     label: 'Print shell activation snippet',
     detail: 'Shows activation snippet for current project workspace shell.',
-    command: 'npx rapidkit shell activate',
+    command: 'npx workspai shell activate',
     stability: 'advanced',
     actionTypes: ['project-shell-activate'],
   },
@@ -228,7 +228,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     label: 'Run browser smoke test',
     detail:
       'Open project in VS Code browser and verify key UI surfaces with AI-guided smoke test (VS Code 1.119+ browser agent tools).',
-    command: 'npx rapidkit dev',
+    command: 'npx workspai dev',
     stability: 'advanced',
     actionTypes: ['browser-smoke-test'],
   },

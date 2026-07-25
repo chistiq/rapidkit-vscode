@@ -94,6 +94,31 @@ describe('aiActionContract', () => {
     expect(result.issues.map((issue) => issue.code)).toContain('command-policy-violation');
   });
 
+  it('accepts deterministic RapidKit bootstrap compliance handoffs from Studio', () => {
+    const contract = normalizeAIActionContract({
+      actionType: 'fix',
+      riskLevel: 'medium',
+      affectedFiles: ['.rapidkit/compatibility-matrix.json', '.rapidkit/mirror-config.json'],
+      proposedCommands: ['npx rapidkit bootstrap --ci --json'],
+      verificationCommands: ['npx rapidkit bootstrap --ci --json'],
+      rollbackPlan: [
+        'git checkout -- ".rapidkit/compatibility-matrix.json" ".rapidkit/mirror-config.json"',
+      ],
+      confidence: 0.9,
+      requiresApproval: true,
+    });
+
+    const result = validateAIActionContract(contract, {
+      workspacePath: '/tmp/workspace',
+      strict: true,
+    });
+
+    expect(result.status).toBe('valid');
+    expect(result.canApply).toBe(true);
+    expect(result.canVerify).toBe(true);
+    expect(result.canRollback).toBe(true);
+  });
+
   it('blocks fix actions without verification in strict mode', () => {
     const contract = normalizeAIActionContract({
       actionType: 'fix',

@@ -373,6 +373,106 @@ describe('welcomePanelDashboardLifecycleMessages', () => {
       refreshMode: 'patch',
     });
   });
+
+  it('routes graph stream lifecycle without falling through to command execution', async () => {
+    const { tryDispatchDashboardLifecycleWebviewMessage } =
+      await import('../ui/panels/welcomePanelDashboardLifecycleMessages');
+    const startWorkspaceGraphStream = vi.fn();
+    const stopWorkspaceGraphStream = vi.fn();
+    const resyncWorkspaceGraphStream = vi.fn();
+    const host = {
+      context: {} as never,
+      sendDashboardEvidence: vi.fn(),
+      sendWorkspaceToolStatus: vi.fn(),
+      resolveTelemetryWorkspacePath: () => '/ws',
+      startWorkspaceGraphStream,
+      stopWorkspaceGraphStream,
+      resyncWorkspaceGraphStream,
+    };
+
+    expect(
+      await tryDispatchDashboardLifecycleWebviewMessage(host, 'startWorkspaceGraphStream', {
+        workspacePath: '/ws',
+      })
+    ).toBe(true);
+    expect(
+      await tryDispatchDashboardLifecycleWebviewMessage(host, 'resyncWorkspaceGraphStream', {})
+    ).toBe(true);
+    expect(
+      await tryDispatchDashboardLifecycleWebviewMessage(host, 'stopWorkspaceGraphStream', {})
+    ).toBe(true);
+    expect(startWorkspaceGraphStream).toHaveBeenCalledWith('/ws');
+    expect(resyncWorkspaceGraphStream).toHaveBeenCalledOnce();
+    expect(stopWorkspaceGraphStream).toHaveBeenCalledOnce();
+  });
+
+  it('normalizes graph recording lifecycle payloads before reaching the host', async () => {
+    const { tryDispatchDashboardLifecycleWebviewMessage } =
+      await import('../ui/panels/welcomePanelDashboardLifecycleMessages');
+    const startWorkspaceGraphRecording = vi.fn(async () => undefined);
+    const appendWorkspaceGraphRecordingFrame = vi.fn(async () => undefined);
+    const stopWorkspaceGraphRecording = vi.fn(async () => undefined);
+    const openWorkspaceGraphRecording = vi.fn(async () => undefined);
+    const host = {
+      context: {} as never,
+      sendDashboardEvidence: vi.fn(),
+      sendWorkspaceToolStatus: vi.fn(),
+      resolveTelemetryWorkspacePath: () => '/ws',
+      startWorkspaceGraphRecording,
+      appendWorkspaceGraphRecordingFrame,
+      stopWorkspaceGraphRecording,
+      openWorkspaceGraphRecording,
+    };
+
+    await tryDispatchDashboardLifecycleWebviewMessage(host, 'startWorkspaceGraphRecording', {
+      workspacePath: '/ws',
+      mode: 'change-driven',
+      initialRevision: 'revision-1',
+    });
+    await tryDispatchDashboardLifecycleWebviewMessage(host, 'appendWorkspaceGraphRecordingFrame', {
+      sessionId: 'session-1',
+      revision: 'revision-1',
+      capturedAt: '2026-07-23T00:00:00.000Z',
+      width: 1280,
+      height: 720,
+      pngDataUrl: 'data:image/png;base64,payload',
+      change: {
+        kind: 'baseline',
+        title: 'Baseline',
+        revision: 'revision-1',
+        entitiesAdded: 1,
+        entitiesRemoved: 0,
+        entitiesChanged: 0,
+        relationsAdded: 0,
+        relationsRemoved: 0,
+        relationsChanged: 0,
+        highlightedEntityIds: [],
+      },
+    });
+    await tryDispatchDashboardLifecycleWebviewMessage(host, 'stopWorkspaceGraphRecording', {
+      sessionId: 'session-1',
+    });
+    await tryDispatchDashboardLifecycleWebviewMessage(host, 'openWorkspaceGraphRecording', {});
+
+    expect(startWorkspaceGraphRecording).toHaveBeenCalledWith({
+      workspacePath: '/ws',
+      mode: 'change-driven',
+      initialRevision: 'revision-1',
+    });
+    expect(appendWorkspaceGraphRecordingFrame).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'session-1',
+        revision: 'revision-1',
+        width: 1280,
+        height: 720,
+      })
+    );
+    expect(stopWorkspaceGraphRecording).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      webmDataUrl: undefined,
+    });
+    expect(openWorkspaceGraphRecording).toHaveBeenCalledOnce();
+  });
 });
 
 describe('welcomePanelDashboardOpsChain', () => {
@@ -703,7 +803,7 @@ describe('welcomePanelDoctorEvidenceWatcher', () => {
     );
 
     expect(source).toContain('export function registerWelcomePanelDoctorEvidenceWatcher');
-    expect(source).toContain('.rapidkit/reports/**/*.json');
+    expect(source).toContain('{.workspai,.rapidkit}/reports/**/*.json');
     expect(welcomePanelSource).toContain('registerWelcomePanelDoctorEvidenceWatcher');
     expect(welcomePanelSource).not.toContain('_registerDoctorEvidenceWatcher');
   });

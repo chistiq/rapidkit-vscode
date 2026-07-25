@@ -1,6 +1,6 @@
 /**
  * Scaffold vs release-blocker semantics for empty workspaces — extension evidence bridge.
- * Keep patterns aligned with rapidkit-npm/src/workspace-scaffold.ts.
+ * Keep patterns aligned with the Workspai CLI workspace scaffold contract.
  */
 
 export function isEmptyWorkspaceScaffoldBlocker(text: string): boolean {
@@ -77,16 +77,20 @@ export function cardCountsAsReleaseBlocker(input: {
   status: string;
   blockers: string[];
   workspaceProjectCount: number;
+  blocking?: boolean;
 }): boolean {
   const effectiveBlockers = filterBlockersForEmptyWorkspace(
     input.workspaceProjectCount,
     input.blockers
   );
   if (input.workspaceProjectCount === 0) {
-    return effectiveBlockers.length > 0;
+    if (effectiveBlockers.length === 0) {
+      return false;
+    }
+    return input.blocking ?? input.status === 'fail';
   }
-  if (input.status === 'fail') {
-    return true;
+  if (input.blocking !== undefined) {
+    return input.blocking;
   }
-  return effectiveBlockers.length > 0;
+  return input.status === 'fail';
 }

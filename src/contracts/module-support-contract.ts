@@ -5,7 +5,7 @@ const MODULE_CAPABLE_KIT_ORDER = ['fastapi.standard', 'fastapi.ddd', 'nestjs.sta
 const MODULE_UNSUPPORTED_BACKEND_FRAMEWORKS = new Set(['go', 'springboot', 'dotnet']);
 
 const MODULE_SUPPORT_POLICY_NOTE =
-  'RapidKit modules are Core-backed templates for FastAPI and NestJS backends only. Frontend scaffolds and extended backend kits use native package ecosystems.';
+  'RapidKit Core modules are Core-backed templates for FastAPI and NestJS backends only. Frontend scaffolds and extended backend kits use native package ecosystems.';
 
 type RuntimeSurfaceModuleSlice = {
   moduleSuggestionFrameworks: string[];

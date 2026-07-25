@@ -159,6 +159,216 @@ describe('doctorRemediationPlanReader', () => {
     });
   });
 
+  it('uses upstream Doctor repairs for aggregate Agent Grounding blockers', async () => {
+    const workspacePath = makeRoot();
+    await writeWorkspacePlan(workspacePath, new Date(Date.now() + 60_000).toISOString());
+    const artifactPath = path.join(
+      workspacePath,
+      '.rapidkit',
+      'reports',
+      'agent-customization-pack.json'
+    );
+    await fs.outputJSON(artifactPath, { generatedAt: new Date().toISOString() });
+
+    const plan = await readDoctorRemediationPlanForStudio({
+      workspacePath,
+      handoff: handoff({
+        workspacePath,
+        cardId: 'agentGrounding',
+        cardLabel: 'Agent Customization Pack',
+        artifactPath: '.rapidkit/reports/agent-customization-pack.json',
+        sourceCommand: 'npx workspai workspace agent-sync --write --json',
+        verifyCommand: 'npx workspai workspace agent-sync --write --json',
+        scope: 'workspace',
+        projectPath: undefined,
+        blockers: [
+          'readiness warn: doctor found project issues',
+          'compass-api: Virtual environment not created',
+        ],
+      }),
+    });
+
+    expect(plan?.policyProfile).toBe('enterprise-strict');
+    expect(plan?.visibleSteps.map((step) => step.id)).toEqual([
+      'web:test-script',
+      'api:env-example',
+    ]);
+  });
+
+  it('routes aggregate Readiness vulnerability blockers to project-owned Doctor repairs', async () => {
+    const workspacePath = makeRoot();
+    const projectPath = path.join(workspacePath, 'apps', 'web');
+    const reportsPath = path.join(workspacePath, '.workspai', 'reports');
+    await fs.outputJSON(path.join(reportsPath, 'release-readiness-last-run.json'), {
+      generatedAt: new Date().toISOString(),
+      blockers: ['dependency: 2 dependency vulnerability(ies) reported'],
+    });
+    await fs.outputJSON(path.join(reportsPath, 'doctor-remediation-plan-last-run.json'), {
+      schemaVersion: 'doctor-remediation-plan-v2',
+      generatedAt: new Date(Date.now() + 60_000).toISOString(),
+      policyProfile: 'enterprise-strict',
+      totalSteps: 1,
+      executableSteps: 1,
+      risk: { safe: 0, guarded: 1, invasive: 0 },
+      steps: [
+        {
+          id: 'web:surface-security-hygiene.command',
+          phase: 'dependency-repair',
+          order: 10,
+          projectName: 'web',
+          projectPath,
+          originalCommand: `cd "${projectPath}" && npm audit fix --audit-level=moderate`,
+          kind: 'shell',
+          risk: 'guarded',
+          executable: true,
+          studioStatus: {
+            state: 'review-required',
+            reason: 'Apply npm-authored non-breaking vulnerability fixes.',
+          },
+          repairIntent: {
+            primaryActionLabel: 'Apply non-breaking npm vulnerability fixes',
+            requiresApproval: true,
+            confidence: 'high',
+          },
+          preview: {
+            title: 'Apply non-breaking npm vulnerability fixes',
+            summary: 'Updates the project lockfile without --force.',
+          },
+          diffPreview: { summary: 'Review npm lockfile changes after execution.' },
+          files: ['package.json', 'package-lock.json'],
+          verifyCommand: 'npx workspai doctor workspace --json',
+          refreshCommands: ['npx workspai readiness --strict --json'],
+        },
+      ],
+    });
+    await fs.outputJSON(path.join(reportsPath, 'artifact-remediation-plan-last-run.json'), {
+      schemaVersion: 'artifact-remediation-plan-v1',
+      generatedAt: new Date(Date.now() + 60_000).toISOString(),
+      actions: [
+        {
+          id: 'readiness.refresh.1',
+          artifactKind: 'readiness',
+          cardId: 'readiness',
+          title: 'Refresh release readiness',
+          order: 1,
+          phase: 'release-readiness',
+          scope: 'workspace',
+          status: 'ready',
+          mode: 'run-command',
+          risk: 'guarded',
+          requiresApproval: true,
+          blocker: 'dependency: 2 dependency vulnerability(ies) reported',
+          summary: 'Refresh evidence.',
+          command: 'npx workspai readiness --strict --json',
+          verifyCommand: 'npx workspai readiness --strict --json',
+          cwd: 'workspace',
+          files: [],
+          notes: [],
+        },
+      ],
+    });
+
+    const plan = await readDoctorRemediationPlanForStudio({
+      workspacePath,
+      handoff: handoff({
+        workspacePath,
+        cardId: 'readiness',
+        cardLabel: 'Readiness',
+        artifactPath: '.workspai/reports/release-readiness-last-run.json',
+        sourceCommand: 'readiness',
+        verifyCommand: 'npx workspai readiness --strict --json',
+        scope: 'workspace',
+        projectPath: undefined,
+        blockers: ['dependency: 2 dependency vulnerability(ies) reported'],
+      }),
+    });
+
+    expect(plan?.sourcePath).toContain('doctor-remediation-plan-last-run.json');
+    expect(plan?.visibleSteps).toHaveLength(1);
+    expect(plan?.visibleSteps[0]).toMatchObject({
+      id: 'web:surface-security-hygiene.command',
+      projectPath,
+      executable: true,
+      primaryAction: 'Apply non-breaking npm vulnerability fixes',
+    });
+    expect(plan?.visibleSteps[0]?.originalCommand).toContain('npm audit fix');
+    expect(plan?.visibleSteps[0]?.originalCommand).not.toContain('--force');
+  });
+
+  it('keeps Agent Grounding remediation focused on the named stale artifact', async () => {
+    const workspacePath = makeRoot();
+    const reportsPath = path.join(workspacePath, '.rapidkit', 'reports');
+    await fs.outputJSON(path.join(reportsPath, 'agent-customization-pack.json'), {
+      generatedAt: new Date().toISOString(),
+    });
+    await fs.outputJSON(path.join(reportsPath, 'artifact-remediation-plan-last-run.json'), {
+      schemaVersion: 'artifact-remediation-plan-v1',
+      generatedAt: new Date(Date.now() + 60_000).toISOString(),
+      actions: [
+        {
+          id: 'agent-grounding:dependencies',
+          artifactKind: 'agent-customization-pack',
+          cardId: 'agentGrounding',
+          title: 'Synchronize dependencies',
+          order: 10,
+          scope: 'workspace',
+          status: 'review-required',
+          mode: 'run-command',
+          risk: 'guarded',
+          requiresApproval: true,
+          blocker: 'Dependency baseline missing',
+          summary: 'Install Java and Poetry dependency baselines.',
+          command: 'npm install',
+          cwd: 'workspace',
+          files: [],
+          operation: { type: 'run-command', command: 'npm install', cwd: 'workspace' },
+          rollback: { available: false, strategy: 'none' },
+          notes: [],
+        },
+        {
+          id: 'agent-grounding:history',
+          artifactKind: 'agent-customization-pack',
+          cardId: 'agentGrounding',
+          title: 'Refresh workspace intelligence history',
+          order: 20,
+          scope: 'workspace',
+          status: 'review-required',
+          mode: 'run-command',
+          risk: 'safe',
+          requiresApproval: true,
+          blocker: 'Stale report: .workspai/reports/workspace-intelligence-history.json',
+          summary: 'Regenerate workspace-intelligence-history.json from governed evidence.',
+          command: 'npx workspai workspace intelligence run --json',
+          cwd: 'workspace',
+          files: ['.workspai/reports/workspace-intelligence-history.json'],
+          operation: {
+            type: 'run-command',
+            command: 'npx workspai workspace intelligence run --json',
+            cwd: 'workspace',
+          },
+          rollback: { available: false, strategy: 'none' },
+          notes: [],
+        },
+      ],
+    });
+
+    const plan = await readDoctorRemediationPlanForStudio({
+      workspacePath,
+      handoff: handoff({
+        workspacePath,
+        cardId: 'agentGrounding',
+        cardLabel: 'Agent Customization Pack',
+        artifactPath: '.workspai/reports/agent-customization-pack.json',
+        scope: 'workspace',
+        projectPath: undefined,
+        blockers: ['Stale report: .workspai/reports/workspace-intelligence-history.json'],
+      }),
+    });
+
+    expect(plan?.policyProfile).toBe('artifact-remediation-plan-v1');
+    expect(plan?.visibleSteps.map((step) => step.id)).toEqual(['agent-grounding:history']);
+  });
+
   it('falls back to npm artifact remediation plans for non-doctor evidence cards', async () => {
     const workspacePath = makeRoot();
     await writeWorkspacePlan(workspacePath, new Date(Date.now() + 60_000).toISOString());
@@ -282,6 +492,7 @@ describe('doctorRemediationPlanReader', () => {
         verifyCommand: 'npx rapidkit readiness --json',
         scope: 'workspace',
         projectPath: undefined,
+        blockers: ['verify: Workspace contract verification failed (CLI cache)'],
       }),
       maxSteps: 4,
     });

@@ -19,6 +19,9 @@ export type PackageRunnerInvocation = {
 /** Cached npm package specifier from global link / env. Undefined = not warmed yet. */
 let resolvedPackageSpecifier: string | null | undefined;
 
+const WORKSPAI_NPM_PACKAGE = 'workspai';
+const WORKSPAI_NPM_BINARY = 'workspai';
+
 const PACKAGE_RUNNER_COMMANDS = new Set(['npx', 'npm', 'yarn', 'pnpm']);
 
 export function detectPlatformKind(platform: NodeJS.Platform = process.platform): PlatformKind {
@@ -163,84 +166,24 @@ export function getResolvedRapidkitNpmPackageSpecifier(): string | null | undefi
 }
 
 function readEnvRapidkitPackageSpecifier(): string | undefined {
-  const envSpec = process.env.RAPIDKIT_NPM_PACKAGE?.trim();
+  const envSpec =
+    process.env.WORKSPAI_NPM_PACKAGE?.trim() ?? process.env.RAPIDKIT_NPM_PACKAGE?.trim();
   return envSpec && envSpec.length > 0 ? envSpec : undefined;
 }
 
 /**
  * npx args that resolve the npm bridge CLI.
- * Prefer unpinned `npx --yes rapidkit` (global npm link / npm exec) because bare
- * `--package rapidkit` can delegate adopt/create frontend to the Python core.
- * When a globally linked file: package exists, pin to that path for reproducibility.
+ * Resolve the registry package explicitly so ambient global npm links cannot leak
+ * mutable development builds into extension-host commands.
  */
 export function buildNpxRapidkitPrefix(): string[] {
   const envSpec = readEnvRapidkitPackageSpecifier();
-  const linkedSpec =
-    resolvedPackageSpecifier !== undefined && resolvedPackageSpecifier !== null
-      ? resolvedPackageSpecifier
-      : undefined;
-  const packageSpecifier = envSpec ?? linkedSpec;
-
-  if (packageSpecifier) {
-    return ['--yes', '--package', packageSpecifier, 'rapidkit'];
-  }
-
-  return ['--yes', 'rapidkit'];
+  const packageSpecifier = envSpec ?? WORKSPAI_NPM_PACKAGE;
+  return ['--yes', '--package', packageSpecifier, WORKSPAI_NPM_BINARY];
 }
 
 export async function warmRapidkitNpmPackageResolution(): Promise<void> {
-  if (readEnvRapidkitPackageSpecifier()) {
-    resolvedPackageSpecifier = readEnvRapidkitPackageSpecifier();
-    return;
-  }
-
-  if (resolvedPackageSpecifier !== undefined) {
-    return;
-  }
-
-  try {
-    const { run } = await import('./exec.js');
-    const result = await run('npm', ['list', '-g', 'rapidkit', '--depth=0', '--json'], {
-      timeout: 8000,
-      stdio: 'pipe',
-    });
-    const stdout = typeof result.stdout === 'string' ? result.stdout : '';
-    if (!stdout.trim()) {
-      resolvedPackageSpecifier = null;
-      return;
-    }
-
-    const parsed = JSON.parse(stdout) as {
-      dependencies?: { rapidkit?: { resolved?: string } };
-    };
-    const resolved = parsed.dependencies?.rapidkit?.resolved?.trim();
-    if (resolved?.startsWith('file:')) {
-      const filePath = resolved.slice('file:'.length);
-      if (path.isAbsolute(filePath)) {
-        resolvedPackageSpecifier = `file:${filePath}`;
-        return;
-      }
-
-      // npm link reports a relative file: path — resolve via the global symlink target.
-      const rootResult = await run('npm', ['root', '-g'], { timeout: 8000, stdio: 'pipe' });
-      const npmRoot = rootResult.stdout?.trim();
-      if (npmRoot) {
-        const linkedPackageDir = path.join(npmRoot, 'rapidkit');
-        if (await fs.pathExists(linkedPackageDir)) {
-          const realPath = await fs.realpath(linkedPackageDir);
-          resolvedPackageSpecifier = `file:${realPath}`;
-          return;
-        }
-      }
-
-      resolvedPackageSpecifier = null;
-      return;
-    }
-  } catch {
-    // Fall back to unpinned npx resolution.
-  }
-
-  resolvedPackageSpecifier = null;
+  resolvedPackageSpecifier = readEnvRapidkitPackageSpecifier() ?? null;
 }
 
 export function buildRapidkitCommand(
@@ -254,18 +197,18 @@ export function buildRapidkitDisplayCommand(
   args: string[] = [],
   platform: NodeJS.Platform = process.platform
 ): string {
-  return buildShellCommand('npx', ['rapidkit', ...args], platform);
+  return buildShellCommand('npx', [WORKSPAI_NPM_BINARY, ...args], platform);
 }
 
 export function toDisplayRapidkitCommand(command: string): string {
   return command
-    .replace(/\bnpx\s+--yes\s+--package\s+[^\s]+\s+rapidkit\b/g, 'npx rapidkit')
-    .replace(/\bnpx\s+--yes\s+rapidkit\b/g, 'npx rapidkit');
+    .replace(/\bnpx\s+--yes\s+--package\s+[^\s]+\s+workspai\b/g, 'npx workspai')
+    .replace(/\bnpx\s+--yes\s+workspai\b/g, 'npx workspai');
 }
 
 export function toPinnedRapidkitExecutionCommand(command: string): string {
   const prefix = buildShellCommand('npx', buildNpxRapidkitPrefix());
-  return command.replace(/\bnpx\s+rapidkit\b/g, prefix);
+  return command.replace(/\bnpx\s+workspai\b/g, prefix);
 }
 
 export function buildNpxRapidkitArgs(args: string[] = []): string[] {
@@ -275,7 +218,7 @@ export function buildNpxRapidkitArgs(args: string[] = []): string[] {
 /**
  * Canonical subprocess contract for extension-host RapidKit execution.
  *
- * Callers pass only RapidKit CLI args (`['workspace', 'verify', ...]`); this
+ * Callers pass only Workspai CLI args (`['workspace', 'verify', ...]`); this
  * function supplies the npm wrapper, display-safe command text, and the
  * platform shell mode in one place so enterprise paths do not rebuild npx
  * invocations ad hoc.
@@ -325,21 +268,20 @@ export function buildPackageRunnerSubprocessEnv(
 
 /** Non-pinned npx args for npm CLI version probes (Setup verify / status). */
 export function buildNpxRapidkitVersionProbeArgs(): string[] {
-  return ['--yes', 'rapidkit', '--version'];
+  return ['--yes', WORKSPAI_NPM_BINARY, '--version'];
 }
 
 /**
  * Setup "Verify CLI" terminal commands — match what developers run manually.
- * Pinned `npx --yes --package rapidkit rapidkit --version` can print the Python
- * core banner (`RapidKit Version v…`) when cwd shadows resolution; that is not
- * the npm bridge version shown on the Setup card.
+ * The npm package and Python Core use different binaries. Setup verifies the
+ * Workspai npm CLI and reports its package version.
  */
 export function buildNpmCliVersionVerifyCommands(
   platform: NodeJS.Platform = process.platform
 ): string[] {
   return [
     buildRapidkitDisplayCommand(['--version'], platform),
-    buildShellCommand('npm', ['list', '-g', 'rapidkit', '--depth=0'], platform),
+    buildShellCommand('npm', ['list', '-g', WORKSPAI_NPM_PACKAGE, '--depth=0'], platform),
   ];
 }
 

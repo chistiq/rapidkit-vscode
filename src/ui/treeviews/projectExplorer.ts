@@ -9,6 +9,11 @@ import * as path from 'path';
 import { WorkspaiProject, WorkspaiWorkspace } from '../../types';
 import { runningServers } from '../../core/runningServers';
 import { clearProjectCapabilityContext } from '../../core/projectCapabilityContext';
+import { hasWorkspaceRootMarkers, resolveProjectMetadataFile } from '../../core/workspacePaths';
+import {
+  readWorkspaceRegistrySummaryFromDisk,
+  type WorkspaceRegistrySummaryProject,
+} from '../../core/workspaceRegistrySummary';
 import { detectProjectStackFromSignals } from '../../commands/importProjectUtils';
 import {
   readImportedProjectsRegistry,
@@ -610,11 +615,28 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
           name: string;
           path: string;
           registryEntry?: ImportedProjectRegistryEntry;
+          workspaceRegistryProject?: WorkspaceRegistrySummaryProject;
         }
       >();
 
+      const workspaceRegistry = await readWorkspaceRegistrySummaryFromDisk(wsPath);
+      for (const registeredProject of workspaceRegistry?.projects ?? []) {
+        const projectPath = path.resolve(wsPath, registeredProject.relativePath);
+        if (hasWorkspaceRootMarkers(projectPath)) {
+          continue;
+        }
+        projectCandidates.set(projectPath, {
+          name: registeredProject.slug || path.basename(projectPath),
+          path: projectPath,
+          workspaceRegistryProject: registeredProject,
+        });
+      }
+
       for (const registryEntry of importedRegistryEntries) {
         const projectPath = resolveImportedProjectPath(wsPath, registryEntry.path);
+        if (hasWorkspaceRootMarkers(projectPath)) {
+          continue;
+        }
         importedByPath.set(projectPath, registryEntry);
         projectCandidates.set(projectPath, {
           name: registryEntry.name || path.basename(projectPath),
@@ -627,11 +649,16 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
       const projectDirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith('.'));
       for (const entry of projectDirs) {
         const projectPath = path.resolve(path.join(wsPath, entry.name));
+        if (hasWorkspaceRootMarkers(projectPath)) {
+          continue;
+        }
         const registryEntry = importedByPath.get(projectPath);
+        const existingCandidate = projectCandidates.get(projectPath);
         projectCandidates.set(projectPath, {
-          name: registryEntry?.name || entry.name,
+          name: existingCandidate?.name || registryEntry?.name || entry.name,
           path: projectPath,
-          registryEntry,
+          registryEntry: registryEntry ?? existingCandidate?.registryEntry,
+          workspaceRegistryProject: existingCandidate?.workspaceRegistryProject,
         });
       }
 
@@ -640,6 +667,7 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
         Array.from(projectCandidates.values()).map(async (candidate) => {
           const projectPath = candidate.path;
           const registryEntry = candidate.registryEntry;
+          const workspaceRegistryProject = candidate.workspaceRegistryProject;
           if (!(await fs.pathExists(projectPath))) {
             return null;
           }
@@ -654,23 +682,23 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
               fs.pathExists(path.join(projectPath, 'build.gradle.kts')),
             ]);
 
-          const [hasRapidkitProjectJson, hasRapidkitContextJson] = await Promise.all([
-            fs.pathExists(path.join(projectPath, '.rapidkit', 'project.json')),
-            fs.pathExists(path.join(projectPath, '.rapidkit', 'context.json')),
-          ]);
+          const projectJsonPath = resolveProjectMetadataFile(projectPath, 'project.json');
+          const contextJsonPath = resolveProjectMetadataFile(projectPath, 'context.json');
 
-          let managedKitName: string | undefined;
-          if (hasRapidkitProjectJson) {
+          let managedKitName = workspaceRegistryProject?.kit;
+          if (projectJsonPath) {
             try {
-              const projectMarker = await fs.readJSON(
-                path.join(projectPath, '.rapidkit', 'project.json')
-              );
+              const projectMarker = await fs.readJSON(projectJsonPath);
               if (
                 projectMarker &&
                 typeof projectMarker === 'object' &&
-                typeof projectMarker.kit_name === 'string'
+                (typeof projectMarker.kit_name === 'string' ||
+                  typeof projectMarker.kit === 'string')
               ) {
-                managedKitName = projectMarker.kit_name;
+                managedKitName =
+                  typeof projectMarker.kit_name === 'string'
+                    ? projectMarker.kit_name
+                    : projectMarker.kit;
               }
             } catch {
               managedKitName = undefined;
@@ -702,9 +730,13 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
             hasNestDependency,
           });
 
-          const hasRapidkitProjectMarker = hasRapidkitProjectJson || hasRapidkitContextJson;
+          const hasRapidkitProjectMarker = Boolean(
+            projectJsonPath || contextJsonPath || workspaceRegistryProject
+          );
           const registryStack = stackFromRegistryEntry(registryEntry);
-          const markerStack = stackFromKitName(managedKitName);
+          const markerStack = stackFromKitName(
+            managedKitName ?? workspaceRegistryProject?.framework
+          );
           const projectType: WorkspaiProject['type'] =
             registryStack && registryStack !== 'unknown'
               ? registryStack
@@ -712,7 +744,12 @@ export class ProjectExplorerProvider implements vscode.TreeDataProvider<ProjectT
                 ? detection.stack
                 : markerStack;
 
-          if (projectType === 'unknown' && !registryEntry && !hasRapidkitProjectMarker) {
+          if (
+            projectType === 'unknown' &&
+            !registryEntry &&
+            !workspaceRegistryProject &&
+            !hasRapidkitProjectMarker
+          ) {
             return null;
           }
 

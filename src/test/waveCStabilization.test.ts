@@ -18,17 +18,21 @@ describe('Wave C stabilization', () => {
   it('distinguishes recovery snapshot from intelligence snapshot in evidence bridge', () => {
     const source = read('src/core/dashboardEvidenceBridge.ts');
     expect(source).toContain("label: 'Recovery Snapshot'");
-    expect(source).toContain('rapidkit workspace snapshot --json (not recovery snapshot create)');
+    expect(source).toContain('workspai workspace snapshot --json (not recovery snapshot create)');
   });
 
-  it('parses LLM secondaryProject and gates adopt CLI', () => {
+  it('parses LLM secondaryProject and gates import/adopt CLI', () => {
     const aiService = read('src/core/aiService.ts');
     const capabilities = read('src/core/rapidkitCliCapabilities.ts');
+    const importProject = read('src/commands/importProject.ts');
     const adoptProject = read('src/commands/adoptProject.ts');
     const modal = read('webview-ui/src/components/AICreateModal.tsx');
 
     expect(aiService).toContain('normalizeSecondaryProject');
     expect(aiService).toContain('"secondaryProject"');
+    expect(capabilities).toContain('gateImportCli');
+    expect(importProject).toContain('gateImportCli');
+    expect(importProject).toContain('import-cli-capability-missing');
     expect(capabilities).toContain('gateAdoptCli');
     expect(adoptProject).toContain('gateAdoptCli');
     expect(modal).toContain('editedCompanionProjectName');

@@ -76,6 +76,7 @@ export async function tryDispatchAnalyzeReportWebviewMessage(
       const payload = getWebviewMessageDataRecord({ command, data });
       const evidencePath = readStringField(payload, 'path') ?? '';
       const workspacePath = readStringField(payload, 'workspacePath') ?? '';
+      const projectPath = readStringField(payload, 'projectPath') ?? '';
 
       if (!evidencePath.trim() || !workspacePath.trim()) {
         vscode.window.showWarningMessage('Evidence path is not available.');
@@ -83,7 +84,11 @@ export async function tryDispatchAnalyzeReportWebviewMessage(
       }
 
       try {
-        await openWorkspacePath({ workspacePath, path: evidencePath });
+        await openWorkspacePath({
+          workspacePath,
+          path: evidencePath,
+          allowedRootPaths: projectPath.trim() ? [projectPath] : undefined,
+        });
       } catch (error) {
         vscode.window.showErrorMessage(
           `Unable to open workspace path: ${error instanceof Error ? error.message : String(error)}`

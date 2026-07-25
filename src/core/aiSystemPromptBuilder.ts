@@ -144,7 +144,7 @@ export async function buildWorkspaiSystemPrompt(
   const instructions = `INSTRUCTIONS:
 - Always generate code that fits exactly into the layer described above.
 - When adding a FastAPI endpoint, put the router in the correct layer (presentation/api/routes/ for DDD, routing/ for Standard).
-- When suggesting catalog module installation: npx rapidkit add module <slug> from the PROJECT root (not workspace root unless installing to a named subproject).
+- When suggesting catalog module installation: npx workspai add module <slug> from the PROJECT root (not workspace root unless installing to a named subproject).
 - When suggesting catalog module removal: rapidkit uninstall module <slug> from the PROJECT root.
 - When adding a NestJS DOMAIN feature: mirror src/examples/ routing and DTO layout; do NOT use rapidkit add module.
 - Inject points in FastAPI pyproject.toml: # <<<inject:poetry-dependencies>>>
@@ -227,7 +227,7 @@ function buildModuleSection(
   const catalogBlock = buildModuleListForPrompt(liveModules ?? null);
 
   const ref = `WORKSPAI MODULE SYSTEM:
-- Install command (PROJECT root):  npx rapidkit add module <slug>   (e.g. npx rapidkit add module free/cache/redis)
+- Install command (PROJECT root):  npx workspai add module <slug>   (e.g. npx workspai add module free/cache/redis)
 - Remove command (PROJECT root):   rapidkit uninstall module <slug>
 - List catalog:                    rapidkit modules list --json-schema 1 (same source as dashboard Catalog tab)
 - List installed:                  registry.json at project root
@@ -404,7 +404,7 @@ Error handling:
 Testing:
   • Use xUnit/NUnit for unit tests
   • Use WebApplicationFactory for API integration tests
-  • Verify with npx rapidkit test and npx rapidkit doctor project before claiming completion`;
+  • Verify with npx workspai test and npx workspai doctor project before claiming completion`;
   }
 
   if (fw === 'go') {
@@ -470,7 +470,7 @@ function buildStateSection(ctx: AIModalContext, scanned?: ScannedProjectContext)
     parts.push(`  runtime_version: ${scanned.runtimeVersion}`);
   }
   if (scanned.rapidkitCliVersion) {
-    parts.push(`  RapidKit CLI: ${scanned.rapidkitCliVersion}`);
+    parts.push(`  Workspai CLI: ${scanned.rapidkitCliVersion}`);
     parts.push(`  rapidkit_cli_version: ${scanned.rapidkitCliVersion}`);
   }
   if (scanned.rapidkitCoreVersion) {

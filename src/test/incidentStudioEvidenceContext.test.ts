@@ -131,7 +131,7 @@ describe('incidentStudioEvidenceContext', () => {
   });
 
   it('includes workspace intelligence artifacts when present', async () => {
-    const reportsDir = path.join(workspacePath, '.rapidkit', 'reports');
+    const reportsDir = path.join(workspacePath, '.workspai', 'reports');
     await fs.mkdir(reportsDir, { recursive: true });
     await fs.writeFile(
       path.join(reportsDir, 'workspace-context-agent.json'),
@@ -140,7 +140,7 @@ describe('incidentStudioEvidenceContext', () => {
         generatedAt: '2026-06-11T00:00:00.000Z',
         agent: 'cursor',
         workspaceSummary: 'Polyglot workspace',
-        safeCommands: [{ display: 'rapidkit workspace verify --json' }],
+        safeCommands: [{ display: 'workspai workspace verify --json' }],
         validation: { status: 'passed' },
       })
     );
@@ -222,8 +222,21 @@ describe('incidentStudioEvidenceContext', () => {
   });
 
   it('includes workspace verify and model artifacts when present', async () => {
-    const reportsDir = path.join(workspacePath, '.rapidkit', 'reports');
+    const reportsDir = path.join(workspacePath, '.workspai', 'reports');
     await fs.mkdir(reportsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(workspacePath, '.workspai', 'compatibility-matrix.json'),
+      JSON.stringify({
+        schemaVersion: 'rapidkit.compatibility-matrix.v1',
+        generatedAt: '2026-06-11T00:00:00.000Z',
+        source: 'workspai-studio',
+        runtimes: {
+          node: { version: '20.x' },
+          python: { version: '3.10' },
+        },
+        notes: ['Enterprise compatibility baseline is available.'],
+      })
+    );
     await fs.writeFile(
       path.join(reportsDir, 'workspace-model.json'),
       JSON.stringify({
@@ -301,9 +314,17 @@ describe('incidentStudioEvidenceContext', () => {
       stepsPassed: 3,
       stepsMissing: 1,
     });
+    expect(context.workspaceIntelligence.compatibilityMatrix).toMatchObject({
+      available: true,
+      source: 'workspai-studio',
+      runtimeCount: 2,
+      runtimes: ['node', 'python'],
+    });
     expect(prompt).toContain('WORKSPACE VERIFY');
     expect(prompt).toContain('WORKSPACE MODEL');
     expect(prompt).toContain('Required analyze report missing');
+    expect(prompt).toContain('compatibilityMatrix');
+    expect(prompt).toContain('Enterprise compatibility baseline is available.');
   });
 
   it('includes project-scoped doctor snapshot when provided', async () => {

@@ -1,6 +1,6 @@
 /**
  * Doctor Evidence Provider
- * Reads workspace `.rapidkit/reports/doctor-last-run.json` and, when a project is
+ * Reads canonical Workspai doctor evidence and, when a project is
  * selected, merges project-scoped `doctor-project-last-run.json` (probes, signals).
  */
 
@@ -16,6 +16,10 @@ import {
   summarizePolicyViolations,
   formatPolicyViolation,
 } from '../../core/workspacePolicyViolations';
+import {
+  resolveWorkspaceArtifactPath,
+  resolveWorkspaceReportsDir,
+} from '../../core/workspaceIntelligencePaths';
 
 const EVIDENCE_RELOAD_DEBOUNCE_MS = 200;
 
@@ -298,7 +302,7 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
 
   private setupFileWatcher(): void {
     this.fileWatcher = vscode.workspace.createFileSystemWatcher(
-      '**/.rapidkit/reports/doctor-*.json',
+      '**/{.workspai,.rapidkit}/reports/doctor-*.json',
       false,
       false,
       true
@@ -308,7 +312,7 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
 
     // Workspace verify drives the governance/policy section of the health tree.
     this.verifyWatcher = vscode.workspace.createFileSystemWatcher(
-      '**/.rapidkit/reports/workspace-verify-last-run.json',
+      '**/{.workspai,.rapidkit}/reports/workspace-verify-last-run.json',
       false,
       false,
       true
@@ -322,12 +326,8 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
     if (!workspacePath) {
       return null;
     }
-    const verifyPath = path.join(
-      workspacePath,
-      '.rapidkit',
-      'reports',
-      'workspace-verify-last-run.json'
-    );
+    const reportsDir = await resolveWorkspaceReportsDir(workspacePath);
+    const verifyPath = path.join(reportsDir, 'workspace-verify-last-run.json');
     try {
       if (!(await fs.pathExists(verifyPath))) {
         return null;
@@ -361,7 +361,8 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
   }
 
   private async readWorkspaceEvidence(workspacePath: string): Promise<DoctorEvidence | null> {
-    const evidencePath = path.join(workspacePath, '.rapidkit', 'reports', 'doctor-last-run.json');
+    const reportsDir = await resolveWorkspaceReportsDir(workspacePath);
+    const evidencePath = path.join(reportsDir, 'doctor-last-run.json');
     try {
       if (!(await fs.pathExists(evidencePath))) {
         return null;
@@ -383,8 +384,14 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
     projectPath: string
   ): Promise<Record<string, unknown> | undefined> {
     const candidates = [
-      path.join(projectPath, '.rapidkit', 'reports', 'doctor-project-last-run.json'),
-      path.join(workspacePath, '.rapidkit', 'reports', 'doctor-project-last-run.json'),
+      await resolveWorkspaceArtifactPath(
+        projectPath,
+        '.workspai/reports/doctor-project-last-run.json'
+      ),
+      await resolveWorkspaceArtifactPath(
+        workspacePath,
+        '.workspai/reports/doctor-project-last-run.json'
+      ),
     ];
 
     for (const candidate of candidates) {

@@ -15,6 +15,8 @@ export type ActionsWebviewMessageDispatchHost = {
   runSidebarStudioAction: (data: unknown) => Promise<void>;
   focusPrimarySidebarView: (data: unknown) => Promise<void>;
   openDashboardSection: (data: unknown) => Promise<void>;
+  openWorkspaceFile: (data: unknown) => Promise<void>;
+  undoAgentPatch: (data: unknown) => Promise<void>;
   sendInlineScope: () => Promise<void>;
   sendInlineModels: () => Promise<void>;
   setPreferredModel: (modelId: string) => Promise<void>;
@@ -73,6 +75,14 @@ const ACTIONS_WEBVIEW_MESSAGE_LANES: readonly ActionsWebviewMessageLane[] = [
   {
     command: 'sidebarOpenDashboard',
     dispatch: (host, data) => host.openDashboardSection(data),
+  },
+  {
+    command: 'sidebarOpenWorkspaceFile',
+    dispatch: (host, data) => host.openWorkspaceFile(data),
+  },
+  {
+    command: 'sidebarStudioUndoPatch',
+    dispatch: (host, data) => host.undoAgentPatch(data),
   },
   {
     command: 'sidebarRefreshScope',

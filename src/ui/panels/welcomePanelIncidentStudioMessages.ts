@@ -28,6 +28,7 @@ import {
 import { postSessionToWebview } from './incidentStudioSessionPersistenceBridge';
 import {
   handleWelcomePanelAskStudioAboutEvidence,
+  handleWelcomePanelCopyEvidenceAgentHandoff,
   handleWelcomePanelSendEvidenceToCopilot,
   handleWelcomePanelSendWorkspaceToCopilot,
 } from './welcomePanelCopilotHandoff';
@@ -89,6 +90,7 @@ const INCIDENT_STUDIO_WEBVIEW_COMMANDS = new Set([
   'copyCopilotContextPrompt',
   'sendWorkspaceToCopilot',
   'sendToCopilot',
+  'copyEvidenceAgentHandoff',
   'askStudioAboutEvidence',
   'showWorkspaiEvidenceOutput',
   'requestIncidentStudioTelemetry',
@@ -227,6 +229,12 @@ export async function tryDispatchIncidentStudioWebviewMessage(
       break;
     case 'sendToCopilot':
       await handleWelcomePanelSendEvidenceToCopilot(data, {
+        resolveWorkspacePath: () => host.getSelectedWorkspaceInfo()?.path,
+        resolveWorkspaceName: () => host.getSelectedWorkspaceInfo()?.name,
+      });
+      break;
+    case 'copyEvidenceAgentHandoff':
+      await handleWelcomePanelCopyEvidenceAgentHandoff(data, {
         resolveWorkspacePath: () => host.getSelectedWorkspaceInfo()?.path,
         resolveWorkspaceName: () => host.getSelectedWorkspaceInfo()?.name,
       });

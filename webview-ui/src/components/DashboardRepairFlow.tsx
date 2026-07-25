@@ -1,26 +1,15 @@
-import {
-  Activity,
-  AlertTriangle,
-  ArrowRight,
-  Check,
-  ClipboardCheck,
-  Lock,
-  ShieldCheck,
-} from 'lucide-react';
+import { ClipboardCheck, ShieldCheck } from 'lucide-react';
 import { type KeyboardEvent, useEffect, useMemo, useState } from 'react';
 import { EvidenceCardActions } from '@/components/EvidenceCardActions';
-import { CommandExecutionBadge } from '@/components/CommandExecutionBadge';
 import { EvidenceCardLogDrawer } from '@/components/EvidenceCardLogDrawer';
-import {
-  buildDashboardEvidenceActionContract,
-  type DashboardEvidenceActionContract,
-} from '@/lib/dashboardActionContract';
+import { WorkspaiEmptyState } from '@/components/WorkspaiEmptyState';
+import { buildDashboardEvidenceActionContract } from '@/lib/dashboardActionContract';
 import type {
   DashboardEvidenceCard,
   DashboardEvidenceCardId,
   DashboardEvidencePayload,
 } from '@/lib/dashboardEvidence';
-import { evidenceNeedsFreshnessAttention, resolveEvidenceFreshness } from '@/lib/dashboardEvidence';
+import { resolveEvidenceFreshness } from '@/lib/dashboardEvidence';
 import {
   evidenceCardStatusLabelForWorkspace,
   effectiveCardBlockers,
@@ -32,18 +21,21 @@ import {
   buildGuidedStepFocusCard,
   evidenceGuidedStepCards,
   type EvidenceGuidedStep,
-  type EvidenceGuidedStepState,
 } from '@/lib/dashboardEvidenceViewMode';
-import { evidenceGuidedStepShortLabel } from '@/components/EvidenceGuidedPath';
 import { buildDashboardEvidenceBrief } from '@/lib/dashboardEvidenceBrief';
+import { resolveEvidenceAttentionBucket } from '@/lib/evidenceAgentContext';
 import { getDashboardCommandMeta } from '@/lib/dashboardCommandRegistry';
 import type { DashboardOperateZone } from '@/lib/dashboardOperateZones';
 import type { DashboardScopeDescriptor } from '@/lib/dashboardScope';
 import { dashboardScopeDetail, dashboardScopeLabel } from '@/lib/dashboardScope';
 import { resolveEvidenceProjectAttribution } from '@/lib/dashboardEvidenceProjectAttribution';
-import { buildDashboardIncidentCopy, type DashboardIncidentCopy } from '@/lib/dashboardIncidentContract';
+import {
+  buildDashboardIncidentCopy,
+  type DashboardIncidentCopy,
+} from '@/lib/dashboardIncidentContract';
+import { buildDashboardRepairCardCopy } from '@/lib/dashboardRepairCardCopy';
 
-type RepairMode = 'guided' | 'inspect' | 'audit';
+export type RepairMode = 'guided' | 'inspect' | 'audit';
 
 export interface DashboardRepairFlowProps {
   evidence: DashboardEvidencePayload | null;
@@ -60,6 +52,7 @@ export interface DashboardRepairFlowProps {
   onRefreshEvidenceCard: (cardId: DashboardEvidenceCardId) => void;
   onAskStudioAboutCard: (card: DashboardEvidenceCard) => void;
   onSendEvidenceToCopilot: (card: DashboardEvidenceCard) => void;
+  onCopyEvidenceAgentHandoff: (card: DashboardEvidenceCard) => void;
   onShowEvidenceOutput: () => void;
   onRevealArtifact: (artifactPath: string) => void;
   onOpenRunZone?: (zone: DashboardOperateZone) => void;
@@ -67,25 +60,12 @@ export interface DashboardRepairFlowProps {
 }
 
 const MODE_LABELS: Record<RepairMode, string> = {
-  guided: 'Guided',
-  inspect: 'Inspect',
-  audit: 'Audit',
+  guided: 'Priority',
+  inspect: 'All issues',
+  audit: 'Diagnostics',
 };
 
 const REPAIR_MODE_STORAGE_KEY = 'workspai.dashboard.repairMode';
-const REPAIR_MODE_PERSIST_AFTER_VERIFY_COUNT = 3;
-const REPAIR_VERIFY_CARD_IDS = new Set<DashboardEvidenceCardId>([
-  'workspaceVerify',
-  'readiness',
-  'pipeline',
-  'autopilot',
-]);
-
-function countRepairVerificationPasses(evidence: DashboardEvidencePayload | null | undefined): number {
-  return (evidence?.cards ?? []).filter(
-    (card) => REPAIR_VERIFY_CARD_IDS.has(card.id) && card.status === 'pass'
-  ).length;
-}
 
 function normalizeRepairMode(value: string | null | undefined): RepairMode | null {
   return value === 'guided' || value === 'inspect' || value === 'audit' ? value : null;
@@ -102,11 +82,8 @@ function storedRepairMode(): RepairMode | null {
   }
 }
 
-function persistRepairMode(mode: RepairMode, verifyPassCount: number): void {
-  if (
-    typeof window === 'undefined' ||
-    verifyPassCount < REPAIR_MODE_PERSIST_AFTER_VERIFY_COUNT
-  ) {
+function persistRepairMode(mode: RepairMode): void {
+  if (typeof window === 'undefined') {
     return;
   }
   try {
@@ -116,37 +93,55 @@ function persistRepairMode(mode: RepairMode, verifyPassCount: number): void {
   }
 }
 
-function initialRepairMode(evidence: DashboardEvidencePayload | null | undefined): RepairMode {
-  const verifyPassCount = countRepairVerificationPasses(evidence);
-  if (verifyPassCount < REPAIR_MODE_PERSIST_AFTER_VERIFY_COUNT) {
-    return 'guided';
-  }
+function initialRepairMode(): RepairMode {
   return storedRepairMode() ?? 'guided';
 }
 
-function isActionableCard(card: DashboardEvidenceCard): boolean {
-  return (
-    card.status === 'fail' ||
-    card.status === 'warn' ||
-    card.status === 'missing' ||
-    evidenceNeedsFreshnessAttention(card)
-  );
+function isActionableCard(
+  card: DashboardEvidenceCard,
+  workspaceProjectCount: number | null
+): boolean {
+  const bucket = resolveEvidenceAttentionBucket(card, workspaceProjectCount);
+  return bucket === 'blocked' || bucket === 'attention' || bucket === 'missing';
 }
 
 function cardPriority(card: DashboardEvidenceCard, workspaceProjectCount: number | null): number {
-  if (card.status === 'fail') {
+  const bucket = resolveEvidenceAttentionBucket(card, workspaceProjectCount);
+  if (bucket === 'blocked') {
     return 0;
   }
-  if (effectiveCardBlockers(card, workspaceProjectCount).length > 0) {
+  if (bucket === 'attention') {
     return 1;
   }
-  if (card.status === 'warn') {
+  if (bucket === 'missing') {
     return 2;
   }
-  if (card.status === 'missing') {
-    return 3;
+  return 3;
+}
+
+export function selectRepairVisibleCards(
+  cards: DashboardEvidenceCard[],
+  activeCard: DashboardEvidenceCard | undefined,
+  mode: RepairMode,
+  workspaceProjectCount: number | null
+): DashboardEvidenceCard[] {
+  if (mode === 'audit') {
+    return cards;
   }
-  return 4;
+
+  const blockedCards = cards.filter(
+    (card) => resolveEvidenceAttentionBucket(card, workspaceProjectCount) === 'blocked'
+  );
+  if (mode === 'inspect') {
+    return cards.slice(0, Math.max(8, blockedCards.length));
+  }
+
+  const visibleIds = new Set<DashboardEvidenceCardId>([
+    ...(activeCard ? [activeCard.id] : []),
+    ...blockedCards.map((card) => card.id),
+    ...cards.slice(0, 3).map((card) => card.id),
+  ]);
+  return cards.filter((card) => visibleIds.has(card.id));
 }
 
 function chooseActiveCard(
@@ -162,12 +157,12 @@ function chooseActiveCard(
     (currentStep.state === 'attention' || currentStep.state === 'current')
   ) {
     const importFocus = buildGuidedStepFocusCard(currentStep);
-    if (importFocus && isActionableCard(importFocus)) {
+    if (importFocus && isActionableCard(importFocus, workspaceProjectCount)) {
       return importFocus;
     }
   }
 
-  if (preferredCard && isActionableCard(preferredCard)) {
+  if (preferredCard && isActionableCard(preferredCard, workspaceProjectCount)) {
     return preferredCard;
   }
 
@@ -175,7 +170,7 @@ function chooseActiveCard(
     ? evidenceGuidedStepCards(currentStep, evidence ?? null)
     : [];
   const scoped = currentStepCards
-    .filter(isActionableCard)
+    .filter((card) => isActionableCard(card, workspaceProjectCount))
     .sort(
       (a, b) => cardPriority(a, workspaceProjectCount) - cardPriority(b, workspaceProjectCount)
     );
@@ -185,11 +180,11 @@ function chooseActiveCard(
 
   if (currentStep && (currentStep.state === 'attention' || currentStep.state === 'current')) {
     const stepFocus = buildGuidedStepFocusCard(currentStep);
-    return stepFocus && isActionableCard(stepFocus) ? stepFocus : undefined;
+    return stepFocus && isActionableCard(stepFocus, workspaceProjectCount) ? stepFocus : undefined;
   }
 
   return cards
-    .filter(isActionableCard)
+    .filter((card) => isActionableCard(card, workspaceProjectCount))
     .sort(
       (a, b) => cardPriority(a, workspaceProjectCount) - cardPriority(b, workspaceProjectCount)
     )[0];
@@ -203,7 +198,10 @@ function statusLabel(card: DashboardEvidenceCard, workspaceProjectCount: number 
   return evidenceCardStatusLabelForWorkspace(card, workspaceProjectCount);
 }
 
-function activeRepairKicker(card: DashboardEvidenceCard, workspaceProjectCount: number | null): string {
+function activeRepairKicker(
+  card: DashboardEvidenceCard,
+  workspaceProjectCount: number | null
+): string {
   const tone = statusTone(card, workspaceProjectCount);
   if (tone === 'warn') {
     return 'Active warning';
@@ -221,22 +219,41 @@ type RepairCardGroup = {
   cards: DashboardEvidenceCard[];
 };
 
-function repairCardGroupLabel(card: DashboardEvidenceCard): { label: string; detail: string } {
+function repairCardGroupLabel(
+  card: DashboardEvidenceCard,
+  workspaceProjectCount: number | null
+): { id: string; label: string; detail: string } {
   const scope = card.scope === 'project' ? 'Project' : 'Workspace';
-  if (card.status === 'fail') {
-    return { label: `${scope} blockers`, detail: 'Failed evidence that blocks progress' };
+  const bucket = resolveEvidenceAttentionBucket(card, workspaceProjectCount);
+  if (bucket === 'blocked') {
+    return {
+      id: 'blocked',
+      label: `${scope} blockers`,
+      detail: 'Issues that currently prevent verification or release',
+    };
   }
-  if (card.status === 'warn') {
-    return { label: `${scope} attention`, detail: 'Warnings that need review before release' };
+  if (bucket === 'attention') {
+    return {
+      id: 'attention',
+      label: `${scope} attention`,
+      detail: 'Warnings that should be reviewed',
+    };
   }
-  return { label: `${scope} pending`, detail: 'Missing or stale evidence to refresh' };
+  return {
+    id: 'missing',
+    label: `${scope} missing`,
+    detail: 'Evidence that has not been generated yet',
+  };
 }
 
-function groupRepairCards(cards: DashboardEvidenceCard[]): RepairCardGroup[] {
+function groupRepairCards(
+  cards: DashboardEvidenceCard[],
+  workspaceProjectCount: number | null
+): RepairCardGroup[] {
   const groups = new Map<string, RepairCardGroup>();
   for (const card of cards) {
-    const key = `${card.scope}:${card.status}`;
-    const copy = repairCardGroupLabel(card);
+    const copy = repairCardGroupLabel(card, workspaceProjectCount);
+    const key = `${card.scope}:${copy.id}`;
     const group = groups.get(key) ?? {
       id: key,
       label: copy.label,
@@ -257,20 +274,20 @@ function RepairModeToggle({
   onChange: (mode: RepairMode) => void;
 }) {
   return (
-    <div className="repair-flow__mode-toggle" role="tablist" aria-label="Repair view mode">
-      {(['guided', 'inspect', 'audit'] as const).map((item) => (
-        <button
-          key={item}
-          type="button"
-          role="tab"
-          aria-selected={mode === item}
-          className={`repair-flow__mode ${mode === item ? 'is-active' : ''}`}
-          onClick={() => onChange(item)}
-        >
-          {MODE_LABELS[item]}
-        </button>
-      ))}
-    </div>
+    <label className="ws-view-select" title="Choose how much repair evidence to show">
+      <span>Show</span>
+      <select
+        aria-label="Repair detail level"
+        value={mode}
+        onChange={(event) => onChange(event.target.value as RepairMode)}
+      >
+        {(['guided', 'inspect', 'audit'] as const).map((item) => (
+          <option key={item} value={item}>
+            {MODE_LABELS[item]}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -283,177 +300,11 @@ function isInteractiveKeyboardTarget(target: EventTarget | null): boolean {
   );
 }
 
-function defaultRepairPathIndex(steps: EvidenceGuidedStep[]): number {
-  const index = steps.findIndex((step) => step.state === 'attention' || step.state === 'current');
-  return index >= 0 ? index : 0;
-}
-
-function RepairPathRailIcon({ state, index }: { state: EvidenceGuidedStepState; index: number }) {
-  if (state === 'complete') {
-    return (
-      <span className="evidence-guided-path__rail-dot evidence-guided-path__rail-dot--complete">
-        <Check size={10} strokeWidth={3} aria-hidden="true" />
-      </span>
-    );
-  }
-  if (state === 'locked') {
-    return (
-      <span className="evidence-guided-path__rail-dot evidence-guided-path__rail-dot--locked">
-        <Lock size={9} aria-hidden="true" />
-      </span>
-    );
-  }
-  if (state === 'attention') {
-    return (
-      <span className="evidence-guided-path__rail-dot evidence-guided-path__rail-dot--attention">
-        <AlertTriangle size={9} aria-hidden="true" />
-      </span>
-    );
-  }
-  return (
-    <span className="evidence-guided-path__rail-dot evidence-guided-path__rail-dot--current">
-      {index + 1}
-    </span>
-  );
-}
-
-function RepairPathRailItem({
-  step,
-  index,
-  isActive,
-  isLast,
-  onSelect,
-}: {
-  step: EvidenceGuidedStep;
-  index: number;
-  isActive: boolean;
-  isLast: boolean;
-  onSelect: () => void;
-}) {
-  const locked = step.state === 'locked';
-
-  return (
-    <div className={`evidence-guided-path__rail-item${isLast ? ' is-last' : ''}`}>
-      <button
-        type="button"
-        role="tab"
-        className={`evidence-guided-path__rail-btn evidence-guided-path__rail-btn--${step.state}${isActive ? ' is-active' : ''}`}
-        onClick={onSelect}
-        disabled={locked}
-        aria-selected={isActive}
-        title={`${step.title}: ${step.detail}`}
-      >
-        <RepairPathRailIcon state={step.state} index={index} />
-        <span className="evidence-guided-path__rail-label">
-          {evidenceGuidedStepShortLabel(step)}
-        </span>
-      </button>
-      {!isLast ? (
-        <span className="evidence-guided-path__rail-connector" aria-hidden="true" />
-      ) : null}
-    </div>
-  );
-}
-
-function RepairPath({
-  steps,
-  fixPathContract,
-  fixPathPending = false,
-  isRefreshingEvidence = false,
-  onRunFixPath,
-  onRefreshEvidence,
-}: {
-  steps: EvidenceGuidedStep[];
-  fixPathContract?: DashboardEvidenceActionContract | null;
-  fixPathPending?: boolean;
-  isRefreshingEvidence?: boolean;
-  onRunFixPath: () => void;
-  onRefreshEvidence: () => void;
-}) {
-  const [activeIndex, setActiveIndex] = useState(() => defaultRepairPathIndex(steps));
-
-  useEffect(() => {
-    setActiveIndex(defaultRepairPathIndex(steps));
-  }, [steps]);
-
-  const completedCount = steps.filter((step) => step.state === 'complete').length;
-  const fixPathAction = fixPathContract?.commandAction;
-  const progressPct = steps.length > 0 ? Math.round((completedCount / steps.length) * 100) : 0;
-
-  return (
-    <section className="repair-flow__path" aria-label="Repair path">
-      <header className="repair-flow__path-head">
-        <span className="ws-kicker">Repair path</span>
-        <div className="repair-flow__path-head-trail">
-          <span className="repair-flow__path-progress">
-            {completedCount}/{steps.length} complete
-          </span>
-          {fixPathAction ? (
-            <button
-              type="button"
-              className="ws-btn ws-btn--primary repair-flow__path-run"
-              onClick={onRunFixPath}
-              disabled={fixPathPending}
-              aria-busy={fixPathPending || undefined}
-            >
-              <ArrowRight size={12} aria-hidden="true" />
-              <span>{fixPathPending ? 'Running…' : 'Fix path'}</span>
-              <CommandExecutionBadge channel={fixPathContract?.executionChannel} compact />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="ws-btn ws-btn--ghost repair-flow__path-run"
-              onClick={onRefreshEvidence}
-              disabled={isRefreshingEvidence}
-              aria-busy={isRefreshingEvidence || undefined}
-            >
-              <Activity
-                size={12}
-                aria-hidden="true"
-                className={isRefreshingEvidence ? 'spinning' : undefined}
-              />
-              {isRefreshingEvidence ? 'Refreshing…' : 'Refresh'}
-            </button>
-          )}
-        </div>
-      </header>
-
-      <div
-        className="repair-flow__path-track"
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={progressPct}
-        aria-label="Path completion"
-      >
-        <span className="repair-flow__path-track-fill" style={{ width: `${progressPct}%` }} />
-      </div>
-
-      <nav
-        className="repair-flow__path-rail evidence-guided-path__rail"
-        aria-label="Evidence path steps"
-      >
-        {steps.map((step, index) => (
-          <RepairPathRailItem
-            key={step.id}
-            step={step}
-            index={index}
-            isActive={index === activeIndex}
-            isLast={index === steps.length - 1}
-            onSelect={() => setActiveIndex(index)}
-          />
-        ))}
-      </nav>
-    </section>
-  );
-}
-
 function groupTone(groupId: string): 'danger' | 'warn' | 'neutral' {
-  if (groupId.includes('fail')) {
+  if (groupId.includes('blocked')) {
     return 'danger';
   }
-  if (groupId.includes('warn')) {
+  if (groupId.includes('attention')) {
     return 'warn';
   }
   return 'neutral';
@@ -472,6 +323,7 @@ function RepairStackCard({
   onRefreshEvidenceCard,
   onAskStudioAboutCard,
   onSendEvidenceToCopilot,
+  onCopyEvidenceAgentHandoff,
   onShowEvidenceOutput,
   onRevealArtifact,
 }: {
@@ -487,26 +339,27 @@ function RepairStackCard({
   onRefreshEvidenceCard: (cardId: DashboardEvidenceCardId) => void;
   onAskStudioAboutCard: (card: DashboardEvidenceCard) => void;
   onSendEvidenceToCopilot: (card: DashboardEvidenceCard) => void;
+  onCopyEvidenceAgentHandoff: (card: DashboardEvidenceCard) => void;
   onShowEvidenceOutput: () => void;
   onRevealArtifact: (artifactPath: string) => void;
 }) {
   const tone = statusTone(card, workspaceProjectCount);
   const actionContract = buildDashboardEvidenceActionContract(card, { workspace, evidence });
   const action = actionContract.commandAction;
-  const incident = buildDashboardIncidentCopy({ card, contract: actionContract });
+  const blockers = effectiveCardBlockers(card, workspaceProjectCount);
+  const bucket = resolveEvidenceAttentionBucket(card, workspaceProjectCount);
+  const copy = buildDashboardRepairCardCopy({
+    card,
+    blockers,
+    actionLabel: actionContract.commandLabel,
+    blocking: bucket === 'blocked',
+  });
 
   return (
     <article
       className={`repair-flow__card repair-flow__card--${tone}${selected ? ' is-selected' : ''}`}
     >
       <div className="repair-flow__card-head">
-        <span className={`repair-flow__status repair-flow__status--${tone}`}>
-          {refreshPending
-            ? 'Refreshing'
-            : pending
-              ? 'Running'
-              : statusLabel(card, workspaceProjectCount)}
-        </span>
         <button
           type="button"
           className="repair-flow__card-select"
@@ -516,9 +369,21 @@ function RepairStackCard({
         >
           {card.label}
         </button>
+        <span className={`repair-flow__status repair-flow__status--${tone}`}>
+          {refreshPending
+            ? 'Refreshing'
+            : pending
+              ? 'Running'
+              : statusLabel(card, workspaceProjectCount)}
+        </span>
       </div>
-      <p className="repair-flow__card-summary">{card.summary || 'No summary available yet.'}</p>
-      <p className="repair-flow__card-summary">Incident · {incident.compactLabel}</p>
+      <p className="repair-flow__card-issue">{copy.issue}</p>
+      <small className="repair-flow__card-guidance">
+        {copy.guidance}
+        {copy.remainingFindingCount > 0
+          ? ` ${copy.remainingFindingCount} more related finding${copy.remainingFindingCount === 1 ? '' : 's'}.`
+          : ''}
+      </small>
       <div className="repair-flow__card-actions">
         <EvidenceCardActions
           cardId={card.id}
@@ -541,6 +406,7 @@ function RepairStackCard({
           onRevealArtifact={onRevealArtifact}
           onAskStudio={() => onAskStudioAboutCard(card)}
           onSendToCopilot={() => onSendEvidenceToCopilot(card)}
+          onCopyAgentHandoff={() => onCopyEvidenceAgentHandoff(card)}
           executionChannel={actionContract.executionChannel}
         />
       </div>
@@ -564,36 +430,7 @@ function RepairMetricStrip({ brief }: { brief: ReturnType<typeof buildDashboardE
   );
 }
 
-function RepairActionContract({ contract }: { contract: DashboardEvidenceActionContract }) {
-  return (
-    <dl className="repair-flow__contract" aria-label="Repair action contract">
-      <div>
-        <dt>Command</dt>
-        <dd>{contract.commandLabel}</dd>
-      </div>
-      <div>
-        <dt>Scope</dt>
-        <dd>{contract.cardScope}</dd>
-      </div>
-      <div>
-        <dt>Artifact</dt>
-        <dd>{contract.artifactLabel}</dd>
-      </div>
-      <div>
-        <dt>Handoff</dt>
-        <dd>
-          {contract.studioLabel} · {contract.copilotLabel}
-        </dd>
-      </div>
-    </dl>
-  );
-}
-
-function RepairIncidentSummary({
-  incident,
-}: {
-  incident: DashboardIncidentCopy;
-}) {
+function RepairIncidentSummary({ incident }: { incident: DashboardIncidentCopy }) {
   return (
     <dl className="repair-flow__incident-summary" aria-label="Incident summary">
       <div>
@@ -626,11 +463,11 @@ function RepairActiveCard({
   fallbackStepCommand,
   fallbackStepCommandLabel,
   mode,
-  onModeChange,
   onRunCommand,
   onRefreshEvidenceCard,
   onAskStudioAboutCard,
   onSendEvidenceToCopilot,
+  onCopyEvidenceAgentHandoff,
   onShowEvidenceOutput,
   onRevealArtifact,
   onOpenProjectLifecycle,
@@ -644,11 +481,11 @@ function RepairActiveCard({
   fallbackStepCommand?: string;
   fallbackStepCommandLabel?: string;
   mode: RepairMode;
-  onModeChange: (mode: RepairMode) => void;
   onRunCommand: (command: string, data?: Record<string, unknown>) => void;
   onRefreshEvidenceCard: (cardId: DashboardEvidenceCardId) => void;
   onAskStudioAboutCard: (card: DashboardEvidenceCard) => void;
   onSendEvidenceToCopilot: (card: DashboardEvidenceCard) => void;
+  onCopyEvidenceAgentHandoff: (card: DashboardEvidenceCard) => void;
   onShowEvidenceOutput: () => void;
   onRevealArtifact: (artifactPath: string) => void;
   onOpenProjectLifecycle?: () => void;
@@ -659,11 +496,16 @@ function RepairActiveCard({
   const canRun = Boolean(action || fallbackStepCommand);
   const freshness = resolveEvidenceFreshness(card);
   const blockers = effectiveCardBlockers(card, workspaceProjectCount);
-  const visibleBlockers = blockers.slice(0, 4);
-  const hiddenBlockerCount = Math.max(blockers.length - visibleBlockers.length, 0);
   const projectAttribution = resolveEvidenceProjectAttribution(card, evidence);
   const tone = statusTone(card, workspaceProjectCount);
+  const bucket = resolveEvidenceAttentionBucket(card, workspaceProjectCount);
   const incident = buildDashboardIncidentCopy({ card, contract: actionContract });
+  const copy = buildDashboardRepairCardCopy({
+    card,
+    blockers,
+    actionLabel: runLabel,
+    blocking: bucket === 'blocked',
+  });
   const runPrimaryAction = () => {
     if (action) {
       onRunCommand(action.command, action.commandData);
@@ -694,21 +536,24 @@ function RepairActiveCard({
     >
       <div className="repair-flow__active-head">
         <span className="ws-kicker">{activeRepairKicker(card, workspaceProjectCount)}</span>
-        <div className="repair-flow__active-head-tools">
-          <RepairModeToggle mode={mode} onChange={onModeChange} />
-          <span className={`repair-flow__status repair-flow__status--${tone}`}>
-            {refreshPending
-              ? 'Refreshing'
-              : pending
-                ? 'Running'
-                : statusLabel(card, workspaceProjectCount)}
-          </span>
-        </div>
+        <span className={`repair-flow__status repair-flow__status--${tone}`}>
+          {refreshPending
+            ? 'Refreshing'
+            : pending
+              ? 'Running'
+              : statusLabel(card, workspaceProjectCount)}
+        </span>
       </div>
 
       <div className="repair-flow__active-main">
         <h3>{card.label}</h3>
-        <p>{card.summary || 'No summary available yet.'}</p>
+        <p className="repair-flow__active-issue">{copy.issue}</p>
+        <small className="repair-flow__active-guidance">
+          {copy.guidance}
+          {copy.remainingFindingCount > 0
+            ? ` ${copy.remainingFindingCount} more related finding${copy.remainingFindingCount === 1 ? '' : 's'}.`
+            : ''}
+        </small>
         <div className="repair-flow__active-meta">
           <small>
             {freshness.label} · {freshness.detail}
@@ -725,17 +570,21 @@ function RepairActiveCard({
             </button>
           ) : null}
         </div>
-        {visibleBlockers.length > 0 ? (
-          <ul className="repair-flow__blocker-list" aria-label="Blockers">
-            {visibleBlockers.map((blocker) => (
-              <li key={blocker}>{blocker}</li>
-            ))}
-            {hiddenBlockerCount > 0 ? (
-              <li className="repair-flow__blocker-more">{hiddenBlockerCount} more blocker(s)</li>
+        {mode !== 'guided' ? (
+          <details className="repair-flow__technical">
+            <summary>
+              Technical details{blockers.length > 0 ? ` · ${blockers.length} findings` : ''}
+            </summary>
+            {blockers.length > 0 ? (
+              <ul className="repair-flow__blocker-list" aria-label="Technical findings">
+                {blockers.map((blocker) => (
+                  <li key={blocker}>{blocker}</li>
+                ))}
+              </ul>
             ) : null}
-          </ul>
+            <RepairIncidentSummary incident={incident} />
+          </details>
         ) : null}
-        <RepairIncidentSummary incident={incident} />
       </div>
 
       <div className="repair-flow__active-actions">
@@ -754,23 +603,22 @@ function RepairActiveCard({
           artifactPath={actionContract.artifactPath}
           artifactState={actionContract.artifactState}
           executionChannel={actionContract.executionChannel}
-          onRun={
-            canRun
-              ? runPrimaryAction
-              : undefined
-          }
+          onRun={canRun ? runPrimaryAction : undefined}
           onRefresh={onRefreshEvidenceCard}
           onAdvancedInspect={onShowEvidenceOutput}
           onRevealArtifact={onRevealArtifact}
           onAskStudio={() => onAskStudioAboutCard(card)}
           onSendToCopilot={() => onSendEvidenceToCopilot(card)}
+          onCopyAgentHandoff={() => onCopyEvidenceAgentHandoff(card)}
         />
-        <EvidenceCardLogDrawer
-          card={card}
-          activity={evidence?.activity}
-          onOpenOutputChannel={onShowEvidenceOutput}
-          onRevealArtifact={onRevealArtifact}
-        />
+        {mode === 'audit' ? (
+          <EvidenceCardLogDrawer
+            card={card}
+            activity={evidence?.activity}
+            onOpenOutputChannel={onShowEvidenceOutput}
+            onRevealArtifact={onRevealArtifact}
+          />
+        ) : null}
       </div>
     </section>
   );
@@ -785,28 +633,27 @@ export function DashboardRepairFlow({
   pendingCardIds = [],
   pendingRunCardIds = pendingCardIds,
   pendingRefreshCardIds = [],
-  isEvidenceFullRefreshPending = false,
   onRunCommand,
   onRefreshEvidence,
   onRefreshEvidenceCard,
   onAskStudioAboutCard,
   onSendEvidenceToCopilot,
+  onCopyEvidenceAgentHandoff,
   onShowEvidenceOutput,
   onRevealArtifact,
   onOpenRunZone,
   onOpenProjectLifecycle,
 }: DashboardRepairFlowProps) {
-  const [mode, setMode] = useState<RepairMode>(() => initialRepairMode(evidence));
+  const [mode, setMode] = useState<RepairMode>(initialRepairMode);
   const [selectedCardId, setSelectedCardId] = useState<DashboardEvidenceCardId | null>(null);
   const cards = evidence?.cards ?? [];
-  const verifyPassCount = countRepairVerificationPasses(evidence);
   const workspaceProjectCount = resolveWorkspaceProjectCountFromEvidence(evidence);
   const steps = buildEvidenceGuidedSteps({ evidence, hasProject });
   const brief = buildDashboardEvidenceBrief({ evidence, hasWorkspace, hasProject });
   const actionableCards = useMemo(
     () =>
       cards
-        .filter(isActionableCard)
+        .filter((card) => isActionableCard(card, workspaceProjectCount))
         .sort(
           (a, b) => cardPriority(a, workspaceProjectCount) - cardPriority(b, workspaceProjectCount)
         ),
@@ -822,45 +669,25 @@ export function DashboardRepairFlow({
     selectedCard ?? brief.primaryCard,
     workspaceProjectCount
   );
-  const activeContract = activeCard
-    ? buildDashboardEvidenceActionContract(activeCard, { workspace, evidence })
-    : undefined;
-  const activeAction = activeContract?.commandAction;
   const stepCommand = brief.currentStep?.command;
   const stepCommandLabel = stepCommand ? getDashboardCommandMeta(stepCommand)?.label : undefined;
-  const visibleCards =
-    mode === 'guided'
-      ? actionableCards.slice(0, 3)
-      : mode === 'inspect'
-        ? actionableCards.slice(0, 8)
-        : actionableCards;
+  const visibleCards = selectRepairVisibleCards(
+    actionableCards,
+    activeCard,
+    mode,
+    workspaceProjectCount
+  );
   const queueCards = visibleCards.filter((card) => card.id !== activeCard?.id);
-  const queueGroups = mode === 'inspect' ? groupRepairCards(queueCards) : [];
+  const queueGroups = mode === 'inspect' ? groupRepairCards(queueCards, workspaceProjectCount) : [];
   const pendingActiveRun = activeCard ? pendingRunCardIds.includes(activeCard.id) : false;
   const pendingActiveRefresh = activeCard ? pendingRefreshCardIds.includes(activeCard.id) : false;
-  const isRefreshingEvidence =
-    isEvidenceFullRefreshPending ||
-    pendingRefreshCardIds.length > 0 ||
-    (activeCard ? pendingActiveRefresh : false);
   const handleRepairModeChange = (nextMode: RepairMode) => {
     setMode(nextMode);
-    persistRepairMode(nextMode, verifyPassCount);
+    persistRepairMode(nextMode);
   };
-  const nextLabel =
-    activeContract?.commandLabel ??
-    stepCommandLabel ??
-    brief.currentStep?.title ??
-    'Refresh evidence';
-
-  const runActiveRepairAction = () => {
-    if (activeAction) {
-      onRunCommand(activeAction.command, activeAction.commandData);
-      return;
-    }
-    if (stepCommand) {
-      onRunCommand(stepCommand, workspace?.path ? { workspacePath: workspace.path } : undefined);
-    }
-  };
+  const overviewSummary = activeCard
+    ? `${actionableCards.length} item${actionableCards.length === 1 ? '' : 's'} need action. Start with ${activeCard.label}.`
+    : 'No repair item is currently active.';
 
   useEffect(() => {
     if (selectedCardId && !actionableCards.some((card) => card.id === selectedCardId)) {
@@ -868,48 +695,36 @@ export function DashboardRepairFlow({
     }
   }, [actionableCards, selectedCardId]);
 
-  useEffect(() => {
-    if (verifyPassCount < REPAIR_MODE_PERSIST_AFTER_VERIFY_COUNT && mode !== 'guided') {
-      setMode('guided');
-    }
-  }, [mode, verifyPassCount]);
-
   if (!hasWorkspace) {
     return (
-      <section className="repair-flow repair-flow--empty" aria-label="Repair command center">
-        <div className="repair-flow__empty">
-          <ClipboardCheck size={18} aria-hidden="true" />
-          <h3>Select a workspace to start the repair flow.</h3>
-          <p>
-            Workspai will turn doctor, analyze, readiness, and verify artifacts into one safe path.
-          </p>
-        </div>
-      </section>
+      <WorkspaiEmptyState
+        icon={<ClipboardCheck size={18} />}
+        title="No workspace selected"
+        description={
+          <>
+            Repair flow unlocks after you create, import, or switch to a workspace. Doctor, analyze,
+            readiness, and verify stay scoped to a real workspace target.
+          </>
+        }
+      />
     );
   }
 
   return (
     <section className="repair-flow" aria-label="Repair command center">
-      <RepairPath
-        steps={steps}
-        fixPathContract={activeContract}
-        fixPathPending={pendingActiveRun}
-        isRefreshingEvidence={isRefreshingEvidence}
-        onRunFixPath={runActiveRepairAction}
-        onRefreshEvidence={onRefreshEvidence}
-      />
-
       <div className={`repair-flow__decision repair-flow__decision--${brief.posture}`}>
         <div className="repair-flow__decision-copy">
-          <span className="ws-kicker">Repair Command Center</span>
+          <span className="ws-kicker">Workspace repair</span>
           <h3>{brief.label}</h3>
-          <p>{brief.summary}</p>
+          <p>{overviewSummary}</p>
           <small className="repair-flow__scope">
             {dashboardScopeLabel(scope)} · {dashboardScopeDetail(scope, { showPaths: false })}
           </small>
-          <small>Next: {nextLabel}</small>
         </div>
-        <RepairMetricStrip brief={brief} />
+        <div className="repair-flow__decision-tools">
+          <RepairMetricStrip brief={brief} />
+          <RepairModeToggle mode={mode} onChange={handleRepairModeChange} />
+        </div>
       </div>
 
       {activeCard ? (
@@ -923,11 +738,11 @@ export function DashboardRepairFlow({
           fallbackStepCommand={stepCommand}
           fallbackStepCommandLabel={stepCommandLabel}
           mode={mode}
-          onModeChange={handleRepairModeChange}
           onRunCommand={onRunCommand}
           onRefreshEvidenceCard={onRefreshEvidenceCard}
           onAskStudioAboutCard={onAskStudioAboutCard}
           onSendEvidenceToCopilot={onSendEvidenceToCopilot}
+          onCopyEvidenceAgentHandoff={onCopyEvidenceAgentHandoff}
           onShowEvidenceOutput={onShowEvidenceOutput}
           onRevealArtifact={onRevealArtifact}
           onOpenProjectLifecycle={onOpenProjectLifecycle}
@@ -936,7 +751,6 @@ export function DashboardRepairFlow({
         <section className="repair-flow__active repair-flow__active--clear">
           <div className="repair-flow__active-head">
             <span className="ws-kicker">Active blocker</span>
-            <RepairModeToggle mode={mode} onChange={handleRepairModeChange} />
           </div>
           <ShieldCheck size={18} aria-hidden="true" />
           <h3>No active blocker.</h3>
@@ -994,6 +808,7 @@ export function DashboardRepairFlow({
                         onRefreshEvidenceCard={onRefreshEvidenceCard}
                         onAskStudioAboutCard={onAskStudioAboutCard}
                         onSendEvidenceToCopilot={onSendEvidenceToCopilot}
+                        onCopyEvidenceAgentHandoff={onCopyEvidenceAgentHandoff}
                         onShowEvidenceOutput={onShowEvidenceOutput}
                         onRevealArtifact={onRevealArtifact}
                       />
@@ -1019,6 +834,7 @@ export function DashboardRepairFlow({
                   onRefreshEvidenceCard={onRefreshEvidenceCard}
                   onAskStudioAboutCard={onAskStudioAboutCard}
                   onSendEvidenceToCopilot={onSendEvidenceToCopilot}
+                  onCopyEvidenceAgentHandoff={onCopyEvidenceAgentHandoff}
                   onShowEvidenceOutput={onShowEvidenceOutput}
                   onRevealArtifact={onRevealArtifact}
                 />

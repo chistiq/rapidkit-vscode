@@ -13,6 +13,12 @@ import {
 } from '../../contracts/webviewProtocol';
 import { asRecord } from './welcomePanel.shared.js';
 
+const PYTHON_ENGINE_REQUIRED_CREATION_PROFILES = new Set(['python-only', 'polyglot', 'enterprise']);
+
+function shouldSkipPythonEngineForCreationProfile(profile: string | undefined): boolean {
+  return !PYTHON_ENGINE_REQUIRED_CREATION_PROFILES.has(profile ?? 'minimal');
+}
+
 export type AiCreationMessageHost = {
   context: vscode.ExtensionContext;
   postWebviewMessage: (command: string, data?: unknown) => void;
@@ -143,6 +149,7 @@ export async function handleAiCreationConfirmMessage(
         name: plan.workspaceName,
         profile,
         installMethod: (plan.installMethod as string | undefined) ?? 'auto',
+        skipPythonEngine: shouldSkipPythonEngineForCreationProfile(profile),
         initGit: true,
         policyMode: 'warn' as const,
         dependencySharing: 'isolated' as const,

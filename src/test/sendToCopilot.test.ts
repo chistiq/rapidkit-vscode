@@ -85,4 +85,28 @@ describe('sendToCopilot', () => {
     expect(result.prefilledChat).toBe(true);
     expect(clipboardWriteText).not.toHaveBeenCalled();
   });
+
+  it('copies the complete agent handoff built by the same Copilot prompt contract', async () => {
+    const { copyEvidenceAgentHandoff } = await import('../core/sendToCopilot.js');
+
+    const prompt = await copyEvidenceAgentHandoff({
+      workspacePath: '/tmp/workspace',
+      card: {
+        id: 'pipeline',
+        label: 'Governance Pipeline',
+        status: 'fail',
+        summary: 'blocked',
+        scope: 'workspace',
+      },
+    });
+
+    expect(prompt).toContain('## Workspai workspace root (READ THIS FIRST)');
+    expect(prompt).toContain('@workspace');
+    expect(prompt).toContain('## Workspai intelligence handoff');
+    expect(prompt).toContain('Evidence: Governance Pipeline (fail) — blocked');
+    expect(prompt).toContain('## Standard answer contract');
+    expect(prompt).toContain('Fix the blocked Workspai evidence issue for "Governance Pipeline"');
+    expect(clipboardWriteText).toHaveBeenCalledWith(prompt);
+    expect(executeCommand).not.toHaveBeenCalled();
+  });
 });

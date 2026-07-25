@@ -1,6 +1,7 @@
 import type { StudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
 import type { DoctorRemediationPlanView } from './doctorRemediationPlanReader.js';
 import { shouldForbidSourceCommandRerun } from './studioBlockerResolution.js';
+const DEFAULT_WORKSPACE_VERIFY_COMMAND = 'workspace verify --json';
 
 export function buildSidebarStudioPrompt(input: {
   task: string;
@@ -39,7 +40,7 @@ export function buildSidebarStudioPrompt(input: {
     'Respond as Workspai Studio inside VS Code.',
     'Be concise, evidence-aware, and action-safe.',
     'Do not claim that files were changed unless an explicit tool/command did it.',
-    'Return a clear next action, verification path, and any risk to check.',
+    'Choose and execute the smallest safe next action through Studio tools; return a verification path and any remaining risk.',
     'Use short markdown sections only when relevant, in this order: Detect, Diagnose, Plan, Verify, Learn, Evidence, Assumptions.',
     'Each section should be brief: one short paragraph or up to three bullets.',
     'If evidence is missing, say exactly what evidence is missing and which command can refresh it.',
@@ -82,7 +83,8 @@ export function buildSidebarStudioPrompt(input: {
       '- Do not ask the user to restate the blocker; use the active blocker handoff, project path, remediation plan, artifact, and verify command first.',
       '- If the user asks a casual or clarifying question, answer briefly, then return to the current card fix path and next safe action.',
       '- Prefer the project path from the handoff over the globally active workspace/project when they differ.',
-      '- If a deterministic Studio apply step exists, tell the user to use that approved Studio action instead of inventing a parallel edit.',
+      '- If a deterministic approval-free Studio apply step exists, continue it automatically instead of asking the user to run commands.',
+      '- Pause once for approval only when the contract marks a step guarded, review-required, invasive, destructive, external, or ambiguous.',
       '- If deterministic steps are exhausted or blocked, continue with the smallest AI-assisted source/config edit grounded in the blocker and current evidence.'
     );
   }
@@ -121,7 +123,7 @@ export function buildSidebarStudioPrompt(input: {
       'Remediation contract:',
       '- Use the active remediation plan as the source of truth for known safe/guarded edits.',
       '- Do not invent unrelated framework setup when the remediation plan already names a safer step.',
-      '- If the user asks to fix it, prefer the Studio Apply/Continue repair path for deterministic steps.',
+      '- If the user asks to fix it, execute the Studio Apply/Continue repair path for safe approval-free deterministic steps.',
       '- If no deterministic step remains, propose the smallest source edit and verification command.',
       '- If you propose an AI-assisted file edit, return patch blocks in this exact format: ```<language> path: <relative/path> ... ```.',
       '- If you cannot produce a safe patch from the evidence, say that no patch is safe yet and name the missing evidence.',
@@ -130,7 +132,7 @@ export function buildSidebarStudioPrompt(input: {
     );
   }
 
-  if (forbidRerun && handoff?.sourceCommand) {
+  if (forbidRerun && handoff?.sourceCommand && executionMode !== 'VERIFY_ONLY') {
     lines.push(
       '',
       'FIX-mode contract:',
@@ -156,7 +158,7 @@ export function buildSidebarStudioPrompt(input: {
     lines.push(
       '',
       'VERIFY_ONLY contract:',
-      `- Only recommend: ${handoff?.verifyCommand ?? 'workspace verify'}.`,
+      `- Only recommend: ${handoff?.verifyCommand ?? DEFAULT_WORKSPACE_VERIFY_COMMAND}.`,
       '- Do not propose new fixes unless verify fails with new evidence.'
     );
   }

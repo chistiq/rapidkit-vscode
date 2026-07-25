@@ -2,7 +2,7 @@ import { parseCliLogEventLine, type CliLogEvent } from './cliLogEventContract';
 
 /**
  * Incremental line buffer that turns a chunked stderr byte stream into parsed
- * `cli-log-event.v1` events. The RapidKit CLI emits one NDJSON event per line on
+ * `cli-log-event.v1` events. The Workspai CLI emits one NDJSON event per line on
  * stderr; chunks arrive at arbitrary boundaries, so we buffer partial lines and
  * only parse complete ones. Non-event lines (plain text, blank lines) are
  * ignored. This is the consumption side of roadmap item 2.2 — the extension

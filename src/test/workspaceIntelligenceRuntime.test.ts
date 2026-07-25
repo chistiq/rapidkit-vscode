@@ -28,7 +28,9 @@ import {
   buildWorkspaceIntelligenceChainCommands,
   buildWorkspaceIntelligenceCoreChainCommands,
   buildWorkspaceIntelligencePhase4ChainCommands,
+  buildWorkspaceIntelligenceUnifiedRunnerCommand,
   resolveWorkspaceIntelligencePhase4Available,
+  toWorkspaceIntelligenceSequenceSteps,
 } from '../core/workspaceIntelligenceRuntime';
 
 const mockedFetchSurface = vi.mocked(fetchRuntimeCommandSurface);
@@ -38,31 +40,44 @@ describe('workspaceIntelligenceRuntime', () => {
     mockedFetchSurface.mockReset();
   });
 
+  it('uses the authoritative unified runner for the extension intelligence action', () => {
+    expect(buildWorkspaceIntelligenceUnifiedRunnerCommand()).toEqual([
+      'workspace',
+      'intelligence',
+      'run',
+      '--for-agent',
+      'vscode',
+      '--json',
+    ]);
+  });
+
   it('builds canonical core intelligence chain commands through explain', () => {
     expect(buildWorkspaceIntelligenceCoreChainCommands()).toEqual([
       ['workspace', 'model', '--json', '--write'],
-      ['workspace', 'snapshot', '--json'],
-      ['workspace', 'diff', '--from', '.rapidkit/reports/workspace-model-snapshot.json', '--json'],
+      ['workspace', 'diff', '--from', '.workspai/reports/workspace-model-snapshot.json', '--json'],
       [
         'workspace',
         'impact',
         '--from',
-        '.rapidkit/reports/workspace-model-diff-last-run.json',
+        '.workspai/reports/workspace-model-diff-last-run.json',
         '--json',
       ],
+      ['doctor', 'workspace', '--json'],
+      ['workspace', 'contract', 'verify', '--strict', '--json'],
+      ['analyze', '--json'],
+      ['readiness', '--json', '--skip-verify'],
       [
         'workspace',
         'verify',
         '--from-impact',
-        '.rapidkit/reports/workspace-impact-last-run.json',
+        '.workspai/reports/workspace-impact-last-run.json',
         '--json',
       ],
-      ['workspace', 'context', '--for-agent', '--json', '--write'],
+      ['workspace', 'context', '--for-agent', '--json', '--write', '--no-agent-sync'],
       [
         'workspace',
         'agent-sync',
         '--write',
-        '--refresh-context',
         '--json',
         '--preset',
         'enterprise',
@@ -74,16 +89,37 @@ describe('workspaceIntelligenceRuntime', () => {
   });
 
   it('keeps core chain steps within the CLI intelligence capability gate', () => {
-    const coreSubcommands = buildWorkspaceIntelligenceCoreChainCommands().map(
-      ([, subcommand]) => subcommand
+    const intelligenceCommands = buildWorkspaceIntelligenceCoreChainCommands().filter(
+      ([command, subcommand]) =>
+        command === 'workspace' &&
+        ['model', 'diff', 'impact', 'verify', 'context', 'agent-sync', 'explain'].includes(
+          subcommand
+        )
     );
 
-    for (const subcommand of coreSubcommands) {
+    for (const [, subcommand] of intelligenceCommands) {
       expect(
         REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS as readonly string[],
         subcommand
       ).toContain(subcommand);
     }
+  });
+
+  it('refreshes verification evidence after impact and before the definitive gate', () => {
+    const commands = buildWorkspaceIntelligenceCoreChainCommands();
+    const impactIndex = commands.findIndex(
+      ([command, subcommand]) => command === 'workspace' && subcommand === 'impact'
+    );
+    const verifyIndex = commands.findIndex(
+      ([command, subcommand]) => command === 'workspace' && subcommand === 'verify'
+    );
+
+    expect(commands.slice(impactIndex + 1, verifyIndex)).toEqual([
+      ['doctor', 'workspace', '--json'],
+      ['workspace', 'contract', 'verify', '--strict', '--json'],
+      ['analyze', '--json'],
+      ['readiness', '--json', '--skip-verify'],
+    ]);
   });
 
   it('appends Phase 4 why/trace only when explicitly requested', () => {
@@ -93,6 +129,31 @@ describe('workspaceIntelligenceRuntime', () => {
     expect(buildWorkspaceIntelligenceChainCommands({ includePhase4: true })).toEqual([
       ...buildWorkspaceIntelligenceCoreChainCommands(),
       ...buildWorkspaceIntelligencePhase4ChainCommands(),
+    ]);
+  });
+
+  it('derives canonical labels and verdict policies by command identity, not array position', () => {
+    expect(
+      toWorkspaceIntelligenceSequenceSteps([
+        ['analyze', '--strict', '--json'],
+        ['workspace', 'why', 'release-blocked', '--json', '--write'],
+        ['workspace', 'diff', '--from', 'custom-snapshot.json', '--json'],
+      ])
+    ).toEqual([
+      {
+        command: ['analyze', '--strict', '--json'],
+        label: 'Analyze Evidence',
+        exitPolicy: 'continue-on-structured-verdict',
+      },
+      {
+        command: ['workspace', 'why', 'release-blocked', '--json', '--write'],
+        label: 'Why',
+      },
+      {
+        command: ['workspace', 'diff', '--from', 'custom-snapshot.json', '--json'],
+        label: 'Diff',
+        exitPolicy: 'stop-on-error',
+      },
     ]);
   });
 
@@ -127,12 +188,12 @@ describe('workspaceIntelligenceRuntime', () => {
       await import('../core/workspaceIntelligenceRuntime');
     expect(buildWorkspaceImpactLensCommands()).toEqual([
       ['workspace', 'snapshot', '--json'],
-      ['workspace', 'diff', '--from', '.rapidkit/reports/workspace-model-snapshot.json', '--json'],
+      ['workspace', 'diff', '--from', '.workspai/reports/workspace-model-snapshot.json', '--json'],
       [
         'workspace',
         'impact',
         '--from',
-        '.rapidkit/reports/workspace-model-diff-last-run.json',
+        '.workspai/reports/workspace-model-diff-last-run.json',
         '--json',
       ],
     ]);
@@ -143,12 +204,12 @@ describe('workspaceIntelligenceRuntime', () => {
       await import('../core/workspaceIntelligenceRuntime');
     expect(buildWorkspaceImpactLensCommands('project:web')).toEqual([
       ['workspace', 'snapshot', '--json'],
-      ['workspace', 'diff', '--from', '.rapidkit/reports/workspace-model-snapshot.json', '--json'],
+      ['workspace', 'diff', '--from', '.workspai/reports/workspace-model-snapshot.json', '--json'],
       [
         'workspace',
         'impact',
         '--from',
-        '.rapidkit/reports/workspace-model-diff-last-run.json',
+        '.workspai/reports/workspace-model-diff-last-run.json',
         '--json',
         '--scope',
         'project:web',

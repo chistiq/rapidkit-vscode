@@ -9,6 +9,13 @@ export type DashboardEvidenceMessageMeta = {
   patchCardIds?: DashboardEvidenceCardId[];
 };
 
+type DashboardEvidenceSessionOptions = {
+  expectedRequestId?: number;
+  activeWorkspacePath?: string | null;
+  activeProjectPath?: string | null;
+  allowMissingRequestId?: boolean;
+};
+
 export function nextEvidenceRequestId(current: number): number {
   return current + 1;
 }
@@ -33,13 +40,46 @@ export function mergeEvidenceCardPatch(
   };
 }
 
+function preserveActiveProjectEvidence(
+  current: DashboardEvidencePayload | null,
+  incoming: DashboardEvidencePayload,
+  activeProjectPath?: string | null
+): DashboardEvidencePayload {
+  if (!current?.projectPath || !activeProjectPath || current.projectPath !== activeProjectPath) {
+    return incoming;
+  }
+
+  if (incoming.projectPath) {
+    return incoming;
+  }
+
+  const currentProjectCards = current.cards.filter((card) => card.scope === 'project');
+  if (currentProjectCards.length === 0) {
+    return incoming;
+  }
+
+  const preservedProjectCardsById = new Map(currentProjectCards.map((card) => [card.id, card]));
+  const cards = incoming.cards.map((card) =>
+    card.scope === 'project' ? (preservedProjectCardsById.get(card.id) ?? card) : card
+  );
+
+  for (const card of currentProjectCards) {
+    if (!cards.some((entry) => entry.id === card.id)) {
+      cards.push(card);
+    }
+  }
+
+  return {
+    ...incoming,
+    projectPath: current.projectPath,
+    projectName: current.projectName,
+    cards,
+  };
+}
+
 export function isStaleEvidenceResponse(
   payload: DashboardEvidencePayload | null | undefined,
-  options: {
-    expectedRequestId?: number;
-    activeWorkspacePath?: string | null;
-    allowMissingRequestId?: boolean;
-  }
+  options: DashboardEvidenceSessionOptions
 ): boolean {
   if (!payload) {
     return true;
@@ -67,11 +107,7 @@ export function isStaleEvidenceResponse(
 export function applyDashboardEvidenceMessage(
   current: DashboardEvidencePayload | null,
   incoming: DashboardEvidencePayload | null | undefined,
-  options: {
-    expectedRequestId?: number;
-    activeWorkspacePath?: string | null;
-    allowMissingRequestId?: boolean;
-  }
+  options: DashboardEvidenceSessionOptions
 ): DashboardEvidencePayload | null {
   if (!incoming) {
     return current;
@@ -88,10 +124,14 @@ export function applyDashboardEvidenceMessage(
   }
 
   if (incoming.refreshMode === 'patch' && current) {
-    return mergeEvidenceCardPatch(current, incoming);
+    return preserveActiveProjectEvidence(
+      current,
+      mergeEvidenceCardPatch(current, incoming),
+      options.activeProjectPath
+    );
   }
 
-  return incoming;
+  return preserveActiveProjectEvidence(current, incoming, options.activeProjectPath);
 }
 
 export function emptyEvidencePayloadForWorkspace(

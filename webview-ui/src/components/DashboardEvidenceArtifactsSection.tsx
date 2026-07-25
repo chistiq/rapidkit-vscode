@@ -26,6 +26,7 @@ export type DashboardEvidenceArtifactsSectionProps = {
   onRefreshEvidenceCard: (cardId: DashboardEvidenceCardId) => void;
   onAskStudioAboutCard: (card: DashboardEvidenceCard) => void;
   onSendEvidenceToCopilot: (card: DashboardEvidenceCard) => void;
+  onCopyEvidenceAgentHandoff: (card: DashboardEvidenceCard) => void;
   onShowEvidenceOutput: () => void;
   onClearActivity: () => void;
   onRevealArtifact: (artifactPath: string) => void;
@@ -57,6 +58,7 @@ export function DashboardEvidenceArtifactsSection({
   onRefreshEvidenceCard,
   onAskStudioAboutCard,
   onSendEvidenceToCopilot,
+  onCopyEvidenceAgentHandoff,
   onShowEvidenceOutput,
   onClearActivity,
   onRevealArtifact,
@@ -94,6 +96,7 @@ export function DashboardEvidenceArtifactsSection({
         onRefreshEvidenceCard={onRefreshEvidenceCard}
         onAskStudioAboutCard={onAskStudioAboutCard}
         onSendEvidenceToCopilot={onSendEvidenceToCopilot}
+        onCopyEvidenceAgentHandoff={onCopyEvidenceAgentHandoff}
         onShowEvidenceOutput={onShowEvidenceOutput}
         onClearActivity={onClearActivity}
         onRevealArtifact={onRevealArtifact}

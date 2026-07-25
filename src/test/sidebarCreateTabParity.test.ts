@@ -19,6 +19,7 @@ describe('React Create tab ↔ host protocol parity (roadmap 2.11d)', () => {
   const dispatcher = read('src/ui/webviews/actionsWebviewMessageDispatcher.ts');
   const welcomePanel = read('src/ui/panels/welcomePanel.ts');
   const bootstrapPayload = read('src/ui/panels/welcomePanelBootstrapPayload.ts');
+  const managedDefaultWorkspace = read('src/core/ensureManagedDefaultWorkspace.ts');
 
   it('posts the create outbound commands the host handles', () => {
     const outbound = [
@@ -93,15 +94,27 @@ describe('React Create tab ↔ host protocol parity (roadmap 2.11d)', () => {
     expect(app).toContain('<SecondarySidebar />');
   });
 
-  it('renders Workspai agent avatars beside AI create messages', () => {
+  it('keeps AI chat messages minimal without a Workspai avatar or activity ring', () => {
     const createTab = read('webview-ui/src/sidebar/CreateTab.tsx');
-    const avatar = read('webview-ui/src/sidebar/SidebarAgentAvatar.tsx');
+    const sidebarMessage = read('webview-ui/src/sidebar/SidebarMessage.tsx');
+    const sidebarCss = read('webview-ui/src/sidebar/sidebar.css');
     expect(createTab).toContain('SidebarMessage');
-    expect(createTab).toContain('agentActive={agentActive}');
     expect(createTab).toContain('LoadingDots');
     expect(createTab).toContain('ws-sidebar__dots');
-    expect(avatar).toContain('ws-sidebar__agent-avatar__ring');
-    expect(avatar).toContain('window.ICON_URI');
+    expect(sidebarMessage).not.toContain('SidebarAgentAvatar');
+    expect(sidebarMessage).not.toContain('agentActive');
+    expect(sidebarCss).not.toContain('ws-sidebar__agent-avatar');
+    expect(sidebarCss).not.toContain('ws-sidebar-avatar-spin');
+  });
+
+  it('identifies the project target as a visible Workspai workspace badge', () => {
+    const projectDrawer = read('webview-ui/src/sidebar/drawers/ManualProjectDrawer.tsx');
+    const sidebarCss = read('webview-ui/src/sidebar/sidebar.css');
+    expect(projectDrawer).toContain('Default Workspai location');
+    expect(projectDrawer).not.toContain('Default RapidKit location');
+    expect(projectDrawer).toContain('ws-drawer-target-badge');
+    expect(projectDrawer).toContain('MapPin');
+    expect(sidebarCss).toContain('.ws-drawer-target-badge');
   });
 
   it('streams manual create progress steps before the final result', () => {
@@ -147,5 +160,11 @@ describe('React Create tab ↔ host protocol parity (roadmap 2.11d)', () => {
     expect(secondary).toContain('workspacePath: input.workspacePath');
     expect(provider).toContain('const scope = resolveExplicitWorkspaceScope(payloadRecord.scope)');
     expect(provider).toContain('let workspacePath = scope.workspacePath');
+    expect(managedDefaultWorkspace).toContain("profile: 'polyglot'");
+    expect(managedDefaultWorkspace).toContain('skipPythonEngine: true');
+    expect(managedDefaultWorkspace).toContain('skipGit: true');
+    expect(managedDefaultWorkspace).toContain(
+      'await ensureWorkspaceViaNpm(workspacePath, workspaceName)'
+    );
   });
 });

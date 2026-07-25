@@ -78,6 +78,7 @@ export interface IntelligenceSequenceStep {
   command: string[];
   /** Short label shown in the progress notification, e.g. `Model`. */
   label: string;
+  exitPolicy?: 'stop-on-error' | 'continue-on-structured-verdict';
 }
 
 /**
@@ -92,7 +93,20 @@ export function isIntelligenceChainVerdictExit(
   if (!result.failed) {
     return false;
   }
-  if (!['Verify', 'Explain', 'Why'].includes(step.label)) {
+  if (step.exitPolicy === 'stop-on-error') {
+    return false;
+  }
+  if (
+    step.exitPolicy !== 'continue-on-structured-verdict' &&
+    ![
+      'Doctor Evidence',
+      'Contract Evidence',
+      'Readiness Evidence',
+      'Verify',
+      'Explain',
+      'Why',
+    ].includes(step.label)
+  ) {
     return false;
   }
   const payload = result.result as Record<string, unknown> | null | undefined;
@@ -101,6 +115,16 @@ export function isIntelligenceChainVerdictExit(
   }
   const outputPath = payload.outputPath;
   if (typeof outputPath === 'string' && outputPath.trim().length > 0) {
+    return true;
+  }
+  const evidencePath = payload.evidencePath;
+  if (typeof evidencePath === 'string' && evidencePath.trim().length > 0) {
+    return true;
+  }
+  if (
+    ['Doctor Evidence', 'Readiness Evidence'].includes(step.label) &&
+    typeof payload.generatedAt === 'string'
+  ) {
     return true;
   }
   if (step.label === 'Verify' && payload.summary != null && payload.gate != null) {

@@ -38,6 +38,7 @@ interface CommandActivityPanelProps {
   onRefreshEvidenceCard?: (cardId: DashboardEvidenceCardId) => void;
   onAskStudioAboutCard?: (card: DashboardEvidenceCard) => void;
   onSendEvidenceToCopilot?: (card: DashboardEvidenceCard) => void;
+  onCopyEvidenceAgentHandoff?: (card: DashboardEvidenceCard) => void;
   onShowEvidenceOutput?: () => void;
   onRevealArtifact?: (artifactPath: string) => void;
   onClearActivity?: () => void;
@@ -71,6 +72,7 @@ export function CommandActivityPanel({
   onRefreshEvidenceCard,
   onAskStudioAboutCard,
   onSendEvidenceToCopilot,
+  onCopyEvidenceAgentHandoff,
   onShowEvidenceOutput,
   onRevealArtifact,
   onClearActivity,
@@ -79,8 +81,7 @@ export function CommandActivityPanel({
   const [expandedVisibleCardCount, setExpandedVisibleCardCount] = useState(ARCHIVE_CARD_PAGE_SIZE);
   const allCards = evidence?.cards ?? [];
   const cards = filterEvidenceCardsForViewMode(allCards, viewMode);
-  const visibleCards =
-    viewMode === 'expanded' ? cards.slice(0, expandedVisibleCardCount) : cards;
+  const visibleCards = viewMode === 'expanded' ? cards.slice(0, expandedVisibleCardCount) : cards;
   const hiddenArchiveCardCount =
     viewMode === 'expanded' ? Math.max(0, cards.length - visibleCards.length) : 0;
   const groupedCards =
@@ -137,6 +138,7 @@ export function CommandActivityPanel({
                       onRefreshEvidenceCard,
                       onAskStudioAboutCard,
                       onSendEvidenceToCopilot,
+                      onCopyEvidenceAgentHandoff,
                       onShowEvidenceOutput,
                       onRevealArtifact,
                       statusIcon,
@@ -162,6 +164,7 @@ export function CommandActivityPanel({
                 onRefreshEvidenceCard,
                 onAskStudioAboutCard,
                 onSendEvidenceToCopilot,
+                onCopyEvidenceAgentHandoff,
                 onShowEvidenceOutput,
                 onRevealArtifact,
                 statusIcon,
@@ -230,6 +233,7 @@ function renderEvidenceCard(
   onRefreshEvidenceCard: ((cardId: DashboardEvidenceCardId) => void) | undefined,
   onAskStudioAboutCard: ((card: DashboardEvidenceCard) => void) | undefined,
   onSendEvidenceToCopilot: ((card: DashboardEvidenceCard) => void) | undefined,
+  onCopyEvidenceAgentHandoff: ((card: DashboardEvidenceCard) => void) | undefined,
   onShowEvidenceOutput: (() => void) | undefined,
   onRevealArtifact: ((artifactPath: string) => void) | undefined,
   statusIconMap: Record<DashboardEvidenceStatus, typeof CheckCircle2>,
@@ -301,6 +305,9 @@ function renderEvidenceCard(
         onRevealArtifact={onRevealArtifact}
         onAskStudio={onAskStudioAboutCard ? () => onAskStudioAboutCard(card) : undefined}
         onSendToCopilot={onSendEvidenceToCopilot ? () => onSendEvidenceToCopilot(card) : undefined}
+        onCopyAgentHandoff={
+          onCopyEvidenceAgentHandoff ? () => onCopyEvidenceAgentHandoff(card) : undefined
+        }
         executionChannel={actionContract.executionChannel}
       />
       <div className="command-activity-panel__card-contract" aria-label="Action contract">

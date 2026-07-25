@@ -36,7 +36,7 @@ describe('verifyPackContractExporter', () => {
     await fs.remove(workspacePath).catch(() => undefined);
   });
 
-  it('writes the verify-pack-contract JSON to .rapidkit/reports/ on a passing simulation', async () => {
+  it('writes the verify-pack-contract JSON to .workspai/reports/ on a passing simulation', async () => {
     const commandRunner = vi.fn().mockResolvedValue({ stdout: 'ok', stderr: '', exitCode: 0 });
 
     const result = await exportVerifyPackContractToWorkspace({
@@ -60,8 +60,8 @@ describe('verifyPackContractExporter', () => {
     const contractExists = await fs.pathExists(result.contractPath);
     expect(contractExists).toBe(true);
 
-    // The file is in .rapidkit/reports/
-    const expectedDir = path.join(workspacePath, '.rapidkit', 'reports');
+    // The file is in the canonical Workspai reports directory.
+    const expectedDir = path.join(workspacePath, '.workspai', 'reports');
     expect(path.dirname(result.contractPath)).toBe(expectedDir);
 
     // The file name matches the pattern {actionId}-verify-pack-contract.json
@@ -116,8 +116,8 @@ describe('verifyPackContractExporter', () => {
     expect(contractExists).toBe(true);
   });
 
-  it('creates the .rapidkit/reports directory if it does not exist', async () => {
-    const reportsDir = path.join(workspacePath, '.rapidkit', 'reports');
+  it('creates the .workspai/reports directory if it does not exist', async () => {
+    const reportsDir = path.join(workspacePath, '.workspai', 'reports');
     expect(await fs.pathExists(reportsDir)).toBe(false);
 
     const commandRunner = vi.fn().mockResolvedValue({ stdout: 'ok', stderr: '', exitCode: 0 });

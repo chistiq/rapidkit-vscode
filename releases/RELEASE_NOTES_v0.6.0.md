@@ -109,10 +109,10 @@ None reported at this time.
 
 ## 🔗 Links
 
-- **GitHub Repository:** https://github.com/rapidkitlabs/rapidkit-vscode
+- **GitHub Repository:** https://github.com/chistiq/rapidkit-vscode
 - **Documentation:** https://www.workspai.com
-- **Issues & Feedback:** https://github.com/rapidkitlabs/rapidkit-vscode/issues
-- **Discussions:** https://github.com/rapidkitlabs/rapidkit-vscode/discussions
+- **Issues & Feedback:** https://github.com/chistiq/rapidkit-vscode/issues
+- **Discussions:** https://github.com/chistiq/rapidkit-vscode/discussions
 
 ---
 

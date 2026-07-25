@@ -62,8 +62,8 @@ code --install-extension rapidkit-vscode-0.3.0.vsix
 
 Thank you to everyone who reported the hanging issue and helped us improve RapidKit!
 
-If you encounter any issues or have suggestions, please [open an issue on GitHub](https://github.com/rapidkitlabs/rapidkit-vscode/issues).
+If you encounter any issues or have suggestions, please [open an issue on GitHub](https://github.com/chistiq/rapidkit-vscode/issues).
 
 ---
 
-**Full Changelog:** https://github.com/rapidkitlabs/rapidkit-vscode/blob/main/CHANGELOG.md
+**Full Changelog:** https://github.com/chistiq/rapidkit-vscode/blob/main/CHANGELOG.md

@@ -30,11 +30,11 @@ describe('VSIX packaging exclusions', () => {
       scripts?: Record<string, string>;
     };
 
-    expect(packageJson.scripts?.['vscode:prepublish']).toBe('npm run build');
-    expect(packageJson.scripts?.prepackage).toBe('npm run build');
+    expect(packageJson.scripts?.['vscode:prepublish']).toBe('corepack npm run build');
+    expect(packageJson.scripts?.prepackage).toBe('corepack npm run build');
     expect(packageJson.scripts?.build).toContain('--production');
     expect(packageJson.scripts?.['package:ci']).toBe(
-      'npm run build && vsce package --no-dependencies --out rapidkit-vscode-${npm_package_version}.vsix'
+      'corepack npm run build && node scripts/vsce-package-runner.mjs package --no-dependencies --out rapidkit-vscode-${npm_package_version}.vsix'
     );
     expect(packageJson.scripts?.['smoke:vsix-artifact']).toBe(
       'node scripts/inspect-vsix-artifact.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix'
@@ -46,7 +46,7 @@ describe('VSIX packaging exclusions', () => {
       'node scripts/guard-vsix-publish.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix'
     );
     expect(packageJson.scripts?.['publish:ci']).toBe(
-      'npm run publish:guard && vsce publish --packagePath rapidkit-vscode-${npm_package_version}.vsix'
+      'corepack npm run publish:guard && vsce publish --packagePath rapidkit-vscode-${npm_package_version}.vsix'
     );
     expect(packageJson.scripts?.['release:enterprise-matrix']).toBe(
       'node scripts/enterprise-validation-matrix.mjs'
@@ -55,7 +55,7 @@ describe('VSIX packaging exclusions', () => {
       'node scripts/npm-audit-gate.mjs --level high'
     );
     expect(packageJson.scripts?.['soak:studio-reload']).toBe('node scripts/studio-reload-soak.mjs');
-    expect(packageJson.scripts?.publish).toBe('npm run publish:ci');
+    expect(packageJson.scripts?.publish).toBe('corepack npm run publish:ci');
     expect(packageJson.scripts?.publish).not.toBe('vsce publish');
   });
 
@@ -70,7 +70,9 @@ describe('VSIX packaging exclusions', () => {
       scripts?: Record<string, string>;
     };
 
-    expect(packageJson.scripts?.pretest).toBe('npm run typecheck && npm run lint');
+    expect(packageJson.scripts?.pretest).toBe(
+      'corepack npm run typecheck && corepack npm run lint'
+    );
     expect(packageJson.scripts?.pretest).not.toContain('compile');
   });
 
@@ -83,10 +85,12 @@ describe('VSIX packaging exclusions', () => {
       'extension/dist/extension.js',
       'extension/dist/webview.js',
       'extension/dist/webview.css',
+      'extension/dist/graphWorker.js',
       'extension/dist/sidebar.js',
       'extension/dist/sidebar.css',
       'extension/contracts/runtime-command-surface.v1.json',
       'extension/contracts/extension-cli-compatibility.v1.json',
+      'extension/contracts/workspace-intelligence/workspace-graph-recording.v1.json',
       'extension/contracts/workspace-intelligence/workspace-verify.v1.json',
       'extension/media/icons/icon.png',
     ]) {
@@ -105,11 +109,15 @@ describe('VSIX packaging exclusions', () => {
 
     expect(electronSmokeScript).toContain("downloadAndUnzipVSCode } from '@vscode/test-electron'");
     expect(electronSmokeScript).toContain(
-      "version: process.env.WORKSPAI_VSCODE_TEST_VERSION || '1.100.0'"
+      "version: process.env.WORKSPAI_VSCODE_TEST_VERSION || '1.106.0'"
     );
     expect(electronSmokeScript).toContain('delete childEnv.ELECTRON_RUN_AS_NODE');
     expect(electronSmokeScript).toContain('pathToFileURL(workspacePath).toString()');
     expect(electronSmokeScript).toContain('function runVsCodeSmoke');
+    expect(electronSmokeScript).toContain('CANNOT use API proposal');
+    expect(electronSmokeScript).toContain(
+      "View container 'workspai-native-sidebar' does not exist"
+    );
     expect(electronSmokeScript).toContain('`--extensionDevelopmentPath=${extensionDir}`');
     expect(electronSmokeScript).toContain('`--extensionTestsPath=${extensionTestsPath}`');
     expect(electronSmokeScript).toContain('--disable-workspace-trust');

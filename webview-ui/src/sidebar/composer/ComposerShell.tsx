@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { ArrowUp, Plus } from 'lucide-react';
+import { type ReactNode, useCallback, useEffect, useRef } from 'react';
+import { ArrowUp, Plus, Square } from 'lucide-react';
 import { ModelPicker } from '../ModelPicker';
 import type { SidebarModel } from '../sidebarModels';
 
@@ -13,10 +13,13 @@ interface ComposerShellProps {
   selectedModelId: string | null;
   onSelectModel: (id: string | null) => void;
   onRefreshModels?: () => void;
-  onOpenAdd: () => void;
+  onOpenAdd?: () => void;
   addLabel?: string;
   contextLabel?: string;
   drawer?: React.ReactNode;
+  modeSelector?: ReactNode;
+  running?: boolean;
+  onCancel?: () => void;
 }
 
 const MIN_INPUT_HEIGHT = 48;
@@ -88,6 +91,7 @@ export function ComposerShell(props: ComposerShellProps) {
           }}
         />
         <div className="ws-composer__toolbar">
+          {props.modeSelector}
           <ModelPicker
             models={props.models}
             selectedId={props.selectedModelId}
@@ -95,24 +99,36 @@ export function ComposerShell(props: ComposerShellProps) {
             onRefreshModels={props.onRefreshModels}
           />
           <div className="ws-composer__toolbar-spacer" />
-          <button
-            type="button"
-            className="ws-composer__icon-btn"
-            aria-label={props.addLabel ?? 'Add'}
-            title={props.addLabel ?? 'Add'}
-            onClick={props.onOpenAdd}
-          >
-            <Plus size={16} aria-hidden={true} />
-          </button>
+          {props.onOpenAdd ? (
+            <button
+              type="button"
+              className="ws-composer__icon-btn"
+              aria-label={props.addLabel ?? 'Add'}
+              title={props.addLabel ?? 'Add'}
+              onClick={props.onOpenAdd}
+            >
+              <Plus size={16} aria-hidden={true} />
+            </button>
+          ) : null}
           <button
             type="button"
             className="ws-composer__send"
-            aria-label="Send"
-            title="Send"
-            disabled={props.disabled || !props.value.trim()}
-            onClick={submit}
+            aria-label={props.running && !props.value.trim() ? 'Stop' : 'Send'}
+            title={props.running && !props.value.trim() ? 'Stop' : 'Send'}
+            disabled={props.disabled || (!props.value.trim() && !props.running)}
+            onClick={() => {
+              if (props.running && !props.value.trim()) {
+                props.onCancel?.();
+                return;
+              }
+              submit();
+            }}
           >
-            <ArrowUp size={15} strokeWidth={2.5} aria-hidden={true} />
+            {props.running && !props.value.trim() ? (
+              <Square size={12} fill="currentColor" aria-hidden={true} />
+            ) : (
+              <ArrowUp size={15} strokeWidth={2.5} aria-hidden={true} />
+            )}
           </button>
         </div>
       </div>

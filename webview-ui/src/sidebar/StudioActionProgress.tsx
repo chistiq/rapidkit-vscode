@@ -5,7 +5,10 @@ import { compactStudioPathText } from '@/lib/studioDisplayText';
 type StudioActionProgressProps = {
   progress: SidebarStudioActionProgressView;
   repairBubble?: boolean;
+  historical?: boolean;
   onNextAction?: (action: NonNullable<SidebarStudioActionProgressView['nextAction']>) => void;
+  onOpenFile?: (relativePath: string) => void;
+  onUndo?: (transactionId: string) => void;
 };
 
 const STATUS_COPY: Record<
@@ -13,16 +16,16 @@ const STATUS_COPY: Record<
   { label: string; detail: string }
 > = {
   running: {
-    label: 'Working',
-    detail: 'I am running the selected step and watching the result.',
+    label: 'Live repair',
+    detail: 'I am applying the repair path and watching the result.',
   },
   review: {
-    label: 'Approval needed',
-    detail: 'Approve this step and I will continue the repair loop.',
+    label: 'Needs approval',
+    detail: 'I found a guarded change. Approve it and I will continue.',
   },
   done: {
-    label: 'Step complete',
-    detail: 'This step is complete. I refreshed the evidence and checked the card.',
+    label: 'Verified step',
+    detail: 'I checked the result and refreshed the card evidence.',
   },
 };
 
@@ -36,40 +39,97 @@ function statusIcon(status: SidebarStudioActionProgressView['status']) {
   return <Loader2 size={14} strokeWidth={1.8} />;
 }
 
+function completedActivityLabel(progress: SidebarStudioActionProgressView): string {
+  const phase = progress.phase ?? progress.action;
+  if (/verif|readiness|contract/i.test(phase)) return 'Verified';
+  if (/appl|patch|fix|remedi|command/i.test(phase)) return 'Changed';
+  if (/resolv|complete|done/i.test(phase)) return 'Resolved';
+  return 'Inspected';
+}
+
 export function StudioActionProgress({
   progress,
   repairBubble = false,
+  historical = false,
   onNextAction,
+  onOpenFile,
+  onUndo,
 }: StudioActionProgressProps) {
-  const copy = STATUS_COPY[progress.status];
+  const automaticContinuation = Boolean(
+    progress.status === 'review' &&
+    progress.nextAction &&
+    repairBubble &&
+    !progress.requiresApproval
+  );
+  const copy = historical
+    ? { label: completedActivityLabel(progress), detail: progress.summary }
+    : automaticContinuation
+      ? { label: 'Continuing automatically', detail: 'The next safe repair phase is starting.' }
+      : STATUS_COPY[progress.status];
   const summary = compactStudioPathText(progress.summary || copy.detail);
-  const commandText = compactStudioPathText(progress.commandText);
+  const hasNextAction = Boolean(progress.nextAction);
+  const showManualNextAction = Boolean(
+    hasNextAction && onNextAction && (!repairBubble || progress.requiresApproval) && !historical
+  );
+  const showAutomaticNextAction = Boolean(
+    hasNextAction && repairBubble && !progress.requiresApproval && !historical
+  );
 
   return (
     <div
-      className={`${repairBubble ? 'ws-sidebar__repair-bubble ' : ''}ws-sidebar__studio-action-progress`}
+      className={`${repairBubble ? 'ws-sidebar__repair-bubble ' : ''}${historical ? 'ws-sidebar__studio-action-progress--historical ' : ''}ws-sidebar__studio-action-progress`}
       data-status={progress.status}
-      role={progress.status === 'running' ? 'status' : 'note'}
+      role={progress.status === 'running' || automaticContinuation ? 'status' : 'note'}
       aria-live="polite"
     >
       <span className="ws-sidebar__studio-action-progress-icon" aria-hidden="true">
-        {statusIcon(progress.status)}
+        {historical ? <CheckCircle2 size={14} strokeWidth={1.8} /> : statusIcon(progress.status)}
       </span>
       <div className="ws-sidebar__studio-action-progress-copy">
-        <small className="ws-sidebar__studio-action-progress-kicker">{copy.label}</small>
-        <strong>{progress.title}</strong>
-        <span>{summary}</span>
-        {progress.commandText ? (
-          <details className="ws-sidebar__studio-action-command">
-            <summary>View command</summary>
-            <code>{commandText}</code>
+        <strong>{historical ? copy.label : progress.title}</strong>
+        {!historical && progress.status === 'running' ? <span>{summary}</span> : null}
+        {!historical && progress.status !== 'running' && summary ? (
+          <details className="ws-sidebar__studio-action-details">
+            <summary>{copy.label}</summary>
+            <span>{summary}</span>
           </details>
         ) : null}
-        {progress.nextAction && onNextAction ? (
+        {progress.changedPaths?.length ? (
+          <ul className="ws-sidebar__studio-changed-files" aria-label="Changed files">
+            {progress.changedPaths.map((changedPath) => (
+              <li key={changedPath}>
+                {onOpenFile ? (
+                  <button type="button" onClick={() => onOpenFile(changedPath)} title={changedPath}>
+                    <code>{compactStudioPathText(changedPath)}</code>
+                  </button>
+                ) : (
+                  <code title={changedPath}>{compactStudioPathText(changedPath)}</code>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {progress.canUndo && progress.invocationId && onUndo ? (
+          <button
+            type="button"
+            className="ws-sidebar__inline"
+            onClick={() => onUndo(progress.invocationId!)}
+          >
+            Undo
+          </button>
+        ) : null}
+        {showAutomaticNextAction ? (
+          <small>Studio will continue from this evidence automatically.</small>
+        ) : null}
+        {showManualNextAction ? (
           <button
             type="button"
             className="ws-sidebar__inline ws-sidebar__inline--primary"
-            onClick={() => onNextAction(progress.nextAction as NonNullable<SidebarStudioActionProgressView['nextAction']>)}
+            onClick={() =>
+              onNextAction?.(
+                progress.nextAction as NonNullable<SidebarStudioActionProgressView['nextAction']>
+              )
+            }
           >
             {progress.nextActionLabel || 'Continue'}
           </button>

@@ -117,7 +117,7 @@ describe('host console diagnostics guard', () => {
   it('keeps Studio action failures visible with a guided next action', () => {
     const provider = read('src/ui/webviews/actionsWebviewProvider.ts');
     const failureParser = read('webview-ui/src/lib/studioVerifyFailure.ts');
-    const chrome = read('webview-ui/src/sidebar/StudioBlockerChrome.tsx');
+    const repairResult = read('webview-ui/src/sidebar/StudioRepairResult.tsx');
     const sidebar = read('webview-ui/src/sidebar/SecondarySidebar.tsx');
 
     expect(provider).toContain('buildSidebarStudioActionFailurePayload');
@@ -127,6 +127,6 @@ describe('host console diagnostics guard', () => {
     expect(failureParser).toContain('nextAction');
     expect(failureParser).toContain("'refresh-ship-loop': 'Ship-loop refresh failed'");
     expect(sidebar).toContain("data.action === 'refresh-ship-loop'");
-    expect(chrome).toContain('verifyFailure.nextAction');
+    expect(repairResult).toContain('verifyFailure.nextAction');
   });
 });

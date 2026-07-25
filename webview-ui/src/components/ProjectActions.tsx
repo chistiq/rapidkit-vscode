@@ -16,6 +16,7 @@ import {
   Globe,
   ScanLine,
   Wand2,
+  Wrench,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { WorkspaceStatus } from '@/types';
@@ -51,6 +52,7 @@ interface ProjectActionsProps {
   onStop: () => void;
   onTest: () => void;
   onDoctor: () => void;
+  onDoctorFix: () => void;
   onArchitecture: () => void;
   onIncident: () => void;
   onAI: () => void;
@@ -101,6 +103,7 @@ export function ProjectActions({
   onStop,
   onTest,
   onDoctor,
+  onDoctorFix,
   onArchitecture,
   onIncident,
   onAI,
@@ -140,6 +143,7 @@ export function ProjectActions({
   const doctorTone = projectDoctorStatusTone(projectDoctorCard);
   const doctorBlockers = projectDoctorCard?.blockers?.filter(Boolean).slice(0, 2) ?? [];
   const doctorHasArtifact = Boolean(projectDoctorCard?.artifactPath?.trim());
+  const doctorCanFix = doctorTone === 'fail';
   const doctorActionLabel =
     projectDoctorCard && projectDoctorCard.status !== 'missing' ? 'Re-run' : 'Run';
 
@@ -244,6 +248,18 @@ export function ProjectActions({
               <RefreshCw size={12} aria-hidden="true" />
               {doctorActionLabel}
             </button>
+            {doctorCanFix ? (
+              <button
+                type="button"
+                className="project-doctor-card__button"
+                onClick={onDoctorFix}
+                disabled={isPending('projectDoctor')}
+                title="Run Project Doctor with auto-fix for the selected project"
+              >
+                <Wrench size={12} aria-hidden="true" />
+                Fix
+              </button>
+            ) : null}
             {doctorHasArtifact && onRevealArtifact ? (
               <button
                 type="button"

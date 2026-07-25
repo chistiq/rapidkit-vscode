@@ -62,7 +62,7 @@ vi.mock('../utils/constants', () => ({
 }));
 
 vi.mock('../utils/platformCapabilities', () => ({
-  buildNpxRapidkitArgs: (args: string[] = []) => ['--yes', 'rapidkit', ...args],
+  buildNpxRapidkitArgs: (args: string[] = []) => ['--yes', 'workspai', ...args],
   warmRapidkitNpmPackageResolution: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -157,7 +157,7 @@ describe('adoptProjectCommand', () => {
     expect(ok).toBe(true);
     expect(runMock).toHaveBeenCalledWith(
       'npx',
-      ['--yes', 'rapidkit', 'adopt', projectPath, '--json', '--name', projectName],
+      ['--yes', 'workspai', 'adopt', projectPath, '--json', '--name', projectName],
       expect.objectContaining({
         cwd: projectPath,
         timeout: 120_000,
@@ -176,7 +176,7 @@ describe('adoptProjectCommand', () => {
       expect.objectContaining({
         result: 'success',
         projectName,
-        adoptionEngine: 'rapidkit-npm',
+        adoptionEngine: 'workspai',
       })
     );
   });
@@ -211,7 +211,7 @@ describe('adoptProjectCommand', () => {
       'npx',
       [
         '--yes',
-        'rapidkit',
+        'workspai',
         'adopt',
         projectPath,
         '--json',
@@ -222,6 +222,30 @@ describe('adoptProjectCommand', () => {
       ],
       expect.any(Object)
     );
+  });
+
+  it('redirects workspace roots to Import Workspace instead of adopting them as projects', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'ws-adopt-root-'));
+    await fs.ensureDir(path.join(workspacePath, '.rapidkit'));
+    await fs.writeJSON(path.join(workspacePath, '.rapidkit', 'workspace.json'), {
+      workspace_name: 'workspace-root',
+    });
+    showWarningMessageMock.mockResolvedValueOnce('Import Workspace');
+
+    const ok = await adoptProjectCommand({
+      projectPath: workspacePath,
+      projectName: 'workspace-root',
+      useDefaultWorkspace: true,
+    });
+
+    expect(ok).toBe(false);
+    expect(runMock).not.toHaveBeenCalled();
+    expect(showWarningMessageMock).toHaveBeenCalledWith(
+      expect.stringContaining('This is a workspace. Import it as a workspace instead.'),
+      'Import Workspace',
+      'Cancel'
+    );
+    expect(executeCommandMock).toHaveBeenCalledWith('workspai.importWorkspace');
   });
 
   it('fails closed when npm adopt fails', async () => {

@@ -23,8 +23,15 @@ describe('cliVersionCompatibilityContract', () => {
     expect(PUBLISHED_CLI_CONTRACT_SCHEMAS.blockerResolution).toBe('rapidkit-blocker-resolution-v1');
   });
 
-  it('matches rapidkit-npm package version in sibling monorepo layout', () => {
-    const npmPackagePath = path.resolve(repoRoot, '..', 'rapidkit-npm', 'package.json');
+  it('matches the Workspai CLI package version in the sibling monorepo', () => {
+    const npmPackagePath = path.resolve(
+      repoRoot,
+      '..',
+      'workspai',
+      'packages',
+      'cli',
+      'package.json'
+    );
     if (!fs.existsSync(npmPackagePath)) {
       return;
     }
@@ -38,7 +45,9 @@ describe('cliVersionCompatibilityContract', () => {
     const npmContractPath = path.resolve(
       repoRoot,
       '..',
-      'rapidkit-npm',
+      'workspai',
+      'packages',
+      'cli',
       'contracts',
       'extension-cli-compatibility.v1.json'
     );

@@ -115,6 +115,10 @@ export function profileRequiresPythonInstallMethod(profile: WorkspaceBootstrapPr
   return !PYTHON_FREE_PROFILES.has(profile);
 }
 
+export function defaultInstallPythonEngineForProfile(profile: WorkspaceBootstrapProfile): boolean {
+  return profileRequiresPythonInstallMethod(profile);
+}
+
 export function resolveDefaultWorkspaceName(
   lane: CreationStackLane,
   profile: WorkspaceBootstrapProfile

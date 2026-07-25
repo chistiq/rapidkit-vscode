@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+vi.mock('vscode', () => ({}));
 
 describe('welcomePanelDashboardEvidence', () => {
   it('exports dashboard evidence assembly and host wiring hooks', () => {
@@ -42,5 +44,34 @@ describe('welcomePanelDashboardEvidence', () => {
     expect(welcomePanelSource).toContain('_dashboardEvidenceHost()');
     expect(welcomePanelSource).toContain('sendDashboardEvidence(this._dashboardEvidenceHost()');
     expect(welcomePanelSource).not.toContain('buildDashboardEvidenceBundle({');
+  });
+
+  it('keeps adopted project context when the project is registered to the active workspace', async () => {
+    const { resolveDashboardProjectContext } =
+      await import('../ui/panels/welcomePanelDashboardEvidence');
+
+    expect(
+      resolveDashboardProjectContext('/workspaces/saas-platform-wsp', {
+        name: 'rapidkit-front-pro',
+        path: '/repo/Rapid/Front/rapidkit-front-pro',
+        workspacePath: '/workspaces/saas-platform-wsp',
+      })
+    ).toEqual({
+      projectPath: '/repo/Rapid/Front/rapidkit-front-pro',
+      projectName: 'rapidkit-front-pro',
+    });
+  });
+
+  it('drops unrelated external project context when it is not registered to the active workspace', async () => {
+    const { resolveDashboardProjectContext } =
+      await import('../ui/panels/welcomePanelDashboardEvidence');
+
+    expect(
+      resolveDashboardProjectContext('/workspaces/saas-platform-wsp', {
+        name: 'other',
+        path: '/repo/other',
+        workspacePath: '/workspaces/other-wsp',
+      })
+    ).toEqual({});
   });
 });

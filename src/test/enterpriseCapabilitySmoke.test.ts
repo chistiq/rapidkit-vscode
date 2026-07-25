@@ -86,6 +86,8 @@ describe('enterprise capability smoke', () => {
     expect(explorer).toContain('clearProjectCapabilityContext');
     expect(explorer).toContain('if (nextPath === currentPath)');
     expect(explorer).toContain('_scheduleTreeRefresh');
+    expect(explorer).toContain('hasWorkspaceRootMarkers(projectPath)');
+    expect(explorer).toContain('continue;');
   });
 
   it('selectWorkspace delegates project tree sync to workspaceSelected handler only', () => {

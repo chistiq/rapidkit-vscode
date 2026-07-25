@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockGet } = vi.hoisted(() => ({
+const { mockGet, mockRequestAIModelToolAction } = vi.hoisted(() => ({
   mockGet: vi.fn(),
+  mockRequestAIModelToolAction: vi.fn(),
 }));
 
 vi.mock('vscode', () => ({
@@ -30,10 +31,12 @@ vi.mock('vscode', () => ({
 
 vi.mock('../core/aiService.js', () => ({
   askAI: vi.fn(async () => 'vscode-lm-response'),
+  requestAIModelToolAction: mockRequestAIModelToolAction,
 }));
 
 import {
   askConfiguredAIProvider,
+  askConfiguredAIProviderForToolAction,
   clearCustomAIAPIKey,
   getAIProviderStatus,
   runConfiguredAIProviderHealthCheck,
@@ -76,6 +79,12 @@ describe('aiProviderService', () => {
       }
       return defaultValue;
     });
+    mockRequestAIModelToolAction.mockResolvedValue({
+      type: 'tool',
+      modelId: 'copilotcli/auto',
+      toolName: 'verify-blocker',
+      input: {},
+    });
   });
 
   it('reports custom provider readiness from settings and Secret Storage', async () => {
@@ -117,12 +126,14 @@ describe('aiProviderService', () => {
     }));
     vi.stubGlobal('fetch', fetchMock);
 
+    const onTextChunk = vi.fn();
     await expect(
-      askConfiguredAIProvider(context, [{ role: 'user', content: 'hello' }])
+      askConfiguredAIProvider(context, [{ role: 'user', content: 'hello' }], undefined, onTextChunk)
     ).resolves.toEqual({
       provider: 'openai-compatible',
       text: 'provider-response',
     });
+    expect(onTextChunk).toHaveBeenCalledWith('provider-response');
 
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api.example.test/v1/chat/completions',
@@ -132,6 +143,81 @@ describe('aiProviderService', () => {
           authorization: 'Bearer sk-test',
         }),
       })
+    );
+  });
+
+  it('preserves native VS Code LM tool actions for Studio Agent', async () => {
+    mockGet.mockImplementation((key: string, defaultValue: unknown) =>
+      key === 'aiProvider' ? 'vscode-lm' : defaultValue
+    );
+    const context = createMockContext();
+    await expect(
+      askConfiguredAIProviderForToolAction(
+        context,
+        [{ role: 'user', content: 'Repair readiness' }],
+        [{ name: 'verify-blocker', description: 'Verify', inputSchema: { type: 'object' } }],
+        undefined,
+        'copilotcli/auto'
+      )
+    ).resolves.toEqual({
+      type: 'tool',
+      provider: 'vscode-lm',
+      toolName: 'verify-blocker',
+      input: {},
+    });
+  });
+
+  it('uses OpenAI-compatible function tools with required selection', async () => {
+    const context = createMockContext();
+    await setCustomAIAPIKey(context, 'sk-test');
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                tool_calls: [
+                  {
+                    id: 'call-1',
+                    type: 'function',
+                    function: { name: 'inspect-remediation-plan', arguments: '{}' },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      askConfiguredAIProviderForToolAction(
+        context,
+        [{ role: 'user', content: 'Repair readiness' }],
+        [
+          {
+            name: 'inspect-remediation-plan',
+            description: 'Inspect',
+            inputSchema: { type: 'object' },
+          },
+        ]
+      )
+    ).resolves.toEqual({
+      type: 'tool',
+      provider: 'openai-compatible',
+      toolName: 'inspect-remediation-plan',
+      input: {},
+    });
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body.tool_choice).toBe('required');
+    expect(body.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          function: expect.objectContaining({ name: 'inspect-remediation-plan' }),
+        }),
+      ])
     );
   });
 

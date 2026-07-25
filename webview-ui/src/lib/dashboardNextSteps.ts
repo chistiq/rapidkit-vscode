@@ -82,7 +82,7 @@ export function buildDashboardNextSteps(input: {
     });
   }
 
-  // Fresh-install onboarding lives in FreshInstallOnboarding — avoid duplicating CTAs here.
+  // Fresh-install creation/import entry points live in Home handoff cards.
   if (isFreshInstall || (!hasWorkspace && recentWorkspaceCount === 0)) {
     return steps;
   }

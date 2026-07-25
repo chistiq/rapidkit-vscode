@@ -129,7 +129,7 @@ export function WorkspaceGovernancePanel({
             'workspaceSync',
             !hasWorkspace ? 'Select a workspace' : undefined
           )}
-          title="rapidkit workspace sync"
+          title="workspai workspace sync"
         />
         <ActionTile
           icon={<Network size={15} />}
@@ -144,7 +144,7 @@ export function WorkspaceGovernancePanel({
             'workspaceContractInspect',
             !hasWorkspace ? 'Select a workspace' : undefined
           )}
-          title="rapidkit workspace contract inspect"
+          title="workspai workspace contract inspect"
         />
         <ActionTile
           icon={<ShieldCheck size={15} />}
@@ -212,7 +212,7 @@ export function WorkspaceGovernancePanel({
                 'workspaceFoundationEnsure',
                 !hasWorkspace ? 'Select a workspace' : undefined
               )}
-              title="rapidkit workspace foundation ensure"
+              title="workspai workspace foundation ensure"
             />
             <ActionTile
               icon={<ClipboardCheck size={15} />}
@@ -227,7 +227,7 @@ export function WorkspaceGovernancePanel({
                 'workspaceContractVerify',
                 !hasWorkspace ? 'Select a workspace' : undefined
               )}
-              title="rapidkit workspace contract verify --strict"
+              title="workspai workspace contract verify --strict"
             />
             <ActionTile
               icon={<Database size={15} />}
@@ -273,7 +273,7 @@ export function WorkspaceGovernancePanel({
                 'workspacePolicyShow',
                 !hasWorkspace ? 'Select a workspace' : undefined
               )}
-              title="rapidkit workspace policy show"
+              title="workspai workspace policy show"
             />
             <ActionTile
               icon={<Server size={15} />}

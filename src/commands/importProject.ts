@@ -18,10 +18,12 @@ import {
 } from '../core/ensureManagedDefaultWorkspace';
 import { refreshExtensionAfterNpmProjectOnboard } from '../core/npmProjectOnboardRefresh';
 import {
+  hasWorkspaceRootMarkers,
   resolveManagedDefaultImportWorkspacePath,
   resolveNewWorkspacePath,
 } from '../core/workspacePaths';
 import { resolveEnableModulesPreference } from '../core/moduleEnablementPrompt';
+import { gateImportCli } from '../core/rapidkitCliCapabilities';
 import { ByopDiscoveryEngine } from '../core/byopDiscovery';
 import {
   detectProjectStackFromByopDiscovery,
@@ -87,6 +89,7 @@ const BATCH_IMPORT_CONCURRENCY = 3;
 const PICK_WORKSPACE_ACTION = 'Pick Workspace';
 const CREATE_WORKSPACE_ACTION = 'Create Workspace';
 const USE_DEFAULT_WORKSPACE_ACTION = 'Use Default Workspace';
+const IMPORT_WORKSPACE_ACTION = 'Import Workspace';
 
 async function showImportWorkspaceResolutionHelp(input: {
   title: string;
@@ -112,6 +115,18 @@ async function showImportWorkspaceResolutionHelp(input: {
   if (action === USE_DEFAULT_WORKSPACE_ACTION) {
     const ensured = await ensureManagedDefaultWorkspace();
     await vscode.commands.executeCommand('workspai.selectWorkspace', ensured.path);
+  }
+}
+
+async function showWorkspaceSourceImportRedirect(sourcePath: string): Promise<void> {
+  const action = await vscode.window.showWarningMessage(
+    `This is a workspace. Import it as a workspace instead.\n${sourcePath}`,
+    IMPORT_WORKSPACE_ACTION,
+    'Cancel'
+  );
+
+  if (action === IMPORT_WORKSPACE_ACTION) {
+    await vscode.commands.executeCommand('workspai.importWorkspace');
   }
 }
 
@@ -583,6 +598,11 @@ async function importFromFolderPath(
     return null;
   }
 
+  if (hasWorkspaceRootMarkers(sourcePath)) {
+    await showWorkspaceSourceImportRedirect(sourcePath);
+    return null;
+  }
+
   if (workspacePath && isSameOrInsideDirectory(workspacePath, sourcePath)) {
     await showImportWorkspaceResolutionHelp({
       title: 'Import source is inside the destination workspace.',
@@ -637,6 +657,10 @@ async function importFromFolderPathWithoutProgress(
 ): Promise<ImportedProject | null> {
   const sourceStats = await fs.stat(sourcePath).catch(() => null);
   if (!sourceStats || !sourceStats.isDirectory()) {
+    return null;
+  }
+
+  if (hasWorkspaceRootMarkers(sourcePath)) {
     return null;
   }
 
@@ -1226,6 +1250,21 @@ export async function importProjectCommand(
   const importOptions = { enableModules };
 
   try {
+    if (
+      !(await gateImportCli('Import Project', {
+        cwd: resolvedWorkspace.path || undefined,
+      }))
+    ) {
+      await trackImportLifecycleEvent({
+        workspacePath: resolvedWorkspace.path || undefined,
+        source: importSource,
+        workspaceResolutionMode: resolvedWorkspace.mode,
+        result: 'cancelled',
+        reason: 'import-cli-capability-missing',
+      });
+      return;
+    }
+
     const workspaceExplorer = options.getWorkspaceExplorer();
     workspaceExplorer?.refresh();
     const npmWorkspacePath = resolvedWorkspace.path || undefined;

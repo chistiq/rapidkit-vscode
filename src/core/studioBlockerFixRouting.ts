@@ -16,7 +16,8 @@ export const STUDIO_CARD_FIX_ROUTING: Readonly<Record<string, StudioFixActionId>
   workspaceRun: 'verify-gates',
   analyze: 'run-analyze',
   workspaceModel: 'run-analyze',
-  snapshot: 'run-analyze',
+  workspaceIntelligenceRun: 'verify-gates',
+  snapshot: 'verify-gates',
   intelligenceSnapshot: 'run-analyze',
   workspaceWatch: 'run-analyze',
   workspaceVerify: 'verify-gates',
@@ -56,6 +57,27 @@ export function resolveStudioFixActionForHandoff(handoff: StudioBlockerHandoff):
   return isDashboardEvidenceCardId(handoff.cardId)
     ? STUDIO_CARD_FIX_ROUTING[handoff.cardId]
     : 'verify-gates';
+}
+
+/**
+ * Verification-only actions cannot resolve a blocked FIX handoff. Route them
+ * through evidence-grounded AI repair before another verify attempt.
+ */
+export function shouldUseEvidencePatchRepair(
+  handoff: StudioBlockerHandoff,
+  fixAction: StudioFixActionId
+): boolean {
+  if (
+    (handoff.commandRunCount != null && handoff.commandRunCount > 0) ||
+    handoff.resolutionClass === 'command-failed-repeat'
+  ) {
+    return true;
+  }
+  return (
+    fixAction !== 'doctor-fix' &&
+    fixAction !== 'fix-lens' &&
+    (fixAction === 'verify-gates' || handoff.resolutionClass === 'config-fixable')
+  );
 }
 
 export function normalizeStudioHandoffSource(

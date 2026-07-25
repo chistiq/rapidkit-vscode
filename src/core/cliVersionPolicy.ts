@@ -1,10 +1,10 @@
 /**
- * RapidKit CLI version compatibility policy.
+ * Workspai CLI version compatibility policy.
  *
  * Workspai bundles versioned contracts (`contracts/*.json`) and consumes the
  * CLI's machine-readable capability and log-event surfaces. The minimum CLI
  * version floor is published in `extension-cli-compatibility.v1.json` (synced
- * from rapidkit-npm/package.json) so the gate stays aligned with bundled contracts.
+ * from the Workspai CLI package) so the gate stays aligned with bundled contracts.
  *
  * This module is the pure foundation (constant + side-effect-free comparison).
  * The runtime banner/gate that surfaces a mismatch to the user lives in the
@@ -152,11 +152,11 @@ export function isCliVersionCompatible(detectedVersion: string | null): boolean 
 export function formatCliVersionMismatchMessage(assessment: CliVersionAssessment): string {
   switch (assessment.reason) {
     case 'below-minimum':
-      return `The linked rapidkit CLI (v${assessment.detectedVersion}) is older than the minimum supported version (v${assessment.minimumVersion}). Update with \`npm i -g rapidkit@latest\` (or re-link the local package) and reload the window.`;
+      return `The linked Workspai CLI (v${assessment.detectedVersion}) is older than the minimum supported version (v${assessment.minimumVersion}). Update with \`npm i -g workspai@latest\` (or re-link the local package) and reload the window.`;
     case 'missing':
-      return `Could not detect the rapidkit CLI version. Install or link rapidkit (minimum v${assessment.minimumVersion}) and reload the window.`;
+      return `Could not detect the Workspai CLI version. Install or link workspai (minimum v${assessment.minimumVersion}) and reload the window.`;
     case 'unparseable':
-      return `Could not parse the rapidkit CLI version "${assessment.detectedVersion}". Workspai requires at least v${assessment.minimumVersion}.`;
+      return `Could not parse the Workspai CLI version "${assessment.detectedVersion}". Workspai requires at least v${assessment.minimumVersion}.`;
     case 'ok':
     default:
       return '';

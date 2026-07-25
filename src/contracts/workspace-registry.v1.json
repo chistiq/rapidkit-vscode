@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://getrapidkit.com/schemas/workspace-registry.v1.json",
-  "title": "RapidKit Workspace Registry Summary",
+  "title": "Workspai Workspace Registry Summary",
   "type": "object",
   "required": [
     "schemaVersion",

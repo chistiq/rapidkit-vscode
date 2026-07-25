@@ -13,7 +13,7 @@ export interface WorkspaceArchiveManifest {
   kind: 'workspai.workspace.archive';
   workspaceName: string;
   exportedAt: string;
-  exportedBy?: 'workspai-vscode' | 'rapidkit-npm';
+  exportedBy?: 'workspai-cli' | 'workspai-vscode' | 'rapidkit-npm';
   archiveFormat?: 'zip-deflate' | 'zip-store';
   security?: {
     envFilesIncluded: boolean;

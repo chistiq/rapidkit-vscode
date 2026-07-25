@@ -162,4 +162,37 @@ describe('aiActionRegistry', () => {
     const latest = getLatestRunnableAIAction(await readAIActionRegistry(workspacePath));
     expect(latest?.id).toBe(entry.id);
   });
+
+  it('serializes concurrent registry writes without losing audit entries', async () => {
+    const contracts = Array.from(
+      { length: 6 },
+      (_, index) =>
+        normalizeAIActionContract({
+          actionType: 'verify',
+          summary: `Concurrent audit ${index}`,
+          affectedFiles: [`package-${index}.json`],
+          verificationCommands: ['npm test'],
+          rollbackPlan: [],
+          confidence: 0.88,
+          requiresApproval: true,
+        })!
+    );
+
+    await Promise.all(
+      contracts.map((contract) =>
+        recordAIActionContract(workspacePath, {
+          contract,
+          validation: validateAIActionContract(contract, { workspacePath, strict: true }),
+          provider: 'concurrency-test',
+        })
+      )
+    );
+
+    const registry = await readAIActionRegistry(workspacePath);
+    expect(registry.entries).toHaveLength(6);
+    expect(new Set(registry.entries.map((entry) => entry.contract.summary)).size).toBe(6);
+    await expect(
+      fs.readdir(path.dirname(getAIActionRegistryPath(workspacePath)))
+    ).resolves.not.toContain('registry.json.tmp');
+  });
 });

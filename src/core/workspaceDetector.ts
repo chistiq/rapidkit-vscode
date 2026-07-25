@@ -8,6 +8,7 @@ import * as path from 'path';
 import { WorkspaiProject } from '../types';
 import { Logger } from '../utils/logger';
 import { hasWorkspaceRootMarkers } from './workspacePaths';
+import { resolveWorkspaceMetadataDir } from './workspaceIntelligencePaths';
 
 export interface DetectedWorkspaceRoot {
   name: string;
@@ -104,8 +105,10 @@ export class WorkspaceDetector {
    * Check if directory is a Workspai project
    */
   private async isRapidKitProject(dirPath: string): Promise<boolean> {
-    // Strong markers created by RapidKit
+    // Strong markers created by Workspai (with legacy RapidKit fallback).
     const strongIndicators = [
+      path.join('.workspai', 'project.json'),
+      path.join('.workspai', 'context.json'),
       path.join('.rapidkit', 'project.json'),
       path.join('.rapidkit', 'context.json'),
     ];
@@ -115,9 +118,11 @@ export class WorkspaceDetector {
       }
     }
 
-    // Fallback: require a .rapidkit directory plus at least one language hint.
-    const hasRapidkitDir = await fs.pathExists(path.join(dirPath, '.rapidkit'));
-    if (!hasRapidkitDir) {
+    // Fallback: require managed metadata plus at least one language hint.
+    const hasMetadataDir =
+      (await fs.pathExists(path.join(dirPath, '.workspai'))) ||
+      (await fs.pathExists(path.join(dirPath, '.rapidkit')));
+    if (!hasMetadataDir) {
       return false;
     }
 
@@ -154,10 +159,10 @@ export class WorkspaceDetector {
       let kit = 'unknown';
       const modules: string[] = [];
 
-      // ── Bug fix 1: Read kit_name directly from .rapidkit/project.json when present.
+      // Read kit_name from the canonical project marker, with a legacy fallback.
       // project.json is the authoritative source written by the CLI at project creation.
-      const rapidkitDir = path.join(projectPath, '.rapidkit');
-      const projectJsonPath = path.join(rapidkitDir, 'project.json');
+      const metadataDir = await resolveWorkspaceMetadataDir(projectPath);
+      const projectJsonPath = path.join(metadataDir, 'project.json');
       if (await fs.pathExists(projectJsonPath)) {
         try {
           const projectJson = await fs.readJson(projectJsonPath);
@@ -280,10 +285,10 @@ export class WorkspaceDetector {
         }
       }
 
-      // ── Bug fix 3: Read modules from .rapidkit/vendor/ subdirectory names.
+      // Read modules from the selected metadata vendor directory.
       // The CLI stores installed modules as directories under vendor/, not in modules.json.
-      if (await fs.pathExists(rapidkitDir)) {
-        const vendorPath = path.join(rapidkitDir, 'vendor');
+      if (await fs.pathExists(metadataDir)) {
+        const vendorPath = path.join(metadataDir, 'vendor');
         if (await fs.pathExists(vendorPath)) {
           try {
             const entries = await fs.readdir(vendorPath, { withFileTypes: true });
@@ -294,7 +299,7 @@ export class WorkspaceDetector {
         }
         // Fallback: legacy modules.json (kept for backwards compatibility)
         if (modules.length === 0) {
-          const modulesPath = path.join(rapidkitDir, 'modules.json');
+          const modulesPath = path.join(metadataDir, 'modules.json');
           if (await fs.pathExists(modulesPath)) {
             const modulesData = await fs.readJson(modulesPath);
             modules.push(...(modulesData.installed || []));

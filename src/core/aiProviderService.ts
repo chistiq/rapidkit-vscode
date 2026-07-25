@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 import type { AIMessage } from './aiService';
-import { askAI } from './aiService';
+import { askAI, requestAIModelToolAction, streamAIResponse } from './aiService';
 import { readWorkspaiSettings } from './workspaiSettingsBridge';
 
 const CUSTOM_AI_SECRET_KEY = 'workspai.customAI.apiKey';
@@ -26,6 +26,16 @@ export interface AIProviderHealthCheckResult {
   model?: string;
   reason?: string;
 }
+
+export interface ConfiguredAIProviderTool {
+  name: string;
+  description: string;
+  inputSchema?: Record<string, unknown>;
+}
+
+export type ConfiguredAIProviderAction =
+  | { type: 'tool'; provider: AIProviderKind; toolName: string; input: Record<string, unknown> }
+  | { type: 'text'; provider: AIProviderKind; text: string };
 
 export async function setCustomAIAPIKey(
   context: vscode.ExtensionContext,
@@ -209,6 +219,108 @@ async function askOpenAICompatible(
   }
 }
 
+async function askOpenAICompatibleToolAction(
+  context: vscode.ExtensionContext,
+  messages: AIMessage[],
+  tools: ConfiguredAIProviderTool[],
+  token?: vscode.CancellationToken
+): Promise<ConfiguredAIProviderAction> {
+  const settings = readWorkspaiSettings();
+  const apiKey = await context.secrets.get(CUSTOM_AI_SECRET_KEY);
+  const status = await getAIProviderStatus(context);
+  if (!status.ready || !apiKey) {
+    throw new Error(status.reason || 'Custom AI provider is not configured.');
+  }
+  const urlError = validateCustomAIBaseUrl(settings.customAIBaseUrl);
+  if (urlError) {
+    throw new Error(urlError);
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), settings.aiStreamTimeoutMs);
+  const cancellation = token?.onCancellationRequested(() => controller.abort());
+  try {
+    const response = await fetch(resolveChatCompletionsUrl(settings.customAIBaseUrl), {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: settings.customAIModel,
+        messages,
+        temperature: 0.1,
+        stream: false,
+        tools: tools.map((tool) => ({
+          type: 'function',
+          function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.inputSchema ?? { type: 'object' },
+          },
+        })),
+        tool_choice: 'required',
+      }),
+      signal: controller.signal,
+    });
+    const raw = await response.text();
+    const payload = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    if (!response.ok) {
+      throw new Error(`Custom AI provider returned ${response.status}: ${raw.slice(0, 240)}`);
+    }
+    const choice = Array.isArray(payload.choices)
+      ? (payload.choices[0] as { message?: Record<string, unknown> } | undefined)
+      : undefined;
+    const message = choice?.message;
+    const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+    const first = toolCalls[0] as
+      | { function?: { name?: unknown; arguments?: unknown } }
+      | undefined;
+    const name = first?.function?.name;
+    if (typeof name === 'string') {
+      const args = first?.function?.arguments;
+      let parsed: Record<string, unknown> = {};
+      if (typeof args === 'string' && args.trim()) {
+        const value = JSON.parse(args) as unknown;
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          parsed = value as Record<string, unknown>;
+        }
+      }
+      return { type: 'tool', provider: 'openai-compatible', toolName: name, input: parsed };
+    }
+    return {
+      type: 'text',
+      provider: 'openai-compatible',
+      text: extractOpenAICompatibleText(payload),
+    };
+  } finally {
+    clearTimeout(timeout);
+    cancellation?.dispose();
+  }
+}
+
+export async function askConfiguredAIProviderForToolAction(
+  context: vscode.ExtensionContext,
+  messages: AIMessage[],
+  tools: ConfiguredAIProviderTool[],
+  token?: vscode.CancellationToken,
+  preferredModelId?: string
+): Promise<ConfiguredAIProviderAction> {
+  const settings = readWorkspaiSettings();
+  if (settings.aiProvider === 'openai-compatible') {
+    return askOpenAICompatibleToolAction(context, messages, tools, token);
+  }
+  const response = await requestAIModelToolAction(messages, tools, token, preferredModelId);
+  return response.type === 'tool'
+    ? {
+        type: 'tool',
+        provider: 'vscode-lm',
+        toolName: response.toolName,
+        input: response.input,
+      }
+    : { type: 'text', provider: 'vscode-lm', text: response.text };
+}
+
 export async function runConfiguredAIProviderHealthCheck(
   context: vscode.ExtensionContext,
   token?: vscode.CancellationToken
@@ -282,17 +394,50 @@ export async function runConfiguredAIProviderHealthCheck(
 export async function askConfiguredAIProvider(
   context: vscode.ExtensionContext,
   messages: AIMessage[],
-  token?: vscode.CancellationToken
+  token?: vscode.CancellationToken,
+  onTextChunk?: (text: string) => void,
+  preferredModelId?: string
 ): Promise<{ text: string; provider: AIProviderKind }> {
   const settings = readWorkspaiSettings();
   if (settings.aiProvider === 'openai-compatible') {
+    const text = await askOpenAICompatible(context, messages, token);
+    onTextChunk?.(text);
     return {
-      text: await askOpenAICompatible(context, messages, token),
+      text,
       provider: 'openai-compatible',
     };
   }
+  if (onTextChunk) {
+    let text = '';
+    await streamAIResponse(
+      messages,
+      (chunk) => {
+        if (!chunk.text) {
+          return;
+        }
+        text += chunk.text;
+        onTextChunk(chunk.text);
+      },
+      token,
+      preferredModelId
+    );
+    return { text, provider: 'vscode-lm' };
+  }
   return {
-    text: await askAI(messages, token),
+    text: preferredModelId
+      ? await (async () => {
+          let text = '';
+          await streamAIResponse(
+            messages,
+            (chunk) => {
+              text += chunk.text;
+            },
+            token,
+            preferredModelId
+          );
+          return text;
+        })()
+      : await askAI(messages, token),
     provider: 'vscode-lm',
   };
 }

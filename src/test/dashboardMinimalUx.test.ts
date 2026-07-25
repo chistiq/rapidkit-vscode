@@ -16,9 +16,8 @@ describe('dashboard minimal UX guard', () => {
     expect(source).toContain('maxVisible = 3');
     expect(source).toContain('const visibleSteps = expanded ? steps : steps.slice(0, maxVisible)');
     expect(source).toContain("expanded ? 'Show less' : 'Show all'");
-    expect(app).toContain(
-      "dashboardSection === 'overview' && (isFreshInstall || setupRecoveryNeeded)"
-    );
+    expect(app).toContain("dashboardSection === 'overview' ? (");
+    expect(app).not.toContain('FreshInstallOnboarding');
     expect(app).not.toContain('<DashboardNextStepRail');
     expect(app).not.toContain("navigationSource: 'next_step'");
   });
@@ -74,14 +73,15 @@ describe('dashboard minimal UX guard', () => {
     );
     expect(quickNav).toContain("section: 'repair'");
     expect(quickNav).toContain('onNavigate(action.section)');
-    expect(repairFlow).toContain('Repair Command Center');
-    expect(repairFlow).toContain("type RepairMode = 'guided' | 'inspect' | 'audit'");
+    expect(repairFlow).toContain('Workspace repair');
+    expect(repairFlow).toContain("export type RepairMode = 'guided' | 'inspect' | 'audit'");
     expect(repairFlow).toContain('REPAIR_MODE_STORAGE_KEY');
-    expect(repairFlow).toContain('REPAIR_MODE_PERSIST_AFTER_VERIFY_COUNT = 3');
-    expect(repairFlow).toContain('initialRepairMode(evidence)');
-    expect(repairFlow).toContain('countRepairVerificationPasses(evidence)');
-    expect(repairFlow).toContain('persistRepairMode(nextMode, verifyPassCount)');
-    expect(repairFlow).toContain("setMode('guided')");
+    expect(repairFlow).toContain('useState<RepairMode>(initialRepairMode)');
+    expect(repairFlow).toContain('persistRepairMode(nextMode)');
+    expect(repairFlow).toContain('aria-label="Repair detail level"');
+    expect(repairFlow).toContain("guided: 'Priority'");
+    expect(repairFlow).toContain("inspect: 'All issues'");
+    expect(repairFlow).toContain("audit: 'Diagnostics'");
     expect(repairFlow).toContain('aria-keyshortcuts="Enter"');
     expect(repairFlow).toContain('tabIndex={0}');
     expect(repairFlow).toContain('function isInteractiveKeyboardTarget');
@@ -89,30 +89,30 @@ describe('dashboard minimal UX guard', () => {
     expect(repairFlow).toContain('runPrimaryAction();');
     expect(repairFlow).toContain('function RepairActiveCard');
     expect(repairFlow).toContain('function RepairMetricStrip');
-    expect(repairFlow).toContain('function RepairActionContract');
     expect(repairFlow).toContain('function groupRepairCards');
     expect(repairFlow).toContain('repair-flow__active-main');
-    expect(repairFlow).toContain('repair-flow__active-head-tools');
+    expect(repairFlow).toContain('repair-flow__decision-tools');
     expect(repairFlow).not.toContain('repair-flow__decision-actions');
-    expect(repairFlow).toContain('function RepairPath');
+    expect(repairFlow).not.toContain('function RepairPath');
     expect(repairFlow).toContain('function RepairStackCard');
-    expect(repairFlow).toContain('repair-flow__path-head-trail');
-    expect(repairFlow).toContain('fixPathContract');
-    expect(repairFlow).not.toContain('repair-flow__path-focus');
+    expect(repairFlow).not.toContain('repair-flow__path-rail');
+    expect(repairFlow).toContain('buildDashboardRepairCardCopy');
+    expect(repairFlow).toContain('repair-flow__active-issue');
+    expect(repairFlow).toContain('repair-flow__active-guidance');
+    expect(repairFlow).toContain('Technical details');
+    expect(repairFlow).toContain("mode !== 'guided'");
     expect(repairFlow).not.toContain('Needs attention');
-    expect(repairFlow.indexOf('<RepairPath')).toBeLessThan(
-      repairFlow.indexOf('Repair Command Center')
-    );
+    expect(repairFlow).not.toContain('<RepairPath');
     expect(repairFlow).toContain("mode === 'guided'");
     expect(repairFlow).toContain("mode === 'inspect'");
     expect(repairFlow).toContain("mode === 'audit'");
-    expect(repairFlow).toContain('actionableCards.slice(0, 3)');
-    expect(repairFlow).toContain('actionableCards.slice(0, 8)');
-    expect(repairFlow).toContain('CommandExecutionBadge');
+    expect(repairFlow).toContain('selectRepairVisibleCards');
+    expect(repairFlow).toContain('...blockedCards.map((card) => card.id)');
+    expect(repairFlow).not.toContain('CommandExecutionBadge');
     expect(repairFlow).toContain('executionChannel');
-    expect(repairFlow).toContain('aria-label="Repair action contract"');
     expect(repairFlow).toContain('buildDashboardIncidentCopy');
-    expect(attentionInbox).toContain('buildDashboardIncidentCopy');
+    expect(attentionInbox).toContain('buildDashboardRepairCardCopy');
+    expect(attentionInbox).not.toContain('evidence-attention-inbox__trail');
     expect(activityPanel).toContain('buildDashboardIncidentCopy');
     expect(detailPreview).toContain('buildDashboardIncidentCopy');
     expect(activityPanel).toContain('incident.compactLabel');
@@ -123,48 +123,35 @@ describe('dashboard minimal UX guard', () => {
       'Show {Math.min(ARCHIVE_CARD_PAGE_SIZE, hiddenArchiveCardCount)} more artifacts'
     );
     expect(detailPreview).toContain('evidence-card-detail-preview__incident');
-    expect(studioChrome).toContain('buildStudioIncidentCopy');
+    expect(studioChrome).toContain('Workspai Agent · {PHASE_LABEL[phase]}');
+    expect(studioChrome).toContain('{loop}');
+    expect(studioChrome).not.toContain('buildStudioIncidentCopy');
     expect(repairFlow).toContain('selectedCardId');
     expect(repairFlow).toContain('const queueCards = visibleCards.filter');
     expect(repairFlow).toContain('onSelect={() => setSelectedCardId(card.id)}');
-    expect(repairFlow).toContain('Fix path');
-    expect(repairFlow).toContain('repair-flow__path-track');
     expect(repairFlow).toContain('onSendToCopilot');
     expect(quickNav).toContain('Workspace next actions');
-    expect(quickNav).toContain('buildEvidenceAttentionInbox(evidence).slice(0, 3)');
-    expect(quickNav).toContain('Top blockers');
-    expect(quickNav).toContain("onClick={() => onNavigate('repair')}");
     expect(quickNav).toContain('Repair workspace');
-    expect(quickNav).toContain(
-      'Resolve blockers with evidence, Studio, verify, and refreshed artifacts'
-    );
-    expect(quickNav).toContain('Continue repair');
+    expect(quickNav).toContain('Review blockers and run safe repair actions when needed');
     expect(quickNav).toContain('Run workspace');
     expect(quickNav).toContain('Generate or refresh health, intelligence, and release evidence');
     expect(quickNav).toContain('home-next-actions');
-    expect(quickNav).toContain('First-value path');
-    expect(quickNav).toContain("step.id === 'first_artifact_generated'");
-    expect(quickNav).toContain('home-first-artifact-celebration');
-    expect(quickNav).toContain('First evidence ready');
-    expect(quickNav).toContain('Generated in');
-    expect(quickNav).toContain('day0Funnel?.current.cta');
-    expect(quickNav).toContain('home-day0-funnel');
-    expect(quickNav).toContain('Next recommended focus');
-    expect(quickNav).toContain('day0Funnel.recommendedFocus.title');
-    expect(quickNav).toContain('day0Funnel.recommendedFocus.detail');
-    expect(quickNav).toContain('day0Funnel.recommendedFocus.cta');
-    expect(quickNav).toContain('onNavigate(day0Funnel.recommendedFocus.section)');
-    expect(quickNav).toContain('Other workspace actions');
-    expect(quickNav).toContain('home-day0-funnel__advanced');
     expect(quickNav).toContain('home-create-handoff__action--primary');
+    expect(quickNav).not.toContain('Top blockers');
+    expect(quickNav).not.toContain('buildEvidenceAttentionInbox');
+    expect(quickNav).not.toContain('First-value path');
+    expect(quickNav).not.toContain('home-day0-funnel');
+    expect(quickNav).not.toContain('Next recommended focus');
+    expect(quickNav).not.toContain('firstArtifactStep');
     expect(quickNav).not.toContain('Select a project');
     expect(quickNav).not.toContain("section: 'console'");
     expect(quickNav).not.toContain('Library');
     expect(quickNav).not.toContain("onNavigate('catalog')");
     expect(read('webview-ui/src/lib/dashboardNextSteps.ts')).not.toContain("section: 'evidence'");
     expect(read('webview-ui/src/App.tsx')).toContain('Open Repair flow');
+    expect(read('webview-ui/src/App.tsx')).toContain("dashboardSection !== 'catalog'");
     expect(read('webview-ui/src/App.tsx')).toContain(
-      "showProjectScope={dashboardSection === 'console' || dashboardSection === 'catalog'}"
+      "showProjectScope={dashboardSection === 'console'}"
     );
     expect(read('webview-ui/src/App.tsx')).toContain('Home, Run, Repair, Artifacts');
     expect(read('webview-ui/src/components/WorkspaceOverview.tsx')).toContain(
@@ -180,35 +167,23 @@ describe('dashboard minimal UX guard', () => {
     expect(prefsBridge).toContain("prefs?.dashboardSection === 'repair'");
   });
 
-  it('keeps Home attention ranking tied to severity, recency, and governance impact', () => {
+  it('keeps Home next actions quiet without blocker ranking or first-value progress', () => {
     const quickNav = read('webview-ui/src/components/DashboardOverviewQuickNav.tsx');
     const overviewSection = read('webview-ui/src/components/DashboardOverviewSection.tsx');
-    const attentionContext = read('webview-ui/src/lib/evidenceAgentContext.ts');
     const styles = read('webview-ui/src/styles-tailwind.css');
 
-    expect(overviewSection).toContain('evidence={evidence}');
-    expect(quickNav).toContain('buildEvidenceAttentionInbox(evidence).slice(0, 3)');
-    expect(quickNav).toContain('aria-label="Top evidence blockers"');
-    expect(quickNav).toContain("onClick={() => onNavigate('repair')}");
-    expect(attentionContext).toContain('attentionScore');
-    expect(attentionContext).toContain('rankReasons');
-    expect(attentionContext).toContain('GOVERNANCE_IMPACT_SCORE');
-    expect(attentionContext).toContain('function recencyScore');
-    expect(attentionContext).toContain('return right.attentionScore - left.attentionScore');
-    expect(styles).toContain('.home-attention-rank');
-    expect(styles).toContain('.home-attention-rank__item');
-  });
-
-  it('keeps first artifact celebration subtle and tied to Day-0 evidence timing', () => {
-    const quickNav = read('webview-ui/src/components/DashboardOverviewQuickNav.tsx');
-    const styles = read('webview-ui/src/styles-tailwind.css');
-
-    expect(quickNav).toContain("firstArtifactStep?.state === 'complete'");
-    expect(quickNav).toContain('evidence?.onboarding?.ttfvLabel');
-    expect(quickNav).toContain('aria-label="First evidence generated"');
-    expect(quickNav).not.toContain('confetti');
-    expect(styles).toContain('.home-first-artifact-celebration');
-    expect(styles).toContain('var(--vscode-testing-iconPassed)');
+    expect(overviewSection).toContain('<DashboardOverviewQuickNav');
+    expect(quickNav).toContain('Next actions');
+    expect(quickNav).toContain('Repair workspace');
+    expect(quickNav).toContain('Run workspace');
+    expect(quickNav).not.toContain('Top blockers');
+    expect(quickNav).not.toContain('aria-label="Top evidence blockers"');
+    expect(quickNav).not.toContain('First-value path');
+    expect(quickNav).not.toContain('First evidence ready');
+    expect(quickNav).not.toContain('day0Funnel');
+    expect(styles).not.toContain('.home-attention-rank');
+    expect(styles).not.toContain('.home-first-artifact-celebration');
+    expect(styles).not.toContain('.home-day0-funnel');
   });
 
   it('keeps Home as the default overview while showing status summary before secondary navigation', () => {
@@ -216,7 +191,6 @@ describe('dashboard minimal UX guard', () => {
     const sections = read('webview-ui/src/lib/dashboardSections.ts');
     const overview = read('webview-ui/src/components/WorkspaceOverview.tsx');
     const overviewSection = read('webview-ui/src/components/DashboardOverviewSection.tsx');
-    const retentionSummary = read('webview-ui/src/components/DashboardRetentionSummary.tsx');
     const dashboardEvidence = read('webview-ui/src/lib/dashboardEvidence.ts');
 
     expect(sections).toContain("label: 'Home'");
@@ -230,31 +204,26 @@ describe('dashboard minimal UX guard', () => {
     expect(overview).toContain('Workspace status summary');
     expect(app).not.toContain('const renderDashboardRepairFlow = () =>');
     expect(app).not.toContain("renderDashboardRepairFlow('status')");
+    expect(app).toContain("dashboardSection === 'overview' ? (");
     expect(app).toContain(
-      "dashboardSection === 'overview' && !isFreshInstall && !setupRecoveryNeeded"
+      "const isEmptyWorkspaceHome = dashboardSection === 'overview' && !hasActiveWorkspace"
     );
+    expect(app).toContain(
+      "const showDashboardContextBar = dashboardSection !== 'catalog' && hasActiveWorkspace"
+    );
+    expect(app).toContain(
+      "const showOverviewDiagnostics = dashboardSection === 'overview' && hasActiveWorkspace"
+    );
+    expect(app).toContain('{showDashboardContextBar ? (');
+    expect(app).toContain('{showOverviewDiagnostics ? (');
     expect(app).toContain('<DashboardRepairPanel');
     expect(app).toContain('<DashboardOverviewSection');
     expect(overviewSection.indexOf('<WorkspaceOverview')).toBeLessThan(
       overviewSection.indexOf('<DashboardOverviewQuickNav')
     );
-    expect(overviewSection).toContain('<DashboardRetentionSummary');
-    expect(overviewSection).toContain('evidence?.onboarding.cohortSummary');
-    expect(overviewSection.indexOf('<DashboardOverviewQuickNav')).toBeLessThan(
-      overviewSection.indexOf('<DashboardRetentionSummary')
-    );
-    expect(retentionSummary).toContain('<details className="home-retention-summary__details">');
-    expect(retentionSummary).toContain('<span>Progress</span>');
-    expect(retentionSummary).toContain('First evidence');
-    expect(retentionSummary).toContain('Command friction');
-    expect(retentionSummary).toContain('Suggested product focus');
-    expect(retentionSummary).not.toContain('TTFV');
-    expect(retentionSummary).not.toContain('Failure rate');
-    expect(retentionSummary).not.toContain('Dogfood focus');
-    expect(retentionSummary).toContain('Repeated command friction detected');
-    expect(retentionSummary).not.toContain('workspacePath');
-    expect(retentionSummary).not.toContain('projectName');
-    expect(retentionSummary).not.toContain('command:');
+    expect(overviewSection).not.toContain('<DashboardRetentionSummary');
+    expect(overviewSection).not.toContain('evidence?.onboarding.cohortSummary');
+    expect(overviewSection).not.toContain('Progress');
     expect(dashboardEvidence).toContain('cohortSummary?: DashboardRetentionCohortSummary | null');
     expect(dashboardEvidence).toContain("schemaVersion: 'retention-cohort.v1'");
   });
@@ -280,8 +249,10 @@ describe('dashboard minimal UX guard', () => {
     expect(studioChrome).toContain("idle: 'Blocked'");
     expect(studioChrome).toContain("diagnosing: 'Running'");
     expect(studioChrome).toContain("'fix-applied': 'Awaiting verify'");
-    expect(studioChrome).toContain('Incident summary');
+    expect(studioChrome).toContain('Workspai Agent · {PHASE_LABEL[phase]}');
+    expect(studioChrome).toContain('`Repairing ${subject}`');
     expect(studioChrome).toContain('incidentSummary');
+    expect(studioChrome).not.toContain('aria-label="Incident summary"');
     expect(shipLoop).toContain("pass: 'Passed'");
     expect(shipLoop).toContain('Release path');
     expect(shipLoop).toContain('context:');
@@ -298,7 +269,7 @@ describe('dashboard minimal UX guard', () => {
     expect(app).toContain('<DashboardSubNav');
     expect(styles).toContain('.ws-dashboard-sticky-chrome');
     expect(styles).toContain('.workspai-view-tabs-sticky');
-    expect(styles).toContain('.home-day0-funnel__focus');
+    expect(styles).not.toContain('.home-day0-funnel__focus');
     expect(styles).toContain('position: sticky');
   });
 
@@ -317,14 +288,12 @@ describe('dashboard minimal UX guard', () => {
     const section = read('webview-ui/src/components/DashboardEvidenceSection.tsx');
 
     expect(source).toContain('Run: {commandAction.label}');
-    expect(source).toContain('evidence-attention-inbox__trail');
+    expect(source).toContain('buildDashboardRepairCardCopy');
+    expect(source).toContain('copy.issue');
+    expect(source).toContain('copy.guidance');
+    expect(source).not.toContain('evidence-attention-inbox__trail');
     expect(source).toContain('import { EvidenceCardActions }');
     expect(source).toContain('buildDashboardEvidenceActionContract');
-    expect(source).toContain('buildDashboardIncidentCopy');
-    expect(source).toContain('<span>Incident</span>');
-    expect(source).toContain('incident.phaseLabel');
-    expect(source).toContain('incident.primaryAction');
-    expect(source).toContain('incident.artifactLabel');
     expect(source).toContain('<EvidenceCardActions');
     expect(source).toContain('primaryAction={actionContract.primaryAction}');
     expect(source).toContain('onRunCommand(commandAction.command, commandAction.commandData)');
@@ -334,6 +303,7 @@ describe('dashboard minimal UX guard', () => {
     expect(section).toContain('workspace={workspace}');
     expect(section).toContain('onRunCommand={onRunCommand}');
     expect(section).toContain('onRevealArtifact={onRevealArtifact}');
+    expect(section).toContain('onCopyEvidenceAgentHandoff={onCopyEvidenceAgentHandoff}');
   });
 
   it('routes Studio and Copilot handoffs through the shared evidence payload contract', () => {
@@ -373,6 +343,11 @@ describe('dashboard minimal UX guard', () => {
     expect(actions).toContain('input.canRun && input.hasRunHandler');
     expect(actions).toContain('evidence-card-actions__overflow');
     expect(actions).toContain('evidence-card-actions__menu-item');
+    expect(actions).toContain("document.addEventListener('pointerdown', dismissOutside, true)");
+    expect(actions).toContain("event.key === 'Escape'");
+    expect(actions).toContain('!overflow.contains(event.target)');
+    expect(actions).toContain("overflowRef.current?.removeAttribute('open')");
+    expect(actions).toContain('Copy agent handoff');
     expect(repair).toContain('artifactLabel={actionContract.artifactLabel}');
     expect(repair).toContain('primaryAction={actionContract.primaryAction}');
     expect(guided).toContain('artifactLabel={actionContract.artifactLabel}');
@@ -401,8 +376,8 @@ describe('dashboard minimal UX guard', () => {
     expect(activity).toContain('buildDashboardIncidentCopy');
     expect(activity).toContain('incident.compactLabel');
     expect(repair).toContain('buildDashboardEvidenceActionContract');
-    expect(repair).toContain('RepairActionContract');
-    expect(repair).toContain('activeContract?.commandAction');
+    expect(repair).toContain('buildDashboardRepairCardCopy');
+    expect(repair).toContain('actionContract.commandAction');
     expect(outcome).toContain('buildDashboardEvidenceActionContract');
     expect(outcome).toContain('actionContract.commandAction');
     expect(section).toContain('buildDashboardEvidenceActionContract');
@@ -436,6 +411,8 @@ describe('dashboard minimal UX guard', () => {
     expect(governance).toContain('workspaceBootstrap');
     expect(project).toContain('buildDashboardCommandActionContract');
     expect(project).toContain('actionContract={commandContract(dashboardCommand');
+    expect(project).toContain('onDoctorFix');
+    expect(project).toContain("doctorTone === 'fail'");
     expect(tile).toContain('actionContract?: DashboardCommandActionContract');
     expect(tile).toContain('workspai-action-tile__contract');
     expect(styles).toContain('.workspai-action-tile__contract');
@@ -509,7 +486,7 @@ describe('dashboard minimal UX guard', () => {
     expect(handoff).toContain('Create with AI');
     expect(handoff).not.toContain('disabled={!hasWorkspace}');
     expect(handoff).toContain('Uses the default workspace');
-    expect(importAdopt).toContain('Import &amp; Adopt');
+    expect(importAdopt).toContain('Import / Adopt Projects');
     expect(importAdopt).not.toContain('ImportAdoptOptionsModal');
     expect(importAdopt).toContain('useDefaultWorkspace: true');
     expect(importAdopt).not.toContain('quickSwitchWorkspace');
@@ -518,12 +495,9 @@ describe('dashboard minimal UX guard', () => {
     expect(importAdopt).not.toContain("source: 'local-folder'");
     expect(app).toContain('HomeCreateHandoff');
     expect(app).toContain('HomeImportAdoptHandoff');
-    expect(app).toContain(
-      "dashboardSection === 'overview' && !isFreshInstall && !setupRecoveryNeeded"
-    );
-    expect(app).not.toContain(
-      "dashboardSection === 'overview' && (!hasActiveWorkspace || isFreshInstall)"
-    );
+    expect(app).toContain("dashboardSection === 'overview' ? (");
+    expect(app).not.toContain('FreshInstallOnboarding');
+    expect(app).not.toContain('setupRecoveryNeeded');
     expect(app).toContain("from '@/lib/dashboardDispatch'");
     expect(app).toContain('buildDashboardDispatchMessages');
     expect(app).toContain('home-onboarding-handoffs');
@@ -596,12 +570,18 @@ describe('dashboard minimal UX guard', () => {
     expect(source).toContain("'projectDev'");
     expect(source).toContain('Project Doctor evidence');
     expect(source).toContain('project-doctor-card');
+    expect(source).toContain('Run Project Doctor with auto-fix');
+    expect(source).toContain('<Wrench size={12}');
     expect(source).toContain('onRevealArtifact');
     expect(source).toContain(
       'isDashboardLifecycleCommandSupported(capabilities, dashboardCommand)'
     );
     expect(source).toContain('disabled={!supported}');
     expect(source).toContain("disableReason || 'Not supported for this project'");
+
+    const app = read('webview-ui/src/App.tsx');
+    expect(app).toContain('{!hasDashboardProject ? (');
+    expect(app).toContain("dispatchDashboardCommand('projectDoctor', { preferredAction: 'fix' })");
   });
 
   it('keeps Library scannable with a compact scope summary', () => {
@@ -669,45 +649,21 @@ describe('dashboard minimal UX guard', () => {
     expect(grid).not.toContain('ws-sidebar__scope');
   });
 
-  it('positions fresh install onboarding around workspace intelligence value', () => {
-    const source = read('webview-ui/src/components/FreshInstallOnboarding.tsx');
+  it('keeps fresh installs on Home handoff cards instead of a banner', () => {
+    const handoff = read('webview-ui/src/components/HomeCreateHandoff.tsx');
+    const importAdopt = read('webview-ui/src/components/HomeImportAdoptHandoff.tsx');
     const app = read('webview-ui/src/App.tsx');
 
-    expect(source).toContain('Setup recovery');
-    expect(source).toContain("mode?: 'fresh' | 'resume-setup'");
-    expect(source).toContain('Get started');
-    expect(source).toContain('Create your first workspace');
-    expect(source).toContain('New to Workspai: no workspace yet');
-    expect(source).toContain('Resume setup before continuing');
-    expect(source).toContain('Start setup');
-    expect(source).toContain('Resume setup');
-    expect(source).toContain('Advanced start options');
-    expect(source).toContain('install compatible CLI');
-    expect(source).toContain('link local npm package');
-    expect(source).toContain('select workspace');
-    expect(source).toContain('run first model');
-    expect(source).toContain('run doctor');
-    expect(source).toContain('run agent-sync');
-    expect(source).toContain('Create with AI');
-    expect(source).toContain('<details className="fresh-install-onboarding__details">');
-    expect(source).toContain(
-      "Browse Library{templateCount > 0 ? ` (${templateCount} templates)` : ''}"
-    );
-    expect(source).not.toContain('fresh-install-onboarding__card--library');
-    expect(app).toContain(
-      'const setupRecoveryNeeded = installStatusChecked && !installStatus.coreInstalled'
-    );
-    expect(app).toContain(
-      "mode={!isFreshInstall && setupRecoveryNeeded ? 'resume-setup' : 'fresh'}"
-    );
-    expect(app).toContain(
-      "dashboardSection === 'overview' && !isFreshInstall && !setupRecoveryNeeded"
-    );
-    expect(app).not.toContain(
-      "dashboardSection === 'overview' && (!hasActiveWorkspace || isFreshInstall)"
-    );
-    expect(app).toContain('onOpenSetup={openSetupInDashboard}');
-    expect(app).toContain('onCreateWithAI={handleOpenAICreateWorkspace}');
+    expect(handoff).toContain('Create with AI');
+    expect(handoff).toContain('Workspace');
+    expect(handoff).toContain('Project');
+    expect(importAdopt).toContain('Import / Adopt Projects');
+    expect(importAdopt).toContain('Import');
+    expect(importAdopt).toContain('Adopt');
+    expect(app).toContain("dashboardSection === 'overview' ? (");
+    expect(app).not.toContain('FreshInstallOnboarding');
+    expect(app).not.toContain('fresh-install-onboarding');
+    expect(app).toContain('onCreateAIWorkspace={handleOpenAICreateWorkspace}');
   });
 
   it('keeps fresh-install and first-evidence timing copy semantically separate', () => {
@@ -775,7 +731,7 @@ describe('dashboard minimal UX guard', () => {
     expect(statusBar).toContain('$(rocket) Workspai');
     expect(statusBar).toContain('updateAmbientTruth');
     expect(statusBar).toContain('Top blocker:');
-    expect(statusBar).toContain('RapidKit CLI:');
+    expect(statusBar).toContain('Workspai CLI:');
     expect(statusBar).toContain('Open Workspai dashboard and workspace intelligence');
     expect(statusBar).not.toContain('🚀');
   });
@@ -798,13 +754,16 @@ describe('dashboard minimal UX guard', () => {
   it('keeps evidence view controls compact and scannable', () => {
     const source = read('webview-ui/src/lib/dashboardEvidenceViewMode.ts');
 
-    expect(source).toContain("guided: 'Attention'");
-    expect(source).toContain("balanced: 'Gates'");
-    expect(source).toContain("expanded: 'Archive'");
+    expect(source).toContain("guided: 'Needs action'");
+    expect(source).toContain("balanced: 'Release checks'");
+    expect(source).toContain("expanded: 'All evidence'");
     expect(source).toContain('Only blocked and warning artifacts.');
     expect(source).not.toContain("guided: 'Step by step'");
     expect(source).not.toContain("balanced: 'By workflow'");
-    expect(source).not.toContain("expanded: 'All evidence'");
+    const toggle = read('webview-ui/src/components/EvidenceViewModeToggle.tsx');
+    expect(toggle).toContain('aria-label="Artifact detail level"');
+    expect(toggle).toContain('<select');
+    expect(toggle).not.toContain('aria-pressed');
   });
 
   it('keeps execution logs collapsed outside the archive view', () => {
@@ -870,6 +829,22 @@ describe('dashboard minimal UX guard', () => {
     expect(trend).toContain('Governance Gate or Workspace Verify');
     expect(evidenceTypes).toContain('policyViolations: number');
     expect(evidenceTypes).toContain('gateHealth: number');
+  });
+
+  it('locks Artifacts history until a workspace exists', () => {
+    const section = read('webview-ui/src/components/DashboardEvidenceSection.tsx');
+    const noWorkspaceGuard = section.slice(
+      section.indexOf('if (!hasWorkspace)'),
+      section.indexOf('const cards = evidence?.cards ?? []')
+    );
+
+    expect(noWorkspaceGuard).toContain('No workspace selected');
+    expect(noWorkspaceGuard).toContain(
+      'Artifacts unlock after you create, import, or switch to a workspace'
+    );
+    expect(noWorkspaceGuard).toContain("onNavigateSection('overview')");
+    expect(noWorkspaceGuard).not.toContain('onRunCommand');
+    expect(noWorkspaceGuard).not.toContain('Generate artifact');
   });
 
   it('loads shared accessibility overrides on the dashboard webview bundle', () => {
@@ -944,8 +919,16 @@ describe('dashboard minimal UX guard', () => {
     expect(sidebar).toContain('activeStudioReturnState.detail');
     expect(sidebar).toContain('data-state={activeStudioReturnState.status}');
     expect(chrome).toContain('awaiting-verify');
-    expect(chrome).toContain('Run verify');
-    expect(chrome).toContain('verifyFailure.nextAction');
+    expect(chrome).not.toContain('Run verify');
+    expect(chrome).not.toContain('use final verify');
+    expect(chrome).not.toContain('final verify');
+    expect(chrome).not.toContain('ws-sidebar__studio-execution');
+    expect(chrome).not.toContain('Command execution contract');
+    expect(sidebar).not.toContain('activeStudioVerifyFailure.nextAction');
+    expect(sidebar).not.toContain('studioAutonomousStepCountsRef');
+    expect(failure).toContain('dashboardCommandId?: string');
+    expect(failure).toContain('executionChannel?:');
+    expect(failure).toContain('capabilityGate?: string');
     expect(failure).toContain('nextAction?: string');
     expect(provider).toContain('buildSidebarStudioActionFailurePayload');
     expect(provider).toContain('studioActionFailureNextAction');
@@ -972,9 +955,11 @@ describe('dashboard minimal UX guard', () => {
     expect(artifacts).toContain('primaryAction={actionContract.primaryAction}');
     expect(artifacts).not.toContain('<Bot');
     expect(artifacts).not.toContain('<Send');
-    expect(studio).toContain("handoff.studioMode === 'RUN_ONCE'");
-    expect(studio).toContain("handoff.studioMode !== 'VERIFY_ONLY'");
-    expect(studio).toContain("phase === 'awaiting-verify' ? 'Run verify' : 'Verify after fix'");
+    expect(studio).not.toContain('onVerify');
+    expect(studio).toContain("phase === 'awaiting-verify'");
+    expect(studio).toContain("phase === 'fix-applied'");
+    expect(studio).toContain("handoff.studioMode === 'EXPLAIN'");
+    expect(studio).not.toContain('const verifyLabel =');
   });
 
   it('keeps direct card refresh failures visible and clears pending refresh state', () => {
@@ -992,7 +977,8 @@ describe('dashboard minimal UX guard', () => {
 
   it('keeps Studio action failure payloads complete for operator recovery', () => {
     const provider = read('src/ui/webviews/actionsWebviewProvider.ts');
-    const chrome = read('webview-ui/src/sidebar/StudioBlockerChrome.tsx');
+    const sidebar = read('webview-ui/src/sidebar/SecondarySidebar.tsx');
+    const failure = read('webview-ui/src/lib/studioVerifyFailure.ts');
 
     for (const action of [
       'auto-fix',
@@ -1008,12 +994,19 @@ describe('dashboard minimal UX guard', () => {
     expect(provider).toContain('title: string');
     expect(provider).toContain('summary: string');
     expect(provider).toContain('commandText?: string');
+    expect(provider).toContain('dashboardCommandId?: string');
+    expect(provider).toContain('executionChannel?:');
+    expect(provider).toContain('capabilityGate?: string');
     expect(provider).toContain('exitCode?: number | null');
     expect(provider).toContain('nextAction: string');
     expect(provider).toContain('buildSidebarStudioActionFailurePayload({');
+    expect(provider).toContain('input.handoff?.dashboardCommandId');
+    expect(provider).toContain('input.handoff?.executionChannel');
+    expect(provider).toContain('input.handoff?.capabilityGate');
     expect(provider).toContain("studioActionFailureNextAction('verify-handoff')");
-    expect(chrome).toContain('verifyFailure.commandText');
-    expect(chrome).toContain('verifyFailure.nextAction');
+    expect(failure).toContain('commandText?: string');
+    expect(failure).toContain('nextAction?: string');
+    expect(sidebar).not.toContain('activeStudioVerifyFailure.nextAction');
   });
 
   it('surfaces feedback history failures through both audit state and Studio failure rail', () => {

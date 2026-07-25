@@ -61,13 +61,14 @@ export function buildReactWebviewCsp(webview: vscode.Webview, nonce: string): st
   const source = webview.cspSource;
   return [
     "default-src 'none'",
-    "connect-src 'none'",
+    `connect-src ${source}`,
     "frame-src 'none'",
     "media-src 'none'",
     "object-src 'none'",
     `style-src ${source} 'unsafe-inline'`,
     `font-src ${source}`,
     `img-src ${source} https: data:`,
+    `worker-src ${source} blob:`,
     `script-src 'nonce-${nonce}'`,
   ].join('; ');
 }

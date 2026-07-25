@@ -1,7 +1,15 @@
+import type { StudioBlockerHandoffView } from './studioBlockerHandoff';
+
 export type StudioVerifyFailureView = {
   title?: string;
   action?: string;
   commandText?: string;
+  dashboardCommandId?: string;
+  executionChannel?: 'terminal' | 'background';
+  capabilityGate?: string;
+  safetyRisk?: 'read' | 'write' | 'destructive';
+  safetyConfirmation?: string;
+  safetyRefreshCommands?: string[];
   rollbackCommand?: string;
   exitCode?: number | null;
   stderrTail?: string;
@@ -27,6 +35,22 @@ export function parseStudioVerifyFailure(value: unknown): StudioVerifyFailureVie
     title: optionalTrimmedString(record.title) ?? 'Verify failed',
     action: 'verify-handoff',
     commandText: optionalTrimmedString(record.commandText),
+    dashboardCommandId: optionalTrimmedString(record.dashboardCommandId),
+    executionChannel:
+      record.executionChannel === 'terminal' || record.executionChannel === 'background'
+        ? record.executionChannel
+        : undefined,
+    capabilityGate: optionalTrimmedString(record.capabilityGate),
+    safetyRisk:
+      record.safetyRisk === 'read' ||
+      record.safetyRisk === 'write' ||
+      record.safetyRisk === 'destructive'
+        ? record.safetyRisk
+        : undefined,
+    safetyConfirmation: optionalTrimmedString(record.safetyConfirmation),
+    safetyRefreshCommands: Array.isArray(record.safetyRefreshCommands)
+      ? record.safetyRefreshCommands.filter((entry): entry is string => typeof entry === 'string')
+      : undefined,
     rollbackCommand: optionalTrimmedString(record.rollbackCommand),
     exitCode:
       typeof record.exitCode === 'number' || record.exitCode === null ? record.exitCode : undefined,
@@ -71,6 +95,22 @@ export function parseStudioActionFailure(value: unknown): StudioVerifyFailureVie
     title: optionalTrimmedString(record.title) ?? titleByAction[action] ?? 'Studio action failed',
     action,
     commandText: optionalTrimmedString(record.commandText),
+    dashboardCommandId: optionalTrimmedString(record.dashboardCommandId),
+    executionChannel:
+      record.executionChannel === 'terminal' || record.executionChannel === 'background'
+        ? record.executionChannel
+        : undefined,
+    capabilityGate: optionalTrimmedString(record.capabilityGate),
+    safetyRisk:
+      record.safetyRisk === 'read' ||
+      record.safetyRisk === 'write' ||
+      record.safetyRisk === 'destructive'
+        ? record.safetyRisk
+        : undefined,
+    safetyConfirmation: optionalTrimmedString(record.safetyConfirmation),
+    safetyRefreshCommands: Array.isArray(record.safetyRefreshCommands)
+      ? record.safetyRefreshCommands.filter((entry): entry is string => typeof entry === 'string')
+      : undefined,
     rollbackCommand: optionalTrimmedString(record.rollbackCommand),
     exitCode:
       typeof record.exitCode === 'number' || record.exitCode === null ? record.exitCode : undefined,
@@ -79,6 +119,24 @@ export function parseStudioActionFailure(value: unknown): StudioVerifyFailureVie
     topBlocker: optionalTrimmedString(record.topBlocker),
     error: optionalTrimmedString(record.error),
     nextAction: optionalTrimmedString(record.nextAction),
+  };
+}
+
+export function enrichStudioActionFailureWithHandoff(
+  failure: StudioVerifyFailureView,
+  handoff?: StudioBlockerHandoffView | null
+): StudioVerifyFailureView {
+  if (!handoff) {
+    return failure;
+  }
+  return {
+    ...failure,
+    dashboardCommandId: failure.dashboardCommandId ?? handoff.dashboardCommandId,
+    executionChannel: failure.executionChannel ?? handoff.executionChannel,
+    capabilityGate: failure.capabilityGate ?? handoff.capabilityGate,
+    safetyRisk: failure.safetyRisk ?? handoff.safetyRisk,
+    safetyConfirmation: failure.safetyConfirmation ?? handoff.safetyConfirmation,
+    safetyRefreshCommands: failure.safetyRefreshCommands ?? handoff.safetyRefreshCommands,
   };
 }
 

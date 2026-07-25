@@ -16,6 +16,21 @@ const CONTEXT_MENU_EXCLUDED_IDS = new Set([
   'quickSwitchWorkspace',
 ]);
 
+/** Workspace menu helpers that are intentionally not dashboard command contracts. */
+const NON_DASHBOARD_WORKSPACE_MENU_COMMANDS = new Set([
+  'workspai.copyCopilotContextPrompt',
+  'workspai.copyWorkspacePath',
+  'workspai.exportVerifyPackContract',
+  'workspai.importWorkspaceShareBundle',
+  'workspai.openCreateWithAI',
+  'workspai.openWorkspace',
+  'workspai.openWorkspaceFolder',
+  'workspai.removeWorkspace',
+  'workspai.resetTelemetry',
+  'workspai.showOnboardingExperimentStats',
+  'workspai.showTelemetrySummary',
+]);
+
 /** Accept alternate vscode commands for equivalent dashboard actions. */
 const CONTEXT_MENU_ALIASES: Record<string, string[]> = {
   workspaceImpactLens: ['workspai.openWorkspaceAdvisor', 'workspai.workspaceImpactLens'],
@@ -85,5 +100,34 @@ describe('workspace sidebar context menu parity', () => {
     expect(menuCommands.has('workspai.workspacePipeline')).toBe(true);
     expect(menuCommands.has('workspai.workspaceExplain')).toBe(true);
     expect(missing, `missing workspace context menu commands:\n${missing.join('\n')}`).toEqual([]);
+  });
+
+  it('keeps workspace operational menu commands covered by dashboard contracts', () => {
+    const packageJsonPath = path.resolve(__dirname, '../../package.json');
+    const manifest = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
+      contributes?: {
+        menus?: Record<string, MenuEntry[]>;
+      };
+    };
+
+    const menuCommands = collectWorkspaceItemContextCommands(manifest.contributes?.menus ?? {});
+    const contractCommands = new Set<string>();
+
+    for (const [dashboardId, contract] of Object.entries(DASHBOARD_COMMAND_CONTRACTS)) {
+      for (const commandId of resolveExpectedCommands(dashboardId, contract)) {
+        contractCommands.add(commandId);
+      }
+    }
+
+    const missingContracts = [...menuCommands]
+      .filter((commandId) => commandId.startsWith('workspai.'))
+      .filter((commandId) => !NON_DASHBOARD_WORKSPACE_MENU_COMMANDS.has(commandId))
+      .filter((commandId) => !contractCommands.has(commandId))
+      .sort();
+
+    expect(
+      missingContracts,
+      `workspace context menu commands without dashboard contracts:\n${missingContracts.join('\n')}`
+    ).toEqual([]);
   });
 });

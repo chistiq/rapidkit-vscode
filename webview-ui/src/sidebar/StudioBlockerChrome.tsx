@@ -1,25 +1,17 @@
+import type { ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, Wrench } from 'lucide-react';
 import {
   resolveStudioFixPhase,
-  studioModeDetail,
-  studioModeHeadline,
   type StudioBlockerHandoffView,
   type StudioFixPhase,
   type StudioIncidentSummaryView,
 } from '@/lib/studioBlockerHandoff';
-import {
-  studioVerifyFailureSummary,
-  type StudioVerifyFailureView,
-} from '@/lib/studioVerifyFailure';
-import { buildStudioIncidentCopy } from '@/lib/dashboardIncidentContract';
 
 type StudioBlockerChromeProps = {
   handoff: StudioBlockerHandoffView | null;
   phase: StudioFixPhase;
-  onAutoFix: () => void;
-  onVerify: () => void;
   autoFixBusy?: boolean;
-  verifyFailure?: StudioVerifyFailureView | null;
+  loop?: ReactNode;
 };
 
 const PHASE_LABEL: Record<StudioFixPhase, string> = {
@@ -33,24 +25,22 @@ const PHASE_LABEL: Record<StudioFixPhase, string> = {
 export function StudioBlockerChrome({
   handoff,
   phase,
-  onAutoFix,
-  onVerify,
   autoFixBusy = false,
-  verifyFailure = null,
+  loop,
 }: StudioBlockerChromeProps) {
   if (!handoff) {
     return null;
   }
 
-  const headline = studioModeHeadline(handoff.studioMode);
-  const detail = studioModeDetail(handoff);
-  const incident = buildStudioIncidentCopy({ handoff });
-  const showAutoFix =
-    handoff.studioMode === 'FIX' ||
-    handoff.studioMode === 'RUN_ONCE' ||
-    (handoff.studioMode !== 'VERIFY_ONLY' && phase !== 'awaiting-verify');
-  const showVerify = Boolean(handoff.verifyCommand) && phase !== 'idle';
-
+  const subject = handoff.cardLabel?.trim() || handoff.cardId;
+  const headline =
+    phase === 'diagnosing'
+      ? `Diagnosing ${subject}`
+      : phase === 'fixing'
+        ? `Repairing ${subject}`
+        : phase === 'fix-applied' || phase === 'awaiting-verify'
+          ? `Verifying ${subject}`
+          : `Repair ${subject}`;
   return (
     <div className="ws-sidebar__studio-chrome" data-phase={phase}>
       <div className="ws-sidebar__studio-posture" role="status" aria-live="polite">
@@ -64,88 +54,17 @@ export function StudioBlockerChrome({
           )}
         </span>
         <div className="ws-sidebar__studio-posture-copy">
-          <strong>{headline}</strong>
-          <span>{detail}</span>
-          <small>
-            {handoff.cardLabel ?? handoff.cardId} · {PHASE_LABEL[phase]} ·{' '}
-            {handoff.resolutionClass ?? 'blocked'}
+          <small className="ws-sidebar__studio-eyebrow">
+            Workspai Agent · {PHASE_LABEL[phase]}
           </small>
+          <strong>{headline}</strong>
+          {handoff.blockers.length > 0 ? <span>{handoff.blockers[0]}</span> : null}
         </div>
       </div>
 
-      <div className="ws-sidebar__studio-incident" role="note" aria-label="Incident summary">
-        <div>
-          <span>Phase</span>
-          <strong>{incident.phaseLabel}</strong>
-        </div>
-        <div>
-          <span>Action</span>
-          <strong>{incident.primaryAction}</strong>
-        </div>
-        <div>
-          <span>Verify</span>
-          <strong>{incident.verifyLabel}</strong>
-        </div>
-        <div>
-          <span>Audit</span>
-          <strong>{incident.auditLabel}</strong>
-        </div>
-      </div>
+      {loop}
 
-      {handoff.blockers.length > 0 ? (
-        <div className="ws-sidebar__studio-blockers" role="note">
-          <strong>Blockers</strong>
-          <ul>
-            {handoff.blockers.slice(0, 4).map((blocker) => (
-              <li key={blocker}>{blocker}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      <div className="ws-sidebar__studio-cta">
-        {showAutoFix ? (
-          <button
-            type="button"
-            className="ws-sidebar__inline ws-sidebar__inline--primary"
-            disabled={autoFixBusy || phase === 'awaiting-verify'}
-            onClick={onAutoFix}
-          >
-            {autoFixBusy
-              ? 'Running…'
-              : handoff.studioMode === 'RUN_ONCE'
-                ? 'Run once'
-                : 'Auto-fix'}
-          </button>
-        ) : null}
-        {showVerify ? (
-          <button
-            type="button"
-            className="ws-sidebar__inline"
-            onClick={onVerify}
-            disabled={autoFixBusy}
-          >
-            {phase === 'awaiting-verify' ? 'Run verify' : 'Verify after fix'}
-          </button>
-        ) : null}
-      </div>
-
-      {phase === 'awaiting-verify' ? (
-        <p className="ws-sidebar__studio-note">
-          Fix applied — run verify once to refresh the dashboard card.
-        </p>
-      ) : null}
-      {verifyFailure ? (
-        <div className="ws-sidebar__studio-verify-alert" role="alert">
-          <strong>
-            {verifyFailure.title ?? 'Studio action failed'}
-            {typeof verifyFailure.exitCode === 'number' ? ` · exit ${verifyFailure.exitCode}` : ''}
-          </strong>
-          <span>{studioVerifyFailureSummary(verifyFailure)}</span>
-          {verifyFailure.commandText ? <code>{verifyFailure.commandText}</code> : null}
-          {verifyFailure.nextAction ? <small>{verifyFailure.nextAction}</small> : null}
-        </div>
-      ) : null}
+      {autoFixBusy ? <span className="ws-sidebar__sr-only">Agent repair is active.</span> : null}
     </div>
   );
 }
@@ -213,9 +132,28 @@ export function parseStudioBlockerHandoffView(value: unknown): StudioBlockerHand
       record.cardStatus === 'missing'
         ? record.cardStatus
         : 'fail',
+    blocking: typeof record.blocking === 'boolean' ? record.blocking : undefined,
     blockers: record.blockers.filter((entry): entry is string => typeof entry === 'string'),
     artifactPath: typeof record.artifactPath === 'string' ? record.artifactPath : '',
     sourceCommand: record.sourceCommand,
+    dashboardCommandId:
+      typeof record.dashboardCommandId === 'string' ? record.dashboardCommandId : undefined,
+    executionChannel:
+      record.executionChannel === 'terminal' || record.executionChannel === 'background'
+        ? record.executionChannel
+        : undefined,
+    capabilityGate: typeof record.capabilityGate === 'string' ? record.capabilityGate : undefined,
+    safetyRisk:
+      record.safetyRisk === 'read' ||
+      record.safetyRisk === 'write' ||
+      record.safetyRisk === 'destructive'
+        ? record.safetyRisk
+        : undefined,
+    safetyConfirmation:
+      typeof record.safetyConfirmation === 'string' ? record.safetyConfirmation : undefined,
+    safetyRefreshCommands: Array.isArray(record.safetyRefreshCommands)
+      ? record.safetyRefreshCommands.filter((entry): entry is string => typeof entry === 'string')
+      : undefined,
     scope: record.scope === 'project' ? 'project' : 'workspace',
     blockerSignature:
       typeof record.blockerSignature === 'string' ? record.blockerSignature : 'unknown',

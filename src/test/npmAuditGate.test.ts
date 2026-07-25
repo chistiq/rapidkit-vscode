@@ -1,8 +1,37 @@
 import { describe, expect, it } from 'vitest';
 
-import { auditCountsFromReport, auditGateVerdict } from '../../scripts/npm-audit-gate.mjs';
+import {
+  auditCountsFromReport,
+  auditGateVerdict,
+  resolvePackageManagerInvocation,
+} from '../../scripts/npm-audit-gate.mjs';
 
 describe('npm audit gate', () => {
+  it('uses the pinned npm CLI from Corepack lifecycle environments', () => {
+    expect(
+      resolvePackageManagerInvocation({
+        packageManager: 'npm',
+        env: {
+          npm_execpath: '/corepack/npm/bin/npm-cli.js',
+          npm_node_execpath: '/usr/bin/node',
+        },
+        platform: 'linux',
+      })
+    ).toEqual({
+      command: '/usr/bin/node',
+      prefixArgs: ['/corepack/npm/bin/npm-cli.js'],
+    });
+  });
+
+  it('falls back to the platform Corepack shim when npm lifecycle metadata is absent', () => {
+    expect(
+      resolvePackageManagerInvocation({ packageManager: 'npm', env: {}, platform: 'linux' })
+    ).toEqual({ command: 'corepack', prefixArgs: ['npm'] });
+    expect(
+      resolvePackageManagerInvocation({ packageManager: 'npm', env: {}, platform: 'win32' })
+    ).toEqual({ command: 'corepack.cmd', prefixArgs: ['npm'] });
+  });
+
   it('blocks high and critical vulnerabilities by default', () => {
     const verdict = auditGateVerdict({
       metadata: {

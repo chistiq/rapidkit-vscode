@@ -70,6 +70,19 @@ export type CreateMessage =
       unsupportedStack?: boolean;
     };
 
+export type CreateSessionStatus = 'planning' | 'ready' | 'running' | 'done' | 'error';
+
+export interface CreateSession {
+  sessionId: string;
+  title: string;
+  target: 'workspace' | 'project';
+  method: 'ai' | 'manual';
+  status: CreateSessionStatus;
+  messages: CreateMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const STACK_FOCUS_OPTIONS = [
   'Any stack',
   'Frontend',

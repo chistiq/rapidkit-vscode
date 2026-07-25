@@ -73,7 +73,7 @@ export async function cloneExampleWorkspace(
     }
 
     vscode.window.showInformationMessage(`🔄 Cloning ${example.title}...`);
-    const cloneSource = example.cloneUrl || 'https://github.com/rapidkitlabs/rapidkit-examples';
+    const cloneSource = example.cloneUrl || 'https://github.com/chistiq/rapidkit-examples';
 
     const terminal = runShellCommandInTerminal({
       name: `Clone ${example.name}`,

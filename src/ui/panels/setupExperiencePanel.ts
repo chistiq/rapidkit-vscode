@@ -431,7 +431,7 @@ export class SetupPanel {
       case 'installNpmGlobal': {
         runCommandsInTerminal({
           name: 'Install Workspai CLI',
-          commands: ['npm install -g rapidkit'],
+          commands: ['npm install -g workspai'],
         });
         setTimeout(async () => {
           const newStatus = await this._checkInstallationStatus();
@@ -442,7 +442,7 @@ export class SetupPanel {
       case 'upgradeNpmGlobal': {
         runCommandsInTerminal({
           name: 'Upgrade Workspai CLI',
-          commands: ['npm install -g rapidkit'],
+          commands: ['npm install -g workspai'],
         });
         setTimeout(async () => {
           const newStatus = await this._checkInstallationStatus();
@@ -1251,7 +1251,7 @@ export class SetupPanel {
       const npmInvocation = resolvePackageRunnerInvocation('npm');
       const listResult = await execa(
         npmInvocation.command,
-        [...npmInvocation.prefixArgs, 'list', '-g', 'rapidkit', '--depth=0'],
+        [...npmInvocation.prefixArgs, 'list', '-g', 'workspai', '--depth=0'],
         {
           shell: status.isWindows,
           timeout: 3000,
@@ -1260,13 +1260,13 @@ export class SetupPanel {
         }
       );
 
-      if (listResult.exitCode === 0 && listResult.stdout.includes('rapidkit@')) {
-        const match = listResult.stdout.match(/rapidkit@([\d.]+)/);
+      if (listResult.exitCode === 0 && listResult.stdout.includes('workspai@')) {
+        const match = listResult.stdout.match(/workspai@([\d.]+)/);
         if (match) {
           status.npmVersion = match[1];
           status.npmInstalled = true;
           status.npmLocation = 'npm global';
-          status.detections.cli = this._buildDetection('rapidkit', undefined);
+          status.detections.cli = this._buildDetection('workspai', undefined);
         }
       } else {
         status.npmInstalled = false;
@@ -1275,7 +1275,7 @@ export class SetupPanel {
       status.npmInstalled = false;
     }
 
-    // Check if rapidkit is available via npx (even if not globally installed)
+    // Check if Workspai is available via npx (even if not globally installed).
     if (!status.npmInstalled) {
       try {
         const npxInvocation = resolvePackageRunnerInvocation('npx');
@@ -1304,7 +1304,7 @@ export class SetupPanel {
           }
         }
       } catch {
-        // npx not available or rapidkit package not found
+        // npx not available or the Workspai package was not found.
       }
     }
 
@@ -1882,13 +1882,13 @@ export class SetupPanel {
         // Force npm to fetch latest version without cache
         const npmResult = await execa(
           'npm',
-          ['view', 'rapidkit', 'version', '--registry=https://registry.npmjs.org/'],
+          ['view', 'workspai', 'version', '--registry=https://registry.npmjs.org/'],
           { timeout: 8000 }
         );
         status.latestNpmVersion = npmResult.stdout.trim();
       } catch {
         try {
-          const data = await fetchJson('https://registry.npmjs.org/rapidkit/latest');
+          const data = await fetchJson('https://registry.npmjs.org/workspai/latest');
           status.latestNpmVersion =
             typeof data.version === 'string' ? data.version : status.latestNpmVersion;
         } catch {

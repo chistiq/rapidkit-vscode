@@ -9,6 +9,7 @@ import {
   buildWorkspaceImpactPromptSection,
   readWorkspaceImpactReport,
 } from './workspaceImpactReader';
+import { readWorkspaceCompatibilityMatrix } from './workspaceCompatibilityMatrixReader';
 import { buildWorkspaceModelPromptSection, readWorkspaceModelReport } from './workspaceModelReader';
 import {
   buildWorkspaceVerifyPromptSection,
@@ -111,6 +112,14 @@ export interface IncidentStudioEvidenceContext {
       stepsMissing?: number;
       blockingReasons: string[];
     };
+    compatibilityMatrix: {
+      available: boolean;
+      generatedAt?: string;
+      source?: string;
+      runtimeCount: number;
+      runtimes: string[];
+      notes: string[];
+    };
   };
 }
 
@@ -171,15 +180,23 @@ export async function buildIncidentStudioEvidenceContext(input: {
           project.name === explicitProjectPath.split(/[\\/]/).pop()
       )
     : undefined;
-  const [registry, diffStat, agentContextReport, impactReport, verifyReport, workspaceModelReport] =
-    await Promise.all([
-      readAIActionRegistry(input.workspacePath),
-      getGitDiffStat(input.workspacePath, input.gitDiffTimeoutMs ?? 1500),
-      readWorkspaceAgentContextReport(input.workspacePath),
-      readWorkspaceImpactReport(input.workspacePath),
-      readWorkspaceVerifyReport(input.workspacePath),
-      readWorkspaceModelReport(input.workspacePath),
-    ]);
+  const [
+    registry,
+    diffStat,
+    agentContextReport,
+    impactReport,
+    verifyReport,
+    workspaceModelReport,
+    compatibilityMatrix,
+  ] = await Promise.all([
+    readAIActionRegistry(input.workspacePath),
+    getGitDiffStat(input.workspacePath, input.gitDiffTimeoutMs ?? 1500),
+    readWorkspaceAgentContextReport(input.workspacePath),
+    readWorkspaceImpactReport(input.workspacePath),
+    readWorkspaceVerifyReport(input.workspacePath),
+    readWorkspaceModelReport(input.workspacePath),
+    readWorkspaceCompatibilityMatrix(input.workspacePath),
+  ]);
   const affected = Array.isArray(impactReport?.affectedProjects)
     ? impactReport.affectedProjects
     : [];
@@ -298,6 +315,14 @@ export async function buildIncidentStudioEvidenceContext(input: {
         blockingReasons: (verifyReport?.blockingReasons ?? [])
           .slice(0, 6)
           .map((reason) => clip(reason, 220)),
+      },
+      compatibilityMatrix: {
+        available: compatibilityMatrix.available,
+        generatedAt: compatibilityMatrix.generatedAt,
+        source: compatibilityMatrix.source,
+        runtimeCount: compatibilityMatrix.runtimeCount,
+        runtimes: compatibilityMatrix.runtimes,
+        notes: compatibilityMatrix.notes,
       },
     },
   };

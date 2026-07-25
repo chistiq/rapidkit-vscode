@@ -140,7 +140,7 @@ Progress: "Checking installation status..."
 
 | Button | Visible when | What happens |
 |--------|-------------|--------------|
-| `[⚡ Install CLI]` | npm not found | Opens terminal, runs `npm install -g rapidkit` |
+| `[⚡ Install CLI]` | npm not found | Opens terminal, runs `npm install -g workspai` |
 | `[⚡ Install Core]` | Python found, core missing | Opens terminal, runs Poetry install inside workspace |
 | `[🔧 Install Core]` | Python not found | Shows install guide for Python 3.10+ |
 | `[🔄 Refresh]` | Always | Re-runs 4-method detection, updates status cards |
@@ -196,9 +196,9 @@ When you trigger a fleet stage command (Init / Test / Build / Start) from the Co
 
 Equivalent CLI commands:
 ```bash
-npx rapidkit workspace run test --affected --parallel --since main --max-workers 4
-npx rapidkit workspace run build --strict --no-gates
-npx rapidkit workspace run start --continue-on-error --json
+npx workspai workspace run test --affected --parallel --since main --max-workers 4
+npx workspai workspace run build --strict --no-gates
+npx workspai workspace run start --continue-on-error --json
 ```
 
 ---
@@ -208,9 +208,9 @@ npx rapidkit workspace run start --continue-on-error --json
 The extension can drive these flows, but the underlying CLI interactive wizard looks like this:
 
 ```bash
-npx rapidkit create workspace my-workspace
+npx workspai create workspace my-workspace
 # or shortcut
-npx rapidkit my-workspace
+npx workspai my-workspace
 ```
 
 Wizard prompts sequence:
@@ -248,16 +248,16 @@ After workspace creation:
 
 ```bash
 cd my-workspace
-npx rapidkit create project
+npx workspai create project
 ```
 
 For direct non-interactive kit creation:
 
 ```bash
-npx rapidkit create project fastapi.standard my-api --yes --skip-install
-npx rapidkit create project nestjs.standard my-nest --yes --skip-install
-npx rapidkit create project springboot.standard my-spring --yes --skip-install
-npx rapidkit create project gofiber.standard my-fiber --yes --skip-install
+npx workspai create project fastapi.standard my-api --yes --skip-install
+npx workspai create project nestjs.standard my-nest --yes --skip-install
+npx workspai create project springboot.standard my-spring --yes --skip-install
+npx workspai create project gofiber.standard my-fiber --yes --skip-install
 ```
 
 ---
@@ -317,9 +317,9 @@ First shows a scope picker:
 └──────────────────────────────────────────────┘
 ```
 
-After selection, output appears in the **RapidKit** output channel. Sensitive paths in `File:` and `Path:` lines are automatically redacted to `<project>/.rapidkit/reports/<filename>` format before display.
+After selection, output appears in the **RapidKit** output channel. Sensitive paths in `File:` and `Path:` lines are automatically redacted to `<project>/.workspai/reports/<filename>` format before display.
 
-Evidence file: `.rapidkit/reports/doctor-project-last-run.json`
+Evidence file: `.workspai/reports/doctor-project-last-run.json`
 
 **Doctor Treatment Timeline** in the AI Incident Studio reads this file and displays:
 ```
@@ -453,7 +453,7 @@ QuickPick: user selects flags + enters --since / --max-workers
 Extension: resolveWorkspaceTarget()  →  gets workspacePath
         │
         ▼
-Terminal: npx rapidkit workspace run test [selected flags]
+Terminal: npx workspai workspace run test [selected flags]
         │
         ▼
 Output channel: live progress (paths redacted)
@@ -491,7 +491,7 @@ Webview: AIIncidentStudio renders doctorTreatmentStatus prop
 | Network error during install | Terminal shows error; user can retry |
 | No project selected for Project Health Check (Doctor) | `showErrorMessage` (no silent fail) |
 | `--max-workers` not a positive integer | Input rejected inline with validation message |
-| Private paths in output channel | Auto-redacted to `<dir>/.rapidkit/reports/<file>` |
+| Private paths in output channel | Auto-redacted to `<dir>/.workspai/reports/<file>` |
 
 ---
 > See also: [GETTING_STARTED.md](./GETTING_STARTED.md) · [WHY_PYTHON_REQUIRED.md](./WHY_PYTHON_REQUIRED.md)

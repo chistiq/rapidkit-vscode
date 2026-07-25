@@ -18,6 +18,11 @@ Highlights:
 **Incident Studio**
 - Retire legacy `AIIncidentStudio` monolith; **`IncidentStudioVNext`** with ship loop, CLI surface, session persistence, AI action framework, policy/mutation gates, guided/lite/responsive Wave Y polish.
 - Studio first view is lighter: Command Ribbon is the default entry point, sidebar toolboxes are collapsed by default, audit details open only after user selection, and chat/context/sidebar regions use calmer panel chrome.
+- Card **Fix by Workspai** enters the durable native Studio Agent loop, follows related Workspace Intelligence blockers, uses governed repair tools, and accepts completion only from fresh non-blocking verify evidence.
+- Model routing follows the VS Code/Copilot tool contract: multi-tool turns use automatic tool selection, session-only providers are hidden, and unavailable/empty providers fail over to a callable model.
+- Durable checkpoints no longer stop a live repair at an arbitrary turn count. Generation-aware tool guards prevent repeat audit/inspect churn, and a successful source patch reopens the dependency repair path against the new evidence generation.
+- Native edit calls expose an exact full-file replacement + source-hash schema; the compact timeline names real work (`Audited dependencies`, `Applied source edit`, `Refreshed governed evidence`) and hides internal duplicate attempts.
+- Minimum VS Code is now **1.106.0**, where extension-contributed Secondary Sidebar containers became stable without a proposed API.
 
 **Design system**
 - Workspai token layers (`workspai-primitives`, studio chrome, analyze report CSS), theme provider, drift-guard tests, and studio CSS extraction/verify scripts.
@@ -46,7 +51,7 @@ Full detail: [`releases/RELEASE_NOTES_v0.35.0.md`](releases/RELEASE_NOTES_v0.35.
 
 Validation:
 - `./node_modules/.bin/tsc --noEmit`
-- `./node_modules/.bin/vitest run` (208 files / 1639 tests)
+- `corepack npm test` (321 files / 2282 passed / 2 skipped)
 - `node scripts/release-stop-gate.mjs --skip-kpi`
 - `env PATH=/tmp:$PATH ./node_modules/.bin/vsce package --no-dependencies --out /tmp/workspai-0.35.0.vsix`
 
@@ -736,6 +741,6 @@ Improved readability of Maximize and Lite/Full view toggle buttons in header:
 ## Links
 
 - 📦 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
-- 🐙 [GitHub Repository](https://github.com/rapidkitlabs/rapidkit-vscode)
+- 🐙 [GitHub Repository](https://github.com/chistiq/rapidkit-vscode)
 - 📚 [Documentation](https://www.workspai.com/)
 - 🚀 [npm Package](https://www.npmjs.com/package/rapidkit)

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 
 import {
+  copyEvidenceAgentHandoff,
   sendEvidenceToCopilot,
   sendWorkspaceIntelligenceToCopilot,
 } from '../../core/sendToCopilot';
@@ -77,6 +78,32 @@ export async function handleWelcomePanelSendEvidenceToCopilot(
   }
 
   await sendEvidenceToCopilot({
+    workspacePath,
+    workspaceName: readOptionalString(data, 'workspaceName'),
+    projectPath: readOptionalString(data, 'projectPath'),
+    projectName: readOptionalString(data, 'projectName'),
+    card: card as EvidenceCardAgentContextInput['card'],
+  });
+}
+
+export async function handleWelcomePanelCopyEvidenceAgentHandoff(
+  data: unknown,
+  context: WelcomePanelCopilotHandoffContext
+): Promise<void> {
+  const workspacePath = readOptionalString(data, 'workspacePath') ?? context.resolveWorkspacePath();
+  const card =
+    data && typeof data === 'object' && 'card' in data
+      ? (data as Record<string, unknown>).card
+      : undefined;
+
+  if (!workspacePath || !card || typeof card !== 'object') {
+    void vscode.window.showWarningMessage(
+      'Select a workspace and evidence card before copying the agent handoff.'
+    );
+    return;
+  }
+
+  await copyEvidenceAgentHandoff({
     workspacePath,
     workspaceName: readOptionalString(data, 'workspaceName'),
     projectPath: readOptionalString(data, 'projectPath'),

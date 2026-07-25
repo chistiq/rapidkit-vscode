@@ -88,6 +88,105 @@ describe('dashboardEvidenceSession', () => {
     expect(next?.cards.find((card) => card.id === 'doctor')?.status).toBe('pass');
   });
 
+  it('preserves active project evidence when a workspace-only full payload arrives', () => {
+    const current = basePayload({
+      projectPath: '/repo/adopted-project',
+      projectName: 'adopted-project',
+      cards: [
+        {
+          id: 'doctor',
+          label: 'Doctor',
+          status: 'pass',
+          summary: 'workspace ok',
+          scope: 'workspace',
+        },
+        {
+          id: 'projectDoctor',
+          label: 'Doctor',
+          status: 'warn',
+          summary: '83% health',
+          scope: 'project',
+          artifactPath: '/repo/adopted-project/.rapidkit/reports/doctor-project-last-run.json',
+        },
+      ],
+    });
+
+    const next = applyDashboardEvidenceMessage(
+      current,
+      basePayload({
+        cards: [
+          {
+            id: 'doctor',
+            label: 'Doctor',
+            status: 'pass',
+            summary: 'workspace ok',
+            scope: 'workspace',
+          },
+          {
+            id: 'projectDoctor',
+            label: 'Doctor',
+            status: 'missing',
+            summary: 'No run yet',
+            scope: 'project',
+          },
+        ],
+        refreshMode: 'full',
+        requestId: 4,
+      }),
+      {
+        expectedRequestId: 4,
+        activeWorkspacePath: '/ws/a',
+        activeProjectPath: '/repo/adopted-project',
+      }
+    );
+
+    expect(next?.projectPath).toBe('/repo/adopted-project');
+    expect(next?.cards.find((card) => card.id === 'projectDoctor')?.status).toBe('warn');
+    expect(next?.cards.find((card) => card.id === 'projectDoctor')?.artifactPath).toBe(
+      '/repo/adopted-project/.rapidkit/reports/doctor-project-last-run.json'
+    );
+  });
+
+  it('does not preserve project evidence after the active project changes', () => {
+    const current = basePayload({
+      projectPath: '/repo/old-project',
+      cards: [
+        {
+          id: 'projectDoctor',
+          label: 'Doctor',
+          status: 'warn',
+          summary: 'old',
+          scope: 'project',
+        },
+      ],
+    });
+
+    const next = applyDashboardEvidenceMessage(
+      current,
+      basePayload({
+        cards: [
+          {
+            id: 'projectDoctor',
+            label: 'Doctor',
+            status: 'missing',
+            summary: 'No run yet',
+            scope: 'project',
+          },
+        ],
+        refreshMode: 'full',
+        requestId: 5,
+      }),
+      {
+        expectedRequestId: 5,
+        activeWorkspacePath: '/ws/a',
+        activeProjectPath: '/repo/new-project',
+      }
+    );
+
+    expect(next?.projectPath).toBeUndefined();
+    expect(next?.cards.find((card) => card.id === 'projectDoctor')?.status).toBe('missing');
+  });
+
   it('creates empty payload for workspace switch reset', () => {
     const empty = emptyEvidencePayloadForWorkspace('/ws/b', 4);
     expect(empty.workspacePath).toBe('/ws/b');

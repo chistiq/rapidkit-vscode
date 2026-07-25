@@ -7,7 +7,9 @@ const repoRoot = path.resolve(__dirname, '../..');
 const npmContract = path.resolve(
   repoRoot,
   '..',
-  'rapidkit-npm',
+  'workspai',
+  'packages',
+  'cli',
   'contracts',
   'agent-customization-pack.v1.json'
 );
@@ -20,7 +22,7 @@ const vscodeSrcContract = path.resolve(
 );
 
 describe('agent-customization-pack contract parity', () => {
-  it('keeps extension mirrors aligned with rapidkit-npm', () => {
+  it('keeps extension mirrors aligned with Workspai CLI', () => {
     expect(fs.existsSync(npmContract)).toBe(true);
     const npmJson = JSON.parse(fs.readFileSync(npmContract, 'utf8'));
     const vscodeJson = JSON.parse(fs.readFileSync(vscodeContract, 'utf8'));

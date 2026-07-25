@@ -87,9 +87,9 @@ describe('aiArchitectureGrounding', () => {
     );
 
     expect(section).toContain('GUARD');
-    expect(section).toContain('rapidkit create project');
+    expect(section).toContain('workspai create project');
     expect(section).toContain('WORKSPAI INTENT ROUTING');
-    expect(section).toContain('rapidkit uninstall module');
+    expect(section).toContain('workspai uninstall module');
   });
 
   it('extracts NestJS examples routing facts from scanned files', () => {
@@ -147,7 +147,7 @@ describe('aiArchitectureGrounding', () => {
     expect(section).toContain('examples/notes');
     expect(section).toContain('No app.setGlobalPrefix');
     expect(section).toContain('DOMAIN FEATURE MODULE');
-    expect(section).toContain('rapidkit add module');
+    expect(section).toContain('workspai add module');
   });
 
   it('async grounding includes workspace atlas and platform index', async () => {

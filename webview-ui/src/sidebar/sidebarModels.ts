@@ -1,5 +1,5 @@
 /**
- * Model picker state shared by the Create / Advisor / Studio tabs (roadmap 2.11).
+ * Model picker state shared by Create and the Agent / Ask / Plan Assistant modes.
  */
 
 export interface SidebarModel {

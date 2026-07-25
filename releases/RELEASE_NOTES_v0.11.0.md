@@ -315,7 +315,7 @@ Thanks to everyone who contributed to this release!
 
 ## 🔗 Links
 
-- [GitHub Repository](https://github.com/rapidkitlabs/rapidkit-vscode)
+- [GitHub Repository](https://github.com/chistiq/rapidkit-vscode)
 - [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
-- [Report Issues](https://github.com/rapidkitlabs/rapidkit-vscode/issues)
-- [Python Core](https://github.com/rapidkitlabs/rapidkit-core)
+- [Report Issues](https://github.com/chistiq/rapidkit-vscode/issues)
+- [Python Core](https://github.com/chistiq/rapidkit-core)

@@ -3,6 +3,7 @@
   "displayName": "Workspai – Workspace Intelligence",
   "description": "Workspace Intelligence for VS Code. Adopt, import, scaffold, diagnose, verify, and govern polyglot workspaces with shared evidence for developers, CI, and AI agents.",
   "version": "0.35.0",
+  "packageManager": "npm@10.8.2",
   "publisher": "rapidkit",
   "icon": "media/icons/icon.png",
   "galleryBanner": {
@@ -10,9 +11,9 @@
     "theme": "dark"
   },
   "preview": false,
-  "qna": "https://github.com/rapidkitlabs/rapidkit-vscode/discussions",
+  "qna": "https://github.com/chistiq/rapidkit-vscode/discussions",
   "engines": {
-    "vscode": "^1.100.0"
+    "vscode": "^1.106.0"
   },
   "extensionDependencies": [],
   "capabilities": {
@@ -25,46 +26,132 @@
     "Testing",
     "Programming Languages",
     "Machine Learning",
+    "SCM Providers",
     "Snippets",
     "Other"
   ],
   "keywords": [
-    "workspai",
+    "ai",
     "rapidkit",
-    "AI",
+    "workspai",
+    "workspace",
+    "workspace intelligence",
+    "canonical workspace",
+    "developer tools",
+    "software architecture",
+    "codebase",
+    "repository",
+    "monorepo",
+    "polyglot",
+    "agent",
+    "agents",
+    "agentic",
+    "ai agent",
+    "ai coding",
+    "ai code assistant",
+    "coding agent",
+    "agent mode",
+    "agents.md",
+    "agent.md",
+    "skill",
+    "skills",
+    "skill.md",
+    "agent skills",
+    "mcp",
+    "model context protocol",
+    "graph",
+    "model",
+    "context",
+    "RAG",
+    "tool calling",
+    "tools",
+    "workspace context",
+    "context engineering",
+    "context window",
+    "memory",
+    "reasoning",
+    "planning",
+    "workflow",
+    "automation",
+    "prompt",
+    "prompt engineering",
+    "blocker resolution",
+    "orchestration",
+    "command loop",
+    "ci",
+    "handoff",
+    "resume",
+    "continuity",
+    "llm",
     "chatgpt",
-    "fastapi",
+    "gpt",
+    "openai",
+    "claude",
+    "anthropic",
+    "gemini",
+    "grok",
+    "deepseek",
+    "deepseek coder",
+    "deepseek flash",
+    "qwen",
+    "qwen coder",
+    "kimi",
+    "kimi k2",
+    "moonshot",
+    "claude code",
+    "opencode",
+    "zod",
+    "llama",
+    "mistral",
+    "codestral",
+    "devstral",
+    "gemma",
+    "glm",
+    "minimax",
+    "copilot",
+    "github copilot",
+    "codex",
+    "MAI",
+    "Muse",
+    "spark",
+    "Meta",
+    "cursor",
+    "windsurf",
+    "cline",
+    "roo",
+    "roo code",
+    "continue",
+    "augment",
+    "aider",
+    "typescript",
+    "javascript",
+    "node",
+    "python",
+    "java",
+    "csharp",
+    "dotnet",
+    "go",
     "nestjs",
     "spring",
-    "springboot",
-    "java",
-    "dotnet",
-    "csharp",
-    "go",
-    "backend",
-    "scaffold",
-    "workspace",
-    "python",
-    "typescript",
-    "rest api",
-    "code generation",
-    "boilerplate",
-    "monorepo",
-    "workspace intelligence",
-    "polyglot",
-    "fullstack",
-    "frontend",
-    "nextjs",
+    "spring boot",
+    "fastapi",
     "react",
+    "nextjs",
     "vue",
-    "angular"
+    "angular",
+    "backend",
+    "frontend",
+    "fullstack",
+    "scaffold",
+    "api",
+    "code generation"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/rapidkitlabs/rapidkit-vscode.git"
+    "url": "https://github.com/chistiq/rapidkit-vscode.git"
   },
   "bugs": {
-    "url": "https://github.com/rapidkitlabs/rapidkit-vscode/issues"
+    "url": "https://github.com/chistiq/rapidkit-vscode/issues"
   },
   "homepage": "https://www.workspai.com/",
   "license": "MIT",
@@ -398,6 +485,42 @@
         "icon": "$(pulse)"
       },
       {
+        "command": "workspai.workspaceGraphSearch",
+        "title": "Workspace Graph: Search",
+        "category": "Workspai",
+        "icon": "$(search)"
+      },
+      {
+        "command": "workspai.workspaceGraphExport.jsonld",
+        "title": "Workspace Graph: Export JSON-LD",
+        "category": "Workspai",
+        "icon": "$(export)"
+      },
+      {
+        "command": "workspai.workspaceGraphExport.graphml",
+        "title": "Workspace Graph: Export GraphML",
+        "category": "Workspai",
+        "icon": "$(export)"
+      },
+      {
+        "command": "workspai.workspaceGraphExport.gexf",
+        "title": "Workspace Graph: Export GEXF",
+        "category": "Workspai",
+        "icon": "$(export)"
+      },
+      {
+        "command": "workspai.workspaceEvaluationStatus",
+        "title": "Workspace Evaluation: Show Live Status",
+        "category": "Workspai",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "workspai.workspaceEvaluationReport",
+        "title": "Workspace Evaluation: Finalize Report",
+        "category": "Workspai",
+        "icon": "$(graph)"
+      },
+      {
         "command": "workspai.workspaceVerify",
         "title": "Workspace Verify",
         "category": "Workspai",
@@ -420,6 +543,12 @@
         "title": "Workspace Trace",
         "category": "Workspai",
         "icon": "$(list-tree)"
+      },
+      {
+        "command": "workspai.workspaceRemediationPlan",
+        "title": "Workspace Repair Plan",
+        "category": "Workspai",
+        "icon": "$(tools)"
       },
       {
         "command": "workspai.workspaceWatch",
@@ -1831,11 +1960,35 @@
           "when": "false"
         },
         {
+          "command": "workspai.workspaceEvaluationReport",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceEvaluationStatus",
+          "when": "false"
+        },
+        {
           "command": "workspai.workspaceExplain",
           "when": "false"
         },
         {
           "command": "workspai.workspaceFoundationEnsure",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceGraphExport.gexf",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceGraphExport.graphml",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceGraphExport.jsonld",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceGraphSearch",
           "when": "false"
         },
         {
@@ -1880,6 +2033,10 @@
         },
         {
           "command": "workspai.workspaceReadiness",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceRemediationPlan",
           "when": "false"
         },
         {
@@ -2421,6 +2578,30 @@
           "group": "intelligence@2"
         },
         {
+          "command": "workspai.workspaceGraphSearch",
+          "group": "graph@1"
+        },
+        {
+          "command": "workspai.workspaceGraphExport.jsonld",
+          "group": "graph@2"
+        },
+        {
+          "command": "workspai.workspaceGraphExport.graphml",
+          "group": "graph@3"
+        },
+        {
+          "command": "workspai.workspaceGraphExport.gexf",
+          "group": "graph@4"
+        },
+        {
+          "command": "workspai.workspaceEvaluationStatus",
+          "group": "evaluation@1"
+        },
+        {
+          "command": "workspai.workspaceEvaluationReport",
+          "group": "evaluation@2"
+        },
+        {
           "command": "workspai.workspaceIntelligenceSnapshot",
           "group": "intelligence@3"
         },
@@ -2449,12 +2630,16 @@
           "group": "intelligence@9"
         },
         {
-          "command": "workspai.workspaceWatch",
+          "command": "workspai.workspaceRemediationPlan",
           "group": "intelligence@10"
         },
         {
-          "command": "workspai.workspaceMcp",
+          "command": "workspai.workspaceWatch",
           "group": "intelligence@11"
+        },
+        {
+          "command": "workspai.workspaceMcp",
+          "group": "intelligence@12"
         },
         {
           "command": "workspai.openWorkspaceAdvisor",
@@ -2790,7 +2975,7 @@
         "workspai.checkForUpdates": {
           "type": "boolean",
           "default": true,
-          "description": "Check for RapidKit npm package updates"
+          "description": "Check for Workspai CLI updates"
         },
         "workspai.networkTimeoutMs": {
           "type": "number",
@@ -2926,20 +3111,20 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run build",
+    "vscode:prepublish": "corepack npm run build",
     "clean:dist": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "npm run clean:dist && npm run esbuild-base -- --production && npm run webview:build:production",
-    "compile": "npm run clean:dist && tsc -p ./ && npm run webview:build",
+    "build": "corepack npm run clean:dist && corepack npm run esbuild-base -- --production && corepack npm run webview:build:production",
+    "compile": "corepack npm run clean:dist && tsc -p ./ && corepack npm run webview:build",
     "watch": "tsc -watch -p ./",
     "esbuild-base": "node esbuild.js",
-    "esbuild": "npm run esbuild-base -- --sourcemap",
-    "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
+    "esbuild": "corepack npm run esbuild-base -- --sourcemap",
+    "esbuild-watch": "corepack npm run esbuild-base -- --sourcemap --watch",
     "webview:install": "cd webview-ui && npm install",
-    "webview:build": "cd webview-ui && npm run build",
-    "webview:build:production": "cd webview-ui && npm run build -- --production",
-    "webview:watch": "cd webview-ui && npm run watch",
+    "webview:build": "cd webview-ui && corepack npm run build",
+    "webview:build:production": "cd webview-ui && corepack npm run build -- --production",
+    "webview:watch": "cd webview-ui && corepack npm run watch",
     "dev": "concurrently \"npm run esbuild-watch\" \"npm run webview:watch\"",
-    "pretest": "npm run typecheck && npm run lint",
+    "pretest": "corepack npm run typecheck && corepack npm run lint",
     "lint": "eslint src --ext ts",
     "lint:stabilization": "eslint src --ext ts --max-warnings 100",
     "lint:fix": "eslint src --ext ts --fix",
@@ -2951,15 +3136,16 @@
     "sync:palette-surface": "node scripts/sync-palette-command-surface.mjs",
     "check:palette-surface": "node scripts/sync-palette-command-surface.mjs --check",
     "gate:contract-parity": "node scripts/sync-import-stack-parity-snapshot.mjs --check --require-canonical",
-    "sync:parity-snapshot": "npm run sync:shared-contracts",
-    "check:parity-snapshot": "npm run check:shared-contracts",
-    "validate:contracts": "npm run check:shared-contracts && npm run check:palette-surface && vitest run src/test/importStackParity.snapshot.test.ts src/test/runtimeCommandSurfaceParity.test.ts src/test/contractWorkflow.test.ts src/test/npmContractSupportMatrix.test.ts src/test/paletteCommandSurface.test.ts",
-    "test:parity-contract": "npm run validate:contracts",
+    "sync:parity-snapshot": "corepack npm run sync:shared-contracts",
+    "check:parity-snapshot": "corepack npm run check:shared-contracts",
+    "validate:contracts": "corepack npm run check:shared-contracts && corepack npm run check:palette-surface && vitest run src/test/importStackParity.snapshot.test.ts src/test/runtimeCommandSurfaceParity.test.ts src/test/contractWorkflow.test.ts src/test/npmContractSupportMatrix.test.ts src/test/paletteCommandSurface.test.ts",
+    "test:parity-contract": "corepack npm run validate:contracts",
     "test:claim-parity": "node scripts/check-website-extension-parity.mjs",
     "test:ai-reliability": "vitest run src/test/aiReliabilityGate.test.ts src/test/aiService.test.ts src/test/aiContextResolver.test.ts src/test/chatParticipant.test.ts src/test/driftGuard.test.ts src/test/incidentStudioPolicyGates.test.ts src/test/incidentStudioResponseValidator.test.ts src/test/incidentStudioTelemetry.test.ts src/test/studioRedesignContracts.test.ts",
     "stabilization:debt-budget": "node scripts/stabilization-debt-budget.mjs",
     "test:coverage": "vitest run --coverage",
     "test:stress:incident-studio": "vitest run src/test/incidentStudioLifecycle.test.ts src/test/incidentStudioStressGate.test.ts src/test/debounceWatchers.test.ts",
+    "benchmark:graph": "vitest run src/test/workspaceGraphPerformance.test.ts --reporter=verbose",
     "soak:studio-reload": "node scripts/studio-reload-soak.mjs",
     "test:vscode": "vscode-test",
     "release:stop-gate": "node scripts/release-stop-gate.mjs",
@@ -2967,24 +3153,25 @@
     "release:enterprise-matrix": "node scripts/enterprise-validation-matrix.mjs",
     "release:audit-gate": "node scripts/npm-audit-gate.mjs --level high",
     "sync:modules": "node scripts/sync-modules.mjs",
-    "prepackage": "npm run build",
-    "package": "vsce package",
-    "package:ci": "npm run build && vsce package --no-dependencies --out rapidkit-vscode-${npm_package_version}.vsix",
+    "prepackage": "corepack npm run build",
+    "package": "node scripts/vsce-package-runner.mjs package",
+    "package:ci": "corepack npm run build && node scripts/vsce-package-runner.mjs package --no-dependencies --out rapidkit-vscode-${npm_package_version}.vsix",
     "smoke:vsix-artifact": "node scripts/inspect-vsix-artifact.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix",
     "smoke:vsix-electron": "node scripts/vsix-electron-smoke.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix",
     "publish:guard": "node scripts/guard-vsix-publish.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix",
-    "publish:ci": "npm run publish:guard && vsce publish --packagePath rapidkit-vscode-${npm_package_version}.vsix",
-    "publish": "npm run publish:ci",
+    "publish:ci": "corepack npm run publish:guard && vsce publish --packagePath rapidkit-vscode-${npm_package_version}.vsix",
+    "publish": "corepack npm run publish:ci",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
-    "typecheck": "tsc --noEmit",
-    "validate": "npm run typecheck && npm run lint && npm run format:check && npm test",
+    "typecheck": "tsc --noEmit && corepack npm run webview:typecheck",
+    "webview:typecheck": "tsc -p webview-ui/tsconfig.json --noEmit",
+    "validate": "corepack npm run typecheck && corepack npm run lint && corepack npm run format:check && corepack npm test",
     "prepare": "husky"
   },
   "dependencies": {
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.6.0",
     "archiver": "^7.0.1",
-    "axios": "^1.13.5",
+    "axios": "^1.18.1",
     "chalk": "^5.3.0",
     "execa": "^9.3.1",
     "fs-extra": "^11.2.0",

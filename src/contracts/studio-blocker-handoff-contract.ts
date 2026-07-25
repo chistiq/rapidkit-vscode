@@ -43,9 +43,17 @@ export type StudioBlockerHandoff = {
   cardId: string;
   cardLabel?: string;
   cardStatus: 'pass' | 'warn' | 'fail' | 'missing';
+  /** Contract-backed release posture. Advisory blockers may be present while false. */
+  blocking?: boolean;
   blockers: string[];
   artifactPath: string;
   sourceCommand: string;
+  dashboardCommandId?: string;
+  executionChannel?: 'terminal' | 'background';
+  capabilityGate?: string;
+  safetyRisk?: 'read' | 'write' | 'destructive';
+  safetyConfirmation?: string;
+  safetyRefreshCommands?: string[];
   scope: 'workspace' | 'project';
   stderrTail?: string;
   exitCode?: number | null;
@@ -94,6 +102,44 @@ export function isStudioBlockerHandoff(value: unknown): value is StudioBlockerHa
     return false;
   }
   if (typeof record.sourceCommand !== 'string') {
+    return false;
+  }
+  if (
+    record.blocking !== undefined &&
+    record.blocking !== null &&
+    typeof record.blocking !== 'boolean'
+  ) {
+    return false;
+  }
+  if (
+    record.executionChannel != null &&
+    record.executionChannel !== 'terminal' &&
+    record.executionChannel !== 'background'
+  ) {
+    return false;
+  }
+  if (record.dashboardCommandId != null && typeof record.dashboardCommandId !== 'string') {
+    return false;
+  }
+  if (record.capabilityGate != null && typeof record.capabilityGate !== 'string') {
+    return false;
+  }
+  if (
+    record.safetyRisk != null &&
+    record.safetyRisk !== 'read' &&
+    record.safetyRisk !== 'write' &&
+    record.safetyRisk !== 'destructive'
+  ) {
+    return false;
+  }
+  if (record.safetyConfirmation != null && typeof record.safetyConfirmation !== 'string') {
+    return false;
+  }
+  if (
+    record.safetyRefreshCommands != null &&
+    (!Array.isArray(record.safetyRefreshCommands) ||
+      !record.safetyRefreshCommands.every((entry) => typeof entry === 'string'))
+  ) {
     return false;
   }
   if (record.scope !== 'workspace' && record.scope !== 'project') {

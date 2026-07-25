@@ -27,6 +27,10 @@ vi.mock('../utils/terminalExecutor', () => ({
   runShellCommandInTerminal: vi.fn(),
 }));
 
+vi.mock('../core/gatedRapidkitTerminal', () => ({
+  runGatedRapidkitCommandsInTerminal: terminalMock.mockResolvedValue(true),
+}));
+
 import { registerWorkspaceOperationsCommands } from '../commands/workspaceOperations';
 
 function setupHarness() {
@@ -67,7 +71,10 @@ describe('workspace foundation ensure command', () => {
     expect(terminalMock).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: '/tmp/team-ws',
-        commands: [['workspace', 'foundation', 'ensure']],
+        commands: [
+          ['workspace', 'foundation', 'ensure'],
+          ['workspace', 'contract', 'inspect', '--json'],
+        ],
       })
     );
   });
@@ -87,7 +94,10 @@ describe('workspace foundation ensure command', () => {
     );
     expect(terminalMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        commands: [['workspace', 'foundation', 'ensure', '--force']],
+        commands: [
+          ['workspace', 'foundation', 'ensure', '--force'],
+          ['workspace', 'contract', 'inspect', '--json'],
+        ],
       })
     );
   });

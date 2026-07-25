@@ -356,7 +356,7 @@ export function CreateProjectModal({ isOpen, framework, availableKits, onClose, 
                         <EnterpriseModalNotice tone="info">
                             <Package size={14} />
                             <span>
-                                Uses RapidKit npm <code>create frontend {framework}</code> with the
+                                Uses Workspai CLI <code>create frontend {framework}</code> with the
                                 official upstream generator (no RapidKit kit catalog entry).
                             </span>
                         </EnterpriseModalNotice>

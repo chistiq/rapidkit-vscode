@@ -6,6 +6,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs-extra';
 import * as path from 'path';
+import * as crypto from 'node:crypto';
 import { type SidebarActionSurfaceMeta } from '../../contracts/sidebarActionSurface';
 import { createExtensionWebviewMessage } from '../../contracts/webviewProtocol';
 import { buildReactWebviewHtml } from './buildReactWebviewHtml';
@@ -19,7 +20,10 @@ import {
   type ActionsWebviewStudioActionHost,
 } from './actionsWebviewStudioActionHost';
 import { WorkspaceUsageTracker } from '../../utils/workspaceUsageTracker';
-import { askConfiguredAIProvider } from '../../core/aiProviderService';
+import {
+  askConfiguredAIProvider,
+  askConfiguredAIProviderForToolAction,
+} from '../../core/aiProviderService';
 import {
   listAvailableModels,
   parseCreationIntent,
@@ -29,6 +33,7 @@ import {
   type AIConversationHistoryEntry,
   type AIModalContext,
   type AICreationPlan,
+  validateCreationPlanForExecution,
   UnsupportedCreationStackError,
 } from '../../core/aiService';
 import { resolveNewWorkspacePath } from '../../core/workspacePaths';
@@ -39,46 +44,87 @@ import { WorkspaceManager } from '../../core/workspaceManager';
 import { readWorkspaiSettings, setWorkspaiPreferredModel } from '../../core/workspaiSettingsBridge';
 import { resolvePreferredAIModalContext } from '../../core/aiContextResolver';
 import { resolveRapidkitExecutionPlan } from '../../core/incidentInlineCommandRunner';
+import {
+  buildStudioDependencyUpgradeCommand,
+  buildStudioDependencySecurityCommand,
+  parseStudioDependencyUpgradeCandidates,
+  resolveStudioDependencySecurityTarget,
+  type StudioDependencyRepairAttempt,
+  type StudioDependencyUpgradeCandidate,
+} from '../../core/studioDependencySecurity.js';
 import { buildCoreRapidkitShellCommand, runCommandsInTerminal } from '../../utils/terminalExecutor';
+import { buildRapidkitCommand } from '../../utils/platformCapabilities';
 import { createWorkspaceCommand } from '../../commands/createWorkspace';
 import type { ScaffoldFramework } from '../../core/scaffoldKits';
 import {
   isStudioBlockerHandoff,
   type StudioBlockerHandoff,
 } from '../../contracts/studio-blocker-handoff-contract.js';
-import { buildSidebarStudioPrompt } from '../../core/sidebarStudioFixPrompt.js';
 import { executeStudioActionById } from '../panels/incidentStudioActionBridge.js';
-import { pickStudioFixActionId } from '../../core/studioBlockerHandoffBuilder.js';
+import {
+  buildStudioBlockerHandoff,
+  pickStudioFixActionId,
+} from '../../core/studioBlockerHandoffBuilder.js';
+import { shouldUseEvidencePatchRepair } from '../../core/studioBlockerFixRouting.js';
 import { recordStudioBlockerCommandRun } from '../../core/studioBlockerCommandLedger.js';
 import { runRapidkitStreaming } from '../../core/streamingRapidkitRunner.js';
+import { gateIncidentStudioRapidkitCommand } from '../../core/rapidkitEnterpriseCliGate.js';
 import { extractDoctorFixResult } from '../../core/doctorFixResultReader.js';
 import { resolveStudioDoctorFixInvocation } from '../../core/studioDoctorFixCommand.js';
 import {
   applyBootstrapComplianceRemediation,
   normalizeBootstrapComplianceCommand,
 } from '../../core/bootstrapComplianceRemediation.js';
-import { runIncidentInlineCommand } from '../panels/incidentStudioInlineCommandBridge.js';
+import {
+  isMutatingRapidkitCliCommand,
+  runIncidentInlineCommand,
+} from '../panels/incidentStudioInlineCommandBridge.js';
+import { resolveIncidentStudioTelemetry } from '../panels/incidentStudioTelemetryBridge.js';
+import {
+  resolveGovernedStudioRepairMutationBlockReason,
+  resolveStudioMutationBlockReason,
+} from '../panels/incidentStudioMutationGate.js';
 import type { StudioActionId } from '../../core/studioActionCommands.js';
 import {
+  dashboardEvidenceCardIsBlocking,
   formatStudioCardRefreshToast,
   refreshDashboardAfterStudioVerify,
   type StudioSidebarDashboardRefreshResult,
 } from '../../core/studioSidebarDashboardRefresh.js';
+import { buildDashboardEvidenceBundle } from '../../core/dashboardEvidenceBridge.js';
+import { buildStudioIncidentGraph } from '../../core/studioIncidentGraph.js';
+import { STUDIO_CANONICAL_INTELLIGENCE_COMMAND } from '../../core/studioCanonicalIntelligenceRepair.js';
+import { resolveWorkspaceIntelligenceRunMilestone } from '../../core/workspaceIntelligenceChainContract.js';
 import {
+  clearDoctorRemediationPlanCache,
   readDoctorRemediationPlanForStudio,
   type DoctorRemediationPlanStepView,
 } from '../../core/doctorRemediationPlanReader.js';
+import { resolveDashboardCommandContractByVscodeCommand } from '../../core/dashboardCommandContracts.js';
+import { gateDashboardCommandCapability } from '../../core/dashboardCommandCapabilityGate.js';
+import { resolveDashboardCommandExecutionPlan } from '../../core/dashboardCommandExecutionPlan.js';
 import { applyDoctorRemediationStep } from '../../core/doctorRemediationApply.js';
 import {
   applySidebarPendingPatches,
-  executeSidebarApplyDebugPatch,
-  type SidebarPatchBridgeResult,
+  collectSidebarStudioRepairEvidence,
 } from '../../core/sidebarStudioPatchBridge.js';
+import type { StudioEvidenceRefreshCommandId } from '../../core/sidebarStudioAgentRuntime.js';
+import type { StudioPatchTransactionResult } from '../../core/studioPatchTransaction.js';
+import { studioAgentRepairIsComplete } from '../../core/sidebarStudioAgentRuntime.js';
 import {
-  extractPatchesFromAiResponse,
+  applyPatches,
   normalizePatchesForWorkspaceScope,
+  preparePatchesForReview,
+  rollbackAppliedPatches,
   type FilePatch,
+  type MultiFilePatchResult,
 } from '../../core/patchApplyEngine.js';
+import { computeLineDiff } from '../panels/incidentStudioVerifyDiff.js';
+import {
+  clearSidebarPendingPatches,
+  readSidebarPendingPatches,
+  saveSidebarPendingPatches,
+} from '../../core/sidebarStudioRepairState.js';
 import {
   dispatchSidebarShipLoopStep,
   isSidebarShipLoopStepId,
@@ -99,6 +145,204 @@ import {
 } from '../../core/sidebarStudioAuditBridge.js';
 import { recordRetentionMilestone } from '../../core/retentionMilestones.js';
 import { WelcomePanel } from '../panels/welcomePanel.js';
+import { resolveWorkspaceArtifactPath } from '../../core/workspaceIntelligencePaths.js';
+import {
+  isWorkspaiAssistantMode,
+  resolveWorkspaiAssistantModeContract,
+  type WorkspaiAssistantMode,
+} from '../../core/assistantModeContract.js';
+import { StudioAgentSession } from '../../core/studioAgentSession.js';
+import { VSCodeStudioAgentSessionStore } from '../../core/studioAgentSessionStore.js';
+import { ContractStudioAgentModelAdapter } from '../../core/studioAgentModelProtocol.js';
+import {
+  createStudioAgentWorkspaiToolRegistry,
+  type StudioAgentWorkspaiToolHost,
+} from '../../core/studioAgentWorkspaiTools.js';
+import { inspectStudioAgentFiles } from '../../core/sidebarStudioAgentRuntime.js';
+import {
+  resolveStudioWorkspaceCommandPlan,
+  runStudioWorkspaceCommand,
+  type StudioWorkspaceCommandRequest,
+} from '../../core/studioWorkspaceCommand.js';
+import {
+  authorizeStudioWorkspacePatchTargets,
+  deleteInspectedStudioWorkspaceFiles,
+} from '../../core/studioWorkspaceFileTransactions.js';
+
+const PYTHON_ENGINE_REQUIRED_CREATION_PROFILES = new Set(['python-only', 'polyglot', 'enterprise']);
+
+function shouldSkipPythonEngineForCreationProfile(profile: string | undefined): boolean {
+  return !PYTHON_ENGINE_REQUIRED_CREATION_PROFILES.has(profile ?? 'minimal');
+}
+
+function preserveAllAgentConsumersForStudioRefresh(cliArgs: readonly string[]): string[] {
+  const args = [...cliArgs];
+  const targetIndex = args.indexOf('--target');
+  if (targetIndex >= 0 && targetIndex + 1 < args.length) {
+    args[targetIndex + 1] = 'all';
+  }
+  return args;
+}
+
+const STUDIO_WORKSPACE_FILE_EXCLUDE =
+  '{**/.git/**,**/node_modules/**,**/vendor/**,**/dist/**,**/build/**,**/target/**,**/.venv/**,**/.workspai/cache/**,**/.workspai/snapshots/**,**/*.tmp}';
+
+async function discoverStudioWorkspaceFiles(input: {
+  workspacePath: string;
+  glob?: string;
+  limit?: number;
+}): Promise<Array<{ path: string; size: number }>> {
+  const limit = Math.min(Math.max(Math.trunc(input.limit ?? 200), 1), 500);
+  const requestedGlob = input.glob?.trim() || '**/*';
+  if (
+    path.isAbsolute(requestedGlob) ||
+    /(?:^|[\\/])\.\.(?:[\\/]|$)/.test(requestedGlob) ||
+    /[\0\r\n]/.test(requestedGlob)
+  ) {
+    throw new Error('Studio workspace discovery glob must stay inside the selected workspace.');
+  }
+  const uris = await vscode.workspace.findFiles(
+    new vscode.RelativePattern(input.workspacePath, requestedGlob),
+    STUDIO_WORKSPACE_FILE_EXCLUDE,
+    limit
+  );
+  const files: Array<{ path: string; size: number }> = [];
+  for (const uri of uris) {
+    try {
+      const stat = await vscode.workspace.fs.stat(uri);
+      if ((stat.type & vscode.FileType.File) !== 0) {
+        files.push({
+          path: path.relative(input.workspacePath, uri.fsPath).replace(/\\/g, '/'),
+          size: stat.size,
+        });
+      }
+    } catch {
+      // Transient files are omitted from the discovery snapshot.
+    }
+  }
+  return files.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function studioDiagnosticSeverityName(
+  severity: vscode.DiagnosticSeverity
+): 'error' | 'warning' | 'information' | 'hint' {
+  if (severity === vscode.DiagnosticSeverity.Error) {
+    return 'error';
+  }
+  if (severity === vscode.DiagnosticSeverity.Warning) {
+    return 'warning';
+  }
+  if (severity === vscode.DiagnosticSeverity.Information) {
+    return 'information';
+  }
+  return 'hint';
+}
+
+function inspectStudioWorkspaceDiagnostics(input: {
+  workspacePath: string;
+  paths?: string[];
+  severities?: Array<'error' | 'warning' | 'information' | 'hint'>;
+}): Array<Record<string, unknown>> {
+  const allowedPaths = input.paths?.length
+    ? new Set(input.paths.map((entry) => entry.replace(/\\/g, '/')))
+    : undefined;
+  const allowedSeverities = new Set(input.severities ?? ['error', 'warning']);
+  const diagnostics: Array<Record<string, unknown>> = [];
+  for (const [uri, entries] of vscode.languages.getDiagnostics()) {
+    const relativePath = path.relative(input.workspacePath, uri.fsPath).replace(/\\/g, '/');
+    if (
+      relativePath.startsWith('../') ||
+      path.isAbsolute(relativePath) ||
+      (allowedPaths && !allowedPaths.has(relativePath))
+    ) {
+      continue;
+    }
+    for (const diagnostic of entries) {
+      const severity = studioDiagnosticSeverityName(diagnostic.severity);
+      if (!allowedSeverities.has(severity)) {
+        continue;
+      }
+      diagnostics.push({
+        path: relativePath,
+        severity,
+        message: diagnostic.message,
+        source: diagnostic.source,
+        code:
+          typeof diagnostic.code === 'object' && diagnostic.code
+            ? diagnostic.code.value
+            : diagnostic.code,
+        range: {
+          start: {
+            line: diagnostic.range.start.line + 1,
+            column: diagnostic.range.start.character + 1,
+          },
+          end: {
+            line: diagnostic.range.end.line + 1,
+            column: diagnostic.range.end.character + 1,
+          },
+        },
+      });
+      if (diagnostics.length >= 250) {
+        return diagnostics;
+      }
+    }
+  }
+  return diagnostics;
+}
+
+async function inspectStudioWorkspaceChanges(input: {
+  workspacePath: string;
+  paths?: string[];
+}): Promise<Record<string, unknown>> {
+  const pathArgs = input.paths?.length ? ['--', ...input.paths] : [];
+  const statusPlan = resolveStudioWorkspaceCommandPlan({
+    workspacePath: input.workspacePath,
+    request: { executable: 'git', args: ['status', '--short'], purpose: 'inspect' },
+  });
+  const diffPlan = resolveStudioWorkspaceCommandPlan({
+    workspacePath: input.workspacePath,
+    request: {
+      executable: 'git',
+      args: ['diff', '--no-ext-diff', '--unified=3', ...pathArgs],
+      purpose: 'inspect',
+    },
+  });
+  const [status, diff] = await Promise.all([
+    runStudioWorkspaceCommand(statusPlan),
+    runStudioWorkspaceCommand(diffPlan),
+  ]);
+  return {
+    status: status.stdout,
+    diff: diff.stdout,
+    statusExitCode: status.exitCode,
+    diffExitCode: diff.exitCode,
+  };
+}
+
+async function captureStudioWorkspaceChangeSnapshot(workspacePath: string): Promise<
+  | {
+      fingerprint: string;
+      changedPaths: string[];
+    }
+  | undefined
+> {
+  try {
+    const observation = await inspectStudioWorkspaceChanges({ workspacePath });
+    if (observation.statusExitCode !== 0 || observation.diffExitCode !== 0) {
+      return undefined;
+    }
+    const status = typeof observation.status === 'string' ? observation.status : '';
+    return {
+      fingerprint: JSON.stringify(observation),
+      changedPaths: status
+        .split(/\r?\n/)
+        .map((line) => line.slice(3).trim())
+        .filter(Boolean),
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 type SidebarStudioActionFailurePayload = {
   sessionId?: string;
@@ -108,6 +352,12 @@ type SidebarStudioActionFailurePayload = {
   title: string;
   summary: string;
   commandText?: string;
+  dashboardCommandId?: string;
+  executionChannel?: 'terminal' | 'background';
+  capabilityGate?: string;
+  safetyRisk?: 'read' | 'write' | 'destructive';
+  safetyConfirmation?: string;
+  safetyRefreshCommands?: string[];
   exitCode?: number | null;
   stderrTail?: string;
   topBlocker?: string;
@@ -117,8 +367,37 @@ type SidebarStudioActionFailurePayload = {
   stepId?: unknown;
 };
 
+type StudioAgentPatchTransaction = {
+  workspacePath: string;
+  cardId: string;
+  sessionId?: string;
+  patchResult: MultiFilePatchResult;
+};
+
 function optionalTrimmedString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function studioCommandLedgerMetadata(handoff: StudioBlockerHandoff): {
+  dashboardCommandId?: string;
+  executionChannel?: 'terminal' | 'background';
+  capabilityGate?: string;
+  safetyRisk?: 'read' | 'write' | 'destructive';
+  safetyConfirmation?: string;
+  safetyRefreshCommands?: string[];
+  blockerSignature: string;
+} {
+  return {
+    blockerSignature: handoff.blockerSignature,
+    ...(handoff.dashboardCommandId ? { dashboardCommandId: handoff.dashboardCommandId } : {}),
+    ...(handoff.executionChannel ? { executionChannel: handoff.executionChannel } : {}),
+    ...(handoff.capabilityGate ? { capabilityGate: handoff.capabilityGate } : {}),
+    ...(handoff.safetyRisk ? { safetyRisk: handoff.safetyRisk } : {}),
+    ...(handoff.safetyConfirmation ? { safetyConfirmation: handoff.safetyConfirmation } : {}),
+    ...(handoff.safetyRefreshCommands?.length
+      ? { safetyRefreshCommands: handoff.safetyRefreshCommands }
+      : {}),
+  };
 }
 
 function errorMessage(error: unknown): string {
@@ -198,13 +477,28 @@ function ensureDoctorRemediationPlanRefreshCommand(command: string): string {
   return `${trimmed} --plan`;
 }
 
-function buildArtifactRemediationPlanCommand(): string {
-  return 'npx rapidkit workspace remediation-plan --ci --json --write --include-paths';
+function resolveArtifactRemediationPlanExecution(): {
+  commandText: string;
+  dashboardCommandId: string;
+  executionChannel?: 'terminal' | 'background';
+  capabilityGate?: string;
+} {
+  const plan = resolveDashboardCommandExecutionPlan('workspaceRemediationPlan');
+  if (plan.cliArgs.length === 0) {
+    throw new Error('Workspace repair plan command is missing CLI args.');
+  }
+  return {
+    commandText: buildRapidkitCommand(plan.cliArgs),
+    dashboardCommandId: plan.commandId,
+    executionChannel: plan.executionChannel,
+    capabilityGate: plan.capabilityRequirement?.label,
+  };
 }
 
 function remediationLoopProgressForApply(input: {
   verifySucceeded: boolean;
   cardStatus?: string;
+  cardBlocking?: boolean;
   refreshedPlanSteps: number;
   failureSummary?: string;
 }): {
@@ -214,6 +508,14 @@ function remediationLoopProgressForApply(input: {
   nextAction?: 'continue-remediation' | 'auto-fix';
   nextActionLabel?: string;
 } {
+  if (input.cardBlocking === false) {
+    return {
+      status: 'done',
+      title: 'Verified with attention',
+      summary:
+        'Evidence refreshed. Remaining findings are advisory and do not block the workspace.',
+    };
+  }
   if (!input.verifySucceeded) {
     if (input.refreshedPlanSteps > 0) {
       return {
@@ -317,7 +619,10 @@ async function resolveProjectPathFromRemediationStep(input: {
         ? resolved
         : path.dirname(resolved);
     while (cursor.startsWith(`${workspacePath}${path.sep}`)) {
-      if (await fs.pathExists(path.join(cursor, '.rapidkit', 'project.json'))) {
+      if (
+        (await fs.pathExists(path.join(cursor, '.workspai', 'project.json'))) ||
+        (await fs.pathExists(path.join(cursor, '.rapidkit', 'project.json')))
+      ) {
         return cursor;
       }
       cursor = path.dirname(cursor);
@@ -330,7 +635,8 @@ async function resolveProjectPathFromRemediationStep(input: {
     const projectCandidate = path.join(workspacePath, firstSegment);
     if (
       (await fs.pathExists(projectCandidate)) &&
-      ((await fs.pathExists(path.join(projectCandidate, '.rapidkit', 'project.json'))) ||
+      ((await fs.pathExists(path.join(projectCandidate, '.workspai', 'project.json'))) ||
+        (await fs.pathExists(path.join(projectCandidate, '.rapidkit', 'project.json'))) ||
         (await fs.pathExists(path.join(projectCandidate, 'package.json'))) ||
         (await fs.pathExists(path.join(projectCandidate, 'pyproject.toml'))) ||
         (await fs.pathExists(path.join(projectCandidate, 'go.mod'))) ||
@@ -387,6 +693,16 @@ function buildSidebarStudioActionFailurePayload(input: {
     title,
     summary,
     ...(commandText ? { commandText } : {}),
+    ...(optionalTrimmedString(input.handoff?.dashboardCommandId)
+      ? { dashboardCommandId: input.handoff?.dashboardCommandId?.trim() }
+      : {}),
+    ...(input.handoff?.executionChannel
+      ? { executionChannel: input.handoff.executionChannel }
+      : {}),
+    ...(optionalTrimmedString(input.handoff?.capabilityGate)
+      ? { capabilityGate: input.handoff?.capabilityGate?.trim() }
+      : {}),
+    ...(input.handoff ? studioCommandLedgerMetadata(input.handoff) : {}),
     ...(typeof input.exitCode === 'number' || input.exitCode === null
       ? { exitCode: input.exitCode }
       : {}),
@@ -404,12 +720,20 @@ function serializeSidebarPatchReviewItems(patches: FilePatch[]): Array<{
   status: string;
   isNewFile?: boolean;
   failReason?: string;
+  diffLines: Array<{ type: 'added' | 'removed' | 'unchanged'; content: string }>;
 }> {
   return patches.map((patch) => ({
     relativePath: patch.relativePath,
     status: patch.status,
     isNewFile: patch.isNewFile,
     failReason: patch.failReason,
+    diffLines: computeLineDiff(
+      (patch.originalContent ?? '').split(/\r?\n/),
+      patch.patchedContent.split(/\r?\n/)
+    )
+      .filter((line) => line.type !== 'unchanged' || line.content.trim().length > 0)
+      .slice(0, 400)
+      .map(({ type, content }) => ({ type, content })),
   }));
 }
 
@@ -420,7 +744,7 @@ function sidebarPatchReviewKey(cardId: string, sessionId?: string): string {
 function buildSidebarPatchAuditMetadata(input: {
   sourceAction: 'auto-fix' | 'apply-patch';
   reviewRequired: boolean;
-  patchResult?: SidebarPatchBridgeResult['patchResult'];
+  patchResult?: StudioPatchTransactionResult['patchResult'];
   appliedFixes?: Array<{ path: string; action: string; outcome: string }>;
   rollbackCommand?: string | null;
 }): SidebarStudioPatchAuditMetadata | undefined {
@@ -448,7 +772,10 @@ async function readWorkspaceProfileFromManifest(
   if (!workspacePath) {
     return undefined;
   }
-  const manifestPath = path.join(workspacePath, '.rapidkit', 'workspace.json');
+  const manifestPath = await resolveWorkspaceArtifactPath(
+    workspacePath,
+    '.workspai/workspace.json'
+  );
   try {
     if (!(await fs.pathExists(manifestPath))) {
       return undefined;
@@ -487,7 +814,7 @@ async function readProjectFrameworkFromMarker(
     return undefined;
   }
   try {
-    const markerPath = path.join(projectPath, '.rapidkit', 'project.json');
+    const markerPath = await resolveWorkspaceArtifactPath(projectPath, '.workspai/project.json');
     if (!(await fs.pathExists(markerPath))) {
       return undefined;
     }
@@ -717,6 +1044,14 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
   private _activeBlockerHandoff?: StudioBlockerHandoff;
   private _pendingSidebarPatches = new Map<string, FilePatch[]>();
   private _lastSidebarStudioAuditInput?: RecordSidebarStudioFixAuditInput;
+  private _studioEvidenceWatcher?: vscode.FileSystemWatcher;
+  private _studioEvidenceWatchWorkspace?: string;
+  private _studioEvidenceWatchSessionId?: string;
+  private _studioEvidencePulseTimer?: NodeJS.Timeout;
+  private _studioEvidenceGeneration = 0;
+  private _studioEvidenceChangedPaths = new Set<string>();
+  private readonly _activeStudioAgentSessions = new Map<string, StudioAgentSession>();
+  private readonly _studioAgentPatchTransactions = new Map<string, StudioAgentPatchTransaction>();
 
   constructor(
     private readonly _extensionUri: vscode.Uri,
@@ -762,6 +1097,8 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       runSidebarStudioAction: (data) => this._runSidebarStudioAction(data),
       focusPrimarySidebarView: (data) => this._focusPrimarySidebarView(data),
       openDashboardSection: (data) => this._openDashboardSection(data),
+      openWorkspaceFile: (data) => this._openSidebarWorkspaceFile(data),
+      undoAgentPatch: (data) => this._undoStudioAgentPatch(data),
       sendInlineScope: () => this._sendInlineScope(),
       sendInlineModels: () => this._sendInlineModels(),
       setPreferredModel: async (modelId) => {
@@ -783,17 +1120,26 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       },
       getPendingPatches: (cardId, sessionId) =>
         this._pendingSidebarPatches.get(sidebarPatchReviewKey(cardId, sessionId)) ??
-        this._pendingSidebarPatches.get(cardId),
+        this._pendingSidebarPatches.get(cardId) ??
+        (this._context
+          ? (readSidebarPendingPatches(this._context, sidebarPatchReviewKey(cardId, sessionId)) ??
+            readSidebarPendingPatches(this._context, cardId))
+          : undefined),
       deletePendingPatches: (cardId, sessionId) => {
-        this._pendingSidebarPatches.delete(sidebarPatchReviewKey(cardId, sessionId));
+        const key = sidebarPatchReviewKey(cardId, sessionId);
+        this._pendingSidebarPatches.delete(key);
         this._pendingSidebarPatches.delete(cardId);
+        if (this._context) {
+          void clearSidebarPendingPatches(this._context, key);
+          void clearSidebarPendingPatches(this._context, cardId);
+        }
       },
       postInlineCreate: (command, data) => this._postInlineCreate(command, data),
       retryLastSidebarStudioAudit: (sessionId) => this._retryLastSidebarStudioAudit(sessionId),
-      runSidebarAutoFix: (handoff, sessionId, payloadScope) =>
-        this._runSidebarAutoFix(handoff, sessionId, payloadScope),
-      finalizeSidebarPatchBridgeResult: (handoff, sessionId, result, sourceAction, scope) =>
-        this._finalizeSidebarPatchBridgeResult(handoff, sessionId, result, sourceAction, scope),
+      runSidebarAutoFix: (handoff, sessionId, payloadScope, requestedModelId) =>
+        this._runSidebarAutoFix(handoff, sessionId, payloadScope, requestedModelId),
+      finalizeStudioPatchTransaction: (handoff, sessionId, result, sourceAction, scope) =>
+        this._finalizeStudioPatchTransaction(handoff, sessionId, result, sourceAction, scope),
       auditSidebarStudioFix: (input) => this._auditSidebarStudioFix(input),
       refreshSidebarShipLoop: (input) => this._refreshSidebarShipLoop(input),
       finalizeStudioVerifyHandoff: (input) => this._finalizeStudioVerifyHandoff(input),
@@ -811,6 +1157,87 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
 
   public refreshScope(): void {
     void this._sendInlineScope();
+  }
+
+  private async _openSidebarWorkspaceFile(data: unknown): Promise<void> {
+    const record =
+      data && typeof data === 'object' && !Array.isArray(data)
+        ? (data as Record<string, unknown>)
+        : {};
+    const relativePath = typeof record.relativePath === 'string' ? record.relativePath.trim() : '';
+    const requestedRoot =
+      typeof record.workspacePath === 'string' ? record.workspacePath.trim() : '';
+    const workspacePath =
+      requestedRoot || (await resolvePreferredAIModalContext()).workspaceRootPath || '';
+    if (!workspacePath || !relativePath || path.isAbsolute(relativePath)) {
+      throw new Error('A workspace-relative file path is required.');
+    }
+    const absolutePath = path.resolve(workspacePath, relativePath);
+    const boundary = path.relative(path.resolve(workspacePath), absolutePath);
+    if (!boundary || boundary.startsWith('..') || path.isAbsolute(boundary)) {
+      if (!boundary) {
+        throw new Error('The workspace root is not an editable file.');
+      }
+      throw new Error('The requested file is outside the active workspace.');
+    }
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(absolutePath));
+    await vscode.window.showTextDocument(document, { preview: true, preserveFocus: false });
+  }
+
+  private _rememberStudioAgentPatchTransaction(
+    transactionId: string,
+    transaction: StudioAgentPatchTransaction
+  ): void {
+    this._studioAgentPatchTransactions.set(transactionId, transaction);
+    while (this._studioAgentPatchTransactions.size > 40) {
+      const oldest = this._studioAgentPatchTransactions.keys().next().value as string | undefined;
+      if (!oldest) {
+        break;
+      }
+      this._studioAgentPatchTransactions.delete(oldest);
+    }
+  }
+
+  private async _undoStudioAgentPatch(data: unknown): Promise<void> {
+    const record =
+      data && typeof data === 'object' && !Array.isArray(data)
+        ? (data as Record<string, unknown>)
+        : {};
+    const transactionId =
+      typeof record.transactionId === 'string' ? record.transactionId.trim() : '';
+    const transaction = transactionId
+      ? this._studioAgentPatchTransactions.get(transactionId)
+      : undefined;
+    if (!transaction) {
+      this._postInlineCreate('sidebarStudioAgentPatchRollback', {
+        transactionId,
+        ok: false,
+        error: 'This live edit transaction is no longer available for automatic Undo.',
+      });
+      return;
+    }
+    await this._assertSidebarStudioMutationAllowed({
+      workspacePath: transaction.workspacePath,
+      actionLabel: 'Studio Agent patch rollback',
+    });
+    const result = await rollbackAppliedPatches({
+      workspacePath: transaction.workspacePath,
+      patches: transaction.patchResult.patches,
+    });
+    if (result.ok) {
+      this._studioAgentPatchTransactions.delete(transactionId);
+    }
+    this._postInlineCreate('sidebarStudioAgentPatchRollback', {
+      transactionId,
+      sessionId: transaction.sessionId,
+      cardId: transaction.cardId,
+      ...result,
+      ...(result.ok
+        ? { summary: `Undid ${result.restoredPaths.length} Agent edit(s).` }
+        : {
+            error: result.failedPaths.map((entry) => `${entry.path}: ${entry.reason}`).join('; '),
+          }),
+    });
   }
 
   public async revealSecondaryTab(
@@ -843,13 +1270,6 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     this._postInlineCreate('sidebarActivateTab', { tab, ...(payload ?? {}) });
     if (handoff) {
       this._postInlineCreate('sidebarBlockerHandoff', { handoff });
-      void this._postSidebarDoctorRemediationPlan({
-        handoff,
-        workspacePath:
-          payload?.workspace?.path ??
-          payload?.workspace?.workspaceRootPath ??
-          handoff.workspacePath,
-      });
     }
     if (tab === 'studio' && payload?.shipLoopIntent === 'release') {
       const workspacePath =
@@ -872,9 +1292,63 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     );
   }
 
+  private _ensureStudioEvidenceWatcher(handoff: StudioBlockerHandoff, sessionId?: string): void {
+    const workspacePath = handoff.workspacePath?.trim();
+    if (!workspacePath) {
+      return;
+    }
+    this._studioEvidenceWatchSessionId = sessionId;
+    if (this._studioEvidenceWatcher && this._studioEvidenceWatchWorkspace === workspacePath) {
+      return;
+    }
+    this._studioEvidenceWatcher?.dispose();
+    this._studioEvidenceWatcher = undefined;
+    this._studioEvidenceWatchWorkspace = workspacePath;
+    this._studioEvidenceGeneration = 0;
+    this._studioEvidenceChangedPaths.clear();
+
+    const watcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(workspacePath, '.workspai/**/*')
+    );
+    const schedulePulse = (uri: vscode.Uri) => {
+      const relativePath = path.relative(workspacePath, uri.fsPath).replace(/\\/g, '/');
+      if (
+        /(?:^|\/)\.[^/]+\.tmp$/i.test(relativePath) ||
+        /\.json\.\d+\.[0-9a-f-]+\.tmp$/i.test(relativePath) ||
+        /(?:^|\/)(?:cache|snapshots)(?:\/|$)/i.test(relativePath)
+      ) {
+        return;
+      }
+      this._studioEvidenceChangedPaths.add(relativePath);
+      if (this._studioEvidencePulseTimer) {
+        clearTimeout(this._studioEvidencePulseTimer);
+      }
+      this._studioEvidencePulseTimer = setTimeout(() => {
+        const changedPaths = [...this._studioEvidenceChangedPaths].sort();
+        this._studioEvidenceChangedPaths.clear();
+        this._studioEvidenceGeneration += 1;
+        this._postInlineCreate('sidebarStudioEvidencePulse', {
+          sessionId: this._studioEvidenceWatchSessionId,
+          cardId: this._activeBlockerHandoff?.cardId ?? handoff.cardId,
+          blockerSignature:
+            this._activeBlockerHandoff?.blockerSignature ?? handoff.blockerSignature,
+          generation: this._studioEvidenceGeneration,
+          observedAt: new Date().toISOString(),
+          changedPaths,
+          summary: `Evidence generation ${this._studioEvidenceGeneration} arrived: ${changedPaths.slice(0, 3).join(', ')}${changedPaths.length > 3 ? ` +${changedPaths.length - 3} more` : ''}`,
+        });
+      }, 180);
+    };
+    watcher.onDidCreate(schedulePulse);
+    watcher.onDidChange(schedulePulse);
+    watcher.onDidDelete(schedulePulse);
+    this._studioEvidenceWatcher = watcher;
+  }
+
   private async _postSidebarDoctorRemediationPlan(input: {
     handoff?: StudioBlockerHandoff;
     workspacePath?: string;
+    sessionId?: string;
   }): Promise<Awaited<ReturnType<typeof readDoctorRemediationPlanForStudio>>> {
     const workspacePath =
       input.workspacePath?.trim() ||
@@ -887,15 +1361,18 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     });
     this._postInlineCreate('sidebarStudioRemediationPlan', {
       cardId: input.handoff?.cardId,
+      sessionId: input.sessionId,
+      blockerSignature: input.handoff?.blockerSignature,
       plan,
     });
     return plan;
   }
 
-  private _postCreateTimelineStep(title: string, detail?: string): void {
+  private _postCreateTimelineStep(title: string, detail?: string, sessionId?: string): void {
     this._postInlineCreate('sidebarAiCreateProgress', {
       title,
       detail: detail ?? '',
+      sessionId,
     });
   }
 
@@ -983,7 +1460,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     rollbackCommand?: string;
     patchMetadata?: SidebarStudioPatchAuditMetadata;
   }): Promise<void> {
-    if (input.ok && input.kind !== 'ship-loop-step') {
+    if (input.ok && input.kind === 'verify-handoff') {
       void recordRetentionMilestone(this._context, 'first_blocker_fixed', {
         surface: 'studio',
       });
@@ -1138,18 +1615,23 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       typeof payloadRecord.stackFocus === 'string' && payloadRecord.stackFocus.trim().length > 0
         ? payloadRecord.stackFocus.trim()
         : undefined;
+    const sessionId =
+      typeof payloadRecord.sessionId === 'string' ? payloadRecord.sessionId.trim() : undefined;
+    const createTarget = payloadRecord.target === 'project' ? 'project' : 'workspace';
     if (!prompt) {
       return;
     }
     if (!this._context) {
       this._postInlineCreate('sidebarAiCreateError', {
         error: 'AI creation is not available until the extension context is ready.',
+        sessionId,
       });
       return;
     }
 
     this._postInlineCreate('sidebarAiCreateThinking', {
       label: 'Connecting to AI planner…',
+      sessionId,
     });
     try {
       const scope = resolveExplicitWorkspaceScope(payloadRecord.scope);
@@ -1160,7 +1642,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           : prompt;
       const { plan, modelId, planSource } = await parseCreationIntent(
         creationPrompt,
-        'workspace',
+        createTarget,
         undefined,
         workspacePath,
         undefined,
@@ -1190,15 +1672,17 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       if (planSource === 'heuristic') {
         this._postCreateTimelineStep(
           'Using local stack planner',
-          'AI is unavailable — inferring framework, kit, and modules from your description.'
+          'AI is unavailable — inferring framework, kit, and modules from your description.',
+          sessionId
         );
       } else {
         this._postCreateTimelineStep(
           'Drafted creation plan',
-          modelId ? `Model: ${modelId}` : 'Stack, framework, and modules mapped.'
+          modelId ? `Model: ${modelId}` : 'Stack, framework, and modules mapped.',
+          sessionId
         );
       }
-      this._postInlineCreate('sidebarAiCreatePlan', { plan, modelId, planSource });
+      this._postInlineCreate('sidebarAiCreatePlan', { plan, modelId, planSource, sessionId });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this._postInlineCreate('sidebarAiCreateError', {
@@ -1207,24 +1691,70 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           error instanceof UnsupportedCreationStackError ? error.stackLabel : undefined,
         createCapability:
           error instanceof UnsupportedCreationStackError ? error.capability : undefined,
+        sessionId,
       });
     }
   }
 
   private async _runInlineAICreateConfirm(payload: unknown): Promise<void> {
-    const plan =
+    const payloadRecord =
+      payload && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>)
+        : {};
+    const sessionId =
+      typeof payloadRecord.sessionId === 'string' ? payloadRecord.sessionId.trim() : undefined;
+    const rawPlan =
       payload && typeof payload === 'object' && 'plan' in payload
         ? ((payload as { plan?: unknown }).plan as AICreationPlan | undefined)
         : undefined;
-    if (!plan) {
-      this._postInlineCreate('sidebarAiCreateError', { error: 'No AI creation plan to execute.' });
+    if (!rawPlan) {
+      this._postInlineCreate('sidebarAiCreateError', {
+        error: 'No AI creation plan to execute.',
+        sessionId,
+      });
       return;
     }
 
     try {
+      const plan = validateCreationPlanForExecution(rawPlan);
+      if (plan.type === 'project') {
+        const scope = resolveExplicitWorkspaceScope(payloadRecord.scope);
+        const workspacePath = scope.workspacePath ?? (await ensureManagedDefaultWorkspace()).path;
+        this._postInlineCreate('sidebarAiCreateProgress', {
+          title: 'Creating project structure',
+          detail: `${plan.projectName} · ${plan.framework} · ${plan.kit}`,
+          sessionId,
+        });
+        await createProjectCommand(workspacePath, plan.framework, plan.projectName, plan.kit, {
+          suppressPostCreatePrompt: true,
+          silent: true,
+        });
+        this._postInlineCreate('sidebarAiCreateProgress', {
+          title: 'Syncing workspace intelligence',
+          detail: 'Refreshing workspace model and project evidence…',
+          sessionId,
+        });
+        await syncWorkspaceAfterInlineCreate(workspacePath);
+        await vscode.commands.executeCommand('workspai.refreshProjects');
+        this._postInlineCreate('sidebarAiCreateDone', {
+          plan,
+          workspacePath,
+          projects: [
+            {
+              name: plan.projectName,
+              framework: plan.framework,
+              kit: plan.kit,
+              path: path.join(workspacePath, plan.projectName),
+            },
+          ],
+          sessionId,
+        });
+        return;
+      }
       this._postInlineCreate('sidebarAiCreateProgress', {
         title: 'Creating workspace shell',
         detail: `Workspace: ${plan.workspaceName}`,
+        sessionId,
       });
 
       const profile = resolveCreationProfile(plan.profile, plan.framework);
@@ -1232,6 +1762,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         name: plan.workspaceName,
         profile,
         installMethod: plan.installMethod ?? 'auto',
+        skipPythonEngine: shouldSkipPythonEngineForCreationProfile(profile),
         initGit: true,
         policyMode: 'warn',
         dependencySharing: 'isolated',
@@ -1248,6 +1779,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       this._postInlineCreate('sidebarAiCreateProgress', {
         title: 'Creating project structure',
         detail: `${plan.projectName} · ${plan.framework} · ${plan.kit}`,
+        sessionId,
       });
       await createProjectCommand(workspacePath, plan.framework, plan.projectName, plan.kit, {
         suppressPostCreatePrompt: true,
@@ -1266,6 +1798,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         this._postInlineCreate('sidebarAiCreateProgress', {
           title: 'Creating companion project',
           detail: `${plan.secondaryProject.projectName} · ${plan.secondaryProject.framework}`,
+          sessionId,
         });
         await createProjectCommand(
           workspacePath,
@@ -1288,16 +1821,18 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           plan.suggestedModules.length > 0
             ? `Module suggestions captured: ${plan.suggestedModules.join(', ')}`
             : 'Workspace model and project evidence are ready.',
+        sessionId,
       });
       await syncWorkspaceAfterInlineCreate(workspacePath);
       this._postInlineCreate('sidebarAiCreateDone', {
         plan,
         workspacePath,
         projects: createdProjects,
+        sessionId,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this._postInlineCreate('sidebarAiCreateError', { error: message });
+      this._postInlineCreate('sidebarAiCreateError', { error: message, sessionId });
     }
   }
 
@@ -1307,11 +1842,14 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         ? (payload as Record<string, unknown>)
         : {};
     const mode = payloadRecord.mode === 'project' ? 'project' : 'workspace';
+    const sessionId =
+      typeof payloadRecord.sessionId === 'string' ? payloadRecord.sessionId.trim() : undefined;
     const name = typeof payloadRecord.name === 'string' ? payloadRecord.name.trim() : '';
     if (!name) {
       this._postInlineCreate('sidebarManualCreateResult', {
         status: 'failed',
         error: mode === 'project' ? 'Project name is required.' : 'Workspace name is required.',
+        sessionId,
       });
       return;
     }
@@ -1393,10 +1931,12 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       if (mode === 'project') {
         this._postInlineCreate('sidebarAiCreateThinking', {
           label: 'Preparing project scaffold…',
+          sessionId,
         });
         this._postCreateTimelineStep(
           'Validated project plan',
-          `${name} · ${frameworkKey} · ${kitName}`
+          `${name} · ${frameworkKey} · ${kitName}`,
+          sessionId
         );
 
         const scope = resolveExplicitWorkspaceScope(payloadRecord.scope);
@@ -1406,17 +1946,19 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         if (!workspacePath) {
           const ensured = await ensureManagedDefaultWorkspace();
           workspacePath = ensured.path;
-          this._postCreateTimelineStep('Using default workspace');
+          this._postCreateTimelineStep('Using default workspace', undefined, sessionId);
         } else {
           this._postCreateTimelineStep(
             'Creating project in workspace',
-            path.basename(workspacePath)
+            path.basename(workspacePath),
+            sessionId
           );
         }
 
         this._postCreateTimelineStep(
           'Running RapidKit scaffold',
-          `Generating files and installing dependencies for ${kitName}…`
+          `Generating files and installing dependencies for ${kitName}…`,
+          sessionId
         );
 
         const result = await cli.createProjectInWorkspace({
@@ -1435,11 +1977,16 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
 
         this._postCreateTimelineStep(
           'Syncing workspace intelligence',
-          'Refreshing workspace model and evidence…'
+          'Refreshing workspace model and evidence…',
+          sessionId
         );
         await syncWorkspaceAfterInlineCreate(workspacePath);
 
-        this._postCreateTimelineStep('Refreshing project explorer', 'Updating project list…');
+        this._postCreateTimelineStep(
+          'Refreshing project explorer',
+          'Updating project list…',
+          sessionId
+        );
         await vscode.commands.executeCommand('workspai.refreshProjects');
         await WelcomePanel.refreshDashboardForWorkspacePath(workspacePath);
 
@@ -1451,17 +1998,24 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           summary,
           workspacePath,
           projectPath: path.join(workspacePath, name),
+          sessionId,
         });
         return;
       }
 
       this._postInlineCreate('sidebarAiCreateThinking', {
         label: 'Preparing workspace shell…',
+        sessionId,
       });
-      this._postCreateTimelineStep('Validated workspace plan', `${name} · ${profile} profile`);
+      this._postCreateTimelineStep(
+        'Validated workspace plan',
+        `${name} · ${profile} profile`,
+        sessionId
+      );
       this._postCreateTimelineStep(
         'Creating workspace shell',
-        'Generating workspace files and governance defaults…'
+        'Generating workspace files and governance defaults…',
+        sessionId
       );
 
       await createWorkspaceCommand({
@@ -1473,6 +2027,10 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           payloadRecord.installMethod === 'pipx'
             ? payloadRecord.installMethod
             : 'auto',
+        skipPythonEngine:
+          typeof payloadRecord.skipPythonEngine === 'boolean'
+            ? payloadRecord.skipPythonEngine
+            : shouldSkipPythonEngineForCreationProfile(profile),
         initGit: payloadRecord.initGit !== false,
         policyMode: payloadRecord.policyMode === 'strict' ? 'strict' : 'warn',
         dependencySharing: payloadRecord.dependencySharing === 'shared' ? 'shared' : 'isolated',
@@ -1482,7 +2040,8 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
 
       this._postCreateTimelineStep(
         'Finalizing workspace',
-        'Workspace shell is ready for projects and evidence.'
+        'Workspace shell is ready for projects and evidence.',
+        sessionId
       );
       const workspacePath = resolveNewWorkspacePath(name);
       await syncWorkspaceAfterInlineCreate(workspacePath);
@@ -1494,6 +2053,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         profile,
         workspacePath,
         summary: name,
+        sessionId,
       });
     } catch (error) {
       this._postInlineCreate('sidebarManualCreateResult', {
@@ -1501,6 +2061,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         mode,
         name,
         error: error instanceof Error ? error.message : String(error),
+        sessionId,
       });
     }
   }
@@ -1759,34 +2320,19 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       typeof payloadRecord.modelId === 'string' && payloadRecord.modelId.trim().length > 0
         ? payloadRecord.modelId.trim()
         : undefined;
+    const assistantMode = isWorkspaiAssistantMode(payloadRecord.assistantMode)
+      ? payloadRecord.assistantMode
+      : 'agent';
+    const assistantModeContract = resolveWorkspaiAssistantModeContract(assistantMode);
     const sessionId =
       typeof payloadRecord.sessionId === 'string' && payloadRecord.sessionId.trim().length > 0
         ? payloadRecord.sessionId.trim()
         : undefined;
-    const studioMode =
-      payloadRecord.mode === 'verify' || payloadRecord.mode === 'prepare'
-        ? payloadRecord.mode
-        : 'investigate';
     const handoff =
       parseStudioBlockerHandoffPayload(payloadRecord.blockerHandoff) ?? this._activeBlockerHandoff;
     if (handoff) {
       this._activeBlockerHandoff = handoff;
     }
-    const rawHistory = Array.isArray(payloadRecord.history) ? payloadRecord.history : [];
-    const history: AIConversationHistoryEntry[] = rawHistory
-      .filter((entry): entry is AIConversationHistoryEntry => {
-        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-          return false;
-        }
-        const record = entry as Record<string, unknown>;
-        return (
-          (record.role === 'user' || record.role === 'assistant') &&
-          typeof record.content === 'string' &&
-          record.content.trim().length > 0
-        );
-      })
-      .slice(-8);
-
     if (!task) {
       return;
     }
@@ -1818,85 +2364,1773 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       });
       this._postInlineCreate('sidebarStudioThinking', {
         sessionId,
-        label: 'Preparing evidence-aware Studio plan...',
+        label:
+          assistantModeContract.intent === 'repair-plan'
+            ? 'Preparing an evidence-backed repair plan...'
+            : 'Preparing the autonomous evidence repair...',
       });
-      const remediationPlan = handoff
-        ? await readDoctorRemediationPlanForStudio({
-            workspacePath: handoff.workspacePath ?? aiContext.workspaceRootPath,
-            handoff,
-            maxSteps: 4,
-          })
-        : null;
-
-      const studioPrompt = buildSidebarStudioPrompt({
-        task,
-        handoff,
-        remediationPlan,
-        studioMode,
-      });
-      const prepared = await prepareAIConversation('ask', studioPrompt, aiContext, history);
-      let answer = '';
-      let modelId = '';
-
-      if (readWorkspaiSettings().aiProvider === 'openai-compatible') {
-        const response = await askConfiguredAIProvider(this._context, prepared.messages);
-        modelId = response.provider;
-        answer = response.text;
-        this._postInlineCreate('sidebarStudioChunk', { sessionId, text: response.text });
-      } else {
-        const streamResult = await streamAIResponse(
-          prepared.messages,
-          (chunk) => {
-            if (chunk.text) {
-              answer += chunk.text;
-              this._postInlineCreate('sidebarStudioChunk', { sessionId, text: chunk.text });
-            }
-          },
-          undefined,
-          requestedModelId
-        );
-        modelId = streamResult.modelId;
-      }
-
-      this._postInlineCreate('sidebarStudioDone', { sessionId, modelId, answer });
-      const answerWorkspacePath = handoff?.workspacePath ?? aiContext.workspaceRootPath;
-      if (handoff && answerWorkspacePath && answer.trim()) {
-        const chatPatches = normalizePatchesForWorkspaceScope({
-          workspacePath: answerWorkspacePath,
-          projectPath: handoff.projectPath ?? aiContext.projectRootPath,
-          patches: extractPatchesFromAiResponse(answer, {
-            actionId: `sidebar-chat-fix-${handoff.cardId}`,
-            workspacePath: answerWorkspacePath,
-          }),
+      const autonomousWorkspacePath = handoff?.workspacePath ?? aiContext.workspaceRootPath;
+      if (autonomousWorkspacePath) {
+        await this._runUnifiedAssistantSession({
+          task,
+          sessionId,
+          requestedModelId,
+          assistantMode,
+          workspacePath: autonomousWorkspacePath,
+          projectPath: handoff?.projectPath ?? aiContext.projectRootPath,
+          handoff,
         });
-        if (chatPatches.length > 0) {
-          this._pendingSidebarPatches.set(
-            sidebarPatchReviewKey(handoff.cardId, sessionId),
-            chatPatches.map((patch) => ({ ...patch, status: 'pending' as const }))
-          );
-          this._postInlineCreate('sidebarStudioPatchReview', {
-            sessionId,
-            cardId: handoff.cardId,
-            summary: `Studio found ${chatPatches.length} file patch(es) in the repair answer.`,
-            riskSummary: 'Review the AI-proposed file changes before applying them.',
-            patches: serializeSidebarPatchReviewItems(chatPatches),
-          });
-          this._postInlineCreate('sidebarStudioActionResult', {
-            sessionId,
-            cardId: handoff.cardId,
-            action: 'apply-patch',
-            status: 'review',
-            title: 'Patch review ready',
-            summary:
-              'I found file changes in the Studio answer. Review and apply the patch set to continue the repair loop.',
-            nextAction: undefined,
-          });
-        }
+        return;
       }
+      throw new Error('Select a Workspai workspace before starting an Assistant session.');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this._postInlineCreate('sidebarStudioError', { sessionId, error: message });
     }
+  }
+
+  private async _runUnifiedAssistantSession(input: {
+    task: string;
+    sessionId?: string;
+    requestedModelId?: string;
+    assistantMode: WorkspaiAssistantMode;
+    workspacePath: string;
+    projectPath?: string;
+    handoff?: StudioBlockerHandoff;
+  }): Promise<void> {
+    if (input.assistantMode === 'agent' && input.handoff) {
+      await this._runAutonomousStudioAgent({
+        task: input.task,
+        sessionId: input.sessionId,
+        requestedModelId: input.requestedModelId,
+        workspacePath: input.workspacePath,
+        projectPath: input.projectPath,
+        handoff: input.handoff,
+      });
+      return;
+    }
+    if (!this._context) {
+      throw new Error('Workspai Assistant requires extension context.');
+    }
+
+    const mode = resolveWorkspaiAssistantModeContract(input.assistantMode);
+    const inspectedSource = new Map<string, string | null>();
+    const evidenceUris = await vscode.workspace.findFiles(
+      new vscode.RelativePattern(input.workspacePath, '.workspai/**/*'),
+      '{**/.workspai/cache/**,**/.workspai/snapshots/**,**/*.tmp}',
+      160
+    );
+    const authorizedEvidencePaths = evidenceUris.map((uri) =>
+      path.relative(input.workspacePath, uri.fsPath).replace(/\\/g, '/')
+    );
+    const host: StudioAgentWorkspaiToolHost = {
+      discover: async (request: { workspacePath: string; glob?: string; limit?: number }) => ({
+        ok: true,
+        output: {
+          files: await discoverStudioWorkspaceFiles(request),
+        },
+      }),
+      inspect: async (request: {
+        paths: string[];
+        kind: 'source' | 'evidence';
+        workspacePath: string;
+      }) => {
+        const observations = await inspectStudioAgentFiles({
+          workspacePath: request.workspacePath,
+          paths: request.paths,
+          kind: request.kind,
+          authorizedEvidencePaths,
+        });
+        if (request.kind === 'source') {
+          observations.forEach((entry) => inspectedSource.set(entry.path, entry.sha256));
+        }
+        return { ok: true, output: observations };
+      },
+      search: async (request: { query: string; paths?: string[]; workspacePath: string }) => {
+        const include = request.paths?.length ? `{${request.paths.join(',')}}` : '**/*';
+        const uris = await vscode.workspace.findFiles(
+          new vscode.RelativePattern(request.workspacePath, include),
+          '{**/.git/**,**/node_modules/**,**/dist/**,**/build/**,**/.workspai/cache/**}',
+          120
+        );
+        const matches: Array<{ path: string; line: number; preview: string }> = [];
+        for (const uri of uris) {
+          if (matches.length >= 80) {
+            break;
+          }
+          try {
+            const lines = Buffer.from(await vscode.workspace.fs.readFile(uri))
+              .toString('utf8')
+              .split(/\r?\n/);
+            lines.forEach((line, index) => {
+              if (matches.length < 80 && line.includes(request.query)) {
+                matches.push({
+                  path: path.relative(request.workspacePath, uri.fsPath).replace(/\\/g, '/'),
+                  line: index + 1,
+                  preview: line.trim().slice(0, 240),
+                });
+              }
+            });
+          } catch {
+            // Binary and transient files are skipped.
+          }
+        }
+        return { ok: true, output: matches };
+      },
+      diagnostics: async (request: {
+        paths?: string[];
+        severities?: Array<'error' | 'warning' | 'information' | 'hint'>;
+        workspacePath: string;
+      }) => ({
+        ok: true,
+        output: {
+          diagnostics: inspectStudioWorkspaceDiagnostics(request),
+        },
+      }),
+      inspectChanges: async (request: { paths?: string[]; workspacePath: string }) => {
+        try {
+          return { ok: true, output: await inspectStudioWorkspaceChanges(request) };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      applyPatches: async (request: {
+        patches: FilePatch[];
+        transactionId: string;
+        workspacePath: string;
+        projectPath?: string;
+      }) => {
+        const normalized = normalizePatchesForWorkspaceScope({
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+          patches: request.patches,
+        });
+        const unauthorized = await authorizeStudioWorkspacePatchTargets({
+          workspacePath: request.workspacePath,
+          patches: normalized,
+          inspectedSource,
+        });
+        if (unauthorized.length > 0) {
+          return {
+            ok: false,
+            error: `Inspect every target before editing: ${unauthorized.map((entry) => entry.relativePath).join(', ')}`,
+          };
+        }
+        await this._assertSidebarStudioMutationAllowed({
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+          actionLabel: 'Workspai Assistant inspected workspace patch',
+        });
+        const result = await applyPatches({
+          actionId: `assistant-${input.sessionId ?? input.assistantMode}`,
+          workspacePath: request.workspacePath,
+          patches: normalized,
+          branchSafeApply: false,
+          acceptedPaths: normalized.map((entry) => entry.relativePath),
+          expectedBaseSha256: Object.fromEntries(inspectedSource),
+        });
+        if (result.appliedCount > 0) {
+          this._rememberStudioAgentPatchTransaction(request.transactionId, {
+            workspacePath: request.workspacePath,
+            cardId: input.handoff?.cardId ?? `assistant:${input.assistantMode}`,
+            sessionId: input.sessionId,
+            patchResult: result,
+          });
+        }
+        return {
+          ok: result.failedCount === 0 && result.appliedCount > 0,
+          changed: result.appliedCount > 0,
+          output: result,
+          ...(result.failedCount > 0
+            ? { error: 'One or more inspected patches could not be applied.' }
+            : {}),
+        };
+      },
+      deleteFiles: async (request: {
+        paths: string[];
+        transactionId: string;
+        workspacePath: string;
+        projectPath?: string;
+      }) => {
+        await this._assertSidebarStudioMutationAllowed({
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+          actionLabel: 'Workspai Assistant inspected file delete',
+          governedRepair: { contractAuthorized: true, reversible: true },
+        });
+        try {
+          const result = await deleteInspectedStudioWorkspaceFiles({
+            workspacePath: request.workspacePath,
+            paths: request.paths,
+            inspectedSource,
+            actionId: request.transactionId,
+          });
+          this._rememberStudioAgentPatchTransaction(request.transactionId, {
+            workspacePath: request.workspacePath,
+            cardId: input.handoff?.cardId ?? `assistant:${input.assistantMode}`,
+            sessionId: input.sessionId,
+            patchResult: result,
+          });
+          return { ok: true, changed: true, output: result };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      runGovernedCommand: async () => ({
+        ok: false,
+        error: 'A card-specific governed command is required for this operation.',
+      }),
+      runWorkspaceCommand: async (request: {
+        request: StudioWorkspaceCommandRequest;
+        workspacePath: string;
+      }) => {
+        try {
+          const plan = resolveStudioWorkspaceCommandPlan({
+            workspacePath: request.workspacePath,
+            request: request.request,
+          });
+          const before = await captureStudioWorkspaceChangeSnapshot(request.workspacePath);
+          const execution = await runStudioWorkspaceCommand(plan);
+          const after = await captureStudioWorkspaceChangeSnapshot(request.workspacePath);
+          const observedSourceChange = Boolean(
+            before && after && before.fingerprint !== after.fingerprint
+          );
+          const changed = observedSourceChange || (execution.exitCode === 0 && plan.mutatesSource);
+          return {
+            ok: execution.exitCode === 0,
+            changed,
+            output: {
+              ...execution,
+              changedPaths: after?.changedPaths ?? [],
+              observedSourceChange,
+            },
+            ...(execution.exitCode === 0
+              ? {}
+              : {
+                  error:
+                    execution.stderr ||
+                    execution.stdout ||
+                    `Workspace command exited with ${execution.exitCode ?? 'no exit code'}.`,
+                }),
+          };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      inspectRemediationPlan: async () => ({
+        ok: false,
+        error: 'A blocker card is required to resolve a governed remediation plan.',
+      }),
+      executeRemediationStep: async () => ({
+        ok: false,
+        error: 'A blocker card is required to execute a governed remediation step.',
+      }),
+      inspectDependencySecurity: async () => ({
+        ok: false,
+        error: 'A blocker card is required to inspect dependency security evidence.',
+      }),
+      repairDependencySecurity: async () => ({
+        ok: false,
+        error: 'A blocker card is required to repair dependency security evidence.',
+      }),
+      upgradeDependencySecurity: async () => ({
+        ok: false,
+        error: 'A blocker card is required to upgrade a vulnerable dependency.',
+      }),
+      verify: async (request: { workspacePath: string; projectPath?: string }) => {
+        const command = buildRapidkitCommand(['workspace', 'verify', '--json']);
+        const execution = await runIncidentInlineCommand({
+          command,
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+          actionId: 'assistant-workspace-verify',
+        });
+        return {
+          ok: execution.success,
+          cardBlocking: !execution.success,
+          output: execution,
+          ...(execution.success
+            ? {}
+            : { error: execution.error ?? execution.stderrTail ?? 'Workspace verify failed.' }),
+        };
+      },
+    };
+    const scopeId = input.handoff?.cardId ?? `assistant:${input.assistantMode}`;
+    const registry = createStudioAgentWorkspaiToolRegistry({
+      host,
+      cardId: scopeId,
+      assistantMode: input.assistantMode,
+    });
+    const store = new VSCodeStudioAgentSessionStore(this._context);
+    const persistedCandidate = input.sessionId ? await store.load(input.sessionId) : undefined;
+    const persisted =
+      persistedCandidate &&
+      persistedCandidate.workspacePath === input.workspacePath &&
+      persistedCandidate.assistantMode === input.assistantMode &&
+      persistedCandidate.status !== 'completed' &&
+      persistedCandidate.status !== 'cancelled'
+        ? persistedCandidate
+        : undefined;
+    const options = {
+      id: input.sessionId,
+      workspacePath: input.workspacePath,
+      ...(input.projectPath ? { projectPath: input.projectPath } : {}),
+      cardId: scopeId,
+      assistantMode: input.assistantMode,
+      ...(input.requestedModelId ? { selectedModelId: input.requestedModelId } : {}),
+      permissionLevel: mode.permissionLevel,
+      requiresVerifiedCompletion: mode.requiresVerifiedCompletion,
+      workspaceTrusted: vscode.workspace.isTrusted,
+      ...(persisted ? { restoredSession: persisted } : {}),
+    };
+    const model = new ContractStudioAgentModelAdapter(input.task, async (prompt, request) => {
+      const response = await askConfiguredAIProviderForToolAction(
+        this._context!,
+        [{ role: 'user', content: prompt }],
+        request.tools,
+        undefined,
+        input.requestedModelId
+      );
+      return response.type === 'tool'
+        ? { toolName: response.toolName, input: response.input }
+        : response.text;
+    });
+    const session = new StudioAgentSession(options, model, registry, store);
+    session.onEvent((event) => this._postInlineCreate('sidebarStudioAgentEvent', { event }));
+    this._activeStudioAgentSessions.set(session.id, session);
+    const completed = await session.run(input.task).finally(() => {
+      if (this._activeStudioAgentSessions.get(session.id) === session) {
+        this._activeStudioAgentSessions.delete(session.id);
+      }
+    });
+    const completion = [...completed.events]
+      .reverse()
+      .find((event) => event.type === 'session.completed');
+    const summary =
+      completion && typeof (completion.data as { summary?: unknown }).summary === 'string'
+        ? String((completion.data as { summary: string }).summary)
+        : undefined;
+    if (completed.status === 'completed' && summary) {
+      this._postInlineCreate('sidebarStudioDone', {
+        sessionId: completed.id,
+        modelId: completed.selectedModelId ?? 'auto',
+        assistantMode: completed.assistantMode,
+        answer: summary,
+      });
+      return;
+    }
+    const failure = [...completed.events]
+      .reverse()
+      .find((event) => event.type === 'session.failed');
+    const failureMessage =
+      failure && typeof (failure.data as { error?: unknown }).error === 'string'
+        ? String((failure.data as { error: string }).error)
+        : undefined;
+    this._postInlineCreate('sidebarStudioError', {
+      sessionId: completed.id,
+      error:
+        completed.status === 'cancelled'
+          ? 'Assistant session was cancelled.'
+          : (failureMessage ??
+            'Assistant session did not complete. The durable session can resume.'),
+    });
+  }
+
+  private async _runAutonomousStudioAgent(input: {
+    task: string;
+    sessionId?: string;
+    requestedModelId?: string;
+    workspacePath: string;
+    projectPath?: string;
+    handoff: StudioBlockerHandoff;
+  }): Promise<void> {
+    if (!this._context) {
+      throw new Error('Studio Agent requires extension context.');
+    }
+    let activeHandoff = input.handoff;
+    let repairEvidence = await collectSidebarStudioRepairEvidence({
+      workspacePath: input.workspacePath,
+      projectPath: input.projectPath,
+      handoff: activeHandoff,
+    });
+    const objective = [
+      input.task,
+      `Card: ${input.handoff.cardLabel ?? input.handoff.cardId}`,
+      `Blockers: ${input.handoff.blockers.join('; ')}`,
+      `Verify command: ${input.handoff.verifyCommand ?? 'resolve from governed evidence'}`,
+      'Use Studio inspect tools to load file bodies only when needed. Generated reports must be refreshed through their governed producers, never patched.',
+      `Evidence generation: ${repairEvidence.evidenceFingerprint}`,
+      `Authorized evidence paths: ${JSON.stringify(repairEvidence.authorizedEvidencePaths.slice(0, 20))}`,
+      `Initial source candidates (not exclusive; inspect-source dynamically authorizes any workspace source): ${JSON.stringify(repairEvidence.autonomousTargetPaths.slice(0, 20))}`,
+      `Missing required evidence: ${JSON.stringify(repairEvidence.missingRequired.slice(0, 20))}`,
+    ].join('\n\n');
+    const commandGenerations = new Map<StudioEvidenceRefreshCommandId, string>();
+    const commandAttempts = new Map<
+      StudioEvidenceRefreshCommandId,
+      { blockerSignature?: string; evidenceGeneration: string; count: number }
+    >();
+    const remediationStepAttempts = new Map<string, { blockerSignature?: string; count: number }>();
+    const dependencyRepairAttempts = new Map<string, StudioDependencyRepairAttempt>();
+    const dependencyUpgradeCandidates = new Map<string, StudioDependencyUpgradeCandidate[]>();
+    const inspectedSource = new Map<string, string | null>();
+    let activeBlockerSignature = activeHandoff.blockerSignature;
+
+    const refreshDependencyDoctorEvidence = async (workspacePath: string) => {
+      const plan = resolveDashboardCommandExecutionPlan('checkWorkspaceHealth');
+      if (plan.cliArgs.length === 0) {
+        throw new Error('Doctor evidence producer is unavailable.');
+      }
+      const command = buildRapidkitCommand(plan.cliArgs);
+      const execution = await runIncidentInlineCommand({
+        command,
+        workspacePath,
+        actionId: 'studio-session-dependency-doctor-refresh',
+      });
+      if (![0, 1, 2].includes(execution.exitCode ?? -1)) {
+        throw new Error(
+          execution.error ?? execution.stderrTail ?? 'Doctor evidence refresh failed.'
+        );
+      }
+      repairEvidence = await collectSidebarStudioRepairEvidence({
+        workspacePath,
+        projectPath: input.projectPath,
+        handoff: activeHandoff,
+      });
+      return execution;
+    };
+
+    const host: StudioAgentWorkspaiToolHost = {
+      discover: async (request: { workspacePath: string; glob?: string; limit?: number }) => ({
+        ok: true,
+        output: {
+          files: await discoverStudioWorkspaceFiles(request),
+        },
+        evidenceGeneration: repairEvidence.evidenceFingerprint,
+      }),
+      inspect: async (request: {
+        paths: string[];
+        kind: 'source' | 'evidence';
+        workspacePath: string;
+      }) => {
+        const observations = await inspectStudioAgentFiles({
+          workspacePath: request.workspacePath,
+          paths: request.paths,
+          kind: request.kind,
+          authorizedEvidencePaths: repairEvidence.authorizedEvidencePaths,
+        });
+        if (request.kind === 'source') {
+          for (const observation of observations) {
+            inspectedSource.set(observation.path, observation.sha256);
+            repairEvidence.expectedBaseSha256[observation.path] = observation.sha256;
+          }
+        }
+        return {
+          ok: true,
+          output: observations,
+          evidenceGeneration: repairEvidence.evidenceFingerprint,
+        };
+      },
+      search: async (request: { query: string; paths?: string[]; workspacePath: string }) => {
+        const include = request.paths?.length ? `{${request.paths.join(',')}}` : '**/*';
+        const uris = await vscode.workspace.findFiles(
+          new vscode.RelativePattern(request.workspacePath, include),
+          '{**/.git/**,**/node_modules/**,**/dist/**,**/build/**,**/.workspai/cache/**}',
+          120
+        );
+        const matches: Array<{ path: string; line: number; preview: string }> = [];
+        for (const uri of uris) {
+          if (matches.length >= 80) {
+            break;
+          }
+          try {
+            const content = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
+            const lines = content.split(/\r?\n/);
+            lines.forEach((line, index) => {
+              if (matches.length < 80 && line.includes(request.query)) {
+                matches.push({
+                  path: path.relative(request.workspacePath, uri.fsPath).replace(/\\/g, '/'),
+                  line: index + 1,
+                  preview: line.trim().slice(0, 240),
+                });
+              }
+            });
+          } catch {
+            // Binary, inaccessible, and transient files are intentionally skipped.
+          }
+        }
+        return { ok: true, output: matches };
+      },
+      diagnostics: async (request: {
+        paths?: string[];
+        severities?: Array<'error' | 'warning' | 'information' | 'hint'>;
+        workspacePath: string;
+      }) => ({
+        ok: true,
+        output: {
+          diagnostics: inspectStudioWorkspaceDiagnostics(request),
+        },
+        evidenceGeneration: repairEvidence.evidenceFingerprint,
+      }),
+      inspectChanges: async (request: { paths?: string[]; workspacePath: string }) => {
+        try {
+          return {
+            ok: true,
+            output: await inspectStudioWorkspaceChanges(request),
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+          };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      applyPatches: async (request: {
+        patches: FilePatch[];
+        transactionId: string;
+        workspacePath: string;
+        projectPath?: string;
+      }) => {
+        const normalized = normalizePatchesForWorkspaceScope({
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+          patches: request.patches,
+        });
+        const generatedEvidencePatches = normalized.filter((patch) =>
+          /^(?:\.workspai|\.rapidkit)\/reports\//.test(patch.relativePath)
+        );
+        if (generatedEvidencePatches.length > 0) {
+          return {
+            ok: false,
+            error: `Generated evidence must be refreshed through its governed producer, not patched directly: ${generatedEvidencePatches
+              .map((patch) => patch.relativePath)
+              .join(', ')}`,
+          };
+        }
+        const staticTargets = new Set(repairEvidence.autonomousTargetPaths);
+        const uninspectedOrNew = await authorizeStudioWorkspacePatchTargets({
+          workspacePath: request.workspacePath,
+          patches: normalized,
+          inspectedSource,
+        });
+        const unauthorized = uninspectedOrNew.filter(
+          (patch) => !staticTargets.has(patch.relativePath)
+        );
+        inspectedSource.forEach((hash, entry) => {
+          repairEvidence.expectedBaseSha256[entry] = hash;
+        });
+        if (unauthorized.length > 0) {
+          return {
+            ok: false,
+            error: `Patch targets are not contract-authorized: ${unauthorized
+              .map((patch) => patch.relativePath)
+              .join(', ')}`,
+          };
+        }
+        await this._assertSidebarStudioMutationAllowed({
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+          actionLabel: 'Studio Agent workspace patch',
+          governedRepair: {
+            contractAuthorized: true,
+            reversible: true,
+          },
+        });
+        const prepared = await preparePatchesForReview({
+          workspacePath: request.workspacePath,
+          patches: normalized,
+          expectedBaseSha256: repairEvidence.expectedBaseSha256,
+        });
+        const result = await applySidebarPendingPatches({
+          workspacePath: request.workspacePath,
+          handoff: activeHandoff,
+          patches: prepared,
+          acceptedPaths: prepared.map((patch) => patch.relativePath),
+        });
+        if (result.status === 'applied' && result.patchResult?.appliedCount) {
+          this._rememberStudioAgentPatchTransaction(request.transactionId, {
+            workspacePath: request.workspacePath,
+            cardId: activeHandoff.cardId,
+            sessionId: input.sessionId,
+            patchResult: result.patchResult,
+          });
+          repairEvidence = await collectSidebarStudioRepairEvidence({
+            workspacePath: request.workspacePath,
+            projectPath: request.projectPath,
+            handoff: activeHandoff,
+          });
+        }
+        return {
+          ok: result.status === 'applied',
+          changed: result.status === 'applied',
+          evidenceGeneration: repairEvidence.evidenceFingerprint,
+          output: result,
+          ...(result.status === 'applied' ? {} : { error: result.summary }),
+        };
+      },
+      deleteFiles: async (request: {
+        paths: string[];
+        transactionId: string;
+        workspacePath: string;
+        projectPath?: string;
+      }) => {
+        await this._assertSidebarStudioMutationAllowed({
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+          actionLabel: 'Studio Agent inspected file delete',
+          governedRepair: { contractAuthorized: true, reversible: true },
+        });
+        try {
+          const result = await deleteInspectedStudioWorkspaceFiles({
+            workspacePath: request.workspacePath,
+            paths: request.paths,
+            inspectedSource,
+            actionId: request.transactionId,
+          });
+          this._rememberStudioAgentPatchTransaction(request.transactionId, {
+            workspacePath: request.workspacePath,
+            cardId: activeHandoff.cardId,
+            sessionId: input.sessionId,
+            patchResult: result,
+          });
+          repairEvidence = await collectSidebarStudioRepairEvidence({
+            workspacePath: request.workspacePath,
+            projectPath: request.projectPath,
+            handoff: activeHandoff,
+          });
+          return {
+            ok: true,
+            changed: true,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            output: result,
+          };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      runGovernedCommand: async (request: {
+        commandId: StudioEvidenceRefreshCommandId;
+        workspacePath: string;
+        projectPath?: string;
+      }) => {
+        const priorAttempt = commandAttempts.get(request.commandId);
+        const attemptsForBlocker =
+          priorAttempt?.blockerSignature === activeBlockerSignature &&
+          priorAttempt.evidenceGeneration === repairEvidence.evidenceFingerprint
+            ? priorAttempt.count
+            : 0;
+        if (attemptsForBlocker >= 2) {
+          return {
+            ok: false,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            blockerSignature: activeBlockerSignature,
+            error: `${request.commandId} already ran twice for the same semantic blocker. Do not refresh again; inspect its output and repair the source cause or choose the next dependency.`,
+          };
+        }
+        commandAttempts.set(request.commandId, {
+          blockerSignature: activeBlockerSignature,
+          evidenceGeneration: repairEvidence.evidenceFingerprint,
+          count: attemptsForBlocker + 1,
+        });
+        const observedGeneration = commandGenerations.get(request.commandId);
+        if (observedGeneration === repairEvidence.evidenceFingerprint) {
+          return {
+            ok: false,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            error: `${request.commandId} already ran against this evidence generation. Inspect the observation or choose the next producer in the chain.`,
+          };
+        }
+        commandGenerations.set(request.commandId, repairEvidence.evidenceFingerprint);
+        const plan = resolveDashboardCommandExecutionPlan(request.commandId);
+        if (request.commandId !== 'workspaceIntelligenceChain' && plan.cliArgs.length === 0) {
+          return { ok: false, error: `No governed command exists for ${request.commandId}.` };
+        }
+        const cliArgs =
+          request.commandId === 'workspaceAgentSync'
+            ? preserveAllAgentConsumersForStudioRefresh(plan.cliArgs)
+            : plan.cliArgs;
+        const command =
+          request.commandId === 'workspaceIntelligenceChain'
+            ? STUDIO_CANONICAL_INTELLIGENCE_COMMAND
+            : buildRapidkitCommand(cliArgs);
+        await this._assertSidebarStudioMutationAllowed({
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+          actionLabel: `Studio Agent ${request.commandId}`,
+          commandText: command,
+        });
+        const execution = await runIncidentInlineCommand({
+          command,
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+          actionId: `studio-session-${request.commandId}`,
+        });
+        repairEvidence = await collectSidebarStudioRepairEvidence({
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+          handoff: activeHandoff,
+        });
+        const producerCompleted = execution.exitCode === 0 || execution.exitCode === 2;
+        const intelligenceRun =
+          request.commandId === 'workspaceIntelligenceChain'
+            ? await fs
+                .readJson(
+                  path.join(
+                    request.workspacePath,
+                    '.workspai',
+                    'reports',
+                    'workspace-intelligence-run-last-run.json'
+                  )
+                )
+                .catch(() => undefined)
+            : undefined;
+        const intelligencePhase = resolveWorkspaceIntelligenceRunMilestone(intelligenceRun);
+        return {
+          ok: producerCompleted,
+          changed: false,
+          ...(intelligencePhase ? { intelligencePhase } : {}),
+          evidenceGeneration: repairEvidence.evidenceFingerprint,
+          output: {
+            ...execution,
+            ...(intelligencePhase ? { intelligencePhase } : {}),
+          },
+          ...(producerCompleted
+            ? {}
+            : { error: execution.error ?? execution.stderrTail ?? 'Governed command failed.' }),
+        };
+      },
+      runWorkspaceCommand: async (request: {
+        request: StudioWorkspaceCommandRequest;
+        workspacePath: string;
+        projectPath?: string;
+      }) => {
+        try {
+          const plan = resolveStudioWorkspaceCommandPlan({
+            workspacePath: request.workspacePath,
+            request: request.request,
+          });
+          if (plan.mutatesSource) {
+            await this._assertSidebarStudioMutationAllowed({
+              workspacePath: request.workspacePath,
+              projectPath: request.projectPath,
+              actionLabel: `Studio Agent workspace command: ${plan.displayCommand}`,
+              commandText: plan.displayCommand,
+            });
+          }
+          const before = await captureStudioWorkspaceChangeSnapshot(request.workspacePath);
+          const execution = await runStudioWorkspaceCommand(plan);
+          const after = await captureStudioWorkspaceChangeSnapshot(request.workspacePath);
+          const observedSourceChange = Boolean(
+            before && after && before.fingerprint !== after.fingerprint
+          );
+          const changed = observedSourceChange || (execution.exitCode === 0 && plan.mutatesSource);
+          if (changed) {
+            repairEvidence = await collectSidebarStudioRepairEvidence({
+              workspacePath: request.workspacePath,
+              projectPath: request.projectPath,
+              handoff: activeHandoff,
+            });
+            await this._auditSidebarStudioFix({
+              sessionId: input.sessionId,
+              workspacePath: request.workspacePath,
+              handoff: activeHandoff,
+              kind: 'auto-fix',
+              actionId: `studio-agent-command:${plan.executable}`,
+              summary: `Workspace command completed: ${plan.displayCommand}`,
+              ok: true,
+              appliedFixes: [],
+            });
+          }
+          return {
+            ok: execution.exitCode === 0,
+            changed,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            output: {
+              ...execution,
+              changedPaths: after?.changedPaths ?? [],
+              observedSourceChange,
+            },
+            ...(execution.exitCode === 0
+              ? {}
+              : {
+                  error:
+                    execution.stderr ||
+                    execution.stdout ||
+                    `Workspace command exited with ${execution.exitCode ?? 'no exit code'}.`,
+                }),
+          };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      inspectRemediationPlan: async (request: { workspacePath: string; projectPath?: string }) => {
+        clearDoctorRemediationPlanCache();
+        const plan = await readDoctorRemediationPlanForStudio({
+          workspacePath: request.workspacePath,
+          handoff: {
+            ...activeHandoff,
+            ...(request.projectPath ? { projectPath: request.projectPath } : {}),
+          },
+          maxSteps: 64,
+        });
+        if (!plan) {
+          return {
+            ok: false,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            error:
+              'No contract-authored remediation plan is available. Run the governed remediation-plan producer or unified intelligence chain first.',
+          };
+        }
+        return {
+          ok: plan.freshness.verdict !== 'stale',
+          evidenceGeneration: repairEvidence.evidenceFingerprint,
+          output: {
+            schemaVersion: plan.schemaVersion,
+            sourcePath: plan.sourcePath,
+            generatedAt: plan.generatedAt,
+            policyProfile: plan.policyProfile,
+            scope: plan.scope,
+            freshness: plan.freshness,
+            hiddenStepCount: plan.hiddenStepCount,
+            steps: plan.visibleSteps.map((step) => ({
+              id: step.id,
+              order: step.order,
+              phase: step.phase,
+              projectName: step.projectName,
+              projectPath: step.projectPath,
+              risk: step.risk,
+              executable: step.executable,
+              studioState: step.studioState,
+              studioReason: step.studioReason,
+              primaryAction: step.primaryAction,
+              previewTitle: step.previewTitle,
+              previewSummary: step.previewSummary,
+              diffSummary: step.diffSummary,
+              files: step.files,
+              canApply: step.canApply,
+              hasDeterministicOperation: Boolean(step.operation),
+              verifyCommand: step.verifyCommand,
+            })),
+          },
+          ...(plan.freshness.verdict === 'stale'
+            ? {
+                error:
+                  plan.freshness.reason ??
+                  'The remediation plan is stale. Refresh its governed source evidence first.',
+              }
+            : {}),
+        };
+      },
+      executeRemediationStep: async (request: {
+        stepId: string;
+        workspacePath: string;
+        projectPath?: string;
+      }) => {
+        const priorAttempt = remediationStepAttempts.get(request.stepId);
+        const attemptsForBlocker =
+          priorAttempt?.blockerSignature === activeBlockerSignature ? priorAttempt.count : 0;
+        if (attemptsForBlocker >= 2) {
+          return {
+            ok: false,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            blockerSignature: activeBlockerSignature,
+            error: `${request.stepId} already ran twice for the same semantic blocker. Inspect the result and repair the next causal blocker instead of repeating it.`,
+          };
+        }
+        remediationStepAttempts.set(request.stepId, {
+          blockerSignature: activeBlockerSignature,
+          count: attemptsForBlocker + 1,
+        });
+
+        clearDoctorRemediationPlanCache();
+        const plan = await readDoctorRemediationPlanForStudio({
+          workspacePath: request.workspacePath,
+          handoff: {
+            ...activeHandoff,
+            ...(request.projectPath ? { projectPath: request.projectPath } : {}),
+          },
+          maxSteps: 64,
+        });
+        if (!plan) {
+          return {
+            ok: false,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            error:
+              'No contract-authored remediation plan is available. Run the governed remediation-plan producer or unified intelligence chain first.',
+          };
+        }
+        if (plan.freshness.verdict === 'stale') {
+          return {
+            ok: false,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            error:
+              plan.freshness.reason ??
+              'The remediation plan is stale. Refresh its governed source evidence first.',
+          };
+        }
+        const step = plan.visibleSteps.find((entry) => entry.id === request.stepId);
+        if (!step) {
+          return {
+            ok: false,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            error: `Remediation step ${request.stepId} is not present in the latest plan. Inspect the plan again.`,
+          };
+        }
+        if (step.risk === 'invasive') {
+          return {
+            ok: false,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            error: `Remediation step ${step.id} is invasive and cannot run in unattended Agent mode.`,
+          };
+        }
+        if (step.studioState !== 'ready' && step.studioState !== 'review-required') {
+          return {
+            ok: false,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            error: step.studioReason || `Remediation step ${step.id} is not executable.`,
+          };
+        }
+        const stepProjectPath = await resolveProjectPathFromRemediationStep({
+          step,
+          workspacePath: request.workspacePath,
+          handoffProjectPath: activeHandoff.projectPath,
+          scopeProjectPath: request.projectPath,
+        });
+
+        let ok = false;
+        let changed = false;
+        let output: unknown;
+        let error: string | undefined;
+        let appliedFixes: Array<{ path: string; action: string; outcome: string }> = [];
+        if (step.canApply && step.operation) {
+          await this._assertSidebarStudioMutationAllowed({
+            workspacePath: request.workspacePath,
+            projectPath: stepProjectPath,
+            actionLabel: `Studio Agent remediation step ${step.id}`,
+          });
+          const applyResult = await applyDoctorRemediationStep({
+            workspacePath: request.workspacePath,
+            step,
+          });
+          ok = applyResult.status === 'applied';
+          appliedFixes = applyResult.appliedFixes;
+          changed = appliedFixes.some((entry) => entry.outcome === 'applied');
+          output = { stepId: step.id, kind: 'deterministic-operation', applyResult };
+          error = ok ? undefined : applyResult.summary;
+        } else if (step.executable && step.originalCommand.trim()) {
+          const command = step.originalCommand.trim();
+          if (isInternalDoctorRepairCommand(command)) {
+            return {
+              ok: false,
+              evidenceGeneration: repairEvidence.evidenceFingerprint,
+              error: `Internal remediation token ${step.id} has no deterministic operation in the latest plan. Refresh the plan instead of executing the token.`,
+            };
+          }
+          await this._assertSidebarStudioMutationAllowed({
+            workspacePath: request.workspacePath,
+            projectPath: stepProjectPath,
+            actionLabel: `Studio Agent remediation command ${step.id}`,
+            commandText: command,
+          });
+          const execution = await runIncidentInlineCommand({
+            command,
+            workspacePath: request.workspacePath,
+            projectPath: stepProjectPath,
+            actionId: `studio-session-remediation-${step.id}`,
+          });
+          ok = execution.success;
+          changed = execution.success;
+          output = { stepId: step.id, kind: 'contract-command', execution };
+          error = execution.success
+            ? undefined
+            : (execution.error ?? execution.stderrTail ?? `Remediation step ${step.id} failed.`);
+        } else {
+          return {
+            ok: false,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            error: `Remediation step ${step.id} has neither a deterministic operation nor an executable contract command.`,
+          };
+        }
+
+        clearDoctorRemediationPlanCache();
+        repairEvidence = await collectSidebarStudioRepairEvidence({
+          workspacePath: request.workspacePath,
+          projectPath: stepProjectPath ?? request.projectPath,
+          handoff: activeHandoff,
+        });
+        await this._auditSidebarStudioFix({
+          sessionId: input.sessionId,
+          workspacePath: request.workspacePath,
+          handoff: {
+            ...activeHandoff,
+            ...(stepProjectPath ? { projectPath: stepProjectPath } : {}),
+          },
+          kind: step.operation ? 'apply-patch' : 'auto-fix',
+          actionId: `studio-agent-remediation:${step.id}`,
+          summary: ok ? `Remediation step ${step.id} completed.` : (error ?? 'Remediation failed.'),
+          ok,
+          appliedFixes,
+        });
+        return {
+          ok,
+          changed,
+          evidenceGeneration: repairEvidence.evidenceFingerprint,
+          output,
+          ...(error ? { error } : {}),
+        };
+      },
+      inspectDependencySecurity: async (request: {
+        projectName?: string;
+        workspacePath: string;
+      }) => {
+        try {
+          const resolveTarget = () =>
+            resolveStudioDependencySecurityTarget({
+              workspacePath: request.workspacePath,
+              ...(request.projectName ? { projectName: request.projectName } : {}),
+            });
+          let target: Awaited<ReturnType<typeof resolveStudioDependencySecurityTarget>>;
+          try {
+            target = await resolveTarget();
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (!message.includes('No fresh dependency-security blocker exists')) {
+              throw error;
+            }
+            const doctorRefresh = await refreshDependencyDoctorEvidence(request.workspacePath);
+            try {
+              target = await resolveTarget();
+            } catch (refreshError) {
+              const refreshedMessage =
+                refreshError instanceof Error ? refreshError.message : String(refreshError);
+              if (refreshedMessage.includes('No fresh dependency-security blocker exists')) {
+                return {
+                  ok: true,
+                  changed: true,
+                  evidenceGeneration: repairEvidence.evidenceFingerprint,
+                  output: {
+                    dependencyBlockerPresent: false,
+                    doctorRefresh,
+                    nextAction: 'verify-blocker',
+                  },
+                };
+              }
+              throw refreshError;
+            }
+          }
+          const command = buildStudioDependencySecurityCommand(target, 'inspect');
+          const execution = await runIncidentInlineCommand({
+            command,
+            workspacePath: request.workspacePath,
+            projectPath: target.projectPath,
+            actionId: `studio-session-security-inspect-${target.projectName}`,
+            captureStdout: true,
+          });
+          const auditCompleted = execution.exitCode === 0 || execution.exitCode === 1;
+          const resolutionCandidates = execution.capturedStdout
+            ? await parseStudioDependencyUpgradeCandidates({
+                target,
+                auditJson: execution.capturedStdout,
+              }).catch(() => [])
+            : [];
+          const upgradeCandidates = resolutionCandidates.filter(
+            (candidate) => candidate.autoExecutable
+          );
+          const blockedCandidates = resolutionCandidates.filter(
+            (candidate) => !candidate.autoExecutable
+          );
+          dependencyUpgradeCandidates.set(target.projectName, upgradeCandidates);
+          return {
+            ok: auditCompleted,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            output: {
+              target,
+              command,
+              auditExitCode: execution.exitCode,
+              auditSummary: execution.output ?? execution.error ?? execution.stderrTail,
+              upgradeCandidates,
+              resolutionCandidates,
+              blockedCandidates,
+              ...(blockedCandidates.length > 0
+                ? {
+                    fallbackCapability: 'general-source-repair',
+                    recommendedTools: [
+                      'inspect-source',
+                      'run-workspace-command',
+                      'apply-workspace-patch',
+                      'inspect-workspace-changes',
+                    ],
+                    exhaustedTools: [
+                      'inspect-dependency-security',
+                      'repair-dependency-security',
+                      'upgrade-dependency-security',
+                    ],
+                  }
+                : {}),
+              nextAction:
+                upgradeCandidates.length > 0
+                  ? 'upgrade-dependency-security'
+                  : blockedCandidates.length > 0
+                    ? 'general-source-repair'
+                    : 'inspect-remediation-plan',
+            },
+            ...(!auditCompleted
+              ? { error: execution.error ?? execution.stderrTail ?? 'Dependency audit failed.' }
+              : {}),
+          };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      repairDependencySecurity: async (request: {
+        projectName?: string;
+        workspacePath: string;
+      }) => {
+        try {
+          const target = await resolveStudioDependencySecurityTarget({
+            workspacePath: request.workspacePath,
+            ...(request.projectName ? { projectName: request.projectName } : {}),
+          });
+          const attemptKey = `${target.projectName}:${target.packageManager}`;
+          const prior = dependencyRepairAttempts.get(attemptKey);
+          const count = prior?.count ?? 0;
+          if (count >= 1) {
+            return {
+              ok: false,
+              error:
+                `The bounded dependency repair already ran once for ${target.projectName}. ` +
+                'Do not repeat it. Inspect dependency security and use an audit-authorized upgradeCandidate.',
+            };
+          }
+          dependencyRepairAttempts.set(attemptKey, {
+            blockerSignature: activeBlockerSignature,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            count: count + 1,
+          });
+          const command = buildStudioDependencySecurityCommand(target, 'repair');
+          const sourceHash = async (relativePath: string): Promise<string | null> => {
+            try {
+              return crypto
+                .createHash('sha256')
+                .update(await fs.readFile(path.join(target.projectPath, relativePath)))
+                .digest('hex');
+            } catch {
+              return null;
+            }
+          };
+          const beforeHashes = Object.fromEntries(
+            await Promise.all(
+              target.sourceFiles.map(async (file) => [file, await sourceHash(file)] as const)
+            )
+          );
+          await this._assertSidebarStudioMutationAllowed({
+            workspacePath: request.workspacePath,
+            projectPath: target.projectPath,
+            actionLabel: `Studio Agent non-force dependency repair for ${target.projectName}`,
+            commandText: command,
+          });
+          const execution = await runIncidentInlineCommand({
+            command,
+            workspacePath: request.workspacePath,
+            projectPath: target.projectPath,
+            actionId: `studio-session-security-repair-${target.projectName}`,
+          });
+          const afterHashes = Object.fromEntries(
+            await Promise.all(
+              target.sourceFiles.map(async (file) => [file, await sourceHash(file)] as const)
+            )
+          );
+          const changedFiles = target.sourceFiles.filter(
+            (file) => beforeHashes[file] !== afterHashes[file]
+          );
+          repairEvidence = await collectSidebarStudioRepairEvidence({
+            workspacePath: request.workspacePath,
+            projectPath: target.projectPath,
+            handoff: activeHandoff,
+          });
+          await this._auditSidebarStudioFix({
+            sessionId: input.sessionId,
+            workspacePath: request.workspacePath,
+            handoff: { ...activeHandoff, projectPath: target.projectPath },
+            kind: 'auto-fix',
+            actionId: `studio-agent-dependency-security:${target.projectName}`,
+            summary: execution.success
+              ? `Non-force dependency repair completed for ${target.projectName}.`
+              : (execution.error ?? 'Dependency repair failed.'),
+            ok: execution.success,
+            appliedFixes: changedFiles.map((file) => ({
+              path: `${target.projectName}/${file}`,
+              action: 'dependency-security-repair',
+              outcome: 'applied',
+            })),
+          });
+          return {
+            ok: execution.success,
+            changed: changedFiles.length > 0,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            output: {
+              target,
+              command,
+              changedFiles: changedFiles.map((file) => `${target.projectName}/${file}`),
+              execution,
+              upgradeCandidates: dependencyUpgradeCandidates.get(target.projectName) ?? [],
+              nextAction:
+                (dependencyUpgradeCandidates.get(target.projectName)?.length ?? 0) > 0
+                  ? 'upgrade-dependency-security'
+                  : 'inspect-dependency-security',
+            },
+            ...(!execution.success
+              ? {
+                  error:
+                    `${execution.error ?? execution.stderrTail ?? 'Dependency repair failed.'}\n` +
+                    'The bounded non-force repair did not clear the advisory. Do not run it again. Follow nextAction and use the exact audit-authorized upgradeCandidate.',
+                }
+              : {}),
+          };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      upgradeDependencySecurity: async (request: {
+        projectName?: string;
+        packageName: string;
+        transactionId: string;
+        workspacePath: string;
+      }) => {
+        try {
+          const target = await resolveStudioDependencySecurityTarget({
+            workspacePath: request.workspacePath,
+            ...(request.projectName ? { projectName: request.projectName } : {}),
+          });
+          const auditCommand = buildStudioDependencySecurityCommand(target, 'inspect');
+          const audit = await runIncidentInlineCommand({
+            command: auditCommand,
+            workspacePath: request.workspacePath,
+            projectPath: target.projectPath,
+            actionId: `studio-session-security-upgrade-audit-${target.projectName}`,
+            captureStdout: true,
+          });
+          const candidates = audit.capturedStdout
+            ? await parseStudioDependencyUpgradeCandidates({
+                target,
+                auditJson: audit.capturedStdout,
+              })
+            : [];
+          const candidate = candidates.find((entry) => entry.packageName === request.packageName);
+          if (!candidate) {
+            return {
+              ok: false,
+              evidenceGeneration: repairEvidence.evidenceFingerprint,
+              error:
+                `${request.packageName} is not a direct upgrade candidate in the fresh dependency audit. ` +
+                'Inspect dependency security and use one of its upgradeCandidates.',
+            };
+          }
+          if (!candidate.autoExecutable || !candidate.targetVersion) {
+            return {
+              ok: false,
+              changed: false,
+              evidenceGeneration: repairEvidence.evidenceFingerprint,
+              output: {
+                target,
+                candidate,
+                resolutionCandidates: candidates,
+                blockedCandidates: candidates.filter((entry) => !entry.autoExecutable),
+                nextAction: 'general-source-repair',
+                fallbackCapability: 'general-source-repair',
+                recommendedTools: [
+                  'inspect-source',
+                  'run-workspace-command',
+                  'apply-workspace-patch',
+                  'inspect-workspace-changes',
+                ],
+                exhaustedTools: [
+                  'inspect-dependency-security',
+                  'repair-dependency-security',
+                  'upgrade-dependency-security',
+                ],
+              },
+              error:
+                `The audit fix for ${candidate.packageName} is ${candidate.disposition} and cannot be applied as an automatic direct upgrade. ` +
+                'Use the general workspace capability plane to diagnose compatible source, version, or dependency alternatives.',
+            };
+          }
+
+          const before = Object.fromEntries(
+            await Promise.all(
+              target.sourceFiles.map(async (file) => [
+                file,
+                await fs.readFile(path.join(target.projectPath, file), 'utf8').catch(() => null),
+              ])
+            )
+          ) as Record<string, string | null>;
+          const command = buildStudioDependencyUpgradeCommand({
+            target,
+            candidate,
+          });
+          await this._assertSidebarStudioMutationAllowed({
+            workspacePath: request.workspacePath,
+            projectPath: target.projectPath,
+            actionLabel: `Studio Agent dependency upgrade for ${target.projectName}`,
+            commandText: command,
+            governedRepair: { contractAuthorized: true, reversible: true },
+          });
+          const execution = await runIncidentInlineCommand({
+            command,
+            workspacePath: request.workspacePath,
+            projectPath: target.projectPath,
+            actionId: `studio-session-security-upgrade-${target.projectName}-${candidate.packageName}`,
+          });
+          const after = Object.fromEntries(
+            await Promise.all(
+              target.sourceFiles.map(async (file) => [
+                file,
+                await fs.readFile(path.join(target.projectPath, file), 'utf8').catch(() => null),
+              ])
+            )
+          ) as Record<string, string | null>;
+          const changedFiles = target.sourceFiles.filter((file) => before[file] !== after[file]);
+          if (execution.success && changedFiles.length > 0) {
+            const patches: FilePatch[] = changedFiles.map((file) => ({
+              relativePath: path
+                .relative(request.workspacePath, path.join(target.projectPath, file))
+                .replace(/\\/g, '/'),
+              isNewFile: before[file] === null,
+              originalContent: before[file] ?? undefined,
+              patchedContent: after[file] ?? '',
+              hunks: [],
+              status: 'applied',
+            }));
+            this._rememberStudioAgentPatchTransaction(request.transactionId, {
+              workspacePath: request.workspacePath,
+              cardId: activeHandoff.cardId,
+              sessionId: input.sessionId,
+              patchResult: {
+                patchId: request.transactionId,
+                generatedAt: new Date().toISOString(),
+                actionId: `dependency-upgrade:${target.projectName}:${candidate.packageName}`,
+                patches,
+                appliedCount: patches.length,
+                rejectedCount: 0,
+                failedCount: 0,
+              },
+            });
+          }
+          repairEvidence = await collectSidebarStudioRepairEvidence({
+            workspacePath: request.workspacePath,
+            projectPath: target.projectPath,
+            handoff: activeHandoff,
+          });
+          const changed = execution.success && changedFiles.length > 0;
+          await this._auditSidebarStudioFix({
+            sessionId: input.sessionId,
+            workspacePath: request.workspacePath,
+            handoff: { ...activeHandoff, projectPath: target.projectPath },
+            kind: 'auto-fix',
+            actionId: `studio-agent-dependency-upgrade:${target.projectName}:${candidate.packageName}`,
+            summary: execution.success
+              ? `Upgraded ${candidate.packageName} and refreshed the package-manager lockfile.`
+              : (execution.error ?? 'Dependency upgrade failed.'),
+            ok: changed,
+            appliedFixes: changedFiles.map((file) => ({
+              path: `${target.projectName}/${file}`,
+              action: 'dependency-security-upgrade',
+              outcome: 'applied',
+            })),
+          });
+          return {
+            ok: changed,
+            changed,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            output: {
+              target,
+              candidate,
+              command,
+              changedFiles: changedFiles.map((file) => `${target.projectName}/${file}`),
+              execution,
+            },
+            ...(!changed
+              ? {
+                  output: {
+                    target,
+                    candidate,
+                    command,
+                    changedFiles: changedFiles.map((file) => `${target.projectName}/${file}`),
+                    execution,
+                    nextAction: 'general-source-repair',
+                    fallbackCapability: 'general-source-repair',
+                    recommendedTools: [
+                      'inspect-source',
+                      'run-workspace-command',
+                      'apply-workspace-patch',
+                      'inspect-workspace-changes',
+                    ],
+                    exhaustedTools: [
+                      'inspect-dependency-security',
+                      'repair-dependency-security',
+                      'upgrade-dependency-security',
+                    ],
+                  },
+                  error:
+                    execution.error ??
+                    execution.stderrTail ??
+                    'Dependency upgrade did not change the manifest or lockfile.',
+                }
+              : {}),
+          };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      recoverActiveBlocker: async (request: { workspacePath: string; projectPath?: string }) => {
+        const blockers = activeHandoff.blockers ?? [];
+        const dependencyIncident = blockers.some((blocker) =>
+          /\b(?:dependency|dependencies|vulnerabilit|security audit|npm audit|pnpm audit|yarn audit)\b/i.test(
+            blocker
+          )
+        );
+        const observations: Array<{ capability: string; result: unknown }> = [];
+
+        if (dependencyIncident) {
+          const inspection = await host.inspectDependencySecurity({
+            workspacePath: request.workspacePath,
+            ...(request.projectPath ? { projectPath: request.projectPath } : {}),
+          });
+          observations.push({ capability: 'inspect-dependency-security', result: inspection });
+          const inspectionOutput =
+            inspection.output &&
+            typeof inspection.output === 'object' &&
+            !Array.isArray(inspection.output)
+              ? (inspection.output as Record<string, unknown>)
+              : undefined;
+          if (inspection.changed === true || inspectionOutput?.dependencyBlockerPresent === false) {
+            return {
+              ...inspection,
+              output: {
+                recoveryPath: 'dependency-security',
+                observations,
+                nextAction: inspectionOutput?.nextAction ?? 'verify-blocker',
+              },
+            };
+          }
+          const target =
+            inspectionOutput?.target &&
+            typeof inspectionOutput.target === 'object' &&
+            !Array.isArray(inspectionOutput.target)
+              ? (inspectionOutput.target as Record<string, unknown>)
+              : undefined;
+          const projectName =
+            typeof target?.projectName === 'string' ? target.projectName : undefined;
+          const candidates = Array.isArray(inspectionOutput?.upgradeCandidates)
+            ? inspectionOutput.upgradeCandidates.filter(
+                (entry): entry is Record<string, unknown> =>
+                  Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)
+              )
+            : [];
+          if (inspection.ok && projectName && host.repairDependencySecurity) {
+            const repair = await host.repairDependencySecurity({
+              projectName,
+              workspacePath: request.workspacePath,
+              ...(request.projectPath ? { projectPath: request.projectPath } : {}),
+            });
+            observations.push({ capability: 'repair-dependency-security', result: repair });
+            if (repair.changed === true) {
+              return {
+                ...repair,
+                output: {
+                  recoveryPath: 'dependency-security',
+                  observations,
+                  nextAction: 'workspaceIntelligenceChain',
+                },
+              };
+            }
+            const repairOutput =
+              repair.output && typeof repair.output === 'object' && !Array.isArray(repair.output)
+                ? (repair.output as Record<string, unknown>)
+                : undefined;
+            const repairCandidates = Array.isArray(repairOutput?.upgradeCandidates)
+              ? repairOutput.upgradeCandidates.filter(
+                  (entry): entry is Record<string, unknown> =>
+                    Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)
+                )
+              : candidates;
+            const candidate = repairCandidates.length === 1 ? repairCandidates[0] : undefined;
+            if (
+              repairOutput?.nextAction === 'upgrade-dependency-security' &&
+              candidate &&
+              typeof candidate.packageName === 'string' &&
+              host.upgradeDependencySecurity
+            ) {
+              const upgrade = await host.upgradeDependencySecurity({
+                projectName,
+                packageName: candidate.packageName,
+                transactionId: crypto.randomUUID(),
+                workspacePath: request.workspacePath,
+                ...(request.projectPath ? { projectPath: request.projectPath } : {}),
+              });
+              observations.push({ capability: 'upgrade-dependency-security', result: upgrade });
+              return {
+                ...upgrade,
+                output: {
+                  recoveryPath: 'dependency-security',
+                  observations,
+                  nextAction: upgrade.changed
+                    ? 'workspaceIntelligenceChain'
+                    : 'general-source-repair',
+                },
+              };
+            }
+          }
+        }
+
+        const plan = await host.inspectRemediationPlan({
+          workspacePath: request.workspacePath,
+          ...(request.projectPath ? { projectPath: request.projectPath } : {}),
+        });
+        observations.push({ capability: 'inspect-remediation-plan', result: plan });
+        const planOutput =
+          plan.output && typeof plan.output === 'object' && !Array.isArray(plan.output)
+            ? (plan.output as Record<string, unknown>)
+            : undefined;
+        const steps = Array.isArray(planOutput?.steps)
+          ? planOutput.steps.filter(
+              (entry): entry is Record<string, unknown> =>
+                Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)
+            )
+          : [];
+        const executableStep = steps
+          .filter(
+            (step) =>
+              step.risk !== 'invasive' &&
+              (step.studioState === 'ready' || step.studioState === 'review-required') &&
+              (step.canApply === true || step.executable === true)
+          )
+          .sort(
+            (left, right) =>
+              Number(left.order ?? Number.MAX_SAFE_INTEGER) -
+              Number(right.order ?? Number.MAX_SAFE_INTEGER)
+          )[0];
+        if (
+          plan.ok &&
+          executableStep &&
+          typeof executableStep.id === 'string' &&
+          host.executeRemediationStep
+        ) {
+          const execution = await host.executeRemediationStep({
+            stepId: executableStep.id,
+            workspacePath: request.workspacePath,
+            ...(request.projectPath ? { projectPath: request.projectPath } : {}),
+          });
+          observations.push({ capability: 'execute-remediation-step', result: execution });
+          return {
+            ...execution,
+            output: {
+              recoveryPath: 'contract-remediation-plan',
+              observations,
+              nextAction: execution.changed
+                ? 'workspaceIntelligenceChain'
+                : 'general-source-repair',
+            },
+          };
+        }
+
+        return {
+          ok: false,
+          changed: false,
+          evidenceGeneration: repairEvidence.evidenceFingerprint,
+          blockerSignature: activeBlockerSignature,
+          output: {
+            recoveryPath: 'general-source-repair',
+            observations,
+            nextAction: 'general-source-repair',
+            recommendedTools: [
+              'discover-workspace-files',
+              'inspect-source',
+              'search-workspace',
+              'inspect-workspace-diagnostics',
+              'run-workspace-command',
+              'apply-workspace-patch',
+              'inspect-workspace-changes',
+            ],
+          },
+          error:
+            'No safe deterministic repair cleared the fresh blocker. Continue with the general source capability plane using these observations.',
+        };
+      },
+      verify: async (request: { workspacePath: string; projectPath?: string }) => {
+        const verifyCommand = activeHandoff.verifyCommand?.trim();
+        if (!verifyCommand) {
+          return { ok: false, cardBlocking: true, error: 'Verify command is missing.' };
+        }
+        const execution = await runIncidentInlineCommand({
+          command: verifyCommand,
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+          actionId: `studio-session-verify-${activeHandoff.cardId}`,
+        });
+        const refresh = await this._finalizeStudioVerifyHandoff({
+          handoff: activeHandoff,
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+          sessionId: input.sessionId,
+          verifySucceeded: execution.success,
+          verifyExitCode: execution.exitCode ?? (execution.success ? 0 : 1),
+          verifyError: execution.error,
+          agentOwned: true,
+        });
+        const cardBlocking = dashboardEvidenceCardIsBlocking(refresh.primaryCard);
+        const evidenceBundle = await buildDashboardEvidenceBundle({
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+        });
+        const incidentGraph = buildStudioIncidentGraph({
+          primaryCardId: input.handoff.cardId,
+          cards: evidenceBundle.cards,
+        });
+        const incidentBlocking = cardBlocking || !incidentGraph.resolved;
+        const nextBlockingCard = incidentGraph.blockingCards[0]
+          ? evidenceBundle.cards.find((card) => card.id === incidentGraph.blockingCards[0]?.id)
+          : undefined;
+        if (nextBlockingCard) {
+          activeHandoff = await buildStudioBlockerHandoff({
+            card: nextBlockingCard,
+            workspacePath: request.workspacePath,
+            projectPath: nextBlockingCard.scope === 'project' ? request.projectPath : undefined,
+            handoffSource: 'dashboard',
+            extensionContext: this._context,
+          });
+        } else if (refresh.primaryCard) {
+          activeHandoff = await buildStudioBlockerHandoff({
+            card: refresh.primaryCard,
+            workspacePath: request.workspacePath,
+            projectPath: request.projectPath,
+            handoffSource: 'dashboard',
+            extensionContext: this._context,
+          });
+        }
+        activeBlockerSignature = activeHandoff.blockerSignature;
+        repairEvidence = await collectSidebarStudioRepairEvidence({
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+          handoff: activeHandoff,
+        });
+        const semanticVerifySucceeded =
+          (execution.exitCode === 0 || execution.exitCode === 2) &&
+          refresh.evidenceOutcome === 'resolved' &&
+          !incidentBlocking;
+        return {
+          ok: semanticVerifySucceeded,
+          cardBlocking: incidentBlocking,
+          blockerSignature: activeBlockerSignature,
+          evidenceGeneration: repairEvidence.evidenceFingerprint,
+          output: {
+            refresh,
+            incidentGraph,
+            activeHandoff: {
+              cardId: activeHandoff.cardId,
+              blockers: activeHandoff.blockers,
+              blockerSignature: activeHandoff.blockerSignature,
+              sourceCommand: activeHandoff.sourceCommand,
+              verifyCommand: activeHandoff.verifyCommand,
+            },
+          },
+          ...(!semanticVerifySucceeded
+            ? {
+                error:
+                  execution.error ??
+                  `${incidentGraph.blockingCards.length} related Workspace Intelligence card(s) remain blocking.`,
+              }
+            : {}),
+        };
+      },
+    };
+    const registry = createStudioAgentWorkspaiToolRegistry({
+      host,
+      cardId: input.handoff.cardId,
+      blockerSignature: input.handoff.blockerSignature,
+      assistantMode: 'agent',
+    });
+    const store = new VSCodeStudioAgentSessionStore(this._context);
+    const persistedCandidate = input.sessionId ? await store.load(input.sessionId) : undefined;
+    const persisted =
+      persistedCandidate &&
+      persistedCandidate.workspacePath === input.workspacePath &&
+      persistedCandidate.cardId === input.handoff.cardId &&
+      persistedCandidate.assistantMode === 'agent' &&
+      persistedCandidate.blockerSignature === input.handoff.blockerSignature &&
+      persistedCandidate.status !== 'completed' &&
+      persistedCandidate.status !== 'cancelled'
+        ? persistedCandidate
+        : undefined;
+    const options = {
+      id: input.sessionId,
+      workspacePath: input.workspacePath,
+      ...(input.projectPath ? { projectPath: input.projectPath } : {}),
+      cardId: input.handoff.cardId,
+      assistantMode: 'agent' as const,
+      ...(input.requestedModelId ? { selectedModelId: input.requestedModelId } : {}),
+      blockerSignature: input.handoff.blockerSignature,
+      permissionLevel: 'autopilot' as const,
+      workspaceTrusted: vscode.workspace.isTrusted,
+      requiresVerifiedCompletion: true,
+      ...(persisted ? { restoredSession: persisted } : {}),
+    };
+    const model = new ContractStudioAgentModelAdapter(objective, async (prompt, request) => {
+      const response = await askConfiguredAIProviderForToolAction(
+        this._context!,
+        [{ role: 'user', content: prompt }],
+        request.tools,
+        undefined,
+        input.requestedModelId
+      );
+      return response.type === 'tool'
+        ? { toolName: response.toolName, input: response.input }
+        : response.text;
+    });
+    const session = new StudioAgentSession(options, model, registry, store);
+    if (persisted) {
+      persisted.events
+        .filter(
+          (event) =>
+            event.type === 'tool.completed' ||
+            event.type === 'tool.failed' ||
+            event.type === 'verify.completed'
+        )
+        .slice(-60)
+        .forEach((event) => {
+          this._postInlineCreate('sidebarStudioAgentEvent', { event, replay: true });
+        });
+    }
+    session.onEvent((event) => {
+      this._postInlineCreate('sidebarStudioAgentEvent', { event });
+    });
+    this._activeStudioAgentSessions.set(session.id, session);
+    const completed = await session.run(objective).finally(() => {
+      if (this._activeStudioAgentSessions.get(session.id) === session) {
+        this._activeStudioAgentSessions.delete(session.id);
+      }
+    });
+    if (completed.status === 'completed') {
+      this._postInlineCreate('sidebarStudioDone', {
+        sessionId: completed.id,
+        modelId: completed.selectedModelId ?? 'auto',
+        assistantMode: completed.assistantMode,
+        answer: 'The blocker was repaired and cleared by refreshed verify evidence.',
+      });
+      return;
+    }
+    const failure = [...completed.events]
+      .reverse()
+      .find((event) => event.type === 'session.failed');
+    const failureMessage =
+      failure && typeof (failure.data as { error?: unknown }).error === 'string'
+        ? String((failure.data as { error: string }).error)
+        : undefined;
+    this._postInlineCreate('sidebarStudioError', {
+      sessionId: completed.id,
+      error:
+        completed.status === 'cancelled'
+          ? 'Studio Agent was cancelled.'
+          : (failureMessage ??
+            'Studio Agent did not reach verified completion. The durable session can resume.'),
+    });
   }
 
   private async _runSidebarStudioAction(payload: unknown): Promise<void> {
@@ -1907,6 +4141,39 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       parseStudioBlockerHandoffPayload
     );
     try {
+      if (action === 'agent-steer') {
+        const message =
+          typeof payloadRecord.message === 'string' ? payloadRecord.message.trim() : '';
+        if (!sessionId || !message) {
+          throw new Error('An active session and steering message are required.');
+        }
+        const session = this._activeStudioAgentSessions.get(sessionId);
+        if (!session) {
+          throw new Error('The Studio Agent session is not currently running.');
+        }
+        session.steer(message);
+        studioHost.postInlineCreate('sidebarStudioActionResult', {
+          sessionId,
+          cardId: handoff?.cardId,
+          action,
+          status: 'running',
+          phase: 'request-steered',
+          title: 'Direction added',
+          summary: 'Studio Agent will apply this direction at the next model boundary.',
+        });
+        return;
+      }
+      if (action === 'agent-cancel') {
+        if (!sessionId) {
+          throw new Error('An active session is required for cancellation.');
+        }
+        const session = this._activeStudioAgentSessions.get(sessionId);
+        if (!session) {
+          throw new Error('The Studio Agent session is not currently running.');
+        }
+        session.cancel();
+        return;
+      }
       if (action === 'retry-audit') {
         await studioHost.retryLastSidebarStudioAudit(sessionId);
         return;
@@ -1915,10 +4182,18 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         if (!handoff) {
           throw new Error('No blocker handoff is active for auto-fix.');
         }
+        if (handoff.studioMode === 'EXPLAIN' || handoff.studioMode === 'VERIFY_ONLY') {
+          throw new Error('Studio auto-fix is only available for fixable blocker handoffs.');
+        }
         if (!studioHost.context) {
           throw new Error('Studio auto-fix is not available until the extension context is ready.');
         }
-        await studioHost.runSidebarAutoFix(handoff, sessionId, payloadRecord.scope);
+        await studioHost.runSidebarAutoFix(
+          handoff,
+          sessionId,
+          payloadRecord.scope,
+          typeof payloadRecord.modelId === 'string' ? payloadRecord.modelId : undefined
+        );
         return;
       }
       if (action === 'refresh-remediation-plan') {
@@ -1937,7 +4212,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         if (!workspacePath || !evidenceRefreshCommand) {
           throw new Error('No source command is available to refresh remediation evidence.');
         }
-        const remediationPlanCommand = buildArtifactRemediationPlanCommand();
+        const remediationPlanExecution = resolveArtifactRemediationPlanExecution();
+        const remediationPlanCommand = remediationPlanExecution.commandText;
+        const refreshCommandText = `${evidenceRefreshCommand} && ${remediationPlanCommand}`;
         studioHost.postInlineCreate('sidebarStudioActionResult', {
           sessionId,
           cardId: handoff.cardId,
@@ -1945,7 +4222,22 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           status: 'running',
           phase: 'refreshing-remediation-plan',
           summary: 'Refreshing source evidence and npm remediation plan.',
+          commandText: refreshCommandText,
+          dashboardCommandId: remediationPlanExecution.dashboardCommandId,
+          executionChannel: remediationPlanExecution.executionChannel,
+          capabilityGate: remediationPlanExecution.capabilityGate,
+        });
+        await this._assertSidebarStudioMutationAllowed({
+          workspacePath,
+          projectPath: handoff.projectPath ?? scope.projectPath,
+          actionLabel: 'Studio remediation evidence refresh',
           commandText: evidenceRefreshCommand,
+        });
+        await this._assertSidebarStudioMutationAllowed({
+          workspacePath,
+          projectPath: handoff.projectPath ?? scope.projectPath,
+          actionLabel: 'Studio remediation plan refresh',
+          commandText: remediationPlanCommand,
         });
         const evidenceExecution = await runIncidentInlineCommand({
           command: evidenceRefreshCommand,
@@ -1962,8 +4254,11 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         if (this._context) {
           await recordStudioBlockerCommandRun(this._context, {
             cardId: handoff.cardId,
-            sourceCommand: `${evidenceRefreshCommand} && ${remediationPlanCommand}`,
+            sourceCommand: refreshCommandText,
             blockers: handoff.blockers,
+            dashboardCommandId: remediationPlanExecution.dashboardCommandId,
+            executionChannel: remediationPlanExecution.executionChannel,
+            capabilityGate: remediationPlanExecution.capabilityGate,
             exitCode: planExecution.exitCode ?? (planExecution.success ? 0 : 1),
           });
         }
@@ -1971,42 +4266,50 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           workspacePath,
           projectPath: handoff.projectPath ?? scope.projectPath,
         });
+        clearDoctorRemediationPlanCache();
         const refreshedPlan = await this._postSidebarDoctorRemediationPlan({
           handoff,
           workspacePath,
+          sessionId,
         });
         const hasRepairPlan = Boolean(refreshedPlan?.visibleSteps.length);
-        const ok = planExecution.success && hasRepairPlan;
-        const failureExecution = planExecution.success ? evidenceExecution : planExecution;
+        const refreshSucceeded = evidenceExecution.success && planExecution.success;
+        const failureExecution = evidenceExecution.success ? planExecution : evidenceExecution;
         studioHost.postInlineCreate('sidebarStudioActionResult', {
           sessionId,
           cardId: handoff.cardId,
           action,
-          status: ok ? 'done' : hasRepairPlan ? 'review' : 'failed',
-          title: planExecution.success
-            ? hasRepairPlan
+          status: hasRepairPlan || refreshSucceeded ? 'review' : 'failed',
+          title: !failureExecution.success
+            ? 'Evidence refresh failed'
+            : hasRepairPlan
               ? undefined
-              : 'Evidence refreshed; source fix needed'
-            : 'Evidence refresh failed',
-          summary: planExecution.success
+              : 'Evidence refreshed; source fix needed',
+          summary: refreshSucceeded
             ? hasRepairPlan
               ? 'Evidence refreshed. Studio loaded the latest repair plan.'
               : 'The artifact is fresh, but no deterministic repair plan is available for this card. I can continue with an AI-assisted fix using the refreshed evidence.'
             : (failureExecution.error ?? failureExecution.stderrTail ?? 'Evidence refresh failed.'),
           commandText: remediationPlanCommand,
+          dashboardCommandId: remediationPlanExecution.dashboardCommandId,
+          executionChannel: remediationPlanExecution.executionChannel,
+          capabilityGate: remediationPlanExecution.capabilityGate,
           exitCode: failureExecution.exitCode,
           stderrTail: failureExecution.stderrTail,
           topBlocker: planExecution.success
             ? undefined
             : (failureExecution.error ?? handoff.blockers[0]),
           error: failureExecution.error,
-          nextAction: planExecution.success
+          nextAction: refreshSucceeded
             ? hasRepairPlan
-              ? undefined
+              ? 'continue-remediation'
               : 'auto-fix'
             : studioActionFailureNextAction('run-command'),
-          nextActionLabel:
-            planExecution.success && !hasRepairPlan ? 'Continue with fix' : undefined,
+          nextActionLabel: refreshSucceeded
+            ? hasRepairPlan
+              ? 'Apply next safe step'
+              : 'Continue with AI repair'
+            : undefined,
         });
         return;
       }
@@ -2056,15 +4359,49 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         if (!step) {
           throw new Error('Selected remediation step is no longer present in the latest plan.');
         }
-        const applyResult = await applyDoctorRemediationStep({ workspacePath, step });
-        const ok = applyResult.status === 'applied';
-        const verifyCommand = step.verifyCommand ?? handoff.verifyCommand;
+        const autonomous = payloadRecord.autonomous === true;
+        if (!autonomous && (step.requiresApproval || step.studioState === 'review-required')) {
+          const approvalLabel = 'Apply and verify';
+          const approval = await vscode.window.showWarningMessage(
+            `Workspai Studio wants to apply: ${step.previewTitle || step.primaryAction}`,
+            {
+              modal: true,
+              detail:
+                step.diffSummary ||
+                step.previewSummary ||
+                'This contract-authored remediation step requires explicit operator approval.',
+            },
+            approvalLabel
+          );
+          if (approval !== approvalLabel) {
+            studioHost.postInlineCreate('sidebarStudioActionResult', {
+              sessionId,
+              cardId: handoff.cardId,
+              action,
+              status: 'review',
+              title: 'Approval required',
+              summary: 'The guarded remediation step was not applied.',
+              requiresApproval: true,
+              nextAction: 'continue-remediation',
+              nextActionLabel: 'Review again',
+            });
+            return;
+          }
+        }
         const stepProjectPath = await resolveProjectPathFromRemediationStep({
           step,
           workspacePath,
           handoffProjectPath: handoff.projectPath,
           scopeProjectPath: scope.projectPath,
         });
+        await this._assertSidebarStudioMutationAllowed({
+          workspacePath,
+          projectPath: stepProjectPath,
+          actionLabel: 'Studio remediation apply',
+        });
+        const applyResult = await applyDoctorRemediationStep({ workspacePath, step });
+        const ok = applyResult.status === 'applied';
+        const verifyCommand = step.verifyCommand ?? handoff.verifyCommand;
         const verifyHandoff: StudioBlockerHandoff = {
           ...handoff,
           verifyCommand,
@@ -2194,6 +4531,11 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               'This internal remediation step is not ready for automatic apply. Refresh source evidence first.'
             );
           }
+          await this._assertSidebarStudioMutationAllowed({
+            workspacePath,
+            projectPath: stepProjectPath,
+            actionLabel: 'Studio internal remediation apply',
+          });
           studioHost.postInlineCreate('sidebarStudioActionResult', {
             sessionId,
             cardId: handoff.cardId,
@@ -2274,6 +4616,12 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           summary: 'Running the selected repair command.',
           commandText,
         });
+        await this._assertSidebarStudioMutationAllowed({
+          workspacePath,
+          projectPath: stepProjectPath,
+          actionLabel: 'Studio remediation command',
+          commandText,
+        });
         const execution = await runIncidentInlineCommand({
           command: commandText,
           workspacePath,
@@ -2332,9 +4680,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             });
             return;
           }
-          void this._postSidebarDoctorRemediationPlan({ handoff, workspacePath });
+          void this._postSidebarDoctorRemediationPlan({ handoff, workspacePath, sessionId });
         } else {
-          void this._postSidebarDoctorRemediationPlan({ handoff, workspacePath });
+          void this._postSidebarDoctorRemediationPlan({ handoff, workspacePath, sessionId });
         }
         studioHost.postInlineCreate('sidebarStudioActionResult', {
           sessionId,
@@ -2375,6 +4723,11 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
             )
           : undefined;
+        await this._assertSidebarStudioMutationAllowed({
+          workspacePath,
+          projectPath: handoff.projectPath ?? scope.projectPath,
+          actionLabel: 'Studio patch apply',
+        });
         studioHost.postInlineCreate('sidebarStudioActionResult', {
           sessionId,
           cardId: handoff.cardId,
@@ -2388,8 +4741,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           patches: pendingPatches,
           acceptedPaths,
         });
-        studioHost.deletePendingPatches(handoff.cardId, sessionId);
-        await studioHost.finalizeSidebarPatchBridgeResult(
+        await studioHost.finalizeStudioPatchTransaction(
           handoff,
           sessionId,
           patchResult,
@@ -2399,6 +4751,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             projectPath: handoff.projectPath ?? scope.projectPath,
           }
         );
+        studioHost.deletePendingPatches(handoff.cardId, sessionId);
         return;
       }
       if (action === 'reject-patch') {
@@ -2486,24 +4839,29 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           throw new Error('No verify command is attached to this blocker handoff.');
         }
         const scope = resolveStudioActionScope(payloadRecord.scope);
-        if (!scope.workspacePath) {
+        const workspacePath = scope.workspacePath ?? handoff.workspacePath;
+        const projectPath = scope.projectPath ?? handoff.projectPath;
+        if (!workspacePath) {
           throw new Error('No workspace is selected for verify.');
         }
         const execution = await runIncidentInlineCommand({
           command: handoff.verifyCommand,
-          workspacePath: scope.workspacePath,
+          workspacePath,
+          projectPath,
           actionId: 'verify-gates',
         });
-        await studioHost.finalizeStudioVerifyHandoff({
+        const refreshResult = await studioHost.finalizeStudioVerifyHandoff({
           handoff,
-          workspacePath: scope.workspacePath,
-          projectPath: scope.projectPath,
+          workspacePath,
+          projectPath,
           sessionId,
           verifySucceeded: execution.success,
           verifyExitCode: execution.exitCode ?? (execution.success ? 0 : 1),
           verifyError: execution.error,
         });
-        if (execution.success) {
+        const remainsBlocking = dashboardEvidenceCardIsBlocking(refreshResult.primaryCard);
+        const resolved = !remainsBlocking;
+        if (resolved) {
           void recordRetentionMilestone(this._context, 'verify_pass_after_studio_fix', {
             surface: 'studio',
           });
@@ -2512,19 +4870,23 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           sessionId,
           ...(handoff ? { cardId: handoff.cardId } : {}),
           action,
-          status: execution.success ? 'done' : 'failed',
-          title: execution.success ? undefined : 'Verify failed',
-          summary: execution.success
-            ? undefined
+          status: resolved ? 'done' : 'failed',
+          title: resolved
+            ? refreshResult.primaryCard?.status === 'warn'
+              ? 'Verified with attention'
+              : undefined
+            : 'Verify still blocking',
+          summary: resolved
+            ? refreshResult.primaryCard?.status === 'warn'
+              ? 'The refreshed card is advisory and no longer blocks completion.'
+              : undefined
             : (execution.error ?? execution.stderrTail ?? handoff.blockers[0]),
           commandText: handoff.verifyCommand,
           exitCode: execution.exitCode,
           stderrTail: execution.stderrTail,
-          topBlocker: execution.success ? undefined : (execution.error ?? handoff.blockers[0]),
+          topBlocker: resolved ? undefined : (execution.error ?? handoff.blockers[0]),
           error: execution.error,
-          nextAction: execution.success
-            ? undefined
-            : studioActionFailureNextAction('verify-handoff'),
+          nextAction: resolved ? undefined : studioActionFailureNextAction('verify-handoff'),
         });
         return;
       }
@@ -2557,6 +4919,14 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         if (!scope.workspacePath) {
           throw new Error('No workspace is selected for this Studio command.');
         }
+        const cliGate = await gateIncidentStudioRapidkitCommand({
+          command: commandText,
+          cwd: scope.workspacePath,
+          featureLabel: 'Studio command',
+        });
+        if (!cliGate.allowed) {
+          throw new Error(cliGate.error);
+        }
         const executionPlan = await resolveRapidkitExecutionPlan({
           command: commandText,
           workspacePath: scope.workspacePath,
@@ -2566,6 +4936,12 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         if ('error' in executionPlan) {
           throw new Error(executionPlan.error);
         }
+        await this._assertSidebarStudioMutationAllowed({
+          workspacePath: scope.workspacePath,
+          projectPath: scope.projectPath,
+          actionLabel: 'Studio command',
+          commandText,
+        });
         runCommandsInTerminal({
           name: 'Workspai Studio',
           cwd: executionPlan.cwd,
@@ -2576,6 +4952,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             cardId: handoff.cardId,
             sourceCommand: handoff.sourceCommand,
             blockers: handoff.blockers,
+            ...studioCommandLedgerMetadata(handoff),
           });
         }
         studioHost.postInlineCreate('sidebarStudioActionResult', {
@@ -2655,6 +5032,50 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private async _assertSidebarStudioMutationAllowed(input: {
+    workspacePath: string;
+    projectPath?: string;
+    actionLabel: string;
+    commandText?: string;
+    governedRepair?: {
+      contractAuthorized: boolean;
+      reversible: boolean;
+      invasive?: boolean;
+    };
+  }): Promise<void> {
+    const commandText = input.commandText?.trim();
+    if (commandText && !isMutatingRapidkitCliCommand(commandText)) {
+      return;
+    }
+
+    if (!this._context) {
+      throw new Error(
+        `${input.actionLabel} is blocked because Studio mutation policy is unavailable until the extension context is ready.`
+      );
+    }
+
+    if (input.governedRepair) {
+      const repairBlockReason = resolveGovernedStudioRepairMutationBlockReason({
+        workspaceTrusted: vscode.workspace.isTrusted,
+        ...input.governedRepair,
+      });
+      if (repairBlockReason) {
+        throw new Error(repairBlockReason);
+      }
+      return;
+    }
+
+    const telemetry = await resolveIncidentStudioTelemetry({
+      context: this._context,
+      workspacePath: input.workspacePath,
+      projectPath: input.projectPath,
+    });
+    const mutationBlockReason = resolveStudioMutationBlockReason(telemetry);
+    if (mutationBlockReason) {
+      throw new Error(mutationBlockReason);
+    }
+  }
+
   private async _finalizeStudioVerifyHandoff(input: {
     handoff: StudioBlockerHandoff;
     workspacePath: string;
@@ -2663,12 +5084,16 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     verifySucceeded: boolean;
     verifyExitCode?: number | null;
     verifyError?: string;
+    agentOwned?: boolean;
   }): Promise<StudioSidebarDashboardRefreshResult> {
     if (this._context) {
       await recordStudioBlockerCommandRun(this._context, {
         cardId: input.handoff.cardId,
         sourceCommand: input.handoff.verifyCommand ?? input.handoff.sourceCommand,
         blockers: input.handoff.blockers,
+        dashboardCommandId: input.handoff.dashboardCommandId,
+        executionChannel: input.handoff.executionChannel,
+        capabilityGate: input.handoff.capabilityGate,
         exitCode: input.verifyExitCode,
       });
     }
@@ -2681,7 +5106,8 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       verifyExitCode: input.verifyExitCode,
       refreshDashboardCards: (payload) => WelcomePanel.refreshDashboardEvidenceCards(payload),
     });
-    if (input.verifySucceeded) {
+    const verifyResolved = refresh.evidenceOutcome === 'resolved';
+    if (verifyResolved) {
       void recordRetentionMilestone(this._context, 'return_to_dashboard_after_verify', {
         surface: 'studio',
       });
@@ -2694,7 +5120,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       blockerSignature: refresh.ledger?.nextSignature ?? input.handoff.blockerSignature,
       commandRunCount:
         refresh.ledger?.signatureChanged === true ? 0 : input.handoff.commandRunCount,
-      studioMode: refresh.primaryCard?.status === 'pass' ? 'VERIFY_ONLY' : input.handoff.studioMode,
+      studioMode: verifyResolved ? 'VERIFY_ONLY' : input.handoff.studioMode,
     };
     this._activeBlockerHandoff = nextHandoff;
 
@@ -2704,22 +5130,24 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       cardStatus: refresh.primaryCard?.status,
       blockers: refresh.primaryCard?.blockers ?? [],
       refreshedCardIds: refresh.cardIds,
-      verifySucceeded: input.verifySucceeded,
+      verifySucceeded: verifyResolved,
+      evidenceOutcome: refresh.evidenceOutcome,
     });
-    if (nextHandoff.cardStatus !== 'pass') {
+    if (!input.agentOwned && dashboardEvidenceCardIsBlocking(refresh.primaryCard)) {
       void this._postSidebarDoctorRemediationPlan({
         handoff: nextHandoff,
         workspacePath: input.workspacePath,
+        sessionId: input.sessionId,
       });
     }
 
-    if (input.verifySucceeded || refresh.primaryCard) {
+    if (refresh.primaryCard && (!input.agentOwned || verifyResolved)) {
       this._postInlineCreate('sidebarStudioFixApplied', {
         cardId: input.handoff.cardId,
         verifyCommand: input.handoff.verifyCommand,
         verifyArtifact: input.handoff.verifyArtifact,
-        requiresVerify: refresh.primaryCard?.status !== 'pass',
-        phase: refresh.primaryCard?.status === 'pass' ? 'verified' : 'awaiting-verify',
+        requiresVerify: !verifyResolved,
+        phase: !verifyResolved ? 'awaiting-verify' : 'verified',
         blockerSignatureBefore: input.handoff.blockerSignature,
         appliedFixes: [],
         cardStatus: refresh.primaryCard?.status,
@@ -2732,24 +5160,29 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       handoff: input.handoff,
       kind: 'verify-handoff',
       actionId: input.handoff.verifyCommand ?? 'verify-handoff',
-      summary: input.verifySucceeded
+      summary: verifyResolved
         ? 'Verify handoff completed.'
-        : (input.verifyError ?? 'Verify failed.'),
-      ok: input.verifySucceeded,
+        : (input.verifyError ??
+          (refresh.evidenceOutcome === 'missing'
+            ? 'Verify ran, but refreshed evidence was missing.'
+            : 'Verify failed or remains blocking.')),
+      ok: verifyResolved,
     });
 
-    const toast = formatStudioCardRefreshToast({
-      primaryCard: refresh.primaryCard,
-      verifySucceeded: input.verifySucceeded,
-    });
-    if (toast.kind === 'info') {
-      void vscode.window.showInformationMessage(toast.message);
-    } else if (toast.kind === 'warning') {
-      void vscode.window.showWarningMessage(toast.message);
-    } else {
-      void vscode.window.showErrorMessage(
-        input.verifyError ? `${toast.message} ${input.verifyError}` : toast.message
-      );
+    if (!input.agentOwned || verifyResolved) {
+      const toast = formatStudioCardRefreshToast({
+        primaryCard: refresh.primaryCard,
+        verifySucceeded: verifyResolved,
+      });
+      if (toast.kind === 'info') {
+        void vscode.window.showInformationMessage(toast.message);
+      } else if (toast.kind === 'warning') {
+        void vscode.window.showWarningMessage(toast.message);
+      } else {
+        void vscode.window.showErrorMessage(
+          input.verifyError ? `${toast.message} ${input.verifyError}` : toast.message
+        );
+      }
     }
     return refresh;
   }
@@ -2802,7 +5235,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     });
 
     let refreshedPlanStepCount = 0;
-    if (refreshResult.primaryCard?.status !== 'pass') {
+    if (dashboardEvidenceCardIsBlocking(refreshResult.primaryCard)) {
       const refreshedPlan = await this._postSidebarDoctorRemediationPlan({
         handoff: {
           ...verifyHandoff,
@@ -2810,6 +5243,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           blockers: refreshResult.primaryCard?.blockers ?? verifyHandoff.blockers,
         },
         workspacePath: input.workspacePath,
+        sessionId: input.sessionId,
       });
       refreshedPlanStepCount = refreshedPlan?.visibleSteps.length ?? 0;
     }
@@ -2819,9 +5253,17 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     const loopProgress = remediationLoopProgressForApply({
       verifySucceeded: verifyExecution.success,
       cardStatus: refreshResult.primaryCard?.status,
+      cardBlocking: dashboardEvidenceCardIsBlocking(refreshResult.primaryCard),
       refreshedPlanSteps: refreshedPlanStepCount,
       failureSummary: verifyFailureSummary,
     });
+    const cardResolved =
+      refreshResult.evidenceOutcome === 'resolved' &&
+      studioAgentRepairIsComplete({
+        verifyRan: true,
+        verifySucceeded: verifyExecution.success,
+        cardBlocking: dashboardEvidenceCardIsBlocking(refreshResult.primaryCard),
+      });
     const finalSummary = verifyExecution.success ? loopProgress.summary : loopProgress.summary;
     this._postInlineCreate('sidebarStudioActionResult', {
       sessionId: input.sessionId,
@@ -2833,9 +5275,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       commandText: verifyExecutionCommand,
       exitCode: verifyExecution.exitCode,
       stderrTail: verifyExecution.stderrTail,
-      topBlocker: verifyExecution.success
-        ? undefined
-        : (verifyExecution.error ?? input.handoff.blockers[0]),
+      topBlocker: cardResolved ? undefined : (verifyExecution.error ?? input.handoff.blockers[0]),
       error: verifyExecution.error,
       nextAction: verifyExecution.success ? loopProgress.nextAction : loopProgress.nextAction,
       nextActionLabel: loopProgress.nextActionLabel,
@@ -2844,35 +5284,37 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         : {}),
     });
 
-    if (verifyExecution.success && input.refreshShipLoopOnSuccess) {
+    if (cardResolved && input.refreshShipLoopOnSuccess) {
       await this._refreshSidebarShipLoop({
         workspacePath: input.workspacePath,
         projectPath: effectiveProjectPath,
       });
     }
-    if (verifyExecution.success && input.recordVerifyPassMilestone) {
+    if (cardResolved && input.recordVerifyPassMilestone) {
       void recordRetentionMilestone(this._context, 'verify_pass_after_studio_fix', {
         surface: 'studio',
       });
     }
     return {
-      verifySucceeded: verifyExecution.success,
+      verifySucceeded: cardResolved,
       summary: finalSummary,
     };
   }
 
-  private async _finalizeSidebarPatchBridgeResult(
+  private async _finalizeStudioPatchTransaction(
     handoff: StudioBlockerHandoff,
     sessionId: string | undefined,
-    result: SidebarPatchBridgeResult,
+    result: StudioPatchTransactionResult,
     sourceAction: 'auto-fix' | 'apply-patch' = 'auto-fix',
     scope: { workspacePath?: string; projectPath?: string } = {}
   ): Promise<void> {
     if (sessionId && result.responseText?.trim()) {
-      this._postInlineCreate('sidebarStudioChunk', {
-        sessionId,
-        text: result.responseText.trim(),
-      });
+      if (!result.responseStreamed) {
+        this._postInlineCreate('sidebarStudioChunk', {
+          sessionId,
+          text: result.responseText.trim(),
+        });
+      }
       this._postInlineCreate('sidebarStudioDone', {
         sessionId,
         answer: result.responseText.trim(),
@@ -2880,10 +5322,12 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     if (result.status === 'review' && result.pendingPatches && result.pendingPatches.length > 0) {
-      this._pendingSidebarPatches.set(
-        sidebarPatchReviewKey(handoff.cardId, sessionId),
-        result.pendingPatches
-      );
+      const reviewKey = sidebarPatchReviewKey(handoff.cardId, sessionId);
+      if (!this._context) {
+        throw new Error('Studio cannot persist the pending patch transaction.');
+      }
+      await saveSidebarPendingPatches(this._context, reviewKey, result.pendingPatches);
+      this._pendingSidebarPatches.set(reviewKey, result.pendingPatches);
       this._postInlineCreate('sidebarStudioPatchReview', {
         sessionId,
         cardId: handoff.cardId,
@@ -2909,11 +5353,12 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         cardId: handoff.cardId,
         action: sourceAction,
         status: 'review',
-        title: 'AI repair needs a patch',
+        title: 'AI diagnosis needs an actionable patch',
         summary:
-          'I received an AI repair answer, but Studio could not extract safe file patch blocks to apply automatically.',
+          'The AI diagnosis did not contain complete path-scoped patches. Studio will retry with the preserved evidence and bounded repair budget.',
+        requiresApproval: false,
         nextAction: 'auto-fix',
-        nextActionLabel: 'Retry AI fix',
+        nextActionLabel: 'Retrying AI repair',
       });
       return;
     }
@@ -2924,6 +5369,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           cardId: handoff.cardId,
           sourceCommand: handoff.sourceCommand,
           blockers: handoff.blockers,
+          ...studioCommandLedgerMetadata(handoff),
           exitCode: 0,
         });
       }
@@ -2996,7 +5442,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           verifyError: verifyExecution.error,
         });
         let refreshedPlanStepCount = 0;
-        if (refreshResult.primaryCard?.status !== 'pass') {
+        if (dashboardEvidenceCardIsBlocking(refreshResult.primaryCard)) {
           const refreshedPlan = await this._postSidebarDoctorRemediationPlan({
             handoff: {
               ...verifyHandoff,
@@ -3004,6 +5450,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               blockers: refreshResult.primaryCard?.blockers ?? verifyHandoff.blockers,
             },
             workspacePath,
+            sessionId,
           });
           refreshedPlanStepCount = refreshedPlan?.visibleSteps.length ?? 0;
         }
@@ -3012,19 +5459,41 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         const loopProgress = remediationLoopProgressForApply({
           verifySucceeded: verifyExecution.success,
           cardStatus: refreshResult.primaryCard?.status,
+          cardBlocking: dashboardEvidenceCardIsBlocking(refreshResult.primaryCard),
           refreshedPlanSteps: refreshedPlanStepCount,
           failureSummary: verifyFailureSummary,
         });
+        const cardResolved =
+          refreshResult.evidenceOutcome === 'resolved' &&
+          studioAgentRepairIsComplete({
+            verifyRan: true,
+            verifySucceeded: verifyExecution.success,
+            cardBlocking: dashboardEvidenceCardIsBlocking(refreshResult.primaryCard),
+          });
+        const automaticRollback =
+          !cardResolved && result.patchResult
+            ? await rollbackAppliedPatches({
+                workspacePath,
+                patches: result.patchResult.patches,
+              })
+            : null;
+        const rollbackSummary = automaticRollback
+          ? automaticRollback.ok
+            ? ` Studio rolled back ${automaticRollback.restoredPaths.length} auto-applied file(s) before trying another strategy.`
+            : ` Automatic rollback paused because source changed: ${automaticRollback.failedPaths
+                .map((entry) => `${entry.path}: ${entry.reason}`)
+                .join('; ')}`
+          : '';
         void this._auditSidebarStudioFix({
           sessionId,
           workspacePath,
           handoff: verifyHandoff,
           kind: sourceAction === 'apply-patch' ? 'apply-patch' : 'auto-fix',
           actionId: 'apply-debug-patch',
-          summary: verifyExecution.success
+          summary: cardResolved
             ? 'Patch applied and verify completed.'
-            : (verifyExecution.error ?? verifyExecution.stderrTail ?? result.summary),
-          ok: verifyExecution.success,
+            : `${verifyExecution.error ?? verifyExecution.stderrTail ?? result.summary}${rollbackSummary}`,
+          ok: cardResolved,
           appliedFixes,
           rollbackCommand: rollbackCommand ?? undefined,
           patchMetadata,
@@ -3033,19 +5502,23 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           sessionId,
           cardId: handoff.cardId,
           action: sourceAction,
-          status: loopProgress.status,
-          title: loopProgress.title,
-          summary: loopProgress.summary,
+          status: automaticRollback && !automaticRollback.ok ? 'review' : loopProgress.status,
+          title:
+            automaticRollback && !automaticRollback.ok
+              ? 'Rollback requires review'
+              : loopProgress.title,
+          summary: `${loopProgress.summary}${rollbackSummary}`,
           commandText: verifyExecutionCommand,
           exitCode: verifyExecution.exitCode,
           stderrTail: verifyExecution.stderrTail,
-          topBlocker: verifyExecution.success
-            ? undefined
-            : (verifyExecution.error ?? handoff.blockers[0]),
+          topBlocker: cardResolved ? undefined : (verifyExecution.error ?? handoff.blockers[0]),
           error: verifyExecution.error,
-          nextAction: loopProgress.nextAction,
-          nextActionLabel: loopProgress.nextActionLabel,
-          ...(!verifyExecution.success && rollbackCommand ? { rollbackCommand } : {}),
+          nextAction:
+            automaticRollback && !automaticRollback.ok ? undefined : loopProgress.nextAction,
+          nextActionLabel:
+            automaticRollback && !automaticRollback.ok ? undefined : loopProgress.nextActionLabel,
+          ...(automaticRollback && !automaticRollback.ok ? { requiresApproval: true } : {}),
+          ...(!cardResolved && rollbackCommand ? { rollbackCommand } : {}),
         });
       } else {
         void this._auditSidebarStudioFix({
@@ -3055,7 +5528,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           kind: sourceAction === 'apply-patch' ? 'apply-patch' : 'auto-fix',
           actionId: 'apply-debug-patch',
           summary: result.summary,
-          ok: true,
+          ok: false,
           appliedFixes,
           rollbackCommand: rollbackCommand ?? undefined,
           patchMetadata,
@@ -3064,8 +5537,11 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           sessionId,
           cardId: handoff.cardId,
           action: sourceAction,
-          status: 'done',
-          summary: result.summary,
+          status: 'review',
+          title: 'Verification contract missing',
+          summary:
+            'Patch applied, but Studio cannot claim completion without a workspace and verify command. Review and verify manually.',
+          requiresApproval: true,
         });
       }
       return;
@@ -3085,7 +5561,8 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
   private async _runSidebarAutoFix(
     handoff: StudioBlockerHandoff,
     sessionId?: string,
-    payloadScope?: unknown
+    payloadScope?: unknown,
+    requestedModelId?: string
   ): Promise<void> {
     const workspacePath =
       handoff.workspacePath ??
@@ -3098,6 +5575,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     const mode = handoff.studioMode ?? 'FIX';
     const scope = resolveStudioActionScope(payloadScope);
     const projectPath = handoff.projectPath ?? scope.projectPath;
+    this._ensureStudioEvidenceWatcher(handoff, sessionId);
 
     this._postInlineCreate('sidebarStudioActionResult', {
       sessionId,
@@ -3108,16 +5586,24 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     });
 
     if (mode === 'RUN_ONCE') {
+      await this._assertSidebarStudioMutationAllowed({
+        workspacePath,
+        projectPath,
+        actionLabel: 'Studio run-once source command',
+        commandText: handoff.sourceCommand,
+      });
       const execution = await runIncidentInlineCommand({
         command: handoff.sourceCommand,
         workspacePath,
-        actionId: 'run-analyze',
+        projectPath,
+        actionId: `run-once-${handoff.cardId}`,
       });
       if (this._context) {
         await recordStudioBlockerCommandRun(this._context, {
           cardId: handoff.cardId,
           sourceCommand: handoff.sourceCommand,
           blockers: handoff.blockers,
+          ...studioCommandLedgerMetadata(handoff),
           exitCode: execution.success ? 0 : 1,
         });
       }
@@ -3182,6 +5668,23 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    if (mode === 'FIX') {
+      await this._runAutonomousStudioAgent({
+        task: `Resolve every blocker for ${handoff.cardLabel ?? handoff.cardId}, refresh the required producers, and stop only after fresh non-blocking verify evidence.`,
+        sessionId,
+        requestedModelId,
+        workspacePath,
+        projectPath,
+        handoff,
+      });
+      return;
+    }
+
+    await this._assertSidebarStudioMutationAllowed({
+      workspacePath,
+      projectPath,
+      actionLabel: 'Studio auto-fix',
+    });
     const bootstrapComplianceFix = await applyBootstrapComplianceRemediation({
       workspacePath,
       handoff,
@@ -3248,6 +5751,18 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     const fixAction = pickStudioFixActionId(handoff);
+    const shouldUseEvidencePatch = shouldUseEvidencePatchRepair(handoff, fixAction);
+    if (shouldUseEvidencePatch) {
+      await this._runAutonomousStudioAgent({
+        task: `Resolve the active ${handoff.cardLabel ?? handoff.cardId} blocker completely.`,
+        sessionId,
+        requestedModelId,
+        workspacePath,
+        projectPath,
+        handoff,
+      });
+      return;
+    }
     if (fixAction === 'doctor-fix') {
       const doctorInvocation = resolveStudioDoctorFixInvocation({ workspacePath, handoff });
       this._postInlineCreate('sidebarStudioActionResult', {
@@ -3309,6 +5824,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           cardId: handoff.cardId,
           sourceCommand: handoff.sourceCommand,
           blockers: handoff.blockers,
+          ...studioCommandLedgerMetadata(handoff),
           exitCode: doctorRun.exitCode,
         });
       }
@@ -3393,15 +5909,13 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     if (fixAction === 'fix-lens') {
-      const patchResult = await executeSidebarApplyDebugPatch({
-        context: this._context,
+      await this._runAutonomousStudioAgent({
+        task: `Resolve the active ${handoff.cardLabel ?? handoff.cardId} blocker completely.`,
+        sessionId,
+        requestedModelId,
         workspacePath,
+        projectPath,
         handoff,
-        projectPath,
-      });
-      await this._finalizeSidebarPatchBridgeResult(handoff, sessionId, patchResult, 'auto-fix', {
-        workspacePath,
-        projectPath,
       });
       return;
     }
@@ -3422,6 +5936,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         cardId: handoff.cardId,
         sourceCommand: handoff.sourceCommand,
         blockers: handoff.blockers,
+        ...studioCommandLedgerMetadata(handoff),
         exitCode: actionSucceeded ? 0 : 1,
       });
     }
@@ -3522,6 +6037,25 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             ? (invocationPayload as Record<string, unknown>)
             : {}),
         };
+        const contract = resolveDashboardCommandContractByVscodeCommand(action.vscodeCommand);
+        const capability = await gateDashboardCommandCapability({
+          contract,
+          commandId: action.id,
+          cwd: this._resolveSidebarActionCapabilityCwd(payload),
+        });
+        if (!capability.ok) {
+          void vscode.window.showWarningMessage(capability.reason, 'Open Setup').then((choice) => {
+            if (choice === 'Open Setup') {
+              void vscode.commands.executeCommand('workspai.openSetup');
+            }
+          });
+          this._postInlineCreate('sidebarActionError', {
+            actionId: action.id,
+            title: action.label,
+            error: capability.reason,
+          });
+          return;
+        }
         if (payload && Object.keys(payload).length > 0) {
           await vscode.commands.executeCommand(action.vscodeCommand, payload);
           return;
@@ -3533,6 +6067,22 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       console.error(`[Workspai] Sidebar action failed: ${action.id}`, error);
       void vscode.window.showErrorMessage(`Workspai action failed: ${action.label}. ${message}`);
     }
+  }
+
+  private _resolveSidebarActionCapabilityCwd(payload: Record<string, unknown>): string | undefined {
+    const nestedWorkspace =
+      payload.workspace && typeof payload.workspace === 'object'
+        ? (payload.workspace as { path?: unknown })
+        : undefined;
+    const explicitPath =
+      typeof payload.workspacePath === 'string' && payload.workspacePath.trim()
+        ? payload.workspacePath.trim()
+        : typeof payload.path === 'string' && payload.path.trim()
+          ? payload.path.trim()
+          : typeof nestedWorkspace?.path === 'string' && nestedWorkspace.path.trim()
+            ? nestedWorkspace.path.trim()
+            : undefined;
+    return explicitPath || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   }
 
   private async _runSidebarCreatedWorkspaceBootstrap(payload: unknown): Promise<void> {
@@ -3610,5 +6160,13 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  dispose() {}
+  dispose() {
+    if (this._studioEvidencePulseTimer) {
+      clearTimeout(this._studioEvidencePulseTimer);
+      this._studioEvidencePulseTimer = undefined;
+    }
+    this._studioEvidenceWatcher?.dispose();
+    this._studioEvidenceWatcher = undefined;
+    this._studioEvidenceChangedPaths.clear();
+  }
 }

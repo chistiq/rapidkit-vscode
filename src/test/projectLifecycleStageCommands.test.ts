@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { registeredCommands, terminalMock, interruptMock, showWarningMock } = vi.hoisted(() => ({
-  registeredCommands: new Map<string, (...args: unknown[]) => unknown>(),
-  terminalMock: vi.fn(),
-  interruptMock: vi.fn(),
-  showWarningMock: vi.fn(),
-}));
+const { registeredCommands, terminalMock, gatedTerminalMock, interruptMock, showWarningMock } =
+  vi.hoisted(() => ({
+    registeredCommands: new Map<string, (...args: unknown[]) => unknown>(),
+    terminalMock: vi.fn(),
+    gatedTerminalMock: vi.fn(),
+    interruptMock: vi.fn(),
+    showWarningMock: vi.fn(),
+  }));
 
 vi.mock('vscode', () => ({
   commands: {
@@ -37,6 +39,10 @@ vi.mock('../utils/terminalExecutor', () => ({
   interruptTerminal: interruptMock,
 }));
 
+vi.mock('../core/gatedRapidkitTerminal', () => ({
+  runGatedRapidkitCommandsInTerminal: gatedTerminalMock.mockResolvedValue(true),
+}));
+
 vi.mock('../utils/poetryHelper', () => ({
   detectPythonVirtualenv: vi.fn().mockResolvedValue({ exists: true }),
 }));
@@ -58,9 +64,11 @@ const PROJECT_ITEM = {
 function setupHarness(runningServers = new Map<string, any>()) {
   registeredCommands.clear();
   terminalMock.mockClear();
+  gatedTerminalMock.mockClear();
   interruptMock.mockClear();
   showWarningMock.mockReset();
   terminalMock.mockReturnValue({ name: 'mock-terminal' });
+  gatedTerminalMock.mockResolvedValue(true);
 
   registerProjectLifecycleCommands({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() } as any,
@@ -174,5 +182,37 @@ describe('project lifecycle stage commands', () => {
     await getCommand('workspai.projectBuild')({});
 
     expect(terminalMock).not.toHaveBeenCalled();
+  });
+
+  it('runs project doctor through the gated RapidKit terminal', async () => {
+    const { getCommand } = setupHarness();
+
+    await getCommand('workspai.projectDoctor')({
+      ...PROJECT_ITEM,
+      preferredAction: 'check',
+    });
+
+    expect(gatedTerminalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: '/tmp/team-ws/api',
+        commands: [['doctor', 'project']],
+      })
+    );
+  });
+
+  it('runs project doctor fix through the gated RapidKit terminal', async () => {
+    const { getCommand } = setupHarness();
+
+    await getCommand('workspai.projectDoctor')({
+      ...PROJECT_ITEM,
+      preferredAction: 'fix',
+    });
+
+    expect(gatedTerminalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: '/tmp/team-ws/api',
+        commands: [['doctor', 'project', '--fix']],
+      })
+    );
   });
 });

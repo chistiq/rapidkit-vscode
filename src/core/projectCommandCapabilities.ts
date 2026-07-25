@@ -111,7 +111,7 @@ export async function resolveProjectLifecycleCommand(
       allowed: false,
       capabilities: null,
       reason:
-        'Could not resolve RapidKit project command capabilities. Run `npx rapidkit project commands --json` in the project directory.',
+        'Could not resolve Workspai project command capabilities. Run `npx workspai project commands --json` in the project directory.',
     };
   }
 

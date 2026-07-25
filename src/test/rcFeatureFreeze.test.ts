@@ -32,6 +32,7 @@ describe('RC feature freeze', () => {
       'intelligenceSnapshot',
       'workspaceDiff',
       'workspaceImpact',
+      'workspaceIntelligenceRun',
       'workspaceVerify',
       'workspaceExplain',
       'workspaceWhy',
@@ -54,25 +55,28 @@ describe('RC feature freeze', () => {
       ['operate', 'Run'],
       ['repair', 'Repair'],
       ['evidence', 'Artifacts'],
+      ['graph', 'Graph'],
       ['console', 'Project'],
       ['catalog', 'Library'],
     ]);
   });
 
-  it('freezes secondary sidebar tabs and Studio modes until RC', () => {
+  it('pins the unified Assistant tab and composer mode selector', () => {
     const sidebar = read('webview-ui/src/sidebar/SecondarySidebar.tsx');
+    const selector = read('webview-ui/src/sidebar/composer/AssistantModeSelector.tsx');
 
     expect(sidebar).toContain("id: 'create'");
-    expect(sidebar).toContain("id: 'impact'");
     expect(sidebar).toContain("id: 'studio'");
     expect(sidebar).toContain("label: 'Create with AI'");
     expect(sidebar).toContain("shortLabel: 'Create'");
-    expect(sidebar).toContain("label: 'Workspace Advisor'");
-    expect(sidebar).toContain("label: 'Studio'");
+    expect(sidebar).toContain("label: 'Assistant'");
+    expect(sidebar).toContain("shortLabel: 'Assistant'");
+    expect(sidebar).not.toContain("label: 'Workspace Advisor'");
     expect(sidebar).toContain("type StudioMode = 'investigate' | 'verify' | 'prepare'");
-    expect(sidebar).toContain("{ id: 'investigate', label: 'Detect'");
-    expect(sidebar).toContain("id: 'verify'");
-    expect(sidebar).toContain("id: 'prepare'");
-    expect(sidebar).not.toContain("type StudioMode = 'investigate' | 'verify' | 'prepare' |");
+    expect(sidebar).toContain("setActiveTab(tab === 'impact' ? 'studio'");
+    expect(selector).toContain("export type AssistantMode = 'agent' | 'ask' | 'plan'");
+    expect(selector).toContain("id: 'agent'");
+    expect(selector).toContain("id: 'ask'");
+    expect(selector).toContain("id: 'plan'");
   });
 });

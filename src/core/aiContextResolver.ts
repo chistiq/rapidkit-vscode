@@ -126,23 +126,23 @@ export function buildRapidkitCommandScopeSection(ctx: AIModalContext): string {
   }
 
   lines.push(
-    '- Workspace-level commands belong in workspace root: `npx rapidkit create workspace`, `npx rapidkit bootstrap`, `npx rapidkit setup ...`, `npx rapidkit workspace ...`, `npx rapidkit cache ...`, `npx rapidkit mirror ...`, `npx rapidkit readiness`, `npx rapidkit doctor workspace`.'
+    '- Workspace-level commands belong in workspace root: `npx workspai create workspace`, `npx workspai bootstrap`, `npx workspai setup ...`, `npx workspai workspace ...`, `npx workspai cache ...`, `npx workspai mirror ...`, `npx workspai readiness`, `npx workspai doctor workspace`.'
   );
-  lines.push('- `npx rapidkit create project <kit> <name>` belongs in workspace root.');
+  lines.push('- `npx workspai create project <kit> <name>` belongs in workspace root.');
   lines.push(
-    '- Project lifecycle commands belong in project root: `npx rapidkit init/dev/test/build/start`, project-local `rapidkit init/dev/test/build/start`, `./rapidkit ...`, `source .rapidkit/activate`, and kit scripts such as `./bootstrap.sh`.'
-  );
-  lines.push(
-    '- `npx rapidkit doctor project` belongs in project root for selected-service diagnostics.'
+    '- Project lifecycle commands belong in project root: `npx workspai init/dev/test/build/start`, project-local `workspai init/dev/test/build/start`, legacy `./rapidkit ...`, and kit scripts such as `./bootstrap.sh`.'
   );
   lines.push(
-    '- Catalog module install/remove belongs in PROJECT root: `npx rapidkit add module <slug>` and `rapidkit uninstall module <slug>`.'
+    '- `npx workspai doctor project` belongs in project root for selected-service diagnostics.'
+  );
+  lines.push(
+    '- Catalog module install/remove belongs in PROJECT root: `npx workspai add module <slug>` and `workspai uninstall module <slug>`.'
   );
   lines.push(
     '- Domain feature scaffolding (NestJS src/<feature>/, FastAPI routers) is manual/code-gen — not `rapidkit add module`.'
   );
   lines.push(
-    '- `npx rapidkit doctor` is a host pre-flight check. It is not a substitute for `npx rapidkit doctor workspace`.'
+    '- `npx workspai doctor` is a host pre-flight check. It is not a substitute for `npx workspai doctor workspace`.'
   );
 
   if (ctx.projectRootPath) {
@@ -156,10 +156,10 @@ export function buildRapidkitCommandScopeSection(ctx: AIModalContext): string {
   }
 
   lines.push(
-    '- Workspace intelligence belongs at workspace root: `npx rapidkit workspace model --json --write`, `workspace snapshot`, `workspace diff --from <report>`, `workspace impact --from <report>`, `workspace context --for-agent --json --write`.'
+    '- Workspace intelligence belongs at workspace root: `npx workspai workspace model --json --write`, `workspace snapshot`, `workspace diff --from <report>`, `workspace impact --from <report>`, `workspace context --for-agent --json --write`.'
   );
   lines.push(
-    '- Recovery snapshots (`rapidkit snapshot create`) are separate from intelligence snapshots (`rapidkit workspace snapshot`).'
+    '- Recovery snapshots (`workspai snapshot create`) are separate from intelligence snapshots (`workspai workspace snapshot`).'
   );
   lines.push(
     '- Never present a workspace-root command as if it should run inside a project, and never present a project-only command as if it should run at workspace root.'

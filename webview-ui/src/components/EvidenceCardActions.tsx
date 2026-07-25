@@ -1,4 +1,15 @@
-import { Bot, Check, Copy, FileSearch, MoreHorizontal, Play, RefreshCw, Search, Send } from 'lucide-react';
+import {
+  Bot,
+  Check,
+  Copy,
+  FileSearch,
+  MoreHorizontal,
+  Play,
+  RefreshCw,
+  Search,
+  Send,
+} from 'lucide-react';
+import { type MouseEvent, useEffect, useRef } from 'react';
 import type { DashboardEvidenceCardId } from '@/lib/dashboardEvidence';
 import type { DashboardCommandExecutionChannel } from '@workspai-contracts/dashboardCommandExecutionChannel';
 import { CommandExecutionBadge } from '@/components/CommandExecutionBadge';
@@ -26,6 +37,7 @@ interface EvidenceCardActionsProps {
   onAdvancedInspect?: () => void;
   onAskStudio?: () => void;
   onSendToCopilot?: () => void;
+  onCopyAgentHandoff?: () => void;
   studioVariant?: 'primary' | 'ghost';
   executionChannel?: DashboardCommandExecutionChannel;
   primaryAction?: DashboardEvidencePrimaryAction;
@@ -82,10 +94,12 @@ export function EvidenceCardActions({
   onAdvancedInspect,
   onAskStudio,
   onSendToCopilot,
+  onCopyAgentHandoff,
   executionChannel,
   primaryAction,
   copyCommandText,
 }: EvidenceCardActionsProps) {
+  const overflowRef = useRef<HTMLDetailsElement>(null);
   const isRefreshPending = refreshPending ?? pending;
   const isBusy = pending || isRefreshPending;
   const canRevealArtifact = Boolean(artifactPath?.trim() && onRevealArtifact);
@@ -107,16 +121,46 @@ export function EvidenceCardActions({
   const hasRefreshSecondary = canRefresh && Boolean(onRefresh);
   const hasArtifactSecondary = canRevealArtifact || shouldExplainArtifact;
   const hasCopyCommandSecondary = Boolean(copyCommandText?.trim());
+  const hasCopyAgentHandoffSecondary = Boolean(onCopyAgentHandoff);
   const hasAdvancedInspectSecondary = Boolean(onAdvancedInspect);
   const hasCopilotSecondary = showAgentActions && Boolean(onSendToCopilot);
   const hasOverflow =
     hasRunSecondary ||
     hasRefreshSecondary ||
     hasArtifactSecondary ||
+    hasCopyAgentHandoffSecondary ||
     hasCopyCommandSecondary ||
     hasAdvancedInspectSecondary ||
     hasStudioSecondary ||
     hasCopilotSecondary;
+
+  useEffect(() => {
+    const dismissOutside = (event: PointerEvent) => {
+      const overflow = overflowRef.current;
+      if (overflow?.open && event.target instanceof Node && !overflow.contains(event.target)) {
+        overflow.open = false;
+      }
+    };
+    const dismissWithEscape = (event: globalThis.KeyboardEvent) => {
+      const overflow = overflowRef.current;
+      if (event.key === 'Escape' && overflow?.open) {
+        overflow.open = false;
+        overflow.querySelector<HTMLElement>('summary')?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', dismissOutside, true);
+    document.addEventListener('keydown', dismissWithEscape);
+    return () => {
+      document.removeEventListener('pointerdown', dismissOutside, true);
+      document.removeEventListener('keydown', dismissWithEscape);
+    };
+  }, []);
+
+  const closeOverflowAfterAction = (event: MouseEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest('button')) {
+      overflowRef.current?.removeAttribute('open');
+    }
+  };
 
   if (
     !resolvedPrimaryAction &&
@@ -124,7 +168,9 @@ export function EvidenceCardActions({
     !canRefresh &&
     !showAgentActions &&
     !canRevealArtifact &&
-    !shouldExplainArtifact
+    !shouldExplainArtifact &&
+    !onAdvancedInspect &&
+    !onCopyAgentHandoff
   ) {
     return null;
   }
@@ -174,12 +220,12 @@ export function EvidenceCardActions({
         </button>
       ) : null}
       {hasOverflow ? (
-        <details className="evidence-card-actions__overflow">
+        <details ref={overflowRef} className="evidence-card-actions__overflow">
           <summary className="ws-btn ws-btn--ghost evidence-card-actions__overflow-trigger">
             <MoreHorizontal size={13} aria-hidden="true" />
             <span>More</span>
           </summary>
-          <div className="evidence-card-actions__menu">
+          <div className="evidence-card-actions__menu" onClick={closeOverflowAfterAction}>
             {hasRunSecondary ? (
               <button
                 type="button"
@@ -257,6 +303,18 @@ export function EvidenceCardActions({
               >
                 <Copy size={12} aria-hidden="true" />
                 <span>Copy command</span>
+              </button>
+            ) : null}
+            {hasCopyAgentHandoffSecondary ? (
+              <button
+                type="button"
+                className="evidence-card-actions__menu-item"
+                onClick={onCopyAgentHandoff}
+                disabled={isBusy}
+                title="Copy the complete evidence pack and fix request for an agent"
+              >
+                <Copy size={12} aria-hidden="true" />
+                <span>Copy agent handoff</span>
               </button>
             ) : null}
             {hasAdvancedInspectSecondary ? (

@@ -22,4 +22,4 @@ Install from VS Code Extensions marketplace or download from releases.
 
 ### Support
 
-For issues or questions, visit: https://github.com/rapidkitlabs/rapidkit-vscode/issues
+For issues or questions, visit: https://github.com/chistiq/rapidkit-vscode/issues

@@ -44,10 +44,14 @@ export function assertDay0DashboardAcceptance(bundle: DashboardEvidenceBundle): 
     hasWorkspace: true,
     hasProject: false,
   });
+  const releaseBlockerDebug = evidence.cards
+    .filter((card) => cardCountsAsReleaseBlocker(card, workspaceProjectCount))
+    .map((card) => ({ id: card.id, status: card.status, blockers: card.blockers }));
 
-  expect(brief.posture, 'empty day-0 workspace should not show release-blocked posture').not.toBe(
-    'blocked'
-  );
+  expect(
+    brief.posture,
+    `empty day-0 workspace should not show release-blocked posture: ${JSON.stringify(releaseBlockerDebug)}`
+  ).not.toBe('blocked');
   expect(brief.label, 'empty day-0 workspace brief label').toBe('Scaffold ready');
   expect(
     countReleaseBlockingCards(evidence.cards, workspaceProjectCount),

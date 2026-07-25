@@ -58,7 +58,7 @@ export class WorkspaiStatusBar implements vscode.Disposable {
             : undefined,
           this.ambientTruth.topBlocker ? `Top blocker: ${this.ambientTruth.topBlocker}` : undefined,
           this.ambientTruth.cliVersion
-            ? `RapidKit CLI: ${this.ambientTruth.cliVersion}`
+            ? `Workspai CLI: ${this.ambientTruth.cliVersion}`
             : undefined,
         ]
           .filter((segment): segment is string => Boolean(segment))

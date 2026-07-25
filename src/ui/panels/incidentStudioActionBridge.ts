@@ -113,7 +113,7 @@ export async function executeVerifyGatesAction(
       ? verifyArtifactPassed
         ? `Workspace verify artifact: PASS (${verifyReport.summary?.stepsPassed ?? 0} step(s) passed)`
         : `Workspace verify artifact: BLOCKED (${verifyBlockingReasons.slice(0, 2).join('; ') || verifyVerdict || 'needs attention'})`
-      : 'Workspace verify artifact missing; run workspace verify --from-impact before claiming release gates.',
+      : 'Workspace verify artifact missing; run workspace verify --json before claiming release gates.',
     autopilotSnapshot?.approved
       ? 'Autopilot release artifact: APPROVED'
       : autopilotSnapshot

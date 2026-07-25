@@ -30,7 +30,7 @@ describe('evidenceCardAgentPrompt', () => {
 
     expect(prompt).toContain('## Impact card semantics');
     expect(prompt).toContain('Do NOT delete `workspace-impact-last-run.json`');
-    expect(prompt).toContain('do NOT run `rapidkit doctor`');
+    expect(prompt).toContain('do NOT run `workspai doctor`');
   });
 
   it('carries the active incident object into Studio prompts', () => {
@@ -64,10 +64,49 @@ describe('evidenceCardAgentPrompt', () => {
     expect(prompt).toContain('Blocker signature: sig-release-1234');
   });
 
+  it('includes execution plan context for mapped evidence cards', () => {
+    const prompt = buildEvidenceCardStudioPrompt({
+      workspacePath: '/tmp/ws',
+      card: {
+        id: 'workspaceVerify',
+        label: 'Workspace Verify',
+        status: 'warn',
+        summary: 'Verify requires refreshed evidence.',
+        scope: 'workspace',
+        artifactPath: '/tmp/ws/.rapidkit/reports/workspace-verify-last-run.json',
+      },
+    });
+
+    expect(prompt).toContain('- Source command: workspaceVerify');
+    expect(prompt).toContain('- Workspai CLI: npx workspai workspace verify --json');
+    expect(prompt).toContain('- Execution channel: background');
+    expect(prompt).toContain('- Capability gate: workspace verify');
+    expect(prompt).toContain(
+      'Prefer the mapped source command when refreshing this evidence: `npx workspai workspace verify --json`'
+    );
+  });
+
+  it('includes safety policy context for guarded mapped evidence cards', () => {
+    const prompt = buildEvidenceCardStudioPrompt({
+      workspacePath: '/tmp/ws',
+      card: {
+        id: 'foundation',
+        label: 'Workspace Foundation',
+        status: 'warn',
+        summary: 'Foundation files need repair.',
+        scope: 'workspace',
+      },
+    });
+
+    expect(prompt).toContain('- Source command: workspaceFoundationEnsure');
+    expect(prompt).toContain('- Command risk: write');
+    expect(prompt).toContain('- Refresh after run: npx workspai workspace contract inspect --json');
+  });
+
   it('enriches impact cards with workspace-level samples from the artifact', async () => {
     const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-impact-card-'));
     tempDirs.push(workspacePath);
-    const reportsDir = path.join(workspacePath, '.rapidkit', 'reports');
+    const reportsDir = path.join(workspacePath, '.workspai', 'reports');
     await fs.ensureDir(reportsDir);
     await fs.writeJson(path.join(reportsDir, 'workspace-impact-last-run.json'), {
       schemaVersion: 'workspace-impact.v1',

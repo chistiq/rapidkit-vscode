@@ -98,7 +98,9 @@ export async function recordSidebarStudioFixAudit(
     verificationCommands: input.handoff?.verifyCommand ? [input.handoff.verifyCommand] : [],
     rollbackPlan: input.rollbackCommand ? [input.rollbackCommand] : [],
     confidence: input.ok ? 0.9 : 0.5,
-    requiresApproval: true,
+    requiresApproval: Boolean(
+      input.patchMetadata?.reviewRequired || input.handoff?.safetyConfirmation
+    ),
   });
   if (!contract) {
     return {
@@ -125,6 +127,12 @@ export async function recordSidebarStudioFixAudit(
       kind: input.kind,
       actionId: input.actionId,
       cardId: input.handoff?.cardId,
+      dashboardCommandId: input.handoff?.dashboardCommandId,
+      executionChannel: input.handoff?.executionChannel,
+      capabilityGate: input.handoff?.capabilityGate,
+      safetyRisk: input.handoff?.safetyRisk,
+      safetyConfirmation: input.handoff?.safetyConfirmation,
+      safetyRefreshCommands: input.handoff?.safetyRefreshCommands,
       handoffSource: input.handoff?.handoffSource,
       blockerSignature: input.handoff?.blockerSignature,
       patchMetadata: input.patchMetadata,

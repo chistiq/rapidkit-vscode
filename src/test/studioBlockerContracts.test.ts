@@ -6,7 +6,14 @@ import { buildStudioBlockerHandoff } from '../core/studioBlockerHandoffBuilder.j
 import { isStudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
 
 const repoRoot = path.resolve(__dirname, '..', '..');
-const npmContractsRoot = path.resolve(repoRoot, '..', 'rapidkit-npm', 'contracts');
+const workspaiCliContractsRoot = path.resolve(
+  repoRoot,
+  '..',
+  'workspai',
+  'packages',
+  'cli',
+  'contracts'
+);
 
 const PHASE3_CONTRACTS = [
   'workspace-intelligence/blocker-resolution.v1.json',
@@ -16,7 +23,7 @@ const PHASE3_CONTRACTS = [
 describe('Phase 3 studio contracts parity', () => {
   it('mirrors blocker-resolution and studio-blocker-handoff JSON to extension contracts', () => {
     for (const contractPath of PHASE3_CONTRACTS) {
-      const npmPath = path.join(npmContractsRoot, contractPath);
+      const npmPath = path.join(workspaiCliContractsRoot, contractPath);
       const extensionPath = path.join(repoRoot, 'contracts', contractPath);
       expect(fs.existsSync(npmPath), npmPath).toBe(true);
       expect(fs.existsSync(extensionPath), extensionPath).toBe(true);
@@ -67,5 +74,49 @@ describe('Phase 3 studio contracts parity', () => {
     });
     expect(handoff.verifyCommand).toBeTruthy();
     expect(handoff.blockerSignature).toHaveLength(16);
+    expect(handoff.dashboardCommandId).toBe('workspaceVerify');
+    expect(handoff.executionChannel).toBe('background');
+    expect(handoff.capabilityGate).toBe('workspace verify');
+  });
+
+  it('carries command safety metadata for guarded Studio handoffs', async () => {
+    const handoff = await buildStudioBlockerHandoff({
+      workspacePath: '/tmp/workspai',
+      card: {
+        id: 'foundation',
+        label: 'Workspace Foundation',
+        status: 'warn',
+        blocking: false,
+        scope: 'workspace',
+        artifactPath: '.rapidkit/workspace.contract.json',
+        blockers: ['foundation files are missing'],
+      },
+    });
+
+    expect(isStudioBlockerHandoff(handoff)).toBe(true);
+    expect(handoff.dashboardCommandId).toBe('workspaceFoundationEnsure');
+    expect(handoff.safetyRisk).toBe('write');
+    expect(handoff.blocking).toBe(false);
+    expect(handoff.safetyRefreshCommands).toEqual([
+      'npx workspai workspace contract inspect --json',
+    ]);
+  });
+
+  it('verifies Workspace Run by regenerating its own evidence artifact', async () => {
+    const handoff = await buildStudioBlockerHandoff({
+      workspacePath: '/tmp/workspai',
+      card: {
+        id: 'workspaceRun',
+        label: 'Workspace Run',
+        status: 'fail',
+        scope: 'workspace',
+        artifactPath: '.workspai/reports/workspace-run-last.json',
+        blockers: ['Blocked by readiness'],
+      },
+    });
+
+    expect(handoff.sourceCommand).toBe('npx workspai workspace run test --json');
+    expect(handoff.verifyCommand).toBe(handoff.sourceCommand);
+    expect(handoff.verifyArtifact).toBe('.workspai/reports/workspace-run-last.json');
   });
 });

@@ -9,12 +9,13 @@ function read(relPath: string): string {
 }
 
 describe('incident studio minimal UX guard', () => {
-  it('keeps Studio in the secondary sidebar with scoped mode suggestions', () => {
+  it('keeps autonomous Studio inside the unified Assistant with scoped mode suggestions', () => {
     const sidebar = read('webview-ui/src/sidebar/SecondarySidebar.tsx');
     const chatTab = read('webview-ui/src/sidebar/ChatTab.tsx');
+    const selector = read('webview-ui/src/sidebar/composer/AssistantModeSelector.tsx');
 
     expect(sidebar).toContain("id: 'studio'");
-    expect(sidebar).toContain("label: 'Studio'");
+    expect(sidebar).toContain("label: 'Assistant'");
     expect(sidebar).toContain('ws-sidebar__tab-icon');
     expect(sidebar).toContain("type StudioMode = 'investigate' | 'verify' | 'prepare'");
     expect(sidebar).toContain('function studioSuggestions(mode: StudioMode, scope: SidebarScope)');
@@ -24,14 +25,25 @@ describe('incident studio minimal UX guard', () => {
     expect(sidebar).toContain('Investigate why this workspace is not release-ready.');
     expect(sidebar).toContain('composerPrefill={studioPrefill}');
     expect(chatTab).toContain('composerPrefill?: string');
+    expect(chatTab).toContain('composerModeSelector?: ReactNode');
+    expect(selector).toContain("export type AssistantMode = 'agent' | 'ask' | 'plan'");
+    expect(sidebar).toContain("assistantMode !== 'agent'");
     expect(chatTab).not.toContain('studio-empty-state__guided-actions');
   });
 
   it('keeps the sidebar composer placeholder scoped to chat work', () => {
     const sidebar = read('webview-ui/src/sidebar/SecondarySidebar.tsx');
+    const chatTab = read('webview-ui/src/sidebar/ChatTab.tsx');
     const composer = read('webview-ui/src/sidebar/composer/ComposerShell.tsx');
 
     expect(sidebar).toContain("'Describe the issue or task'");
+    expect(sidebar).toContain("'Studio is repairing. Add context if needed.'");
+    expect(sidebar).not.toContain('Ask clarifying questions about the fix');
+    expect(chatTab).toContain('!repairMode && composerScopeLabel');
+    expect(chatTab).toContain('onOpenAdd={repairMode ? undefined');
+    expect(chatTab).toContain('addLabel={repairMode ? undefined');
+    expect(composer).toContain('onOpenAdd?: () => void');
+    expect(composer).toContain('{props.onOpenAdd ? (');
     expect(composer).toContain('placeholder={props.placeholder}');
     expect(composer).not.toContain('Ask about current evidence or run the guided next step');
   });

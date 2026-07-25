@@ -4,7 +4,11 @@ import type {
   DashboardEvidenceCard,
   DashboardEvidencePayload,
 } from '../../webview-ui/src/lib/dashboardEvidence';
-import { buildEvidenceAttentionInbox } from '../../webview-ui/src/lib/evidenceAgentContext';
+import {
+  buildEvidenceAttentionInbox,
+  countEvidenceAttentionBuckets,
+  evidenceAttentionVisibleLimit,
+} from '../../webview-ui/src/lib/evidenceAgentContext';
 
 function evidence(cards: DashboardEvidenceCard[]): DashboardEvidencePayload {
   return {
@@ -80,5 +84,74 @@ describe('evidence agent context attention ranking', () => {
     expect(items[0]?.rankReasons).toContain('blocked');
     expect(items[0]?.rankReasons).toContain('governance impact');
     expect(items[2]?.rankReasons).toContain('recent evidence');
+  });
+
+  it('uses the contract-backed blocking posture and classifies every card exactly once', () => {
+    const payload = evidence([
+      card({
+        id: 'workspaceModel',
+        label: 'Workspace Model',
+        status: 'pass',
+        metrics: { projectCount: 2 },
+      }),
+      card({
+        id: 'readiness',
+        label: 'Readiness',
+        status: 'pass',
+        blocking: false,
+      }),
+      card({
+        id: 'doctor',
+        label: 'Doctor',
+        status: 'fail',
+        blockers: ['Runtime dependency is missing'],
+        blocking: true,
+      }),
+      card({
+        id: 'analyze',
+        label: 'Analyze',
+        status: 'warn',
+        blockers: ['Review complexity trend'],
+        blocking: false,
+      }),
+      card({
+        id: 'workspaceContextAgent',
+        label: 'Agent Context',
+        status: 'fail',
+        blockers: ['Optional context is stale'],
+        blocking: false,
+      }),
+      card({
+        id: 'workspaceDiff',
+        label: 'Workspace Diff',
+        status: 'pass',
+        blockers: ['Workspace model changed since baseline'],
+        blocking: false,
+      }),
+      card({
+        id: 'autopilot',
+        label: 'Autopilot release',
+        status: 'missing',
+        blocking: false,
+      }),
+    ]);
+
+    expect(countEvidenceAttentionBuckets(payload)).toEqual({
+      blocked: 1,
+      attention: 2,
+      missing: 1,
+      ok: 3,
+    });
+    expect(buildEvidenceAttentionInbox(payload).map((item) => item.severity)).toEqual([
+      'fail',
+      'warn',
+      'warn',
+    ]);
+  });
+
+  it('never hides a blocked card behind the compact inbox limit', () => {
+    expect(evidenceAttentionVisibleLimit(12, 4, 3)).toBe(4);
+    expect(evidenceAttentionVisibleLimit(12, 2, 3)).toBe(3);
+    expect(evidenceAttentionVisibleLimit(2, 4, 3)).toBe(2);
   });
 });

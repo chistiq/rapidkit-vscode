@@ -1,6 +1,6 @@
 /**
  * Kits Service
- * Fetches and caches available kits from RapidKit CLI
+ * Fetches and caches available kits from Workspai CLI
  */
 
 import * as vscode from 'vscode';

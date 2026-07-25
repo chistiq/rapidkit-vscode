@@ -1,5 +1,5 @@
 /**
- * Canonical scaffold kit surface — aligned with rapidkit-npm/contracts/runtime-command-surface.v1.json
+ * Canonical scaffold kit surface, aligned with Workspai CLI runtime contracts.
  */
 
 export type BackendScaffoldFramework = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';

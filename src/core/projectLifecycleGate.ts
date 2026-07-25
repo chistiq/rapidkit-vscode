@@ -49,7 +49,7 @@ export async function gateModuleMutationCommand(
   const capabilities = await fetchProjectCommandCapabilities(projectPath);
   if (!capabilities) {
     vscode.window.showErrorMessage(
-      `Could not verify module support for "${projectName}". Ensure RapidKit CLI is available and the project is managed.`
+      `Could not verify module support for "${projectName}". Ensure Workspai CLI is available and the project is managed.`
     );
     return false;
   }

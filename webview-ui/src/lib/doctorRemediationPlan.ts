@@ -21,6 +21,7 @@ export type DoctorRemediationPlanStepView = {
   refreshCommands: string[];
   blockedReason?: string;
   canApply: boolean;
+  operation?: { type?: string };
 };
 
 export type DoctorRemediationPlanView = {
@@ -111,6 +112,9 @@ function parseStep(value: unknown): DoctorRemediationPlanStepView | null {
     refreshCommands: stringArray(value.refreshCommands),
     blockedReason: stringValue(value.blockedReason) || undefined,
     canApply: booleanValue(value.canApply),
+    operation: isRecord(value.operation)
+      ? { type: stringValue(value.operation.type) || undefined }
+      : undefined,
   };
 }
 

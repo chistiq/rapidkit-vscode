@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://getrapidkit.com/schemas/workspace-model-diff.v1.json",
-  "title": "RapidKit Workspace Model Diff",
+  "title": "Workspai Workspace Model Diff",
   "type": "object",
   "required": [
     "schemaVersion",

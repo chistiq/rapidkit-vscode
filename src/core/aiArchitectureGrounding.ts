@@ -8,6 +8,10 @@ import {
   isModuleCapableKit,
 } from './aiCoreModuleCatalog';
 import { buildWorkspaceArchitectureAtlasPromptBlock } from './aiWorkspaceArchitectureAtlas';
+import {
+  getWorkspaceIntelligenceEvidencePrinciples,
+  getWorkspaceIntelligencePositioning,
+} from './workspaceIntelligenceArchitectureContract';
 
 export type AnalyzeProjectEvidenceSlice = {
   name: string;
@@ -35,7 +39,8 @@ export type AnalyzeEvidenceSlice = {
   workspaceFindings: Array<{ severity: string; target: string; title: string }>;
 };
 
-const ANALYZE_REPORT_REL = path.join('.rapidkit', 'reports', 'analyze-last-run.json');
+const ANALYZE_REPORT_REL = path.join('.workspai', 'reports', 'analyze-last-run.json');
+const LEGACY_ANALYZE_REPORT_REL = path.join('.rapidkit', 'reports', 'analyze-last-run.json');
 
 export function resolveWorkspacePathForGrounding(ctx: AIModalContext): string | undefined {
   if (ctx.type === 'workspace' && ctx.path?.trim()) {
@@ -47,10 +52,16 @@ export function resolveWorkspacePathForGrounding(ctx: AIModalContext): string | 
   if (ctx.type === 'project' && ctx.path?.trim()) {
     const projectPath = path.resolve(ctx.path.trim());
     const parent = path.dirname(projectPath);
-    if (fs.existsSync(path.join(parent, '.rapidkit-workspace'))) {
+    if (
+      fs.existsSync(path.join(parent, '.workspai-workspace')) ||
+      fs.existsSync(path.join(parent, '.rapidkit-workspace'))
+    ) {
       return parent;
     }
-    if (fs.existsSync(path.join(projectPath, '.rapidkit-workspace'))) {
+    if (
+      fs.existsSync(path.join(projectPath, '.workspai-workspace')) ||
+      fs.existsSync(path.join(projectPath, '.rapidkit-workspace'))
+    ) {
       return projectPath;
     }
   }
@@ -62,7 +73,11 @@ export function loadAnalyzeEvidenceSlice(workspacePath?: string): AnalyzeEvidenc
     return null;
   }
 
-  const reportPath = path.join(path.resolve(workspacePath), ANALYZE_REPORT_REL);
+  const workspaceRoot = path.resolve(workspacePath);
+  const canonicalReportPath = path.join(workspaceRoot, ANALYZE_REPORT_REL);
+  const reportPath = fs.existsSync(canonicalReportPath)
+    ? canonicalReportPath
+    : path.join(workspaceRoot, LEGACY_ANALYZE_REPORT_REL);
   if (!fs.existsSync(reportPath)) {
     return null;
   }
@@ -236,7 +251,7 @@ function buildAnalyzeEvidenceBlock(
       !activeProject.hasDockerfile
     ) {
       lines.push(
-        '- GUARD: This is NOT a scaffolded FastAPI/NestJS app yet. Do NOT recommend uvicorn/Docker/K8s deploy until `rapidkit create project` or import produces an application.'
+        '- GUARD: This is NOT a scaffolded FastAPI/NestJS app yet. Do NOT recommend uvicorn/Docker/K8s deploy until `workspai create project` or import produces an application.'
       );
     }
   }
@@ -251,7 +266,7 @@ function buildAnalyzeEvidenceBlock(
       (only.framework === 'python' || only.runtime === 'python')
     ) {
       lines.push(
-        '- GUARD: Workspace is minimal (workspace shell without deployable service). Recommend `rapidkit create project` before deployment/Docker/K8s guidance.'
+        '- GUARD: Workspace is minimal (workspace shell without deployable service). Recommend `workspai create project` before deployment/Docker/K8s guidance.'
       );
     }
   }
@@ -273,12 +288,12 @@ function buildIntentDisambiguationBlock(): string {
     '1) DOMAIN FEATURE MODULE (NestJS/FastAPI app code the team owns)',
     '   Triggers: "create feature", "new endpoint", "teams module", "NestJS conventions", "add controller".',
     '   Action: Scaffold under src/<feature>/ (NestJS) or kit layer paths (FastAPI). Mirror src/examples/ when present.',
-    '   Do NOT use: rapidkit add module',
+    '   Do NOT use: workspai add module',
     '',
     '2) RAPIDKIT CATALOG MODULE (platform module from marketplace)',
     '   Triggers: "Workspai module", "RapidKit module", "install module", "add redis/settings/auth from catalog".',
-    '   Action (project root): npx rapidkit add module <slug>   e.g. npx rapidkit add module free/cache/redis',
-    '   Remove (project root): rapidkit uninstall module <slug>',
+    '   Action (project root): npx workspai add module <slug>   e.g. npx workspai add module free/cache/redis',
+    '   Remove (project root): workspai uninstall module <slug>',
     '   Updates: registry.json, src/modules/free/..., src/modules/index.ts (rapidkitModules).',
     '',
     '3) DEPLOY / DEVOPS (containers, CI, K8s)',
@@ -324,7 +339,7 @@ function buildNestJsGroundingBlock(scanned?: ScannedProjectContext): string {
     'NESTJS PROJECT GROUNDING (from scanned files):',
     ...routingFacts,
     '- Feature module files: <feature>.module.ts, <feature>.service.ts, <feature>.controller.ts, dto/create-<feature>.dto.ts',
-    '- Default dev/start: npx rapidkit dev or npx rapidkit start from project root (after init + node_modules).',
+    '- Default dev/start: npx workspai dev or npx workspai start from project root (after init + node_modules).',
     '- Default port: parseInt(process.env.PORT ?? "8000") in main.ts unless settings say otherwise.',
   ];
 
@@ -359,8 +374,16 @@ export function buildArchitectureGroundingSection(
   analyze?: AnalyzeEvidenceSlice | null
 ): string {
   const activeProject = resolveActiveProjectEvidence(ctx, scanned, analyze ?? null);
+  const positioning = getWorkspaceIntelligencePositioning();
+  const primaryEvidencePrinciple = getWorkspaceIntelligenceEvidencePrinciples()[0];
 
   const sections = [
+    [
+      `WORKSPACE INTELLIGENCE CONTRACT: ${positioning.primaryPromise}`,
+      primaryEvidencePrinciple ? `- ${primaryEvidencePrinciple}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
     buildEvidenceIntegrityBlock(ctx, scanned, activeProject ?? undefined),
     buildIntentDisambiguationBlock(),
     buildAnalyzeEvidenceBlock(ctx, analyze ?? null, activeProject),

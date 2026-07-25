@@ -5,6 +5,8 @@ interface ChatSessionBarProps {
   activeSession: ChatSession | null;
   sessionCount: number;
   compact?: boolean;
+  allowNewSession?: boolean;
+  statusText?: string | null;
   onNewSession: () => void;
   onOpenHistory: () => void;
 }
@@ -12,6 +14,12 @@ interface ChatSessionBarProps {
 function sessionStatusLabel(session: ChatSession | null): string | null {
   if (!session) {
     return null;
+  }
+  if (session.status === 'streaming') {
+    return 'Replying…';
+  }
+  if (session.status === 'error') {
+    return 'Stopped';
   }
   if (session.incident?.repairStatus) {
     const statusLabels: Record<string, string> = {
@@ -21,17 +29,10 @@ function sessionStatusLabel(session: ChatSession | null): string | null {
       done: 'Done',
       blocked: 'Blocked',
     };
-    const label =
-      statusLabels[session.incident.repairStatus] ?? session.incident.repairStatus;
+    const label = statusLabels[session.incident.repairStatus] ?? session.incident.repairStatus;
     return session.incident.lastActionTitle
       ? `${label} · ${session.incident.lastActionTitle}`
       : label;
-  }
-  if (session.status === 'streaming') {
-    return 'Replying…';
-  }
-  if (session.status === 'error') {
-    return 'Stopped';
   }
   const turns = session.messages.filter((m) => m.content.trim().length > 0).length;
   if (turns > 0) {
@@ -45,11 +46,13 @@ export function ChatSessionBar({
   activeSession,
   sessionCount,
   compact = false,
+  allowNewSession = true,
+  statusText,
   onNewSession,
   onOpenHistory,
 }: ChatSessionBarProps) {
   const title = activeSession?.title ?? 'New conversation';
-  const status = sessionStatusLabel(activeSession);
+  const status = statusText === undefined ? sessionStatusLabel(activeSession) : statusText;
 
   return (
     <div
@@ -70,15 +73,17 @@ export function ChatSessionBar({
         ) : null}
       </button>
       <div className="ws-session-bar__actions">
-        <button
-          type="button"
-          className="ws-session-bar__action"
-          onClick={onNewSession}
-          title="Start a new chat for a different topic"
-        >
-          <MessageSquarePlus size={13} aria-hidden={true} />
-          <span>{compact ? 'New' : 'New chat'}</span>
-        </button>
+        {allowNewSession ? (
+          <button
+            type="button"
+            className="ws-session-bar__action"
+            onClick={onNewSession}
+            title="Start a new chat for a different topic"
+          >
+            <MessageSquarePlus size={13} aria-hidden={true} />
+            <span>{compact ? 'New' : 'New chat'}</span>
+          </button>
+        ) : null}
         <button
           type="button"
           className="ws-session-bar__action ws-session-bar__action--icon"

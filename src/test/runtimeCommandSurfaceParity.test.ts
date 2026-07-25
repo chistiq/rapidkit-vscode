@@ -17,8 +17,8 @@ type RuntimeSurfaceContract = {
   scaffoldKits: string[];
   createPlanner: {
     nativeCreateKits: string[];
-    externalCreateAdopt: string[];
-    adoptOnlyRuntimes: string[];
+    officialCreate: string[];
+    existingRuntimeSignals: string[];
   };
   runtimeMatrix: Record<
     string,
@@ -67,6 +67,17 @@ function readContract(): RuntimeSurfaceContract {
   return JSON.parse(fs.readFileSync(contractPath, 'utf8')) as RuntimeSurfaceContract;
 }
 
+function readCreatePlannerContract(): {
+  nativeCreate: Array<{ id: string }>;
+  officialCreate: Array<{ id: string; canExecuteCreate: boolean }>;
+} {
+  const contractPath = path.join(repoRoot, 'contracts', 'create-planner-capabilities.v1.json');
+  return JSON.parse(fs.readFileSync(contractPath, 'utf8')) as {
+    nativeCreate: Array<{ id: string }>;
+    officialCreate: Array<{ id: string; canExecuteCreate: boolean }>;
+  };
+}
+
 describe('shared runtime command surface contract (extension)', () => {
   it('pins scaffold kit choices exposed by the extension', () => {
     const contract = readContract();
@@ -88,15 +99,21 @@ describe('shared runtime command surface contract (extension)', () => {
     expect(rapidkitCli).toContain('./scaffoldKits');
     expect(kitsService).toContain("from './scaffoldKits'");
     expect(kitsService).toContain('FRONTEND_SCAFFOLD_KITS');
-    expect([...contract.createPlanner.nativeCreateKits].sort()).toEqual(
-      [...contract.scaffoldKits].sort()
-    );
-    expect(contract.createPlanner.externalCreateAdopt).toContain('wordpress-site');
-    expect(contract.createPlanner.externalCreateAdopt).toContain('laravel');
-    expect(contract.createPlanner.adoptOnlyRuntimes).toContain('php');
+    const createPlanner = readCreatePlannerContract();
+    const executableCreateIds = [
+      ...createPlanner.nativeCreate.map((entry) => entry.id),
+      ...createPlanner.officialCreate
+        .filter((entry) => entry.canExecuteCreate)
+        .map((entry) => entry.id),
+    ];
+    expect([...executableCreateIds].sort()).toEqual([...contract.scaffoldKits].sort());
+    expect(contract.createPlanner.officialCreate).toContain('wordpress-site');
+    expect(contract.createPlanner.officialCreate).toContain('frontend.nextjs');
+    expect(contract.createPlanner.officialCreate).toContain('laravel');
+    expect(contract.createPlanner.existingRuntimeSignals).toContain('php');
   });
 
-  it('keeps extension and rapidkit-npm runtime surfaces aligned', () => {
+  it('keeps extension and Workspai CLI runtime surfaces aligned', () => {
     const extensionContractPath = path.join(
       repoRoot,
       'contracts',
@@ -105,7 +122,9 @@ describe('shared runtime command surface contract (extension)', () => {
     const npmContractPath = path.resolve(
       repoRoot,
       '..',
-      'rapidkit-npm',
+      'workspai',
+      'packages',
+      'cli',
       'contracts',
       'runtime-command-surface.v1.json'
     );
@@ -274,6 +293,11 @@ describe('shared runtime command surface contract (extension)', () => {
     expect(importProject).toContain("const PICK_WORKSPACE_ACTION = 'Pick Workspace'");
     expect(importProject).toContain("const CREATE_WORKSPACE_ACTION = 'Create Workspace'");
     expect(importProject).toContain("const USE_DEFAULT_WORKSPACE_ACTION = 'Use Default Workspace'");
+    expect(importProject).toContain("const IMPORT_WORKSPACE_ACTION = 'Import Workspace'");
+    expect(importProject).toContain('hasWorkspaceRootMarkers(sourcePath)');
+    expect(importProject).toContain('showWorkspaceSourceImportRedirect(sourcePath)');
+    expect(importProject).toContain('This is a workspace. Import it as a workspace instead.');
+    expect(importProject).toContain("vscode.commands.executeCommand('workspai.importWorkspace')");
     expect(importProject).toContain(
       "vscode.commands.executeCommand('workspai.quickSwitchWorkspace')"
     );
@@ -287,6 +311,10 @@ describe('shared runtime command surface contract (extension)', () => {
     expect(importProject).not.toContain('extension-fallback');
 
     expect(adoptProject).toContain('runCanonicalNpmAdopt');
+    expect(adoptProject).toContain('hasWorkspaceRootMarkers(projectPath)');
+    expect(adoptProject).toContain('showWorkspaceSourceAdoptRedirect(projectPath)');
+    expect(adoptProject).toContain('This is a workspace. Import it as a workspace instead.');
+    expect(adoptProject).toContain("vscode.commands.executeCommand('workspai.importWorkspace')");
     expect(adoptProject).not.toContain('writeLocalAdoptionFallback');
     expect(adoptProject).not.toContain('extension-fallback');
 

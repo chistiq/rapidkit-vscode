@@ -296,7 +296,7 @@ export async function buildStructuredIncidentPrompt(
   const responseRules = [
     'SCOPE: This is a project-level analysis. Focus on the selected project internals — runtime state, module health, framework-specific blockers, and execution readiness.',
     'EVIDENCE INTEGRITY: Use only facts present in WORKSPACE ARCHITECTURE and PROJECT EXECUTION STATE blocks. Do not invent missing modules, unknown kit, or missing projects.',
-    'Domain feature modules (src/<feature>/) ≠ RapidKit catalog modules (npx rapidkit add module <slug>). Route questions accordingly.',
+    'Domain feature modules (src/<feature>/) ≠ RapidKit Core catalog modules (npx workspai add module <slug>). Route questions accordingly.',
     'NestJS routes: mirror src/examples/ — no /api prefix unless setGlobalPrefix exists in main.ts.',
     'If doctor evidence shows healthy projects with zero issues, do not recommend setup/reset commands unless the user explicitly asks for reconfiguration.',
     'Never claim `kit unknown` or `no modules installed` unless those exact conditions are explicitly listed in the evidence block.',

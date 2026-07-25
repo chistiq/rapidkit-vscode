@@ -299,7 +299,7 @@ export function EnterpriseDashboardFlow({
                     'workspaceRunInit',
                     !hasWorkspace ? 'Select a workspace' : undefined
                   )}
-                  title="rapidkit workspace run init"
+                  title="workspai workspace run init"
                 />
                 <ActionTile
                   icon={<Play size={15} />}
@@ -336,7 +336,7 @@ export function EnterpriseDashboardFlow({
                     'workspaceRunStart',
                     !hasWorkspace ? 'Select a workspace' : undefined
                   )}
-                  title="rapidkit workspace run start"
+                  title="workspai workspace run start"
                 />
                 <ActionTile
                   icon={<Terminal size={15} />}

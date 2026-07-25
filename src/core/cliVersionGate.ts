@@ -14,7 +14,7 @@ import {
 const SEMVER_TOKEN = /\b\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\b/;
 
 /**
- * Resolve the linked rapidkit CLI version. Prefers the structured
+ * Resolve the linked Workspai CLI version. Prefers the structured
  * `commands --json` surface (already cached from capability detection); falls
  * back to `--version --json` (`rapidkit-version-v1`) and then a bare
  * `--version` string. Returns `null` when no version can be detected.
@@ -107,10 +107,10 @@ export async function presentCliVersionGate(options?: {
 
   if (choice === 'Update CLI') {
     runShellCommandInTerminal({
-      name: 'Workspai: Update RapidKit CLI',
+      name: 'Workspai: Update CLI',
       cwd: options?.cwd,
       command: 'npm',
-      args: ['install', '-g', 'rapidkit@latest'],
+      args: ['install', '-g', 'workspai@latest'],
     });
   } else if (choice === 'Open Setup Recovery') {
     await vscode.commands.executeCommand('workspai.openSetup');
@@ -134,10 +134,10 @@ export async function gateCompatibleCliVersion(options: {
 
   if (choice === 'Update CLI') {
     runShellCommandInTerminal({
-      name: 'Workspai: Update RapidKit CLI',
+      name: 'Workspai: Update CLI',
       cwd: options.cwd,
       command: 'npm',
-      args: ['install', '-g', 'rapidkit@latest'],
+      args: ['install', '-g', 'workspai@latest'],
     });
   } else if (choice === 'Open Setup Recovery') {
     await vscode.commands.executeCommand('workspai.openSetup');

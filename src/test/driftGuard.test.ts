@@ -418,14 +418,26 @@ describe('contract drift guard', () => {
     expect(operationsSource).toContain("'--output',");
 
     expect(operationsSource).toContain("commands: [['cache', 'status']]");
-    expect(operationsSource).toContain("commands: [['cache', 'clear']]");
-    expect(operationsSource).toContain("commands: [['cache', 'prune']]");
-    expect(operationsSource).toContain("commands: [['cache', 'repair']]");
+    expect(operationsSource).toContain(
+      "commands: appendWorkspaceCommandRefresh('cacheClear', [['cache', 'clear']])"
+    );
+    expect(operationsSource).toContain(
+      "commands: appendWorkspaceCommandRefresh('cachePrune', [['cache', 'prune']])"
+    );
+    expect(operationsSource).toContain(
+      "commands: appendWorkspaceCommandRefresh('cacheRepair', [['cache', 'repair']])"
+    );
 
     expect(operationsSource).toContain("commands: [['mirror', 'status']]");
-    expect(operationsSource).toContain("commands: [['mirror', 'sync']]");
-    expect(operationsSource).toContain("commands: [['mirror', 'verify']]");
-    expect(operationsSource).toContain("commands: [['mirror', 'rotate']]");
+    expect(operationsSource).toContain(
+      "commands: appendWorkspaceCommandRefresh('mirrorSync', [['mirror', 'sync']])"
+    );
+    expect(operationsSource).toContain(
+      "commands: appendWorkspaceCommandRefresh('mirrorVerify', [['mirror', 'verify']])"
+    );
+    expect(operationsSource).toContain(
+      "commands: appendWorkspaceCommandRefresh('mirrorRotate', [['mirror', 'rotate']])"
+    );
 
     expect(operationsSource).toContain("commands: [['doctor', 'workspace']]");
     expect(operationsSource).toContain("commands: [['doctor', 'workspace', '--fix']]");
@@ -512,7 +524,9 @@ describe('contract drift guard', () => {
 
     expect(combined).not.toContain('npx --yes --package rapidkit rapidkit');
     expect(read('src/utils/platformCapabilities.ts')).toContain('buildNpxRapidkitPrefix');
-    expect(read('src/utils/platformCapabilities.ts')).toContain("return ['--yes', 'rapidkit']");
+    expect(read('src/utils/platformCapabilities.ts')).toContain(
+      "return ['--yes', '--package', packageSpecifier, WORKSPAI_NPM_BINARY]"
+    );
     expect(read('src/core/incidentInlineCommandRunner.ts')).toContain(
       'toPinnedRapidkitExecutionCommand(commandBody)'
     );

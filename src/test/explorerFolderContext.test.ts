@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   findWorkspaceRootUp,
   hasRapidkitProjectMarkers,
+  projectMetadataFileCandidates,
+  resolveProjectMetadataFile,
   resolveExplorerFolderContext,
 } from '../core/workspacePaths';
 
@@ -46,6 +48,23 @@ describe('explorer folder context', () => {
       name: 'catalog-api',
     });
 
+    expect(hasRapidkitProjectMarkers(projectPath)).toBe(true);
+  });
+
+  it('prefers canonical .workspai project metadata over legacy metadata', async () => {
+    const projectPath = await makeTempDir('canonical-project');
+    await fs.ensureDir(path.join(projectPath, '.workspai'));
+    await fs.ensureDir(path.join(projectPath, '.rapidkit'));
+    await fs.writeJson(path.join(projectPath, '.workspai', 'project.json'), { name: 'canonical' });
+    await fs.writeJson(path.join(projectPath, '.rapidkit', 'project.json'), { name: 'legacy' });
+
+    expect(projectMetadataFileCandidates(projectPath, 'project.json')).toEqual([
+      path.join(projectPath, '.workspai', 'project.json'),
+      path.join(projectPath, '.rapidkit', 'project.json'),
+    ]);
+    expect(resolveProjectMetadataFile(projectPath, 'project.json')).toBe(
+      path.join(projectPath, '.workspai', 'project.json')
+    );
     expect(hasRapidkitProjectMarkers(projectPath)).toBe(true);
   });
 

@@ -32,6 +32,10 @@ function payload(): string {
       subcommands: ['model', 'graph', 'watch'],
       intelligenceSubcommands: ['model', 'impact', 'verify'],
     },
+    commands: {
+      coreBacked: ['diff', 'rollback'],
+      projectScoped: ['init', 'test', 'build'],
+    },
     commandMap: { create: {}, adopt: {}, workspace: {} },
   });
 }
@@ -50,6 +54,8 @@ describe('fetchRuntimeCommandSurface', () => {
     expect(surface?.version).toBe('0.39.0');
     expect(surface?.workspaceSubcommands).toEqual(['model', 'graph', 'watch']);
     expect(surface?.workspaceIntelligenceSubcommands).toEqual(['model', 'impact', 'verify']);
+    expect(surface?.coreBackedCommands).toEqual(['diff', 'rollback']);
+    expect(surface?.projectScopedCommands).toEqual(['init', 'test', 'build']);
     expect(surface?.topLevelCommands).toEqual(['create', 'adopt', 'workspace']);
     expect(surface?.contracts.runtimeCommandSurface).toBe('rapidkit-runtime-command-surface-v1');
   });

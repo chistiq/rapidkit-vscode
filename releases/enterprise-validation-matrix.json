@@ -1,7 +1,7 @@
 {
   "schemaVersion": "workspai-enterprise-validation-matrix.v1",
   "generatedFor": "rapidkit-vscode",
-  "npmTruthBaseline": "0.41.4",
+  "npmTruthBaseline": "0.49.0",
   "scenarios": [
     {
       "id": "cli.version.below_minimum",
@@ -16,7 +16,7 @@
       "requiredSnippets": [
         "blocks below-minimum enterprise workflows without a continue option",
         "reports missing and unparseable versions as unknown",
-        "matches rapidkit-npm package version"
+        "matches the Workspai CLI package version"
       ]
     },
     {
@@ -87,18 +87,18 @@
     },
     {
       "id": "studio.verify.non_bypassable",
-      "label": "Mutating Studio actions require verify before completion",
+      "label": "Autonomous Agent repairs require fresh semantic verify before completion",
       "category": "studio",
       "priority": "P0",
       "evidence": [
-        "src/test/studioBlockerHandoffVerifyGate.test.ts",
-        "src/test/incidentStudioPayload.test.ts",
-        "webview-ui/src/sidebar/StudioBlockerChrome.tsx"
+        "src/test/studioAgentSession.test.ts",
+        "src/core/studioAgentSession.ts",
+        "src/core/studioAgentWorkspaiTools.ts"
       ],
       "requiredSnippets": [
-        "keeps mutating fixes blocked on verify",
-        "allowCompletionClaimWithoutVerify",
-        "Run verify"
+        "does not reuse a successful verify from an earlier restored request",
+        "Completion rejected: successful non-blocking verification and canonical post-mutation chain closure are required.",
+        "verify-blocker"
       ]
     },
     {
@@ -111,11 +111,7 @@
         "src/test/dashboardMinimalUx.test.ts",
         "webview-ui/src/sidebar/SecondarySidebar.tsx"
       ],
-      "requiredSnippets": [
-        "retry",
-        "Feedback history is stale",
-        "sidebarStudioAuditState"
-      ]
+      "requiredSnippets": ["retry", "Feedback history is stale", "sidebarStudioAuditState"]
     },
     {
       "id": "handoff.why_trace.parity",
@@ -128,7 +124,7 @@
         "src/test/evidenceAgentContextBundle.test.ts"
       ],
       "requiredSnippets": [
-        "rapidkit workspace why release-blocked --json --write",
+        "workspai workspace why release-blocked --json --write",
         "workspace-trace-last-run.json",
         "workspace-why-last-run.json"
       ]
@@ -143,11 +139,7 @@
         "webview-ui/src/components/EvidenceCardActions.tsx",
         "webview-ui/src/components/DashboardRepairFlow.tsx"
       ],
-      "requiredSnippets": [
-        "primaryAction",
-        "overflow",
-        "RepairIncidentSummary"
-      ]
+      "requiredSnippets": ["primaryAction", "overflow", "RepairIncidentSummary"]
     },
     {
       "id": "dashboard.home.attention_rank",
@@ -155,30 +147,30 @@
       "category": "dashboard",
       "priority": "P1",
       "evidence": [
-        "src/test/dashboardMinimalUx.test.ts",
-        "webview-ui/src/components/DashboardOverviewQuickNav.tsx",
+        "src/test/evidenceAgentContext.test.ts",
+        "webview-ui/src/components/EvidenceAttentionInbox.tsx",
         "webview-ui/src/lib/evidenceAgentContext.ts"
       ],
       "requiredSnippets": [
-        "Top blockers",
-        "buildEvidenceAttentionInbox(evidence).slice(0, 3)",
+        "buildEvidenceAttentionInbox(evidence)",
+        "evidenceAttentionVisibleLimit(items.length, buckets.blocked, maxItems)",
         "GOVERNANCE_IMPACT_SCORE"
       ]
     },
     {
       "id": "dashboard.first_artifact.celebration",
-      "label": "First artifact generation creates a subtle Day-0 value moment",
+      "label": "First artifact generation exposes a subtle time-to-value signal",
       "category": "dashboard",
       "priority": "P2",
       "evidence": [
         "src/test/dashboardMinimalUx.test.ts",
-        "webview-ui/src/components/DashboardOverviewQuickNav.tsx",
-        "webview-ui/src/styles-tailwind.css"
+        "webview-ui/src/components/WorkspaceOverview.tsx",
+        "webview-ui/src/lib/dashboardDay0Funnel.ts"
       ],
       "requiredSnippets": [
-        "First evidence ready",
-        "aria-label=\"First evidence generated\"",
-        ".home-first-artifact-celebration"
+        "First evidence generated in",
+        "aria-label=\"First evidence timing\"",
+        "Generate first evidence"
       ]
     },
     {
@@ -203,10 +195,7 @@
       "label": "Status bar exposes workspace, blocker, and CLI truth without opening panels",
       "category": "dashboard",
       "priority": "P2",
-      "evidence": [
-        "src/test/statusBar.test.ts",
-        "src/ui/statusBar.ts"
-      ],
+      "evidence": ["src/test/statusBar.test.ts", "src/ui/statusBar.ts"],
       "requiredSnippets": [
         "updateAmbientTruth",
         "Top: none loaded",
@@ -215,7 +204,7 @@
     },
     {
       "id": "repair.guided_default.keyboard",
-      "label": "Repair stays guided for new users and supports Enter on the active card",
+      "label": "Repair defaults to Priority, preserves the operator view, and supports Enter on the active card",
       "category": "dashboard",
       "priority": "P2",
       "evidence": [
@@ -223,7 +212,8 @@
         "webview-ui/src/components/DashboardRepairFlow.tsx"
       ],
       "requiredSnippets": [
-        "REPAIR_MODE_PERSIST_AFTER_VERIFY_COUNT = 3",
+        "persistRepairMode(nextMode)",
+        "selectRepairVisibleCards",
         "aria-keyshortcuts=\"Enter\"",
         "function isInteractiveKeyboardTarget"
       ]
@@ -286,7 +276,7 @@
       "requiredSnippets": [
         "Activation: registering commands",
         "Activation: Workspai extension initialized",
-        "Dashboard diagnoses and routes; Studio fixes; Advisor explains; Create builds."
+        "Dashboard detects and routes; Studio diagnoses, plans, fixes, verifies, and"
       ]
     },
     {

@@ -7,6 +7,7 @@ import { enrichDashboardEvidenceCommandData } from '../../core/dashboardEvidence
 import { runDashboardEvidenceContractCli } from '../../core/evidenceCommandRunner';
 import { gateCompatibleCliVersion } from '../../core/cliVersionGate';
 import { resolveEvidenceCardIdsForDashboardCommand } from '../../core/dashboardReportRegistry';
+import { gateDashboardCommandCapability } from '../../core/dashboardCommandCapabilityGate';
 
 export type DashboardSelectedProject = {
   name: string;
@@ -74,19 +75,57 @@ function getDashboardWorkspacePayload(
 
 function getDashboardProjectPayload(
   host: DashboardCommandHost,
-  command: string
-): { projectPath: string } | null {
+  command: string,
+  data?: Record<string, unknown>
+): {
+  projectPath: string;
+  projectName?: string;
+  projectType?: string;
+  workspacePath?: string;
+} | null {
   const contract = resolveDashboardCommandContract(command);
+  const explicitProjectPath =
+    typeof data?.projectPath === 'string' && data.projectPath.trim()
+      ? data.projectPath.trim()
+      : undefined;
+  if (explicitProjectPath) {
+    return {
+      projectPath: explicitProjectPath,
+      projectName:
+        typeof data?.projectName === 'string' && data.projectName.trim()
+          ? data.projectName.trim()
+          : undefined,
+      projectType:
+        typeof data?.projectType === 'string' && data.projectType.trim()
+          ? data.projectType.trim()
+          : undefined,
+      workspacePath:
+        typeof data?.workspacePath === 'string' && data.workspacePath.trim()
+          ? data.workspacePath.trim()
+          : undefined,
+    };
+  }
+
   const selectedProject = host.getSelectedProject();
   if (contract?.requiresProject && !selectedProject?.path) {
     vscode.window.showWarningMessage('Select a project in the sidebar first.');
     return null;
   }
 
-  return selectedProject?.path ? { projectPath: selectedProject.path } : null;
+  return selectedProject?.path
+    ? {
+        projectPath: selectedProject.path,
+        projectName: selectedProject.name,
+        projectType: selectedProject.type,
+        workspacePath: selectedProject.workspacePath,
+      }
+    : null;
 }
 
-function getSelectedProjectCommandContext(host: DashboardCommandHost): {
+function getSelectedProjectCommandContext(
+  host: DashboardCommandHost,
+  data?: Record<string, unknown>
+): {
   workspace?: { name?: string; path?: string };
   project: {
     name?: string;
@@ -95,6 +134,38 @@ function getSelectedProjectCommandContext(host: DashboardCommandHost): {
     workspacePath?: string;
   };
 } | null {
+  const explicitProjectPath =
+    typeof data?.projectPath === 'string' && data.projectPath.trim()
+      ? data.projectPath.trim()
+      : undefined;
+  if (explicitProjectPath) {
+    const workspacePath =
+      typeof data?.workspacePath === 'string' && data.workspacePath.trim()
+        ? data.workspacePath.trim()
+        : host.getSelectedWorkspaceInfo()?.path;
+    const workspaceName =
+      typeof data?.workspaceName === 'string' && data.workspaceName.trim()
+        ? data.workspaceName.trim()
+        : workspacePath
+          ? path.basename(workspacePath)
+          : undefined;
+    return {
+      workspace: workspacePath ? { path: workspacePath, name: workspaceName } : undefined,
+      project: {
+        path: explicitProjectPath,
+        name:
+          typeof data?.projectName === 'string' && data.projectName.trim()
+            ? data.projectName.trim()
+            : path.basename(explicitProjectPath),
+        type:
+          typeof data?.projectType === 'string' && data.projectType.trim()
+            ? data.projectType.trim()
+            : undefined,
+        workspacePath,
+      },
+    };
+  }
+
   const selectedProject = host.getSelectedProject();
   if (!selectedProject?.path) {
     vscode.window.showWarningMessage('Select a project first.');
@@ -128,6 +199,29 @@ function getSelectedProjectCommandContext(host: DashboardCommandHost): {
   };
 }
 
+function getDashboardCommandCapabilityCwd(
+  host: DashboardCommandHost,
+  data?: Record<string, unknown>
+): string | undefined {
+  const nestedWorkspace =
+    data?.workspace && typeof data.workspace === 'object'
+      ? (data.workspace as { path?: unknown })
+      : undefined;
+  const explicitWorkspacePath =
+    typeof data?.workspacePath === 'string' && data.workspacePath.trim()
+      ? data.workspacePath.trim()
+      : typeof data?.path === 'string' && data.path.trim()
+        ? data.path.trim()
+        : typeof nestedWorkspace?.path === 'string' && nestedWorkspace.path.trim()
+          ? nestedWorkspace.path.trim()
+          : undefined;
+  return (
+    explicitWorkspacePath ||
+    host.getSelectedProject()?.path ||
+    host.getSelectedWorkspaceInfo()?.path
+  );
+}
+
 function failDashboardContractCommand(
   host: DashboardCommandHost,
   command: string,
@@ -148,6 +242,22 @@ export async function executeDashboardContractCommand(
     return false;
   }
   const enrichedData = enrichDashboardEvidenceCommandData(command, data);
+  const capability = await gateDashboardCommandCapability({
+    contract,
+    commandId: command,
+    cwd: getDashboardCommandCapabilityCwd(host, enrichedData),
+  });
+  if (!capability.ok) {
+    void vscode.window.showWarningMessage(capability.reason, 'Open Setup').then((choice) => {
+      if (choice === 'Open Setup') {
+        void vscode.commands.executeCommand('workspai.openSetup');
+      }
+    });
+    host.postDashboardCommandFailed(command, capability.reason, {
+      suggestedNextAction: 'Run npx workspai commands --json and update/link Workspai if needed.',
+    });
+    return false;
+  }
 
   if (command === 'importProject' || command === 'adoptProject') {
     const useDefaultWorkspace = enrichedData?.useDefaultWorkspace === true;
@@ -197,7 +307,7 @@ export async function executeDashboardContractCommand(
     if (!versionAllowed) {
       host.postDashboardCommandFailed(
         command,
-        `${contract.label} is blocked until the linked rapidkit CLI is compatible.`
+        `${contract.label} is blocked until the linked Workspai CLI is compatible.`
       );
       return false;
     }
@@ -235,9 +345,9 @@ export async function executeDashboardContractCommand(
   }
 
   if (contract.scope === 'module' || contract.payloadKind === 'module-maintenance') {
-    const projectPayload = getDashboardProjectPayload(host, command);
+    const projectPayload = getDashboardProjectPayload(host, command, enrichedData);
     const selectedProject = host.getSelectedProject();
-    if (!projectPayload || !selectedProject) {
+    if (!projectPayload) {
       return failDashboardContractCommand(
         host,
         command,
@@ -248,7 +358,12 @@ export async function executeDashboardContractCommand(
       typeof enrichedData?.moduleSlug === 'string' ? enrichedData.moduleSlug : undefined;
     await vscode.commands.executeCommand(contract.vscodeCommand, {
       ...contract.payloadDefaults,
-      project: selectedProject,
+      project: selectedProject ?? {
+        path: projectPayload.projectPath,
+        name: projectPayload.projectName ?? path.basename(projectPayload.projectPath),
+        type: projectPayload.projectType,
+        workspacePath: projectPayload.workspacePath,
+      },
       ...projectPayload,
       moduleSlug,
       module: moduleSlug ? { slug: moduleSlug } : undefined,
@@ -259,7 +374,7 @@ export async function executeDashboardContractCommand(
   }
 
   if (contract.payloadKind === 'project-context') {
-    const contextItem = getSelectedProjectCommandContext(host);
+    const contextItem = getSelectedProjectCommandContext(host, enrichedData);
     if (!contextItem) {
       return failDashboardContractCommand(
         host,
@@ -276,7 +391,7 @@ export async function executeDashboardContractCommand(
   }
 
   if (contract.payloadKind === 'project-path' || contract.requiresProject) {
-    const projectPayload = getDashboardProjectPayload(host, command);
+    const projectPayload = getDashboardProjectPayload(host, command, enrichedData);
     if (!projectPayload) {
       return failDashboardContractCommand(
         host,

@@ -123,6 +123,7 @@ const EVIDENCE_CARD_OPERATE_ZONES: Partial<Record<DashboardEvidenceCardId, Dashb
     intelligenceSnapshot: 'intelligence',
     workspaceDiff: 'intelligence',
     workspaceImpact: 'intelligence',
+    workspaceIntelligenceRun: 'intelligence',
     workspaceVerify: 'intelligence',
     workspaceExplain: 'intelligence',
     workspaceWhy: 'intelligence',

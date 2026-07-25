@@ -406,7 +406,7 @@ export function validateContextContract(
       clarificationNeeded: true,
       clarificationReason:
         'No workspace or project evidence is available. ' +
-        'Please select a workspace and run `npx rapidkit doctor workspace` to generate evidence.',
+        'Please select a workspace and run `npx workspai doctor workspace` to generate evidence.',
     };
   }
 
@@ -499,7 +499,7 @@ export function buildPersonaAdapterBlock(contract: AIContextContractV1): string 
   if (safetyFlags.doctorEvidenceStale) {
     lines.push(
       'NOTE — STALE EVIDENCE: Doctor evidence is missing or >24 h old. ' +
-        'Mention this caveat and recommend running `npx rapidkit doctor workspace` for fresh data.'
+        'Mention this caveat and recommend running `npx workspai doctor workspace` for fresh data.'
     );
   }
 

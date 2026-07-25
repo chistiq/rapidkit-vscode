@@ -31,6 +31,10 @@ vi.mock('../utils/terminalExecutor', () => ({
   runShellCommandInTerminal: vi.fn(),
 }));
 
+vi.mock('../core/gatedRapidkitTerminal', () => ({
+  runGatedRapidkitCommandsInTerminal: terminalMock.mockResolvedValue(true),
+}));
+
 import { registerWorkspaceOperationsCommands } from '../commands/workspaceOperations';
 
 function setupHarness() {
@@ -195,7 +199,10 @@ describe('workspace snapshot commands', () => {
     expect(terminalMock).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: '/tmp/team-ws',
-        commands: [['snapshot', 'restore', 'before-upgrade', '--dry-run']],
+        commands: [
+          ['snapshot', 'restore', 'before-upgrade', '--dry-run'],
+          ['snapshot', 'list'],
+        ],
       })
     );
   });
@@ -212,7 +219,10 @@ describe('workspace snapshot commands', () => {
     expect(terminalMock).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: '/tmp/team-ws',
-        commands: [['snapshot', 'restore', 'before-upgrade', '--force', '--reason', 'rollback']],
+        commands: [
+          ['snapshot', 'restore', 'before-upgrade', '--force', '--reason', 'rollback'],
+          ['snapshot', 'list'],
+        ],
       })
     );
   });
@@ -267,5 +277,102 @@ describe('workspace snapshot commands', () => {
       expect(workspaceRecoveryCommands.has(command)).toBe(true);
     }
     expect(workspaceContextSubmenus.has('workspai.workspace.recovery')).toBe(true);
+  });
+
+  it('confirms cache clear and refreshes cache status after the destructive operation', async () => {
+    const { getCommand } = setupHarness();
+
+    showWarningMock.mockResolvedValueOnce('Clear Cache');
+
+    await getCommand('workspai.cacheClear')();
+
+    expect(showWarningMock).toHaveBeenCalledWith(
+      expect.stringContaining('Clear RapidKit caches?'),
+      { modal: true },
+      'Clear Cache',
+      'Cancel'
+    );
+    expect(terminalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: '/tmp/team-ws',
+        commands: [
+          ['cache', 'clear'],
+          ['cache', 'status'],
+        ],
+      })
+    );
+  });
+
+  it('refreshes cache status after prune and repair operations', async () => {
+    const { getCommand } = setupHarness();
+
+    await getCommand('workspai.cachePrune')();
+    await getCommand('workspai.cacheRepair')();
+
+    expect(terminalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        commands: [
+          ['cache', 'prune'],
+          ['cache', 'status'],
+        ],
+      })
+    );
+    expect(terminalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        commands: [
+          ['cache', 'repair'],
+          ['cache', 'status'],
+        ],
+      })
+    );
+  });
+
+  it('confirms policy updates and shows the refreshed policy after mutation', async () => {
+    const { getCommand } = setupHarness();
+
+    showQuickPickMock.mockResolvedValueOnce({ label: 'mode' }).mockResolvedValueOnce('strict');
+    showWarningMock.mockResolvedValueOnce('Update Policy');
+
+    await getCommand('workspai.workspacePolicySet')();
+
+    expect(showWarningMock).toHaveBeenCalledWith(
+      expect.stringContaining('Update workspace policy?'),
+      { modal: true },
+      'Update Policy',
+      'Cancel'
+    );
+    expect(terminalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: '/tmp/team-ws',
+        commands: [
+          ['workspace', 'policy', 'set', 'mode', 'strict'],
+          ['workspace', 'policy', 'show'],
+        ],
+      })
+    );
+  });
+
+  it('confirms mirror rotation and refreshes mirror status after mutation', async () => {
+    const { getCommand } = setupHarness();
+
+    showWarningMock.mockResolvedValueOnce('Rotate Keys');
+
+    await getCommand('workspai.mirrorRotate')();
+
+    expect(showWarningMock).toHaveBeenCalledWith(
+      expect.stringContaining('Rotate mirror signing keys?'),
+      { modal: true },
+      'Rotate Keys',
+      'Cancel'
+    );
+    expect(terminalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: '/tmp/team-ws',
+        commands: [
+          ['mirror', 'rotate'],
+          ['mirror', 'status'],
+        ],
+      })
+    );
   });
 });

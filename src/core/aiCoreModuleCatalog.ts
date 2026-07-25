@@ -37,7 +37,7 @@ export function isModuleCapableKit(kitId?: string | null): kitId is ModuleCapabl
 export function buildWorkspaiPlatformContract(): string {
   return [
     'WORKSPAI PLATFORM CONTRACT (canonical — no developer-repo paths):',
-    '- User entrypoint: npx rapidkit at workspace or project root.',
+    '- User entrypoint: npx workspai at workspace or project root.',
     '- Kit create + catalog module install/uninstall run through rapidkit-core when Python is available',
     '  (workspace .venv via pip/poetry, or pipx — location varies per machine; never cite a fixed engine path).',
     '- Module-capable kits ONLY: fastapi.standard, fastapi.ddd, nestjs.standard.',
@@ -55,7 +55,7 @@ function buildFastApiModuleContract(kitId: 'fastapi.standard' | 'fastapi.ddd'): 
   return [
     `CATALOG MODULE ARCHITECTURE — ${kitId}:`,
     '',
-    'Install (project root):  npx rapidkit add module free/<category>/<name>',
+    'Install (project root):  npx workspai add module free/<category>/<name>',
     'Remove (project root):   rapidkit uninstall module free/<category>/<name>',
     'Manifest:                registry.json → installed_modules[]',
     '',
@@ -81,7 +81,7 @@ function buildNestJsModuleContract(): string {
   return [
     'CATALOG MODULE ARCHITECTURE — nestjs.standard:',
     '',
-    'Install (project root):  npx rapidkit add module free/<category>/<name>',
+    'Install (project root):  npx workspai add module free/<category>/<name>',
     'Remove (project root):   rapidkit uninstall module free/<category>/<name>',
     'Manifest:                registry.json → installed_modules[]',
     '',

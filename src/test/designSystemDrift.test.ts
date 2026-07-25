@@ -257,11 +257,7 @@ describe('Workspai design system drift', () => {
     expect(primitivesSource).toContain('.ws-dashboard-next-step-rail');
   });
 
-  it('migrates overview, onboarding, and evidence panels to ws-* primitives', () => {
-    const onboardingSource = fs.readFileSync(
-      path.join(repoRoot, 'webview-ui/src/components/FreshInstallOnboarding.tsx'),
-      'utf8'
-    );
+  it('migrates overview and evidence panels to ws-* primitives', () => {
     const overviewSource = fs.readFileSync(
       path.join(repoRoot, 'webview-ui/src/components/WorkspaceOverview.tsx'),
       'utf8'
@@ -282,10 +278,6 @@ describe('Workspai design system drift', () => {
       path.join(repoRoot, 'webview-ui/src/styles/workspai-primitives.css'),
       'utf8'
     );
-
-    expect(onboardingSource).toContain('ws-onboarding-shell');
-    expect(onboardingSource).toContain('fresh-install-onboarding--compact');
-    expect(onboardingSource).toContain('ws-kicker');
 
     expect(overviewSource).toContain('ws-overview-shell');
     expect(overviewSource).toContain('ws-metric');
@@ -461,6 +453,41 @@ describe('Workspai design system drift', () => {
         new RegExp(`${escapedSelector}\\s*\\{[\\s\\S]*?overflow`)
       );
     }
+
+    expect(sidebarSource).toMatch(
+      /\.ws-sidebar--secondary\s*\{[\s\S]*?background:[\s\S]*?var\(--vscode-charts-blue/
+    );
+    expect(sidebarSource).toContain('#root > .workspai-theme-root');
+    expect(sidebarSource).toMatch(
+      /html,\s*body,\s*#root,\s*#root > \.workspai-theme-root\s*\{[\s\S]*?margin:\s*0;/
+    );
+    expect(sidebarSource).toMatch(
+      /html,\s*body,\s*#root,\s*#root > \.workspai-theme-root\s*\{[\s\S]*?padding:\s*0;/
+    );
+    expect(sidebarSource).toMatch(
+      /html,\s*body,\s*#root,\s*#root > \.workspai-theme-root\s*\{[\s\S]*?overflow:\s*hidden;/
+    );
+    expect(sidebarSource).toMatch(
+      /\.ws-sidebar--secondary\s*\{[\s\S]*?border-left:\s*1px solid var\(--vscode-panel-border\);/
+    );
+    expect(sidebarSource).toMatch(
+      /\.ws-sidebar--secondary\s*\{[\s\S]*?--ws-sidebar-edge-inset:\s*8px;/
+    );
+    expect(sidebarSource).toMatch(
+      /\.ws-sidebar--secondary \.ws-composer-dock\s*\{[\s\S]*?margin:\s*8px var\(--ws-sidebar-edge-inset\) 10px;/
+    );
+    expect(sidebarSource).toMatch(
+      /\.ws-sidebar--secondary \.ws-composer__input\s*\{[\s\S]*?padding:\s*4px 3px;/
+    );
+    expect(sidebarSource).toMatch(
+      /\.ws-sidebar--secondary \.ws-sidebar__tabs\s*\{[\s\S]*?padding:\s*4px var\(--ws-sidebar-edge-inset\) 0;/
+    );
+    expect(sidebarSource).toMatch(
+      /\.ws-sidebar--secondary \.ws-sidebar__tabpanel--chat \.ws-sidebar__stream\s*\{[\s\S]*?padding:\s*8px var\(--ws-sidebar-edge-inset\) 6px;/
+    );
+    expect(sidebarSource).toMatch(
+      /\.ws-sidebar--secondary \.ws-session-bar\s*\{[\s\S]*?padding:\s*8px var\(--ws-sidebar-edge-inset\) 0;/
+    );
   });
 
   it('keeps legacy context inquire off the dashboard shell', () => {
@@ -551,7 +578,6 @@ describe('Workspai design system drift', () => {
       'webview-ui/src/components/EnterpriseModal.tsx',
       'webview-ui/src/components/WorkspaiSettingsPanel.tsx',
       'webview-ui/src/components/DashboardNextStepRail.tsx',
-      'webview-ui/src/components/FreshInstallOnboarding.tsx',
       'webview-ui/src/components/WorkspaceOverview.tsx',
       'webview-ui/src/components/DashboardEvidenceSection.tsx',
       'webview-ui/src/components/EvidenceOutcomePanel.tsx',

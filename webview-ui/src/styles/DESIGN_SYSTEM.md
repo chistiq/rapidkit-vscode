@@ -49,15 +49,15 @@ Core variables:
 
 Canonical vocabulary lives in `workspai-primitives.css`. Prefer these classes in new UI:
 
-| Primitive | Class | Notes |
-|-----------|-------|-------|
-| Button | `ws-btn`, `ws-btn--primary`, `ws-btn--ghost`, `ws-btn--danger` | No gradient fills |
-| Card | `ws-card`, `ws-card--raised` | Transparent / raised surfaces |
-| Chip | `ws-chip`, `ws-chip--success`, `ws-chip--warn`, `ws-chip--error` | Status badges |
-| Field | `ws-field`, `ws-field__label`, `ws-field__hint`, `ws-field__error` | Forms |
-| Empty | `ws-empty`, `ws-empty__title`, `ws-empty__desc`, `ws-empty__actions` | Zero-data states |
-| Kicker | `ws-kicker` | Section eyebrows |
-| Embedded shell | `ws-embedded-host` | Setup / Settings / Studio tab bodies |
+| Primitive      | Class                                                                | Notes                                |
+| -------------- | -------------------------------------------------------------------- | ------------------------------------ |
+| Button         | `ws-btn`, `ws-btn--primary`, `ws-btn--ghost`, `ws-btn--danger`       | No gradient fills                    |
+| Card           | `ws-card`, `ws-card--raised`                                         | Transparent / raised surfaces        |
+| Chip           | `ws-chip`, `ws-chip--success`, `ws-chip--warn`, `ws-chip--error`     | Status badges                        |
+| Field          | `ws-field`, `ws-field__label`, `ws-field__hint`, `ws-field__error`   | Forms                                |
+| Empty          | `ws-empty`, `ws-empty__title`, `ws-empty__desc`, `ws-empty__actions` | Zero-data states                     |
+| Kicker         | `ws-kicker`                                                          | Section eyebrows                     |
+| Embedded shell | `ws-embedded-host`                                                   | Setup / Settings / Studio tab bodies |
 
 Legacy aliases (migration only, do not extend):
 
@@ -73,9 +73,9 @@ Legacy aliases (migration only, do not extend):
 
 Legacy prefixes are allowed only as tracked migration debt. They must not grow.
 
-| Prefix | Current budget | Rule |
-| ------ | -------------- | ---- |
-| legacy `dashboard-*` | 104 occurrences across 19 product source files | New dashboard chrome should add `ws-dashboard-*` aliases or replace old selectors. |
+| Prefix               | Current budget                                 | Rule                                                                                    |
+| -------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------- |
+| legacy `dashboard-*` | 104 occurrences across 19 product source files | New dashboard chrome should add `ws-dashboard-*` aliases or replace old selectors.      |
 | `spc-*` | 294 occurrences across 3 product source files | Setup surfaces should migrate toward `ws-setup-*`, `ws-card`, `ws-field`, and `ws-btn`. |
 
 `designSystemDrift.test.ts` enforces this budget so touched UI can move toward
@@ -103,15 +103,15 @@ command, verify command, and audit context. Release-path guidance is not default
 Studio chrome; it only appears for explicit readiness / verify-gate handoffs with a
 known workspace scope.
 
-| Layer | File | Role |
-|-------|------|------|
-| Tokens | `workspai-tokens.css` | Semantic `--ws-*` variables |
-| Sidebar entry | `webview-ui/src/sidebar/index.tsx` | Imports token spine, primitives, sidebar CSS, and a11y styles |
-| Sidebar app | `webview-ui/src/sidebar/SidebarApp.tsx` | Secondary-sidebar shell |
-| Studio orchestration | `webview-ui/src/sidebar/SecondarySidebar.tsx` | Create / Advisor / Studio tabs and host protocol |
-| Blocker chrome | `webview-ui/src/sidebar/StudioBlockerChrome.tsx` | Mode, phase, blockers, verify, and visible failure state |
-| Patch review | `webview-ui/src/sidebar/StudioPatchReview.tsx` | Human review before patch apply |
-| Release path | `webview-ui/src/sidebar/StudioShipLoopStepper.tsx` | Scoped analyze, verify-gates, readiness, archive loop |
+| Layer                   | File                                               | Role                                                           |
+| ----------------------- | -------------------------------------------------- | -------------------------------------------------------------- |
+| Tokens                  | `workspai-tokens.css`                              | Semantic `--ws-*` variables                                    |
+| Sidebar entry           | `webview-ui/src/sidebar/index.tsx`                 | Imports token spine, primitives, sidebar CSS, and a11y styles  |
+| Sidebar app             | `webview-ui/src/sidebar/SidebarApp.tsx`            | Secondary-sidebar shell                                        |
+| Assistant orchestration | `webview-ui/src/sidebar/SecondarySidebar.tsx`      | Create plus unified Agent / Ask / Plan modes and host protocol |
+| Blocker chrome          | `webview-ui/src/sidebar/StudioBlockerChrome.tsx`   | Mode, phase, blockers, verify, and visible failure state       |
+| Patch review            | `webview-ui/src/sidebar/StudioPatchReview.tsx`     | Human review before patch apply                                |
+| Release path            | `webview-ui/src/sidebar/StudioShipLoopStepper.tsx` | Scoped analyze, verify-gates, readiness, archive loop          |
 
 Rules for Studio and sidebar surfaces:
 

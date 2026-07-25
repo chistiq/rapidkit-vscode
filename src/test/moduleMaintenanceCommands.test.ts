@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   registeredCommands,
+  executeCommandMock,
   terminalMock,
   showQuickPickMock,
   showInputBoxMock,
@@ -11,6 +12,7 @@ const {
   readJsonMock,
 } = vi.hoisted(() => ({
   registeredCommands: new Map<string, (...args: unknown[]) => unknown>(),
+  executeCommandMock: vi.fn(),
   terminalMock: vi.fn(),
   showQuickPickMock: vi.fn(),
   showInputBoxMock: vi.fn(),
@@ -26,6 +28,7 @@ vi.mock('vscode', () => ({
       registeredCommands.set(id, handler);
       return { dispose: vi.fn() };
     },
+    executeCommand: executeCommandMock,
   },
   window: {
     showQuickPick: showQuickPickMock,
@@ -35,8 +38,8 @@ vi.mock('vscode', () => ({
   },
 }));
 
-vi.mock('../utils/terminalExecutor', () => ({
-  runRapidkitCommandsInTerminal: terminalMock,
+vi.mock('../core/gatedRapidkitTerminal', () => ({
+  runGatedRapidkitCommandsInTerminal: terminalMock,
 }));
 
 vi.mock('fs-extra', () => ({
@@ -55,6 +58,7 @@ const PROJECT_ITEM = { project: { path: '/tmp/team-ws/api', name: 'api' } };
 
 function setupHarness() {
   registeredCommands.clear();
+  executeCommandMock.mockClear();
   terminalMock.mockClear();
   showQuickPickMock.mockReset();
   showInputBoxMock.mockReset();

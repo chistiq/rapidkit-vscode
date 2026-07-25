@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { languageModelSupportsExtensionRequests } from './aiModelIdentity.js';
 
 interface ModelSelectionCacheEntry {
   preference: string;
@@ -26,7 +27,9 @@ async function selectModelByPreference(pref: string): Promise<{
     const cachedModel = modelSelectionCache.result.model;
     const cachedId = normalizeModelKey(cachedModel.id);
     const cachedName = normalizeModelKey(cachedModel.name ?? '');
-    const liveModels = await vscode.lm.selectChatModels();
+    const liveModels = (await vscode.lm.selectChatModels()).filter(
+      languageModelSupportsExtensionRequests
+    );
     const stillAvailable = liveModels.find((model) => {
       const modelId = normalizeModelKey(model.id);
       const modelName = normalizeModelKey(model.name ?? '');
@@ -84,7 +87,9 @@ async function selectModelByPreference(pref: string): Promise<{
     return result;
   };
 
-  const allModels = await vscode.lm.selectChatModels();
+  const allModels = (await vscode.lm.selectChatModels()).filter(
+    languageModelSupportsExtensionRequests
+  );
 
   const getModelSortKey = (model: vscode.LanguageModelChat): string => {
     const normalizedId = normalizeModelKey(model.id);

@@ -283,7 +283,7 @@ describe('chatParticipant', () => {
         missing: ['workspace.path'],
         clarificationNeeded: true,
         clarificationReason:
-          'No workspace or project evidence is available. Please select a workspace and run `npx rapidkit doctor workspace` to generate evidence.',
+          'No workspace or project evidence is available. Please select a workspace and run `npx workspai doctor workspace` to generate evidence.',
       },
     });
 
@@ -310,7 +310,7 @@ describe('chatParticipant', () => {
     expect(streamAIResponseMock).not.toHaveBeenCalled();
     expect(stream.markdown).toHaveBeenCalledWith(
       expect.stringContaining(
-        'Please select the workspace/project and run `npx rapidkit doctor workspace`'
+        'Please select the workspace/project and run `npx workspai doctor workspace`'
       )
     );
     expect(trackCommandEventMock).toHaveBeenCalledWith(

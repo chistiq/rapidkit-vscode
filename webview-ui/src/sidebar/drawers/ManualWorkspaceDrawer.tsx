@@ -3,8 +3,8 @@ import { AlertCircle, FolderPlus, Sparkles } from 'lucide-react';
 import { Drawer } from '../drawer/Drawer';
 import {
   MANUAL_STACK_LANES,
+  defaultInstallPythonEngineForProfile,
   defaultProfileForStackLane,
-  profileRequiresPythonInstallMethod,
   recommendedProfilesForStackLane,
   resolveDefaultWorkspaceName,
   stackLaneGuidance,
@@ -27,6 +27,7 @@ export interface ManualWorkspaceInput {
   name: string;
   profile: WorkspaceProfile;
   installMethod: WorkspaceInstallMethod;
+  skipPythonEngine: boolean;
   initGit: boolean;
   policyMode: 'warn' | 'strict';
   dependencySharing: 'isolated' | 'shared';
@@ -71,6 +72,8 @@ export function ManualWorkspaceDrawer({
   const [stackLane, setStackLane] = useState<CreationStackLane>('balanced');
   const [profile, setProfile] = useState<WorkspaceProfile>('minimal');
   const [installMethod, setInstallMethod] = useState<WorkspaceInstallMethod>('auto');
+  const [installPythonEngine, setInstallPythonEngine] = useState(false);
+  const [installPythonEngineTouched, setInstallPythonEngineTouched] = useState(false);
   const [initGit, setInitGit] = useState(true);
   const [strictPolicy, setStrictPolicy] = useState(false);
   const [depSharing, setDepSharing] = useState(false);
@@ -103,6 +106,8 @@ export function ManualWorkspaceDrawer({
     setStackLane('balanced');
     setProfile('minimal');
     setInstallMethod('auto');
+    setInstallPythonEngine(defaultInstallPythonEngineForProfile('minimal'));
+    setInstallPythonEngineTouched(false);
     setInitGit(true);
     setStrictPolicy(false);
     setDepSharing(false);
@@ -114,6 +119,13 @@ export function ManualWorkspaceDrawer({
     }
     setWorkspaceName(suggestedName);
   }, [open, nameTouched, suggestedName]);
+
+  useEffect(() => {
+    if (!open || installPythonEngineTouched) {
+      return;
+    }
+    setInstallPythonEngine(defaultInstallPythonEngineForProfile(profile));
+  }, [open, installPythonEngineTouched, profile]);
 
   const validateName = (name: string): boolean => {
     if (!name.trim()) {
@@ -141,14 +153,15 @@ export function ManualWorkspaceDrawer({
       name: workspaceName.trim(),
       profile,
       installMethod,
+      skipPythonEngine: !installPythonEngine,
       initGit,
       policyMode: strictPolicy ? 'strict' : 'warn',
       dependencySharing: depSharing ? 'shared' : 'isolated',
     });
   };
 
-  const showInstallMethod = profileRequiresPythonInstallMethod(profile);
-  const pathPreview = `~/rapidkit/workspaces/${workspaceName || suggestedName}`;
+  const showInstallMethod = installPythonEngine;
+  const pathPreview = `~/.workspai/workspaces/${workspaceName || suggestedName}`;
 
   return (
     <Drawer
@@ -261,6 +274,17 @@ export function ManualWorkspaceDrawer({
       <section className="ws-drawer-section">
         <span className="ws-drawer-section__label">Options</span>
         <div className="ws-drawer-toggle-row">
+          <button
+            type="button"
+            className={`ws-drawer-toggle${installPythonEngine ? ' is-on' : ''}`}
+            onClick={() => {
+              setInstallPythonEngineTouched(true);
+              setInstallPythonEngine((v) => !v);
+            }}
+            title="Install RapidKit Core for Python/FastAPI, polyglot, and enterprise profiles"
+          >
+            RapidKit Core
+          </button>
           <button
             type="button"
             className={`ws-drawer-toggle${initGit ? ' is-on' : ''}`}

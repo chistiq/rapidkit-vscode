@@ -1,3 +1,7 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 
 // Mock vscode so patchApplyEngine (via WorkspaceUsageTracker) can be imported
@@ -22,6 +26,7 @@ import {
   extractPatchesFromAiResponse,
   normalizePatchesForWorkspaceScope,
   applyPatches,
+  rollbackAppliedPatches,
   parseLogTrace,
   type FilePatch,
   type PatchApplyDeps,
@@ -280,6 +285,137 @@ describe('applyPatches', () => {
     expect(result.patches[0].failReason).toContain('disk full');
   });
 
+  it('rejects stale AI patches before any workspace write', async () => {
+    const written: Record<string, string> = {};
+    const deps = makeDeps({ '/workspace/src/value.ts': 'const value = 2;' }, written);
+    const result = await applyPatches(
+      {
+        actionId: 'stale-source',
+        workspacePath: '/workspace',
+        patches: [makePatch('src/value.ts', 'const value = 3;')],
+        expectedBaseSha256: {
+          'src/value.ts': crypto.createHash('sha256').update('const value = 1;').digest('hex'),
+        },
+      },
+      deps
+    );
+
+    expect(result.appliedCount).toBe(0);
+    expect(result.failedCount).toBe(1);
+    expect(result.patches[0].failReason).toContain('Source changed after AI grounding');
+    expect(written).toEqual({});
+  });
+
+  it('rejects malformed JSON before mutating any transaction target', async () => {
+    const written: Record<string, string> = {};
+    const result = await applyPatches(
+      {
+        actionId: 'invalid-json',
+        workspacePath: '/workspace',
+        patches: [makePatch('config.json', '{broken'), makePatch('src/a.ts', 'new-a')],
+      },
+      makeDeps({}, written)
+    );
+
+    expect(result.appliedCount).toBe(0);
+    expect(result.failedCount).toBe(2);
+    expect(result.patches[0].failReason).toContain('Invalid JSON patch');
+    expect(written).toEqual({});
+  });
+
+  it('rolls back prior files when a later write fails', async () => {
+    const state: Record<string, string | null> = {
+      '/workspace/src/a.ts': 'old-a',
+      '/workspace/src/b.ts': 'old-b',
+    };
+    let failedOnce = false;
+    const result = await applyPatches(
+      {
+        actionId: 'transactional-write',
+        workspacePath: '/workspace',
+        patches: [makePatch('src/a.ts', 'new-a'), makePatch('src/b.ts', 'new-b')],
+      },
+      {
+        readFile: async (filePath) => state[filePath] ?? null,
+        writeFile: async (filePath, content) => {
+          if (filePath.endsWith('/b.ts') && content === 'new-b' && !failedOnce) {
+            failedOnce = true;
+            throw new Error('disk full');
+          }
+          state[filePath] = content;
+        },
+        deleteFile: async (filePath) => {
+          state[filePath] = null;
+        },
+        telemetry: { trackCommandEvent: vi.fn().mockResolvedValue(undefined) },
+        commandRunner: vi.fn().mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' }),
+      }
+    );
+
+    expect(result.appliedCount).toBe(0);
+    expect(result.failedCount).toBe(2);
+    expect(state['/workspace/src/a.ts']).toBe('old-a');
+    expect(state['/workspace/src/b.ts']).toBe('old-b');
+  });
+
+  it('rolls back an applied AI patch only while its written content is unchanged', async () => {
+    const state: Record<string, string | null> = { '/workspace/src/a.ts': 'new-a' };
+    const appliedPatch = {
+      ...makePatch('src/a.ts', 'new-a'),
+      originalContent: 'old-a',
+      status: 'applied' as const,
+    };
+    const deps = {
+      readFile: async (filePath: string) => state[filePath] ?? null,
+      writeFile: async (filePath: string, content: string) => {
+        state[filePath] = content;
+      },
+      deleteFile: async (filePath: string) => {
+        state[filePath] = null;
+      },
+    };
+
+    expect(
+      await rollbackAppliedPatches({ workspacePath: '/workspace', patches: [appliedPatch] }, deps)
+    ).toMatchObject({ ok: true, restoredPaths: ['src/a.ts'] });
+    expect(state['/workspace/src/a.ts']).toBe('old-a');
+
+    state['/workspace/src/a.ts'] = 'user-edit';
+    expect(
+      await rollbackAppliedPatches({ workspacePath: '/workspace', patches: [appliedPatch] }, deps)
+    ).toMatchObject({ ok: false, restoredPaths: [] });
+    expect(state['/workspace/src/a.ts']).toBe('user-edit');
+  });
+
+  it('restores an inspected delete transaction only while the target remains absent', async () => {
+    const state: Record<string, string | null> = { '/workspace/src/old.ts': null };
+    const deletedPatch = {
+      ...makePatch('src/old.ts', ''),
+      operation: 'delete' as const,
+      originalContent: 'export const old = true;',
+      status: 'applied' as const,
+    };
+    const deps = {
+      readFile: async (filePath: string) => state[filePath] ?? null,
+      writeFile: async (filePath: string, content: string) => {
+        state[filePath] = content;
+      },
+      deleteFile: async (filePath: string) => {
+        state[filePath] = null;
+      },
+    };
+
+    expect(
+      await rollbackAppliedPatches({ workspacePath: '/workspace', patches: [deletedPatch] }, deps)
+    ).toMatchObject({ ok: true, restoredPaths: ['src/old.ts'] });
+    expect(state['/workspace/src/old.ts']).toBe('export const old = true;');
+
+    state['/workspace/src/old.ts'] = 'a user recreated this file';
+    expect(
+      await rollbackAppliedPatches({ workspacePath: '/workspace', patches: [deletedPatch] }, deps)
+    ).toMatchObject({ ok: false, restoredPaths: [] });
+  });
+
   it('refuses to apply patches outside the workspace boundary', async () => {
     const written: Record<string, string> = {};
     const deps = makeDeps({}, written);
@@ -300,6 +436,25 @@ describe('applyPatches', () => {
     expect(Object.keys(written)).toHaveLength(0);
   });
 
+  it('refuses production writes through a symlink outside the workspace', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-patch-symlink-'));
+    const outsidePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-patch-outside-'));
+    await fs.symlink(outsidePath, path.join(workspacePath, 'linked'), 'dir');
+    try {
+      const result = await applyPatches({
+        actionId: 'symlink-boundary',
+        workspacePath,
+        patches: [makePatch('linked/escape.txt', 'blocked')],
+      });
+      expect(result.appliedCount).toBe(0);
+      expect(result.patches[0].failReason).toContain('symbolic link');
+      await expect(fs.readFile(path.join(outsidePath, 'escape.txt'), 'utf8')).rejects.toThrow();
+    } finally {
+      await fs.rm(workspacePath, { recursive: true, force: true });
+      await fs.rm(outsidePath, { recursive: true, force: true });
+    }
+  });
+
   it('creates a branch when branchSafeApply is true and git succeeds', async () => {
     const deps = makeDeps({}, {});
     const result = await applyPatches(
@@ -315,7 +470,7 @@ describe('applyPatches', () => {
     expect(result.branchCreated).toBe('workspai/apply-my-action');
   });
 
-  it('proceeds without branch when git fails', async () => {
+  it('fails closed without writes when required branch isolation fails', async () => {
     const written: Record<string, string> = {};
     const deps = makeDeps({}, written);
     (deps.commandRunner as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -335,7 +490,9 @@ describe('applyPatches', () => {
     );
 
     expect(result.branchCreated).toBeUndefined();
-    expect(result.appliedCount).toBe(1);
+    expect(result.appliedCount).toBe(0);
+    expect(result.failedCount).toBe(1);
+    expect(Object.keys(written)).toHaveLength(0);
   });
 
   it('sets patchId and generatedAt in result', async () => {

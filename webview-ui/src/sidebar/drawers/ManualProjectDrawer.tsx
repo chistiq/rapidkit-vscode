@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Package } from 'lucide-react';
+import { AlertCircle, MapPin, Package } from 'lucide-react';
 import { Drawer } from '../drawer/Drawer';
 import { FRAMEWORK_OPTIONS } from '../createTypes';
 import type { SidebarScope } from '../sidebarTypes';
@@ -29,7 +29,11 @@ const FRONTEND_KEYS = [
 ];
 
 function shortLabel(key: string): string {
-  return FRAMEWORK_OPTIONS.find((o) => o.value === key)?.label.replace(/ Kit$/, '').replace(/ Standard/, '') ?? key;
+  return (
+    FRAMEWORK_OPTIONS.find((o) => o.value === key)
+      ?.label.replace(/ Kit$/, '')
+      .replace(/ Standard/, '') ?? key
+  );
 }
 
 interface ManualProjectDrawerProps {
@@ -131,13 +135,16 @@ export function ManualProjectDrawer({
     >
       <section className="ws-drawer-section ws-drawer-section--flush">
         <span className="ws-drawer-section__label">Target workspace</span>
-        <p className="ws-drawer-scope ws-drawer-scope--compact">
-          {scope.workspaceName ? (
-            <strong>{scope.workspaceName}</strong>
-          ) : (
-            <strong>Default RapidKit location</strong>
-          )}
-        </p>
+        <div className="ws-drawer-scope ws-drawer-scope--compact">
+          <span
+            className="ws-drawer-target-badge"
+            data-default={scope.workspaceName ? 'false' : 'true'}
+            title={scope.workspacePath || undefined}
+          >
+            <MapPin size={11} strokeWidth={2} aria-hidden={true} />
+            <strong>{scope.workspaceName || 'Default Workspai location'}</strong>
+          </span>
+        </div>
       </section>
 
       {renderFrameworkRow('Backend', BACKEND_KEYS)}

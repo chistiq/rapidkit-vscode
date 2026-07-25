@@ -1,8 +1,38 @@
 import type { DashboardEvidenceCard, DashboardEvidencePayload } from '@/lib/dashboardEvidence';
-import { outcomeCards } from '@/lib/dashboardEvidence';
+import { resolveEvidenceFreshness } from '@/lib/dashboardEvidence';
+import {
+  cardCountsAsReleaseBlocker,
+  resolveWorkspaceProjectCountFromEvidence,
+} from '@/lib/dashboardScaffoldEvidence';
+
+export type EvidenceAttentionBucket = 'blocked' | 'attention' | 'missing' | 'ok';
+
+export type EvidenceAttentionBuckets = Record<EvidenceAttentionBucket, number>;
+
+export function resolveEvidenceAttentionBucket(
+  card: DashboardEvidenceCard,
+  workspaceProjectCount: number | null,
+  nowMs = Date.now()
+): EvidenceAttentionBucket {
+  if (cardCountsAsReleaseBlocker(card, workspaceProjectCount)) {
+    return 'blocked';
+  }
+  if (card.status === 'missing') {
+    return 'missing';
+  }
+  if (
+    card.status === 'fail' ||
+    card.status === 'warn' ||
+    resolveEvidenceFreshness(card, nowMs).status === 'stale'
+  ) {
+    return 'attention';
+  }
+  return 'ok';
+}
 
 export function cardNeedsAgentAttention(card: DashboardEvidenceCard): boolean {
-  return card.status === 'fail' || card.status === 'warn' || (card.blockers?.length ?? 0) > 0;
+  const bucket = resolveEvidenceAttentionBucket(card, null);
+  return bucket === 'blocked' || bucket === 'attention';
 }
 
 export type EvidenceAttentionItem = {
@@ -46,16 +76,17 @@ function recencyScore(card: DashboardEvidenceCard, nowMs = Date.now()): number {
 }
 
 function buildAttentionRank(
-  card: DashboardEvidenceCard
+  card: DashboardEvidenceCard,
+  severity: EvidenceAttentionItem['severity']
 ): Pick<EvidenceAttentionItem, 'attentionScore' | 'rankReasons'> {
   const blockerCount = card.blockers?.length ?? 0;
-  const severityScore = card.status === 'fail' ? 100 : card.status === 'warn' ? 45 : 0;
+  const severityScore = severity === 'fail' ? 100 : 45;
   const blockerScore = Math.min(blockerCount, 5) * 8;
   const governanceScore = GOVERNANCE_IMPACT_SCORE[card.id] ?? 0;
   const recency = recencyScore(card);
   const attentionScore = severityScore + blockerScore + governanceScore + recency;
   const rankReasons = [
-    card.status === 'fail' ? 'blocked' : card.status === 'warn' ? 'attention' : '',
+    severity === 'fail' ? 'blocked' : 'attention',
     blockerCount > 0 ? `${blockerCount} blocker${blockerCount === 1 ? '' : 's'}` : '',
     governanceScore > 0 ? 'governance impact' : '',
     recency > 0 ? 'recent evidence' : '',
@@ -67,46 +98,59 @@ function buildAttentionRank(
 export function buildEvidenceAttentionInbox(
   evidence: DashboardEvidencePayload | null | undefined
 ): EvidenceAttentionItem[] {
-  return outcomeCards(evidence)
+  const workspaceProjectCount = resolveWorkspaceProjectCountFromEvidence(evidence);
+  return (evidence?.cards ?? [])
+    .map((card) => ({
+      card,
+      bucket: resolveEvidenceAttentionBucket(card, workspaceProjectCount),
+    }))
+    .filter(
+      (entry): entry is { card: DashboardEvidenceCard; bucket: 'blocked' | 'attention' } =>
+        entry.bucket === 'blocked' || entry.bucket === 'attention'
+    )
     .map((card) => {
-      const blockerCount = card.blockers?.length ?? 0;
+      const severity = card.bucket === 'blocked' ? ('fail' as const) : ('warn' as const);
+      const blockerCount = card.card.blockers?.length ?? 0;
       return {
-        card,
-        severity: card.status === 'fail' ? ('fail' as const) : ('warn' as const),
+        card: card.card,
+        severity,
         blockerCount,
-        ...buildAttentionRank(card),
+        ...buildAttentionRank(card.card, severity),
       };
     })
     .sort((left, right) => {
-      if (left.attentionScore !== right.attentionScore) {
-        return right.attentionScore - left.attentionScore;
-      }
       if (left.severity !== right.severity) {
         return left.severity === 'fail' ? -1 : 1;
+      }
+      if (left.attentionScore !== right.attentionScore) {
+        return right.attentionScore - left.attentionScore;
       }
       return left.card.label.localeCompare(right.card.label);
     });
 }
 
+export function evidenceAttentionVisibleLimit(
+  itemCount: number,
+  blockedCount: number,
+  requestedLimit?: number
+): number {
+  const requested =
+    typeof requestedLimit === 'number' && requestedLimit > 0 ? requestedLimit : itemCount;
+  return Math.min(itemCount, Math.max(requested, blockedCount));
+}
+
 export function countEvidenceAttentionBuckets(
   evidence: DashboardEvidencePayload | null | undefined
-): { blocked: number; attention: number; ok: number } {
+): EvidenceAttentionBuckets {
   const cards = evidence?.cards ?? [];
-  let blocked = 0;
-  let attention = 0;
-  let ok = 0;
+  const workspaceProjectCount = resolveWorkspaceProjectCountFromEvidence(evidence);
+  const buckets: EvidenceAttentionBuckets = { blocked: 0, attention: 0, missing: 0, ok: 0 };
 
   for (const card of cards) {
-    if (card.status === 'fail' || (card.blockers?.length ?? 0) > 0) {
-      blocked += 1;
-    } else if (card.status === 'warn') {
-      attention += 1;
-    } else if (card.status === 'pass') {
-      ok += 1;
-    }
+    buckets[resolveEvidenceAttentionBucket(card, workspaceProjectCount)] += 1;
   }
 
-  return { blocked, attention, ok };
+  return buckets;
 }
 
 export function buildEvidenceCardStudioQuery(

@@ -45,6 +45,7 @@ type WorkspaceModalConfig = {
   initGit?: boolean;
   profile?: BootstrapProfile;
   installMethod?: InstallMethod;
+  skipPythonEngine?: boolean;
   policyMode?: PolicyMode;
   dependencySharing?: DependencySharing;
   /** Assist / chained flows: show toast without blocking on user dismissal. */
@@ -59,6 +60,7 @@ type WorkspaceCreationConfig = {
   initGit: boolean;
   profile?: BootstrapProfile;
   installMethod?: InstallMethod;
+  skipPythonEngine?: boolean;
   policyMode?: PolicyMode;
   dependencySharing?: DependencySharing;
   suppressPostCreatePrompt?: boolean;
@@ -74,227 +76,31 @@ function isWorkspaceModalConfig(value: unknown): value is WorkspaceModalConfig {
   return typeof candidate.name === 'string' && candidate.name.trim().length > 0;
 }
 
+const PYTHON_ENGINE_REQUIRED_PROFILES = new Set<BootstrapProfile>([
+  'python-only',
+  'polyglot',
+  'enterprise',
+]);
+
+function defaultSkipPythonEngine(profile?: BootstrapProfile): boolean {
+  return !PYTHON_ENGINE_REQUIRED_PROFILES.has(profile ?? 'minimal');
+}
+
 export async function createWorkspaceCommand(workspaceName?: string | Record<string, unknown>) {
   const logger = Logger.getInstance();
-  const PYTHON_REQUIRED_PROFILES = new Set(['python-only', 'polyglot', 'enterprise']);
   logger.info(
     'Create Workspace command initiated',
     workspaceName ? `with name: ${workspaceName}` : ''
   );
 
   try {
-    // Show progress notification while checking system requirements
     let pythonCheck: PythonEnvironmentCheck = {
       available: false,
       meetsMinimumVersion: false,
       venvSupport: false,
     };
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: 'Preparing workspace creation',
-        cancellable: false,
-      },
-      async (progress) => {
-        progress.report({ increment: 0, message: 'Checking system requirements...' });
-
-        // Check Python 3.10+ BEFORE Poetry (Python is more fundamental)
-        logger.info('Checking for Python 3.10+ installation...');
-
-        // Check if cache available
-        const { requirementCache } = await import('../utils/requirementCache.js');
-        const cacheStats = requirementCache.getStats();
-        const pythonCached = cacheStats.pythonCached;
-
-        progress.report({
-          increment: 30,
-          message: pythonCached ? 'Checking Python (cached)...' : 'Checking Python installation...',
-        });
-
-        pythonCheck = await checkPythonEnvironmentCached();
-
-        if (!pythonCheck.available) {
-          logger.error('Python not installed');
-          progress.report({ increment: 100, message: 'Python not found' });
-        }
-      }
-    );
-
-    // Python checks are advisory here. We enforce/confirm later based on selected profile.
-    if (!pythonCheck.available) {
-      logger.warn('Python not detected in pre-check; continuing with profile-aware flow');
-    } else if (!pythonCheck.meetsMinimumVersion) {
-      logger.warn(
-        `Python version ${pythonCheck.version} is below minimum; continuing with profile-aware flow`
-      );
-    } else if (!pythonCheck.venvSupport) {
-      logger.warn('Python venv support missing in pre-check; continuing with profile-aware flow');
-    } else {
-      logger.info(`Python ${pythonCheck.version} is available with venv support`);
-    }
-
     const modalConfig = isWorkspaceModalConfig(workspaceName) ? workspaceName : null;
-    const modalInstallMethod = modalConfig?.installMethod as
-      | 'poetry'
-      | 'venv'
-      | 'pipx'
-      | 'auto'
-      | undefined;
     const isModalFlow = Boolean(modalConfig?.name);
-
-    // ── Install-method resolution: poetry (preferred) → fallback chain → venv ──
-    // Poetry is NEVER a hard requirement. If missing, we offer auto-install via
-    // pipx, or a pure venv workspace which is fully equivalent in functionality.
-    let chosenInstallMethod: 'poetry' | 'venv' | 'pipx' = 'venv';
-    let hasPoetry = false;
-
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: 'Checking Poetry installation',
-        cancellable: false,
-      },
-      async (progress) => {
-        const { requirementCache } = await import('../utils/requirementCache.js');
-        const cacheStats = requirementCache.getStats();
-        const poetryCached = cacheStats.poetryCached;
-        progress.report({
-          increment: 0,
-          message: poetryCached ? 'Verifying Poetry (cached)...' : 'Verifying Poetry...',
-        });
-        logger.info('Checking for Poetry installation...');
-        hasPoetry = await isPoetryInstalledCached();
-        progress.report({
-          increment: 100,
-          message: hasPoetry ? 'Poetry found' : 'Poetry not found — checking fallback options...',
-        });
-      }
-    );
-
-    if (hasPoetry) {
-      chosenInstallMethod = 'poetry';
-      logger.info('Poetry is installed — using poetry install method');
-    } else {
-      if (isModalFlow) {
-        if (modalInstallMethod && modalInstallMethod !== 'auto') {
-          if (modalInstallMethod === 'poetry') {
-            chosenInstallMethod = 'venv';
-            logger.warn(
-              'Modal requested poetry, but Poetry is not installed — using venv fallback without extra prompt'
-            );
-          } else {
-            chosenInstallMethod = modalInstallMethod;
-            logger.info(`Modal install method respected: ${modalInstallMethod}`);
-          }
-        } else {
-          chosenInstallMethod = 'venv';
-          logger.info('Modal auto install method with missing Poetry — using venv fallback');
-        }
-      }
-
-      if (isModalFlow) {
-        logger.info('Modal flow detected — skipping interactive Poetry prompt');
-      } else {
-        logger.warn('Poetry not installed — offering smart fallback');
-
-        // Detect whether pipx is available for automatic Poetry installation
-        let hasPipx = false;
-        try {
-          const { execa } = await import('execa');
-          await execa('pipx', ['--version'], { timeout: 3000 });
-          hasPipx = true;
-        } catch {
-          try {
-            const { execa } = await import('execa');
-            await execa('python3', ['-m', 'pipx', '--version'], { timeout: 3000 });
-            hasPipx = true;
-          } catch {
-            hasPipx = false;
-          }
-        }
-
-        type PickItem = vscode.QuickPickItem & { value: string };
-
-        const choices: PickItem[] = [
-          ...(hasPipx
-            ? [
-                {
-                  label: '$(zap) Auto-install Poetry via pipx',
-                  description: 'Recommended — installs Poetry globally then creates workspace',
-                  detail: 'Runs: pipx install poetry',
-                  value: 'auto-poetry',
-                },
-              ]
-            : []),
-          {
-            label: '$(package) Use Python venv instead',
-            description: 'No extra tools needed — pip + venv (equivalent functionality)',
-            detail: 'Workspace is fully functional without Poetry. You can add it later.',
-            value: 'venv',
-          },
-          {
-            label: '$(tools) Open Setup Panel',
-            description: 'Guide me through manual Poetry / pipx installation',
-            detail: 'Workspace creation will be cancelled. Opens the setup wizard.',
-            value: 'setup',
-          },
-        ];
-
-        const pick = await vscode.window.showQuickPick(choices, {
-          placeHolder: 'Poetry is not installed. How would you like to proceed?',
-          title: '⚙️ Workspace Install Method',
-          ignoreFocusOut: true,
-        });
-
-        if (!pick) {
-          logger.info('User cancelled workspace creation at install method selection');
-          return;
-        }
-
-        if (pick.value === 'auto-poetry') {
-          logger.info('Auto-installing Poetry via pipx...');
-          const installCommands =
-            process.platform === 'win32'
-              ? ['python -m pipx install poetry', 'echo ✅ Poetry installed successfully']
-              : ['pipx install poetry', 'echo "✅ Poetry installed successfully"'];
-          runCommandsInTerminal({
-            name: 'Workspai: Install Poetry',
-            commands: installCommands,
-          });
-
-          const confirm = await vscode.window.showInformationMessage(
-            'Installing Poetry via pipx...\n\nWait until the terminal shows\n"✅ Poetry installed successfully", then click Continue.',
-            { modal: true },
-            'Continue',
-            'Skip — use venv instead'
-          );
-
-          if (!confirm || confirm === 'Skip — use venv instead') {
-            chosenInstallMethod = 'venv';
-            logger.info('User skipped Poetry auto-install — using venv fallback');
-          } else {
-            const { requirementCache } = await import('../utils/requirementCache.js');
-            requirementCache.invalidateAll();
-            hasPoetry = await isPoetryInstalledCached();
-            chosenInstallMethod = hasPoetry ? 'poetry' : 'venv';
-            logger.info(
-              hasPoetry
-                ? 'Poetry confirmed after auto-install — using poetry'
-                : 'Poetry still not detected — falling back to venv'
-            );
-          }
-        } else if (pick.value === 'venv') {
-          chosenInstallMethod = 'venv';
-          logger.info('User selected venv install method');
-        } else {
-          // Open Setup Panel and abort workspace creation
-          vscode.commands.executeCommand('workspai.openSetup');
-          return;
-        }
-      }
-    }
-
-    logger.info(`Proceeding with workspace creation (install method: ${chosenInstallMethod})`);
 
     // Check if this is first-time setup and show guidance (only if name not provided from modal)
     if (!workspaceName) {
@@ -322,6 +128,10 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
           initGit: workspaceName.initGit !== undefined ? workspaceName.initGit : true,
           profile: workspaceName.profile || 'minimal',
           installMethod: workspaceName.installMethod || 'auto',
+          skipPythonEngine:
+            typeof workspaceName.skipPythonEngine === 'boolean'
+              ? workspaceName.skipPythonEngine
+              : defaultSkipPythonEngine(workspaceName.profile || 'minimal'),
           policyMode: workspaceName.policyMode || 'warn',
           dependencySharing: workspaceName.dependencySharing || 'isolated',
           suppressPostCreatePrompt: workspaceName.suppressPostCreatePrompt === true,
@@ -334,6 +144,8 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
           name: workspaceName as string,
           path: resolveNewWorkspacePath(workspaceName as string),
           initGit: true,
+          profile: 'minimal',
+          skipPythonEngine: true,
         };
       }
     } else {
@@ -352,20 +164,222 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
         initGit: wizardConfig.initGit,
         profile: wizardConfig.profile,
         installMethod: wizardConfig.installMethod,
+        skipPythonEngine:
+          typeof wizardConfig.skipPythonEngine === 'boolean'
+            ? wizardConfig.skipPythonEngine
+            : defaultSkipPythonEngine(wizardConfig.profile),
         policyMode: wizardConfig.policyMode,
         dependencySharing: wizardConfig.dependencySharing,
       };
     }
 
+    let chosenInstallMethod: 'poetry' | 'venv' | 'pipx' | undefined = config.skipPythonEngine
+      ? undefined
+      : 'venv';
+
+    if (config.skipPythonEngine) {
+      logger.info('Skipping optional Python engine bootstrap for lightweight workspace creation');
+    } else {
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'Preparing workspace creation',
+          cancellable: false,
+        },
+        async (progress) => {
+          progress.report({ increment: 0, message: 'Checking system requirements...' });
+          logger.info('Checking for Python 3.10+ installation...');
+
+          const { requirementCache } = await import('../utils/requirementCache.js');
+          const cacheStats = requirementCache.getStats();
+          const pythonCached = cacheStats.pythonCached;
+
+          progress.report({
+            increment: 30,
+            message: pythonCached
+              ? 'Checking Python (cached)...'
+              : 'Checking Python installation...',
+          });
+
+          pythonCheck = await checkPythonEnvironmentCached();
+
+          if (!pythonCheck.available) {
+            logger.error('Python not installed');
+            progress.report({ increment: 100, message: 'Python not found' });
+          }
+        }
+      );
+
+      if (!pythonCheck.available) {
+        logger.warn('Python not detected in pre-check; continuing with profile-aware flow');
+      } else if (!pythonCheck.meetsMinimumVersion) {
+        logger.warn(
+          `Python version ${pythonCheck.version} is below minimum; continuing with profile-aware flow`
+        );
+      } else if (!pythonCheck.venvSupport) {
+        logger.warn('Python venv support missing in pre-check; continuing with profile-aware flow');
+      } else {
+        logger.info(`Python ${pythonCheck.version} is available with venv support`);
+      }
+
+      let hasPoetry = false;
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'Checking Poetry installation',
+          cancellable: false,
+        },
+        async (progress) => {
+          const { requirementCache } = await import('../utils/requirementCache.js');
+          const cacheStats = requirementCache.getStats();
+          const poetryCached = cacheStats.poetryCached;
+          progress.report({
+            increment: 0,
+            message: poetryCached ? 'Verifying Poetry (cached)...' : 'Verifying Poetry...',
+          });
+          logger.info('Checking for Poetry installation...');
+          hasPoetry = await isPoetryInstalledCached();
+          progress.report({
+            increment: 100,
+            message: hasPoetry ? 'Poetry found' : 'Poetry not found - checking fallback options...',
+          });
+        }
+      );
+
+      if (hasPoetry) {
+        chosenInstallMethod = 'poetry';
+        logger.info('Poetry is installed - using poetry install method');
+      } else {
+        if (isModalFlow) {
+          const modalInstallMethod = modalConfig?.installMethod as
+            | 'poetry'
+            | 'venv'
+            | 'pipx'
+            | 'auto'
+            | undefined;
+          if (modalInstallMethod && modalInstallMethod !== 'auto') {
+            if (modalInstallMethod === 'poetry') {
+              chosenInstallMethod = 'venv';
+              logger.warn(
+                'Modal requested poetry, but Poetry is not installed - using venv fallback without extra prompt'
+              );
+            } else {
+              chosenInstallMethod = modalInstallMethod;
+              logger.info(`Modal install method respected: ${modalInstallMethod}`);
+            }
+          } else {
+            chosenInstallMethod = 'venv';
+            logger.info('Modal auto install method with missing Poetry - using venv fallback');
+          }
+        } else {
+          logger.warn('Poetry not installed - offering smart fallback');
+
+          let hasPipx = false;
+          try {
+            const { execa } = await import('execa');
+            await execa('pipx', ['--version'], { timeout: 3000 });
+            hasPipx = true;
+          } catch {
+            try {
+              const { execa } = await import('execa');
+              await execa('python3', ['-m', 'pipx', '--version'], { timeout: 3000 });
+              hasPipx = true;
+            } catch {
+              hasPipx = false;
+            }
+          }
+
+          type PickItem = vscode.QuickPickItem & { value: string };
+
+          const choices: PickItem[] = [
+            ...(hasPipx
+              ? [
+                  {
+                    label: '$(zap) Auto-install Poetry via pipx',
+                    description: 'Recommended - installs Poetry globally then creates workspace',
+                    detail: 'Runs: pipx install poetry',
+                    value: 'auto-poetry',
+                  },
+                ]
+              : []),
+            {
+              label: '$(package) Use Python venv instead',
+              description: 'No extra tools needed - pip + venv (equivalent functionality)',
+              detail: 'Workspace is fully functional without Poetry. You can add it later.',
+              value: 'venv',
+            },
+            {
+              label: '$(tools) Open Setup Panel',
+              description: 'Guide me through manual Poetry / pipx installation',
+              detail: 'Workspace creation will be cancelled. Opens the setup wizard.',
+              value: 'setup',
+            },
+          ];
+
+          const pick = await vscode.window.showQuickPick(choices, {
+            placeHolder: 'Poetry is not installed. How would you like to proceed?',
+            title: 'Workspace Install Method',
+            ignoreFocusOut: true,
+          });
+
+          if (!pick) {
+            logger.info('User cancelled workspace creation at install method selection');
+            return;
+          }
+
+          if (pick.value === 'auto-poetry') {
+            logger.info('Auto-installing Poetry via pipx...');
+            const installCommands =
+              process.platform === 'win32'
+                ? ['python -m pipx install poetry', 'echo Poetry installed successfully']
+                : ['pipx install poetry', 'echo "Poetry installed successfully"'];
+            runCommandsInTerminal({
+              name: 'Workspai: Install Poetry',
+              commands: installCommands,
+            });
+
+            const confirm = await vscode.window.showInformationMessage(
+              'Installing Poetry via pipx...\n\nWait until the terminal shows "Poetry installed successfully", then click Continue.',
+              { modal: true },
+              'Continue',
+              'Skip - use venv instead'
+            );
+
+            if (!confirm || confirm === 'Skip - use venv instead') {
+              chosenInstallMethod = 'venv';
+              logger.info('User skipped Poetry auto-install - using venv fallback');
+            } else {
+              const { requirementCache } = await import('../utils/requirementCache.js');
+              requirementCache.invalidateAll();
+              hasPoetry = await isPoetryInstalledCached();
+              chosenInstallMethod = hasPoetry ? 'poetry' : 'venv';
+              logger.info(
+                hasPoetry
+                  ? 'Poetry confirmed after auto-install - using poetry'
+                  : 'Poetry still not detected - falling back to venv'
+              );
+            }
+          } else if (pick.value === 'venv') {
+            chosenInstallMethod = 'venv';
+            logger.info('User selected venv install method');
+          } else {
+            vscode.commands.executeCommand('workspai.openSetup');
+            return;
+          }
+        }
+      }
+    }
+
     // Honour install method explicitly chosen in the wizard (overrides auto-detection)
-    if (config.installMethod && config.installMethod !== 'auto') {
-      logger.info(`Wizard override: install method → ${config.installMethod}`);
+    if (!config.skipPythonEngine && config.installMethod && config.installMethod !== 'auto') {
+      logger.info(`Wizard override: install method -> ${config.installMethod}`);
       chosenInstallMethod = config.installMethod as 'poetry' | 'venv' | 'pipx';
     }
 
     // Profile-aware Python enforcement: only gate Python-required profiles.
-    const selectedProfile = (config.profile || 'minimal') as string;
-    const requiresPython = PYTHON_REQUIRED_PROFILES.has(selectedProfile);
+    const selectedProfile = (config.profile || 'minimal') as BootstrapProfile;
+    const requiresPython =
+      !config.skipPythonEngine && PYTHON_ENGINE_REQUIRED_PROFILES.has(selectedProfile);
     const pythonReady =
       !!pythonCheck?.available && !!pythonCheck?.meetsMinimumVersion && !!pythonCheck?.venvSupport;
 
@@ -379,7 +393,7 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
       const choice = await vscode.window.showWarningMessage(
         `⚠️ Profile "${selectedProfile}" typically needs Python tooling.\n\n` +
           `${issueDetails}\n\n` +
-          `Continue anyway? RapidKit CLI can auto-fallback to a compatible profile if needed.`,
+          `Continue anyway? Workspai CLI can auto-fallback to a compatible profile if needed.`,
         { modal: true },
         'Continue',
         'Open Setup',
@@ -449,7 +463,7 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
           // Use npm package directly for default location
           progress.report({
             increment: 20,
-            message: 'Setting up RapidKit CLI (downloading if needed)...',
+            message: 'Setting up Workspai CLI (downloading if needed)...',
           });
 
           // Idempotency: if the workspace marker already exists (prior run or
@@ -467,7 +481,8 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
                 name: config.name,
                 parentPath: path.dirname(config.path),
                 skipGit: !config.initGit,
-                installMethod: chosenInstallMethod,
+                installMethod: config.skipPythonEngine ? undefined : chosenInstallMethod,
+                skipPythonEngine: config.skipPythonEngine,
                 profile: config.profile,
               });
 
@@ -503,7 +518,7 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
                   `⚠️ Fallback Option Available:\n` +
                   `• Creates basic workspace structure (marker + README)\n` +
                   `• Does NOT include Poetry setup or CLI tools\n` +
-                  `• You'll need to install rapidkit npm package to create projects`,
+                  `• You'll need to install the workspai npm package to create projects`,
                 { modal: true },
                 ...actions
               );
@@ -519,7 +534,7 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
                 const selected = await vscode.window.showWarningMessage(
                   `⚠️ Basic Workspace Created\n\n` +
                     `This is a minimal workspace. To create projects:\n\n` +
-                    `1️⃣ Install: npm install -g rapidkit\n` +
+                    `1️⃣ Install: npm install -g workspai\n` +
                     `2️⃣ Create projects with Extension commands\n\n` +
                     `⚠️ Note: Some features require rapidkit-core (not yet on PyPI)`,
                   installAction,
@@ -581,14 +596,15 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
           // IMPORTANT: Don't create in default location and move - this breaks virtualenv shebangs!
           progress.report({
             increment: 20,
-            message: 'Setting up RapidKit CLI (downloading if needed)...',
+            message: 'Setting up Workspai CLI (downloading if needed)...',
           });
 
           const createResult = await cli.createWorkspace({
             name: config.name,
             parentPath: path.dirname(config.path), // Use actual parent path, not default
             skipGit: !config.initGit,
-            installMethod: chosenInstallMethod,
+            installMethod: config.skipPythonEngine ? undefined : chosenInstallMethod,
+            skipPythonEngine: config.skipPythonEngine,
             profile: config.profile,
           });
 
@@ -764,7 +780,7 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
         if (isFallback) {
           message +=
             `\n⚠️ Note: This is a basic workspace (fallback mode)\n` +
-            `To create projects, install: npm install -g rapidkit\n` +
+            `To create projects, install: npm install -g workspai\n` +
             `See README.md for full setup instructions`;
         } else {
           message += `💡 Tip: Add projects with \`rapidkit create\` or use Extension commands`;
@@ -884,12 +900,12 @@ async function createBasicWorkspace(workspacePath: string, name: string, initGit
     // Ensure workspace directory exists
     await fs.ensureDir(workspacePath);
 
-    // 1. Create .rapidkit directory
-    const rapidkitDir = path.join(workspacePath, '.rapidkit');
-    await fs.ensureDir(rapidkitDir);
-    logger.info('Created .rapidkit directory');
+    // 1. Create canonical Workspai metadata directory.
+    const workspaiDir = path.join(workspacePath, '.workspai');
+    await fs.ensureDir(workspaiDir);
+    logger.info('Created .workspai directory');
 
-    // 2. Create .rapidkit/config.json (same as npm package)
+    // 2. Create .workspai/config.json.
     const { getExtensionVersion } = await import('../utils/constants.js');
     const config = {
       workspace_name: name,
@@ -899,11 +915,11 @@ async function createBasicWorkspace(workspacePath: string, name: string, initGit
       type: 'workspace',
       fallbackMode: true, // Indicates fallback creation
     };
-    await fs.writeJSON(path.join(rapidkitDir, 'config.json'), config, { spaces: 2 });
-    logger.info('Created .rapidkit/config.json');
+    await fs.writeJSON(path.join(workspaiDir, 'config.json'), config, { spaces: 2 });
+    logger.info('Created .workspai/config.json');
 
-    // 3. Create .rapidkit-workspace marker (for Extension compatibility)
-    const markerPath = path.join(workspacePath, '.rapidkit-workspace');
+    // 3. Create canonical workspace marker.
+    const markerPath = path.join(workspacePath, '.workspai-workspace');
     const { MARKERS } = await import('../utils/constants.js');
 
     await fs.writeJSON(
@@ -919,18 +935,18 @@ async function createBasicWorkspace(workspacePath: string, name: string, initGit
       },
       { spaces: 2 }
     );
-    logger.info('Created .rapidkit-workspace marker');
+    logger.info('Created .workspai-workspace marker');
 
-    // 4. Create rapidkit CLI script (shell script for Unix)
-    const cliScriptPath = path.join(workspacePath, 'rapidkit');
+    // 4. Create a Workspai CLI guidance wrapper (shell script for Unix).
+    const cliScriptPath = path.join(workspacePath, 'workspai');
     const cliScript = `#!/usr/bin/env bash
 #
-# RapidKit CLI - Fallback workspace wrapper
+# Workspai CLI - Fallback workspace wrapper
 # This workspace was created without RapidKit Python Core
 #
-# To use RapidKit features:
-#   1. Install: npm install -g rapidkit
-#   2. Run: npx rapidkit <command>
+# To use Workspai features:
+#   1. Install: npm install -g workspai
+#   2. Run: npx workspai <command>
 #
 
 set -e
@@ -938,29 +954,29 @@ set -e
 echo "⚠️  This is a fallback workspace created without RapidKit Core"
 echo ""
 echo "To create projects:"
-echo "  1. Install npm package: npm install -g rapidkit"
-echo "  2. Create project: npx rapidkit create project fastapi.standard my-api --yes --skip-install"
+echo "  1. Install npm package: npm install -g workspai"
+echo "  2. Create project: npx workspai create project fastapi.standard my-api --yes --skip-install"
 echo ""
 echo "Or use VS Code Extension: 'Workspai: Create Project'"
 echo ""
 `;
     await fs.writeFile(cliScriptPath, cliScript, { mode: 0o755 });
-    logger.info('Created rapidkit CLI script');
+    logger.info('Created workspai CLI script');
 
     // 4b. Create Windows launcher for parity on win32 environments
-    const cliScriptCmdPath = path.join(workspacePath, 'rapidkit.cmd');
+    const cliScriptCmdPath = path.join(workspacePath, 'workspai.cmd');
     const cliScriptCmd = `@echo off
   echo ⚠️  This is a fallback workspace created without RapidKit Core
   echo.
   echo To create projects:
-  echo   1. Install npm package: npm install -g rapidkit
-  echo   2. Create project: npx rapidkit create project fastapi.standard my-api --yes --skip-install
+  echo   1. Install npm package: npm install -g workspai
+  echo   2. Create project: npx workspai create project fastapi.standard my-api --yes --skip-install
   echo.
   echo Or use VS Code Extension: "Workspai: Create Project"
   echo.
   `;
     await fs.writeFile(cliScriptCmdPath, cliScriptCmd, 'utf-8');
-    logger.info('Created rapidkit.cmd launcher');
+    logger.info('Created workspai.cmd launcher');
 
     // 5. Create README.md (comprehensive guide)
     const readmePath = path.join(workspacePath, 'README.md');
@@ -970,14 +986,14 @@ echo ""
 
 ## 🔄 Workspace Structure
 
-This workspace follows the standard RapidKit structure but requires manual setup:
+This workspace follows the canonical Workspai structure but requires manual setup:
 
 \`\`\`
 ${name}/
-├── rapidkit              # CLI wrapper (requires npm package)
-├── .rapidkit/            # Workspace configuration
+├── workspai              # CLI wrapper (requires npm package)
+├── .workspai/            # Workspace configuration
 │   └── config.json       # Workspace settings
-├── .rapidkit-workspace   # Workspace marker (for VS Code Extension)
+├── .workspai-workspace   # Workspace marker
 ├── README.md             # This file
 ├── .gitignore            # Git ignore rules
 └── [your-projects]/      # Add projects here
@@ -995,32 +1011,32 @@ ${name}/
 
 ### Option 1: Use npm Package (Recommended)
 
-1. **Install RapidKit npm package:**
+1. **Install Workspai CLI:**
    \`\`\`bash
-   npm install -g rapidkit
+   npm install -g workspai
    \`\`\`
 
 2. **Verify installation:**
    \`\`\`bash
-   rapidkit --version
+   workspai --version
    \`\`\`
 
 3. **Create projects:**
    \`\`\`bash
    # FastAPI project
-   npx rapidkit create project fastapi.standard my-api --yes --skip-install
+   npx workspai create project fastapi.standard my-api --yes --skip-install
    
    # NestJS project
-   npx rapidkit create project nestjs.standard my-app --yes --skip-install
+   npx workspai create project nestjs.standard my-app --yes --skip-install
 
   # Go Fiber project
-  npx rapidkit create project gofiber.standard my-go-api --yes --skip-install
+  npx workspai create project gofiber.standard my-go-api --yes --skip-install
 
   # Spring Boot project
-  npx rapidkit create project springboot.standard billing-api --yes --skip-install
+  npx workspai create project springboot.standard billing-api --yes --skip-install
 
   # .NET Web API project
-  npx rapidkit create project dotnet.webapi.clean dotnet-api --yes --skip-install
+  npx workspai create project dotnet.webapi.clean dotnet-api --yes --skip-install
    \`\`\`
 
 4. **Or use VS Code Extension:**
@@ -1094,22 +1110,22 @@ With npm package installed:
 
 \`\`\`bash
 # Create project in workspace
-npx rapidkit create project <template> <name> --yes --skip-install
+npx workspai create project <template> <name> --yes --skip-install
 
 # Examples
-npx rapidkit create project fastapi.standard my-api --yes --skip-install
-npx rapidkit create project fastapi.ddd my-api --yes --skip-install
-npx rapidkit create project nestjs.standard my-app --yes --skip-install
-npx rapidkit create project gofiber.standard my-go-api --yes --skip-install
-npx rapidkit create project gogin.standard my-gin-api --yes --skip-install
-npx rapidkit create project springboot.standard billing-api --yes --skip-install
-npx rapidkit create project dotnet.webapi.clean dotnet-api --yes --skip-install
+npx workspai create project fastapi.standard my-api --yes --skip-install
+npx workspai create project fastapi.ddd my-api --yes --skip-install
+npx workspai create project nestjs.standard my-app --yes --skip-install
+npx workspai create project gofiber.standard my-go-api --yes --skip-install
+npx workspai create project gogin.standard my-gin-api --yes --skip-install
+npx workspai create project springboot.standard billing-api --yes --skip-install
+npx workspai create project dotnet.webapi.clean dotnet-api --yes --skip-install
 \`\`\`
 
 ## 🆘 Need Help?
 
 - 📖 Documentation: https://www.workspai.com/docs
-- 💬 GitHub Issues: https://github.com/rapidkitlabs/rapidkit-vscode/issues
+- 💬 GitHub Issues: https://github.com/chistiq/rapidkit-vscode/issues
 - 🔧 VS Code Extension: Run \`Workspai: Run System Check\`
 
 ## 🔄 Upgrade to Full Workspace
@@ -1138,7 +1154,7 @@ To upgrade when RapidKit Core becomes available:
 **Created:** ${new Date().toISOString()}  
 **Mode:** Fallback (npm-compatible structure)  
 **Created By:** VS Code Workspai Extension  
-**Structure Version:** Compatible with rapidkit npm v0.16.x
+**Structure:** Compatible with the current Workspai CLI workspace contract
 `;
     await fs.writeFile(readmePath, readmeContent);
     logger.info('Created README.md');

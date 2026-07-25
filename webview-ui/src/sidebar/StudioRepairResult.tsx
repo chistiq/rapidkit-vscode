@@ -9,40 +9,28 @@ import {
 type StudioRepairResultProps = {
   returnState?: SidebarStudioReturnState | null;
   verifyFailure?: StudioVerifyFailureView | null;
+  repairHold?: string | null;
   rollbackCommand?: string | null;
   onCopyRollback: () => void;
   onBackToDashboard?: () => void;
-  onContinueRepair?: () => void;
 };
-
-function failureCanContinueRepair(failure: StudioVerifyFailureView): boolean {
-  return (
-    failure.action === 'auto-fix' ||
-    failure.action === 'apply-patch' ||
-    failure.action === 'apply-remediation-step' ||
-    failure.action === 'run-remediation-command' ||
-    failure.action === 'refresh-remediation-plan' ||
-    failure.action === 'verify-handoff'
-  );
-}
 
 export function StudioRepairResult({
   returnState = null,
   verifyFailure = null,
+  repairHold = null,
   rollbackCommand = null,
   onCopyRollback,
   onBackToDashboard,
-  onContinueRepair,
 }: StudioRepairResultProps) {
-  if (!returnState && !verifyFailure && !rollbackCommand) {
+  if (!returnState && !verifyFailure && !repairHold && !rollbackCommand) {
     return null;
   }
   const returnDetail = compactStudioPathText(returnState?.detail);
   const failureSummary = compactStudioPathText(
     verifyFailure ? studioVerifyFailureSummary(verifyFailure) : null
   );
-  const failureNextAction = compactStudioPathText(verifyFailure?.nextAction);
-  const failureCommandText = compactStudioPathText(verifyFailure?.commandText);
+  const repairHoldDetail = compactStudioPathText(repairHold);
   const displayRollbackCommand = compactStudioPathText(rollbackCommand);
 
   return (
@@ -62,7 +50,7 @@ export function StudioRepairResult({
           </span>
           <div className="ws-sidebar__studio-action-progress-copy">
             <small className="ws-sidebar__studio-action-progress-kicker">
-              {returnState.status === 'verified-refreshed' ? 'Verified' : 'Next step'}
+              {returnState.status === 'verified-refreshed' ? 'Fixed and verified' : 'Still working'}
             </small>
             <strong>{returnState.title}</strong>
             <span>{returnDetail}</span>
@@ -72,11 +60,6 @@ export function StudioRepairResult({
             {returnState.status === 'verified-refreshed' && onBackToDashboard ? (
               <button type="button" className="ws-sidebar__inline" onClick={onBackToDashboard}>
                 Back to Dashboard
-              </button>
-            ) : null}
-            {returnState.status === 'still-blocked' && onContinueRepair ? (
-              <button type="button" className="ws-sidebar__inline" onClick={onContinueRepair}>
-                Continue repair
               </button>
             ) : null}
           </div>
@@ -93,24 +76,34 @@ export function StudioRepairResult({
             <AlertTriangle size={14} strokeWidth={1.8} />
           </span>
           <div className="ws-sidebar__studio-action-progress-copy">
-            <small className="ws-sidebar__studio-action-progress-kicker">Needs next step</small>
+            <small className="ws-sidebar__studio-action-progress-kicker">Verify still failing</small>
             <strong>
-              {verifyFailure.title ?? 'Studio action failed'}
+              {verifyFailure.title ?? 'Studio is continuing the repair'}
               {typeof verifyFailure.exitCode === 'number' ? ` · exit ${verifyFailure.exitCode}` : ''}
             </strong>
             <span>{failureSummary}</span>
-            {verifyFailure.nextAction ? <small>{failureNextAction}</small> : null}
-            {onContinueRepair && failureCanContinueRepair(verifyFailure) ? (
-              <button type="button" className="ws-sidebar__inline" onClick={onContinueRepair}>
-                Continue repair
-              </button>
+            {verifyFailure.nextAction ? (
+              <small>
+                {repairHoldDetail || 'Studio is continuing from the latest evidence.'}
+              </small>
             ) : null}
-            {verifyFailure.commandText ? (
-              <details className="ws-sidebar__studio-action-command">
-                <summary>View command</summary>
-                <code>{failureCommandText}</code>
-              </details>
-            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {repairHold && !verifyFailure ? (
+        <div
+          className="ws-sidebar__repair-bubble ws-sidebar__repair-result-card"
+          data-state="held"
+          role="status"
+        >
+          <span className="ws-sidebar__studio-action-progress-icon" aria-hidden="true">
+            <AlertTriangle size={14} strokeWidth={1.8} />
+          </span>
+          <div className="ws-sidebar__studio-action-progress-copy">
+            <small className="ws-sidebar__studio-action-progress-kicker">Needs review</small>
+            <strong>Studio paused safely</strong>
+            <span>{repairHoldDetail}</span>
           </div>
         </div>
       ) : null}
@@ -125,7 +118,7 @@ export function StudioRepairResult({
             <strong>Rollback available</strong>
             <span>Use this only if you want to undo the applied change.</span>
             <details className="ws-sidebar__studio-action-command">
-              <summary>View command</summary>
+              <summary>Details</summary>
               <code>{displayRollbackCommand}</code>
             </details>
             <button type="button" className="ws-sidebar__inline" onClick={onCopyRollback}>

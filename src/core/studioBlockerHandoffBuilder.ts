@@ -14,6 +14,8 @@ import { buildResolutionHintsForBlockingReasons } from './studioBlockerResolutio
 import { resolveBlockerResolutionClass } from './studioBlockerResolution.js';
 import { readStudioBlockerCommandRunCount } from './studioBlockerCommandLedger.js';
 import { resolveStudioFixActionForHandoff } from './studioBlockerFixRouting.js';
+import { resolveDashboardCommandExecutionPlan } from './dashboardCommandExecutionPlan.js';
+import { resolveDashboardCommandForEvidenceCard } from './dashboardReportRegistry.js';
 import {
   buildStudioSourceCommandForCard,
   CARD_SOURCE_SHELL,
@@ -25,7 +27,7 @@ export { CARD_SOURCE_SHELL, buildStudioSourceCommandForCard };
 export type BuildStudioBlockerHandoffInput = {
   card: Pick<
     DashboardEvidenceCard,
-    'id' | 'label' | 'status' | 'scope' | 'artifactPath' | 'blockers'
+    'id' | 'label' | 'status' | 'blocking' | 'scope' | 'artifactPath' | 'blockers'
   >;
   workspacePath: string;
   projectPath?: string;
@@ -37,9 +39,22 @@ export async function buildStudioBlockerHandoff(
   input: BuildStudioBlockerHandoffInput
 ): Promise<StudioBlockerHandoff> {
   const blockers = (input.card.blockers ?? []).map((entry) => entry.trim()).filter(Boolean);
+  const dashboardCommandId = resolveDashboardCommandForEvidenceCard(input.card.id);
+  const executionPlan = dashboardCommandId
+    ? resolveDashboardCommandExecutionPlan(dashboardCommandId)
+    : undefined;
   const sourceCommand = buildStudioSourceCommandForCard(input.card.id);
-  const verifyCommand = DEFAULT_VERIFY_COMMAND;
-  const verifyArtifact = WORKSPACE_VERIFY_REPORT_PATH;
+  // Re-run the producer for Workspace Run so verify refreshes the exact card
+  // artifact and gate state. A generic workspace verify can pass while the
+  // workspace-run-last.json card remains blocked and stale.
+  const verifyCommand =
+    input.card.id === 'workspaceRun' || input.card.id === 'readiness'
+      ? sourceCommand
+      : DEFAULT_VERIFY_COMMAND;
+  const verifyArtifact =
+    (input.card.id === 'workspaceRun' || input.card.id === 'readiness') && input.card.artifactPath
+      ? input.card.artifactPath
+      : WORKSPACE_VERIFY_REPORT_PATH;
 
   let resolutionHints = buildResolutionHintsForBlockingReasons({
     blockingReasons: blockers.length > 0 ? blockers : [`${input.card.id}: blocked`],
@@ -82,9 +97,34 @@ export async function buildStudioBlockerHandoff(
     cardId: input.card.id,
     cardLabel: input.card.label,
     cardStatus: input.card.status,
+    ...(input.card.blocking !== undefined && input.card.blocking !== null
+      ? { blocking: input.card.blocking }
+      : {}),
     blockers,
     artifactPath: input.card.artifactPath ?? '',
     sourceCommand,
+    ...(dashboardCommandId ? { dashboardCommandId } : {}),
+    ...(executionPlan?.executionChannel
+      ? { executionChannel: executionPlan.executionChannel }
+      : {}),
+    ...(executionPlan?.capabilityRequirement
+      ? { capabilityGate: executionPlan.capabilityRequirement.label }
+      : {}),
+    ...(executionPlan?.safetyPolicy
+      ? {
+          safetyRisk: executionPlan.safetyPolicy.risk,
+          ...(executionPlan.safetyPolicy.confirmation
+            ? { safetyConfirmation: executionPlan.safetyPolicy.confirmation.confirmLabel }
+            : {}),
+          ...(executionPlan.safetyPolicy.refreshCommands?.length
+            ? {
+                safetyRefreshCommands: executionPlan.safetyPolicy.refreshCommands.map(
+                  (command) => `npx workspai ${command.join(' ')}`
+                ),
+              }
+            : {}),
+        }
+      : {}),
     scope: input.card.scope,
     blockerSignature,
     commandRunCount,

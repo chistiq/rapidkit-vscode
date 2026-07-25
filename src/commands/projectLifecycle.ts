@@ -5,6 +5,7 @@ import { detectPythonVirtualenv } from '../utils/poetryHelper';
 import { getSelectedProjectPath } from '../core/selectedProject';
 import { WelcomePanel } from '../ui/panels/welcomePanel';
 import { Logger } from '../utils/logger';
+import { runGatedRapidkitCommandsInTerminal } from '../core/gatedRapidkitTerminal';
 import { gateProjectLifecycleCommand } from '../core/projectLifecycleGate';
 import {
   interruptTerminal,
@@ -665,7 +666,7 @@ export function registerProjectLifecycleCommands(options: {
         return;
       }
 
-      runRapidkitCommandsInTerminal({
+      await runGatedRapidkitCommandsInTerminal({
         name: `🩺 ${projectName} [doctor:${action}]`,
         cwd: projectPath,
         commands: [action === 'fix' ? ['doctor', 'project', '--fix'] : ['doctor', 'project']],
