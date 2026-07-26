@@ -1,13 +1,23 @@
 import * as vscode from 'vscode';
 
 import { resetModelSelectionCache } from './aiModelSelection';
+import {
+  getAIProviderDefinition,
+  normalizeAIProviderKind,
+  type AIProviderKind,
+} from './aiProviderCatalog';
 
 export type WorkspaiThemeMode = 'auto' | 'light' | 'dark';
+
+export interface WorkspaiAIProviderProfile {
+  baseUrl?: string;
+  model?: string;
+}
 
 export interface WorkspaiSettingsSnapshot {
   preferredModel: string;
   aiStreamTimeoutMs: number;
-  aiProvider: 'vscode-lm' | 'openai-compatible';
+  aiProvider: AIProviderKind;
   customAIBaseUrl: string;
   customAIModel: string;
   themeMode: WorkspaiThemeMode;
@@ -20,13 +30,35 @@ function normalizeThemeMode(value: unknown): WorkspaiThemeMode {
   return 'auto';
 }
 
+function normalizeProviderProfiles(value: unknown): Record<string, WorkspaiAIProviderProfile> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).flatMap(([id, profile]) => {
+      if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
+        return [];
+      }
+      const candidate = profile as Record<string, unknown>;
+      const baseUrl = typeof candidate.baseUrl === 'string' ? candidate.baseUrl.trim() : '';
+      const model = typeof candidate.model === 'string' ? candidate.model.trim() : '';
+      return [[id, { baseUrl, model } satisfies WorkspaiAIProviderProfile]];
+    })
+  );
+}
+
 export function readWorkspaiSettings(): WorkspaiSettingsSnapshot {
   const config = vscode.workspace.getConfiguration('workspai');
   const preferredModel = config.get<string>('preferredModel', 'auto');
   const aiStreamTimeoutMs = config.get<number>('aiStreamTimeoutMs', 45_000);
-  const aiProvider = config.get<string>('aiProvider', 'vscode-lm');
-  const customAIBaseUrl = config.get<string>('customAIBaseUrl', '');
-  const customAIModel = config.get<string>('customAIModel', '');
+  const aiProvider = normalizeAIProviderKind(config.get<string>('aiProvider', 'vscode-lm'));
+  const legacyBaseUrl = config.get<string>('customAIBaseUrl', '');
+  const legacyModel = config.get<string>('customAIModel', '');
+  const profiles = normalizeProviderProfiles(
+    config.get<Record<string, WorkspaiAIProviderProfile>>('aiProviderProfiles', {})
+  );
+  const provider = getAIProviderDefinition(aiProvider);
+  const profile = profiles[aiProvider];
   const themeMode = config.get<string>('themeMode', 'auto');
 
   return {
@@ -38,15 +70,19 @@ export function readWorkspaiSettings(): WorkspaiSettingsSnapshot {
       typeof aiStreamTimeoutMs === 'number' && Number.isFinite(aiStreamTimeoutMs)
         ? aiStreamTimeoutMs
         : 45_000,
-    aiProvider: aiProvider === 'openai-compatible' ? 'openai-compatible' : 'vscode-lm',
+    aiProvider,
     customAIBaseUrl:
-      typeof customAIBaseUrl === 'string' && customAIBaseUrl.trim().length > 0
-        ? customAIBaseUrl.trim()
-        : '',
+      profile?.baseUrl ||
+      (aiProvider === 'openai-compatible' && typeof legacyBaseUrl === 'string'
+        ? legacyBaseUrl.trim()
+        : '') ||
+      provider.defaultBaseUrl,
     customAIModel:
-      typeof customAIModel === 'string' && customAIModel.trim().length > 0
-        ? customAIModel.trim()
-        : '',
+      profile?.model ||
+      (aiProvider === 'openai-compatible' && typeof legacyModel === 'string'
+        ? legacyModel.trim()
+        : '') ||
+      provider.defaultModel,
     themeMode: normalizeThemeMode(themeMode),
   };
 }
@@ -70,7 +106,7 @@ export async function setWorkspaiPreferredModel(modelId: string): Promise<string
 }
 
 export async function setWorkspaiAIProvider(provider: string): Promise<WorkspaiSettingsSnapshot> {
-  const normalized = provider === 'openai-compatible' ? 'openai-compatible' : 'vscode-lm';
+  const normalized = normalizeAIProviderKind(provider);
   await vscode.workspace
     .getConfiguration('workspai')
     .update('aiProvider', normalized, vscode.ConfigurationTarget.Global);
@@ -83,11 +119,30 @@ export async function setWorkspaiCustomAIConfig(input: {
   model?: string;
 }): Promise<WorkspaiSettingsSnapshot> {
   const config = vscode.workspace.getConfiguration('workspai');
-  if (typeof input.baseUrl === 'string') {
-    await config.update('customAIBaseUrl', input.baseUrl.trim(), vscode.ConfigurationTarget.Global);
+  const provider = normalizeAIProviderKind(config.get<string>('aiProvider', 'vscode-lm'));
+  if (provider === 'vscode-lm') {
+    return readWorkspaiSettings();
   }
-  if (typeof input.model === 'string') {
-    await config.update('customAIModel', input.model.trim(), vscode.ConfigurationTarget.Global);
+  const profiles = normalizeProviderProfiles(
+    config.get<Record<string, WorkspaiAIProviderProfile>>('aiProviderProfiles', {})
+  );
+  const previous = profiles[provider] ?? {};
+  profiles[provider] = {
+    baseUrl: typeof input.baseUrl === 'string' ? input.baseUrl.trim() : previous.baseUrl,
+    model: typeof input.model === 'string' ? input.model.trim() : previous.model,
+  };
+  await config.update('aiProviderProfiles', profiles, vscode.ConfigurationTarget.Global);
+  if (provider === 'openai-compatible') {
+    if (typeof input.baseUrl === 'string') {
+      await config.update(
+        'customAIBaseUrl',
+        input.baseUrl.trim(),
+        vscode.ConfigurationTarget.Global
+      );
+    }
+    if (typeof input.model === 'string') {
+      await config.update('customAIModel', input.model.trim(), vscode.ConfigurationTarget.Global);
+    }
   }
   return readWorkspaiSettings();
 }

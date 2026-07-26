@@ -6,6 +6,7 @@ import {
   runConfiguredAIProviderHealthCheck,
   setCustomAIAPIKey,
 } from '../../core/aiProviderService';
+import { getAIProviderDefinition, listAIProviderDefinitions } from '../../core/aiProviderCatalog';
 import {
   openWorkspaiExtensionSettings,
   readWorkspaiSettings,
@@ -30,6 +31,7 @@ const WORKSPAI_SETTINGS_COMMANDS = new Set([
   'setCustomAIAPIKey',
   'clearCustomAIAPIKey',
   'testAIProvider',
+  'openAIProviderLink',
   'openWorkspaiExtensionSettings',
   'aiGetModels',
 ]);
@@ -93,6 +95,15 @@ export async function tryDispatchWorkspaiSettingsWebviewMessage(
       await host.sendWorkspaiSettings();
       return true;
     }
+    case 'openAIProviderLink': {
+      const provider = getAIProviderDefinition(data?.provider);
+      const destination = data?.destination === 'api-key' ? 'api-key' : 'docs';
+      const url = destination === 'api-key' ? provider.apiKeyUrl : provider.docsUrl;
+      if (url) {
+        await vscode.env.openExternal(vscode.Uri.parse(url));
+      }
+      return true;
+    }
     case 'openWorkspaiExtensionSettings':
       await openWorkspaiExtensionSettings();
       return true;
@@ -134,6 +145,7 @@ export async function buildWorkspaiSettingsPayload(
     customAIModel: settings.customAIModel,
     themeMode: settings.themeMode,
     aiProviderStatus,
+    aiProviderCatalog: listAIProviderDefinitions(),
     models,
   };
 }

@@ -41,8 +41,19 @@ function statusIcon(status: SidebarStudioActionProgressView['status']) {
 
 function completedActivityLabel(progress: SidebarStudioActionProgressView): string {
   const phase = progress.phase ?? progress.action;
+  if (
+    progress.action === 'run-governed-command' ||
+    /evidence|agent-sync|intelligence-chain/i.test(phase)
+  ) {
+    return 'Evidence refreshed';
+  }
   if (/verif|readiness|contract/i.test(phase)) return 'Verified';
-  if (/appl|patch|fix|remedi|command/i.test(phase)) return 'Changed';
+  if (
+    progress.changedPaths?.length ||
+    /appl(?:y|ied)|patch|source-change|dependency-(?:repair|upgrade)/i.test(phase)
+  ) {
+    return 'Changed';
+  }
   if (/resolv|complete|done/i.test(phase)) return 'Resolved';
   return 'Inspected';
 }

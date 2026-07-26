@@ -50,7 +50,10 @@ import { CreateWorkspaceModal, WorkspaceCreationConfig } from '@/components/Crea
 import { CreateProjectModal } from '@/components/CreateProjectModal';
 import { InstallModuleModal } from '@/components/InstallModuleModal';
 import { ModuleDetailsModal } from '@/components/ModuleDetailsModal';
-import { WorkspaiSettingsPanel } from '@/components/WorkspaiSettingsPanel';
+import {
+  WorkspaiSettingsPanel,
+  type WorkspaiAIProviderDefinition,
+} from '@/components/WorkspaiSettingsPanel';
 import { WorkspaiThemeProvider } from '@/components/WorkspaiThemeProvider';
 import { normalizeThemeMode, type ThemeMode } from '@/components/StudioRedesign/styles/themeSystem';
 import { WorkspaiBanner } from '@/components/WorkspaiBanner';
@@ -180,11 +183,12 @@ export function App() {
     { id: string; name: string; vendor: string }[]
   >([]);
   const [preferredModelId, setPreferredModelId] = useState<string>('auto');
-  const [aiProvider, setAIProvider] = useState<'vscode-lm' | 'openai-compatible'>('vscode-lm');
+  const [aiProvider, setAIProvider] = useState<string>('vscode-lm');
+  const [aiProviderCatalog, setAIProviderCatalog] = useState<WorkspaiAIProviderDefinition[]>([]);
   const [customAIBaseUrl, setCustomAIBaseUrl] = useState('');
   const [customAIModel, setCustomAIModel] = useState('');
   const [aiProviderStatus, setAIProviderStatus] = useState<{
-    provider: 'vscode-lm' | 'openai-compatible';
+    provider: string;
     ready: boolean;
     label: string;
     reason?: string;
@@ -1325,7 +1329,12 @@ export function App() {
           const normalizedModels = normalizeAvailableModels(message.data?.models);
           setPreferredModelId(preferredModel);
           setAIProvider(
-            message.data?.aiProvider === 'openai-compatible' ? 'openai-compatible' : 'vscode-lm'
+            typeof message.data?.aiProvider === 'string' ? message.data.aiProvider : 'vscode-lm'
+          );
+          setAIProviderCatalog(
+            Array.isArray(message.data?.aiProviderCatalog)
+              ? (message.data.aiProviderCatalog as WorkspaiAIProviderDefinition[])
+              : []
           );
           setCustomAIBaseUrl(
             typeof message.data?.customAIBaseUrl === 'string' ? message.data.customAIBaseUrl : ''
@@ -2313,6 +2322,7 @@ export function App() {
               availableModels={aiAvailableModels}
               preferredModelId={preferredModelId}
               aiProvider={aiProvider}
+              aiProviderCatalog={aiProviderCatalog}
               customAIBaseUrl={customAIBaseUrl}
               customAIModel={customAIModel}
               aiProviderStatus={aiProviderStatus}
@@ -2320,7 +2330,10 @@ export function App() {
               providerHealthChecking={providerHealthChecking}
               modelsLoading={aiModelsLoading}
               onPreferredModelChange={handlePreferredModelChange}
-              onProviderChange={(provider) => vscode.postMessage('setAIProvider', { provider })}
+              onProviderChange={(provider) => {
+                setAIProviderHealthCheck(null);
+                vscode.postMessage('setAIProvider', { provider });
+              }}
               onCustomAIConfigSave={(input) => vscode.postMessage('setCustomAIConfig', input)}
               onCustomAIAPIKeySave={(apiKey) => vscode.postMessage('setCustomAIAPIKey', { apiKey })}
               onCustomAIAPIKeyClear={() => vscode.postMessage('clearCustomAIAPIKey')}

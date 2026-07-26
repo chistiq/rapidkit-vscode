@@ -98,6 +98,64 @@ describe('Studio Agent session runtime', () => {
     );
   });
 
+  it('verifies a blocker cleared during deterministic recovery without spending a model decision', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'recover-active-blocker',
+      title: 'Resolve active blocker',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ok: true,
+          changed: false,
+          evidenceGeneration: 'doctor-v2',
+          output: { nextAction: 'verify-blocker' },
+        };
+      },
+    });
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Verify blocker',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        return { ok: true, cardBlocking: false, blockerSignature: 'resolved-v2' };
+      },
+    });
+    let modelTurns = 0;
+    const session = new StudioAgentSession(
+      {
+        id: 'deterministic-recovery-verify-session',
+        workspacePath: '/workspace',
+        cardId: 'readiness',
+        assistantMode: 'agent',
+        blockerSignature: 'blocked-v1',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      {
+        async next() {
+          modelTurns += 1;
+          return { type: 'complete', summary: 'should not be called' };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Verify refreshed dependency evidence');
+
+    expect(result.status).toBe('completed');
+    expect(modelTurns).toBe(0);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'model.checkpoint',
+        data: expect.objectContaining({ recovery: 'recovery-verify' }),
+      })
+    );
+  });
+
   it('closes a single audit-authorized dependency upgrade without another model decision', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
@@ -208,6 +266,82 @@ describe('Studio Agent session runtime', () => {
       expect.objectContaining({
         type: 'model.checkpoint',
         data: expect.objectContaining({ recovery: 'dependency-bounded-repair' }),
+      })
+    );
+  });
+
+  it('attempts bounded repair for transitive audit findings without direct upgrade candidates', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'inspect-dependency-security',
+      title: 'Inspect dependency security',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return {
+          ok: true,
+          output: {
+            target: { projectName: 'atlas-web' },
+            upgradeCandidates: [],
+          },
+        };
+      },
+    });
+    registry.register({
+      name: 'repair-dependency-security',
+      title: 'Bounded dependency repair',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return { ok: true, changed: true };
+      },
+    });
+    registry.register({
+      name: 'run-governed-command',
+      title: 'Run chain',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return { ok: true, changed: false };
+      },
+    });
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Verify blocker',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        return { ok: true, cardBlocking: false };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'transitive-dependency-repair-session',
+        workspacePath: '/workspace',
+        cardId: 'readiness',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      sequenceModel([
+        {
+          type: 'tool',
+          toolName: 'inspect-dependency-security',
+          input: { projectName: 'atlas-web' },
+          reason: 'Inspect transitive dependency findings',
+        },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Clear transitive dependency findings');
+
+    expect(result.status).toBe('completed');
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'tool.requested',
+        data: expect.objectContaining({ toolName: 'repair-dependency-security' }),
       })
     );
   });

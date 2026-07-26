@@ -239,9 +239,120 @@ describe('aiProviderService', () => {
     await expect(runConfiguredAIProviderHealthCheck(context)).resolves.toMatchObject({
       provider: 'openai-compatible',
       ok: true,
-      label: 'OpenAI-compatible API',
+      label: 'Custom OpenAI-compatible API',
       model: 'enterprise-model',
     });
+  });
+
+  it('uses the official Gemini OpenAI-compatible endpoint and provider-scoped secret', async () => {
+    mockGet.mockImplementation((key: string, defaultValue: unknown) => {
+      if (key === 'aiProvider') {
+        return 'gemini';
+      }
+      if (key === 'aiStreamTimeoutMs') {
+        return 45_000;
+      }
+      return defaultValue;
+    });
+    const context = createMockContext();
+    await setCustomAIAPIKey(context, 'gemini-key');
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          choices: [{ message: { content: 'gemini-response' } }],
+        }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      askConfiguredAIProvider(context, [{ role: 'user', content: 'hello' }])
+    ).resolves.toEqual({
+      provider: 'gemini',
+      text: 'gemini-response',
+    });
+    expect(context.secrets.store).toHaveBeenCalledWith(
+      'workspai.aiProvider.apiKey.gemini',
+      'gemini-key'
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      expect.objectContaining({
+        headers: expect.objectContaining({ authorization: 'Bearer gemini-key' }),
+      })
+    );
+  });
+
+  it('supports local Ollama without requiring an API key', async () => {
+    mockGet.mockImplementation((key: string, defaultValue: unknown) => {
+      if (key === 'aiProvider') {
+        return 'ollama';
+      }
+      return defaultValue;
+    });
+    const context = createMockContext();
+
+    await expect(getAIProviderStatus(context)).resolves.toMatchObject({
+      provider: 'ollama',
+      ready: true,
+      hasApiKey: false,
+      requiresApiKey: false,
+      baseUrl: 'http://localhost:11434/v1',
+    });
+  });
+
+  it('uses Anthropic Messages tool calling for Claude', async () => {
+    mockGet.mockImplementation((key: string, defaultValue: unknown) => {
+      if (key === 'aiProvider') {
+        return 'anthropic';
+      }
+      if (key === 'aiStreamTimeoutMs') {
+        return 45_000;
+      }
+      return defaultValue;
+    });
+    const context = createMockContext();
+    await setCustomAIAPIKey(context, 'anthropic-key');
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool-1',
+              name: 'verify-blocker',
+              input: { strict: true },
+            },
+          ],
+        }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      askConfiguredAIProviderForToolAction(
+        context,
+        [{ role: 'user', content: 'Verify readiness' }],
+        [{ name: 'verify-blocker', description: 'Verify the blocker' }]
+      )
+    ).resolves.toEqual({
+      type: 'tool',
+      provider: 'anthropic',
+      toolName: 'verify-blocker',
+      input: { strict: true },
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.anthropic.com/v1/messages',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'anthropic-version': '2023-06-01',
+          'x-api-key': 'anthropic-key',
+        }),
+      })
+    );
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body.tool_choice).toEqual({ type: 'any' });
   });
 
   it('returns setup failures without making network requests', async () => {

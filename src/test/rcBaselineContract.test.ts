@@ -25,16 +25,11 @@ describe('RC baseline contract', () => {
     const matrix = readJson<{ npmTruthBaseline: string }>(
       'releases/enterprise-validation-matrix.json'
     );
-    const readme = read('README.md');
     const baseline = readRoadmapFile('WORKSPAI_EXTENSION_RC_BASELINE_2026-06-28.md');
 
     expect(packageJson.version).toBe('0.35.0');
     expect(MIN_RAPIDKIT_CLI_VERSION).toBe('0.49.0');
     expect(matrix.npmTruthBaseline).toBe('0.49.0');
-    expect(readme).toContain('workspai commands --json');
-    expect(readme).toContain(
-      '| Workspai npm CLI | `0.49.0+`, verified through `workspai commands --json`'
-    );
     expect(baseline).toContain('rapidkit@0.42.0');
     expect(baseline).toContain('rapidkit-vscode@0.35.0');
   });

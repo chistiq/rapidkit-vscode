@@ -2,20 +2,28 @@ import * as vscode from 'vscode';
 
 import type { AIMessage } from './aiService';
 import { askAI, requestAIModelToolAction, streamAIResponse } from './aiService';
+import {
+  getAIProviderDefinition,
+  type AIProviderKind,
+  type AIProviderProtocol,
+} from './aiProviderCatalog';
 import { readWorkspaiSettings } from './workspaiSettingsBridge';
 
-const CUSTOM_AI_SECRET_KEY = 'workspai.customAI.apiKey';
+export type { AIProviderKind } from './aiProviderCatalog';
 
-export type AIProviderKind = 'vscode-lm' | 'openai-compatible';
+const LEGACY_CUSTOM_AI_SECRET_KEY = 'workspai.customAI.apiKey';
+const PROVIDER_SECRET_PREFIX = 'workspai.aiProvider.apiKey';
 
 export interface AIProviderStatus {
   provider: AIProviderKind;
+  protocol: AIProviderProtocol;
   ready: boolean;
   label: string;
   reason?: string;
   baseUrl?: string;
   model?: string;
   hasApiKey?: boolean;
+  requiresApiKey: boolean;
 }
 
 export interface AIProviderHealthCheckResult {
@@ -37,68 +45,117 @@ export type ConfiguredAIProviderAction =
   | { type: 'tool'; provider: AIProviderKind; toolName: string; input: Record<string, unknown> }
   | { type: 'text'; provider: AIProviderKind; text: string };
 
+function providerSecretKey(provider: AIProviderKind): string {
+  return `${PROVIDER_SECRET_PREFIX}.${provider}`;
+}
+
+async function getActiveProviderAPIKey(
+  context: vscode.ExtensionContext,
+  provider: AIProviderKind
+): Promise<string | undefined> {
+  const providerKey = await context.secrets.get(providerSecretKey(provider));
+  if (providerKey) {
+    return providerKey;
+  }
+  if (provider === 'openai-compatible') {
+    return context.secrets.get(LEGACY_CUSTOM_AI_SECRET_KEY);
+  }
+  return undefined;
+}
+
 export async function setCustomAIAPIKey(
   context: vscode.ExtensionContext,
   apiKey: string
 ): Promise<void> {
-  const trimmed = apiKey.trim();
-  if (!trimmed) {
-    await context.secrets.delete(CUSTOM_AI_SECRET_KEY);
+  const provider = readWorkspaiSettings().aiProvider;
+  if (provider === 'vscode-lm') {
     return;
   }
-  await context.secrets.store(CUSTOM_AI_SECRET_KEY, trimmed);
+  const key = providerSecretKey(provider);
+  const trimmed = apiKey.trim();
+  if (!trimmed) {
+    await context.secrets.delete(key);
+    if (provider === 'openai-compatible') {
+      await context.secrets.delete(LEGACY_CUSTOM_AI_SECRET_KEY);
+    }
+    return;
+  }
+  await context.secrets.store(key, trimmed);
 }
 
 export async function clearCustomAIAPIKey(context: vscode.ExtensionContext): Promise<void> {
-  await context.secrets.delete(CUSTOM_AI_SECRET_KEY);
+  const provider = readWorkspaiSettings().aiProvider;
+  if (provider === 'vscode-lm') {
+    return;
+  }
+  await context.secrets.delete(providerSecretKey(provider));
+  if (provider === 'openai-compatible') {
+    await context.secrets.delete(LEGACY_CUSTOM_AI_SECRET_KEY);
+  }
 }
 
 export async function getAIProviderStatus(
   context: vscode.ExtensionContext
 ): Promise<AIProviderStatus> {
   const settings = readWorkspaiSettings();
-  if (settings.aiProvider === 'vscode-lm') {
+  const provider = getAIProviderDefinition(settings.aiProvider);
+  if (provider.protocol === 'vscode-lm') {
     return {
-      provider: 'vscode-lm',
+      provider: provider.id,
+      protocol: provider.protocol,
       ready: true,
-      label: 'VS Code Language Model',
+      label: provider.label,
       model: settings.preferredModel,
+      requiresApiKey: false,
     };
   }
 
-  const hasApiKey = Boolean(await context.secrets.get(CUSTOM_AI_SECRET_KEY));
+  const hasApiKey = Boolean(await getActiveProviderAPIKey(context, provider.id));
   const hasBaseUrl = settings.customAIBaseUrl.length > 0;
   const hasModel = settings.customAIModel.length > 0;
-  const ready = hasApiKey && hasBaseUrl && hasModel;
+  const ready = hasBaseUrl && hasModel && (!provider.requiresApiKey || hasApiKey);
 
   return {
-    provider: 'openai-compatible',
+    provider: provider.id,
+    protocol: provider.protocol,
     ready,
-    label: 'OpenAI-compatible API',
+    label: provider.label,
     baseUrl: settings.customAIBaseUrl || undefined,
     model: settings.customAIModel || undefined,
     hasApiKey,
+    requiresApiKey: provider.requiresApiKey,
     reason: ready
       ? undefined
       : [
           !hasBaseUrl ? 'Base URL is missing' : null,
           !hasModel ? 'Model is missing' : null,
-          !hasApiKey ? 'API key is missing' : null,
+          provider.requiresApiKey && !hasApiKey ? 'API key is missing' : null,
         ]
           .filter(Boolean)
           .join(', '),
   };
 }
 
-function resolveChatCompletionsUrl(baseUrl: string): string {
+function resolveOpenAIChatCompletionsUrl(baseUrl: string): string {
   const trimmed = baseUrl.trim().replace(/\/+$/, '');
   if (/\/chat\/completions$/i.test(trimmed)) {
     return trimmed;
   }
-  if (/\/v\d+$/i.test(trimmed)) {
+  if (/\/(?:v\d+(?:beta)?|openai)$/i.test(trimmed)) {
     return `${trimmed}/chat/completions`;
   }
   return `${trimmed}/v1/chat/completions`;
+}
+
+function resolveAnthropicMessagesUrl(baseUrl: string): string {
+  const trimmed = baseUrl.trim().replace(/\/+$/, '');
+  if (/\/messages$/i.test(trimmed)) {
+    return trimmed;
+  }
+  if (/\/v\d+(?:beta)?$/i.test(trimmed)) {
+    return `${trimmed}/messages`;
+  }
+  return `${trimmed}/v1/messages`;
 }
 
 function validateCustomAIBaseUrl(baseUrl: string): string | null {
@@ -108,7 +165,7 @@ function validateCustomAIBaseUrl(baseUrl: string): string | null {
       return 'Base URL must use http or https.';
     }
     if (url.protocol === 'http:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
-      return 'HTTP custom AI providers are only allowed for localhost.';
+      return 'HTTP AI providers are only allowed for localhost.';
     }
     return null;
   } catch {
@@ -120,7 +177,7 @@ function sanitizeProviderError(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   return raw
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
-    .replace(/sk-[A-Za-z0-9._-]+/gi, 'sk-[redacted]')
+    .replace(/(?:sk|AIza)[-A-Za-z0-9._]+/gi, '[redacted API key]')
     .slice(0, 360);
 }
 
@@ -156,67 +213,184 @@ function extractOpenAICompatibleText(payload: unknown): string {
   return '';
 }
 
+function extractAnthropicText(payload: unknown): string {
+  const content = (payload as { content?: unknown }).content;
+  if (!Array.isArray(content)) {
+    return '';
+  }
+  return content
+    .map((block) =>
+      block &&
+      typeof block === 'object' &&
+      (block as { type?: unknown }).type === 'text' &&
+      typeof (block as { text?: unknown }).text === 'string'
+        ? String((block as { text: string }).text)
+        : ''
+    )
+    .join('');
+}
+
+function parseErrorPayload(raw: string): unknown {
+  try {
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function providerErrorMessage(label: string, status: number, raw: string): string {
+  const payload = parseErrorPayload(raw);
+  const message =
+    payload && typeof payload === 'object' && 'error' in payload
+      ? JSON.stringify((payload as { error?: unknown }).error)
+      : raw.slice(0, 240);
+  return `${label} returned ${status}: ${message}`;
+}
+
+function createRequestLifecycle(
+  timeoutMs: number,
+  token?: vscode.CancellationToken
+): {
+  signal: AbortSignal;
+  dispose: () => void;
+} {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const cancellation = token?.onCancellationRequested(() => controller.abort());
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      clearTimeout(timeout);
+      cancellation?.dispose();
+    },
+  };
+}
+
+function createOpenAIHeaders(provider: AIProviderKind, apiKey?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+  };
+  if (apiKey) {
+    headers.authorization = `Bearer ${apiKey}`;
+  }
+  if (provider === 'openrouter') {
+    headers['HTTP-Referer'] = 'https://www.workspai.com/';
+    headers['X-OpenRouter-Title'] = 'Workspai for VS Code';
+  }
+  return headers;
+}
+
+function toAnthropicMessages(messages: AIMessage[]): {
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+} {
+  return {
+    messages: messages.map((message) => ({
+      role: message.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+      content: message.content,
+    })),
+  };
+}
+
 async function askOpenAICompatible(
   context: vscode.ExtensionContext,
   messages: AIMessage[],
   token?: vscode.CancellationToken
 ): Promise<string> {
   const settings = readWorkspaiSettings();
-  const apiKey = await context.secrets.get(CUSTOM_AI_SECRET_KEY);
+  const provider = getAIProviderDefinition(settings.aiProvider);
+  const apiKey = await getActiveProviderAPIKey(context, settings.aiProvider);
   const status = await getAIProviderStatus(context);
-  if (!status.ready || !apiKey) {
-    throw new Error(status.reason || 'Custom AI provider is not configured.');
+  if (!status.ready) {
+    throw new Error(status.reason || `${provider.label} is not configured.`);
   }
   const urlError = validateCustomAIBaseUrl(settings.customAIBaseUrl);
   if (urlError) {
     throw new Error(urlError);
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), settings.aiStreamTimeoutMs);
-  const cancellation = token?.onCancellationRequested(() => controller.abort());
-
+  const lifecycle = createRequestLifecycle(settings.aiStreamTimeoutMs, token);
   try {
-    const response = await fetch(resolveChatCompletionsUrl(settings.customAIBaseUrl), {
+    const response = await fetch(resolveOpenAIChatCompletionsUrl(settings.customAIBaseUrl), {
       method: 'POST',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-      },
+      headers: createOpenAIHeaders(provider.id, apiKey),
       body: JSON.stringify({
         model: settings.customAIModel,
         messages,
         temperature: 0.2,
         stream: false,
       }),
-      signal: controller.signal,
+      signal: lifecycle.signal,
     });
-
     const raw = await response.text();
-    let payload: unknown = null;
-    try {
-      payload = raw ? JSON.parse(raw) : null;
-    } catch {
-      payload = null;
-    }
-
     if (!response.ok) {
-      const message =
-        payload && typeof payload === 'object' && 'error' in payload
-          ? JSON.stringify((payload as { error?: unknown }).error)
-          : raw.slice(0, 240);
-      throw new Error(`Custom AI provider returned ${response.status}: ${message}`);
+      throw new Error(providerErrorMessage(provider.label, response.status, raw));
     }
-
-    const text = extractOpenAICompatibleText(payload);
+    const text = extractOpenAICompatibleText(parseErrorPayload(raw));
     if (!text.trim()) {
-      throw new Error('Custom AI provider returned an empty response.');
+      throw new Error(`${provider.label} returned an empty response.`);
     }
     return text;
   } finally {
-    clearTimeout(timeout);
-    cancellation?.dispose();
+    lifecycle.dispose();
   }
+}
+
+async function askAnthropic(
+  context: vscode.ExtensionContext,
+  messages: AIMessage[],
+  token?: vscode.CancellationToken
+): Promise<string> {
+  const settings = readWorkspaiSettings();
+  const provider = getAIProviderDefinition(settings.aiProvider);
+  const apiKey = await getActiveProviderAPIKey(context, settings.aiProvider);
+  const status = await getAIProviderStatus(context);
+  if (!status.ready || !apiKey) {
+    throw new Error(status.reason || `${provider.label} is not configured.`);
+  }
+  const urlError = validateCustomAIBaseUrl(settings.customAIBaseUrl);
+  if (urlError) {
+    throw new Error(urlError);
+  }
+
+  const lifecycle = createRequestLifecycle(settings.aiStreamTimeoutMs, token);
+  try {
+    const response = await fetch(resolveAnthropicMessagesUrl(settings.customAIBaseUrl), {
+      method: 'POST',
+      headers: {
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        model: settings.customAIModel,
+        max_tokens: 4096,
+        ...toAnthropicMessages(messages),
+      }),
+      signal: lifecycle.signal,
+    });
+    const raw = await response.text();
+    if (!response.ok) {
+      throw new Error(providerErrorMessage(provider.label, response.status, raw));
+    }
+    const text = extractAnthropicText(parseErrorPayload(raw));
+    if (!text.trim()) {
+      throw new Error(`${provider.label} returned an empty response.`);
+    }
+    return text;
+  } finally {
+    lifecycle.dispose();
+  }
+}
+
+async function askExternalProvider(
+  context: vscode.ExtensionContext,
+  messages: AIMessage[],
+  token?: vscode.CancellationToken
+): Promise<string> {
+  const provider = getAIProviderDefinition(readWorkspaiSettings().aiProvider);
+  return provider.protocol === 'anthropic-messages'
+    ? askAnthropic(context, messages, token)
+    : askOpenAICompatible(context, messages, token);
 }
 
 async function askOpenAICompatibleToolAction(
@@ -226,26 +400,22 @@ async function askOpenAICompatibleToolAction(
   token?: vscode.CancellationToken
 ): Promise<ConfiguredAIProviderAction> {
   const settings = readWorkspaiSettings();
-  const apiKey = await context.secrets.get(CUSTOM_AI_SECRET_KEY);
+  const provider = getAIProviderDefinition(settings.aiProvider);
+  const apiKey = await getActiveProviderAPIKey(context, settings.aiProvider);
   const status = await getAIProviderStatus(context);
-  if (!status.ready || !apiKey) {
-    throw new Error(status.reason || 'Custom AI provider is not configured.');
+  if (!status.ready) {
+    throw new Error(status.reason || `${provider.label} is not configured.`);
   }
   const urlError = validateCustomAIBaseUrl(settings.customAIBaseUrl);
   if (urlError) {
     throw new Error(urlError);
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), settings.aiStreamTimeoutMs);
-  const cancellation = token?.onCancellationRequested(() => controller.abort());
+  const lifecycle = createRequestLifecycle(settings.aiStreamTimeoutMs, token);
   try {
-    const response = await fetch(resolveChatCompletionsUrl(settings.customAIBaseUrl), {
+    const response = await fetch(resolveOpenAIChatCompletionsUrl(settings.customAIBaseUrl), {
       method: 'POST',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-      },
+      headers: createOpenAIHeaders(provider.id, apiKey),
       body: JSON.stringify({
         model: settings.customAIModel,
         messages,
@@ -261,13 +431,13 @@ async function askOpenAICompatibleToolAction(
         })),
         tool_choice: 'required',
       }),
-      signal: controller.signal,
+      signal: lifecycle.signal,
     });
     const raw = await response.text();
-    const payload = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
     if (!response.ok) {
-      throw new Error(`Custom AI provider returned ${response.status}: ${raw.slice(0, 240)}`);
+      throw new Error(providerErrorMessage(provider.label, response.status, raw));
     }
+    const payload = (parseErrorPayload(raw) ?? {}) as Record<string, unknown>;
     const choice = Array.isArray(payload.choices)
       ? (payload.choices[0] as { message?: Record<string, unknown> } | undefined)
       : undefined;
@@ -286,16 +456,82 @@ async function askOpenAICompatibleToolAction(
           parsed = value as Record<string, unknown>;
         }
       }
-      return { type: 'tool', provider: 'openai-compatible', toolName: name, input: parsed };
+      return { type: 'tool', provider: provider.id, toolName: name, input: parsed };
     }
     return {
       type: 'text',
-      provider: 'openai-compatible',
+      provider: provider.id,
       text: extractOpenAICompatibleText(payload),
     };
   } finally {
-    clearTimeout(timeout);
-    cancellation?.dispose();
+    lifecycle.dispose();
+  }
+}
+
+async function askAnthropicToolAction(
+  context: vscode.ExtensionContext,
+  messages: AIMessage[],
+  tools: ConfiguredAIProviderTool[],
+  token?: vscode.CancellationToken
+): Promise<ConfiguredAIProviderAction> {
+  const settings = readWorkspaiSettings();
+  const provider = getAIProviderDefinition(settings.aiProvider);
+  const apiKey = await getActiveProviderAPIKey(context, settings.aiProvider);
+  const status = await getAIProviderStatus(context);
+  if (!status.ready || !apiKey) {
+    throw new Error(status.reason || `${provider.label} is not configured.`);
+  }
+
+  const lifecycle = createRequestLifecycle(settings.aiStreamTimeoutMs, token);
+  try {
+    const response = await fetch(resolveAnthropicMessagesUrl(settings.customAIBaseUrl), {
+      method: 'POST',
+      headers: {
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        model: settings.customAIModel,
+        max_tokens: 4096,
+        ...toAnthropicMessages(messages),
+        tools: tools.map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          input_schema: tool.inputSchema ?? { type: 'object' },
+        })),
+        tool_choice: { type: 'any' },
+      }),
+      signal: lifecycle.signal,
+    });
+    const raw = await response.text();
+    if (!response.ok) {
+      throw new Error(providerErrorMessage(provider.label, response.status, raw));
+    }
+    const payload = (parseErrorPayload(raw) ?? {}) as { content?: unknown };
+    const content = Array.isArray(payload.content) ? payload.content : [];
+    const toolUse = content.find(
+      (block) =>
+        block && typeof block === 'object' && (block as { type?: unknown }).type === 'tool_use'
+    ) as { name?: unknown; input?: unknown } | undefined;
+    if (typeof toolUse?.name === 'string') {
+      return {
+        type: 'tool',
+        provider: provider.id,
+        toolName: toolUse.name,
+        input:
+          toolUse.input && typeof toolUse.input === 'object' && !Array.isArray(toolUse.input)
+            ? (toolUse.input as Record<string, unknown>)
+            : {},
+      };
+    }
+    return {
+      type: 'text',
+      provider: provider.id,
+      text: extractAnthropicText(payload),
+    };
+  } finally {
+    lifecycle.dispose();
   }
 }
 
@@ -306,9 +542,12 @@ export async function askConfiguredAIProviderForToolAction(
   token?: vscode.CancellationToken,
   preferredModelId?: string
 ): Promise<ConfiguredAIProviderAction> {
-  const settings = readWorkspaiSettings();
-  if (settings.aiProvider === 'openai-compatible') {
+  const provider = getAIProviderDefinition(readWorkspaiSettings().aiProvider);
+  if (provider.protocol === 'openai-compatible') {
     return askOpenAICompatibleToolAction(context, messages, tools, token);
+  }
+  if (provider.protocol === 'anthropic-messages') {
+    return askAnthropicToolAction(context, messages, tools, token);
   }
   const response = await requestAIModelToolAction(messages, tools, token, preferredModelId);
   return response.type === 'tool'
@@ -339,15 +578,10 @@ export async function runConfiguredAIProviderHealthCheck(
   }
 
   try {
-    if (status.provider === 'openai-compatible') {
-      const text = await askOpenAICompatible(
+    if (status.protocol !== 'vscode-lm') {
+      const text = await askExternalProvider(
         context,
-        [
-          {
-            role: 'user',
-            content: 'Reply with exactly: OK',
-          },
-        ],
+        [{ role: 'user', content: 'Reply with exactly: OK' }],
         token
       );
       if (!/\bOK\b/i.test(text)) {
@@ -361,15 +595,7 @@ export async function runConfiguredAIProviderHealthCheck(
         };
       }
     } else {
-      await askAI(
-        [
-          {
-            role: 'user',
-            content: 'Reply with exactly: OK',
-          },
-        ],
-        token
-      );
+      await askAI([{ role: 'user', content: 'Reply with exactly: OK' }], token);
     }
 
     return {
@@ -398,14 +624,11 @@ export async function askConfiguredAIProvider(
   onTextChunk?: (text: string) => void,
   preferredModelId?: string
 ): Promise<{ text: string; provider: AIProviderKind }> {
-  const settings = readWorkspaiSettings();
-  if (settings.aiProvider === 'openai-compatible') {
-    const text = await askOpenAICompatible(context, messages, token);
+  const provider = getAIProviderDefinition(readWorkspaiSettings().aiProvider);
+  if (provider.protocol !== 'vscode-lm') {
+    const text = await askExternalProvider(context, messages, token);
     onTextChunk?.(text);
-    return {
-      text,
-      provider: 'openai-compatible',
-    };
+    return { text, provider: provider.id };
   }
   if (onTextChunk) {
     let text = '';

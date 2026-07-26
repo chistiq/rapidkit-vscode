@@ -122,6 +122,12 @@ describe('workspaiSettingsBridge', () => {
   });
 
   it('persists custom AI provider settings', async () => {
+    mockGet.mockImplementation((key: string, defaultValue: unknown) => {
+      if (key === 'aiProvider') {
+        return 'openai-compatible';
+      }
+      return defaultValue;
+    });
     await setWorkspaiAIProvider('openai-compatible');
     await setWorkspaiCustomAIConfig({
       baseUrl: ' https://api.example.test/v1 ',
@@ -129,8 +135,36 @@ describe('workspaiSettingsBridge', () => {
     });
 
     expect(mockUpdate).toHaveBeenCalledWith('aiProvider', 'openai-compatible', 1);
+    expect(mockUpdate).toHaveBeenCalledWith(
+      'aiProviderProfiles',
+      {
+        'openai-compatible': {
+          baseUrl: 'https://api.example.test/v1',
+          model: 'enterprise-model',
+        },
+      },
+      1
+    );
     expect(mockUpdate).toHaveBeenCalledWith('customAIBaseUrl', 'https://api.example.test/v1', 1);
     expect(mockUpdate).toHaveBeenCalledWith('customAIModel', 'enterprise-model', 1);
+  });
+
+  it('accepts catalog providers and resolves their safe defaults', async () => {
+    mockGet.mockImplementation((key: string, defaultValue: unknown) => {
+      if (key === 'aiProvider') {
+        return 'gemini';
+      }
+      return defaultValue;
+    });
+
+    expect(readWorkspaiSettings()).toMatchObject({
+      aiProvider: 'gemini',
+      customAIBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      customAIModel: 'gemini-3.6-flash',
+    });
+
+    await setWorkspaiAIProvider('kimi');
+    expect(mockUpdate).toHaveBeenCalledWith('aiProvider', 'kimi', 1);
   });
 
   it('opens filtered Workspai extension settings', async () => {

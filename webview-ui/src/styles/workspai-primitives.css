@@ -731,6 +731,61 @@
   gap: 10px;
 }
 
+.ws-settings-provider-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--ws-border-subtle);
+  border-radius: var(--ws-radius-md);
+  background: color-mix(in srgb, var(--ws-surface-raised) 64%, transparent);
+}
+
+.ws-settings-provider-summary > div,
+.ws-settings-provider-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-settings-provider-summary strong {
+  color: var(--ws-text);
+  font-size: 11px;
+}
+
+.ws-settings-provider-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 7px;
+  border: 1px solid var(--ws-border);
+  border-radius: 999px;
+  color: var(--ws-text-muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ws-settings-provider-state.is-ready {
+  border-color: color-mix(in srgb, var(--ws-success) 54%, var(--ws-border));
+  color: var(--ws-success);
+}
+
+.ws-settings-provider-state.needs-setup {
+  border-color: color-mix(in srgb, var(--ws-warn) 54%, var(--ws-border));
+  color: var(--ws-warn);
+}
+
+.ws-field input[readonly] {
+  cursor: default;
+  color: var(--ws-text-muted);
+  background: color-mix(in srgb, var(--ws-surface-input) 82%, transparent);
+}
+
 .ws-settings-meta,
 .workspai-settings-meta {
   font-size: 10px;

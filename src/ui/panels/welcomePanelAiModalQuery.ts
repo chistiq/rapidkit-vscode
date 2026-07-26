@@ -205,7 +205,7 @@ export async function handleAiModalQueryMessage(
     }, 50);
 
     let modelId = '';
-    if (readWorkspaiSettings().aiProvider === 'openai-compatible') {
+    if (readWorkspaiSettings().aiProvider !== 'vscode-lm') {
       const providerResponse = await askConfiguredAIProvider(
         host.context,
         prepared.messages,

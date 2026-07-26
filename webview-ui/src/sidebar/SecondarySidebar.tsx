@@ -1115,13 +1115,27 @@ export function SecondarySidebar() {
       case 'sidebarStudioChunk':
         studio.appendChunk(String(data.sessionId ?? ''), (data.text as string) || '');
         break;
-      case 'sidebarStudioDone':
+      case 'sidebarStudioDone': {
+        const completedSessionId = String(data.sessionId ?? '');
         studio.finishStreaming(
-          String(data.sessionId ?? ''),
+          completedSessionId,
           data.modelId as string | undefined,
           data.answer as string | undefined
         );
+        const completedIncidentKey = resolveStudioIncidentKeyForSession(completedSessionId);
+        if (completedIncidentKey) {
+          updateStudioIncidentRepairState(completedIncidentKey, {
+            repairStatus: 'done',
+            lastActionTitle: 'Verified',
+            lastActionSummary:
+              typeof data.answer === 'string' && data.answer.trim()
+                ? data.answer
+                : 'The blocker passed refreshed verification.',
+            lastActionAt: new Date().toISOString(),
+          });
+        }
         break;
+      }
       case 'sidebarStudioEvidencePulse': {
         const pulseIncidentKey = resolveStudioIncidentKeyForEvent(data);
         const changedCount = Array.isArray(data.changedPaths) ? data.changedPaths.length : 0;
@@ -1147,13 +1161,22 @@ export function SecondarySidebar() {
         }
         break;
       }
-      case 'sidebarStudioError':
-        studio.failSession(
-          String(data.sessionId ?? ''),
-          humanizeStudioError((data.error as string) || 'Unknown error')
-        );
+      case 'sidebarStudioError': {
+        const failedSessionId = String(data.sessionId ?? '');
+        const failureMessage = humanizeStudioError((data.error as string) || 'Unknown error');
+        studio.failSession(failedSessionId, failureMessage);
+        const failedIncidentKey = resolveStudioIncidentKeyForSession(failedSessionId);
+        if (failedIncidentKey) {
+          updateStudioIncidentRepairState(failedIncidentKey, {
+            repairStatus: 'blocked',
+            lastActionTitle: 'Repair stopped',
+            lastActionSummary: failureMessage,
+            lastActionAt: new Date().toISOString(),
+          });
+        }
         setStudioAutoFixBusy(false);
         break;
+      }
       case 'sidebarBlockerHandoff': {
         const nextHandoff = parseStudioBlockerHandoffView(data.handoff);
         if (nextHandoff) {

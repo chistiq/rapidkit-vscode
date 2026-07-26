@@ -9,6 +9,7 @@ import {
   dependencyRepairAttemptsForGeneration,
   parseStudioDependencyUpgradeCandidates,
   resolveStudioDependencySecurityTarget,
+  resolveStudioDependencySecurityTargets,
 } from '../core/studioDependencySecurity.js';
 
 const roots: string[] = [];
@@ -94,6 +95,47 @@ describe('Studio dependency security capability', () => {
     await expect(
       resolveStudioDependencySecurityTarget({ workspacePath: root, projectName: 'other-app' })
     ).rejects.toThrow('No fresh dependency-security blocker');
+  });
+
+  it('enumerates every fresh vulnerable project for workspace-scoped recovery', async () => {
+    const root = await fixture();
+    const secondProjectPath = path.join(root, 'atlas-api');
+    await fs.ensureDir(secondProjectPath);
+    await fs.writeJson(path.join(secondProjectPath, 'package.json'), { name: 'atlas-api' });
+    await fs.writeJson(path.join(secondProjectPath, 'pnpm-lock.yaml'), {
+      lockfileVersion: '9.0',
+    });
+    const reportPath = path.join(root, '.workspai', 'reports', 'doctor-last-run.json');
+    const report = await fs.readJson(reportPath);
+    report.projects.push({
+      name: 'atlas-api',
+      path: secondProjectPath,
+      vulnerabilities: 7,
+      probes: [
+        {
+          id: 'surface-security-hygiene',
+          status: 'fail',
+          freshness: { status: 'fresh', expiresAt: '2099-01-01T00:00:00.000Z' },
+        },
+      ],
+    });
+    await fs.writeJson(reportPath, report);
+
+    await expect(resolveStudioDependencySecurityTarget({ workspacePath: root })).rejects.toThrow(
+      'Project name is required'
+    );
+    await expect(resolveStudioDependencySecurityTargets({ workspacePath: root })).resolves.toEqual([
+      expect.objectContaining({
+        projectName: 'atlas-web',
+        vulnerabilities: 2,
+        packageManager: 'npm',
+      }),
+      expect.objectContaining({
+        projectName: 'atlas-api',
+        vulnerabilities: 7,
+        packageManager: 'pnpm',
+      }),
+    ]);
   });
 
   it('classifies audit-backed breaking downgrades as general-agent work, not an automatic latest install', async () => {

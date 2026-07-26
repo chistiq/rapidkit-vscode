@@ -355,7 +355,6 @@ export class StudioAgentSession {
             this.state.assistantMode === 'agent' &&
             effectiveAction.toolName === 'inspect-dependency-security' &&
             latestObservation.ok === true &&
-            upgradeCandidates.length === 1 &&
             inspectedProjectName &&
             this.registry.get('repair-dependency-security')
           ) {
@@ -363,7 +362,7 @@ export class StudioAgentSession {
               'model.checkpoint',
               {
                 summary:
-                  'Fresh audit evidence identified one direct dependency path. Studio is attempting the bounded package-manager repair before upgrading it.',
+                  'Fresh audit evidence identified a vulnerable project. Studio is attempting its bounded package-manager repair before considering direct upgrades.',
                 recovery: 'dependency-bounded-repair',
               },
               requestId
@@ -423,6 +422,42 @@ export class StudioAgentSession {
             effectiveAction.toolName !== 'verify-blocker'
           ) {
             modelDecisionsWithoutSourceProgress = 0;
+          }
+          if (
+            this.state.assistantMode === 'agent' &&
+            effectiveAction.toolName === 'recover-active-blocker' &&
+            latestObservation.ok === true &&
+            latestObservation.changed !== true &&
+            observationOutput?.nextAction === 'verify-blocker' &&
+            this.registry.get('verify-blocker')
+          ) {
+            await this.emit(
+              'model.checkpoint',
+              {
+                summary:
+                  'Fresh recovery evidence no longer contains the dependency blocker. Studio is verifying the card without another model call.',
+                recovery: 'recovery-verify',
+              },
+              requestId
+            );
+            latestObservation = await this.executeTool(
+              {
+                type: 'tool',
+                toolName: 'verify-blocker',
+                input: {},
+                reason: 'Verify that refreshed blocker evidence is non-blocking.',
+              },
+              requestId
+            );
+            if (latestObservation.ok === true && latestObservation.cardBlocking === false) {
+              await this.emit(
+                'session.completed',
+                { summary: 'Deterministic verification confirmed that the blocker is resolved.' },
+                requestId
+              );
+              await this.setStatus('completed');
+              return this.snapshot();
+            }
           }
           if (this.causalEpoch > causalEpochBeforeTool) {
             causalRecoveryAttempts = 0;

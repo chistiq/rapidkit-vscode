@@ -47,11 +47,14 @@ import { resolveRapidkitExecutionPlan } from '../../core/incidentInlineCommandRu
 import {
   buildStudioDependencyUpgradeCommand,
   buildStudioDependencySecurityCommand,
+  dependencyRepairAttemptsForGeneration,
   parseStudioDependencyUpgradeCandidates,
   resolveStudioDependencySecurityTarget,
+  resolveStudioDependencySecurityTargets,
   type StudioDependencyRepairAttempt,
   type StudioDependencyUpgradeCandidate,
 } from '../../core/studioDependencySecurity.js';
+import { runStudioActiveBlockerRecovery } from '../../core/studioActiveBlockerRecovery.js';
 import { buildCoreRapidkitShellCommand, runCommandsInTerminal } from '../../utils/terminalExecutor';
 import { buildRapidkitCommand } from '../../utils/platformCapabilities';
 import { createWorkspaceCommand } from '../../commands/createWorkspace';
@@ -1387,12 +1390,12 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     try {
       const settings = readWorkspaiSettings();
       const models =
-        settings.aiProvider === 'openai-compatible'
+        settings.aiProvider !== 'vscode-lm'
           ? [
               {
-                id: settings.customAIModel || 'openai-compatible',
-                name: settings.customAIModel || 'OpenAI-compatible',
-                vendor: 'openai-compatible',
+                id: settings.customAIModel || settings.aiProvider,
+                name: settings.customAIModel || settings.aiProvider,
+                vendor: settings.aiProvider,
               },
             ]
           : await listAvailableModels();
@@ -1647,7 +1650,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         workspacePath,
         undefined,
         async (messages, token) => {
-          if (requestedModelId && readWorkspaiSettings().aiProvider !== 'openai-compatible') {
+          if (requestedModelId && readWorkspaiSettings().aiProvider === 'vscode-lm') {
             let text = '';
             const response = await streamAIResponse(
               messages,
@@ -2188,7 +2191,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       let answer = '';
       let modelId = '';
 
-      if (readWorkspaiSettings().aiProvider === 'openai-compatible') {
+      if (readWorkspaiSettings().aiProvider !== 'vscode-lm') {
         const response = await askConfiguredAIProvider(this._context, prepared.messages);
         modelId = response.provider;
         answer = response.text;
@@ -2595,7 +2598,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           const observedSourceChange = Boolean(
             before && after && before.fingerprint !== after.fingerprint
           );
-          const changed = observedSourceChange || (execution.exitCode === 0 && plan.mutatesSource);
+          const changed = observedSourceChange;
           return {
             ok: execution.exitCode === 0,
             changed,
@@ -3120,7 +3123,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           const observedSourceChange = Boolean(
             before && after && before.fingerprint !== after.fingerprint
           );
-          const changed = observedSourceChange || (execution.exitCode === 0 && plan.mutatesSource);
+          const changed = observedSourceChange;
           if (changed) {
             repairEvidence = await collectSidebarStudioRepairEvidence({
               workspacePath: request.workspacePath,
@@ -3175,7 +3178,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             ok: false,
             evidenceGeneration: repairEvidence.evidenceFingerprint,
             error:
-              'No contract-authored remediation plan is available. Run the governed remediation-plan producer or unified intelligence chain first.',
+              'No contract-authored remediation plan is available. Run the workspaceRemediationPlan governed producer first.',
           };
         }
         return {
@@ -3253,7 +3256,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             ok: false,
             evidenceGeneration: repairEvidence.evidenceFingerprint,
             error:
-              'No contract-authored remediation plan is available. Run the governed remediation-plan producer or unified intelligence chain first.',
+              'No contract-authored remediation plan is available. Run the workspaceRemediationPlan governed producer first.',
           };
         }
         if (plan.freshness.verdict === 'stale') {
@@ -3379,6 +3382,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       inspectDependencySecurity: async (request: {
         projectName?: string;
         workspacePath: string;
+        projectPath?: string;
       }) => {
         try {
           const resolveTarget = () =>
@@ -3401,9 +3405,14 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               const refreshedMessage =
                 refreshError instanceof Error ? refreshError.message : String(refreshError);
               if (refreshedMessage.includes('No fresh dependency-security blocker exists')) {
+                repairEvidence = await collectSidebarStudioRepairEvidence({
+                  workspacePath: request.workspacePath,
+                  projectPath: request.projectPath,
+                  handoff: activeHandoff,
+                });
                 return {
                   ok: true,
-                  changed: true,
+                  changed: false,
                   evidenceGeneration: repairEvidence.evidenceFingerprint,
                   output: {
                     dependencyBlockerPresent: false,
@@ -3490,7 +3499,11 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           });
           const attemptKey = `${target.projectName}:${target.packageManager}`;
           const prior = dependencyRepairAttempts.get(attemptKey);
-          const count = prior?.count ?? 0;
+          const count = dependencyRepairAttemptsForGeneration({
+            prior,
+            blockerSignature: activeBlockerSignature,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+          });
           if (count >= 1) {
             return {
               ok: false,
@@ -3780,179 +3793,23 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         }
       },
       recoverActiveBlocker: async (request: { workspacePath: string; projectPath?: string }) => {
-        const blockers = activeHandoff.blockers ?? [];
-        const dependencyIncident = blockers.some((blocker) =>
-          /\b(?:dependency|dependencies|vulnerabilit|security audit|npm audit|pnpm audit|yarn audit)\b/i.test(
-            blocker
-          )
-        );
-        const observations: Array<{ capability: string; result: unknown }> = [];
-
-        if (dependencyIncident) {
-          const inspection = await host.inspectDependencySecurity({
-            workspacePath: request.workspacePath,
-            ...(request.projectPath ? { projectPath: request.projectPath } : {}),
-          });
-          observations.push({ capability: 'inspect-dependency-security', result: inspection });
-          const inspectionOutput =
-            inspection.output &&
-            typeof inspection.output === 'object' &&
-            !Array.isArray(inspection.output)
-              ? (inspection.output as Record<string, unknown>)
-              : undefined;
-          if (inspection.changed === true || inspectionOutput?.dependencyBlockerPresent === false) {
-            return {
-              ...inspection,
-              output: {
-                recoveryPath: 'dependency-security',
-                observations,
-                nextAction: inspectionOutput?.nextAction ?? 'verify-blocker',
-              },
-            };
-          }
-          const target =
-            inspectionOutput?.target &&
-            typeof inspectionOutput.target === 'object' &&
-            !Array.isArray(inspectionOutput.target)
-              ? (inspectionOutput.target as Record<string, unknown>)
-              : undefined;
-          const projectName =
-            typeof target?.projectName === 'string' ? target.projectName : undefined;
-          const candidates = Array.isArray(inspectionOutput?.upgradeCandidates)
-            ? inspectionOutput.upgradeCandidates.filter(
-                (entry): entry is Record<string, unknown> =>
-                  Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)
-              )
-            : [];
-          if (inspection.ok && projectName && host.repairDependencySecurity) {
-            const repair = await host.repairDependencySecurity({
-              projectName,
-              workspacePath: request.workspacePath,
-              ...(request.projectPath ? { projectPath: request.projectPath } : {}),
-            });
-            observations.push({ capability: 'repair-dependency-security', result: repair });
-            if (repair.changed === true) {
-              return {
-                ...repair,
-                output: {
-                  recoveryPath: 'dependency-security',
-                  observations,
-                  nextAction: 'workspaceIntelligenceChain',
-                },
-              };
-            }
-            const repairOutput =
-              repair.output && typeof repair.output === 'object' && !Array.isArray(repair.output)
-                ? (repair.output as Record<string, unknown>)
-                : undefined;
-            const repairCandidates = Array.isArray(repairOutput?.upgradeCandidates)
-              ? repairOutput.upgradeCandidates.filter(
-                  (entry): entry is Record<string, unknown> =>
-                    Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)
-                )
-              : candidates;
-            const candidate = repairCandidates.length === 1 ? repairCandidates[0] : undefined;
-            if (
-              repairOutput?.nextAction === 'upgrade-dependency-security' &&
-              candidate &&
-              typeof candidate.packageName === 'string' &&
-              host.upgradeDependencySecurity
-            ) {
-              const upgrade = await host.upgradeDependencySecurity({
-                projectName,
-                packageName: candidate.packageName,
-                transactionId: crypto.randomUUID(),
-                workspacePath: request.workspacePath,
-                ...(request.projectPath ? { projectPath: request.projectPath } : {}),
-              });
-              observations.push({ capability: 'upgrade-dependency-security', result: upgrade });
-              return {
-                ...upgrade,
-                output: {
-                  recoveryPath: 'dependency-security',
-                  observations,
-                  nextAction: upgrade.changed
-                    ? 'workspaceIntelligenceChain'
-                    : 'general-source-repair',
-                },
-              };
-            }
-          }
-        }
-
-        const plan = await host.inspectRemediationPlan({
+        const dependencyTargets = await resolveStudioDependencySecurityTargets({
           workspacePath: request.workspacePath,
-          ...(request.projectPath ? { projectPath: request.projectPath } : {}),
-        });
-        observations.push({ capability: 'inspect-remediation-plan', result: plan });
-        const planOutput =
-          plan.output && typeof plan.output === 'object' && !Array.isArray(plan.output)
-            ? (plan.output as Record<string, unknown>)
-            : undefined;
-        const steps = Array.isArray(planOutput?.steps)
-          ? planOutput.steps.filter(
-              (entry): entry is Record<string, unknown> =>
-                Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)
+        }).catch(() => []);
+        const scopedDependencyTargets = request.projectPath
+          ? dependencyTargets.filter(
+              (target) => path.resolve(target.projectPath) === path.resolve(request.projectPath!)
             )
-          : [];
-        const executableStep = steps
-          .filter(
-            (step) =>
-              step.risk !== 'invasive' &&
-              (step.studioState === 'ready' || step.studioState === 'review-required') &&
-              (step.canApply === true || step.executable === true)
-          )
-          .sort(
-            (left, right) =>
-              Number(left.order ?? Number.MAX_SAFE_INTEGER) -
-              Number(right.order ?? Number.MAX_SAFE_INTEGER)
-          )[0];
-        if (
-          plan.ok &&
-          executableStep &&
-          typeof executableStep.id === 'string' &&
-          host.executeRemediationStep
-        ) {
-          const execution = await host.executeRemediationStep({
-            stepId: executableStep.id,
-            workspacePath: request.workspacePath,
-            ...(request.projectPath ? { projectPath: request.projectPath } : {}),
-          });
-          observations.push({ capability: 'execute-remediation-step', result: execution });
-          return {
-            ...execution,
-            output: {
-              recoveryPath: 'contract-remediation-plan',
-              observations,
-              nextAction: execution.changed
-                ? 'workspaceIntelligenceChain'
-                : 'general-source-repair',
-            },
-          };
-        }
-
-        return {
-          ok: false,
-          changed: false,
+          : dependencyTargets;
+        return runStudioActiveBlockerRecovery({
+          blockers: activeHandoff.blockers ?? [],
+          dependencyProjectNames: scopedDependencyTargets.map((target) => target.projectName),
           evidenceGeneration: repairEvidence.evidenceFingerprint,
           blockerSignature: activeBlockerSignature,
-          output: {
-            recoveryPath: 'general-source-repair',
-            observations,
-            nextAction: 'general-source-repair',
-            recommendedTools: [
-              'discover-workspace-files',
-              'inspect-source',
-              'search-workspace',
-              'inspect-workspace-diagnostics',
-              'run-workspace-command',
-              'apply-workspace-patch',
-              'inspect-workspace-changes',
-            ],
-          },
-          error:
-            'No safe deterministic repair cleared the fresh blocker. Continue with the general source capability plane using these observations.',
-        };
+          workspacePath: request.workspacePath,
+          ...(request.projectPath ? { projectPath: request.projectPath } : {}),
+          host,
+        });
       },
       verify: async (request: { workspacePath: string; projectPath?: string }) => {
         const verifyCommand = activeHandoff.verifyCommand?.trim();

@@ -3025,10 +3025,30 @@
           "default": "vscode-lm",
           "enum": [
             "vscode-lm",
+            "openai",
+            "anthropic",
+            "gemini",
+            "kimi",
+            "deepseek",
+            "openrouter",
+            "groq",
+            "mistral",
+            "xai",
+            "ollama",
             "openai-compatible"
           ],
           "enumDescriptions": [
             "Use VS Code language models such as GitHub Copilot.",
+            "Use the OpenAI API with a key stored in VS Code Secret Storage.",
+            "Use Claude through Anthropic's native Messages API.",
+            "Use Google Gemini through its OpenAI-compatible API.",
+            "Use Kimi through the Moonshot AI API.",
+            "Use DeepSeek chat and reasoning models.",
+            "Use OpenRouter's multi-provider model catalog.",
+            "Use supported models through Groq.",
+            "Use Mistral and Codestral-compatible models.",
+            "Use Grok models through xAI.",
+            "Use a local Ollama server.",
             "Use a custom OpenAI-compatible API endpoint with the key stored in VS Code Secret Storage."
           ],
           "markdownDescription": "AI provider used by Workspai Studio and AI workflows.",
@@ -3037,13 +3057,31 @@
         "workspai.customAIBaseUrl": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Base URL for a custom OpenAI-compatible provider. Examples: `https://api.openai.com/v1`, `http://localhost:11434/v1`, or a full `/chat/completions` URL.",
+          "markdownDescription": "Legacy base URL setting for the custom OpenAI-compatible provider. Provider-specific endpoints are managed by `workspai.aiProviderProfiles`.",
           "scope": "window"
         },
         "workspai.customAIModel": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Model name for the custom OpenAI-compatible provider.",
+          "markdownDescription": "Legacy model setting for the custom OpenAI-compatible provider. Provider-specific models are managed by `workspai.aiProviderProfiles`.",
+          "scope": "window"
+        },
+        "workspai.aiProviderProfiles": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "baseUrl": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "markdownDescription": "Per-provider endpoint and model overrides managed by the Workspai Settings view. API keys are never stored here; they remain in VS Code Secret Storage.",
           "scope": "window"
         }
       }

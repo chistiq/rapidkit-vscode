@@ -320,36 +320,38 @@ describe('actionsWebviewProvider — manifest + command alignment', () => {
     }
   });
 
-  it('keeps README sidebar naming aligned with the Workspai surface', () => {
+  it('keeps the Marketplace README concise and aligned with the Workspai Assistant', () => {
     const readme = read('README.md');
-    expect(readme).toContain('**Quick Actions**');
-    expect(readme).toContain('**Workspai**');
-    expect(readme).toContain('Home, Run, Repair, Artifacts, Project, and Library');
-    expect(readme).toContain('Secondary sidebar: Create · Assistant (Agent / Ask / Plan)');
-    expect(readme).toContain('Workspai Studio');
-    expect(readme).toContain('not** another AI coding assistant');
-    expect(readme).toContain('not** another agent framework');
-    expect(readme).toContain('not** another context window');
-    expect(readme).toContain('Workspace Intelligence for software systems');
-    expect(readme).toContain('Dashboard evidence');
-    expect(readme).toContain('Studio fix');
-    expect(readme).toContain('Artifact refresh');
-    expect(readme).toContain('every stack in the workspace');
-    expect(readme).toContain('generation depth');
-    expect(readme).toContain('workspai commands --json');
-    expect(readme).toContain('0.49.0+');
+    expect(readme).toContain(
+      'Understand the workspace. Change it with evidence. Verify the result.'
+    );
+    expect(readme).toContain('Ask → inspect → change → test → verify');
+    expect(readme).toContain('## One assistant, three ways to work');
+    expect(readme).toContain('| **Ask**');
+    expect(readme).toContain('| **Plan**');
+    expect(readme).toContain('| **Agent**');
+    expect(readme).toContain('does not need an incident card');
+    expect(readme).toContain('## Bring your model');
+    expect(readme).toContain('`Gemini`');
+    expect(readme).toContain('`Kimi`');
+    expect(readme).toContain('`Ollama`');
+    expect(readme).toContain('https://www.workspai.dev/');
+    expect(readme.split(/\r?\n/).length).toBeLessThanOrEqual(120);
+    expect(readme).not.toContain('## Workspace operations');
+    expect(readme).not.toContain('## Keyboard shortcuts');
+    expect(readme).not.toContain('## Troubleshooting');
     expect(readme).not.toContain('Incident Studio VNext');
-    expect(readme).not.toContain('Home, Evidence, Run, Project, and Library');
   });
 
-  it('keeps media capture guidance aligned with the shipped dashboard and sidebar Studio', () => {
+  it('keeps media capture guidance aligned with one real Assistant story', () => {
     const mediaReadme = read('media/README.md');
-    expect(mediaReadme).toContain('Dashboard evidence → Studio fix → verify → artifact refresh');
-    expect(mediaReadme).toContain('Workspai Studio secondary-sidebar repair workflow');
-    expect(mediaReadme).toContain('Run / Repair / Artifacts + sidebar visible');
-    expect(mediaReadme).toContain('Secondary sidebar Studio open with blocker context');
+    expect(mediaReadme).toContain('readme/assistant-loop.gif');
+    expect(mediaReadme).toContain('Enter an ordinary code task in **Agent** mode');
+    expect(mediaReadme).toContain('transaction-backed edit');
+    expect(mediaReadme).toContain('successful verify');
+    expect(mediaReadme).toContain('between 10 and 15 seconds');
+    expect(mediaReadme).toContain('Do not show secrets, tokens, or local-only paths');
     expect(mediaReadme).not.toContain('Incident Studio VNext');
-    expect(mediaReadme).not.toContain('Evidence + sidebar visible');
   });
 
   it('keeps manifest and host copy aligned with the Workspai surface', () => {

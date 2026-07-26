@@ -210,10 +210,9 @@ async function packageManagerFor(projectPath: string): Promise<{
   throw new Error('Dependency security target has no supported Node manifest.');
 }
 
-export async function resolveStudioDependencySecurityTarget(input: {
+export async function resolveStudioDependencySecurityTargets(input: {
   workspacePath: string;
-  projectName?: string;
-}): Promise<StudioDependencySecurityTarget> {
+}): Promise<StudioDependencySecurityTarget[]> {
   const reportPath = path.join(input.workspacePath, '.workspai', 'reports', 'doctor-last-run.json');
   const report = (await fs.readJson(reportPath)) as { projects?: DoctorProject[] };
   const vulnerable = (Array.isArray(report.projects) ? report.projects : []).filter((project) => {
@@ -246,12 +245,34 @@ export async function resolveStudioDependencySecurityTarget(input: {
       );
     });
   });
+  return Promise.all(
+    vulnerable.map(async (project) => {
+      const projectName = project.name as string;
+      const projectPath = project.path as string;
+      const manager = await packageManagerFor(projectPath);
+      return {
+        projectName,
+        projectPath,
+        vulnerabilities: project.vulnerabilities as number,
+        ...manager,
+      };
+    })
+  );
+}
+
+export async function resolveStudioDependencySecurityTarget(input: {
+  workspacePath: string;
+  projectName?: string;
+}): Promise<StudioDependencySecurityTarget> {
+  const vulnerable = await resolveStudioDependencySecurityTargets({
+    workspacePath: input.workspacePath,
+  });
   const selected = input.projectName
-    ? vulnerable.find((project) => project.name === input.projectName)
+    ? vulnerable.find((project) => project.projectName === input.projectName)
     : vulnerable.length === 1
       ? vulnerable[0]
       : undefined;
-  if (!selected || typeof selected.name !== 'string' || typeof selected.path !== 'string') {
+  if (!selected) {
     throw new Error(
       input.projectName
         ? `No fresh dependency-security blocker exists for project ${input.projectName}. Refresh Doctor evidence first.`
@@ -260,13 +281,7 @@ export async function resolveStudioDependencySecurityTarget(input: {
           : 'Project name is required when more than one dependency-security blocker exists.'
     );
   }
-  const manager = await packageManagerFor(selected.path);
-  return {
-    projectName: selected.name,
-    projectPath: selected.path,
-    vulnerabilities: selected.vulnerabilities as number,
-    ...manager,
-  };
+  return selected;
 }
 
 export function buildStudioDependencySecurityCommand(
