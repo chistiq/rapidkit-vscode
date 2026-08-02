@@ -10,6 +10,8 @@ import {
 type StudioBlockerChromeProps = {
   handoff: StudioBlockerHandoffView | null;
   phase: StudioFixPhase;
+  workspaceName?: string;
+  projectName?: string;
   autoFixBusy?: boolean;
   loop?: ReactNode;
 };
@@ -25,6 +27,8 @@ const PHASE_LABEL: Record<StudioFixPhase, string> = {
 export function StudioBlockerChrome({
   handoff,
   phase,
+  workspaceName,
+  projectName,
   autoFixBusy = false,
   loop,
 }: StudioBlockerChromeProps) {
@@ -33,40 +37,60 @@ export function StudioBlockerChrome({
   }
 
   const subject = handoff.cardLabel?.trim() || handoff.cardId;
+  const resolvedWorkspaceName =
+    workspaceName?.trim() ||
+    handoff.workspacePath?.split(/[\\/]/).filter(Boolean).at(-1) ||
+    'Workspace';
+  const resolvedProjectName =
+    projectName?.trim() || handoff.projectPath?.split(/[\\/]/).filter(Boolean).at(-1);
   const affectedProjectCount = handoff.affectedProjectNames?.length ?? 0;
   const scopeLabel =
     handoff.scope === 'workspace'
-      ? `Workspace repair${affectedProjectCount > 0 ? ` · ${affectedProjectCount} affected project${affectedProjectCount === 1 ? '' : 's'}` : ''}`
-      : `Project repair${handoff.projectPath ? ` · ${handoff.projectPath.split(/[\\/]/).filter(Boolean).at(-1)}` : ''}`;
-  const headline =
-    phase === 'diagnosing'
-      ? `Diagnosing ${subject}`
-      : phase === 'fixing'
-        ? `Repairing ${subject}`
-        : phase === 'fix-applied' || phase === 'awaiting-verify'
-          ? `Verifying ${subject}`
-          : `Repair ${subject}`;
+      ? `Workspace repair${affectedProjectCount > 0 ? ` · ${affectedProjectCount} project${affectedProjectCount === 1 ? '' : 's'}` : ''}`
+      : 'Project repair';
+  const blocker = handoff.blockers[0];
   return (
     <div className="ws-sidebar__studio-chrome" data-phase={phase}>
-      <div className="ws-sidebar__studio-posture" role="status" aria-live="polite">
-        <span className="ws-sidebar__studio-posture-icon" aria-hidden="true">
-          {phase === 'awaiting-verify' || phase === 'fix-applied' ? (
-            <CheckCircle2 size={14} strokeWidth={1.75} />
-          ) : handoff.studioMode === 'EXPLAIN' ? (
-            <AlertTriangle size={14} strokeWidth={1.75} />
-          ) : (
-            <Wrench size={14} strokeWidth={1.75} />
-          )}
-        </span>
-        <div className="ws-sidebar__studio-posture-copy">
-          <small className="ws-sidebar__studio-eyebrow">
-            Workspai Agent · {PHASE_LABEL[phase]}
-          </small>
-          <strong>{headline}</strong>
-          <small>{scopeLabel}</small>
-          {handoff.blockers.length > 0 ? <span>{handoff.blockers[0]}</span> : null}
+      <header
+        className="ws-sidebar__studio-context"
+        role="status"
+        aria-live="polite"
+        aria-label={`${resolvedWorkspaceName}${resolvedProjectName ? `, ${resolvedProjectName}` : ''}, ${subject}, ${PHASE_LABEL[phase]}`}
+      >
+        <div className="ws-sidebar__studio-context-path">
+          <small>Workspace</small>
+          <div>
+            <strong title={handoff.workspacePath}>{resolvedWorkspaceName}</strong>
+            {resolvedProjectName ? (
+              <>
+                <span aria-hidden="true">/</span>
+                <strong title={handoff.projectPath}>{resolvedProjectName}</strong>
+              </>
+            ) : null}
+          </div>
+          <span className="ws-sidebar__studio-scope-badge">{scopeLabel}</span>
         </div>
-      </div>
+
+        <div className="ws-sidebar__studio-incident-row">
+          <span className="ws-sidebar__studio-posture-icon" aria-hidden="true">
+            {phase === 'awaiting-verify' || phase === 'fix-applied' ? (
+              <CheckCircle2 size={14} strokeWidth={1.75} />
+            ) : handoff.studioMode === 'EXPLAIN' ? (
+              <AlertTriangle size={14} strokeWidth={1.75} />
+            ) : (
+              <Wrench size={14} strokeWidth={1.75} />
+            )}
+          </span>
+          <div className="ws-sidebar__studio-incident-copy">
+            <small>Incident</small>
+            <strong>{subject}</strong>
+            {blocker ? <span title={blocker}>{blocker}</span> : null}
+          </div>
+          <span className="ws-sidebar__studio-state-badge" data-phase={phase}>
+            {PHASE_LABEL[phase]}
+          </span>
+        </div>
+      </header>
 
       {loop}
 

@@ -6,6 +6,7 @@ type StudioRepairPreludeProps = {
   completed?: boolean;
   resumable?: boolean;
   reviewRequired?: boolean;
+  onReview?: () => void;
   onStart: () => void;
   onStop: () => void;
 };
@@ -16,10 +17,10 @@ export function StudioRepairPrelude({
   completed = false,
   resumable = false,
   reviewRequired = false,
+  onReview,
   onStart,
   onStop,
 }: StudioRepairPreludeProps) {
-  const blocker = handoff.blockers[0] || `${handoff.cardLabel ?? 'This card'} needs repair.`;
   const scopeLabel = handoff.scope === 'project' ? 'Project evidence' : 'Workspace evidence';
   const status = completed
     ? 'Repair verified'
@@ -39,13 +40,25 @@ export function StudioRepairPrelude({
             <span className="ws-sidebar__repair-live" aria-hidden="true" />
             {status}
           </strong>
-          <p>{blocker}</p>
-          <span className="ws-sidebar__repair-meta">{scopeLabel} · verify included</span>
+          <span className="ws-sidebar__repair-meta">{scopeLabel} · verification required</span>
           {reviewRequired ? (
-            <p>
-              Studio paused before a breaking, forced, or downgrade-only dependency change. Review
-              the options below before choosing a new direction.
-            </p>
+            <>
+              <p>
+                Only a breaking, forced, or downgrade remediation remains. Studio will not continue
+                without your decision.
+              </p>
+              {onReview ? (
+                <div
+                  className="ws-sidebar__repair-controls"
+                  role="group"
+                  aria-label="Studio engineering decision controls"
+                >
+                  <button type="button" className="ws-sidebar__inline" onClick={onReview}>
+                    Review options
+                  </button>
+                </div>
+              ) : null}
+            </>
           ) : null}
           {!completed && !reviewRequired ? (
             <div

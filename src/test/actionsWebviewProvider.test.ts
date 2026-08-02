@@ -90,7 +90,7 @@ describe('actionsWebviewProvider — sidebar protocol handlers', () => {
 
     expect(auditDoc).toContain('Workspai Command Surface Audit');
     expect(auditDoc).toContain(
-      'Dashboard detects and routes; Studio diagnoses, plans, fixes, verifies, and'
+      'Dashboard detects and routes; Agent diagnoses, plans, fixes, verifies, and'
     );
     expect(auditDoc).toContain('Sending a fail/warn card to Studio is repair intent.');
     for (const command of [

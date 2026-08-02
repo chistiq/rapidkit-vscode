@@ -195,16 +195,20 @@ export function ChatTab(props: ChatTabProps) {
             );
           })
         )}
-        {activeSession?.status === 'error' && activeSession.error ? (
+        {!repairMode && activeSession?.status === 'error' && activeSession.error ? (
           <SidebarMessage role="ai">
             <strong>Studio paused.</strong>
             <p>{activeSession.error}</p>
           </SidebarMessage>
         ) : null}
         {props.streamChrome ? (
-          <SidebarMessage role="ai">
+          repairMode ? (
             <div className="ws-sidebar__studio-live-activity">{props.streamChrome}</div>
-          </SidebarMessage>
+          ) : (
+            <SidebarMessage role="ai">
+              <div className="ws-sidebar__studio-live-activity">{props.streamChrome}</div>
+            </SidebarMessage>
+          )
         ) : null}
         <div ref={streamEndRef} aria-hidden="true" />
       </div>
@@ -214,6 +218,7 @@ export function ChatTab(props: ChatTabProps) {
         sessionCount={sessions.length}
         compact={repairMode}
         allowNewSession={!repairMode}
+        contextText={composerScopeLabel === 'No workspace selected' ? null : composerScopeLabel}
         onNewSession={() => {
           props.onNewSession();
           setPrompt('');

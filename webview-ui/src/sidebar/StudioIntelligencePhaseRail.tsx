@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import {
-  buildStudioIntelligencePhaseWindow,
   resolveStudioIntelligencePhaseDirection,
+  STUDIO_INTELLIGENCE_PHASES,
   studioIntelligencePhaseIndex,
+  studioIntelligencePhaseLabel,
   type StudioIntelligencePhaseId,
 } from '@/lib/studioIntelligencePhaseRail';
 
@@ -17,8 +18,8 @@ export function StudioIntelligencePhaseRail({
 }: StudioIntelligencePhaseRailProps) {
   const previousIndex = useRef(studioIntelligencePhaseIndex(activePhase));
   const [direction, setDirection] = useState<'forward' | 'backward' | 'idle'>('idle');
-  const activeIndex = studioIntelligencePhaseIndex(activePhase);
-  const phases = buildStudioIntelligencePhaseWindow(activePhase);
+  const activeIndex = Math.max(0, studioIntelligencePhaseIndex(activePhase));
+  const activeLabel = studioIntelligencePhaseLabel(activePhase) ?? 'Model';
 
   useEffect(() => {
     setDirection(resolveStudioIntelligencePhaseDirection(previousIndex.current, activeIndex));
@@ -31,19 +32,33 @@ export function StudioIntelligencePhaseRail({
       aria-label="Workspace Intelligence repair loop"
       data-direction={direction}
       data-running={running ? 'true' : 'false'}
+      style={
+        {
+          '--ws-phase-count': STUDIO_INTELLIGENCE_PHASES.length,
+        } as CSSProperties
+      }
     >
+      <div className="ws-sidebar__intelligence-rail-head">
+        <span>Workspace Intelligence</span>
+        <strong>{activeLabel}</strong>
+        <small>
+          {activeIndex + 1}/{STUDIO_INTELLIGENCE_PHASES.length}
+        </small>
+      </div>
       <div className="ws-sidebar__intelligence-rail-track" key={activePhase}>
-        {phases.map((phase, index) => (
+        {STUDIO_INTELLIGENCE_PHASES.map((phase, index) => (
           <div
-            key={`${phase.id}:${phase.offset}`}
+            key={phase.id}
             className="ws-sidebar__intelligence-phase"
-            data-state={phase.state}
-            data-offset={phase.offset}
+            data-state={index < activeIndex ? 'past' : index === activeIndex ? 'active' : 'future'}
             style={{ gridColumn: index + 1 }}
-            aria-current={phase.state === 'active' ? 'step' : undefined}
+            aria-current={index === activeIndex ? 'step' : undefined}
+            title={`${index + 1}. ${phase.label}`}
           >
             <span className="ws-sidebar__intelligence-phase-dot" aria-hidden="true" />
-            <span>{phase.label}</span>
+            <span className="ws-sidebar__sr-only">
+              {index + 1}. {phase.label}
+            </span>
           </div>
         ))}
       </div>

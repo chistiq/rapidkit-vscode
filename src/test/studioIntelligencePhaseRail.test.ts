@@ -40,6 +40,17 @@ describe('Studio Workspace Intelligence phase rail', () => {
     expect(source).toContain("eventData.intelligenceMilestoneStatus === 'started'");
   });
 
+  it('renders every contract-owned stage while exposing only the active label in narrow UI', () => {
+    const source = fs.readFileSync(
+      path.resolve(__dirname, '../../webview-ui/src/sidebar/StudioIntelligencePhaseRail.tsx'),
+      'utf8'
+    );
+    expect(source).toContain('STUDIO_INTELLIGENCE_PHASES.map');
+    expect(source).toContain('studioIntelligencePhaseLabel(activePhase)');
+    expect(source).toContain("'--ws-phase-count': STUDIO_INTELLIGENCE_PHASES.length");
+    expect(source).not.toContain('buildStudioIntelligencePhaseWindow(activePhase)');
+  });
+
   it('keeps the active phase centered between three prior and three future phases', () => {
     const phases = buildStudioIntelligencePhaseWindow('impact');
     expect(phases).toHaveLength(7);

@@ -4467,7 +4467,8 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           (event) =>
             event.type === 'tool.completed' ||
             event.type === 'tool.failed' ||
-            event.type === 'verify.completed'
+            event.type === 'verify.completed' ||
+            event.type === 'session.failed'
         )
         .slice(-60)
         .forEach((event) => {
@@ -4496,12 +4497,23 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     const failure = [...completed.events]
       .reverse()
       .find((event) => event.type === 'session.failed');
-    const failureMessage =
-      failure && typeof (failure.data as { error?: unknown }).error === 'string'
-        ? String((failure.data as { error: string }).error)
+    const failureData =
+      failure && failure.data && typeof failure.data === 'object' && !Array.isArray(failure.data)
+        ? (failure.data as Record<string, unknown>)
         : undefined;
+    const failureMessage =
+      typeof failureData?.error === 'string' ? String(failureData.error) : undefined;
     this._postInlineCreate('sidebarStudioError', {
       sessionId: completed.id,
+      ...(failureData?.requiresUserDecision === true
+        ? {
+            requiresUserDecision: true,
+            terminalReason:
+              typeof failureData.terminalReason === 'string'
+                ? failureData.terminalReason
+                : 'review-required',
+          }
+        : {}),
       error:
         completed.status === 'cancelled'
           ? 'Studio Agent was cancelled.'
@@ -4520,11 +4532,39 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     try {
       if (action === 'agent-status') {
         const session = sessionId ? this._activeStudioAgentSessions.get(sessionId) : undefined;
+        const snapshot = session?.snapshot();
+        const persistedSession =
+          !snapshot && sessionId && this._context
+            ? await new VSCodeStudioAgentSessionStore(this._context).load(sessionId)
+            : undefined;
+        const durableSession = snapshot ?? persistedSession;
+        const terminalFailure = [...(durableSession?.events ?? [])]
+          .reverse()
+          .find((event) => event.type === 'session.failed');
+        const terminalFailureData =
+          terminalFailure?.data &&
+          typeof terminalFailure.data === 'object' &&
+          !Array.isArray(terminalFailure.data)
+            ? (terminalFailure.data as Record<string, unknown>)
+            : undefined;
         studioHost.postInlineCreate('sidebarStudioSessionState', {
           sessionId,
           cardId: handoff?.cardId,
-          active: session?.snapshot().status === 'running',
-          status: session?.snapshot().status ?? 'paused',
+          active: snapshot?.status === 'running',
+          status: durableSession?.status ?? 'paused',
+          ...(terminalFailureData?.requiresUserDecision === true
+            ? {
+                requiresUserDecision: true,
+                terminalReason:
+                  typeof terminalFailureData.terminalReason === 'string'
+                    ? terminalFailureData.terminalReason
+                    : 'review-required',
+                error:
+                  typeof terminalFailureData.error === 'string'
+                    ? terminalFailureData.error
+                    : 'Studio requires an engineering decision to continue.',
+              }
+            : {}),
         });
         return;
       }

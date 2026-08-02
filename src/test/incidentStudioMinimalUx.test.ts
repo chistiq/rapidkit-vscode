@@ -27,7 +27,7 @@ describe('incident studio minimal UX guard', () => {
     expect(chatTab).toContain('composerPrefill?: string');
     expect(chatTab).toContain('composerModeSelector?: ReactNode');
     expect(selector).toContain("export type AssistantMode = 'agent' | 'ask' | 'plan'");
-    expect(sidebar).toContain("assistantMode !== 'agent'");
+    expect(sidebar).toContain("assistantMode !== 'ask'");
     expect(chatTab).not.toContain('studio-empty-state__guided-actions');
   });
 

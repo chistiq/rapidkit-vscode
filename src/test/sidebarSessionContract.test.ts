@@ -24,6 +24,8 @@ describe('Workspai chat session contract', () => {
     expect(sessions).toContain('export function chatSessionKind');
     expect(sessions).toContain('export function chatSessionGroupLabel');
     expect(sessions).toContain('export function chatSessionContextLabel');
+    expect(sessions).toContain('export function chatSessionWorkspaceKey');
+    expect(sessions).toContain('export function chatSessionWorkspaceLabel');
     expect(sessions).toContain("return 'editor-issue'");
     expect(sessions).toContain("return 'artifact'");
     expect(sessions).toContain("return 'scope'");
@@ -115,7 +117,20 @@ describe('Workspai chat session contract', () => {
     expect(drawer).toContain('ws-drawer-tabs');
     expect(drawer).toContain('ws-drawer-category-tabs');
     expect(drawer).toContain('ws-drawer-session-group');
+    expect(drawer).toContain('groupSessionsByWorkspace');
+    expect(drawer).toContain('ws-drawer-session-workspace__head');
     expect(drawer).toContain('props.toolbar');
+  });
+
+  it('keeps active workspace and project identity visible throughout Studio', () => {
+    const blockerChrome = read('webview-ui/src/sidebar/StudioBlockerChrome.tsx');
+    const sessionBar = read('webview-ui/src/sidebar/composer/ChatSessionBar.tsx');
+    expect(blockerChrome).toContain('ws-sidebar__studio-context-path');
+    expect(blockerChrome).toContain('workspaceName?.trim()');
+    expect(blockerChrome).toContain('projectName?.trim()');
+    expect(sessionBar).toContain('chatSessionContextLabel(activeSession)');
+    expect(sessionBar).toContain('Switch session or workspace context');
+    expect(chatTab).toContain("!repairMode && activeSession?.status === 'error'");
   });
 
   it('keeps long user prompts readable in chat instead of dumping raw prompt blocks', () => {

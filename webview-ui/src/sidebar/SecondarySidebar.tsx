@@ -319,6 +319,7 @@ type StudioRepairPersistedState = {
   returnStates?: Record<string, SidebarStudioReturnState>;
   rollbackCommands?: Record<string, string>;
   patchReviews?: Record<string, StudioPatchReviewState>;
+  repairHolds?: Record<string, string>;
 };
 
 type SecondarySidebarPersistedState = {
@@ -424,7 +425,7 @@ export function SecondarySidebar() {
   >(persistedStudioRepairState.patchReviews ?? {});
   const [studioIncidentRepairHolds, setStudioIncidentRepairHolds] = useState<
     Record<string, string>
-  >({});
+  >(persistedStudioRepairState.repairHolds ?? {});
   const [studioReturnState, setStudioReturnState] = useState<SidebarStudioReturnState | null>(null);
   const [studioActionProgress, setStudioActionProgress] =
     useState<SidebarStudioActionProgressView | null>(null);
@@ -448,6 +449,7 @@ export function SecondarySidebar() {
       returnStates: studioIncidentReturnStates,
       rollbackCommands: studioIncidentRollbackCommands,
       patchReviews: studioIncidentPatchReviews,
+      repairHolds: studioIncidentRepairHolds,
     });
   }, [
     studioIncidentHandoffs,
@@ -457,6 +459,7 @@ export function SecondarySidebar() {
     studioIncidentTimeline,
     studioIncidentReturnStates,
     studioIncidentRollbackCommands,
+    studioIncidentRepairHolds,
     studioIncidentVerifyFailures,
   ]);
   useEffect(() => {
@@ -1024,6 +1027,24 @@ export function SecondarySidebar() {
               eventSessionId,
               String(eventData.error ?? eventData.reason ?? eventType)
             );
+            if (eventType === 'session.failed' && eventData.requiresUserDecision === true) {
+              const failedIncidentKey = resolveStudioIncidentKeyForSession(eventSessionId);
+              const failureMessage = humanizeStudioError(
+                String(eventData.error ?? 'Studio requires an engineering decision to continue.')
+              );
+              if (failedIncidentKey) {
+                setStudioIncidentRepairHolds((previous) => ({
+                  ...previous,
+                  [failedIncidentKey]: failureMessage,
+                }));
+                updateStudioIncidentRepairState(failedIncidentKey, {
+                  repairStatus: 'review',
+                  lastActionTitle: 'Decision required',
+                  lastActionSummary: failureMessage,
+                  lastActionAt: new Date().toISOString(),
+                });
+              }
+            }
           }
         }
         break;
@@ -1039,6 +1060,27 @@ export function SecondarySidebar() {
           break;
         }
         setStudioAutoFixBusy(false);
+        if (data.requiresUserDecision === true) {
+          const reviewIncidentKey = resolveStudioIncidentKeyForSession(statusSessionId);
+          const reviewMessage = humanizeStudioError(
+            typeof data.error === 'string'
+              ? data.error
+              : 'Studio requires an engineering decision to continue.'
+          );
+          if (reviewIncidentKey) {
+            setStudioIncidentRepairHolds((previous) => ({
+              ...previous,
+              [reviewIncidentKey]: reviewMessage,
+            }));
+            updateStudioIncidentRepairState(reviewIncidentKey, {
+              repairStatus: 'review',
+              lastActionTitle: 'Decision required',
+              lastActionSummary: reviewMessage,
+              lastActionAt: new Date().toISOString(),
+            });
+          }
+          break;
+        }
         const hydratedSession = studio.sessions.find(
           (session) => session.sessionId === statusSessionId
         );
@@ -2350,8 +2392,19 @@ export function SecondarySidebar() {
       META
     );
   };
+  const reviewStudioRepairOptions = () => {
+    setAssistantMode('plan');
+    setStudioPrefill(
+      'Review the unresolved dependency blocker and present the available compatible migration or replacement, time-bounded exception, and upstream-wait options. Do not apply a breaking, forced, or downgrade dependency change without my explicit approval.'
+    );
+    setStudioPrefillKey((key) => key + 1);
+  };
   const studioAutoFix = () => {
     if (!activeBlockerHandoff) {
+      return;
+    }
+    if (activeStudioReviewRequired) {
+      reviewStudioRepairOptions();
       return;
     }
     setStudioAutoFixBusy(true);
@@ -2868,6 +2921,7 @@ export function SecondarySidebar() {
                     activeStudio?.incident?.repairStatus === 'blocked')
                 }
                 reviewRequired={activeStudioReviewRequired}
+                onReview={reviewStudioRepairOptions}
                 onStart={
                   activeBlockerHandoff.studioMode === 'VERIFY_ONLY'
                     ? studioVerifyHandoff
@@ -2919,7 +2973,7 @@ export function SecondarySidebar() {
               <StudioRepairResult
                 returnState={visibleStudioReturnStateForResult}
                 verifyFailure={visibleStudioVerifyFailureForResult}
-                repairHold={activeStudioRepairHold}
+                repairHold={activeStudioReviewRequired ? null : activeStudioRepairHold}
                 rollbackCommand={visibleStudioRollbackCommandForResult}
                 onCopyRollback={studioCopyRollback}
                 onBackToDashboard={openDashboardRepairFlow}
@@ -2943,6 +2997,8 @@ export function SecondarySidebar() {
             <StudioBlockerChrome
               handoff={activeBlockerHandoff}
               phase={activeStudioFixPhase}
+              workspaceName={activeStudio?.incident?.workspaceName}
+              projectName={activeStudio?.incident?.projectName}
               autoFixBusy={studioAutoFixBusy || studioPatchApplyBusy}
               loop={
                 <StudioIntelligencePhaseRail

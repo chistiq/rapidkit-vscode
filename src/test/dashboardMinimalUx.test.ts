@@ -123,7 +123,8 @@ describe('dashboard minimal UX guard', () => {
       'Show {Math.min(ARCHIVE_CARD_PAGE_SIZE, hiddenArchiveCardCount)} more artifacts'
     );
     expect(detailPreview).toContain('evidence-card-detail-preview__incident');
-    expect(studioChrome).toContain('Workspai Agent · {PHASE_LABEL[phase]}');
+    expect(studioChrome).toContain('ws-sidebar__studio-context-path');
+    expect(studioChrome).toContain('ws-sidebar__studio-state-badge');
     expect(studioChrome).toContain('{loop}');
     expect(studioChrome).not.toContain('buildStudioIncidentCopy');
     expect(repairFlow).toContain('selectedCardId');
@@ -249,8 +250,10 @@ describe('dashboard minimal UX guard', () => {
     expect(studioChrome).toContain("idle: 'Blocked'");
     expect(studioChrome).toContain("diagnosing: 'Running'");
     expect(studioChrome).toContain("'fix-applied': 'Awaiting verify'");
-    expect(studioChrome).toContain('Workspai Agent · {PHASE_LABEL[phase]}');
-    expect(studioChrome).toContain('`Repairing ${subject}`');
+    expect(studioChrome).toContain('ws-sidebar__studio-context-path');
+    expect(studioChrome).toContain('{PHASE_LABEL[phase]}');
+    expect(studioChrome).toContain('resolvedWorkspaceName');
+    expect(studioChrome).toContain('resolvedProjectName');
     expect(studioChrome).toContain('incidentSummary');
     expect(studioChrome).not.toContain('aria-label="Incident summary"');
     expect(shipLoop).toContain("pass: 'Passed'");

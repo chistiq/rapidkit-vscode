@@ -6,6 +6,9 @@ import {
   chatSessionContextLabel,
   chatSessionGroupLabel,
   chatSessionKind,
+  chatSessionProjectLabel,
+  chatSessionWorkspaceKey,
+  chatSessionWorkspaceLabel,
   type ChatSession,
   type ChatSessionKind,
 } from '../sidebarSessions';
@@ -42,25 +45,51 @@ function sessionMetaLabel(session: ChatSession, fallback: string): string {
     blocked: 'Blocked',
   };
   const status = session.incident.repairStatus
-    ? statusLabels[session.incident.repairStatus] ?? session.incident.repairStatus
+    ? (statusLabels[session.incident.repairStatus] ?? session.incident.repairStatus)
     : fallback;
   const affectedCount = session.incident.affectedProjectNames?.length ?? 0;
-  const scope =
-    session.incident.scope === 'workspace'
-      ? `Workspace repair${affectedCount > 0 ? ` · ${affectedCount} affected project${affectedCount === 1 ? '' : 's'}` : ''}`
-      : session.incident.projectName ||
-        basenameFromPath(session.incident.projectPath) ||
-        'Project repair';
+  const project = chatSessionProjectLabel(session);
+  const scope = project
+    ? project
+    : `Workspace${affectedCount > 0 ? ` · ${affectedCount} project${affectedCount === 1 ? '' : 's'}` : ''}`;
   const seen = session.incident.lastSeenAt
     ? new Date(session.incident.lastSeenAt).toLocaleTimeString([], {
         hour: '2-digit',
         minute: '2-digit',
       })
     : '';
-  const lastAction = session.incident.lastActionTitle
-    ? ` · ${session.incident.lastActionTitle}`
-    : '';
-  return `${status} · ${scope} · ${session.incident.cardLabel ?? session.incident.cardId}${lastAction}${seen ? ` · ${seen}` : ''}`;
+  return `${scope} · ${status}${seen ? ` · ${seen}` : ''}`;
+}
+
+function workspacePathForSession(session: ChatSession): string | undefined {
+  return session.incident?.workspacePath || session.scope?.workspacePath;
+}
+
+function groupSessionsByWorkspace(sessions: ChatSession[]): Array<{
+  key: string;
+  label: string;
+  path?: string;
+  sessions: ChatSession[];
+}> {
+  const groups = new Map<
+    string,
+    { key: string; label: string; path?: string; sessions: ChatSession[] }
+  >();
+  for (const session of sessions) {
+    const key = chatSessionWorkspaceKey(session);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.sessions.push(session);
+      continue;
+    }
+    groups.set(key, {
+      key,
+      label: chatSessionWorkspaceLabel(session),
+      path: workspacePathForSession(session),
+      sessions: [session],
+    });
+  }
+  return [...groups.values()];
 }
 
 function groupedSessions(sessions: ChatSession[]): Array<{
@@ -151,85 +180,105 @@ export function ChatToolsDrawer(props: ChatToolsDrawerProps) {
       </div>
 
       {mainTab === 'sessions' ? (
-      <section className="ws-drawer-section ws-drawer-section--flush">
-        <div className="ws-drawer-section__head">
-          <span className="ws-drawer-section__label">
-            <History size={11} aria-hidden={true} /> Sessions
-          </span>
-          <button type="button" className="ws-drawer__link" onClick={props.onNewSession}>
-            New chat
-          </button>
-        </div>
-        {props.sessions.length === 0 ? (
-          <p className="ws-drawer-hint">No saved sessions yet.</p>
-        ) : (
-          <>
-          <div className="ws-drawer-category-tabs" role="tablist" aria-label="Session categories">
-            {sessionGroups.map((group) => (
-              <button
-                key={group.kind}
-                type="button"
-                className="ws-drawer-category-tab"
-                aria-selected={group.kind === activeGroup?.kind}
-                onClick={() => setSessionKind(group.kind)}
+        <section className="ws-drawer-section ws-drawer-section--flush">
+          <div className="ws-drawer-section__head">
+            <span className="ws-drawer-section__label">
+              <History size={11} aria-hidden={true} /> Sessions
+            </span>
+            <button type="button" className="ws-drawer__link" onClick={props.onNewSession}>
+              New chat
+            </button>
+          </div>
+          {props.sessions.length === 0 ? (
+            <p className="ws-drawer-hint">No saved sessions yet.</p>
+          ) : (
+            <>
+              <div
+                className="ws-drawer-category-tabs"
+                role="tablist"
+                aria-label="Session categories"
               >
-                <span>{group.label}</span>
-                <small>{group.sessions.length}</small>
-              </button>
-            ))}
-          </div>
-          <div className="ws-drawer-session-list">
-            {activeGroup ? (
-              <div key={activeGroup.kind} className="ws-drawer-session-group">
-                {activeGroup.sessions.map((session) => {
-                  const turnCount = Math.ceil(
-                    session.messages.filter((m) => m.content.trim().length > 0).length / 2
-                  );
-                  const statusLabel =
-                    session.status === 'streaming'
-                      ? 'Replying…'
-                      : session.status === 'error'
-                        ? 'Stopped'
-                        : turnCount > 0
-                          ? `${turnCount} turn${turnCount === 1 ? '' : 's'}`
-                          : 'Draft';
-                  return (
-                    <div
-                      key={session.sessionId}
-                      className={`ws-drawer-session${
-                        session.sessionId === props.activeSessionId ? ' is-active' : ''
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        className="ws-drawer-session__select"
-                        onClick={() => {
-                          props.onSelectSession(session.sessionId);
-                          props.onClose();
-                        }}
-                      >
-                        <span className="ws-drawer-session__title">{session.title}</span>
-                        <small className="ws-drawer-session__meta">
-                          {sessionMetaLabel(session, statusLabel)}
-                        </small>
-                      </button>
-                      <button
-                        type="button"
-                        className="ws-drawer-session__delete"
-                        aria-label="Delete session"
-                        onClick={() => props.onDeleteSession(session.sessionId)}
-                      >
-                        <Trash2 size={11} aria-hidden={true} />
-                      </button>
-                    </div>
-                  );
-                })}
+                {sessionGroups.map((group) => (
+                  <button
+                    key={group.kind}
+                    type="button"
+                    className="ws-drawer-category-tab"
+                    aria-selected={group.kind === activeGroup?.kind}
+                    onClick={() => setSessionKind(group.kind)}
+                  >
+                    <span>{group.label}</span>
+                    <small>{group.sessions.length}</small>
+                  </button>
+                ))}
               </div>
-            ) : null}
-          </div>
-          </>
-        )}
-      </section>
+              <div className="ws-drawer-session-list">
+                {activeGroup ? (
+                  <div key={activeGroup.kind} className="ws-drawer-session-group">
+                    {groupSessionsByWorkspace(activeGroup.sessions).map((workspaceGroup) => (
+                      <section
+                        key={workspaceGroup.key}
+                        className="ws-drawer-session-workspace"
+                        aria-label={`${workspaceGroup.label} sessions`}
+                      >
+                        <header
+                          className="ws-drawer-session-workspace__head"
+                          title={workspaceGroup.path}
+                        >
+                          <span>Workspace</span>
+                          <strong>{workspaceGroup.label}</strong>
+                          <small>{workspaceGroup.sessions.length}</small>
+                        </header>
+                        {workspaceGroup.sessions.map((session) => {
+                          const turnCount = Math.ceil(
+                            session.messages.filter((m) => m.content.trim().length > 0).length / 2
+                          );
+                          const statusLabel =
+                            session.status === 'streaming'
+                              ? 'Replying…'
+                              : session.status === 'error'
+                                ? 'Stopped'
+                                : turnCount > 0
+                                  ? `${turnCount} turn${turnCount === 1 ? '' : 's'}`
+                                  : 'Draft';
+                          return (
+                            <div
+                              key={session.sessionId}
+                              className={`ws-drawer-session${
+                                session.sessionId === props.activeSessionId ? ' is-active' : ''
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                className="ws-drawer-session__select"
+                                onClick={() => {
+                                  props.onSelectSession(session.sessionId);
+                                  props.onClose();
+                                }}
+                              >
+                                <span className="ws-drawer-session__title">{session.title}</span>
+                                <small className="ws-drawer-session__meta">
+                                  {sessionMetaLabel(session, statusLabel)}
+                                </small>
+                              </button>
+                              <button
+                                type="button"
+                                className="ws-drawer-session__delete"
+                                aria-label="Delete session"
+                                onClick={() => props.onDeleteSession(session.sessionId)}
+                              >
+                                <Trash2 size={11} aria-hidden={true} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </section>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </>
+          )}
+        </section>
       ) : (
         <>
           {props.toolbar ? (
@@ -239,31 +288,31 @@ export function ChatToolsDrawer(props: ChatToolsDrawerProps) {
             </section>
           ) : null}
 
-      {props.suggestions.length > 0 ? (
-        <section className="ws-drawer-section ws-drawer-section--flush">
-          <span className="ws-drawer-section__label">
-            <Lightbulb size={11} aria-hidden={true} /> Questions
-          </span>
-          <div className="ws-drawer-menu">
-            {props.suggestions.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                className="ws-drawer-menu__item ws-drawer-menu__item--compact"
-                onClick={() => props.onPickSuggestion(suggestion)}
-              >
-                <span>
-                  <strong>{suggestion}</strong>
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : (
-        <section className="ws-drawer-section ws-drawer-section--flush">
-          <p className="ws-drawer-hint">No suggested questions for this scope.</p>
-        </section>
-      )}
+          {props.suggestions.length > 0 ? (
+            <section className="ws-drawer-section ws-drawer-section--flush">
+              <span className="ws-drawer-section__label">
+                <Lightbulb size={11} aria-hidden={true} /> Questions
+              </span>
+              <div className="ws-drawer-menu">
+                {props.suggestions.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    className="ws-drawer-menu__item ws-drawer-menu__item--compact"
+                    onClick={() => props.onPickSuggestion(suggestion)}
+                  >
+                    <span>
+                      <strong>{suggestion}</strong>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : (
+            <section className="ws-drawer-section ws-drawer-section--flush">
+              <p className="ws-drawer-hint">No suggested questions for this scope.</p>
+            </section>
+          )}
         </>
       )}
 

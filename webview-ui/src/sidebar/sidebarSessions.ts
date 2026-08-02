@@ -162,6 +162,44 @@ export function chatSessionGroupLabel(kind: ChatSessionKind): string {
   }
 }
 
+export function chatSessionWorkspaceLabel(session: ChatSession): string {
+  if (session.incident) {
+    return (
+      session.incident.workspaceName ||
+      basenameFromPath(session.incident.workspacePath) ||
+      'Unscoped workspace'
+    );
+  }
+  if (session.scope) {
+    return (
+      session.scope.workspaceName ||
+      basenameFromPath(session.scope.workspacePath) ||
+      'Unscoped workspace'
+    );
+  }
+  return session.editorIssue ? 'Editor' : 'Global';
+}
+
+export function chatSessionWorkspaceKey(session: ChatSession): string {
+  if (session.incident?.workspacePath) {
+    return `workspace:${session.incident.workspacePath}`;
+  }
+  if (session.scope?.workspacePath) {
+    return `workspace:${session.scope.workspacePath}`;
+  }
+  return `${chatSessionKind(session)}:${chatSessionWorkspaceLabel(session)}`;
+}
+
+export function chatSessionProjectLabel(session: ChatSession): string | undefined {
+  if (session.incident) {
+    return session.incident.projectName || basenameFromPath(session.incident.projectPath);
+  }
+  if (session.scope) {
+    return session.scope.projectName || basenameFromPath(session.scope.projectPath);
+  }
+  return undefined;
+}
+
 export function chatSessionContextLabel(session: ChatSession): string {
   if (session.editorIssue) {
     const file =
@@ -171,13 +209,9 @@ export function chatSessionContextLabel(session: ChatSession): string {
     return session.editorIssue.languageId ? `${file} · ${session.editorIssue.languageId}` : file;
   }
   if (session.incident) {
-    const scope =
-      session.incident.projectName ||
-      session.incident.workspaceName ||
-      basenameFromPath(session.incident.projectPath) ||
-      basenameFromPath(session.incident.workspacePath) ||
-      'workspace';
-    return `${scope} · ${session.incident.cardLabel ?? session.incident.cardId}`;
+    const workspace = chatSessionWorkspaceLabel(session);
+    const project = chatSessionProjectLabel(session);
+    return project ? `${workspace} / ${project}` : `${workspace} / workspace`;
   }
   if (session.scope) {
     const workspace = session.scope.workspaceName || basenameFromPath(session.scope.workspacePath);

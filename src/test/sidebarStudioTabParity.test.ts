@@ -291,7 +291,9 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(repairPrelude).toContain('Start repair');
     expect(repairPrelude).toContain('Resume repair');
     expect(repairPrelude).toContain('Stop session');
-    expect(repairPrelude).toContain('verify included');
+    expect(repairPrelude).toContain('Review options');
+    expect(repairPrelude).toContain('without your decision');
+    expect(repairPrelude).toContain('verification required');
     expect(repairPrelude).not.toContain('ws-sidebar__repair-avatar');
     expect(repairPrelude).not.toContain('Refresh evidence');
     expect(repairPrelude).not.toContain('ws-sidebar__studio-action-timeline');
@@ -326,6 +328,15 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(secondary).toContain('verifyFailure={visibleStudioVerifyFailureForResult}');
     expect(secondary).toContain('rollbackCommand={visibleStudioRollbackCommandForResult}');
     expect(secondary).toContain('studioIncidentRepairHolds');
+    expect(secondary).toContain('repairHolds: studioIncidentRepairHolds');
+    expect(secondary).toContain("repairStatus: 'review'");
+    expect(secondary).toContain('eventData.requiresUserDecision === true');
+    expect(provider).toContain("event.type === 'session.failed'");
+    expect(provider).toContain('failureData?.requiresUserDecision === true');
+    expect(provider).toContain('? failureData.terminalReason');
+    expect(provider).toContain('terminalFailureData?.requiresUserDecision === true');
+    expect(secondary).toContain("case 'sidebarStudioSessionState':");
+    expect(secondary).toContain('data.requiresUserDecision === true');
     expect(secondary).not.toContain('Studio exhausted the bounded repair strategies');
     const progressParser = read('webview-ui/src/lib/sidebarStudioActionProgress.ts');
     expect(progressParser).toContain("record.nextAction === 'continue-remediation'");
@@ -461,7 +472,8 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(sessionHook).toContain('session.incident?.key');
     const drawer = read('webview-ui/src/sidebar/drawers/ChatToolsDrawer.tsx');
     expect(drawer).toContain('sessionMetaLabel');
-    expect(drawer).toContain('session.incident.cardLabel');
+    expect(drawer).toContain('chatSessionWorkspaceKey');
+    expect(drawer).toContain('groupSessionsByWorkspace');
     expect(drawer).toContain('session.incident.repairStatus');
     expect(drawer).toContain('props.suggestions.length > 0');
     expect(drawer).toContain("mainTab === 'questions' && props.footerActions");
