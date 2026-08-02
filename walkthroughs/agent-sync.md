@@ -1,10 +1,16 @@
 # Sync agent grounding
 
-Agent grounding sync writes the shared handoff so every AI tool works from the same evidence as you:
+Workspai prepares a bounded entry point so supported AI tools can discover the
+owning workspace and query current evidence without loading every file into a
+prompt.
 
-- `AGENTS.md` — the human + agent grounding document at the workspace root.
-- `.rapidkit/reports/INDEX.json` — the index of evidence reports.
+The synchronization refreshes:
 
-It also refreshes the agent context report used by the Workspai chat participant and the **Send to Copilot** handoff.
+- `AGENTS.md` — generated workspace instructions for people and agents;
+- `.workspai/reports/INDEX.json` — the canonical report index;
+- `.workspai/reports/workspace-context-agent.json` — bounded agent context;
+- `.workspai/reports/workspace-skills-index.json` — available workspace skills.
 
-This final step completes once `AGENTS.md` and the reports index both exist. Your workspace is now fully grounded for humans and AI.
+The step completes only when the current workspace owns those artifacts. An
+adopted external project can still use them through its project-to-workspace
+link.

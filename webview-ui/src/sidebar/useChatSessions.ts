@@ -93,21 +93,28 @@ export function useChatSessions(key: StoreKey, idPrefix: string) {
       setSessions((prev) => {
         const found = prev.find((session) => session.sessionId === selectedId);
         if (found) {
-          nextSessionsSnapshot = prev.map((session) =>
-            session.sessionId === selectedId
-              ? {
-                  ...session,
-                  title: input.title || session.title,
-                  mode: input.mode ?? session.mode,
-                  incident: {
-                    ...session.incident,
-                    ...input.incident,
-                    firstSeenAt: session.incident?.firstSeenAt ?? now,
-                    lastSeenAt: now,
-                  },
-                }
-              : session
-          );
+          nextSessionsSnapshot = prev.map((session) => {
+            if (session.sessionId !== selectedId) {
+              return session;
+            }
+            const previousIncident = session.incident;
+            return {
+              ...session,
+              title: input.title || session.title,
+              mode: input.mode ?? session.mode,
+              incident: {
+                ...previousIncident,
+                ...input.incident,
+                repairStatus:
+                  input.incident.repairStatus === 'ready' &&
+                  previousIncident?.blockerSignature === input.incident.blockerSignature
+                    ? (previousIncident?.repairStatus ?? input.incident.repairStatus)
+                    : input.incident.repairStatus,
+                firstSeenAt: previousIncident?.firstSeenAt ?? now,
+                lastSeenAt: now,
+              },
+            };
+          });
           return nextSessionsSnapshot;
         }
         const created: ChatSession = {

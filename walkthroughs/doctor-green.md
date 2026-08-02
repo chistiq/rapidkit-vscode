@@ -1,11 +1,16 @@
-# Run Doctor until it is green
+# Check workspace health
 
-The workspace **doctor** scans your projects for missing dependencies, unhealthy modules, failing probes, and security issues. Results are written to:
+Workspace Doctor checks runtime tools, dependencies, tests, security, and other
+project-specific readiness surfaces. Its current workspace result is written to:
 
 ```
-.rapidkit/reports/doctor-last-run.json
+.workspai/reports/doctor-last-run.json
 ```
 
-The **Workspace Health** view shows a live score. Use **Fix with AI** on any issue node to resolve problems quickly.
+Project Doctor results retain project identity under
+`.workspai/reports/projects/`.
 
-This step completes when the doctor reports a **green** score — zero errors and zero warnings. (Warnings-only stays amber, not green.)
+The **Workspace Health** view distinguishes passed, warning, blocked, missing,
+and stale evidence. Use **Fix with Workspai** to open a scoped Agent repair
+session. A green state requires current evidence with no remaining error or
+warning; command success alone is not enough.

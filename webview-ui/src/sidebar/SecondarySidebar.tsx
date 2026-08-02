@@ -487,7 +487,6 @@ export function SecondarySidebar() {
   const handleSubmitStudioRef = useRef<(task: string, options?: { forceNew?: boolean }) => void>(
     () => undefined
   );
-  const studioAutoStartKeysRef = useRef<Set<string>>(new Set());
   const studioAttemptedRemediationStepsRef = useRef<Map<string, Set<string>>>(new Map());
   const studioMirroredHandoffKeysRef = useRef<Set<string>>(new Set());
   const pendingStudioIncidentSessionRef = useRef<string | null>(null);
@@ -720,36 +719,25 @@ export function SecondarySidebar() {
         if (activatedHandoff) {
           const incidentScope = scopeFromHandoff(activatedHandoff, nextScope);
           setScope(incidentScope);
-          const incidentKey = openStudioIncidentSession(activatedHandoff, incidentScope);
+          openStudioIncidentSession(activatedHandoff, incidentScope);
+          const activatedSessionId = pendingStudioIncidentSessionRef.current;
           studioMirroredHandoffKeysRef.current.add(
             `${activatedHandoff.cardId}:${activatedHandoff.blockerSignature}`
           );
-          studioAutoStartKeysRef.current.add(incidentKey);
           setBlockerHandoff(activatedHandoff);
           setStudioFixApplied(false);
-          setStudioAutoFixBusy(true);
-          startStudioActionProgress(
-            {
-              action: 'auto-fix',
-              status: 'running',
-              phase: 'starting-agent',
-              title: 'Inspecting the blocker',
-              summary:
-                'Studio Agent is reading the governed evidence and will own the repair through verified completion.',
-            },
-            incidentKey
-          );
-          vscode.postMessage(
-            'sidebarStudioAction',
-            {
-              action: 'auto-fix',
-              sessionId: pendingStudioIncidentSessionRef.current ?? undefined,
-              modelId: selectedModelId ?? undefined,
-              scope: scopePayloadFromScope(incidentScope),
-              blockerHandoff: activatedHandoff,
-            },
-            META
-          );
+          setStudioAutoFixBusy(false);
+          if (activatedSessionId) {
+            vscode.postMessage(
+              'sidebarStudioAction',
+              {
+                action: 'agent-status',
+                sessionId: activatedSessionId,
+                blockerHandoff: activatedHandoff,
+              },
+              META
+            );
+          }
         }
         if (data.createMode === 'project') {
           setCreateDrawerFocus({ drawer: 'project', key: Date.now() });
@@ -1040,6 +1028,38 @@ export function SecondarySidebar() {
         }
         break;
       }
+      case 'sidebarStudioSessionState': {
+        const statusSessionId = typeof data.sessionId === 'string' ? data.sessionId.trim() : '';
+        if (!statusSessionId) {
+          break;
+        }
+        if (data.active === true) {
+          setStudioAutoFixBusy(true);
+          studio.setActivity(statusSessionId, 'Continuing the active repair...');
+          break;
+        }
+        setStudioAutoFixBusy(false);
+        const hydratedSession = studio.sessions.find(
+          (session) => session.sessionId === statusSessionId
+        );
+        if (hydratedSession?.status === 'streaming') {
+          studio.failSession(
+            statusSessionId,
+            'This repair is paused. Review the latest evidence, then press Resume repair when you are ready.'
+          );
+          const hydratedIncidentKey = hydratedSession.incident?.key;
+          if (hydratedIncidentKey) {
+            updateStudioIncidentRepairState(hydratedIncidentKey, {
+              repairStatus: 'blocked',
+              lastActionTitle: 'Repair paused',
+              lastActionSummary:
+                'No live Studio process owns this persisted session. Resume only when you choose to continue.',
+              lastActionAt: new Date().toISOString(),
+            });
+          }
+        }
+        break;
+      }
       case 'sidebarStudioAgentPatchRollback': {
         const transactionId =
           typeof data.transactionId === 'string' ? data.transactionId.trim() : '';
@@ -1311,9 +1331,16 @@ export function SecondarySidebar() {
         studio.failSession(failedSessionId, failureMessage);
         const failedIncidentKey = resolveStudioIncidentKeyForSession(failedSessionId);
         if (failedIncidentKey) {
+          if (data.requiresUserDecision === true) {
+            setStudioIncidentRepairHolds((previous) => ({
+              ...previous,
+              [failedIncidentKey]: failureMessage,
+            }));
+          }
           updateStudioIncidentRepairState(failedIncidentKey, {
-            repairStatus: 'blocked',
-            lastActionTitle: 'Repair stopped',
+            repairStatus: data.requiresUserDecision === true ? 'review' : 'blocked',
+            lastActionTitle:
+              data.requiresUserDecision === true ? 'Decision required' : 'Repair stopped',
             lastActionSummary: failureMessage,
             lastActionAt: new Date().toISOString(),
           });
@@ -2138,6 +2165,9 @@ export function SecondarySidebar() {
   const activeStudioRepairHold = visibleStudioIncidentKey
     ? (studioIncidentRepairHolds[visibleStudioIncidentKey] ?? null)
     : null;
+  const activeStudioReviewRequired = Boolean(
+    activeStudioRepairHold || activeStudio?.incident?.repairStatus === 'review'
+  );
   const activeStudioRepairRunning = Boolean(
     studioAutoFixBusy || studioPatchApplyBusy || activeStudioActionProgress?.status === 'running'
   );
@@ -2158,15 +2188,6 @@ export function SecondarySidebar() {
     fixApplied: studioFixApplied,
     autoFixRunning: studioAutoFixBusy || studioPatchApplyBusy,
   });
-  const hasActiveStudioRepairOutput = Boolean(
-    activeStudioRemediationPlan ||
-    activeStudioActionProgress ||
-    activeStudioRepairTimeline.length > 0 ||
-    activeStudioVerifyFailure ||
-    activeStudioReturnState ||
-    activeStudioRollbackCommand ||
-    activeStudioPatchReview
-  );
   const runStudioCommand = (command: string) => {
     vscode.postMessage(
       'sidebarStudioAction',
@@ -2369,6 +2390,20 @@ export function SecondarySidebar() {
       META
     );
   };
+  const stopStudioAgent = () => {
+    if (!studio.activeId) {
+      return;
+    }
+    vscode.postMessage(
+      'sidebarStudioAction',
+      {
+        action: 'agent-cancel',
+        sessionId: studio.activeId,
+        ...(activeBlockerHandoff ? { blockerHandoff: activeBlockerHandoff } : {}),
+      },
+      META
+    );
+  };
   const handleStudioProgressNextAction = (
     action: NonNullable<SidebarStudioActionProgressView['nextAction']>
   ) => {
@@ -2453,43 +2488,6 @@ export function SecondarySidebar() {
       META
     );
   };
-  useEffect(() => {
-    if (activeTab !== 'studio' || assistantMode !== 'agent' || !activeBlockerHandoff) {
-      return;
-    }
-    if (activeBlockerHandoff.studioMode === 'EXPLAIN') {
-      return;
-    }
-    if (
-      studioAutoFixBusy ||
-      studioPatchApplyBusy ||
-      activeStudioPatchReview ||
-      activeStudioReturnState?.status === 'verified-refreshed'
-    ) {
-      return;
-    }
-    const autoStartKey =
-      visibleStudioIncidentKey ??
-      `${activeBlockerHandoff.cardId}:${activeBlockerHandoff.blockerSignature}`;
-    if (studioAutoStartKeysRef.current.has(autoStartKey)) {
-      return;
-    }
-    studioAutoStartKeysRef.current.add(autoStartKey);
-    if (activeBlockerHandoff.studioMode === 'VERIFY_ONLY') {
-      studioVerifyHandoff();
-      return;
-    }
-    studioAutoFix();
-  }, [
-    activeTab,
-    assistantMode,
-    activeBlockerHandoff,
-    activeStudioPatchReview,
-    activeStudioReturnState?.status,
-    studioAutoFixBusy,
-    studioPatchApplyBusy,
-    visibleStudioIncidentKey,
-  ]);
   const studioRunShipLoopStep = (stepId: 'analyze' | 'verify-gates' | 'readiness' | 'archive') => {
     if (!shipLoopContext) {
       return;
@@ -2842,20 +2840,7 @@ export function SecondarySidebar() {
             META
           );
         }}
-        onCancel={() => {
-          if (!studio.activeId) {
-            return;
-          }
-          vscode.postMessage(
-            'sidebarStudioAction',
-            {
-              action: 'agent-cancel',
-              sessionId: studio.activeId,
-              ...(activeBlockerHandoff ? { blockerHandoff: activeBlockerHandoff } : {}),
-            },
-            META
-          );
-        }}
+        onCancel={stopStudioAgent}
         models={models}
         selectedModelId={selectedModelId}
         onSelectModel={handleSelectModel}
@@ -2870,13 +2855,26 @@ export function SecondarySidebar() {
         streamChrome={
           activeBlockerHandoff ? (
             <>
-              {!hasActiveStudioRepairOutput ? (
-                <StudioRepairPrelude
-                  handoff={activeBlockerHandoff}
-                  busy={studioAutoFixBusy}
-                  onRefreshEvidence={refreshStudioRemediationPlan}
-                />
-              ) : null}
+              <StudioRepairPrelude
+                handoff={activeBlockerHandoff}
+                busy={activeStudioRepairRunning}
+                completed={
+                  activeStudio?.incident?.repairStatus === 'done' ||
+                  activeStudioReturnState?.status === 'verified-refreshed'
+                }
+                resumable={
+                  !activeStudioReviewRequired &&
+                  (activeStudio?.status === 'error' ||
+                    activeStudio?.incident?.repairStatus === 'blocked')
+                }
+                reviewRequired={activeStudioReviewRequired}
+                onStart={
+                  activeBlockerHandoff.studioMode === 'VERIFY_ONLY'
+                    ? studioVerifyHandoff
+                    : studioAutoFix
+                }
+                onStop={stopStudioAgent}
+              />
               {activeStudioRepairTimeline.length > 0 ? (
                 <div
                   className="ws-sidebar__studio-repair-timeline"

@@ -2979,12 +2979,23 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     const failure = [...completed.events]
       .reverse()
       .find((event) => event.type === 'session.failed');
-    const failureMessage =
-      failure && typeof (failure.data as { error?: unknown }).error === 'string'
-        ? String((failure.data as { error: string }).error)
+    const failureData =
+      failure && failure.data && typeof failure.data === 'object' && !Array.isArray(failure.data)
+        ? (failure.data as Record<string, unknown>)
         : undefined;
+    const failureMessage =
+      typeof failureData?.error === 'string' ? String(failureData.error) : undefined;
     this._postInlineCreate('sidebarStudioError', {
       sessionId: completed.id,
+      ...(failureData?.requiresUserDecision === true
+        ? {
+            requiresUserDecision: true,
+            terminalReason:
+              typeof failureData.terminalReason === 'string'
+                ? failureData.terminalReason
+                : 'review-required',
+          }
+        : {}),
       error:
         completed.status === 'cancelled'
           ? 'Assistant session was cancelled.'
@@ -4507,6 +4518,16 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       parseStudioBlockerHandoffPayload
     );
     try {
+      if (action === 'agent-status') {
+        const session = sessionId ? this._activeStudioAgentSessions.get(sessionId) : undefined;
+        studioHost.postInlineCreate('sidebarStudioSessionState', {
+          sessionId,
+          cardId: handoff?.cardId,
+          active: session?.snapshot().status === 'running',
+          status: session?.snapshot().status ?? 'paused',
+        });
+        return;
+      }
       if (action === 'agent-steer') {
         const message =
           typeof payloadRecord.message === 'string' ? payloadRecord.message.trim() : '';

@@ -1,5 +1,11 @@
 # RapidKit VS Code Extension - Build Summary
 
+> **Historical archive:** this document describes the original 0.1-era
+> extension and is not current product or release guidance. See
+> [`../README.md`](../README.md), [`../docs/GETTING_STARTED.md`](../docs/GETTING_STARTED.md),
+> and [`RELEASE_NOTES_v0.35.0.md`](RELEASE_NOTES_v0.35.0.md) for the current
+> Workspai architecture and validation surface.
+
 ## 🎉 Project Status: Ready for Testing & Publishing
 
 This document provides a comprehensive overview of the RapidKit VS Code extension that has been built from the create-rapidkit NPM package.

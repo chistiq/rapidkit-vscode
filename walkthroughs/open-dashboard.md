@@ -1,9 +1,14 @@
-# Open the Workspai dashboard
+# Open the Workspai Dashboard
 
-The Workspai dashboard is your single pane of glass for the workspace:
+The Dashboard keeps workspace evidence and actions in explicit sections:
 
-- **Workspace Health** — doctor results, system tools, and governance policy.
-- **Evidence** — the workspace model, impact, verify, and agent-grounding artifacts.
-- **Governance Gate** — run `pipeline --json --strict` and read a clear pass/blocked verdict.
+- **Home** — current workspace and next action;
+- **Run** — lifecycle and governed commands;
+- **Repair** — Doctor findings, blockers, and remediation;
+- **Artifacts** — reports, contracts, receipts, and provenance;
+- **Graph** — relationships, proof paths, changes, and impact;
+- **Project** — selected-project evidence and actions;
+- **Library** — workspaces, kits, modules, and reusable resources.
 
-Everything here is backed by real artifacts under `.rapidkit/reports/`, so what you see is what your AI agents see.
+The surface reads canonical artifacts under `.workspai/reports/`. Missing or
+stale evidence stays visible as missing/stale instead of looking successful.

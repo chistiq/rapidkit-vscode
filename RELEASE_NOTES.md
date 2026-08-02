@@ -2,72 +2,65 @@
 
 ## v0.35.0 (unreleased)
 
-### ✦ Enterprise Dashboard, Incident Studio Redesign, and npm Governance Pipeline
+### Workspace Intelligence, verified goals, and dependable Studio repair
 
-Summary:
-- Ship the next extension release after marketplace **`0.34.0`**, covering nine local commits of deep dashboard, studio, design-system, and AI wiring work — plus npm **`0.34.0`** governance pipeline parity (`rapidkit pipeline`). Extension and npm version lines remain independent.
+This release aligns Workspai for VS Code with CLI 0.52.0 across the primary
+sidebar, Dashboard, Create, Setup, and Assistant.
 
 Highlights:
 
-**Enterprise dashboard**
-- Close **Command → Evidence → Next Step** with host bridges, activity trail, ops chain after workspace create/clone/import, fresh-install onboarding, and Incident Studio handoff from evidence cards.
-- New surfaces: Operate/Evidence sections, `ReleaseHub`, `WorkspaceGovernancePanel`, `CommandCheatsheet`, pending-command UX across governance tiles.
-- Enterprise-minimal UX pass: Guided Evidence shows one current path, view controls use compact `Guided / Workflows / All` labels, and secondary Run commands stay collapsed behind focused primary actions.
-- **Workspai sidebar**: Workspai now contributes a standard VS Code Secondary Sidebar tab, with the Activity Bar Workspai view still available as fallback. The AI surface is intentionally minimal: `Create with AI / Workspace Advisor / Studio`, with a live vertical creation timeline for workspace/project planning, architecture questions, and deep Studio handoff.
+- Dashboard sections are Home, Run, Repair, Artifacts, Graph, Project, and
+  Library, with truthful missing/stale evidence states.
+- Create supports the complete canonical backend, frontend, desktop, and
+  extension kit catalog plus explicit adopt/import flows.
+- Ask, Plan, and Agent share the selected workspace/project scope.
+- Agent accepts ordinary engineering goals as well as blocker cards.
+- Verified goals cover release preparation, non-breaking dependency repair, and
+  test-coverage targets.
+- Studio requires real source change evidence, closes dependency transactions,
+  refreshes the governed Workspace Intelligence loop, and accepts completion
+  only from fresh non-blocking verification.
+- CLI-authored Doctor strategy, typed repair operations, and verification
+  commands reach Studio without being dropped.
+- Project Explorer recognizes current Rust, PHP, desktop, and extension kits.
+- Setup discovers global and version-manager CLI installations and keeps
+  RapidKit Core optional for non-Python workspaces.
+- Recovery-mode creation uses the canonical `.workspai-workspace` marker and
+  an honest synchronization guide.
 
-**Incident Studio**
-- Retire legacy `AIIncidentStudio` monolith; **`IncidentStudioVNext`** with ship loop, CLI surface, session persistence, AI action framework, policy/mutation gates, guided/lite/responsive Wave Y polish.
-- Studio first view is lighter: Command Ribbon is the default entry point, sidebar toolboxes are collapsed by default, audit details open only after user selection, and chat/context/sidebar regions use calmer panel chrome.
-- Card **Fix by Workspai** enters the durable native Studio Agent loop, follows related Workspace Intelligence blockers, uses governed repair tools, and accepts completion only from fresh non-blocking verify evidence.
-- Model routing follows the VS Code/Copilot tool contract: multi-tool turns use automatic tool selection, session-only providers are hidden, and unavailable/empty providers fail over to a callable model.
-- Durable checkpoints no longer stop a live repair at an arbitrary turn count. Generation-aware tool guards prevent repeat audit/inspect churn, and a successful source patch reopens the dependency repair path against the new evidence generation.
-- Native edit calls expose an exact full-file replacement + source-hash schema; the compact timeline names real work (`Audited dependencies`, `Applied source edit`, `Refreshed governed evidence`) and hides internal duplicate attempts.
-- Minimum VS Code is now **1.106.0**, where extension-contributed Secondary Sidebar containers became stable without a proposed API.
+Compatibility:
 
-**Design system**
-- Workspai token layers (`workspai-primitives`, studio chrome, analyze report CSS), theme provider, drift-guard tests, and studio CSS extraction/verify scripts.
-
-**AI & Setup**
-- Creation intent heuristic, analyze report scoping, stable doctor/telemetry wiring; embedded Setup command-center with theme-safe loading; unpinned npx for npm CLI version verify.
-
-**npm governance pipeline** (npm `0.34.0` CLI → extension `0.35.0`)
-- `workspai.workspacePipeline`, `pipeline-last-run.json` evidence card, sidebar/dashboard/studio surfaces.
-
-**Workspace adoption and multi-stack discovery**
-- Extension adoption now calls the canonical npm contract first: `rapidkit adopt --json`.
-- If npm is unavailable, the extension writes schema-aligned fallback metadata (`project.json`, `adopt.json`, `adopt-readiness.json`, `context.json`) and updates the workspace imported/adopted project registry.
-- Adopted frontend/backend projects outside the workspace tree now remain visible across Dashboard, Sidebar, Evidence, and project-scope discovery after refresh.
-
-**Enterprise hardening** (post-audit remediation)
-- **Security**: workspace path boundary enforcement; Incident Studio inline CLI allowlist + `execa` without shell (no free `sh -c`).
-- **Dashboard**: ops chain scoped per workspace; 120s step timeout; contract dispatch failures surface `dashboardCommandFailed` instead of silent no-ops.
-- **Evidence**: strict project-doctor identity for workspace-level reports; bootstrap card always emitted.
-- **Studio**: shared stabilization policy for mutation gates; `incomingMessage` merge and project scope in standalone panel.
-- **Reliability**: coalesced evidence refresh (debounce + single follow-up); pending cards reconcile from activity completion/failure.
-- **Studio stabilization (0.35.0)**: analyze evidence resync in VNext; project-scoped chat brain + command palette open; CLI mutation gate parity for guided commands; session save queue; scope selector guards; ContextPanel AI gate parity; chat error banner; stale host-handler refs fixed.
-- **Release packaging**: `vscode:prepublish` now builds webview assets in production mode; VSIX package verified at `/tmp/workspai-0.35.0.vsix`.
-
-Full detail: [`releases/RELEASE_NOTES_v0.35.0.md`](releases/RELEASE_NOTES_v0.35.0.md) (includes per-commit table).
+- VS Code 1.106.0+
+- Workspai CLI 0.52.0+
+- RapidKit Core 0.6.0 only for Python-backed kits/modules
 
 Validation:
-- `./node_modules/.bin/tsc --noEmit`
-- `corepack npm test` (321 files / 2282 passed / 2 skipped)
-- `node scripts/release-stop-gate.mjs --skip-kpi`
-- `env PATH=/tmp:$PATH ./node_modules/.bin/vsce package --no-dependencies --out /tmp/workspai-0.35.0.vsix`
 
-Release posture: `enterprise-dashboard-studio-and-npm-governance-pipeline`
+- 356 test files passed
+- 2510 tests passed; 2 skipped
+- CLI/extension contract parity passed
+- 172 palette commands synchronized
+- TypeScript host/webview checks passed
+- Production build passed
+
+Full detail:
+[releases/RELEASE_NOTES_v0.35.0.md](releases/RELEASE_NOTES_v0.35.0.md)
+
+Release posture: `workspace-intelligence-and-verified-studio`
 
 ## v0.34.0 (June 10, 2026)
 
 ### ✦ CLI Parity: Infra, Foundation, Project Lifecycle, and Module Maintenance
 
 Summary:
+
 - Close major RapidKit npm CLI gaps inside the Workspai VS Code extension.
 - Add workspace infrastructure orchestration (`infra plan/up/down/status`) with Docker readiness checks and compose file access.
 - Add workspace foundation ensure with safe and force re-sync modes.
 - Expose project build/start/lint/format and module upgrade/diff/checkpoint/rollback/uninstall from the sidebar with guarded UX.
 
 Highlights:
+
 - New **Infrastructure** workspace submenu wraps `rapidkit infra` with optional plan flags, volume-removal confirmation, and compose file open flow.
 - **Foundation Ensure** sits in Run & Release and dispatches `workspace foundation ensure [--force]` with modal guardrails.
 - Project tree now includes build, production start, lint, and format commands aligned with npm lifecycle adapters.
@@ -75,6 +68,7 @@ Highlights:
 - Added focused vitest suites asserting exact terminal command arrays for all new surfaces.
 
 Validation:
+
 - `npm run compile`
 - `npm run lint`
 - `vitest run`
@@ -86,12 +80,14 @@ Release posture: `cli-parity-and-workspace-command-surface`
 ### ✦ .NET Setup Runtime and Enterprise Profile Parity
 
 Summary:
+
 - Promote the extension release to `0.33.0` because `0.32.1` was pushed but not published to the marketplace.
 - Complete `.NET` runtime setup coverage across the VS Code command palette and dashboard setup experience.
 - Add `dotnet-only` profile parity across schemas, completions, hover help, AI creation, command reference, and workspace creation UI.
 - Harden subprocess-based release gate tests and RapidKit CLI fallback tests so CI remains deterministic across operating systems.
 
 Highlights:
+
 - Setup Runtime now includes `.NET` alongside Python, Node.js, Go, and Java.
 - The setup dashboard can detect, verify, and guide installation for `.NET SDK 8+`.
 - Workspace bootstrap profiles now include `dotnet-only`, and polyglot/enterprise copy clearly includes `.NET`.
@@ -99,6 +95,7 @@ Highlights:
 - Drift guards now protect `.NET` and profile parity from silently regressing.
 
 Validation:
+
 - `./node_modules/.bin/tsc --noEmit`
 - `./node_modules/.bin/vitest run`
 - `./node_modules/.bin/eslint src --ext ts --max-warnings 100`
@@ -113,12 +110,14 @@ Release posture: `runtime-profile-parity-and-extension-stabilization`
 ### ✦ Runtime Command Surface Parity and Module Boundary Hardening
 
 Summary:
+
 - Align the Workspai extension with RapidKit npm `0.32.1` command contracts.
 - Add a shared runtime command surface contract so scaffold kits, lifecycle commands, runtime tiers, and module-support boundaries cannot drift silently.
 - Restrict AI module suggestions to FastAPI and NestJS, while clearly guiding Go, Spring Boot, and .NET users toward their native package ecosystems.
 - Update dashboard, setup, command reference, module browser, module details, and AI creation surfaces to the pinned npm wrapper form.
 
 Highlights:
+
 - Extension-host calls now use `npx --yes --package rapidkit rapidkit ...` instead of relying on ambiguous local/global command resolution.
 - FastAPI and NestJS remain module-capable; Go, Spring Boot, and .NET are scaffold/import/runtime-supported but do not expose RapidKit module marketplace suggestions.
 - `.NET` AI creation copy now correctly explains NuGet/native adapter extension paths instead of reusing Spring Boot module text.
@@ -126,6 +125,7 @@ Highlights:
 - Runtime parity tests cover scaffold kit exposure, AI module suggestion boundaries, command snippets, and npm wrapper usage.
 
 Validation:
+
 - `npm run typecheck`
 - `npm run check:parity-snapshot`
 - `vitest run src/test/runtimeCommandSurfaceParity.test.ts src/test/driftGuard.test.ts src/test/platformCapabilities.test.ts src/test/springSupportContracts.test.ts src/test/aiService.test.ts`
@@ -140,6 +140,7 @@ Release posture: `contract-parity-and-extension-stabilization`
 ### ✦ Enterprise Workspai Dashboard and Workspace Contract Release
 
 Summary:
+
 - Redesign the Workspai dashboard as an enterprise command center for governed workspace operations.
 - Add a contract-first workspace graph surface covering services, ports, dependencies, events, and contract file inspection.
 - Align workspace archive, import, export, verify, and handoff flows with the npm workspace archive contract.
@@ -147,6 +148,7 @@ Summary:
 - Refresh README and media documentation with the new dashboard, modal, module, and contract registry screenshots.
 
 Highlights:
+
 - Dashboard now separates workspace operations, project build actions, share/handoff actions, recent workspaces, templates, and module browsing with clearer scope boundaries.
 - Project actions now focus on project-level operations and avoid showing workspace-local absolute paths in user-facing module surfaces.
 - Added resilient webview error handling to prevent blank dashboard failures from hiding actionable recovery paths.
@@ -154,6 +156,7 @@ Highlights:
 - Cleared npm audit findings with safe dependency updates and targeted transitive overrides for vulnerable test-cli dependencies.
 
 Validation:
+
 - `./node_modules/.bin/tsc --noEmit` passed during the release preparation window.
 - `node esbuild.js` passed in `webview-ui`.
 - `npm audit --json` reports 0 vulnerabilities.
@@ -164,12 +167,14 @@ Validation:
 ### ✦ Stable Analyze Integration and Incident Studio Reuse
 
 Summary:
+
 - Move analyze lifecycle out of the redesign-only Incident Studio path and into the stable WelcomePanel / AIIncidentStudio experience.
 - Add a reusable modular analyze helper with stable message handlers: `runAnalyze`, `loadReport`, and `revealEvidence`.
 - Surface a dedicated `Workspace Live Diagnosis` analyze card with run-analyze guidance and retry support when analysis output is missing.
 - Improve user flow so missing analyze data now prompts the user to run `rapidkit analyze` rather than leaving an empty state.
 
 Highlights:
+
 - Commit range included in this release (recent commits): `59aa208..HEAD` (see releases/RELEASE_NOTES_v0.31.0.md for details)
 
 ## v0.30.0 (May 27, 2026)
@@ -177,6 +182,7 @@ Highlights:
 ### ✦ Studio, AI, Incident & Workspace Hardening
 
 Summary:
+
 - Clarify structured AI response cards in Studio and improve card semantics.
 - Improve chat clarity, stream timeout handling, and add an output quality gate.
 - Surface a modal evidence contract used by incident/debug flows.
@@ -186,19 +192,21 @@ Summary:
 - Migrate organization and documentation domain references to rapidkitlabs / www.workspai.com.
 
 Highlights:
-- Commit range included in this release (recent 8 commits): `ce4ee8b..59aa208` (see releases/RELEASE_NOTES_v0.30.0.md for details)
 
+- Commit range included in this release (recent 8 commits): `ce4ee8b..59aa208` (see releases/RELEASE_NOTES_v0.30.0.md for details)
 
 ## v0.29.0 (May 19, 2026)
 
 ### ✦ AI Stability And Enterprise Typing Hardening Release
 
 Summary:
+
 - This release packages the full git range from `v0.28.0` to current `HEAD` for publication as `0.29.0`.
 - Focus is strict runtime reliability and enterprise typing consistency across AI and command execution paths.
 - No expansion-oriented feature risk accepted in this release window.
 
 Highlights:
+
 - **Range included in this release** (`v0.28.0..HEAD`):
   - `e68f54e` refactor(stabilization): inline ui preference workspace path resolver
   - `8c3bd0b` refactor(stabilization): inline workspace project discovery deps wrapper
@@ -235,6 +243,7 @@ Highlights:
   - added `src/ui/panels/welcomePanelChatBrainTracking.ts` for panel-level tracking support
 
 Quality and validation:
+
 - `npm run compile` passed.
 - `npm run test` passed with all test files green.
 - Lint remains warning-only for known backlog debt outside this release scope.
@@ -246,11 +255,13 @@ Release posture: `stabilization-only`
 ### ✦ Consolidated Stabilization & Feature Consolidation Release
 
 Summary:
+
 - This release consolidates a broad set of important stabilization, safety, and integration changes applied since `v0.29.0`. These are not "minor" editorial tweaks — they are deliberate stabilizations, safeguards, contract hardenings, and host/webview integrations that materially improve AI behavior, reliability, and governance.
 - Notable surface areas include AI runtime lifecycle hardening, memory-policy contract enforcement, doctor/provenance reliability, incident verification gates, and the new opt-in Incident Studio integration (kept opt-in to avoid impacting the stable AI baseline).
 - Also includes a localization cleanup and one deterministic textual ordering alignment to preserve contract tests (no functional change to runtime behavior).
 
 Highlights:
+
 - AI runtime and streaming hardening: deterministic model selection, safer fallback behaviors, stricter timeout and cancellation handling, duplicate stream-done prevention, and more defensive message parsing across host and webview flows.
 - Memory and governance: local-processing memory policy profile surfaced and write-access contracts enforced end-to-end, memory influence audit timeline linked to decision artifacts.
 - Incident Studio: new fullscreen redesign implemented as an opt-in webview (feature-flagged via `localStorage`). The redesign is shipped in-tree but does not alter existing AI command routing unless explicitly invoked.
@@ -258,6 +269,7 @@ Highlights:
 - CI & release governance: release-stop gate integration, parity snapshot checks, and smoke-matrix validation tightened for enterprise release posture.
 
 Audit & validation:
+
 - Full source-level audit: `npm run compile` and `tsc --noEmit` passed.
 - Full test suite: `npx vitest run` — all tests passed (1013/1013) after a single safe textual ordering fix to satisfy a contract test.
 - ESLint: warnings only (no blocking errors).
@@ -293,11 +305,13 @@ Please review these commit-level notes; let me know if you want these committed 
 ### ✦ Enterprise E1/E2 Stabilization and Policy Boundaries Release
 
 Summary:
+
 - This release includes the entire commit range from `v0.27.3` to current `HEAD`.
 - Delivers E1 execution hardening and E2.1-E2.5 private-brain and policy-boundary slices.
 - Strengthens release governance with open-issue severity enforcement in CI release-stop flows.
 
 Highlights:
+
 - **Range included in this release** (`v0.27.3..HEAD`):
   - `7ebe77c` chore(ci): harden release gate with open-issue severity enforcement
   - `7111314` feat(e1): add versioned cross-service impact score contract v1
@@ -338,6 +352,7 @@ Release posture: `stabilization-only`
 ### ✦ Enterprise Stability Hardening Patch
 
 Summary:
+
 - Hardens Incident Studio trust semantics: no false "verification passed" claims under NO-GO or blocked verify gates.
 - Makes guided flow deterministic and lower-noise (next + verify focus, dense action board hidden in guided mode).
 - Expands stabilization KPI model with actionable anti-false-positive signals.
@@ -346,6 +361,7 @@ Summary:
 - Adds parity snapshot sync/check automation and workspace boundary-safe registry fallback.
 
 Highlights:
+
 - **Incident Studio behavior and policy (webview + host)**
   - `webview-ui/src/components/AIIncidentStudio.tsx`:
     - verify-claim guard (`verificationClaimGuardReason`) added and enforced
@@ -416,12 +432,14 @@ Release posture: `stabilization-only`
 ### ✦ Workspace Operations And Incident Reliability Patch
 
 Summary:
+
 - Ships workspace stage-run command suite and AI Workspace Command Center.
 - Introduces project-scoped doctor command and incident wiring for project/workspace doctor actions.
 - Hardens doctor telemetry envelope and timeline rendering in Incident Studio.
 - Redacts path-sensitive report outputs and aligns command references to canonical `npx rapidkit` syntax.
 
 Highlights:
+
 - Added commands:
   - `Workspai: Workspace Run: Select Stage`
   - `Workspai: Workspace Run: Init`
@@ -466,6 +484,7 @@ Release posture: `stabilization-only`
 ### ✦ Stability & Strategic Alignment Release
 
 **Summary:** Completes four independent hardening initiatives from the v0.25.0 session:
+
 1. Browser smoke test action — new Incident Studio action type for AI-guided web application verification, aligned with VS Code 1.119 browser agent tools
 2. Auto model selection regression fix — preserves literal `'auto'` string through all normalize helpers so Auto model UI state doesn't collapse
 3. Smart rate-limit fallback — one-shot intelligent fallback on 429/quota/overloaded errors with cache reset before first streamed chunk
@@ -482,11 +501,13 @@ Release posture: `stabilization-only`
 New `browser-smoke-test` action type in Incident Studio enables AI-guided smoke testing of web applications. Opens project's dev server in VS Code simple browser and generates structured verification checklist:
 
 **User trigger keywords:**
+
 - `browser smoke`, `smoke test`, `ui smoke`
 - `browser test`, `browser check`
 - `verify ui`, `verify browser`, `open browser`
 
 **AI generates report with:**
+
 1. Smoke result (PASS/FAIL)
 2. Verified endpoints (URL → HTTP status → pass/fail)
 3. Detected issues
@@ -535,9 +556,11 @@ Fixed v0.25.0 regression where literal string `'auto'` was being normalized to n
 Implements intelligent one-shot fallback on retryable model errors (429, rate limit, quota, service unavailable, overloaded, busy):
 
 **Error detection:**
+
 - `isRetryableModelRequestError(err)`: regex matches 429, rate limit, quota, unavailable, overloaded, busy, service unavailable, model unavailable
 
 **Fallback flow:**
+
 1. `selectFallbackModelForFailure(failedModel)`: resets model selection cache and calls `selectModelAuto()` for alternative
 2. If auto-select picks same model, falls back to raw model registry for different option
 3. `emittedFromPrimary` guard: only retries if zero chunks streamed from primary (prevents duplicate partial responses)
@@ -577,6 +600,7 @@ Improved readability of Maximize and Lite/Full view toggle buttons in header:
 ### Files Changed
 
 **v0.25.0 hot-fixes + browser-smoke-test action:**
+
 - src/core/aiService.ts — smart fallback + normalize helper
 - src/ui/panels/incidentStudioPromptPolicy.ts — browser-smoke-test allowlist + policy
 - src/ui/panels/welcomePanel.ts — model normalization + routing + inline query builder
@@ -677,64 +701,63 @@ Improved readability of Maximize and Lite/Full view toggle buttons in header:
 
 #### Fixed
 
-- ⏱️ **Workspace Health not showing on reload** — fixed initial workspace path not being passed to the provider because `workspaceSelected` event only fires when workspace *changes*, not on first load. Now explicitly seeded after `workspaceExplorer.refresh()` completes.
+- ⏱️ **Workspace Health not showing on reload** — fixed initial workspace path not being passed to the provider because `workspaceSelected` event only fires when workspace _changes_, not on first load. Now explicitly seeded after `workspaceExplorer.refresh()` completes.
 - 🗂️ **Stale health data after workspace switch** — fixed by always re-reading evidence from disk in `getChildren` instead of relying on in-memory cache
 
 ### 🧪 Contract Regression Log (v0.16.0)
 
-| Area | Expected Contract | Status | Notes |
-|------|-------------------|--------|-------|
-| doctor workspace | `npx rapidkit doctor workspace` | ✅ | Rerun button uses terminal at workspace CWD |
-| doctor fix | `npx rapidkit doctor workspace --fix` | ✅ | Auto-fix button aligned |
-| add module | `npx rapidkit add module <slug>` | ✅ | Shown in modal before execution |
-| evidence file path | `<workspace>/.rapidkit/reports/doctor-last-run.json` | ✅ | Provider reads this exact path |
-
+| Area               | Expected Contract                                    | Status | Notes                                       |
+| ------------------ | ---------------------------------------------------- | ------ | ------------------------------------------- |
+| doctor workspace   | `npx rapidkit doctor workspace`                      | ✅     | Rerun button uses terminal at workspace CWD |
+| doctor fix         | `npx rapidkit doctor workspace --fix`                | ✅     | Auto-fix button aligned                     |
+| add module         | `npx rapidkit add module <slug>`                     | ✅     | Shown in modal before execution             |
+| evidence file path | `<workspace>/.rapidkit/reports/doctor-last-run.json` | ✅     | Provider reads this exact path              |
 
 ## 📋 Version History
 
-| Version | Release Date | Highlights |
-|---------|--------------|-----------|
+| Version                                      | Release Date | Highlights                                                                                                             |
+| -------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------- |
 | [v0.28.0](releases/RELEASE_NOTES_v0.28.0.md) | May 13, 2026 | ✦ E1/E2 enterprise stabilization (E2.1-E2.5), memory-policy boundaries, audit timeline linkage, release-gate hardening |
-| [v0.27.3](releases/RELEASE_NOTES_v0.27.3.md) | May 12, 2026 | ✦ Incident Studio trust hardening, deterministic verify/release gating, parity snapshot and CI guardrails |
-| [v0.27.2](releases/RELEASE_NOTES_v0.27.2.md) | May 10, 2026 | ✦ Setup panel disposal safety, guarded postMessage flow, webview lifecycle stability |
-| [v0.27.1](releases/RELEASE_NOTES_v0.27.1.md) | May 10, 2026 | ✦ Workspace run suite, AI command center, project-scoped doctor routing and telemetry hardening |
-| [v0.27.0](releases/RELEASE_NOTES_v0.27.0.md) | May 8, 2026 | ✦ Routing/module-graph/BYOP stabilization, phase-gate alignment, enterprise gate fixture hardening |
-| [v0.26.0](releases/RELEASE_NOTES_v0.26.0.md) | May 8, 2026 | ✦ Browser smoke-test action, model-selection regression fix, smart rate-limit fallback |
-| [v0.25.0](releases/RELEASE_NOTES_v0.25.0.md) | May 7, 2026 | ✦ S01-S05 stabilization loop completion with false-positive prevention telemetry breakdowns |
-| [v0.24.1](releases/RELEASE_NOTES_v0.24.1.md) | May 6, 2026 | ✦ Incident Studio UX polish, 🎛️ AI dashboard refresh, 📚 README + quick-fixes sync |
-| [v0.24.0](releases/RELEASE_NOTES_v0.24.0.md) | May 5, 2026 | ✦ decision clarity loop closure, ✅ enterprise readiness gates, 🧪 artifact criteria coverage |
-| [v0.19.1](releases/RELEASE_NOTES_v0.19.1.md) | Apr 19, 2026 | ✦ toolchain reliability, 🐹 Go context clarity, 🧭 Workspai positioning sync |
-| [v0.18.0](releases/RELEASE_NOTES_v0.18.0.md) | Apr 17, 2026 | ✦ AI stability hardening, richer context extraction, stronger prompt safety |
-| [v0.17.1](releases/RELEASE_NOTES_v0.17.1.md) | Apr 17, 2026 | ⚡ Instant sidebar render — two-phase async loading for WORKSPACES panel |
-| [v0.17.0](releases/RELEASE_NOTES_v0.17.0.md) | Apr 16, 2026 | ✦ AI Assistant, Doctor Fix with AI, Code Actions, minimizable modal |
-| [v0.15.0](releases/RELEASE_NOTES_v0.15.0.md) | Feb 27, 2026 | 🚀 platform-safe command layer, 🪟 tool-aware workspace modal, ⚡ workspace list performance, 🩺 doctor path clarity |
-| [v0.14.0](releases/RELEASE_NOTES_v0.14.0.md) | Feb 25, 2026 | 🎯 Workspace-vs-project correctness, 👁️ persisted setup toggle, 🌐 example link/clone fixes, 🏷️ profile tags |
-| [v0.13.0](releases/RELEASE_NOTES_v0.13.0.md) | Feb 21, 2026 | 🐹 Go framework support, 🪟 Workspace modal routing, 🔧 @latest fix, 🚫 Modules disabled for Go |
-| [v0.12.0](releases/RELEASE_NOTES_v0.12.0.md) | Feb 15, 2026 | 🪟 Module details modal, 🧭 workspace-first CLI resolution, 🔄 post-install refresh |
-| [v0.11.0](releases/RELEASE_NOTES_v0.11.0.md) | Feb 14, 2026 | 🌐 Dynamic Examples, 🎨 Kit Selection, 📦 Workspace Export/Import |
-| [v0.10.0](releases/RELEASE_NOTES_v0.10.0.md) | Feb 12, 2026 | 🚀 Project Actions, 🎯 Smart Browser, 📡 Port Detection |
-| [v0.9.0](releases/RELEASE_NOTES_v0.9.0.md) | Feb 10, 2026 | 🎭 Modal system, ⚡ Smart caching, 📱 Responsive design |
-| [v0.8.0](releases/RELEASE_NOTES_v0.8.0.md) | Feb 9, 2026 | 🎨 Workspace cards redesign, Dynamic version display, Project statistics |
-| [v0.7.0](releases/RELEASE_NOTES_v0.7.0.md) | Feb 6, 2026 | 🩺 Workspace health check, Setup status panel, Diagnostics integration |
-| [v0.6.1](releases/RELEASE_NOTES_v0.6.1.md) | Feb 3, 2026 | 🛠️ Fixes & polish: setup stability, module copy commands, detection improvements |
-| [v0.6.0](releases/RELEASE_NOTES_v0.6.0.md) | Feb 3, 2026 | 🎯 Module Browser, Setup Wizard, Package Manager Selection |
-| [v0.5.2](releases/RELEASE_NOTES_v0.5.2.md) | Feb 2, 2026 | 🔧 NPM caching fix, Standalone mode, Recent workspaces |
-| [v0.5.1](releases/RELEASE_NOTES_v0.5.1.md) | Feb 2, 2026 | 📝 Documentation translation, Consistency improvements |
-| [v0.5.0](releases/RELEASE_NOTES_v0.5.0.md) | Feb 1, 2026 | 🐍 Python Core bridge, Workspace registry integration |
-| [v0.4.7](releases/RELEASE_NOTES_v0.4.7.md) | Jan 23, 2026 | 🐛 Bug fixes, Dependency updates, Security patches |
-| [v0.4.6](releases/RELEASE_NOTES_v0.4.6.md) | Jan 1, 2026 | 🎯 Poetry smart detection, Update notifications |
-| [v0.4.5](releases/RELEASE_NOTES_v0.4.5.md) | Dec 23, 2025 | ⚡ Project quick actions, No workspace switching |
-| [v0.4.4](releases/RELEASE_NOTES_v0.4.4.md) | Dec 22, 2025 | 🩺 Doctor npm check, Dynamic versions |
-| [v0.4.3](releases/RELEASE_NOTES_v0.4.3.md) | Dec 12, 2025 | 📚 Module explorer, UI enhancements |
-| [v0.4.2](releases/RELEASE_NOTES_v0.4.2.md) | Dec 5, 2025 | 📝 Logging commands, Marketplace improvements |
-| [v0.4.1](releases/RELEASE_NOTES_v0.4.1.md) | Dec 4, 2025 | 📖 Documentation update, README rewrite |
-| [v0.4.0](releases/RELEASE_NOTES_v0.4.0.md) | Dec 3, 2025 | 🎯 Smart location detection, npm migration |
-| [v0.3.1](releases/RELEASE_NOTES_v0.3.1.md) | Dec 3, 2025 | 🐛 Bug fixes |
-| [v0.3.0](releases/RELEASE_NOTES_v0.3.0.md) | Dec 2, 2025 | ✨ New features |
-| [v0.1.3](releases/RELEASE_NOTES_v0.1.3.md) | Nov 2025 | 🔧 Improvements |
-| [v0.1.2](releases/RELEASE_NOTES_v0.1.2.md) | Nov 2025 | 🐛 Bug fixes |
-| [v0.1.1](releases/RELEASE_NOTES_v0.1.1.md) | Nov 2025 | ✏️ Minor updates |
-| [v0.1.0](releases/RELEASE_NOTES_v0.1.0.md) | Nov 2025 | 🎉 Initial release |
+| [v0.27.3](releases/RELEASE_NOTES_v0.27.3.md) | May 12, 2026 | ✦ Incident Studio trust hardening, deterministic verify/release gating, parity snapshot and CI guardrails              |
+| [v0.27.2](releases/RELEASE_NOTES_v0.27.2.md) | May 10, 2026 | ✦ Setup panel disposal safety, guarded postMessage flow, webview lifecycle stability                                   |
+| [v0.27.1](releases/RELEASE_NOTES_v0.27.1.md) | May 10, 2026 | ✦ Workspace run suite, AI command center, project-scoped doctor routing and telemetry hardening                        |
+| [v0.27.0](releases/RELEASE_NOTES_v0.27.0.md) | May 8, 2026  | ✦ Routing/module-graph/BYOP stabilization, phase-gate alignment, enterprise gate fixture hardening                     |
+| [v0.26.0](releases/RELEASE_NOTES_v0.26.0.md) | May 8, 2026  | ✦ Browser smoke-test action, model-selection regression fix, smart rate-limit fallback                                 |
+| [v0.25.0](releases/RELEASE_NOTES_v0.25.0.md) | May 7, 2026  | ✦ S01-S05 stabilization loop completion with false-positive prevention telemetry breakdowns                            |
+| [v0.24.1](releases/RELEASE_NOTES_v0.24.1.md) | May 6, 2026  | ✦ Incident Studio UX polish, 🎛️ AI dashboard refresh, 📚 README + quick-fixes sync                                     |
+| [v0.24.0](releases/RELEASE_NOTES_v0.24.0.md) | May 5, 2026  | ✦ decision clarity loop closure, ✅ enterprise readiness gates, 🧪 artifact criteria coverage                          |
+| [v0.19.1](releases/RELEASE_NOTES_v0.19.1.md) | Apr 19, 2026 | ✦ toolchain reliability, 🐹 Go context clarity, 🧭 Workspai positioning sync                                           |
+| [v0.18.0](releases/RELEASE_NOTES_v0.18.0.md) | Apr 17, 2026 | ✦ AI stability hardening, richer context extraction, stronger prompt safety                                            |
+| [v0.17.1](releases/RELEASE_NOTES_v0.17.1.md) | Apr 17, 2026 | ⚡ Instant sidebar render — two-phase async loading for WORKSPACES panel                                               |
+| [v0.17.0](releases/RELEASE_NOTES_v0.17.0.md) | Apr 16, 2026 | ✦ AI Assistant, Doctor Fix with AI, Code Actions, minimizable modal                                                    |
+| [v0.15.0](releases/RELEASE_NOTES_v0.15.0.md) | Feb 27, 2026 | 🚀 platform-safe command layer, 🪟 tool-aware workspace modal, ⚡ workspace list performance, 🩺 doctor path clarity   |
+| [v0.14.0](releases/RELEASE_NOTES_v0.14.0.md) | Feb 25, 2026 | 🎯 Workspace-vs-project correctness, 👁️ persisted setup toggle, 🌐 example link/clone fixes, 🏷️ profile tags           |
+| [v0.13.0](releases/RELEASE_NOTES_v0.13.0.md) | Feb 21, 2026 | 🐹 Go framework support, 🪟 Workspace modal routing, 🔧 @latest fix, 🚫 Modules disabled for Go                        |
+| [v0.12.0](releases/RELEASE_NOTES_v0.12.0.md) | Feb 15, 2026 | 🪟 Module details modal, 🧭 workspace-first CLI resolution, 🔄 post-install refresh                                    |
+| [v0.11.0](releases/RELEASE_NOTES_v0.11.0.md) | Feb 14, 2026 | 🌐 Dynamic Examples, 🎨 Kit Selection, 📦 Workspace Export/Import                                                      |
+| [v0.10.0](releases/RELEASE_NOTES_v0.10.0.md) | Feb 12, 2026 | 🚀 Project Actions, 🎯 Smart Browser, 📡 Port Detection                                                                |
+| [v0.9.0](releases/RELEASE_NOTES_v0.9.0.md)   | Feb 10, 2026 | 🎭 Modal system, ⚡ Smart caching, 📱 Responsive design                                                                |
+| [v0.8.0](releases/RELEASE_NOTES_v0.8.0.md)   | Feb 9, 2026  | 🎨 Workspace cards redesign, Dynamic version display, Project statistics                                               |
+| [v0.7.0](releases/RELEASE_NOTES_v0.7.0.md)   | Feb 6, 2026  | 🩺 Workspace health check, Setup status panel, Diagnostics integration                                                 |
+| [v0.6.1](releases/RELEASE_NOTES_v0.6.1.md)   | Feb 3, 2026  | 🛠️ Fixes & polish: setup stability, module copy commands, detection improvements                                       |
+| [v0.6.0](releases/RELEASE_NOTES_v0.6.0.md)   | Feb 3, 2026  | 🎯 Module Browser, Setup Wizard, Package Manager Selection                                                             |
+| [v0.5.2](releases/RELEASE_NOTES_v0.5.2.md)   | Feb 2, 2026  | 🔧 NPM caching fix, Standalone mode, Recent workspaces                                                                 |
+| [v0.5.1](releases/RELEASE_NOTES_v0.5.1.md)   | Feb 2, 2026  | 📝 Documentation translation, Consistency improvements                                                                 |
+| [v0.5.0](releases/RELEASE_NOTES_v0.5.0.md)   | Feb 1, 2026  | 🐍 Python Core bridge, Workspace registry integration                                                                  |
+| [v0.4.7](releases/RELEASE_NOTES_v0.4.7.md)   | Jan 23, 2026 | 🐛 Bug fixes, Dependency updates, Security patches                                                                     |
+| [v0.4.6](releases/RELEASE_NOTES_v0.4.6.md)   | Jan 1, 2026  | 🎯 Poetry smart detection, Update notifications                                                                        |
+| [v0.4.5](releases/RELEASE_NOTES_v0.4.5.md)   | Dec 23, 2025 | ⚡ Project quick actions, No workspace switching                                                                       |
+| [v0.4.4](releases/RELEASE_NOTES_v0.4.4.md)   | Dec 22, 2025 | 🩺 Doctor npm check, Dynamic versions                                                                                  |
+| [v0.4.3](releases/RELEASE_NOTES_v0.4.3.md)   | Dec 12, 2025 | 📚 Module explorer, UI enhancements                                                                                    |
+| [v0.4.2](releases/RELEASE_NOTES_v0.4.2.md)   | Dec 5, 2025  | 📝 Logging commands, Marketplace improvements                                                                          |
+| [v0.4.1](releases/RELEASE_NOTES_v0.4.1.md)   | Dec 4, 2025  | 📖 Documentation update, README rewrite                                                                                |
+| [v0.4.0](releases/RELEASE_NOTES_v0.4.0.md)   | Dec 3, 2025  | 🎯 Smart location detection, npm migration                                                                             |
+| [v0.3.1](releases/RELEASE_NOTES_v0.3.1.md)   | Dec 3, 2025  | 🐛 Bug fixes                                                                                                           |
+| [v0.3.0](releases/RELEASE_NOTES_v0.3.0.md)   | Dec 2, 2025  | ✨ New features                                                                                                        |
+| [v0.1.3](releases/RELEASE_NOTES_v0.1.3.md)   | Nov 2025     | 🔧 Improvements                                                                                                        |
+| [v0.1.2](releases/RELEASE_NOTES_v0.1.2.md)   | Nov 2025     | 🐛 Bug fixes                                                                                                           |
+| [v0.1.1](releases/RELEASE_NOTES_v0.1.1.md)   | Nov 2025     | ✏️ Minor updates                                                                                                       |
+| [v0.1.0](releases/RELEASE_NOTES_v0.1.0.md)   | Nov 2025     | 🎉 Initial release                                                                                                     |
 
 ---
 

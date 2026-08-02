@@ -54,6 +54,24 @@ export async function runStudioActiveBlockerRecovery(input: {
     nextAction?: string;
   }> = [];
   let unresolvedDependencyProjects: string[] = [];
+  const safeFixUnavailableProjects: string[] = [];
+  const changedDependencyProjects = new Set<string>();
+  const changedDependencyPaths = new Set<string>();
+  const recordDependencyMutation = (projectName: string, result: StudioAgentToolResult): void => {
+    if (result.changed !== true) {
+      return;
+    }
+    changedDependencyProjects.add(projectName);
+    const output = outputRecord(result);
+    for (const value of [
+      ...(Array.isArray(output?.changedPaths) ? output.changedPaths : []),
+      ...(Array.isArray(output?.changedFiles) ? output.changedFiles : []),
+    ]) {
+      if (typeof value === 'string' && value.trim()) {
+        changedDependencyPaths.add(value.replace(/\\/g, '/'));
+      }
+    }
+  };
 
   if (dependencyIncident && input.dependencyProjectNames.length > 0) {
     let dependencySourceChanged = false;
@@ -88,12 +106,26 @@ export async function runStudioActiveBlockerRecovery(input: {
         continue;
       }
       if (inspection.changed === true) {
+        recordDependencyMutation(projectName, inspection);
         dependencySourceChanged ||= inspection.changed === true;
         continue;
       }
       const candidates = recordArray(inspectionOutput?.upgradeCandidates);
       if (!inspection.ok) {
         unresolvedProjects.push(projectName);
+        continue;
+      }
+
+      const blockedCandidates = recordArray(inspectionOutput?.blockedCandidates);
+      if (
+        candidates.length === 0 &&
+        blockedCandidates.length > 0 &&
+        ['general-source-repair', 'review-required', 'no-safe-upgrade'].includes(
+          String(inspectionOutput?.nextAction ?? '')
+        )
+      ) {
+        unresolvedProjects.push(projectName);
+        safeFixUnavailableProjects.push(projectName);
         continue;
       }
 
@@ -107,6 +139,7 @@ export async function runStudioActiveBlockerRecovery(input: {
         result: repair,
       });
       if (repair.changed === true) {
+        recordDependencyMutation(projectName, repair);
         dependencySourceChanged = true;
         continue;
       }
@@ -133,6 +166,7 @@ export async function runStudioActiveBlockerRecovery(input: {
             capability: `upgrade-dependency-security:${projectName}:${candidate.packageName}`,
             result: upgrade,
           });
+          recordDependencyMutation(projectName, upgrade);
           projectUpgraded ||= upgrade.changed === true;
         }
         if (projectUpgraded) {
@@ -154,6 +188,8 @@ export async function runStudioActiveBlockerRecovery(input: {
           recoveryPath: 'dependency-security',
           observations,
           processedProjects: [...input.dependencyProjectNames],
+          projectNames: [...changedDependencyProjects],
+          changedPaths: [...changedDependencyPaths],
           clearedProjects,
           unresolvedProjects,
           nextAction: 'workspaceIntelligenceChain',
@@ -174,6 +210,36 @@ export async function runStudioActiveBlockerRecovery(input: {
           unresolvedProjects: [],
           nextAction: 'verify-blocker',
         },
+      };
+    }
+    if (
+      unresolvedProjects.length > 0 &&
+      unresolvedProjects.every((projectName) => safeFixUnavailableProjects.includes(projectName))
+    ) {
+      return {
+        ok: false,
+        changed: false,
+        evidenceGeneration: input.evidenceGeneration,
+        blockerSignature: input.blockerSignature,
+        output: {
+          recoveryPath: 'dependency-security',
+          observations,
+          processedProjects: [...input.dependencyProjectNames],
+          clearedProjects,
+          unresolvedProjects,
+          dependencyDiagnostics,
+          nextAction: 'review-required',
+          terminalReason: 'safe-fix-unavailable',
+          requiresUserDecision: true,
+          recommendedActions: [
+            'Review an explicit dependency replacement or compatible migration.',
+            'Record a time-bounded policy exception when the residual risk is accepted.',
+            'Wait for an upstream patch and rerun Doctor before release.',
+          ],
+        },
+        error:
+          `No compatible non-breaking remediation is currently available for ${unresolvedProjects.length} affected project(s). ` +
+          'Studio paused before applying a downgrade, force install, or breaking dependency change.',
       };
     }
   }

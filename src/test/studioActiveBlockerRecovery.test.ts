@@ -34,10 +34,13 @@ describe('Studio active blocker recovery', () => {
         upgradeCandidates: [],
       },
     }));
-    const repairDependencySecurity = vi.fn(async () => ({
+    const repairDependencySecurity = vi.fn(async (input: { projectName?: string }) => ({
       ok: true,
       changed: true,
-      output: { nextAction: 'inspect-dependency-security' },
+      output: {
+        changedFiles: [`${input.projectName}/package-lock.json`],
+        nextAction: 'inspect-dependency-security',
+      },
     }));
     const inspectRemediationPlan = vi.fn(async () => ({
       ok: false,
@@ -63,6 +66,8 @@ describe('Studio active blocker recovery', () => {
       output: {
         recoveryPath: 'dependency-security',
         processedProjects: ['polyglot-api', 'polyglot-app'],
+        projectNames: ['polyglot-api', 'polyglot-app'],
+        changedPaths: ['polyglot-api/package-lock.json', 'polyglot-app/package-lock.json'],
         unresolvedProjects: [],
         nextAction: 'workspaceIntelligenceChain',
       },
@@ -199,7 +204,7 @@ describe('Studio active blocker recovery', () => {
     });
   });
 
-  it('preserves source candidates and audit diagnostics when accelerators delegate to source repair', async () => {
+  it('stops before provider calls when every audit candidate requires a breaking decision', async () => {
     const inspectDependencySecurity = vi.fn(async (input: { projectName?: string }) => ({
       ok: true,
       output: {
@@ -246,14 +251,16 @@ describe('Studio active blocker recovery', () => {
       }),
     });
 
+    expect(repairDependencySecurity).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       ok: false,
       changed: false,
       output: {
-        recoveryPath: 'general-source-repair',
-        nextAction: 'general-source-repair',
+        recoveryPath: 'dependency-security',
+        nextAction: 'review-required',
+        terminalReason: 'safe-fix-unavailable',
+        requiresUserDecision: true,
         unresolvedProjects: ['polyglot-app'],
-        sourceCandidates: ['polyglot-app/package.json', 'polyglot-app/package-lock.json'],
         dependencyDiagnostics: [
           expect.objectContaining({
             projectName: 'polyglot-app',
@@ -263,5 +270,6 @@ describe('Studio active blocker recovery', () => {
         ],
       },
     });
+    expect(result.error).toContain('No compatible non-breaking remediation');
   });
 });

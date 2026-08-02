@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Planned as extension **0.35.0** (after marketplace **0.34.0**). Aligns with RapidKit **npm** `0.34.0` governance CLI where noted; extension and npm version lines are independent.
+Planned as extension **0.35.0**, aligned with Workspai CLI **0.52.0+**.
+
+Current release scope:
+
+- Dashboard sections: Home, Run, Repair, Artifacts, Graph, Project, and Library.
+- Canonical create, adopt, and import flows across all currently available kits.
+- Assistant modes: Ask, Plan, and Agent over explicit workspace/project scope.
+- Verified goals for release readiness, non-breaking dependency repair, and
+  coverage targets.
+- Transaction-backed Studio repair with source-change evidence, focused checks,
+  Workspace Intelligence refresh, and final verification.
+- Current CLI/extension contract parity, project taxonomy, Setup discovery, and
+  Python-optional recovery behavior.
+
+See [`releases/RELEASE_NOTES_v0.35.0.md`](releases/RELEASE_NOTES_v0.35.0.md) for
+the current user-facing detail. The implementation ledger below records the
+development history of this release and may retain legacy internal command IDs
+or names for traceability; it is not usage guidance.
 
 ### Added
 

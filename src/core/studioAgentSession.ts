@@ -77,6 +77,17 @@ const GENERAL_SOURCE_REPAIR_TOOL_NAMES = new Set([
 const DEPENDENCY_SOURCE_FILE_PATTERN =
   /(?:^|\/)(?:package\.json|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.ya?ml|yarn\.lock|bun\.lockb?|deno\.jsonc?|jsr\.json|pyproject\.toml|poetry\.lock|uv\.lock|pdm\.lock|pipfile(?:\.lock)?|requirements(?:[-_.][^/]+)?\.txt|setup\.py|setup\.cfg|go\.mod|go\.sum|cargo\.toml|cargo\.lock|composer\.json|composer\.lock|gemfile|gemfile\.lock|pubspec\.ya?ml|pubspec\.lock|packages\.lock\.json|directory\.packages\.props|[^/]+\.(?:csproj|fsproj|vbproj)|pom\.xml|build\.gradle(?:\.kts)?|settings\.gradle(?:\.kts)?|gradle\.lockfile)$/i;
 
+class StudioAgentReviewRequiredError extends Error {
+  readonly terminalReason: string;
+  readonly requiresUserDecision = true;
+
+  constructor(message: string, terminalReason = 'review-required') {
+    super(message);
+    this.name = 'StudioAgentReviewRequiredError';
+    this.terminalReason = terminalReason;
+  }
+}
+
 function stringValues(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
@@ -99,6 +110,9 @@ function dependencyMutationScope(input: {
   const projectNames = new Set<string>();
   if (typeof target?.projectName === 'string' && target.projectName.trim()) {
     projectNames.add(target.projectName.trim());
+  }
+  for (const projectName of stringValues(output?.projectNames)) {
+    projectNames.add(projectName.trim());
   }
   const changedPaths = new Set<string>([
     ...stringValues(output?.changedPaths),
@@ -152,6 +166,57 @@ function requestsGeneralSourceRepair(result: StudioAgentToolResult): boolean {
     output?.fallbackCapability === 'general-source-repair' ||
     output?.recoveryPath === 'general-source-repair'
   );
+}
+
+function requestsReviewDecision(result: StudioAgentToolResult): boolean {
+  const output = toolOutputRecord(result);
+  return output?.nextAction === 'review-required' && output?.requiresUserDecision === true;
+}
+
+function generalSourceRepairCommandViolation(
+  action: Extract<StudioAgentModelAction, { type: 'tool' }>
+): string | undefined {
+  if (action.toolName !== 'run-workspace-command') {
+    return undefined;
+  }
+  const input =
+    action.input && typeof action.input === 'object' && !Array.isArray(action.input)
+      ? (action.input as Record<string, unknown>)
+      : undefined;
+  const executable =
+    String(input?.executable ?? '')
+      .split(/[\\/]/)
+      .pop()
+      ?.toLowerCase() ?? '';
+  const args = Array.isArray(input?.args)
+    ? input.args.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+  let command = executable === 'workspai' || executable === 'wspai' ? args : [];
+  if (['npx', 'pnpx', 'bunx', 'npm', 'pnpm', 'yarn'].includes(executable)) {
+    let binaryIndex = -1;
+    for (let index = args.length - 1; index >= 0; index -= 1) {
+      if (args[index] === 'workspai' || args[index] === 'wspai') {
+        binaryIndex = index;
+        break;
+      }
+    }
+    if (binaryIndex >= 0) {
+      command = args.slice(binaryIndex + 1);
+    }
+  }
+  const first = command[0]?.toLowerCase();
+  const second = command[1]?.toLowerCase();
+  if (
+    first === 'doctor' ||
+    (first === 'workspace' &&
+      ['verify', 'remediation-plan', 'intelligence', 'readiness'].includes(second ?? ''))
+  ) {
+    return (
+      `The ${command.slice(0, 2).join(' ')} evidence producer is locked during general source repair. ` +
+      'Make a real source change or return a review-required result; the controller owns evidence refresh and verification.'
+    );
+  }
+  return undefined;
 }
 
 function verifiedNonBlockingResult(data: unknown): boolean {
@@ -500,6 +565,19 @@ export class StudioAgentSession {
           const activeCardBeforeAction = this.latestActiveCardId;
           let effectiveAction = action;
           latestObservation = await this.executeTool(effectiveAction, requestId);
+          if (
+            effectiveAction.toolName === 'recover-active-blocker' &&
+            requestsReviewDecision(latestObservation)
+          ) {
+            const terminalReason = String(
+              toolOutputRecord(latestObservation)?.terminalReason ?? 'review-required'
+            );
+            throw new StudioAgentReviewRequiredError(
+              latestObservation.error ??
+                'No compatible non-breaking remediation is currently available. Studio requires an explicit engineering decision before continuing.',
+              terminalReason
+            );
+          }
           const dependencyPlan = (observation: StudioAgentToolResult) => {
             const output =
               observation.output &&
@@ -529,6 +607,8 @@ export class StudioAgentSession {
             effectiveAction.toolName === 'inspect-dependency-security' &&
             latestObservation.ok === true &&
             inspectedProjectName &&
+            observationOutput?.nextAction !== 'general-source-repair' &&
+            observationOutput?.nextAction !== 'review-required' &&
             this.registry.get('repair-dependency-security')
           ) {
             await this.emit(
@@ -621,7 +701,8 @@ export class StudioAgentSession {
                 input: {},
                 reason: 'Verify that refreshed blocker evidence is non-blocking.',
               },
-              requestId
+              requestId,
+              { allowDependencyTransaction: true }
             );
             if (latestObservation.ok === true && latestObservation.cardBlocking === false) {
               await this.emit(
@@ -695,7 +776,8 @@ export class StudioAgentSession {
                 input: dependencyScope,
                 reason: 'Close the dependency transaction before canonical evidence regeneration.',
               },
-              requestId
+              requestId,
+              { allowDependencyTransaction: true }
             );
             dependencyClosureReady =
               toolOutputRecord(latestObservation)?.closureReady === true &&
@@ -860,7 +942,19 @@ export class StudioAgentSession {
       return this.snapshot();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await this.emit('session.failed', { error: message }, requestId);
+      await this.emit(
+        'session.failed',
+        {
+          error: message,
+          ...(error instanceof StudioAgentReviewRequiredError
+            ? {
+                terminalReason: error.terminalReason,
+                requiresUserDecision: error.requiresUserDecision,
+              }
+            : {}),
+        },
+        requestId
+      );
       await this.setStatus('failed');
       return this.snapshot();
     }
@@ -868,7 +962,8 @@ export class StudioAgentSession {
 
   private async executeTool(
     action: Extract<StudioAgentModelAction, { type: 'tool' }>,
-    requestId: string
+    requestId: string,
+    executionPolicy: { allowDependencyTransaction?: boolean } = {}
   ): Promise<StudioAgentToolResult> {
     const tool = this.registry.get(action.toolName);
     const toolCallId = crypto.randomUUID();
@@ -882,6 +977,36 @@ export class StudioAgentSession {
     if (!tool) {
       const result = { ok: false, error: `Unknown Studio Agent tool: ${action.toolName}` };
       await this.emit('tool.failed', result, requestId, toolCallId);
+      return result;
+    }
+    const phaseViolation = this.generalSourceRepairActive
+      ? generalSourceRepairCommandViolation(action)
+      : undefined;
+    if (phaseViolation) {
+      const result = { ok: false, error: phaseViolation };
+      await this.emit(
+        'tool.failed',
+        { toolName: tool.name, input: durableInput, policyRejected: true, ...result },
+        requestId,
+        toolCallId
+      );
+      return result;
+    }
+    if (
+      tool.name === 'complete-dependency-transaction' &&
+      executionPolicy.allowDependencyTransaction !== true
+    ) {
+      const result = {
+        ok: false,
+        error:
+          'Dependency transaction rejected: no causal dependency source mutation was observed. Apply a manifest or lockfile change first; Studio will then run transaction closure automatically.',
+      };
+      await this.emit(
+        'tool.failed',
+        { toolName: tool.name, input: durableInput, policyRejected: true, ...result },
+        requestId,
+        toolCallId
+      );
       return result;
     }
     if (this.exhaustedTools.has(tool.name)) {

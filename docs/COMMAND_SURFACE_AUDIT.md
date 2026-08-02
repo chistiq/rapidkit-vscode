@@ -6,13 +6,13 @@ dashboard, and the secondary Workspai sidebar.
 
 ## Surfaces
 
-| Surface         | Owner                                | Role                                                                        |
-| --------------- | ------------------------------------ | --------------------------------------------------------------------------- |
-| Dashboard       | `WelcomePanel` + dashboard React app | Workspace status, run/repair/artifact navigation, evidence refresh          |
-| Create          | secondary sidebar Create tab         | Workspace/project creation and bootstrap handoff                            |
-| Advisor         | secondary sidebar Advisor tab        | Explain, clarify, and route context to Studio when a fix is needed          |
-| Studio          | secondary sidebar Studio tab         | Card/editor repair sessions, safe commands, patch review, verify, rollback  |
-| Primary sidebar | workspace/project/tree providers     | Workspace and project selection, artifact access, module/library navigation |
+| Surface         | Owner                                | Role                                                                          |
+| --------------- | ------------------------------------ | ----------------------------------------------------------------------------- |
+| Dashboard       | `WelcomePanel` + dashboard React app | Home, Run, Repair, Artifacts, Graph, Project, and Library                     |
+| Create          | secondary sidebar Create tab         | Create/adopt/import through model-assisted or manual contract paths           |
+| Assistant       | secondary sidebar Assistant tab      | Ask, Plan, and Agent sessions over explicit workspace/project scope           |
+| Studio repair   | Assistant Agent mode                 | Goal/card repair, safe commands, patch review, transactions, verify, rollback |
+| Primary sidebar | workspace/project/tree providers     | Workspace and project selection, artifact access, module/library navigation   |
 
 ## Inbound Webview Commands
 
@@ -38,8 +38,8 @@ these messages:
 
 ## Safety Rules
 
-- Dashboard detects and routes; Studio diagnoses, plans, fixes, verifies, and
-  records the outcome; Advisor explains; Create builds.
+- Dashboard detects and routes; Agent diagnoses, plans, fixes, verifies, and
+  records the outcome; Ask explains; Plan investigates; Create builds or adds software.
 - `Fix by Workspai` starts or resumes one card-scoped Studio session.
 - Sending a fail/warn card to Studio is repair intent. Studio must consume the
   card handoff, exact artifact paths, resolution hints, project scope, and
@@ -54,11 +54,16 @@ these messages:
   actions always remain explicit authorization boundaries.
 - Editor `Fix with Workspai` starts an editor-issue Studio session independent
   of the active workspace/project selection.
-- Editor `Explain with Workspai` routes to Advisor, not Studio.
+- Editor `Explain with Workspai` routes to read-only Assistant context, not a
+  mutation-capable Agent session.
 - Studio command execution must use approved Workspai/npm command routing and
   must not execute shell-chained commands as trusted remediation.
 - Create workspace/project commands must use the explicit target workspace path
   returned by the creation flow.
+- Manual and model-assisted Create must resolve the same available canonical kit
+  inventory; planned entries must not be presented as runnable.
+- RapidKit Core remains optional unless the active workspace declares a
+  Python-backed kit or module.
 - User-facing sidebar copy should show workspace/project names, not full local
   paths, unless the user explicitly opens or copies a path.
 
@@ -78,3 +83,5 @@ Before publishing the extension:
   safe operations continue without clicks and guarded writes pause for review.
 - Confirm every fail/warn dashboard card has a visible primary action and no
   critical command is hidden behind overflow-only UI.
+- Confirm CLI/extension parity, palette parity, typecheck, full tests, and the
+  production host/webview build are green.

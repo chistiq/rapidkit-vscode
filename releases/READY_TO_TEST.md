@@ -1,5 +1,11 @@
 # 🎉 RapidKit VS Code Extension - Ready to Test!
 
+> **Historical archive:** this checklist belongs to the original 0.1-era
+> extension. Do not use its commands or paths to validate current Workspai
+> releases. Use [`../docs/GETTING_STARTED.md`](../docs/GETTING_STARTED.md),
+> [`../docs/COMMAND_SURFACE_AUDIT.md`](../docs/COMMAND_SURFACE_AUDIT.md), and the
+> current release notes instead.
+
 ## ✅ Completed Tasks
 
 ### 1. Project Structure

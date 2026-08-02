@@ -1,15 +1,17 @@
-# Generate your first workspace model
+# Generate the workspace model
 
 The **workspace model** is the foundation of Workspace Intelligence. It produces a dependency-graph-aware map of your projects written to:
 
 ```
-.rapidkit/reports/workspace-model.json
+.workspai/reports/workspace-model.json
 ```
 
-This model drives:
+The model defines the canonical workspace boundary and drives:
 
 - **Impact** analysis — transitive blast radius of a change.
 - **Verify** — subgraph-scoped, graph-aware freshness and policy checks.
 - **AI grounding** — the context your agents rely on.
 
-This step completes automatically once `workspace-model.json` exists.
+The graph enriches this model with proof-carrying relationships. The step
+completes only when the model is current for the selected workspace; a stale
+file is not presented as complete.

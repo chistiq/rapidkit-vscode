@@ -48,6 +48,7 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
       'sidebarStudioChunk',
       'sidebarStudioDone',
       'sidebarStudioError',
+      'sidebarStudioSessionState',
     ]) {
       expect(secondary, `React should handle inbound "${command}"`).toContain(`case '${command}'`);
       expect(provider, `host should emit "${command}"`).toContain(`'${command}'`);
@@ -69,13 +70,34 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(secondary).toContain('StudioRepairPrelude');
     expect(secondary).toContain('StudioRemediationPlan');
     expect(secondary).toContain('StudioActionProgress');
-    expect(secondary).toContain('hasActiveStudioRepairOutput');
+    expect(secondary).not.toContain('studioAutoStartKeysRef');
+    expect(secondary).toContain('onStop={stopStudioAgent}');
+    expect(secondary).toContain('reviewRequired={activeStudioReviewRequired}');
+    expect(secondary).toContain("action: 'agent-cancel'");
     const remediationPlan = read('webview-ui/src/sidebar/StudioRemediationPlan.tsx');
     expect(remediationPlan).toContain('deriveStudioRepairCapability');
     expect(remediationPlan).toContain('Repair capability');
     expect(remediationPlan).toContain('Apply change');
     expect(remediationPlan).toContain('Run check');
     expect(remediationPlan).not.toContain('How I can help');
+  });
+
+  it('hydrates a blocker incident without starting repair when the Studio tab opens', () => {
+    const activationStart = secondary.indexOf("case 'sidebarActivateTab':");
+    const activationEnd = secondary.indexOf("case 'sidebarAiScope':", activationStart);
+    const activationHandler = secondary.slice(activationStart, activationEnd);
+
+    expect(activationStart).toBeGreaterThanOrEqual(0);
+    expect(activationEnd).toBeGreaterThan(activationStart);
+    expect(activationHandler).toContain('openStudioIncidentSession');
+    expect(activationHandler).toContain('setStudioAutoFixBusy(false)');
+    expect(activationHandler).not.toContain("action: 'auto-fix'");
+    expect(activationHandler).not.toContain('studioAutoFix()');
+    expect(activationHandler).toContain("action: 'agent-status'");
+    const sessions = read('webview-ui/src/sidebar/useChatSessions.ts');
+    expect(sessions).toContain(
+      'previousIncident?.blockerSignature === input.incident.blockerSignature'
+    );
   });
 
   it('handles blocker handoff + fix-applied inbound commands', () => {
@@ -227,11 +249,11 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(secondary).toContain('StudioRemediationPlan');
     expect(secondary).toContain('StudioBlockerChrome');
     expect(secondary).toContain('activeStudioFixPhase');
-    expect(secondary).toContain('studioAutoStartKeysRef');
+    expect(secondary).not.toContain('studioAutoStartKeysRef');
     expect(secondary).not.toContain('studioAutonomousStepCountsRef');
     expect(secondary).toContain('studioAttemptedRemediationStepsRef');
     expect(secondary).toContain('studioMirroredHandoffKeysRef');
-    expect(secondary).toContain('setStudioAutoFixBusy(true)');
+    expect(secondary).toContain('setStudioAutoFixBusy(false)');
     expect(secondary).not.toContain('selectAgentStudioRemediationStep');
     expect(secondary).toContain("action: 'auto-fix'");
     expect(secondary).not.toContain('canContinueStudioAutonomously(completedSteps)');
@@ -265,7 +287,10 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     const sidebarCss = read('webview-ui/src/sidebar/sidebar.css');
     expect(sidebarCss).not.toContain('.ws-sidebar__studio-action-timeline');
     const repairPrelude = read('webview-ui/src/sidebar/StudioRepairPrelude.tsx');
-    expect(repairPrelude).toContain('Working on the blocker');
+    expect(repairPrelude).toContain('Studio is running');
+    expect(repairPrelude).toContain('Start repair');
+    expect(repairPrelude).toContain('Resume repair');
+    expect(repairPrelude).toContain('Stop session');
     expect(repairPrelude).toContain('verify included');
     expect(repairPrelude).not.toContain('ws-sidebar__repair-avatar');
     expect(repairPrelude).not.toContain('Refresh evidence');

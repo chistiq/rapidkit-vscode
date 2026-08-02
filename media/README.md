@@ -101,6 +101,7 @@ release-safe fallback.
 
 ## Marketplace notes
 
-- PNG for screenshots; SVG allowed in README.
+- Use PNG or GIF for Marketplace README images. Keep SVG files as design
+  sources only; VSCE rejects SVG references in the published README.
 - First Marketplace image should show dashboard + sidebar context, not a modal crop.
 - README mockups may be refreshed between releases; Marketplace should use real captures before publish.

@@ -1,8 +1,14 @@
 # Create or select a workspace
 
-Workspai operates on a **workspace** — a folder that holds one or more projects with a shared `.rapidkit/` directory.
+A Workspai workspace gives one or more projects a shared model, graph, health
+evidence, agent context, and verification loop. Its root is identified by the
+canonical `.workspai-workspace` marker.
 
-- **Create Workspace** scaffolds a new workspace and registers it.
-- You can also **adopt** or **import** an existing project so Workspai can model it.
+- **Create workspace** starts an empty managed boundary.
+- **Create project** scaffolds and registers new software.
+- **Adopt** links an existing project without moving its source.
+- **Import** brings in a project, workspace, Git source, or Workspai archive.
 
-Once a workspace is selected in the sidebar, this step is marked complete and the rest of the checklist unlocks.
+Once selected, the sidebar and Dashboard must resolve the same workspace and
+project scope. External adopted projects remain linked to their owning
+workspace.

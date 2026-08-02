@@ -1,4 +1,4 @@
-## Thank you for contributing to RapidKit VS Code Extension 🚀
+## Thank you for contributing to Workspai for VS Code 🚀
 
 Please make sure:
 

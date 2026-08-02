@@ -1,296 +1,120 @@
-# Contributing to Workspai VS Code Extension
+# Contributing to Workspai for VS Code
 
-Thank you for your interest in contributing to RapidKit! This document provides guidelines and instructions for contributing.
+Thank you for helping improve Workspai. This repository owns the VS Code user
+experience; the Workspai CLI remains the source of truth for commands,
+contracts, artifacts, and Workspace Intelligence semantics.
 
-## 🤝 Code of Conduct
+## Before you start
 
-This project adheres to a Code of Conduct. By participating, you are expected to uphold this code.
+- Use Node.js 20.19 or newer.
+- Use the package manager declared by the repository through Corepack.
+- Use VS Code 1.106 or newer for extension-host testing.
+- Discuss broad product or contract changes before implementation.
+- Never include secrets, private workspace evidence, or local absolute paths in
+  fixtures, screenshots, logs, or pull requests.
 
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Node.js 18+
-- npm or yarn
-- Visual Studio Code
-- Git
-
-### Development Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/chistiq/rapidkit-vscode.git
-   cd rapidkit-vscode
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Open in VS Code**
-   ```bash
-   code .
-   ```
-
-4. **Run the extension**
-   - Press `F5` to open Extension Development Host
-   - Test your changes in the new window
-
-## 📁 Project Structure
-
-```
-rapidkit-vscode/
-├── src/
-│   ├── commands/          # Command implementations
-│   ├── core/              # Core services (config, detector)
-│   ├── providers/         # IntelliSense providers
-│   ├── ui/                # UI components (tree views, panels)
-│   ├── utils/             # Utility functions
-│   ├── types/             # TypeScript type definitions
-│   └── extension.ts       # Extension entry point
-├── snippets/              # Code snippets (Python, TS, YAML)
-├── schemas/               # JSON schemas for validation
-├── media/                 # Icons and images
-├── package.json           # Extension manifest
-└── tsconfig.json          # TypeScript configuration
-```
-
-## 🔧 Development Workflow
-
-### Making Changes
-
-1. **Create a branch**
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. **Make your changes**
-   - Follow TypeScript best practices
-   - Add JSDoc comments for public APIs
-   - Update tests if needed
-
-3. **Test your changes**
-   ```bash
-   npm test
-   npm run lint
-   ```
-
-4. **Commit your changes**
-   ```bash
-   git commit -m "feat: add new feature"
-   ```
-
-   Follow [Conventional Commits](https://www.conventionalcommits.org/):
-   - `feat:` - New feature
-   - `fix:` - Bug fix
-   - `docs:` - Documentation changes
-   - `style:` - Code style changes
-   - `refactor:` - Code refactoring
-   - `test:` - Test additions/changes
-   - `chore:` - Build/tooling changes
-
-5. **Push and create PR**
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-### Testing
-
-Run tests before submitting PR:
+## Set up the repository
 
 ```bash
-# Lint code
-npm run lint
-
-# Run tests
-npm test
-
-# Test compilation
-npm run compile
+git clone https://github.com/chistiq/rapidkit-vscode.git
+cd rapidkit-vscode
+corepack npm install
+code .
 ```
 
-### Debugging
+Press `F5` to open an Extension Development Host. Use a disposable Workspai
+workspace when testing create, adopt, import, repair, or mutation flows.
 
-1. Set breakpoints in VS Code
-2. Press `F5` to launch Extension Development Host
-3. Trigger the feature you're debugging
-4. Inspect variables and step through code
+## Architecture boundaries
 
-## 📝 Code Style
-
-### TypeScript Guidelines
-
-- Use TypeScript strict mode
-- Prefer `const` over `let`
-- Use explicit types for function parameters and return values
-- Use async/await over promises
-- Add JSDoc comments for exported functions
-
-Example:
-```typescript
-/**
- * Creates a new RapidKit project
- * @param name - Project name
- * @param framework - Framework type (fastapi or nestjs)
- * @returns Promise resolving to project path
- */
-export async function createProject(
-  name: string,
-  framework: Framework
-): Promise<string> {
-  // Implementation
-}
+```text
+Workspai CLI contracts and artifacts
+                ↓
+extension host services and command routing
+                ↓
+primary sidebar · Dashboard · Create · Assistant/Studio
 ```
 
-### VS Code API Usage
+- `contracts/` and `src/contracts/` mirror canonical CLI/extension contracts.
+- `src/core/` owns host-side orchestration, evidence readers, AI routing, and
+  safety boundaries.
+- `src/ui/treeviews/` owns primary sidebar workspace/project navigation.
+- `src/ui/panels/` and `src/ui/webviews/` own Dashboard and webview bridges.
+- `webview-ui/src/` owns Dashboard and secondary-sidebar presentation.
+- `src/test/` protects command parity, scope, contracts, and repair behavior.
 
-- Use `vscode.window.showInformationMessage` for user messages
-- Use `vscode.window.withProgress` for long-running operations
-- Dispose resources properly (add to `context.subscriptions`)
-- Use proper VS Code icons (`$(icon-name)`)
+Do not invent a second command, artifact, project taxonomy, or repair contract
+inside the extension. Change the canonical CLI contract first, synchronize it,
+then update the consuming UI and tests.
 
-### Error Handling
+## Make a focused change
 
-Always handle errors gracefully:
+1. Create a branch:
 
-```typescript
-try {
-  await someOperation();
-  vscode.window.showInformationMessage('Success!');
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  vscode.window.showErrorMessage(`Failed: ${message}`);
-  Logger.getInstance().error('Operation failed', error);
-}
+   ```bash
+   git switch -c feat/short-description
+   ```
+
+2. Keep workspace and project scope explicit in commands and messages.
+3. Preserve missing/stale/blocked evidence instead of rendering it as success.
+4. Add or update focused tests with every behavioral change.
+5. Update user documentation only when the public workflow changes.
+
+For Agent or Studio changes, preserve these boundaries:
+
+- a command exit code is not proof that source changed;
+- dependency edits are incomplete until lock/install and focused checks close;
+- generated evidence is refreshed through CLI producers, never patched by the
+  model;
+- only fresh non-blocking verification can complete a repair;
+- guarded, destructive, external, or ambiguous actions require explicit review.
+
+## Validate
+
+Run the checks relevant to your change, then the full release path when the
+change affects shared contracts or user-facing behavior:
+
+```bash
+corepack npm run validate:contracts
+corepack npm run typecheck
+corepack npm test
+corepack npm run lint
+corepack npm run build
 ```
 
-## 🎨 UI Guidelines
+Use `corepack npm run sync:shared-contracts` or
+`corepack npm run sync:palette-surface` only when the canonical source changed;
+review the generated diff before committing it.
 
-### Tree Views
+## Pull requests
 
-- Use appropriate icons from VS Code icon library
-- Provide context menus for actions
-- Show loading states
-- Handle empty states
+Include:
 
-### Webviews
+- the user problem and intended outcome;
+- affected workspace/project scope;
+- contract or artifact changes;
+- tests and commands run;
+- screenshots or recordings for visible UI changes;
+- compatibility, migration, and rollback notes when relevant.
 
-- Use VS Code theme CSS variables
-- Make responsive
-- Handle message passing properly
-- Clean up resources on dispose
+Keep pull requests focused. Do not combine unrelated refactors, generated
+artifacts, or formatting churn with a product change.
 
-### Commands
+## Documentation
 
-- Use clear, descriptive names
-- Show progress for long operations
-- Provide meaningful error messages
-- Add to Command Palette with category
+- [`README.md`](README.md) is the concise Marketplace story.
+- [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) is the current user flow.
+- [`docs/COMMAND_SURFACE_AUDIT.md`](docs/COMMAND_SURFACE_AUDIT.md) records
+  extension/CLI command boundaries.
+- [`RELEASE_NOTES.md`](RELEASE_NOTES.md) and `releases/` preserve version history.
 
-## 📚 Documentation
+Historical release documents may contain old product names and commands. Mark
+archival files clearly; do not copy their instructions into current docs.
 
-Update documentation when:
+## Community and support
 
-- Adding new features
-- Changing existing behavior
-- Adding configuration options
-- Adding commands or shortcuts
+- [Discord](https://www.workspai.com/discord)
+- [GitHub Discussions](https://github.com/chistiq/rapidkit-vscode/discussions)
+- [Issues](https://github.com/chistiq/rapidkit-vscode/issues)
 
-Update these files:
-- `README.md` - Main documentation
-- `CHANGELOG.md` - Version history
-- Code comments - Inline documentation
-
-## 🧪 Testing Guidelines
-
-### Unit Tests
-
-Test individual functions:
-
-```typescript
-import { describe, it, expect } from '@jest/globals';
-import { myFunction } from '../myFunction';
-
-describe('myFunction', () => {
-  it('should return expected result', () => {
-    const result = myFunction('input');
-    expect(result).toBe('expected');
-  });
-});
-```
-
-### Integration Tests
-
-Test VS Code API integration:
-
-```typescript
-import * as vscode from 'vscode';
-import * as assert from 'assert';
-
-suite('Extension Test Suite', () => {
-  test('Command is registered', async () => {
-    const commands = await vscode.commands.getCommands(true);
-    assert.ok(commands.includes('rapidkit.createWorkspace'));
-  });
-});
-```
-
-## 🐛 Bug Reports
-
-When reporting bugs, include:
-
-1. **Description** - Clear description of the issue
-2. **Steps to Reproduce** - Detailed steps
-3. **Expected Behavior** - What should happen
-4. **Actual Behavior** - What actually happens
-5. **Environment**:
-   - VS Code version
-   - Extension version
-   - OS and version
-   - Node.js version
-   - Python version (if relevant)
-6. **Logs** - Output from RapidKit output channel
-7. **Screenshots** - If applicable
-
-## ✨ Feature Requests
-
-When requesting features:
-
-1. **Use Case** - Explain the problem/need
-2. **Proposed Solution** - How it should work
-3. **Alternatives** - Other solutions considered
-4. **Additional Context** - Screenshots, mockups, etc.
-
-## 🔍 Code Review
-
-PRs will be reviewed for:
-
-- **Functionality** - Does it work as expected?
-- **Code Quality** - Is it well-written and maintainable?
-- **Tests** - Are there appropriate tests?
-- **Documentation** - Is it properly documented?
-- **Performance** - Is it efficient?
-- **Security** - Are there security concerns?
-
-## 📦 Release Process
-
-1. Update version in `package.json`
-2. Update `CHANGELOG.md`
-3. Create git tag
-4. Push to GitHub
-5. Publish to VS Code Marketplace
-
-## 📞 Getting Help
-
-- **Discord**: [Join our server](https://discord.gg/rapidkit)
-- **GitHub Discussions**: [Ask questions](https://github.com/chistiq/rapidkit-vscode/discussions)
-- **Email**: dev@rapidkitlabs.com
-
-## 🙏 Thank You
-
-Thank you for contributing to RapidKit! Your efforts help make this tool better for everyone.
-
----
-
-**Happy Coding!** 🚀
+Be respectful, provide reproducible context, and redact private workspace data.

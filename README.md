@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="media/icons/icon-128.png" alt="Workspai" width="168" />
+<!-- <img src="media/icons/icon-128.png" alt="Workspai" width="64" /> -->
 
 ### Understand the workspace. Change it with evidence. Verify the result.
 
