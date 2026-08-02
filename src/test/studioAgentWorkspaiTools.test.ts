@@ -59,6 +59,7 @@ describe('Studio Agent Workspai tool registry', () => {
       'inspect-dependency-security',
       'repair-dependency-security',
       'upgrade-dependency-security',
+      'complete-dependency-transaction',
       'verify-blocker',
     ]);
     const commandTool = registry.get('run-governed-command');
@@ -102,6 +103,11 @@ describe('Studio Agent Workspai tool registry', () => {
       inspectDependencySecurity: vi.fn(async () => ({ ok: true, output: {} })),
       repairDependencySecurity: vi.fn(async () => ({ ok: true, changed: true })),
       upgradeDependencySecurity: vi.fn(async () => ({ ok: true, changed: true })),
+      completeDependencyTransaction: vi.fn(async () => ({
+        ok: true,
+        changed: false,
+        output: { closureReady: true },
+      })),
       verify: vi.fn(async () => ({ ok: true, cardBlocking: false })),
     };
     const registry = createStudioAgentWorkspaiToolRegistry({
@@ -117,6 +123,7 @@ describe('Studio Agent Workspai tool registry', () => {
       workspacePath: '/workspace',
       projectPath: '/workspace/web',
       signal: new AbortController().signal,
+      reportProgress: vi.fn(async () => undefined),
     };
 
     await registry
@@ -160,6 +167,9 @@ describe('Studio Agent Workspai tool registry', () => {
     await registry
       .get('upgrade-dependency-security')
       ?.execute({ projectName: 'web', packageName: 'next' }, context);
+    await registry
+      .get('complete-dependency-transaction')
+      ?.execute({ projectNames: ['web'], changedPaths: ['web/package.json'] }, context);
     await registry.get('verify-blocker')?.execute({}, context);
 
     expect(host.discover).toHaveBeenCalledWith({
@@ -200,7 +210,10 @@ describe('Studio Agent Workspai tool registry', () => {
       projectPath: '/workspace/web',
     });
     expect(host.runGovernedCommand).toHaveBeenCalledWith(
-      expect.objectContaining({ commandId: 'workspaceReadiness' })
+      expect.objectContaining({
+        commandId: 'workspaceReadiness',
+        reportProgress: context.reportProgress,
+      })
     );
     expect(host.runWorkspaceCommand).toHaveBeenCalledWith({
       request: {
@@ -224,6 +237,12 @@ describe('Studio Agent Workspai tool registry', () => {
     });
     expect(host.inspectDependencySecurity).toHaveBeenCalledWith({
       projectName: 'web',
+      workspacePath: '/workspace',
+      projectPath: '/workspace/web',
+    });
+    expect(host.completeDependencyTransaction).toHaveBeenCalledWith({
+      projectNames: ['web'],
+      changedPaths: ['web/package.json'],
       workspacePath: '/workspace',
       projectPath: '/workspace/web',
     });

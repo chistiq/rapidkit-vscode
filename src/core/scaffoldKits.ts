@@ -2,16 +2,25 @@
  * Canonical scaffold kit surface, aligned with Workspai CLI runtime contracts.
  */
 
-export type BackendScaffoldFramework = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
+export type BackendScaffoldFramework =
+  | 'fastapi'
+  | 'nestjs'
+  | 'go'
+  | 'springboot'
+  | 'dotnet'
+  | 'rust'
+  | 'laravel';
 
 export const BACKEND_SCAFFOLD_KIT_IDS = [
   'fastapi.standard',
   'fastapi.ddd',
   'nestjs.standard',
+  'springboot.standard',
   'gofiber.standard',
   'gogin.standard',
-  'springboot.standard',
   'dotnet.webapi.clean',
+  'rust.axum',
+  'php.laravel',
 ] as const;
 
 export type FrontendScaffoldFramework =
@@ -27,7 +36,22 @@ export type FrontendScaffoldFramework =
   | 'astro'
   | 'sveltekit';
 
-export type ScaffoldFramework = BackendScaffoldFramework | FrontendScaffoldFramework;
+export type DesktopScaffoldFramework = 'tauri' | 'electron';
+export type ExtensionScaffoldFramework = 'vscode-extension';
+
+export type ScaffoldFramework =
+  | BackendScaffoldFramework
+  | FrontendScaffoldFramework
+  | DesktopScaffoldFramework
+  | ExtensionScaffoldFramework;
+
+export interface OfficialScaffoldKitDefinition<TFramework extends ScaffoldFramework> {
+  kitId: string;
+  framework: TFramework;
+  displayName: string;
+  description: string;
+  tags: string[];
+}
 
 export interface FrontendScaffoldKitDefinition {
   kitId: `frontend.${FrontendScaffoldFramework}`;
@@ -36,6 +60,36 @@ export interface FrontendScaffoldKitDefinition {
   description: string;
   tags: string[];
 }
+
+export const DESKTOP_SCAFFOLD_KITS: Array<OfficialScaffoldKitDefinition<DesktopScaffoldFramework>> =
+  [
+    {
+      kitId: 'desktop.tauri',
+      framework: 'tauri',
+      displayName: 'Tauri',
+      description: 'Official Tauri desktop app with a TypeScript frontend.',
+      tags: ['desktop', 'tauri', 'rust', 'typescript'],
+    },
+    {
+      kitId: 'desktop.electron',
+      framework: 'electron',
+      displayName: 'Electron Forge',
+      description: 'Official Electron Forge desktop app with Vite and TypeScript.',
+      tags: ['desktop', 'electron', 'vite', 'typescript'],
+    },
+  ];
+
+export const EXTENSION_SCAFFOLD_KITS: Array<
+  OfficialScaffoldKitDefinition<ExtensionScaffoldFramework>
+> = [
+  {
+    kitId: 'extension.vscode',
+    framework: 'vscode-extension',
+    displayName: 'VS Code Extension',
+    description: 'Official VS Code extension generator with TypeScript and esbuild.',
+    tags: ['extension', 'vscode', 'typescript'],
+  },
+];
 
 export const FRONTEND_SCAFFOLD_KITS: FrontendScaffoldKitDefinition[] = [
   {
@@ -118,8 +172,11 @@ export const FRONTEND_SCAFFOLD_KITS: FrontendScaffoldKitDefinition[] = [
 ];
 
 export const SCAFFOLD_KIT_IDS = [
-  ...BACKEND_SCAFFOLD_KIT_IDS,
+  ...BACKEND_SCAFFOLD_KIT_IDS.filter((kitId) => kitId !== 'php.laravel'),
   ...FRONTEND_SCAFFOLD_KITS.map((kit) => kit.kitId),
+  ...DESKTOP_SCAFFOLD_KITS.map((kit) => kit.kitId),
+  ...EXTENSION_SCAFFOLD_KITS.map((kit) => kit.kitId),
+  'php.laravel',
 ] as const;
 
 export type ScaffoldKitId = (typeof SCAFFOLD_KIT_IDS)[number];
@@ -142,7 +199,30 @@ export function isBackendScaffoldFramework(
     framework === 'nestjs' ||
     framework === 'go' ||
     framework === 'springboot' ||
-    framework === 'dotnet'
+    framework === 'dotnet' ||
+    framework === 'rust' ||
+    framework === 'laravel'
+  );
+}
+
+export function isDesktopScaffoldFramework(
+  framework: string | undefined
+): framework is DesktopScaffoldFramework {
+  return DESKTOP_SCAFFOLD_KITS.some((kit) => kit.framework === framework);
+}
+
+export function isExtensionScaffoldFramework(
+  framework: string | undefined
+): framework is ExtensionScaffoldFramework {
+  return EXTENSION_SCAFFOLD_KITS.some((kit) => kit.framework === framework);
+}
+
+export function isScaffoldFramework(framework: string | undefined): framework is ScaffoldFramework {
+  return (
+    isBackendScaffoldFramework(framework) ||
+    isFrontendScaffoldFramework(framework) ||
+    isDesktopScaffoldFramework(framework) ||
+    isExtensionScaffoldFramework(framework)
   );
 }
 

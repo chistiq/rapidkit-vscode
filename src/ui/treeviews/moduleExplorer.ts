@@ -10,6 +10,7 @@ import * as fs from 'fs-extra';
 import { MODULES, CATEGORY_INFO, ModuleData } from '../../data/modules';
 import { ModulesCatalogService } from '../../core/modulesCatalogService';
 import { resolveCatalogWorkspaceRoot } from '../../utils/coreRuntimeResolver';
+import { projectModuleRegistryCandidates } from '../../utils/workspaceCanonicalPaths';
 import { WorkspaiModule } from '../../types';
 
 interface InstalledModule {
@@ -338,11 +339,10 @@ export class ModuleExplorerProvider implements vscode.TreeDataProvider<ModuleTre
     }
 
     try {
-      const primaryPath = path.join(this._currentProjectPath, 'registry.json');
-      const legacyPath = path.join(this._currentProjectPath, '.rapidkit', 'registry.json');
-
-      const primaryExists = await fs.pathExists(primaryPath);
-      const registryPath = primaryExists ? primaryPath : legacyPath;
+      const registryCandidates = projectModuleRegistryCandidates(this._currentProjectPath);
+      const registryPath =
+        registryCandidates.find((candidate) => fs.pathExistsSync(candidate)) ??
+        registryCandidates[0];
 
       if (await fs.pathExists(registryPath)) {
         const registry = await fs.readJson(registryPath);

@@ -32,7 +32,9 @@ import {
 } from './aiModelSelection';
 import {
   frontendKitIdForFramework,
-  isBackendScaffoldFramework,
+  isScaffoldFramework,
+  isDesktopScaffoldFramework,
+  isExtensionScaffoldFramework,
   isFrontendScaffoldFramework,
   type ScaffoldKitId,
   type ScaffoldFramework,
@@ -881,6 +883,7 @@ export async function scanProjectContext(
 
   // ── registry.json (installed modules) ─────────────────────────────────
   const registry =
+    (await readJSON<{ installed_modules?: InstalledModule[] }>('.workspai/registry.json')) ??
     (await readJSON<{ installed_modules?: InstalledModule[] }>('registry.json')) ??
     (await readJSON<{ installed_modules?: InstalledModule[] }>('.rapidkit/registry.json'));
   if (registry?.installed_modules) {
@@ -1129,6 +1132,7 @@ async function collectWorkspaceInstalledModules(
   for (const candidate of projectCandidates) {
     const projectName = path.basename(candidate);
     const registryPaths = [
+      path.join(candidate, '.workspai', 'registry.json'),
       path.join(candidate, 'registry.json'),
       path.join(candidate, '.rapidkit', 'registry.json'),
     ];
@@ -1348,7 +1352,7 @@ export class UnsupportedCreationStackError extends Error {
 
   constructor(stackLabel: string, capability?: CreatePlannerCapability) {
     super(
-      `${stackLabel} is not available as a native RapidKit scaffold yet. Create an empty governed workspace, then add or adopt your ${stackLabel} project so Workspai can index it, generate workspace intelligence, and keep agents aligned.`
+      `${stackLabel} is not available as a Workspai create target yet. Create an empty governed workspace, then add or adopt your ${stackLabel} project so Workspai can index it, generate workspace intelligence, and keep agents aligned.`
     );
     this.name = 'UnsupportedCreationStackError';
     this.stackLabel = stackLabel;
@@ -1380,6 +1384,11 @@ const FRAMEWORK_TO_KITS: Record<ScaffoldFramework, string[]> = {
   go: ['gofiber.standard', 'gogin.standard'],
   springboot: ['springboot.standard'],
   dotnet: ['dotnet.webapi.clean'],
+  rust: ['rust.axum'],
+  laravel: ['php.laravel'],
+  tauri: ['desktop.tauri'],
+  electron: ['desktop.electron'],
+  'vscode-extension': ['extension.vscode'],
   nextjs: ['frontend.nextjs'],
   remix: ['frontend.remix'],
   'vite-react': ['frontend.vite-react'],
@@ -1445,7 +1454,12 @@ function extractJSON(text: string): string {
  * Map a framework string to the default profile.
  */
 function defaultProfile(fw: ScaffoldFramework): AICreateProfile {
-  if (isFrontendScaffoldFramework(fw) || fw === 'nestjs') {
+  if (
+    isFrontendScaffoldFramework(fw) ||
+    fw === 'nestjs' ||
+    fw === 'electron' ||
+    fw === 'vscode-extension'
+  ) {
     return 'node-only';
   }
   if (fw === 'go') {
@@ -1457,14 +1471,14 @@ function defaultProfile(fw: ScaffoldFramework): AICreateProfile {
   if (fw === 'dotnet') {
     return 'dotnet-only';
   }
+  if (fw === 'rust' || fw === 'tauri' || fw === 'laravel') {
+    return 'minimal';
+  }
   return 'python-only';
 }
 
 function isCreateFramework(value: unknown): value is ScaffoldFramework {
-  return (
-    typeof value === 'string' &&
-    (isBackendScaffoldFramework(value) || isFrontendScaffoldFramework(value))
-  );
+  return typeof value === 'string' && isScaffoldFramework(value);
 }
 
 function normalizeCreationFramework(value: unknown, frameworkHint?: string): ScaffoldFramework {
@@ -1493,6 +1507,21 @@ function defaultKitForFramework(framework: ScaffoldFramework): string {
   if (framework === 'dotnet') {
     return 'dotnet.webapi.clean';
   }
+  if (framework === 'rust') {
+    return 'rust.axum';
+  }
+  if (framework === 'laravel') {
+    return 'php.laravel';
+  }
+  if (framework === 'tauri') {
+    return 'desktop.tauri';
+  }
+  if (framework === 'electron') {
+    return 'desktop.electron';
+  }
+  if (framework === 'vscode-extension') {
+    return 'extension.vscode';
+  }
   return 'fastapi.standard';
 }
 
@@ -1501,7 +1530,7 @@ function labelCreatePlannerCapability(capability: CreatePlannerCapability): stri
   const labels: Record<string, string> = {
     'wordpress-site': 'WordPress',
     'wordpress-block': 'WordPress block',
-    laravel: 'Laravel',
+    'php.laravel': 'Laravel',
     symfony: 'Symfony',
     rails: 'Rails',
     php: 'PHP',
@@ -1643,6 +1672,10 @@ function normalizeSuggestedModules(
     framework === 'go' ||
     framework === 'springboot' ||
     framework === 'dotnet' ||
+    framework === 'rust' ||
+    framework === 'laravel' ||
+    isDesktopScaffoldFramework(framework) ||
+    isExtensionScaffoldFramework(framework) ||
     (framework && isFrontendScaffoldFramework(framework))
   ) {
     return [];
@@ -1768,12 +1801,14 @@ Available workspace profiles:
   "enterprise"   — multi-team governance
 
 Available frameworks:
-  Backend: "fastapi" | "nestjs" | "go" | "springboot" | "dotnet"
+  Backend: "fastapi" | "nestjs" | "go" | "springboot" | "dotnet" | "rust" | "laravel"
   Frontend: "nextjs" | "remix" | "vite-react" | "vite-vue" | "vite-svelte" | "vite-solid" | "vite-vanilla" | "nuxt" | "angular" | "astro" | "sveltekit"
+  Desktop: "tauri" | "electron"
+  Extension: "vscode-extension"
 
-Unsupported native scaffolds:
-  PHP / Laravel / Symfony, Ruby / Rails, and Rust are NOT native create targets yet.
-  Never translate these requests into NestJS, FastAPI, Go, Java, .NET, or frontend kits.
+Unsupported create targets:
+  WordPress, Symfony, Ruby / Rails, and unlisted ecosystems are not executable create targets.
+  Never translate these requests into an unrelated available kit.
   If the user explicitly asks for an unsupported stack, the host will stop the create flow and guide them to create/adopt/import instead.
 
 Available kits (use EXACT names):
@@ -1784,6 +1819,10 @@ Available kits (use EXACT names):
   "gogin.standard"    — Go + Gin HTTP (classic REST)
   "springboot.standard" — Spring Boot service (default for Java)
   "dotnet.webapi.clean" — .NET Web API clean architecture service (default for C#)
+  "rust.axum" — Rust Axum backend
+  "php.laravel" — Laravel via the official Composer generator
+  "desktop.tauri" | "desktop.electron"
+  "extension.vscode"
   "frontend.nextjs" | "frontend.remix" | "frontend.vite-react" | "frontend.vite-vue" | "frontend.vite-svelte" | "frontend.vite-solid" | "frontend.vite-vanilla" | "frontend.nuxt" | "frontend.angular" | "frontend.astro" | "frontend.sveltekit"
 
 ${modulesSection}
@@ -1812,7 +1851,7 @@ Required JSON schema (return EXACTLY this):
 
 Rules:
 - For fastapi/nestjs, ALWAYS include "free/essentials/settings" in suggestedModules
-- For go/springboot/dotnet/frontend frameworks, set suggestedModules to []
+- For go/springboot/dotnet/rust/laravel/frontend/desktop/extension frameworks, set suggestedModules to []
 - Use fastapi.ddd kit when: DDD / clean-arch / domain / layered / complex mentioned
 - Use polyglot profile when: full-stack / polyglot / frontend+backend / multiple runtimes mentioned
 - Choose the smallest accurate stack from the user's wording; do not blindly convert product-domain requests into full-stack

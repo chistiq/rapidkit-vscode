@@ -25,11 +25,18 @@ export type StudioDependencyUpgradeCandidate = {
   auditFixVersion?: string;
   auditFixIsSemVerMajor?: boolean;
   targetVersion?: string;
-  disposition: 'safe-upgrade' | 'breaking-change' | 'downgrade-only' | 'no-exact-fix';
+  disposition:
+    | 'safe-upgrade'
+    | 'compatible-resolution'
+    | 'breaking-change'
+    | 'downgrade-only'
+    | 'no-exact-fix';
   autoExecutable: boolean;
 };
 
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i;
+const SAFE_VERSION_SPEC_PATTERN =
+  /^(?:v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?|[~^]v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)$/;
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -55,8 +62,19 @@ function dependencyFixDisposition(input: {
   currentRange: string;
   fixVersion?: string;
   isSemVerMajor?: boolean;
+  packageManagerCanResolve?: boolean;
 }): Pick<StudioDependencyUpgradeCandidate, 'targetVersion' | 'disposition' | 'autoExecutable'> {
   if (!input.fixVersion) {
+    if (
+      input.packageManagerCanResolve === true &&
+      /^[~^]v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(input.currentRange.trim())
+    ) {
+      return {
+        targetVersion: input.currentRange.trim(),
+        disposition: 'compatible-resolution',
+        autoExecutable: true,
+      };
+    }
     return { disposition: 'no-exact-fix', autoExecutable: false };
   }
   const current = exactSemver(input.currentRange);
@@ -135,6 +153,7 @@ export async function parseStudioDependencyUpgradeCandidates(input: {
           currentRange,
           fixVersion: auditFixVersion,
           isSemVerMajor: typeof fix?.isSemVerMajor === 'boolean' ? fix.isSemVerMajor : undefined,
+          packageManagerCanResolve: vulnerability.fixAvailable === true,
         }),
       },
     ];
@@ -147,6 +166,12 @@ export function buildStudioDependencyUpgradeCommand(input: {
 }): string {
   if (!PACKAGE_NAME_PATTERN.test(input.candidate.packageName)) {
     throw new Error('Dependency upgrade package name is invalid.');
+  }
+  if (
+    !input.candidate.targetVersion ||
+    !SAFE_VERSION_SPEC_PATTERN.test(input.candidate.targetVersion)
+  ) {
+    throw new Error('Dependency upgrade target version is invalid or unbounded.');
   }
   if (!input.candidate.autoExecutable || !input.candidate.targetVersion) {
     throw new Error(
@@ -210,6 +235,21 @@ async function packageManagerFor(projectPath: string): Promise<{
   throw new Error('Dependency security target has no supported Node manifest.');
 }
 
+export async function resolveStudioDependencySecurityTargetFromProject(input: {
+  projectPath: string;
+  projectName?: string;
+  vulnerabilities?: number;
+}): Promise<StudioDependencySecurityTarget> {
+  const projectPath = path.resolve(input.projectPath);
+  const manager = await packageManagerFor(projectPath);
+  return {
+    projectName: input.projectName?.trim() || path.basename(projectPath),
+    projectPath,
+    vulnerabilities: Math.max(0, input.vulnerabilities ?? 0),
+    ...manager,
+  };
+}
+
 export async function resolveStudioDependencySecurityTargets(input: {
   workspacePath: string;
 }): Promise<StudioDependencySecurityTarget[]> {
@@ -249,13 +289,11 @@ export async function resolveStudioDependencySecurityTargets(input: {
     vulnerable.map(async (project) => {
       const projectName = project.name as string;
       const projectPath = project.path as string;
-      const manager = await packageManagerFor(projectPath);
-      return {
+      return resolveStudioDependencySecurityTargetFromProject({
         projectName,
         projectPath,
         vulnerabilities: project.vulnerabilities as number,
-        ...manager,
-      };
+      });
     })
   );
 }

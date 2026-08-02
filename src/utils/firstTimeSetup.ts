@@ -69,9 +69,7 @@ export async function showFirstTimeSetupMessage(): Promise<boolean> {
   );
 
   if (selected === learnMoreAction) {
-    await vscode.env.openExternal(
-      vscode.Uri.parse('https://www.workspai.com/docs/getting-started')
-    );
+    await vscode.env.openExternal(vscode.Uri.parse('https://www.workspai.dev/learn'));
     return false;
   }
 
@@ -156,6 +154,6 @@ export async function showFirstTimeSetupComplete(): Promise<void> {
   if (selected === createWorkspaceAction) {
     await vscode.commands.executeCommand('workspai.createWorkspace');
   } else if (selected === viewDocsAction) {
-    await vscode.env.openExternal(vscode.Uri.parse('https://www.workspai.com/docs'));
+    await vscode.env.openExternal(vscode.Uri.parse('https://www.workspai.dev/learn'));
   }
 }

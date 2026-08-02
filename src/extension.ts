@@ -4,7 +4,6 @@
  */
 
 import * as vscode from 'vscode';
-import path from 'path';
 import { runningServers } from './core/runningServers';
 import {
   resolveWorkspacePathForEvidenceTerminal,
@@ -77,6 +76,7 @@ import { WorkspaceMemoryService } from './core/workspaceMemoryService';
 import { registerWorkspaiChatParticipant } from './commands/chatParticipant';
 import { registerModelCacheConfigListener } from './core/aiModelSelection';
 import { WorkspaceManager } from './core/workspaceManager';
+import { PROJECT_REFRESH_WATCH_PATTERNS } from './core/projectRefreshContract';
 import {
   buildWorkspaceShareBundleDashboardSummary,
   parseWorkspaceShareBundle,
@@ -94,21 +94,6 @@ let workspaceContractGraphExplorer: WorkspaceContractGraphProvider;
 // templateExplorer removed
 
 const PROJECT_WATCHER_REFRESH_DEBOUNCE_MS = 250;
-const PROJECT_REFRESH_WATCH_PATTERNS = [
-  '**/pyproject.toml',
-  '**/requirements.txt',
-  '**/package.json',
-  '**/go.mod',
-  '**/pom.xml',
-  '**/build.gradle',
-  '**/build.gradle.kts',
-  '**/settings.gradle',
-  '**/settings.gradle.kts',
-  '**/composer.json',
-  '**/Cargo.toml',
-  '**/mix.exs',
-  '**/Gemfile',
-];
 const AI_ONBOARDING_VERSION_KEY = 'workspai.aiOnboarding.versionShown';
 const AI_ONBOARDING_VERSION = '0.20.0-ai-ux-tour-1';
 const AI_ONBOARDING_TOAST_VARIANT_KEY = 'workspai.aiOnboarding.toastVariant';
@@ -706,7 +691,7 @@ export async function activate(context: vscode.ExtensionContext) {
           trigger: 'ai-for-workspace',
         });
       }),
-      // Edit / create workspace memory — opens .rapidkit/workspace-memory.json
+      // Edit / create workspace memory — writes canonical .workspai metadata.
       vscode.commands.registerCommand('workspai.editWorkspaceMemory', async (item?: unknown) => {
         const contextItem = asAIContextItem(item);
         const ws = contextItem?.workspace || workspaceExplorer?.getSelectedWorkspace();
@@ -719,7 +704,7 @@ export async function activate(context: vscode.ExtensionContext) {
           // Seed with a template so the user has something to start from
           await memSvc.writeTemplate(ws.path);
         }
-        const memUri = vscode.Uri.file(path.join(ws.path, '.rapidkit', 'workspace-memory.json'));
+        const memUri = vscode.Uri.file(await memSvc.resolveMemoryPath(ws.path));
         await vscode.window.showTextDocument(memUri, { preview: false });
         vscode.window.showInformationMessage(
           'Edit your workspace memory — the AI will include it in every prompt.',
@@ -1419,6 +1404,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
         registerProjectRefreshWatchers(context, config, () => {
           projectExplorer.refresh();
+          void moduleExplorer.reloadModuleStates();
+          doctorEvidenceExplorer.refresh();
+          workspaceContractGraphExplorer.refresh();
         });
       } catch (error) {
         logger.error('Error during async initialization:', error);

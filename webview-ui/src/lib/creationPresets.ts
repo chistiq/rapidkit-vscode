@@ -288,7 +288,37 @@ export function resolveProjectPlaceholder(framework?: ScaffoldFramework): string
   if (framework && isFrontendScaffoldFramework(framework)) {
     return 'e.g. "Customer dashboard with protected routes and API-backed tables"';
   }
+  if (framework === 'tauri' || framework === 'electron') {
+    return 'e.g. "Cross-platform desktop client with settings and secure API access"';
+  }
+  if (framework === 'vscode-extension') {
+    return 'e.g. "VS Code extension with commands, a sidebar view, and tests"';
+  }
   return 'e.g. "CRUD API with JWT auth, PostgreSQL, and clean layered architecture"';
+}
+
+export function resolveCreatePlaceholder(
+  lane: CreationStackLane,
+  target: 'workspace' | 'project',
+  workspaceName?: string
+): string {
+  if (target === 'workspace') {
+    return resolveWorkspacePlaceholder(lane);
+  }
+
+  const scope = workspaceName?.trim() ? ` to ${workspaceName.trim()}` : '';
+  switch (lane) {
+    case 'frontend':
+      return `Describe a frontend project to add${scope} — Next.js, React, Vue, Astro…`;
+    case 'backend':
+      return `Describe an API or backend service to add${scope} — Node, Python, Go, Java, .NET…`;
+    case 'polyglot':
+      return `Describe one full-stack or cross-runtime project to add${scope}…`;
+    case 'enterprise':
+      return `Describe one governed, release-ready project to add${scope}…`;
+    default:
+      return `Describe one project to add${scope} — web, API, desktop, extension, or CLI…`;
+  }
 }
 
 /** Quick-start prompts shown in the sidebar Add drawer, keyed by stack lane. */
@@ -312,6 +342,54 @@ export function quickStartsForStackLane(lane: CreationStackLane): string[] {
         pick('backend-services')[0],
         pick('platform-ai')[0],
         pick('enterprise-governance')[0],
+      ].filter(Boolean) as string[];
+  }
+}
+
+/**
+ * Target-aware quick starts for the Create composer.
+ *
+ * Workspace prompts may describe multiple projects. Project prompts must remain
+ * executable as one scaffold so selecting Project never silently expands into
+ * a second project or a new workspace.
+ */
+export function quickStartsForCreateTarget(
+  lane: CreationStackLane,
+  target: 'workspace' | 'project'
+): string[] {
+  if (target === 'workspace') {
+    return quickStartsForStackLane(lane);
+  }
+
+  const pick = (categoryId: string) =>
+    WORKSPACE_PRESET_CATEGORIES.find((category) => category.id === categoryId)?.options.map(
+      (option) => option.text
+    ) ?? [];
+
+  switch (lane) {
+    case 'frontend':
+      return pick('frontend-products');
+    case 'backend':
+      return [...pick('backend-services'), ...pick('systems-runtimes')].slice(0, 5);
+    case 'polyglot':
+      return [
+        'Next.js full-stack application with authenticated routes and server-side API handlers',
+        'Nuxt full-stack application with a governed server API and shared validation',
+        'Electron desktop application with a TypeScript UI and secure backend integration',
+      ];
+    case 'enterprise':
+      return [
+        'NestJS service with audit logging, policy boundaries, and release-ready tests',
+        'Spring Boot service with health checks, validation, and compliance-ready evidence',
+        'VS Code extension with governed commands, a sidebar view, and automated tests',
+      ];
+    default:
+      return [
+        pick('frontend-products')[0],
+        pick('backend-services')[0],
+        pick('systems-runtimes')[0],
+        'Tauri desktop application with a TypeScript interface and secure local commands',
+        'VS Code extension with commands, a sidebar view, and automated tests',
       ].filter(Boolean) as string[];
   }
 }

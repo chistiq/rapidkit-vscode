@@ -1,6 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import {
+  resolveWorkspaceArtifactPathSync,
+  WORKSPAI_REPORTS_DIR,
+} from '../../core/workspaceIntelligencePaths';
 
 export interface WorkspaceContext {
   workspacePath: string;
@@ -42,7 +46,10 @@ export interface AnalyzeReport {
 }
 
 export const getAnalyzeReportPath = (workspacePath: string): string => {
-  return path.join(workspacePath, '.rapidkit', 'reports', 'analyze-last-run.json');
+  return resolveWorkspaceArtifactPathSync(
+    workspacePath,
+    path.join(WORKSPAI_REPORTS_DIR, 'analyze-last-run.json')
+  );
 };
 
 export const analyzeReportExists = (workspacePath: string): boolean => {

@@ -21,10 +21,16 @@ import {
   verifyWorkspaceArchive,
   WORKSPACE_ARCHIVE_MANIFEST_PATH,
 } from '../../utils/workspaceArchive';
+import {
+  PROJECT_MODULE_REGISTRY_RELATIVE_PATHS,
+  WORKSPACE_PROFILE_RELATIVE_PATHS,
+  WORKSPACE_SCOPED_WATCH_GLOB,
+  WORKSPACE_TREE_WATCH_GLOBS,
+} from '../../utils/workspaceCanonicalPaths';
 import { WelcomePanel } from '../panels/welcomePanel';
 
 const WATCHER_REFRESH_DEBOUNCE_MS = 250;
-const WORKSPACE_ARCHIVE_RECOVERY_DOCS_URL = 'https://www.workspai.com/docs/troubleshooting';
+const WORKSPACE_ARCHIVE_RECOVERY_DOCS_URL = 'https://www.workspai.dev/learn/workspace-doctor';
 const ARCHIVE_RECOVERY_DOCS_ACTION = 'Open Docs';
 const ARCHIVE_RECOVERY_FOLDER_ACTION = 'Import Folder Instead';
 
@@ -59,7 +65,8 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
   private versionService = CoreVersionService.getInstance();
   private workspaces: WorkspaiWorkspace[] = [];
   private selectedWorkspace: WorkspaiWorkspace | null = null;
-  private fileWatcher?: vscode.FileSystemWatcher;
+  private fileWatchers: vscode.FileSystemWatcher[] = [];
+  private scopedFileWatchers = new Map<string, vscode.FileSystemWatcher>();
   private versionInfoCache: Map<string, CoreVersionInfo> = new Map();
   private profileCache: Map<string, string | undefined> = new Map();
   private moduleCountCache: Map<string, number> = new Map();
@@ -74,17 +81,42 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
   }
 
   private setupFileWatcher(): void {
-    // Watch for .rapidkit-workspace file changes
-    this.fileWatcher = vscode.workspace.createFileSystemWatcher(
-      '**/.rapidkit-workspace',
-      false,
-      false,
-      false
-    );
+    // Canonical Workspai artifacts own the live tree. Legacy markers remain
+    // watched so migrated workspaces still refresh without a manual reload.
+    this.fileWatchers = WORKSPACE_TREE_WATCH_GLOBS.map((glob) => {
+      const watcher = vscode.workspace.createFileSystemWatcher(glob, false, false, false);
+      watcher.onDidCreate(() => this.scheduleRefresh());
+      watcher.onDidChange(() => this.scheduleRefresh());
+      watcher.onDidDelete(() => this.scheduleRefresh());
+      return watcher;
+    });
+  }
 
-    this.fileWatcher.onDidCreate(() => this.scheduleRefresh());
-    this.fileWatcher.onDidChange(() => this.scheduleRefresh());
-    this.fileWatcher.onDidDelete(() => this.scheduleRefresh());
+  private syncScopedFileWatchers(): void {
+    const workspacePaths = new Set(
+      this.workspaces.map((workspace) => path.resolve(workspace.path))
+    );
+    for (const [workspacePath, watcher] of this.scopedFileWatchers) {
+      if (!workspacePaths.has(workspacePath)) {
+        watcher.dispose();
+        this.scopedFileWatchers.delete(workspacePath);
+      }
+    }
+    for (const workspacePath of workspacePaths) {
+      if (this.scopedFileWatchers.has(workspacePath)) {
+        continue;
+      }
+      const watcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(workspacePath, WORKSPACE_SCOPED_WATCH_GLOB),
+        false,
+        false,
+        false
+      );
+      watcher.onDidCreate(() => this.scheduleRefresh());
+      watcher.onDidChange(() => this.scheduleRefresh());
+      watcher.onDidDelete(() => this.scheduleRefresh());
+      this.scopedFileWatchers.set(workspacePath, watcher);
+    }
   }
 
   private scheduleRefresh(): void {
@@ -99,7 +131,14 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
   }
 
   dispose(): void {
-    this.fileWatcher?.dispose();
+    for (const watcher of this.fileWatchers) {
+      watcher.dispose();
+    }
+    this.fileWatchers = [];
+    for (const watcher of this.scopedFileWatchers.values()) {
+      watcher.dispose();
+    }
+    this.scopedFileWatchers.clear();
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
@@ -223,7 +262,7 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
           continue;
         }
         const projectPath = path.join(workspacePath, entry.name);
-        for (const registryRelPath of ['registry.json', '.rapidkit/registry.json']) {
+        for (const registryRelPath of PROJECT_MODULE_REGISTRY_RELATIVE_PATHS) {
           const registryPath = path.join(projectPath, registryRelPath);
           if (await fs.pathExists(registryPath)) {
             try {
@@ -249,11 +288,15 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
 
     let profile: string | undefined;
     try {
-      const manifestPath = path.join(workspacePath, '.rapidkit', 'workspace.json');
-      if (await fs.pathExists(manifestPath)) {
+      for (const relativePath of WORKSPACE_PROFILE_RELATIVE_PATHS) {
+        const manifestPath = path.join(workspacePath, relativePath);
+        if (!(await fs.pathExists(manifestPath))) {
+          continue;
+        }
         const manifest = await fs.readJSON(manifestPath).catch(() => null);
         if (manifest?.profile && typeof manifest.profile === 'string') {
           profile = manifest.profile;
+          break;
         }
       }
     } catch {
@@ -293,6 +336,7 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
   private async loadWorkspaces(options: { publishSelection?: boolean } = {}): Promise<void> {
     const publishSelection = options.publishSelection !== false;
     this.workspaces = await this.workspaceManager.loadWorkspaces();
+    this.syncScopedFileWatchers();
 
     // Auto-select first workspace if none selected
     if (!this.selectedWorkspace && this.workspaces.length > 0) {
@@ -366,7 +410,7 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
         },
         {
           label: '$(archive) Import from Archive',
-          description: 'Extract and import from .rapidkit-archive.zip',
+          description: 'Extract and import from .workspai-archive.zip',
           detail: 'Full workspace restore with all files',
           value: 'archive',
         },
@@ -446,9 +490,9 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
             'The selected folder is not a governed workspace root.',
             '',
             'A valid workspace root must include one of:',
-            '- .rapidkit/workspace.json',
-            '- .rapidkit-workspace with a Workspai/RapidKit signature',
-            '- legacy RapidKit workspace bootstrap files',
+            '- .workspai/workspace.json',
+            '- .workspai-workspace',
+            '- legacy .rapidkit/workspace.json or .rapidkit-workspace metadata',
             '',
             'If this is a project folder, import or adopt it from an active workspace instead.',
           ].join('\n'),
@@ -501,8 +545,8 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
   private async importFromRemoteArchive(): Promise<WorkspaiWorkspace | undefined> {
     const archiveUrl = await vscode.window.showInputBox({
       title: 'Import Remote Workspace Archive',
-      prompt: 'Paste a HTTPS/HTTP .rapidkit-archive.zip URL',
-      placeHolder: 'https://example.com/team-workspace.rapidkit-archive.zip',
+      prompt: 'Paste an HTTPS/HTTP .workspai-archive.zip URL',
+      placeHolder: 'https://example.com/team-workspace.workspai-archive.zip',
       ignoreFocusOut: true,
       validateInput: (value) => {
         const trimmed = value.trim();
@@ -715,7 +759,7 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
         // Prompt for save location first
         const saveUri = await vscode.window.showSaveDialog({
           defaultUri: vscode.Uri.file(
-            path.join(os.homedir(), 'Downloads', `${workspace.name}.rapidkit-archive.zip`)
+            path.join(os.homedir(), 'Downloads', `${workspace.name}.workspai-archive.zip`)
           ),
           filters: {
             'Workspai Archive': ['zip'],
@@ -920,13 +964,15 @@ export class WorkspaceTreeItem extends vscode.TreeItem {
       // Enhanced tooltip with version info
       let tooltipText = `${workspace.name}\n${workspace.path}\nMode: ${workspace.mode}\n${projectText}`;
 
-      if (versionInfo) {
+      if (versionInfo && versionInfo.status !== 'not-required') {
         const versionService = CoreVersionService.getInstance();
         const statusMsg = versionService.getStatusMessage(versionInfo);
         const locationText = versionInfo.location ? ` (${versionInfo.location})` : '';
         tooltipText += `\n\n🩺 ${statusMsg}${locationText}`;
         if (versionInfo.status === 'update-available') {
           tooltipText += `\n\n💡 Click doctor icon to upgrade`;
+        } else if (versionInfo.status === 'repair-required') {
+          tooltipText += `\n\n💡 Click doctor icon to repair the workspace environment`;
         }
       }
 

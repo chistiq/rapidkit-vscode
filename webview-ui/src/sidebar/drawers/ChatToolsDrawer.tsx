@@ -44,12 +44,13 @@ function sessionMetaLabel(session: ChatSession, fallback: string): string {
   const status = session.incident.repairStatus
     ? statusLabels[session.incident.repairStatus] ?? session.incident.repairStatus
     : fallback;
+  const affectedCount = session.incident.affectedProjectNames?.length ?? 0;
   const scope =
-    session.incident.projectName ||
-    session.incident.workspaceName ||
-    basenameFromPath(session.incident.projectPath) ||
-    basenameFromPath(session.incident.workspacePath) ||
-    'workspace';
+    session.incident.scope === 'workspace'
+      ? `Workspace repair${affectedCount > 0 ? ` · ${affectedCount} affected project${affectedCount === 1 ? '' : 's'}` : ''}`
+      : session.incident.projectName ||
+        basenameFromPath(session.incident.projectPath) ||
+        'Project repair';
   const seen = session.incident.lastSeenAt
     ? new Date(session.incident.lastSeenAt).toLocaleTimeString([], {
         hour: '2-digit',
@@ -90,12 +91,28 @@ export function ChatToolsDrawer(props: ChatToolsDrawerProps) {
   );
   const activeGroup =
     sessionGroups.find((group) => group.kind === sessionKind) ?? sessionGroups[0] ?? null;
-  const scopeTitle = props.scope.projectName
-    ? props.scope.projectName
-    : props.scope.workspaceName || basenameFromPath(props.scope.workspacePath) || 'Workspace';
-  const scopeSubtitle = props.scope.projectName
-    ? 'Project-scoped questions'
-    : 'Workspace-level questions';
+  const activeIncident = props.sessions.find(
+    (session) => session.sessionId === props.activeSessionId
+  )?.incident;
+  const activeIncidentAffectedCount = activeIncident?.affectedProjectNames?.length ?? 0;
+  const scopeTitle = activeIncident
+    ? activeIncident.scope === 'project'
+      ? activeIncident.projectName ||
+        basenameFromPath(activeIncident.projectPath) ||
+        'Project repair'
+      : activeIncident.workspaceName ||
+        basenameFromPath(activeIncident.workspacePath) ||
+        'Workspace repair'
+    : props.scope.projectName
+      ? props.scope.projectName
+      : props.scope.workspaceName || basenameFromPath(props.scope.workspacePath) || 'Workspace';
+  const scopeSubtitle = activeIncident
+    ? activeIncident.scope === 'project'
+      ? 'Project repair'
+      : `Workspace repair${activeIncidentAffectedCount > 0 ? ` · ${activeIncidentAffectedCount} affected project${activeIncidentAffectedCount === 1 ? '' : 's'}` : ''}`
+    : props.scope.projectName
+      ? 'Project-scoped questions'
+      : 'Workspace-level questions';
 
   useEffect(() => {
     if (mainTab === 'questions' || sessionGroups.length === 0) {

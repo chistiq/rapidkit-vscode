@@ -537,6 +537,76 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
     usage:
       'Guards watch event reason, changed paths, and affected artifacts before incremental dashboard and Studio refresh.',
   },
+  {
+    contractPath: 'ingestion-plan.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Create, adopt, import, and workspace ingestion planning',
+    usage:
+      'Guards the portable preflight plan used to distinguish project adoption, project import, workspace import, and archive hydration before mutation.',
+  },
+  {
+    contractPath: 'ingestion-result.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Create session result and canonical project refresh',
+    usage:
+      'Consumes structured ingestion outcomes so Create sessions can report the target workspace, registered projects, written artifacts, and safe next action.',
+  },
+  {
+    contractPath: 'project-test-coverage.v1.json',
+    mode: 'mirrored-reserved',
+    extensionSurface: 'Project test-depth compatibility boundary',
+    usage:
+      'Ships the canonical coverage objective and result schema for the planned project test-depth card without inventing coverage from editor state.',
+  },
+  {
+    contractPath: 'project-workspace-link.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Project-to-workspace scope resolution in sidebars and commands',
+    usage:
+      'Guards the durable project binding that lets commands launched inside an external adopted project resolve its owning Workspai workspace deterministically.',
+  },
+  {
+    contractPath: 'project-workspace-resolution.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Project command scope and workspace recovery',
+    usage:
+      'Consumes the canonical resolution result so the extension can distinguish direct, marker, registry, recovered, ambiguous, and unresolved workspace ownership.',
+  },
+  {
+    contractPath: 'workspace-intelligence/doctor-graph-diagnosis.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Doctor evidence, graph-aware blocker diagnosis, and Studio handoff',
+    usage:
+      'Carries proof-backed graph diagnoses from Doctor into blocker cards and Studio so causal projects, relations, confidence, and verification remain inspectable.',
+  },
+  {
+    contractPath: 'workspace-intelligence/doctor-dependency-repair-transaction.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Studio dependency-security transaction state machine',
+    usage:
+      'Consumes the ordered reconcile, audit, test, and build transaction so Studio cannot treat a manifest-only edit as a completed dependency repair.',
+  },
+  {
+    contractPath: 'workspace-intelligence/project-context-agent.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Project-scoped Assistant and Studio grounding',
+    usage:
+      'Reads the bounded project context artifact that points an agent from one project to its owning workspace, model, graph, evidence index, and safe commands.',
+  },
+  {
+    contractPath: 'workspace-intelligence/verified-goal.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Assistant and Studio measurable-goal planning',
+    usage:
+      'Creates durable release-readiness, dependency-security, and test-coverage goals with explicit scope, constraints, baselines, and completion criteria.',
+  },
+  {
+    contractPath: 'workspace-intelligence/verified-goal-status.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Assistant and Studio goal progress and completion evidence',
+    usage:
+      'Reads the durable goal status artifact so progress, verification, blockers, and completion remain resumable and inspectable across sessions.',
+  },
 ];
 
 export function getNpmContractSupportEntry(

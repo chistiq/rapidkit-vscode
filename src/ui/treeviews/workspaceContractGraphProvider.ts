@@ -3,7 +3,6 @@ import {
   readWorkspaceContractGraph,
   type WorkspaceContractGraphModel,
   type WorkspaceContractProject,
-  WORKSPACE_CONTRACT_PATH,
 } from '../../utils/workspaceContractGraph';
 
 const CONTRACT_RELOAD_DEBOUNCE_MS = 200;
@@ -320,7 +319,7 @@ export class WorkspaceContractGraphProvider implements vscode.TreeDataProvider<W
 
   private setupFileWatcher(): void {
     this.fileWatcher = vscode.workspace.createFileSystemWatcher(
-      `**/${WORKSPACE_CONTRACT_PATH.replace(/\\/g, '/')}`,
+      '**/{.workspai,.rapidkit}/workspace.contract.json',
       false,
       false,
       true

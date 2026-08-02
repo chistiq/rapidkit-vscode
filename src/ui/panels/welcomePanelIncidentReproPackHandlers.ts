@@ -7,6 +7,7 @@ import {
   buildLinkSafeExportBundle,
   parseImportedReproBundle,
 } from './incidentReproPackUtils';
+import { WORKSPAI_REPORTS_DIR } from '../../core/workspaceIntelligencePaths';
 import type { WebviewFromExtensionMessage } from '../../contracts/webviewProtocol';
 import type { ImportedIncidentReplay } from './welcomePanelChatBrainLifecycle';
 import type { IncidentMemoryInfluenceAuditEntry } from './welcomePanel.shared.js';
@@ -107,7 +108,7 @@ export async function handleExportIncidentReproPack(
   const defaultFileName = `${reproPack.packId}-redacted-bundle.json`;
   const defaultUri = workspaceResolution
     ? vscode.Uri.file(
-        path.join(workspaceResolution.workspacePath, '.rapidkit', 'reports', defaultFileName)
+        path.join(workspaceResolution.workspacePath, WORKSPAI_REPORTS_DIR, defaultFileName)
       )
     : undefined;
 

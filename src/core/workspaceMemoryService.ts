@@ -1,6 +1,7 @@
 /**
  * WorkspaceMemoryService
- * Reads and writes project-level memory stored in .rapidkit/workspace-memory.json.
+ * Reads and writes project-level memory stored in .workspai/workspace-memory.json.
+ * The legacy .rapidkit path remains a read-only compatibility fallback.
  * The memory is injected into every AI system prompt so the model has persistent
  * context about conventions, decisions, and the project overview.
  */
@@ -95,8 +96,24 @@ export class WorkspaceMemoryService {
     return WorkspaceMemoryService._instance;
   }
 
-  private memoryPath(workspacePath: string): string {
-    return path.join(workspacePath, '.rapidkit', 'workspace-memory.json');
+  canonicalMemoryPath(workspacePath: string): string {
+    return path.join(workspacePath, '.workspai', 'workspace-memory.json');
+  }
+
+  private memoryPathCandidates(workspacePath: string): string[] {
+    return [
+      this.canonicalMemoryPath(workspacePath),
+      path.join(workspacePath, '.rapidkit', 'workspace-memory.json'),
+    ];
+  }
+
+  async resolveMemoryPath(workspacePath: string): Promise<string> {
+    for (const candidate of this.memoryPathCandidates(workspacePath)) {
+      if (await this.pathExists(candidate)) {
+        return candidate;
+      }
+    }
+    return this.canonicalMemoryPath(workspacePath);
   }
 
   private async pathExists(targetPath: string): Promise<boolean> {
@@ -324,9 +341,10 @@ export class WorkspaceMemoryService {
 
     let keepSearching = true;
     while (keepSearching) {
-      const candidate = path.join(currentPath, '.rapidkit', 'workspace-memory.json');
-      if (await this.pathExists(candidate)) {
-        return candidate;
+      for (const candidate of this.memoryPathCandidates(currentPath)) {
+        if (await this.pathExists(candidate)) {
+          return candidate;
+        }
       }
       const parent = path.dirname(currentPath);
       if (parent === currentPath) {
@@ -341,7 +359,9 @@ export class WorkspaceMemoryService {
 
   /** Returns true when a memory file exists for the workspace. */
   async hasMemory(workspacePath: string): Promise<boolean> {
-    return this.pathExists(this.memoryPath(workspacePath));
+    return (await this.resolveMemoryPath(workspacePath)) !== this.canonicalMemoryPath(workspacePath)
+      ? true
+      : this.pathExists(this.canonicalMemoryPath(workspacePath));
   }
 
   /**
@@ -349,7 +369,7 @@ export class WorkspaceMemoryService {
    * Returns DEFAULT_MEMORY (all empty) when the file does not exist or is unreadable.
    */
   async read(workspacePath: string): Promise<WorkspaceMemory> {
-    return this.readFromPath(this.memoryPath(workspacePath), true);
+    return this.readFromPath(await this.resolveMemoryPath(workspacePath), true);
   }
 
   /**
@@ -366,7 +386,7 @@ export class WorkspaceMemoryService {
 
   /**
    * Persist workspace memory to disk.
-   * Creates .rapidkit/ directory if it doesn't already exist.
+   * Creates the canonical .workspai/ directory if it doesn't already exist.
    */
   async write(
     workspacePath: string,
@@ -375,7 +395,7 @@ export class WorkspaceMemoryService {
   ): Promise<void> {
     const sanitized = this.sanitizeMemory(memory).memory;
     this.validateWriteAccessContract(sanitized, accessContract);
-    const filePath = this.memoryPath(workspacePath);
+    const filePath = this.canonicalMemoryPath(workspacePath);
     await this.writeAtPath(filePath, sanitized, true);
   }
 

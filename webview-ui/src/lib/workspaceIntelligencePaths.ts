@@ -23,18 +23,7 @@ export const WORKSPACE_CONTRACT_VERIFY_REPORT_PATH =
 
 /** Terminal Bridge / Studio CLI snippet — mirrors extension intelligence chain dispatch. */
 export function buildIntelligenceChainCliSnippet(): string {
-  return [
-    'npx workspai workspace model --json --write',
-    'npx workspai workspace snapshot --json',
-    `npx workspai workspace diff --from ${WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH} --json`,
-    `npx workspai workspace impact --from ${WORKSPACE_MODEL_DIFF_REPORT_PATH} --json`,
-    `npx workspai workspace verify --from-impact ${WORKSPACE_IMPACT_REPORT_PATH} --json`,
-    'npx workspai workspace context --for-agent --json --write',
-    'npx workspai workspace agent-sync --write --refresh-context --preset enterprise --target vscode --json',
-    `npx workspai workspace explain release-blocked --json --write`,
-    `npx workspai workspace why release-blocked --json --write`,
-    `npx workspai workspace trace --from ${WORKSPACE_MODEL_DIFF_REPORT_PATH} --json --write`,
-  ].join(' && ');
+  return 'npx workspai workspace intelligence run --for-agent vscode --json';
 }
 
 export function buildAgentGroundingSyncCliSnippet(): string {

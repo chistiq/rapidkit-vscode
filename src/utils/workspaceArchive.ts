@@ -6,7 +6,22 @@ import * as os from 'os';
 import * as path from 'path';
 import AdmZip from 'adm-zip';
 
-export const WORKSPACE_ARCHIVE_MANIFEST_PATH = '.rapidkit/archive-manifest.json';
+export const WORKSPACE_ARCHIVE_MANIFEST_PATH = '.workspai/archive-manifest.json';
+export const LEGACY_WORKSPACE_ARCHIVE_MANIFEST_PATH = '.rapidkit/archive-manifest.json';
+export const WORKSPACE_ARCHIVE_MANIFEST_PATHS = [
+  WORKSPACE_ARCHIVE_MANIFEST_PATH,
+  LEGACY_WORKSPACE_ARCHIVE_MANIFEST_PATH,
+] as const;
+
+export async function resolveWorkspaceArchiveManifestPath(workspacePath: string): Promise<string> {
+  for (const relativePath of WORKSPACE_ARCHIVE_MANIFEST_PATHS) {
+    const candidate = path.join(workspacePath, relativePath);
+    if (await fs.pathExists(candidate)) {
+      return candidate;
+    }
+  }
+  return path.join(workspacePath, WORKSPACE_ARCHIVE_MANIFEST_PATH);
+}
 
 export interface WorkspaceArchiveManifest {
   version: 1;
@@ -104,6 +119,7 @@ function assertWorkspaceArchiveUrl(rawUrl: string): URL {
 
 export function sanitizeWorkspaceArchiveName(rawName: string): string {
   const stripped = rawName
+    .replace(/\.workspai-archive\.zip$/i, '')
     .replace(/\.rapidkit-archive\.zip$/i, '')
     .replace(/\.zip$/i, '')
     .trim();
@@ -138,9 +154,11 @@ export function validateWorkspaceArchiveEntries(entryNames: string[]): void {
 }
 
 function parseWorkspaceArchiveManifest(zip: AdmZip): WorkspaceArchiveManifest {
-  const manifestEntry = zip.getEntry(WORKSPACE_ARCHIVE_MANIFEST_PATH);
+  const manifestEntry = WORKSPACE_ARCHIVE_MANIFEST_PATHS.map((entryPath) =>
+    zip.getEntry(entryPath)
+  ).find((entry) => Boolean(entry));
   if (!manifestEntry) {
-    throw new Error('Archive is missing .rapidkit/archive-manifest.json.');
+    throw new Error('Archive is missing .workspai/archive-manifest.json.');
   }
   const manifest = JSON.parse(
     manifestEntry.getData().toString('utf-8')
@@ -160,7 +178,12 @@ export function verifyWorkspaceArchive(input: {
   const manifest = parseWorkspaceArchiveManifest(zip);
   const entryByName = new Map(
     entries
-      .filter((entry) => entry.entryName !== WORKSPACE_ARCHIVE_MANIFEST_PATH && !entry.isDirectory)
+      .filter(
+        (entry) =>
+          !WORKSPACE_ARCHIVE_MANIFEST_PATHS.includes(
+            entry.entryName as (typeof WORKSPACE_ARCHIVE_MANIFEST_PATHS)[number]
+          ) && !entry.isDirectory
+      )
       .map((entry) => [entry.entryName, entry])
   );
   const manifestPaths = new Set(manifest.files.map((file) => file.path));

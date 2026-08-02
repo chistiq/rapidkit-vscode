@@ -17,6 +17,8 @@ describe('welcomePanelRecentWorkspaces', () => {
     expect(source).toContain('host.detectProjectType');
     expect(source).toContain('bootstrap-compliance');
     expect(source).toContain('mirror-ops');
-    expect(source).toContain('coreLatestVersion: versionInfo.latest');
+    expect(source).toContain(
+      "versionInfo.status === 'not-required' ? undefined : versionInfo.latest"
+    );
   });
 });

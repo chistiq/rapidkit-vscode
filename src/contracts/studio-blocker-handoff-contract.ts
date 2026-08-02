@@ -46,6 +46,7 @@ export type StudioBlockerHandoff = {
   /** Contract-backed release posture. Advisory blockers may be present while false. */
   blocking?: boolean;
   blockers: string[];
+  affectedProjectNames?: string[];
   artifactPath: string;
   sourceCommand: string;
   dashboardCommandId?: string;
@@ -146,6 +147,13 @@ export function isStudioBlockerHandoff(value: unknown): value is StudioBlockerHa
     return false;
   }
   if (!Array.isArray(record.blockers)) {
+    return false;
+  }
+  if (
+    record.affectedProjectNames != null &&
+    (!Array.isArray(record.affectedProjectNames) ||
+      !record.affectedProjectNames.every((entry) => typeof entry === 'string'))
+  ) {
     return false;
   }
   if (typeof record.artifactPath !== 'string') {

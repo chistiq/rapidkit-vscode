@@ -100,11 +100,19 @@ export interface Workspace {
   lastAccessed?: number;
   coreVersion?: string;
   coreLatestVersion?: string;
-  coreStatus?: 'ok' | 'outdated' | 'not-installed' | 'update-available' | 'error';
+  coreStatus?:
+    | 'ok'
+    | 'outdated'
+    | 'not-installed'
+    | 'update-available'
+    | 'not-required'
+    | 'install-required'
+    | 'repair-required'
+    | 'error';
   coreLocation?: 'workspace' | 'global' | 'pipx';
   lastModified?: number;
   projectCount?: number;
-  /** Phase 4: bootstrap profile written to .rapidkit/workspace.json */
+  /** Bootstrap profile from canonical .workspai/workspace.json evidence. */
   bootstrapProfile?:
     | 'minimal'
     | 'python-only'
@@ -114,7 +122,7 @@ export interface Workspace {
     | 'dotnet-only'
     | 'polyglot'
     | 'enterprise';
-  /** Phase 4: dependency sharing mode from .rapidkit/policies.yml */
+  /** Dependency sharing mode from canonical .workspai/policies.yml evidence. */
   dependencySharingMode?: 'isolated' | 'shared-runtime-caches' | 'shared-node-deps';
   /** Phase 4: policy enforcement mode */
   policyMode?: 'warn' | 'strict';
@@ -218,7 +226,14 @@ export interface Kit {
   description: string;
 }
 
-export type BackendScaffoldFramework = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
+export type BackendScaffoldFramework =
+  | 'fastapi'
+  | 'nestjs'
+  | 'go'
+  | 'springboot'
+  | 'dotnet'
+  | 'rust'
+  | 'laravel';
 
 export type FrontendScaffoldFramework =
   | 'nextjs'
@@ -233,4 +248,10 @@ export type FrontendScaffoldFramework =
   | 'astro'
   | 'sveltekit';
 
-export type ScaffoldFramework = BackendScaffoldFramework | FrontendScaffoldFramework;
+export type DesktopScaffoldFramework = 'tauri' | 'electron';
+export type ExtensionScaffoldFramework = 'vscode-extension';
+export type ScaffoldFramework =
+  | BackendScaffoldFramework
+  | FrontendScaffoldFramework
+  | DesktopScaffoldFramework
+  | ExtensionScaffoldFramework;

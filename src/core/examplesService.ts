@@ -79,7 +79,7 @@ export class ExamplesService {
   private readonly trackingFilePath: string;
   private readonly ttlMs: number = 60 * 60 * 1000; // 1 hour
   private readonly metadataUrl =
-    'https://raw.githubusercontent.com/rapidkitlabs/rapidkit-examples/main/examples.json';
+    'https://raw.githubusercontent.com/chistiq/rapidkit-examples/main/examples.json';
 
   private constructor(context: vscode.ExtensionContext) {
     this.storagePath = context.globalStorageUri.fsPath;
@@ -278,7 +278,7 @@ export class ExamplesService {
       }
 
       // Get latest commit hash from GitHub API
-      const apiUrl = `https://api.github.com/repos/rapidkitlabs/rapidkit-examples/commits/main`;
+      const apiUrl = `https://api.github.com/repos/chistiq/rapidkit-examples/commits/main`;
       const response = await axios.get(apiUrl, {
         timeout: this.getNetworkTimeoutMs(DEFAULT_EXAMPLES_UPDATES_TIMEOUT_MS),
         headers: {

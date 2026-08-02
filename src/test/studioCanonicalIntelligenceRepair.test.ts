@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { StudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
 import {
   shouldRunCanonicalIntelligenceRepair,
+  STUDIO_CANONICAL_INTELLIGENCE_ARGS,
   STUDIO_CANONICAL_INTELLIGENCE_COMMAND,
 } from '../core/studioCanonicalIntelligenceRepair.js';
 
@@ -42,6 +43,15 @@ describe('Studio canonical intelligence repair routing', () => {
   });
 
   it('uses the strict contract-backed runner for the VS Code agent surface', () => {
+    expect(STUDIO_CANONICAL_INTELLIGENCE_ARGS).toEqual([
+      'workspace',
+      'intelligence',
+      'run',
+      '--for-agent',
+      'vscode',
+      '--strict',
+      '--json',
+    ]);
     expect(STUDIO_CANONICAL_INTELLIGENCE_COMMAND).toBe(
       'npx workspai workspace intelligence run --for-agent vscode --strict --json'
     );

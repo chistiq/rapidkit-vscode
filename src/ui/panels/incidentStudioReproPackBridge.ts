@@ -9,6 +9,7 @@ import {
   buildLinkSafeExportBundle,
   parseImportedReproBundle,
 } from './incidentReproPackUtils';
+import { WORKSPAI_REPORTS_DIR } from '../../core/workspaceIntelligencePaths';
 
 export async function resolveIncidentReplayWorkspacePath(
   preferredWorkspacePath?: string,
@@ -79,7 +80,7 @@ export async function exportIncidentReproPack(
   const defaultFileName = `${reproPack.packId}-redacted-bundle.json`;
   const defaultUri = workspaceResolution
     ? vscode.Uri.file(
-        path.join(workspaceResolution.workspacePath, '.rapidkit', 'reports', defaultFileName)
+        path.join(workspaceResolution.workspacePath, WORKSPAI_REPORTS_DIR, defaultFileName)
       )
     : undefined;
 

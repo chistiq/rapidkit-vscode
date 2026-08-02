@@ -16,7 +16,7 @@ function sessionStatusLabel(session: ChatSession | null): string | null {
     return null;
   }
   if (session.status === 'streaming') {
-    return 'Replying…';
+    return session.activityLabel || 'Replying…';
   }
   if (session.status === 'error') {
     return 'Stopped';

@@ -8,6 +8,11 @@ const FRAMEWORK_MONOGRAM: Record<string, string> = {
   go: 'Go',
   springboot: 'JVM',
   dotnet: '.NET',
+  rust: 'Rs',
+  laravel: 'Lv',
+  tauri: 'Ta',
+  electron: 'El',
+  'vscode-extension': 'VS',
   nextjs: 'Nx',
   remix: 'Rx',
   'vite-react': 'VR',
@@ -51,7 +56,9 @@ function readFrameworkIconUri(framework: BackendScaffoldFramework): string | und
 }
 
 function isBackendFramework(framework: ScaffoldFramework): framework is BackendScaffoldFramework {
-  return ['fastapi', 'nestjs', 'go', 'springboot', 'dotnet'].includes(framework);
+  return ['fastapi', 'nestjs', 'go', 'springboot', 'dotnet', 'rust', 'laravel'].includes(
+    framework
+  );
 }
 
 interface FrameworkIconProps {

@@ -81,10 +81,71 @@ describe('React Create tab ↔ host protocol parity (roadmap 2.11d)', () => {
       'gofiber-standard',
       'gogin-standard',
       'dotnet-webapi-clean',
+      'rust-axum',
+      'php-laravel',
       'nextjs',
       'react-router',
+      'vite-react',
+      'vite-vue',
+      'vite-svelte',
+      'vite-solid',
+      'vite-vanilla',
+      'nuxt',
+      'angular',
+      'astro',
+      'sveltekit',
+      'desktop-tauri',
+      'desktop-electron',
+      'vscode-extension',
     ]) {
       expect(createTypes, `framework option "${framework}"`).toContain(`'${framework}'`);
+    }
+  });
+
+  it('exposes every existing-software onboarding path through the contract surface', () => {
+    const actionContract = read('src/contracts/sidebar-action-surface.v1.json');
+    const createTab = read('webview-ui/src/sidebar/CreateTab.tsx');
+    const addDrawer = read('webview-ui/src/sidebar/drawers/CreateAddDrawer.tsx');
+    for (const [actionId, command] of [
+      ['adoptExistingProject', 'workspai.adoptProject'],
+      ['importExistingProject', 'workspai.importProject'],
+      ['importExistingWorkspace', 'workspai.importWorkspace'],
+    ]) {
+      expect(actionContract).toContain(`\"${actionId}\"`);
+      expect(actionContract).toContain(`\"vscodeCommand\": \"${command}\"`);
+      expect(createTab).toContain(
+        actionId === 'adoptExistingProject'
+          ? 'onAdoptProject'
+          : actionId === 'importExistingProject'
+            ? 'onImportProject'
+            : 'onImportWorkspace'
+      );
+    }
+    expect(addDrawer).toContain('Existing software');
+    expect(addDrawer).toContain('Adopt project');
+    expect(addDrawer).toContain('Import project');
+    expect(addDrawer).toContain('Import workspace');
+  });
+
+  it('keeps manual project naming aligned with the CLI validation boundary', () => {
+    const projectDrawer = read('webview-ui/src/sidebar/drawers/ManualProjectDrawer.tsx');
+    expect(projectDrawer).toContain('/^[a-z][a-z0-9_-]*$/');
+    expect(projectDrawer).toContain('value.length < 2 || value.length > 214');
+    for (const reserved of [
+      'test',
+      'tests',
+      'src',
+      'dist',
+      'build',
+      'lib',
+      'python',
+      'pip',
+      'poetry',
+      'node',
+      'npm',
+      'rapidkit',
+    ]) {
+      expect(projectDrawer).toContain(`'${reserved}'`);
     }
   });
 
@@ -115,6 +176,27 @@ describe('React Create tab ↔ host protocol parity (roadmap 2.11d)', () => {
     expect(projectDrawer).toContain('ws-drawer-target-badge');
     expect(projectDrawer).toContain('MapPin');
     expect(sidebarCss).toContain('.ws-drawer-target-badge');
+  });
+
+  it('keeps the composer selector, add drawer, quick starts, and manual lanes on one target', () => {
+    const createTab = read('webview-ui/src/sidebar/CreateTab.tsx');
+    const addDrawer = read('webview-ui/src/sidebar/drawers/CreateAddDrawer.tsx');
+    const presets = read('webview-ui/src/lib/creationPresets.ts');
+
+    expect(createTab).toContain("scope.workspacePath ? 'project' : 'workspace'");
+    expect(createTab).toContain('target={createTarget}');
+    expect(createTab).toContain('onTargetChange={setCreateTarget}');
+    expect(createTab).toContain("setCreateTarget('workspace')");
+    expect(createTab).toContain("setCreateTarget('project')");
+    expect(createTab).toContain('resolveCreatePlaceholder(');
+    expect(createTab).toContain('setCreateTarget(contextualTarget)');
+    expect(createTab).toContain('setCreateTarget(activeSession?.target ?? contextualTarget)');
+    expect(createTab).toContain('setCreateTarget(session.target)');
+    expect(addDrawer).toContain('quickStartsForCreateTarget(stackLane, target)');
+    expect(addDrawer).toContain('role="radiogroup"');
+    expect(addDrawer).toContain('Workspace quick starts');
+    expect(addDrawer).toContain('Project quick starts');
+    expect(presets).toContain('one scaffold');
   });
 
   it('streams manual create progress steps before the final result', () => {
@@ -166,5 +248,15 @@ describe('React Create tab ↔ host protocol parity (roadmap 2.11d)', () => {
     expect(managedDefaultWorkspace).toContain(
       'await ensureWorkspaceViaNpm(workspacePath, workspaceName)'
     );
+  });
+
+  it('never routes fallback onboarding back to the legacy rapidkit npm package', () => {
+    const createWorkspace = read('src/commands/createWorkspace.ts');
+    const createProject = read('src/commands/createProject.ts');
+    expect(createWorkspace).toContain("args: ['install', '-g', 'workspai']");
+    expect(createWorkspace).toContain('workspai create');
+    expect(createWorkspace).not.toContain("args: ['install', '-g', 'rapidkit']");
+    expect(createWorkspace).not.toContain('rapidkit create');
+    expect(createProject).not.toContain('rapidkit create project failed');
   });
 });

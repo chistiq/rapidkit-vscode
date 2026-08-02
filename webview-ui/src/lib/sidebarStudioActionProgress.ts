@@ -107,10 +107,20 @@ const STUDIO_AGENT_TOOL_LABELS: Record<
     completed: 'Upgraded vulnerable dependency',
     failed: 'Dependency upgrade needs another candidate',
   },
+  'complete-dependency-transaction': {
+    running: 'Validating dependency transaction',
+    completed: 'Dependency transaction closed',
+    failed: 'Dependency transaction still has work',
+  },
   'verify-blocker': {
     running: 'Verifying blocker',
     completed: 'Verified blocker',
     failed: 'Verify found remaining work',
+  },
+  'verify-goal': {
+    running: 'Verifying engineering goal',
+    completed: 'Verified engineering goal',
+    failed: 'Goal still has work',
   },
 };
 

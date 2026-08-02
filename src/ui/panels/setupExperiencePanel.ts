@@ -11,12 +11,16 @@ import * as path from 'path';
 import { runCommandsInTerminal } from '../../utils/terminalExecutor';
 import { run } from '../../utils/exec';
 import {
-  buildPackageRunnerSubprocessEnv,
+  buildPackageRunnerInvocationEnv,
   buildNpmCliVersionVerifyCommands,
   buildNpxRapidkitVersionProbeArgs,
   buildRapidkitDisplayCommand,
   parseNpmCliVersionOutput,
-  resolvePackageRunnerInvocation,
+  parseGlobalNpmPackageVersionOutput,
+  parsePipxRapidkitCoreVersion,
+  parseRapidkitCoreVersion,
+  discoverPackageRunnerInvocations,
+  discoverPythonExecutableCandidates,
 } from '../../utils/platformCapabilities';
 
 const SETUP_PREFERENCES_KEY = 'workspai.setup.preferences';
@@ -32,7 +36,13 @@ type SetupToolKey =
   | 'gradle'
   | 'dotnet';
 type InstallMethodKey = 'python' | 'core' | 'cli' | 'go' | 'java' | 'dotnet';
-type DetectionSource = 'manual-path' | 'path' | 'fallback' | 'workspace';
+type DetectionSource =
+  | 'manual-path'
+  | 'path'
+  | 'fallback'
+  | 'workspace'
+  | 'package-manager'
+  | 'python';
 type PathDoctorSuggestion = {
   id: string;
   title: string;
@@ -1247,78 +1257,91 @@ export class SetupPanel {
       );
     }
 
-    try {
-      const npmInvocation = resolvePackageRunnerInvocation('npm');
-      const listResult = await execa(
-        npmInvocation.command,
-        [...npmInvocation.prefixArgs, 'list', '-g', 'workspai', '--depth=0'],
-        {
-          shell: status.isWindows,
-          timeout: 3000,
-          reject: false,
-          env: buildPackageRunnerSubprocessEnv(),
-        }
-      );
-
-      if (listResult.exitCode === 0 && listResult.stdout.includes('workspai@')) {
-        const match = listResult.stdout.match(/workspai@([\d.]+)/);
-        if (match) {
-          status.npmVersion = match[1];
+    for (const npmInvocation of discoverPackageRunnerInvocations(
+      'npm',
+      process.platform,
+      process.env,
+      os.homedir()
+    )) {
+      try {
+        const listResult = await execa(
+          npmInvocation.command,
+          [...npmInvocation.prefixArgs, 'list', '-g', 'workspai', '--depth=0'],
+          {
+            shell: status.isWindows,
+            timeout: 3500,
+            reject: false,
+            env: buildPackageRunnerInvocationEnv(npmInvocation),
+          }
+        );
+        const version = parseGlobalNpmPackageVersionOutput(listResult.stdout || '');
+        if (listResult.exitCode === 0 && listResult.stdout.includes('workspai@') && version) {
+          status.npmVersion = version;
           status.npmInstalled = true;
-          status.npmLocation = 'npm global';
-          status.detections.cli = this._buildDetection('workspai', undefined);
+          status.npmLocation = npmInvocation.command;
+          status.detections.cli = {
+            source: 'package-manager',
+            command: `${npmInvocation.command} list -g workspai --depth=0`,
+            note: 'Detected as a global npm package, including Node version-manager installs.',
+          };
+          break;
         }
-      } else {
-        status.npmInstalled = false;
+      } catch {
+        continue;
       }
-    } catch {
-      status.npmInstalled = false;
     }
 
     // Check if Workspai is available via npx (even if not globally installed).
     if (!status.npmInstalled) {
-      try {
-        const npxInvocation = resolvePackageRunnerInvocation('npx');
-        const npxResult = await execa(
-          npxInvocation.command,
-          [...npxInvocation.prefixArgs, ...buildNpxRapidkitVersionProbeArgs()],
-          {
-            shell: status.isWindows,
-            timeout: 5000,
-            reject: false,
-            env: buildPackageRunnerSubprocessEnv(),
-          }
-        );
-
-        if (npxResult.exitCode === 0 && npxResult.stdout) {
+      for (const npxInvocation of discoverPackageRunnerInvocations(
+        'npx',
+        process.platform,
+        process.env,
+        os.homedir()
+      )) {
+        try {
+          const npxResult = await execa(
+            npxInvocation.command,
+            [...npxInvocation.prefixArgs, ...buildNpxRapidkitVersionProbeArgs()],
+            {
+              shell: status.isWindows,
+              timeout: 5000,
+              reject: false,
+              env: buildPackageRunnerInvocationEnv(npxInvocation),
+            }
+          );
           const parsedVersion = parseNpmCliVersionOutput(npxResult.stdout);
-          if (parsedVersion) {
+          if (npxResult.exitCode === 0 && parsedVersion) {
             status.npmVersion = parsedVersion;
             status.npmAvailableViaNpx = true;
-            status.npmLocation = 'npx (not global)';
+            status.npmLocation = npxInvocation.command;
             status.detections.cli = {
-              source: 'fallback',
+              source: 'package-manager',
               command: buildRapidkitDisplayCommand(['--version']),
-              note: 'CLI available through npx (npm bridge), not a global install.',
+              note: 'CLI is executable through npx; a global install is optional.',
             };
+            break;
           }
+        } catch {
+          continue;
         }
-      } catch {
-        // npx not available or the Workspai package was not found.
       }
     }
 
-    const pythonCommands = status.isWindows
-      ? [preferences.manualPaths.python || '', 'py', 'python3', 'python']
-      : [
-          preferences.manualPaths.python || '',
-          'python3',
-          'python',
-          'python3.10',
-          'python3.11',
-          'python3.12',
-          'python3.13',
-        ];
+    const pythonCommands = [
+      ...(status.isWindows
+        ? [preferences.manualPaths.python || '', 'py', 'python3', 'python']
+        : [
+            preferences.manualPaths.python || '',
+            'python3',
+            'python',
+            'python3.10',
+            'python3.11',
+            'python3.12',
+            'python3.13',
+          ]),
+      ...discoverPythonExecutableCandidates(process.platform, process.env, os.homedir()),
+    ].filter((value, index, values) => Boolean(value.trim()) && values.indexOf(value) === index);
 
     for (const cmd of pythonCommands) {
       try {
@@ -1361,7 +1384,7 @@ export class SetupPanel {
               : []),
             { cmd: 'pip3', args: ['--version'] },
             { cmd: 'pip', args: ['--version'] },
-            { cmd: 'python3', args: ['-m', 'pip', '--version'] },
+            ...pythonCommands.map((cmd) => ({ cmd, args: ['-m', 'pip', '--version'] })),
           ];
 
       for (const variant of pipVariants) {
@@ -1505,11 +1528,6 @@ export class SetupPanel {
       source: string;
     };
 
-    const extractVersion = (value: string): string | null => {
-      const match = value.match(/v?([\d.]+(?:rc\d+)?(?:a\d+)?(?:b\d+)?)/i);
-      return match?.[1] || null;
-    };
-
     const looksLikeCoreCliOutput = (output: string): boolean => {
       const normalized = (output || '').toLowerCase();
       return (
@@ -1528,10 +1546,10 @@ export class SetupPanel {
           reject: false,
         });
         const listOutput = listResult.stdout + listResult.stderr;
-        const packageMatch = listOutput.match(/package\s+rapidkit-core\s+([^,\s]+)/i);
-        if (packageMatch?.[1]) {
+        const version = parsePipxRapidkitCoreVersion(listOutput);
+        if (version) {
           return {
-            version: packageMatch[1].trim(),
+            version,
             installType: 'global',
             source: 'pipx-list',
           };
@@ -1606,7 +1624,7 @@ export class SetupPanel {
           return null;
         }
 
-        const version = extractVersion(rawOutput);
+        const version = parseRapidkitCoreVersion(rawOutput);
         if (!version) {
           return null;
         }
@@ -1688,7 +1706,7 @@ export class SetupPanel {
                 continue;
               }
 
-              const version = extractVersion(raw);
+              const version = parseRapidkitCoreVersion(raw);
               if (!version) {
                 continue;
               }
@@ -1744,7 +1762,14 @@ export class SetupPanel {
           );
           const version = result.stdout.trim();
           if (version && !version.includes('command not found')) {
-            return { version, installType: 'workspace', source: `python-import:${cmd}` };
+            const parsedVersion = parseRapidkitCoreVersion(version);
+            if (parsedVersion) {
+              return {
+                version: parsedVersion,
+                installType: 'global',
+                source: `python-import:${cmd}`,
+              };
+            }
           }
         } catch {
           continue;
@@ -1754,19 +1779,26 @@ export class SetupPanel {
     };
 
     const detectViaPipShow = async (): Promise<CoreDetectResult | null> => {
-      const pipCommands = status.isWindows ? ['pip', 'pip3'] : ['pip3', 'pip'];
-      for (const cmd of pipCommands) {
+      const pipCommands = [
+        ...pythonCommands.map((cmd) => ({ cmd, args: ['-m', 'pip', 'show', 'rapidkit-core'] })),
+        ...(status.isWindows ? ['pip', 'pip3'] : ['pip3', 'pip']).map((cmd) => ({
+          cmd,
+          args: ['show', 'rapidkit-core'],
+        })),
+      ];
+      for (const candidate of pipCommands) {
         try {
-          const result = await execa(cmd, ['show', 'rapidkit-core'], {
+          const result = await execa(candidate.cmd, candidate.args, {
             shell: status.isWindows,
             timeout: 2500,
           });
           const versionMatch = result.stdout.match(/Version:\s*(\S+)/);
-          if (versionMatch?.[1]) {
+          const version = versionMatch?.[1] ? parseRapidkitCoreVersion(versionMatch[1]) : null;
+          if (version) {
             return {
-              version: versionMatch[1],
-              installType: 'workspace',
-              source: `pip-show:${cmd}`,
+              version,
+              installType: 'global',
+              source: `pip-show:${candidate.cmd}`,
             };
           }
         } catch {
@@ -1822,16 +1854,22 @@ export class SetupPanel {
         status.coreInstallType = found.installType;
         status.detections.core = {
           source:
-            found.installType === 'workspace'
-              ? found.source === 'workspace-venv-runner'
-                ? 'workspace'
-                : 'fallback'
-              : 'fallback',
+            found.source === 'workspace-venv-runner'
+              ? 'workspace'
+              : found.source.startsWith('python-import:') || found.source.startsWith('pip-show:')
+                ? 'python'
+                : found.source.startsWith('pipx-')
+                  ? 'package-manager'
+                  : found.installType === 'workspace'
+                    ? 'workspace'
+                    : 'path',
           command: found.source,
           note:
             found.installType === 'workspace'
               ? 'Core detected inside the current workspace environment.'
-              : 'Core detected in a global/shared environment.',
+              : found.source.startsWith('python-import:') || found.source.startsWith('pip-show:')
+                ? 'Core detected in the active Python environment.'
+                : 'Core detected in a global/shared environment.',
         };
         break;
       } catch {

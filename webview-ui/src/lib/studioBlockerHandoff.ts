@@ -19,6 +19,7 @@ export type StudioBlockerHandoffView = {
   cardStatus: 'pass' | 'warn' | 'fail' | 'missing';
   blocking?: boolean;
   blockers: string[];
+  affectedProjectNames?: string[];
   artifactPath: string;
   sourceCommand: string;
   dashboardCommandId?: string;

@@ -94,6 +94,30 @@
       "vscodeCommand": "workspai.openWorkspaceModal",
       "trackActivity": true
     },
+    "adoptExistingProject": {
+      "id": "adoptExistingProject",
+      "label": "Adopt existing project",
+      "scope": "onboarding",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.adoptProject",
+      "trackActivity": true
+    },
+    "importExistingProject": {
+      "id": "importExistingProject",
+      "label": "Import existing project",
+      "scope": "onboarding",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.importProject",
+      "trackActivity": true
+    },
+    "importExistingWorkspace": {
+      "id": "importExistingWorkspace",
+      "label": "Import existing workspace",
+      "scope": "onboarding",
+      "handler": "vscode-command",
+      "vscodeCommand": "workspai.importWorkspace",
+      "trackActivity": true
+    },
     "showTelemetry": {
       "id": "showTelemetry",
       "label": "Telemetry",
@@ -147,7 +171,7 @@
       "label": "Docs",
       "scope": "education",
       "handler": "external-url",
-      "externalUrl": "https://www.workspai.com/docs",
+      "externalUrl": "https://www.workspai.dev/learn",
       "trackActivity": false
     },
     "openWelcome": {

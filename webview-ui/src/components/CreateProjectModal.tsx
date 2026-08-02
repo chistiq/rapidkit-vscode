@@ -59,6 +59,18 @@ const FRAMEWORK_INFO: Record<ProjectFramework, {
         description: 'Create a clean architecture .NET Web API inside the selected workspace.',
         placeholder: 'dotnet-api',
     },
+    rust: {
+        title: 'Rust Axum Project',
+        subtitle: 'Rust backend',
+        description: 'Create a typed Axum service with Cargo-owned dependencies.',
+        placeholder: 'rust-api',
+    },
+    laravel: {
+        title: 'Laravel Project',
+        subtitle: 'PHP backend',
+        description: 'Create a latest stable Laravel app with the official Composer generator.',
+        placeholder: 'laravel-api',
+    },
     nextjs: {
         title: 'Next.js Project',
         subtitle: 'React framework',
@@ -124,6 +136,24 @@ const FRAMEWORK_INFO: Record<ProjectFramework, {
         subtitle: 'Svelte framework',
         description: 'Create a SvelteKit app with the official sv create generator.',
         placeholder: 'my-sveltekit-app',
+    },
+    tauri: {
+        title: 'Tauri Desktop Project',
+        subtitle: 'Rust + TypeScript desktop app',
+        description: 'Create a lightweight desktop app with the official Tauri generator.',
+        placeholder: 'my-tauri-app',
+    },
+    electron: {
+        title: 'Electron Project',
+        subtitle: 'TypeScript desktop app',
+        description: 'Create an Electron Forge app with Vite and TypeScript.',
+        placeholder: 'my-electron-app',
+    },
+    'vscode-extension': {
+        title: 'VS Code Extension',
+        subtitle: 'TypeScript extension',
+        description: 'Create a VS Code extension with the official generator-code scaffold.',
+        placeholder: 'my-vscode-extension',
     },
 };
 

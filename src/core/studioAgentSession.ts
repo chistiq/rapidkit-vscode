@@ -31,7 +31,23 @@ export type StudioAgentModelContext = {
     risk: string;
   }>;
   latestObservation?: StudioAgentToolResult;
+  /**
+   * Bounded in-memory observations for the active causal epoch.
+   *
+   * Durable events intentionally omit source bodies. Keeping a short
+   * non-persisted window lets the model retain inspected source while it runs
+   * diagnostics or audits, without writing source content to VS Code storage.
+   */
+  recentObservations?: StudioAgentRecentObservation[];
+  sourceRepairDirective?: Record<string, unknown>;
+  sourceActionRequired?: boolean;
   steering: string[];
+};
+
+export type StudioAgentRecentObservation = {
+  toolName: string;
+  input: unknown;
+  result: StudioAgentToolResult;
 };
 
 export interface StudioAgentModelAdapter {
@@ -46,6 +62,123 @@ export interface StudioAgentSessionStore {
 
 const DURABLE_EVENT_STRING_LIMIT = 2_000;
 const DURABLE_EVENT_ARRAY_LIMIT = 50;
+const GENERAL_SOURCE_REPAIR_TOOL_NAMES = new Set([
+  'discover-workspace-files',
+  'inspect-source',
+  'search-workspace',
+  'inspect-workspace-diagnostics',
+  'run-workspace-command',
+  'apply-workspace-patch',
+  'delete-workspace-files',
+  'inspect-workspace-changes',
+  'complete-dependency-transaction',
+]);
+
+const DEPENDENCY_SOURCE_FILE_PATTERN =
+  /(?:^|\/)(?:package\.json|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.ya?ml|yarn\.lock|bun\.lockb?|deno\.jsonc?|jsr\.json|pyproject\.toml|poetry\.lock|uv\.lock|pdm\.lock|pipfile(?:\.lock)?|requirements(?:[-_.][^/]+)?\.txt|setup\.py|setup\.cfg|go\.mod|go\.sum|cargo\.toml|cargo\.lock|composer\.json|composer\.lock|gemfile|gemfile\.lock|pubspec\.ya?ml|pubspec\.lock|packages\.lock\.json|directory\.packages\.props|[^/]+\.(?:csproj|fsproj|vbproj)|pom\.xml|build\.gradle(?:\.kts)?|settings\.gradle(?:\.kts)?|gradle\.lockfile)$/i;
+
+function stringValues(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    : [];
+}
+
+function dependencyMutationScope(input: {
+  action: Extract<StudioAgentModelAction, { type: 'tool' }>;
+  result: StudioAgentToolResult;
+  workspacePath: string;
+}): { projectNames?: string[]; changedPaths?: string[] } | undefined {
+  if (input.result.changed !== true) {
+    return undefined;
+  }
+  const output = toolOutputRecord(input.result);
+  const target =
+    output?.target && typeof output.target === 'object' && !Array.isArray(output.target)
+      ? (output.target as Record<string, unknown>)
+      : undefined;
+  const projectNames = new Set<string>();
+  if (typeof target?.projectName === 'string' && target.projectName.trim()) {
+    projectNames.add(target.projectName.trim());
+  }
+  const changedPaths = new Set<string>([
+    ...stringValues(output?.changedPaths),
+    ...stringValues(output?.changedFiles),
+  ]);
+  const actionInput =
+    input.action.input &&
+    typeof input.action.input === 'object' &&
+    !Array.isArray(input.action.input)
+      ? (input.action.input as Record<string, unknown>)
+      : undefined;
+  if (input.action.toolName === 'apply-workspace-patch' && Array.isArray(actionInput?.patches)) {
+    for (const patch of actionInput.patches) {
+      if (
+        patch &&
+        typeof patch === 'object' &&
+        !Array.isArray(patch) &&
+        typeof (patch as Record<string, unknown>).relativePath === 'string'
+      ) {
+        changedPaths.add(String((patch as Record<string, unknown>).relativePath));
+      }
+    }
+  }
+  const dependencyPaths = [...changedPaths]
+    .map((value) => value.replace(/\\/g, '/'))
+    .filter((value) => DEPENDENCY_SOURCE_FILE_PATTERN.test(value));
+  const dependencyTool = [
+    'repair-dependency-security',
+    'upgrade-dependency-security',
+    'complete-dependency-transaction',
+  ].includes(input.action.toolName);
+  if (!dependencyTool && dependencyPaths.length === 0) {
+    return undefined;
+  }
+  return {
+    ...(projectNames.size > 0 ? { projectNames: [...projectNames] } : {}),
+    ...(dependencyPaths.length > 0 ? { changedPaths: dependencyPaths } : {}),
+  };
+}
+
+function toolOutputRecord(result: StudioAgentToolResult): Record<string, unknown> | undefined {
+  return result.output && typeof result.output === 'object' && !Array.isArray(result.output)
+    ? (result.output as Record<string, unknown>)
+    : undefined;
+}
+
+function requestsGeneralSourceRepair(result: StudioAgentToolResult): boolean {
+  const output = toolOutputRecord(result);
+  return (
+    output?.nextAction === 'general-source-repair' ||
+    output?.fallbackCapability === 'general-source-repair' ||
+    output?.recoveryPath === 'general-source-repair'
+  );
+}
+
+function verifiedNonBlockingResult(data: unknown): boolean {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return false;
+  }
+  const result = data as StudioAgentToolResult;
+  return result.ok === true && result.cardBlocking === false;
+}
+
+function sourceRepairInspectionCandidates(result: StudioAgentToolResult): string[] {
+  const candidates = toolOutputRecord(result)?.sourceCandidates;
+  if (!Array.isArray(candidates)) {
+    return [];
+  }
+  const unique = new Set(
+    candidates.filter(
+      (entry): entry is string =>
+        typeof entry === 'string' &&
+        entry.trim().length > 0 &&
+        !/(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.ya?ml|yarn\.lock|bun\.lockb?)$/i.test(
+          entry
+        )
+    )
+  );
+  return [...unique].slice(0, 12);
+}
 
 function durableEventValue(value: unknown, depth = 0): unknown {
   if (depth > 5) {
@@ -88,6 +221,7 @@ export type StudioAgentSessionOptions = {
   assistantMode: WorkspaiAssistantMode;
   selectedModelId?: string;
   blockerSignature?: string;
+  goal?: NonNullable<StudioAgentPersistedSession['goal']>;
   permissionLevel: StudioAgentPermissionLevel;
   workspaceTrusted: boolean;
   requiresVerifiedCompletion?: boolean;
@@ -99,12 +233,17 @@ export type StudioAgentSessionOptions = {
 
 export class StudioAgentSession {
   private static readonly MAX_IN_MEMORY_EVENTS = 500;
+  private static readonly MAX_RECENT_OBSERVATIONS = 8;
   private readonly listeners = new Set<(event: StudioAgentEvent) => void>();
   private readonly steering: string[] = [];
+  private readonly recentObservations: StudioAgentRecentObservation[] = [];
   private readonly abortController = new AbortController();
   private readonly toolAttemptsByEpoch = new Map<string, number>();
   private readonly exhaustedTools = new Set<string>();
   private causalEpoch = 0;
+  private generalSourceRepairActive = false;
+  private sourceRepairDirective: Record<string, unknown> | undefined;
+  private latestActiveCardId: string;
   private latestEvidenceGeneration: string | undefined;
   private latestBlockerSignature: string | undefined;
   private running: Promise<StudioAgentPersistedSession> | undefined;
@@ -129,14 +268,25 @@ export class StudioAgentSession {
           assistantMode: options.assistantMode,
           ...(options.selectedModelId ? { selectedModelId: options.selectedModelId } : {}),
           ...(options.blockerSignature ? { blockerSignature: options.blockerSignature } : {}),
+          ...(options.goal ? { goal: structuredClone(options.goal) } : {}),
           status: 'idle',
           createdAt,
           updatedAt: createdAt,
           sequence: 0,
           events: [],
         };
+    if (options.restoredSession && options.blockerSignature) {
+      this.state.blockerSignature = options.blockerSignature;
+    }
+    if (options.goal) {
+      this.state.goal = structuredClone(options.goal);
+    }
+    if (options.restoredSession && options.selectedModelId) {
+      this.state.selectedModelId = options.selectedModelId;
+    }
     this.latestBlockerSignature =
       options.blockerSignature ?? options.restoredSession?.blockerSignature;
+    this.latestActiveCardId = options.cardId;
     for (const event of this.state.events) {
       const data =
         event.data && typeof event.data === 'object' && !Array.isArray(event.data)
@@ -146,6 +296,15 @@ export class StudioAgentSession {
         this.exhaustedTools.clear();
       }
       this.rememberExhaustedTools(data?.output);
+      const result = data as StudioAgentToolResult | undefined;
+      if (result && requestsGeneralSourceRepair(result)) {
+        this.generalSourceRepairActive = true;
+        this.sourceRepairDirective = toolOutputRecord(result);
+      }
+      if (event.type === 'verify.completed' && verifiedNonBlockingResult(data)) {
+        this.generalSourceRepairActive = false;
+        this.sourceRepairDirective = undefined;
+      }
     }
   }
 
@@ -195,6 +354,7 @@ export class StudioAgentSession {
         request,
         assistantMode: this.state.assistantMode,
         selectedModelId: this.state.selectedModelId,
+        ...(this.state.goal ? { goal: this.state.goal } : {}),
       },
       requestId
     );
@@ -205,19 +365,22 @@ export class StudioAgentSession {
     let consecutiveCausalRejections = 0;
     let causalRecoveryAttempts = 0;
     let modelDecisionsWithoutSourceProgress = 0;
+    const resumedFailedAgentSession =
+      this.state.assistantMode === 'agent' && this.options.restoredSession?.status === 'failed';
     let deterministicRecoveryPending =
       this.state.assistantMode === 'agent' &&
       Boolean(this.registry.get('recover-active-blocker')) &&
-      !this.state.events.some((event) => {
-        if (event.type !== 'tool.completed' && event.type !== 'tool.failed') {
-          return false;
-        }
-        const data =
-          event.data && typeof event.data === 'object' && !Array.isArray(event.data)
-            ? (event.data as Record<string, unknown>)
-            : undefined;
-        return data?.toolName === 'recover-active-blocker';
-      });
+      (resumedFailedAgentSession ||
+        !this.state.events.some((event) => {
+          if (event.type !== 'tool.completed' && event.type !== 'tool.failed') {
+            return false;
+          }
+          const data =
+            event.data && typeof event.data === 'object' && !Array.isArray(event.data)
+              ? (event.data as Record<string, unknown>)
+              : undefined;
+          return data?.toolName === 'recover-active-blocker';
+        }));
     try {
       while (!this.abortController.signal.aborted) {
         totalTurns += 1;
@@ -234,7 +397,8 @@ export class StudioAgentSession {
           this.state.assistantMode === 'agent' &&
           modelDecisionsWithoutSourceProgress >= modelDecisionLimit
         ) {
-          if (this.registry.get('verify-blocker')) {
+          const verificationToolName = this.verificationToolName();
+          if (verificationToolName) {
             await this.emit(
               'model.checkpoint',
               {
@@ -248,7 +412,7 @@ export class StudioAgentSession {
             latestObservation = await this.executeTool(
               {
                 type: 'tool',
-                toolName: 'verify-blocker',
+                toolName: verificationToolName,
                 input: {},
                 reason:
                   'Protect provider credits and verify the current blocker deterministically.',
@@ -278,7 +442,14 @@ export class StudioAgentSession {
               reason:
                 'Run the contract-first blocker recovery prelude before spending a model decision.',
             }
-          : await this.model.next(this.modelContext(latestObservation));
+          : await this.model.next(
+              this.modelContext(
+                latestObservation,
+                this.generalSourceRepairActive &&
+                  modelDecisionsWithoutSourceProgress >=
+                    Math.min(4, Math.max(1, modelDecisionLimit - 1))
+              )
+            );
         if (deterministicRecoveryPending) {
           deterministicRecoveryPending = false;
           await this.emit(
@@ -325,6 +496,8 @@ export class StudioAgentSession {
         } else {
           consecutiveProtocolMisses = 0;
           const causalEpochBeforeTool = this.causalEpoch;
+          const blockerSignatureBeforeAction = this.latestBlockerSignature;
+          const activeCardBeforeAction = this.latestActiveCardId;
           let effectiveAction = action;
           latestObservation = await this.executeTool(effectiveAction, requestId);
           const dependencyPlan = (observation: StudioAgentToolResult) => {
@@ -419,7 +592,8 @@ export class StudioAgentSession {
           if (
             latestObservation.changed === true &&
             effectiveAction.toolName !== 'run-governed-command' &&
-            effectiveAction.toolName !== 'verify-blocker'
+            effectiveAction.toolName !== 'verify-blocker' &&
+            effectiveAction.toolName !== 'verify-goal'
           ) {
             modelDecisionsWithoutSourceProgress = 0;
           }
@@ -429,7 +603,7 @@ export class StudioAgentSession {
             latestObservation.ok === true &&
             latestObservation.changed !== true &&
             observationOutput?.nextAction === 'verify-blocker' &&
-            this.registry.get('verify-blocker')
+            this.verificationToolName()
           ) {
             await this.emit(
               'model.checkpoint',
@@ -443,7 +617,7 @@ export class StudioAgentSession {
             latestObservation = await this.executeTool(
               {
                 type: 'tool',
-                toolName: 'verify-blocker',
+                toolName: this.verificationToolName()!,
                 input: {},
                 reason: 'Verify that refreshed blocker evidence is non-blocking.',
               },
@@ -459,16 +633,90 @@ export class StudioAgentSession {
               return this.snapshot();
             }
           }
+          const sourceCandidates = sourceRepairInspectionCandidates(latestObservation);
+          if (
+            this.state.assistantMode === 'agent' &&
+            effectiveAction.toolName === 'recover-active-blocker' &&
+            requestsGeneralSourceRepair(latestObservation) &&
+            sourceCandidates.length > 0 &&
+            this.registry.get('inspect-source')
+          ) {
+            await this.emit(
+              'model.checkpoint',
+              {
+                summary:
+                  'Blocker accelerators delegated to source repair. Studio is loading the exact causal manifests before spending a model decision.',
+                recovery: 'general-source-inspection',
+                sourceCandidates,
+              },
+              requestId
+            );
+            latestObservation = await this.executeTool(
+              {
+                type: 'tool',
+                toolName: 'inspect-source',
+                input: { paths: sourceCandidates },
+                reason:
+                  'Authorize and inspect the exact source candidates returned by blocker recovery.',
+              },
+              requestId
+            );
+          }
           if (this.causalEpoch > causalEpochBeforeTool) {
             causalRecoveryAttempts = 0;
           }
+          const sourceMutationObserved = latestObservation.changed === true;
+          const dependencyScope = dependencyMutationScope({
+            action: effectiveAction,
+            result: latestObservation,
+            workspacePath: this.options.workspacePath,
+          });
+          let dependencyClosureReady = true;
+          if (
+            this.state.assistantMode === 'agent' &&
+            dependencyScope &&
+            effectiveAction.toolName !== 'complete-dependency-transaction' &&
+            this.registry.get('complete-dependency-transaction')
+          ) {
+            await this.emit(
+              'model.checkpoint',
+              {
+                summary:
+                  'Dependency source changed. Studio is reconciling the manifest and lockfile, then running focused audit, test, and build validation before the Workspace Intelligence chain.',
+                recovery: 'dependency-transaction',
+                ...dependencyScope,
+              },
+              requestId
+            );
+            latestObservation = await this.executeTool(
+              {
+                type: 'tool',
+                toolName: 'complete-dependency-transaction',
+                input: dependencyScope,
+                reason: 'Close the dependency transaction before canonical evidence regeneration.',
+              },
+              requestId
+            );
+            dependencyClosureReady =
+              toolOutputRecord(latestObservation)?.closureReady === true &&
+              latestObservation.ok === true;
+          } else if (effectiveAction.toolName === 'complete-dependency-transaction') {
+            dependencyClosureReady =
+              toolOutputRecord(latestObservation)?.closureReady === true &&
+              latestObservation.ok === true;
+          }
+          const dependencyTransactionClosed =
+            effectiveAction.toolName === 'complete-dependency-transaction' &&
+            dependencyClosureReady;
           const shouldRunPostMutationClosure =
             this.state.assistantMode === 'agent' &&
-            latestObservation.changed === true &&
+            (sourceMutationObserved || dependencyTransactionClosed) &&
+            dependencyClosureReady &&
             effectiveAction.toolName !== 'run-governed-command' &&
             effectiveAction.toolName !== 'verify-blocker' &&
+            effectiveAction.toolName !== 'verify-goal' &&
             Boolean(this.registry.get('run-governed-command')) &&
-            Boolean(this.registry.get('verify-blocker'));
+            Boolean(this.verificationToolName());
           if (shouldRunPostMutationClosure) {
             await this.emit(
               'model.checkpoint',
@@ -491,7 +739,7 @@ export class StudioAgentSession {
             latestObservation = await this.executeTool(
               {
                 type: 'tool',
-                toolName: 'verify-blocker',
+                toolName: this.verificationToolName()!,
                 input: {},
                 reason: 'Verify the card immediately after post-mutation evidence refresh.',
               },
@@ -513,6 +761,38 @@ export class StudioAgentSession {
               await this.setStatus('completed');
               return this.snapshot();
             }
+          }
+          const activeBlockerAdvanced =
+            latestObservation.cardBlocking === true &&
+            ((Boolean(latestObservation.blockerSignature) &&
+              latestObservation.blockerSignature !== blockerSignatureBeforeAction) ||
+              this.latestActiveCardId !== activeCardBeforeAction);
+          if (
+            activeBlockerAdvanced &&
+            this.state.assistantMode === 'agent' &&
+            this.registry.get('recover-active-blocker')
+          ) {
+            this.generalSourceRepairActive = false;
+            this.sourceRepairDirective = undefined;
+            this.exhaustedTools.clear();
+            deterministicRecoveryPending = true;
+            modelDecisionsWithoutSourceProgress = 0;
+            consecutiveCausalRejections = 0;
+            causalRecoveryAttempts = 0;
+            await this.emit(
+              'model.checkpoint',
+              {
+                summary:
+                  'Verification advanced to a dependent blocker. Studio is transferring ownership to the next fresh blocker contract without another model decision.',
+                recovery: 'dependent-blocker-handoff',
+                previousCardId: activeCardBeforeAction,
+                activeCardId: this.latestActiveCardId,
+                previousBlockerSignature: blockerSignatureBeforeAction,
+                blockerSignature: latestObservation.blockerSignature,
+              },
+              requestId
+            );
+            continue;
           }
           const causalRejection =
             latestObservation.ok === false &&
@@ -541,7 +821,7 @@ export class StudioAgentSession {
             latestObservation = await this.executeTool(
               {
                 type: 'tool',
-                toolName: 'verify-blocker',
+                toolName: this.verificationToolName()!,
                 input: {},
                 reason: 'Recover from a causal retry loop with fresh card verification.',
               },
@@ -679,6 +959,15 @@ export class StudioAgentSession {
       workspacePath: this.options.workspacePath,
       ...(this.options.projectPath ? { projectPath: this.options.projectPath } : {}),
       signal: this.abortController.signal,
+      reportProgress: async (data) => {
+        const durableProgress = durableEventValue(data) as Record<string, unknown>;
+        await this.emit(
+          'tool.progress',
+          { toolName: tool.name, ...durableProgress },
+          requestId,
+          toolCallId
+        );
+      },
     };
     let result: StudioAgentToolResult;
     try {
@@ -703,13 +992,43 @@ export class StudioAgentSession {
     }
     if (result.blockerSignature) {
       this.latestBlockerSignature = result.blockerSignature;
+      this.state.blockerSignature = result.blockerSignature;
+    }
+    const output = toolOutputRecord(result);
+    const activeHandoff =
+      output?.activeHandoff &&
+      typeof output.activeHandoff === 'object' &&
+      !Array.isArray(output.activeHandoff)
+        ? (output.activeHandoff as Record<string, unknown>)
+        : undefined;
+    if (typeof activeHandoff?.cardId === 'string' && activeHandoff.cardId.trim()) {
+      this.latestActiveCardId = activeHandoff.cardId.trim();
     }
     if (result.changed === true) {
       this.exhaustedTools.clear();
     }
     this.rememberExhaustedTools(result.output);
+    if (requestsGeneralSourceRepair(result)) {
+      this.generalSourceRepairActive = true;
+      this.sourceRepairDirective = toolOutputRecord(result);
+    }
+    if (tool.activity === 'verify' && result.ok === true && result.cardBlocking === false) {
+      this.generalSourceRepairActive = false;
+      this.sourceRepairDirective = undefined;
+    }
     if (evidenceAdvanced) {
       this.causalEpoch += 1;
+    }
+    this.recentObservations.push({
+      toolName: tool.name,
+      input: structuredClone(action.input),
+      result,
+    });
+    if (this.recentObservations.length > StudioAgentSession.MAX_RECENT_OBSERVATIONS) {
+      this.recentObservations.splice(
+        0,
+        this.recentObservations.length - StudioAgentSession.MAX_RECENT_OBSERVATIONS
+      );
     }
     const durableResult = durableToolResult(result);
     await this.emit(
@@ -739,6 +1058,13 @@ export class StudioAgentSession {
     );
   }
 
+  private verificationToolName(): 'verify-goal' | 'verify-blocker' | undefined {
+    if (this.state.goal && this.registry.get('verify-goal')) {
+      return 'verify-goal';
+    }
+    return this.registry.get('verify-blocker') ? 'verify-blocker' : undefined;
+  }
+
   private hasCanonicalChainClosure(requestId: string): boolean {
     const requestEvents = this.state.events.filter((event) => event.requestId === requestId);
     const latestSourceMutation = [...requestEvents].reverse().find((event) => {
@@ -749,7 +1075,8 @@ export class StudioAgentSession {
       return (
         data.changed === true &&
         data.toolName !== 'run-governed-command' &&
-        data.toolName !== 'verify-blocker'
+        data.toolName !== 'verify-blocker' &&
+        data.toolName !== 'verify-goal'
       );
     });
     if (!latestSourceMutation) {
@@ -773,21 +1100,38 @@ export class StudioAgentSession {
     });
   }
 
-  private modelContext(latestObservation?: StudioAgentToolResult): StudioAgentModelContext {
+  private modelContext(
+    latestObservation?: StudioAgentToolResult,
+    sourceActionRequired = false
+  ): StudioAgentModelContext {
+    const tools = this.registry
+      .list()
+      .filter((tool) => !this.exhaustedTools.has(tool.name))
+      .filter(
+        (tool) => !this.generalSourceRepairActive || GENERAL_SOURCE_REPAIR_TOOL_NAMES.has(tool.name)
+      )
+      .filter((tool) => !sourceActionRequired || tool.activity === 'change')
+      .map((tool) => ({
+        name: tool.name,
+        title: tool.title,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        activity: tool.activity,
+        risk: tool.risk,
+      }));
     return {
       session: this.snapshot(),
-      tools: this.registry
-        .list()
-        .filter((tool) => !this.exhaustedTools.has(tool.name))
-        .map((tool) => ({
-          name: tool.name,
-          title: tool.title,
-          description: tool.description,
-          inputSchema: tool.inputSchema,
-          activity: tool.activity,
-          risk: tool.risk,
-        })),
+      tools,
       latestObservation,
+      recentObservations: this.recentObservations.map((observation) => ({
+        toolName: observation.toolName,
+        input: structuredClone(observation.input),
+        result: observation.result,
+      })),
+      ...(this.generalSourceRepairActive && this.sourceRepairDirective
+        ? { sourceRepairDirective: this.sourceRepairDirective }
+        : {}),
+      ...(sourceActionRequired ? { sourceActionRequired: true } : {}),
       steering: this.steering.splice(0),
     };
   }

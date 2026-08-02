@@ -81,7 +81,8 @@ function isFreshnessOnlyBlocker(text: string): boolean {
     lower.includes('evidence is stale') ||
     lower.includes('is stale relative to') ||
     (lower.includes('generated at') && lower.includes('before impact')) ||
-    (lower.includes('stale report:') && lower.includes('.rapidkit/reports/'))
+    (lower.includes('stale report:') &&
+      (lower.includes('.workspai/reports/') || lower.includes('.rapidkit/reports/')))
   );
 }
 

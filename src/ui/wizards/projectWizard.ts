@@ -6,7 +6,11 @@
 import * as vscode from 'vscode';
 import { ProjectConfig } from '../../types';
 import type { ScaffoldFramework } from '../../core/scaffoldKits';
-import { FRONTEND_SCAFFOLD_KITS } from '../../core/scaffoldKits';
+import {
+  DESKTOP_SCAFFOLD_KITS,
+  EXTENSION_SCAFFOLD_KITS,
+  FRONTEND_SCAFFOLD_KITS,
+} from '../../core/scaffoldKits';
 import { KitsService } from '../../core/kitsService';
 
 export class ProjectWizard {
@@ -84,9 +88,33 @@ export class ProjectWizard {
           detail: 'Clean architecture Web API service',
           framework: 'dotnet' as const,
         },
+        {
+          label: '$(flame) Rust Axum',
+          description: 'Rust backend',
+          detail: 'Typed Axum service with Cargo-owned dependencies',
+          framework: 'rust' as const,
+        },
+        {
+          label: '$(server-process) Laravel',
+          description: 'PHP backend',
+          detail: 'Latest stable official Laravel application',
+          framework: 'laravel' as const,
+        },
         ...FRONTEND_SCAFFOLD_KITS.map((definition) => ({
           label: `$(browser) ${definition.displayName}`,
           description: 'Official frontend generator',
+          detail: definition.description,
+          framework: definition.framework,
+        })),
+        ...DESKTOP_SCAFFOLD_KITS.map((definition) => ({
+          label: `$(device-desktop) ${definition.displayName}`,
+          description: 'Official desktop generator',
+          detail: definition.description,
+          framework: definition.framework,
+        })),
+        ...EXTENSION_SCAFFOLD_KITS.map((definition) => ({
+          label: `$(extensions) ${definition.displayName}`,
+          description: 'Official extension generator',
           detail: definition.description,
           framework: definition.framework,
         })),

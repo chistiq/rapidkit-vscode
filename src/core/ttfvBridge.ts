@@ -4,13 +4,15 @@ import * as path from 'path';
 
 import { Logger } from '../utils/logger';
 import { recordRetentionMilestone } from './retentionMilestones';
+import { resolveWorkspaceReportsDir } from './workspaceIntelligencePaths';
 
 /**
  * Time-to-First-Value (TTFV) instrumentation (roadmap item 2.9).
  *
  * Measures the elapsed time from the extension's first-ever activation
  * (`installedAt`) to the moment the user produces their FIRST workspace
- * intelligence artifact (any `.rapidkit/reports/*.json`). The result is a
+ * intelligence artifact (any canonical `.workspai/reports/*.json`, with a
+ * read-only `.rapidkit/reports` compatibility fallback). The result is a
  * write-once retention metric persisted in `globalState` and logged to the
  * Workspai output channel. It is intentionally local-only — no network egress —
  * and is kept distinct from the dashboard's `isFreshInstall` heuristic (which
@@ -90,7 +92,7 @@ function parseGeneratedAt(raw: unknown): number | null {
 }
 
 /**
- * Scan `.rapidkit/reports` for produced artifacts, resolving each one's
+ * Scan the authoritative reports directory for produced artifacts, resolving each one's
  * timestamp from its `generatedAt`/`timestamp` field, falling back to the file
  * mtime. Returns an empty list when the directory does not exist.
  */
@@ -168,7 +170,7 @@ export async function recordTtfvIfNeeded(
 
   const now = options?.now ?? Date.now();
   const installedAt = await ensureInstalledAt(context, now);
-  const reportsDir = path.join(workspacePath, '.rapidkit', 'reports');
+  const reportsDir = await resolveWorkspaceReportsDir(workspacePath);
   const artifacts = await scanReportArtifacts(reportsDir);
   const earliest = selectEarliestArtifact(artifacts);
   if (!earliest) {

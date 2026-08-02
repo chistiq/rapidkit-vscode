@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { createExtensionWebviewMessage } from '../../contracts/webviewProtocol';
 import { buildVerifyPackOutputContract } from '../../core/verifyPackContract';
 import { WorkspaceUsageTracker } from '../../utils/workspaceUsageTracker';
+import { WORKSPAI_REPORTS_DIR } from '../../core/workspaceIntelligencePaths';
 
 export type MessagePayload = Record<string, unknown>;
 
@@ -94,7 +95,7 @@ export async function exportSandboxSimulationEvidenceFromPayload(
 
   const defaultFileName = `${sandboxSimulation.actionId}-sandbox-simulation-evidence.json`;
   const defaultUri = vscode.Uri.file(
-    path.join(workspacePathInput, '.rapidkit', 'reports', defaultFileName)
+    path.join(workspacePathInput, WORKSPAI_REPORTS_DIR, defaultFileName)
   );
 
   const outputUri = await vscode.window.showSaveDialog({
@@ -277,7 +278,7 @@ export async function exportReleaseReadinessCommanderFromPayload(
 
   const defaultFileName = `${artifact.artifactId}.json`;
   const defaultUri = workspacePathInput
-    ? vscode.Uri.file(path.join(workspacePathInput, '.rapidkit', 'reports', defaultFileName))
+    ? vscode.Uri.file(path.join(workspacePathInput, WORKSPAI_REPORTS_DIR, defaultFileName))
     : undefined;
 
   const outputUri = await vscode.window.showSaveDialog({

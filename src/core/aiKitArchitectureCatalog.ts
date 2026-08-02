@@ -203,7 +203,7 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
   src/main/resources/application.yml
   src/test/java/...
   pom.xml
-  .rapidkit/project.json                    ← runtime=java, module_support=false`,
+  .workspai/project.json                    ← runtime=java, module_support=false`,
     patterns: `  • Keep controllers thin; business rules in @Service classes
   • Constructor injection for all Spring beans
   • Jakarta Bean Validation on request DTOs
@@ -228,7 +228,7 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
     {Service}.Infrastructure/      ← Repositories, external adapters
   tests/{Service}.Tests/
   *.sln
-  .rapidkit/project.json           ← runtime=dotnet, module_support=false`,
+  .workspai/project.json           ← runtime=dotnet, module_support=false`,
     patterns: `  • Controllers/endpoints thin; business rules in Application/Domain
   • DI registration in Program.cs or extension methods
   • appsettings.json + environment variables for configuration

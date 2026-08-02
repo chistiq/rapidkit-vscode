@@ -1,7 +1,15 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
 
-export const WORKSPACE_CONTRACT_PATH = path.join('.rapidkit', 'workspace.contract.json');
+export const WORKSPACE_CONTRACT_PATH = path.join('.workspai', 'workspace.contract.json');
+export const LEGACY_WORKSPACE_CONTRACT_PATH = path.join('.rapidkit', 'workspace.contract.json');
+
+export function workspaceContractPathCandidates(workspacePath: string): string[] {
+  return [
+    path.join(workspacePath, WORKSPACE_CONTRACT_PATH),
+    path.join(workspacePath, LEGACY_WORKSPACE_CONTRACT_PATH),
+  ];
+}
 
 export interface WorkspaceContractApi {
   name: string;
@@ -171,7 +179,10 @@ function findPortConflicts(
 export async function readWorkspaceContractGraph(
   workspacePath: string
 ): Promise<WorkspaceContractGraphModel> {
-  const contractPath = path.join(workspacePath, WORKSPACE_CONTRACT_PATH);
+  const contractPath =
+    workspaceContractPathCandidates(workspacePath).find((candidate) =>
+      fs.pathExistsSync(candidate)
+    ) ?? path.join(workspacePath, WORKSPACE_CONTRACT_PATH);
   const workspaceName = path.basename(workspacePath);
 
   if (!(await fs.pathExists(contractPath))) {

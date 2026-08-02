@@ -11,9 +11,14 @@ vi.mock('vscode', () => ({
 
 import {
   getWorkspaceIntelligenceAgentReadOrder,
+  getWorkspaceIntelligenceCanonicalStages,
   getWorkspaceIntelligenceChainSteps,
   getWorkspaceIntelligenceExecutionMilestones,
+  getWorkspaceIntelligenceExecutionPreflights,
   resolveWorkspaceIntelligenceRunMilestone,
+  resolveWorkspaceIntelligenceRunPreflight,
+  resolveWorkspaceIntelligenceRunStage,
+  resolveWorkspaceIntelligenceStreamProgress,
   validateWorkspaceIntelligenceChainContract,
 } from '../core/workspaceIntelligenceChainContract.js';
 import { buildWorkspaceIntelligenceCoreChainCommands } from '../core/workspaceIntelligenceRuntime.js';
@@ -69,6 +74,26 @@ describe('workspace intelligence chain contract consumer', () => {
     ]);
   });
 
+  it('keeps deterministic preflights outside the immutable canonical loop', () => {
+    expect(getWorkspaceIntelligenceExecutionPreflights().map((preflight) => preflight.id)).toEqual([
+      'sync',
+      'baseline',
+    ]);
+    expect(getWorkspaceIntelligenceCanonicalStages().map((stage) => stage.id)).toEqual([
+      'model',
+      'diff',
+      'impact',
+      'doctor-evidence',
+      'contract-evidence',
+      'analyze-evidence',
+      'readiness-evidence',
+      'verify',
+      'context',
+      'agent-sync',
+      'explain',
+    ]);
+  });
+
   it('resolves the first blocking milestone from a unified runner report', () => {
     expect(
       resolveWorkspaceIntelligenceRunMilestone({
@@ -88,5 +113,57 @@ describe('workspace intelligence chain contract consumer', () => {
         ],
       })
     ).toBe('readiness-evidence');
+  });
+
+  it('projects a failed preflight onto the canonical stage it prevented', () => {
+    const report = {
+      preflight: [
+        { id: 'sync', status: 'passed' },
+        { id: 'baseline', status: 'failed' },
+      ],
+      stages: [
+        { id: 'model', status: 'passed' },
+        { id: 'diff', status: 'skipped' },
+      ],
+    };
+    expect(resolveWorkspaceIntelligenceRunMilestone(report)).toBe('baseline');
+    expect(resolveWorkspaceIntelligenceRunPreflight(report)).toBe('baseline');
+    expect(resolveWorkspaceIntelligenceRunStage(report)).toBe('diff');
+  });
+
+  it('accepts only contract-owned milestone progress from the CLI log stream', () => {
+    expect(
+      resolveWorkspaceIntelligenceStreamProgress({
+        message: 'impact started',
+        metadata: {
+          intelligenceMilestoneId: 'impact',
+          intelligenceMilestoneKind: 'stage',
+          intelligenceMilestoneStatus: 'started',
+        },
+      })
+    ).toEqual({
+      id: 'impact',
+      kind: 'stage',
+      status: 'started',
+      message: 'impact started',
+    });
+    expect(
+      resolveWorkspaceIntelligenceStreamProgress({
+        metadata: {
+          intelligenceMilestoneId: 'baseline',
+          intelligenceMilestoneKind: 'preflight',
+          intelligenceMilestoneStatus: 'passed',
+        },
+      })
+    ).toMatchObject({ id: 'baseline', kind: 'preflight', status: 'passed' });
+    expect(
+      resolveWorkspaceIntelligenceStreamProgress({
+        metadata: {
+          intelligenceMilestoneId: 'invented-stage',
+          intelligenceMilestoneKind: 'stage',
+          intelligenceMilestoneStatus: 'started',
+        },
+      })
+    ).toBeUndefined();
   });
 });

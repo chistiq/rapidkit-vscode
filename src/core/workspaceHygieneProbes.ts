@@ -222,17 +222,22 @@ async function detectProjectFramework(workspacePath: string): Promise<string | n
       }
       const projectPath = path.join(workspacePath, entry.name);
 
-      // Check RapidKit context
+      // Check canonical Workspai context, then legacy RapidKit metadata.
       for (const metaFile of ['context.json', 'project.json']) {
-        const metaPath = path.join(projectPath, '.rapidkit', metaFile);
-        if (await fs.pathExists(metaPath)) {
-          const meta = await fs.readJSON(metaPath).catch(() => null);
-          const kitType = (meta?.kit_type || meta?.projectType || '') as string;
-          if (kitType) {
-            const lower = kitType.toLowerCase();
-            for (const framework of Object.keys(FRAMEWORK_TOKENS)) {
-              if (lower.includes(framework)) {
-                return framework;
+        for (const metadataDir of ['.workspai', '.rapidkit']) {
+          const metaPath = path.join(projectPath, metadataDir, metaFile);
+          if (await fs.pathExists(metaPath)) {
+            const meta = await fs.readJSON(metaPath).catch(() => null);
+            const kitType = (meta?.kit_type ||
+              meta?.projectType ||
+              meta?.framework ||
+              '') as string;
+            if (kitType) {
+              const lower = kitType.toLowerCase();
+              for (const framework of Object.keys(FRAMEWORK_TOKENS)) {
+                if (lower.includes(framework)) {
+                  return framework;
+                }
               }
             }
           }

@@ -97,12 +97,13 @@ describe('ensureInstalledAt', () => {
 describe('recordTtfvIfNeeded', () => {
   async function makeWorkspace(
     reports: Record<string, Record<string, unknown>>,
-    installedAt = Date.parse('2026-06-01T00:00:00.000Z')
+    installedAt = Date.parse('2026-06-01T00:00:00.000Z'),
+    metadataDirectory: '.workspai' | '.rapidkit' = '.workspai'
   ): Promise<{ context: import('vscode').ExtensionContext; dir: string }> {
     const context = createContext();
     await context.globalState.update(TTFV_INSTALLED_AT_KEY, installedAt);
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'rapidkit-ttfv-ws-'));
-    const reportsDir = path.join(dir, '.rapidkit', 'reports');
+    const reportsDir = path.join(dir, metadataDirectory, 'reports');
     await fs.ensureDir(reportsDir);
     for (const [name, payload] of Object.entries(reports)) {
       await fs.writeJSON(path.join(reportsDir, name), payload);
@@ -143,6 +144,39 @@ describe('recordTtfvIfNeeded', () => {
     expect(record?.preexisting).toBe(true);
     expect(record?.ttfvMs).toBeNull();
     await fs.remove(dir);
+  });
+
+  it('uses canonical reports as the single authority and retains a legacy fallback', async () => {
+    const installedAt = Date.parse('2026-06-01T00:00:00.000Z');
+    const canonicalAt = Date.parse('2026-06-01T00:03:00.000Z');
+    const legacyAt = Date.parse('2026-06-01T00:01:00.000Z');
+    const { context, dir } = await makeWorkspace(
+      {
+        'workspace-model.json': { generatedAt: new Date(canonicalAt).toISOString() },
+      },
+      installedAt
+    );
+    await fs.ensureDir(path.join(dir, '.rapidkit', 'reports'));
+    await fs.writeJSON(path.join(dir, '.rapidkit', 'reports', 'doctor-last-run.json'), {
+      generatedAt: new Date(legacyAt).toISOString(),
+    });
+
+    const canonical = await recordTtfvIfNeeded(context, dir);
+    expect(canonical?.ttfvMs).toBe(3 * 60 * 1000);
+    expect(canonical?.firstArtifactPath).toContain('.workspai');
+
+    const legacyFixture = await makeWorkspace(
+      {
+        'doctor-last-run.json': { generatedAt: new Date(legacyAt).toISOString() },
+      },
+      installedAt,
+      '.rapidkit'
+    );
+    const legacy = await recordTtfvIfNeeded(legacyFixture.context, legacyFixture.dir);
+    expect(legacy?.ttfvMs).toBe(60 * 1000);
+    expect(legacy?.firstArtifactPath).toContain('.rapidkit');
+    await fs.remove(dir);
+    await fs.remove(legacyFixture.dir);
   });
 
   it('returns null when no workspace path or no artifacts yet', async () => {

@@ -42,7 +42,7 @@ export function buildWorkspaiPlatformContract(): string {
     '  (workspace .venv via pip/poetry, or pipx — location varies per machine; never cite a fixed engine path).',
     '- Module-capable kits ONLY: fastapi.standard, fastapi.ddd, nestjs.standard.',
     '- Go / Spring Boot / .NET kits: native deps only — no catalog module marketplace.',
-    '- Teach from project evidence (.rapidkit/project.json, registry.json, scanned src/) before generic templates.',
+    '- Teach from canonical project evidence (.workspai/project.json, .workspai/registry.json, scanned src/) before generic templates.',
   ].join('\n');
 }
 

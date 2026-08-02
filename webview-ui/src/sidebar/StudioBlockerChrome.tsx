@@ -33,6 +33,11 @@ export function StudioBlockerChrome({
   }
 
   const subject = handoff.cardLabel?.trim() || handoff.cardId;
+  const affectedProjectCount = handoff.affectedProjectNames?.length ?? 0;
+  const scopeLabel =
+    handoff.scope === 'workspace'
+      ? `Workspace repair${affectedProjectCount > 0 ? ` · ${affectedProjectCount} affected project${affectedProjectCount === 1 ? '' : 's'}` : ''}`
+      : `Project repair${handoff.projectPath ? ` · ${handoff.projectPath.split(/[\\/]/).filter(Boolean).at(-1)}` : ''}`;
   const headline =
     phase === 'diagnosing'
       ? `Diagnosing ${subject}`
@@ -58,6 +63,7 @@ export function StudioBlockerChrome({
             Workspai Agent · {PHASE_LABEL[phase]}
           </small>
           <strong>{headline}</strong>
+          <small>{scopeLabel}</small>
           {handoff.blockers.length > 0 ? <span>{handoff.blockers[0]}</span> : null}
         </div>
       </div>
@@ -134,6 +140,11 @@ export function parseStudioBlockerHandoffView(value: unknown): StudioBlockerHand
         : 'fail',
     blocking: typeof record.blocking === 'boolean' ? record.blocking : undefined,
     blockers: record.blockers.filter((entry): entry is string => typeof entry === 'string'),
+    affectedProjectNames: Array.isArray(record.affectedProjectNames)
+      ? record.affectedProjectNames.filter(
+          (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
+        )
+      : undefined,
     artifactPath: typeof record.artifactPath === 'string' ? record.artifactPath : '',
     sourceCommand: record.sourceCommand,
     dashboardCommandId:

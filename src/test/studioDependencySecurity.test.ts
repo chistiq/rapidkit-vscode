@@ -220,4 +220,61 @@ describe('Studio dependency security capability', () => {
       'npm install next@16.2.11 --save-exact'
     );
   });
+
+  it('lets the package manager resolve boolean fixes only inside a bounded semver range', async () => {
+    const root = await fixture();
+    const projectPath = path.join(root, 'atlas-web');
+    await fs.writeJson(path.join(projectPath, 'package.json'), {
+      name: 'atlas-web',
+      dependencies: { '@nestjs/cli': '^11.0.0', unbounded: '*', exact: '1.0.0' },
+    });
+    const target = await resolveStudioDependencySecurityTarget({ workspacePath: root });
+    const candidates = await parseStudioDependencyUpgradeCandidates({
+      target,
+      auditJson: JSON.stringify({
+        vulnerabilities: {
+          '@nestjs/cli': {
+            name: '@nestjs/cli',
+            severity: 'high',
+            isDirect: true,
+            fixAvailable: true,
+          },
+          unbounded: {
+            name: 'unbounded',
+            severity: 'high',
+            isDirect: true,
+            fixAvailable: true,
+          },
+          exact: {
+            name: 'exact',
+            severity: 'high',
+            isDirect: true,
+            fixAvailable: true,
+          },
+        },
+      }),
+    });
+
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        packageName: '@nestjs/cli',
+        targetVersion: '^11.0.0',
+        disposition: 'compatible-resolution',
+        autoExecutable: true,
+      }),
+      expect.objectContaining({
+        packageName: 'unbounded',
+        disposition: 'no-exact-fix',
+        autoExecutable: false,
+      }),
+      expect.objectContaining({
+        packageName: 'exact',
+        disposition: 'no-exact-fix',
+        autoExecutable: false,
+      }),
+    ]);
+    expect(buildStudioDependencyUpgradeCommand({ target, candidate: candidates[0] })).toBe(
+      'npm install @nestjs/cli@^11.0.0 --save-exact'
+    );
+  });
 });

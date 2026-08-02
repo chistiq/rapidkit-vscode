@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/workspace-model.v1.json",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/workspace-model.v1.json",
   "title": "Workspai Workspace Intelligence Model",
   "type": "object",
   "required": [
@@ -34,7 +34,46 @@
       },
       "additionalProperties": true
     },
-    "identity": { "type": "object", "additionalProperties": true },
+    "identity": {
+      "type": "object",
+      "properties": {
+        "surfaces": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "backend",
+              "frontend",
+              "desktop",
+              "extension",
+              "service",
+              "worker",
+              "library",
+              "infra",
+              "docs",
+              "test-suite",
+              "unknown"
+            ]
+          }
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "backend",
+              "frontend",
+              "desktop",
+              "extension",
+              "library",
+              "infrastructure",
+              "documentation",
+              "quality",
+              "unknown"
+            ]
+          }
+        }
+      },
+      "additionalProperties": true
+    },
     "summary": { "type": "object", "additionalProperties": true },
     "factFreshness": { "$ref": "#/$defs/factFreshnessSummary" },
     "facts": {
@@ -43,20 +82,73 @@
     },
     "projects": {
       "type": "array",
-      "items": { "type": "object", "additionalProperties": true }
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "backend",
+              "frontend",
+              "desktop",
+              "extension",
+              "worker",
+              "library",
+              "infra",
+              "docs",
+              "test-suite",
+              "unknown"
+            ]
+          },
+          "category": {
+            "enum": [
+              "backend",
+              "frontend",
+              "desktop",
+              "extension",
+              "library",
+              "infrastructure",
+              "documentation",
+              "quality",
+              "unknown"
+            ]
+          }
+        },
+        "additionalProperties": true
+      }
     },
     "contracts": { "type": "object", "additionalProperties": true },
+    "projectTopology": {
+      "type": "object",
+      "description": "Canonical compact project dependency topology (workspace-dependency-graph.v1).",
+      "additionalProperties": true
+    },
     "graph": {
       "type": "object",
-      "description": "First-class inferred dependency graph (workspace-dependency-graph.v1). Additive/optional.",
+      "deprecated": true,
+      "description": "Deprecated compatibility alias for projectTopology. Producers must emit identical content during the v1 migration window.",
       "additionalProperties": true
     },
     "evidence": { "type": "object", "additionalProperties": true },
     "discovery": { "type": "object", "additionalProperties": true },
     "policies": { "type": "object", "additionalProperties": true },
-    "validation": { "type": "object", "additionalProperties": true }
+    "validation": { "type": "object", "additionalProperties": true },
+    "build": { "$ref": "#/$defs/buildProvenance" }
   },
   "$defs": {
+    "buildProvenance": {
+      "type": "object",
+      "description": "Non-structural provenance for the model command execution. It is excluded from the canonical workspace-model hash.",
+      "required": ["schemaVersion", "mode", "outcome", "engineStatus"],
+      "properties": {
+        "schemaVersion": { "const": "workspace-model-build.v1" },
+        "mode": { "enum": ["full", "cache", "incremental"] },
+        "outcome": { "enum": ["rebuilt", "partially-reused", "reused"] },
+        "engineStatus": {
+          "enum": ["disabled", "miss", "hit", "full", "incremental", "unchanged"]
+        }
+      },
+      "additionalProperties": false
+    },
     "factFreshness": {
       "type": "object",
       "required": [

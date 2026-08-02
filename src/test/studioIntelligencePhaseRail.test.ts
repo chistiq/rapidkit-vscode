@@ -14,9 +14,15 @@ describe('Studio Workspace Intelligence phase rail', () => {
       path.resolve(__dirname, '../../webview-ui/src/lib/studioIntelligencePhaseRail.ts'),
       'utf8'
     );
-    expect(source).toContain('getWorkspaceIntelligenceExecutionMilestones');
+    expect(source).toContain('getWorkspaceIntelligenceCanonicalStages');
     expect(source).toContain('@workspai-contracts/workspaceIntelligenceChain');
     expect(source).not.toContain("{ id: 'sync', label: 'Sync' }");
+  });
+
+  it('does not present sync or baseline prerequisites as canonical loop stages', () => {
+    const phases = buildStudioIntelligencePhaseWindow('model', 20);
+    expect(phases.map((phase) => phase.id)).not.toContain('sync');
+    expect(phases.map((phase) => phase.id)).not.toContain('baseline');
   });
 
   it('mounts the loop in the persistent repair header, not inside the activity bubble', () => {
@@ -30,14 +36,16 @@ describe('Studio Workspace Intelligence phase rail', () => {
     expect(source.match(/<StudioIntelligencePhaseRail/g)).toHaveLength(1);
     expect(source).toContain('<summary>Recent activity</summary>');
     expect(source).not.toContain('Activity · {activeStudioRepairTimeline.length');
+    expect(source).toContain("eventType === 'tool.progress'");
+    expect(source).toContain("eventData.intelligenceMilestoneStatus === 'started'");
   });
 
   it('keeps the active phase centered between three prior and three future phases', () => {
     const phases = buildStudioIntelligencePhaseWindow('impact');
     expect(phases).toHaveLength(7);
     expect(phases.map((phase) => phase.id)).toEqual([
+      'explain',
       'model',
-      'baseline',
       'diff',
       'impact',
       'doctor-evidence',
@@ -48,29 +56,29 @@ describe('Studio Workspace Intelligence phase rail', () => {
   });
 
   it('wraps the seven-phase window at both ends without leaving empty rail positions', () => {
-    expect(buildStudioIntelligencePhaseWindow('sync').map((phase) => phase.id)).toEqual([
+    expect(buildStudioIntelligencePhaseWindow('model').map((phase) => phase.id)).toEqual([
       'context',
       'agent-sync',
       'explain',
-      'sync',
       'model',
-      'baseline',
       'diff',
+      'impact',
+      'doctor-evidence',
     ]);
     expect(buildStudioIntelligencePhaseWindow('explain').map((phase) => phase.id)).toEqual([
       'verify',
       'context',
       'agent-sync',
       'explain',
-      'sync',
       'model',
-      'baseline',
+      'diff',
+      'impact',
     ]);
   });
 
-  it('treats explain to sync as forward movement around the contract-owned loop', () => {
-    expect(resolveStudioIntelligencePhaseDirection(12, 0)).toBe('forward');
-    expect(resolveStudioIntelligencePhaseDirection(0, 12)).toBe('backward');
+  it('treats explain to model as forward movement around the contract-owned loop', () => {
+    expect(resolveStudioIntelligencePhaseDirection(10, 0)).toBe('forward');
+    expect(resolveStudioIntelligencePhaseDirection(0, 10)).toBe('backward');
     expect(resolveStudioIntelligencePhaseDirection(3, 3)).toBe('idle');
   });
 
@@ -94,6 +102,7 @@ describe('Studio Workspace Intelligence phase rail', () => {
       'verify'
     );
     expect(resolveStudioIntelligencePhaseFromCard('releaseReadiness')).toBe('readiness-evidence');
+    expect(resolveStudioIntelligencePhaseFromCard('intelligenceSnapshot')).toBe('diff');
   });
 
   it('prefers the runner-reported contract milestone over command-level inference', () => {

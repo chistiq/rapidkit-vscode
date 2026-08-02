@@ -13,7 +13,7 @@ import type { SidebarScope } from './sidebarTypes';
 import type { CreateMessage, CreationPlan, CreateSession } from './createTypes';
 import type { ChatSession } from './sidebarSessions';
 import {
-  resolveWorkspacePlaceholder,
+  resolveCreatePlaceholder,
   stackLaneLabel,
   type CreationStackLane,
 } from '@/lib/creationPresets';
@@ -40,6 +40,9 @@ interface CreateTabProps {
   onManualCreate: (
     input: ManualWorkspaceInput | { mode: 'project'; name: string; framework: string }
   ) => void;
+  onAdoptProject: () => void;
+  onImportProject: () => void;
+  onImportWorkspace: () => void;
   onBootstrapWorkspace: (input: {
     workspacePath: string;
     workspaceName?: string;
@@ -52,9 +55,17 @@ export function CreateTab(props: CreateTabProps) {
   const { active, busy, messages, models, selectedModelId, onSelectModel, scope } = props;
   const [prompt, setPrompt] = useState('');
   const [stackLane, setStackLane] = useState<CreationStackLane>('balanced');
-  const [createTarget, setCreateTarget] = useState<CreateTarget>('workspace');
+  const contextualTarget: CreateTarget = scope.workspacePath ? 'project' : 'workspace';
+  const [createTarget, setCreateTarget] = useState<CreateTarget>(contextualTarget);
   const [drawer, setDrawer] = useState<CreateDrawerId>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+
+  useEffect(() => {
+    const activeSession = props.sessions.find(
+      (session) => session.sessionId === props.activeSessionId
+    );
+    setCreateTarget(activeSession?.target ?? contextualTarget);
+  }, [contextualTarget, props.activeSessionId, props.sessions]);
 
   useEffect(() => {
     if (!active || !props.initialDrawer || !props.initialDrawerKey) {
@@ -89,15 +100,32 @@ export function CreateTab(props: CreateTabProps) {
     closeDrawer();
   };
 
+  const startNewSession = () => {
+    props.onNewSession();
+    setPrompt('');
+    setCreateTarget(contextualTarget);
+  };
+
   const drawerNode = (
     <>
       <CreateAddDrawer
         open={drawer === 'add'}
+        target={createTarget}
         stackLane={stackLane}
+        onTargetChange={setCreateTarget}
         onStackLaneChange={setStackLane}
         onClose={closeDrawer}
-        onOpenWorkspace={() => openFromAdd('workspace')}
-        onOpenProject={() => openFromAdd('project')}
+        onOpenWorkspace={() => {
+          setCreateTarget('workspace');
+          openFromAdd('workspace');
+        }}
+        onOpenProject={() => {
+          setCreateTarget('project');
+          openFromAdd('project');
+        }}
+        onAdoptProject={props.onAdoptProject}
+        onImportProject={props.onImportProject}
+        onImportWorkspace={props.onImportWorkspace}
         onPickQuickStart={(text) => {
           setPrompt(text);
           closeDrawer();
@@ -123,11 +151,16 @@ export function CreateTab(props: CreateTabProps) {
         activeSessionId={props.activeSessionId}
         onClose={() => setHistoryOpen(false)}
         onNewSession={() => {
-          props.onNewSession();
-          setPrompt('');
+          startNewSession();
           setHistoryOpen(false);
         }}
-        onSelectSession={props.onSelectSession}
+        onSelectSession={(sessionId) => {
+          const session = props.sessions.find((entry) => entry.sessionId === sessionId);
+          if (session) {
+            setCreateTarget(session.target);
+          }
+          props.onSelectSession(sessionId);
+        }}
         onDeleteSession={props.onDeleteSession}
       />
     </>
@@ -161,6 +194,11 @@ export function CreateTab(props: CreateTabProps) {
         }[activeCreateSession.status]
       } · ${activeCreateSession.method === 'ai' ? 'AI' : 'Manual'} ${activeCreateSession.target}`
     : null;
+  const composerPlaceholder = resolveCreatePlaceholder(
+    stackLane,
+    createTarget,
+    scope.workspaceName
+  );
 
   return (
     <section
@@ -196,10 +234,7 @@ export function CreateTab(props: CreateTabProps) {
         activeSession={activeBarSession}
         sessionCount={props.sessions.length}
         statusText={activeStatusText}
-        onNewSession={() => {
-          props.onNewSession();
-          setPrompt('');
-        }}
+        onNewSession={startNewSession}
         onOpenHistory={() => setHistoryOpen(true)}
       />
 
@@ -207,7 +242,7 @@ export function CreateTab(props: CreateTabProps) {
         value={prompt}
         onChange={setPrompt}
         onSubmit={submitPrompt}
-        placeholder={resolveWorkspacePlaceholder(stackLane)}
+        placeholder={composerPlaceholder}
         disabled={busy}
         models={models}
         selectedModelId={selectedModelId}

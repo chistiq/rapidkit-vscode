@@ -5,14 +5,19 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs-extra';
+import path from 'node:path';
 import { run } from '../utils/exec';
 import { Logger } from '../utils/logger';
 import { getWorkspaceVenvRapidkitCandidates } from '../utils/platformCapabilities';
+import { resolveWorkspaceCoreRequirement } from './workspaceCoreRequirement';
 
 export type VersionStatus =
   | 'up-to-date'
   | 'update-available'
   | 'deprecated'
+  | 'not-required'
+  | 'install-required'
+  | 'repair-required'
   | 'error'
   | 'not-installed';
 
@@ -29,12 +34,6 @@ export class CoreVersionService {
   private logger: Logger;
   private cache: Map<string, { info: CoreVersionInfo; timestamp: number }> = new Map();
   private cacheTtl = 30 * 60 * 1000; // 30 minutes — Python package version changes rarely
-  private globalInstalledCache: {
-    version?: string;
-    location?: string;
-    path?: string;
-    timestamp: number;
-  } | null = null;
   private latestVersionCache: { version?: string; timestamp: number } | null = null;
 
   private constructor() {
@@ -77,13 +76,34 @@ export class CoreVersionService {
       this.cache.delete(workspacePath);
     } else {
       this.cache.clear();
-      this.globalInstalledCache = null;
       this.latestVersionCache = null;
     }
   }
 
   private async _fetchVersionInfo(workspacePath: string): Promise<CoreVersionInfo> {
+    const requirement = await resolveWorkspaceCoreRequirement(workspacePath);
+    if (!requirement.required) {
+      return { status: 'not-required' };
+    }
+
     const installedInfo = await this._getInstalledVersion(workspacePath);
+
+    if (installedInfo.brokenWorkspaceEnvironment) {
+      return {
+        status: 'repair-required',
+        latest: await this._getLatestVersionCached().catch(() => undefined),
+        location: 'workspace',
+        path: installedInfo.path,
+      };
+    }
+    if (installedInfo.missingWorkspaceEnvironment) {
+      return {
+        status: 'install-required',
+        latest: await this._getLatestVersionCached().catch(() => undefined),
+        location: 'workspace',
+        path: path.join(workspacePath, '.venv'),
+      };
+    }
 
     if (!installedInfo.version) {
       return {
@@ -109,9 +129,13 @@ export class CoreVersionService {
     };
   }
 
-  private async _getInstalledVersion(
-    workspacePath: string
-  ): Promise<{ version?: string; location?: string; path?: string }> {
+  private async _getInstalledVersion(workspacePath: string): Promise<{
+    version?: string;
+    location?: string;
+    path?: string;
+    brokenWorkspaceEnvironment?: boolean;
+    missingWorkspaceEnvironment?: boolean;
+  }> {
     // Priority 1: Workspace .venv (cross-platform)
     const venvCandidates = getWorkspaceVenvRapidkitCandidates(workspacePath);
     for (const venvPath of venvCandidates) {
@@ -137,54 +161,20 @@ export class CoreVersionService {
       }
     }
 
-    // Priority 2: Global installation (cached across workspaces)
-    const globalVersion = await this._getGlobalInstalledVersionCached(workspacePath);
-    if (globalVersion.version) {
-      return globalVersion;
-    }
-
-    return {};
-  }
-
-  private async _getGlobalInstalledVersionCached(
-    workspacePath: string
-  ): Promise<{ version?: string; location?: string; path?: string }> {
-    if (
-      this.globalInstalledCache &&
-      Date.now() - this.globalInstalledCache.timestamp < this.cacheTtl
-    ) {
+    const workspaceVenv = path.join(workspacePath, '.venv');
+    if (await fs.pathExists(workspaceVenv)) {
       return {
-        version: this.globalInstalledCache.version,
-        location: this.globalInstalledCache.location,
-        path: this.globalInstalledCache.path,
+        location: 'workspace',
+        path: workspaceVenv,
+        brokenWorkspaceEnvironment: true,
       };
     }
 
-    try {
-      const { stdout } = await run('rapidkit', ['--version'], {
-        cwd: workspacePath,
-        stdio: 'pipe',
-      });
-      const match = stdout.match(/v?([\d.]+(?:rc\d+)?(?:a\d+)?(?:b\d+)?)/);
-      if (match) {
-        const result = {
-          version: match[1],
-          location: 'global',
-        };
-        this.globalInstalledCache = { ...result, timestamp: Date.now() };
-        return result;
-      }
-    } catch {
-      // Not installed
-    }
-
-    this.globalInstalledCache = {
-      version: undefined,
-      location: undefined,
-      path: undefined,
-      timestamp: Date.now(),
+    return {
+      location: 'workspace',
+      path: workspaceVenv,
+      missingWorkspaceEnvironment: true,
     };
-    return {};
   }
 
   private async _getLatestVersionCached(): Promise<string | undefined> {
@@ -268,6 +258,12 @@ export class CoreVersionService {
         return new vscode.ThemeIcon('pulse', new vscode.ThemeColor('charts.yellow'));
       case 'deprecated':
         return new vscode.ThemeIcon('pulse', new vscode.ThemeColor('charts.orange'));
+      case 'repair-required':
+        return new vscode.ThemeIcon('tools', new vscode.ThemeColor('charts.orange'));
+      case 'install-required':
+        return new vscode.ThemeIcon('cloud-download', new vscode.ThemeColor('charts.yellow'));
+      case 'not-required':
+        return new vscode.ThemeIcon('circle-outline');
       case 'error':
       case 'not-installed':
         return new vscode.ThemeIcon('pulse', new vscode.ThemeColor('charts.red'));
@@ -287,6 +283,12 @@ export class CoreVersionService {
         return `🆕 Update available: v${info.latest} (installed: v${info.installed})`;
       case 'deprecated':
         return `⚠️ Version deprecated (v${info.installed})`;
+      case 'repair-required':
+        return '⚠️ Workspace Python environment needs repair';
+      case 'install-required':
+        return 'RapidKit Core is not installed in this workspace';
+      case 'not-required':
+        return 'RapidKit Core is optional for this workspace';
       case 'not-installed':
         return '❌ RapidKit Core not installed';
       case 'error':

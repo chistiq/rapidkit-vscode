@@ -121,6 +121,7 @@ function detectEntryPoints(projectPath: string, kit: string): string[] {
 
 function readInstalledModules(projectPath: string): { count: number; slugs: string[] } {
   const registryPaths = [
+    path.join(projectPath, '.workspai', 'registry.json'),
     path.join(projectPath, 'registry.json'),
     path.join(projectPath, '.rapidkit', 'registry.json'),
   ];
@@ -206,13 +207,21 @@ export function scanProjectArchitectureFingerprint(
   }
 
   const name = path.basename(resolvedPath);
-  const projectJson = readJsonFile<{
-    kit_name?: string;
-    kit?: string;
-    framework?: string;
-    runtime?: string;
-    module_support?: boolean;
-  }>(path.join(resolvedPath, '.rapidkit', 'project.json'));
+  const projectJson =
+    readJsonFile<{
+      kit_name?: string;
+      kit?: string;
+      framework?: string;
+      runtime?: string;
+      module_support?: boolean;
+    }>(path.join(resolvedPath, '.workspai', 'project.json')) ??
+    readJsonFile<{
+      kit_name?: string;
+      kit?: string;
+      framework?: string;
+      runtime?: string;
+      module_support?: boolean;
+    }>(path.join(resolvedPath, '.rapidkit', 'project.json'));
 
   let kit = projectJson?.kit_name?.trim() || projectJson?.kit?.trim() || 'unknown';
   if (kit === 'unknown' && analyzeSlice) {
@@ -227,7 +236,8 @@ export function scanProjectArchitectureFingerprint(
   const entryPoints = detectEntryPoints(resolvedPath, kit);
   const hasRapidKitMarker =
     analyzeSlice?.hasRapidKitMarker ??
-    pathExists(path.join(resolvedPath, '.rapidkit', 'project.json'));
+    (pathExists(path.join(resolvedPath, '.workspai', 'project.json')) ||
+      pathExists(path.join(resolvedPath, '.rapidkit', 'project.json')));
   const hasExamplesDir = pathExists(path.join(resolvedPath, 'src', 'examples'));
   const hasDomainLayer = pathExists(path.join(resolvedPath, 'src', 'app', 'domain'));
   const hasDockerfile =
@@ -294,7 +304,10 @@ async function discoverProjectPaths(
     }
   }
 
-  if (pathExists(path.join(workspacePath, '.rapidkit', 'project.json'))) {
+  if (
+    pathExists(path.join(workspacePath, '.workspai', 'project.json')) ||
+    pathExists(path.join(workspacePath, '.rapidkit', 'project.json'))
+  ) {
     discovered.add(path.resolve(workspacePath));
   }
   if (pathExists(path.join(workspacePath, 'registry.json'))) {
@@ -309,6 +322,7 @@ async function discoverProjectPaths(
       }
       const candidate = path.join(workspacePath, entry.name);
       const hasProjectMarker =
+        pathExists(path.join(candidate, '.workspai', 'project.json')) ||
         pathExists(path.join(candidate, '.rapidkit', 'project.json')) ||
         pathExists(path.join(candidate, 'registry.json')) ||
         pathExists(path.join(candidate, 'pyproject.toml')) ||
@@ -497,7 +511,7 @@ export function buildWorkspaceArchitectureAtlasBlock(
   );
   if (minimalProjects.length > 0 && minimalProjects.length === atlas.projectCount) {
     lines.push(
-      '- GUARD: Entire workspace is minimal shell without deployable services. Recommend `rapidkit create project <kit> <name>` before deploy/Docker/module guidance.'
+      '- GUARD: Entire workspace is a minimal shell without deployable services. Recommend `workspai create project <kit> <name>` before deploy, Docker, or module guidance.'
     );
   }
 

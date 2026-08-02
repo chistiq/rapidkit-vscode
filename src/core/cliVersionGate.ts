@@ -1,7 +1,14 @@
 import * as vscode from 'vscode';
 
 import { run } from '../utils/exec';
-import { buildRapidkitExecutionSpec } from '../utils/platformCapabilities';
+import {
+  buildPackageRunnerInvocationEnv,
+  buildNpxRapidkitVersionProbeArgs,
+  buildRapidkitExecutionSpec,
+  discoverPackageRunnerInvocations,
+  parseGlobalNpmPackageVersionOutput,
+  parseNpmCliVersionOutput,
+} from '../utils/platformCapabilities';
 import { runShellCommandInTerminal } from '../utils/terminalExecutor';
 import { parseTrailingJson } from './canonicalProjectLifecycle';
 import { fetchRuntimeCommandSurface } from './runtimeCommandSurface';
@@ -43,7 +50,50 @@ export async function resolveLinkedCliVersion(cwd?: string): Promise<string | nu
       }
     }
   } catch {
-    // fall through to null
+    // Fall through to package-manager discovery. VS Code can retain a stale
+    // Extension Host PATH when Node is managed by nvm/fnm/asdf.
+  }
+
+  for (const npmInvocation of discoverPackageRunnerInvocations('npm')) {
+    try {
+      const result = await run(
+        npmInvocation.command,
+        [...npmInvocation.prefixArgs, 'list', '-g', 'workspai', '--depth=0'],
+        {
+          cwd,
+          shell: process.platform === 'win32',
+          timeout: 5_000,
+          env: buildPackageRunnerInvocationEnv(npmInvocation),
+        }
+      );
+      const version = parseGlobalNpmPackageVersionOutput(result.stdout ?? '');
+      if (result.exitCode === 0 && version) {
+        return version;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  for (const npxInvocation of discoverPackageRunnerInvocations('npx')) {
+    try {
+      const result = await run(
+        npxInvocation.command,
+        [...npxInvocation.prefixArgs, ...buildNpxRapidkitVersionProbeArgs()],
+        {
+          cwd,
+          shell: process.platform === 'win32',
+          timeout: 8_000,
+          env: buildPackageRunnerInvocationEnv(npxInvocation),
+        }
+      );
+      const version = parseNpmCliVersionOutput(result.stdout ?? '');
+      if (result.exitCode === 0 && version) {
+        return version;
+      }
+    } catch {
+      continue;
+    }
   }
 
   return null;

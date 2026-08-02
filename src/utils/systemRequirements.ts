@@ -357,7 +357,9 @@ export async function showSystemRequirementsError(
     );
 
     if (selected === setupGuideAction) {
-      await vscode.env.openExternal(vscode.Uri.parse('https://www.workspai.com/docs/setup/python'));
+      await vscode.env.openExternal(
+        vscode.Uri.parse('https://www.workspai.dev/learn/create-adopt')
+      );
     }
 
     return 'cancel';
@@ -382,7 +384,9 @@ export async function showSystemRequirementsError(
     );
 
     if (selected === setupGuideAction) {
-      await vscode.env.openExternal(vscode.Uri.parse('https://www.workspai.com/docs/setup/python'));
+      await vscode.env.openExternal(
+        vscode.Uri.parse('https://www.workspai.dev/learn/create-adopt')
+      );
     }
 
     return 'cancel';
@@ -415,7 +419,7 @@ export async function showSystemRequirementsError(
         return 'install';
       } else if (selected === manualAction) {
         await vscode.env.openExternal(
-          vscode.Uri.parse('https://www.workspai.com/docs/setup/python-venv')
+          vscode.Uri.parse('https://www.workspai.dev/learn/create-adopt')
         );
         return 'cancel';
       }
@@ -438,7 +442,7 @@ export async function showSystemRequirementsError(
 
       if (selected === setupGuideAction) {
         await vscode.env.openExternal(
-          vscode.Uri.parse('https://www.workspai.com/docs/setup/python-venv')
+          vscode.Uri.parse('https://www.workspai.dev/learn/create-adopt')
         );
       } else if (selected === retryAction) {
         return 'retry';

@@ -20,6 +20,12 @@ function recordArray(value: unknown): Record<string, unknown>[] {
     : [];
 }
 
+function valueRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 function scopedProject(projectPath?: string): { projectPath?: string } {
   return projectPath ? { projectPath } : {};
 }
@@ -40,6 +46,14 @@ export async function runStudioActiveBlockerRecovery(input: {
       blocker
     )
   );
+  const dependencyDiagnostics: Array<{
+    projectName: string;
+    sourceFiles: string[];
+    resolutionCandidates: Record<string, unknown>[];
+    blockedCandidates: Record<string, unknown>[];
+    nextAction?: string;
+  }> = [];
+  let unresolvedDependencyProjects: string[] = [];
 
   if (dependencyIncident && input.dependencyProjectNames.length > 0) {
     let dependencySourceChanged = false;
@@ -57,6 +71,18 @@ export async function runStudioActiveBlockerRecovery(input: {
         result: inspection,
       });
       const inspectionOutput = outputRecord(inspection);
+      const target = valueRecord(inspectionOutput?.target);
+      dependencyDiagnostics.push({
+        projectName,
+        sourceFiles: Array.isArray(target?.sourceFiles)
+          ? target.sourceFiles.filter((entry): entry is string => typeof entry === 'string')
+          : [],
+        resolutionCandidates: recordArray(inspectionOutput?.resolutionCandidates),
+        blockedCandidates: recordArray(inspectionOutput?.blockedCandidates),
+        ...(typeof inspectionOutput?.nextAction === 'string'
+          ? { nextAction: inspectionOutput.nextAction }
+          : {}),
+      });
       if (inspectionOutput?.dependencyBlockerPresent === false) {
         clearedProjects.push(projectName);
         continue;
@@ -116,6 +142,7 @@ export async function runStudioActiveBlockerRecovery(input: {
       }
       unresolvedProjects.push(projectName);
     }
+    unresolvedDependencyProjects = [...unresolvedProjects];
 
     if (dependencySourceChanged) {
       return {
@@ -213,6 +240,15 @@ export async function runStudioActiveBlockerRecovery(input: {
     output: {
       recoveryPath: 'general-source-repair',
       observations,
+      ...(dependencyIncident && input.dependencyProjectNames.length > 0
+        ? {
+            unresolvedProjects: unresolvedDependencyProjects,
+            dependencyDiagnostics,
+            sourceCandidates: dependencyDiagnostics.flatMap((entry) =>
+              entry.sourceFiles.map((file) => `${entry.projectName}/${file}`)
+            ),
+          }
+        : {}),
       nextAction: 'general-source-repair',
       recommendedTools: [
         'discover-workspace-files',

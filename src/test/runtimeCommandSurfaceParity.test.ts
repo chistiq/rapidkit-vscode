@@ -91,14 +91,6 @@ describe('shared runtime command surface contract (extension)', () => {
     const scaffoldKits = read('src/core/scaffoldKits.ts');
 
     expect(contract.schemaVersion).toBe('rapidkit-runtime-command-surface-v1');
-    expect(defaultKitEnum).toEqual(contract.scaffoldKits);
-    for (const kit of contract.scaffoldKits) {
-      expect(scaffoldKits, kit).toContain(kit);
-    }
-    expect(rapidkitCli).toContain('SCAFFOLD_KIT_IDS');
-    expect(rapidkitCli).toContain('./scaffoldKits');
-    expect(kitsService).toContain("from './scaffoldKits'");
-    expect(kitsService).toContain('FRONTEND_SCAFFOLD_KITS');
     const createPlanner = readCreatePlannerContract();
     const executableCreateIds = [
       ...createPlanner.nativeCreate.map((entry) => entry.id),
@@ -106,10 +98,26 @@ describe('shared runtime command surface contract (extension)', () => {
         .filter((entry) => entry.canExecuteCreate)
         .map((entry) => entry.id),
     ];
-    expect([...executableCreateIds].sort()).toEqual([...contract.scaffoldKits].sort());
+    expect(defaultKitEnum).toEqual(executableCreateIds);
+    for (const kit of contract.scaffoldKits) {
+      expect(scaffoldKits, kit).toContain(kit);
+    }
+    expect(rapidkitCli).toContain('SCAFFOLD_KIT_IDS');
+    expect(rapidkitCli).toContain('./scaffoldKits');
+    expect(kitsService).toContain("from './scaffoldKits'");
+    expect(kitsService).toContain('FRONTEND_SCAFFOLD_KITS');
+    expect(executableCreateIds).toEqual(expect.arrayContaining(contract.scaffoldKits));
+    for (const kitId of executableCreateIds.filter(
+      (kitId) => !contract.scaffoldKits.includes(kitId)
+    )) {
+      expect(
+        createPlanner.officialCreate.find((entry) => entry.id === kitId)?.canExecuteCreate,
+        kitId
+      ).toBe(true);
+    }
     expect(contract.createPlanner.officialCreate).toContain('wordpress-site');
     expect(contract.createPlanner.officialCreate).toContain('frontend.nextjs');
-    expect(contract.createPlanner.officialCreate).toContain('laravel');
+    expect(contract.createPlanner.officialCreate).toContain('php.laravel');
     expect(contract.createPlanner.existingRuntimeSignals).toContain('php');
   });
 
@@ -332,12 +340,20 @@ describe('shared runtime command surface contract (extension)', () => {
     );
   });
 
-  it('keeps observed runtimes lifecycle-limited to help in the contract matrix', () => {
+  it('keeps observed runtimes lifecycle-limited and extended runtimes actionable', () => {
     const contract = readContract();
-    const observedRuntimes = ['php', 'ruby', 'rust', 'unknown'];
+    const observedRuntimes = ['ruby', 'unknown'];
 
     for (const runtime of observedRuntimes) {
       expect(contract.runtimeMatrix[runtime].lifecycleCommands).toEqual(['help']);
+      expect(contract.runtimeMatrix[runtime].moduleCommands).toBe(false);
+    }
+
+    for (const runtime of ['php', 'rust']) {
+      expect(contract.runtimeMatrix[runtime].tier).toBe('extended');
+      expect(contract.runtimeMatrix[runtime].lifecycleCommands).toEqual(
+        expect.arrayContaining(['init', 'dev', 'start', 'build', 'test', 'lint', 'format', 'help'])
+      );
       expect(contract.runtimeMatrix[runtime].moduleCommands).toBe(false);
     }
   });

@@ -1,8 +1,8 @@
-import path from 'node:path';
-import * as fs from 'fs-extra';
 import * as vscode from 'vscode';
 
 import type { AIModalContext } from '../../core/aiService';
+import { resolveCoreUpgradePlan } from '../../core/coreUpgradePlan';
+import { CoreVersionService } from '../../core/coreVersionService';
 import { getWebviewMessageDataRecord, readStringField } from '../../contracts/webviewProtocol';
 import { runCommandsInTerminal } from '../../utils/terminalExecutor';
 
@@ -46,7 +46,7 @@ export async function tryDispatchDashboardShortcutWebviewMessage(
 
   switch (command) {
     case 'openDocs':
-      await vscode.env.openExternal(vscode.Uri.parse('https://www.workspai.com/docs'));
+      await vscode.env.openExternal(vscode.Uri.parse('https://www.workspai.dev/learn'));
       break;
     case 'openGitHub':
       await vscode.env.openExternal(vscode.Uri.parse('https://github.com/rapidkit/rapidkit'));
@@ -70,13 +70,19 @@ export async function tryDispatchDashboardShortcutWebviewMessage(
         break;
       }
 
-      const venvPath = path.join(workspacePath, '.venv');
-      const hasVenv = await fs.pathExists(venvPath);
+      const versionInfo = await CoreVersionService.getInstance().getVersionInfo(workspacePath);
+      if (versionInfo.status === 'not-required') {
+        vscode.window.showInformationMessage(
+          'RapidKit Core is not required by this workspace. No global package was changed.'
+        );
+        break;
+      }
+      const upgradePlan = await resolveCoreUpgradePlan(workspacePath);
 
       runCommandsInTerminal({
         name: 'Upgrade RapidKit Core',
         cwd: workspacePath,
-        commands: [hasVenv ? 'poetry update rapidkit-core' : 'pipx upgrade rapidkit-core'],
+        commands: upgradePlan.commands,
       });
 
       vscode.window.showInformationMessage(

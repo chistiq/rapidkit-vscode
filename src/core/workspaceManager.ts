@@ -9,7 +9,11 @@ import * as path from 'path';
 import * as os from 'os';
 import { WorkspaiWorkspace } from '../types';
 import { MARKERS } from '../utils/constants';
-import { hasRapidkitProjectMarkers, hasWorkspaceRootMarkers } from './workspacePaths';
+import {
+  getCanonicalWorkspacesDirectory,
+  hasRapidkitProjectMarkers,
+  hasWorkspaceRootMarkers,
+} from './workspacePaths';
 import { resolveWorkspaceMarkerPath } from './workspaceIntelligencePaths';
 import { getRegistryDir } from '../utils/registryPath';
 import {
@@ -169,6 +173,7 @@ export class WorkspaceManager {
 
     // Check common dev directories
     const commonDirs = [
+      getCanonicalWorkspacesDirectory(),
       path.join(os.homedir(), 'rapidkit', 'workspaces'),
       path.join(os.homedir(), 'Workspai', 'rapidkits'), // legacy Workspai location
       path.join(os.homedir(), 'RapidKit'), // legacy npm package default location

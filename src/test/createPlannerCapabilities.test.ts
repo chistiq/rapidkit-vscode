@@ -23,7 +23,7 @@ describe('create planner capabilities contract', () => {
     });
   });
 
-  it('routes WordPress and Laravel prompts to official planned create', () => {
+  it('keeps WordPress planned and routes Laravel to the executable official lane', () => {
     expect(resolveCreateCapabilityFromPrompt('Create a WordPress site for commerce')).toMatchObject(
       {
         lane: 'official',
@@ -38,10 +38,9 @@ describe('create planner capabilities contract', () => {
       resolveCreateCapabilityFromPrompt('Build a Laravel project management portal')
     ).toMatchObject({
       lane: 'official',
-      status: 'planned',
-      canExecuteCreate: false,
-      resolved: 'laravel',
-      fallbackLane: 'existing',
+      status: 'available',
+      canExecuteCreate: true,
+      resolved: 'php.laravel',
     });
   });
 

@@ -119,7 +119,7 @@ describe('dispatchIncidentStudioShipLoopStep integration', () => {
     expect(mocks.runIncidentInlineCommand).toHaveBeenCalledWith(
       expect.objectContaining({
         command:
-          'npx workspai workspace export --output team-workspace.rapidkit-archive.zip --json',
+          'npx workspai workspace export --output team-workspace.workspai-archive.zip --json',
         workspacePath: '/tmp/ws',
       })
     );

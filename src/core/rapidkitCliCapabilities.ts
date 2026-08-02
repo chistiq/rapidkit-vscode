@@ -20,6 +20,7 @@ export const REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS = [
   'impact',
   'contract',
   'verify',
+  'goal',
   'graph',
   'watch',
   'context',

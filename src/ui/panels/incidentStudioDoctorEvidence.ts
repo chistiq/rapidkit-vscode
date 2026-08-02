@@ -1,5 +1,6 @@
 import fs from 'fs-extra';
 import path from 'path';
+import { projectModuleRegistryCandidates } from '../../utils/workspaceCanonicalPaths';
 import {
   resolveWorkspaceArtifactPath,
   resolveWorkspaceReportsDir,
@@ -116,20 +117,10 @@ async function readInstalledModules(
   projectPath: string
 ): Promise<Array<{ slug: string; version: string; display_name: string }>> {
   try {
-    const primaryRegistryPath = path.join(projectPath, 'registry.json');
-    const workspaiRegistryPath = path.join(projectPath, '.workspai', 'registry.json');
-    const legacyRegistryPath = path.join(projectPath, '.rapidkit', 'registry.json');
-    const primaryExists = await fs.pathExists(primaryRegistryPath);
-    const workspaiExists = await fs.pathExists(workspaiRegistryPath);
-    const legacyExists = await fs.pathExists(legacyRegistryPath);
-    const registryPath = primaryExists
-      ? primaryRegistryPath
-      : workspaiExists
-        ? workspaiRegistryPath
-        : legacyRegistryPath;
-    const exists = primaryExists || workspaiExists || legacyExists;
-
-    if (exists) {
+    for (const registryPath of projectModuleRegistryCandidates(projectPath)) {
+      if (!(await fs.pathExists(registryPath))) {
+        continue;
+      }
       const content = await fs.readFile(registryPath, 'utf-8');
       const registry = JSON.parse(content);
       return registry.installed_modules || [];

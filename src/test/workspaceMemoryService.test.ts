@@ -16,6 +16,44 @@ describe('workspaceMemoryService', () => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
+  it('writes new memory to canonical Workspai metadata and prefers it over legacy memory', async () => {
+    const svc = WorkspaceMemoryService.getInstance();
+    const wsPath = path.join(tempRoot, 'ws-canonical');
+    const legacyPath = path.join(wsPath, '.rapidkit', 'workspace-memory.json');
+    fs.mkdirSync(path.dirname(legacyPath), { recursive: true });
+    fs.writeFileSync(
+      legacyPath,
+      JSON.stringify({
+        context: 'Legacy context',
+        conventions: [],
+        decisions: [],
+        lastUpdated: '2026-04-20T00:00:00.000Z',
+      })
+    );
+
+    await svc.write(
+      wsPath,
+      {
+        context: 'Canonical context',
+        conventions: [],
+        decisions: [],
+        lastUpdated: '',
+      },
+      {
+        actor: 'test',
+        operation: 'workspace-memory-wizard',
+        mode: 'user-initiated',
+        reason: 'Verify canonical ownership.',
+        approvedByUser: true,
+      }
+    );
+
+    expect(await svc.resolveMemoryPath(wsPath)).toBe(
+      path.join(wsPath, '.workspai', 'workspace-memory.json')
+    );
+    await expect(svc.read(wsPath)).resolves.toMatchObject({ context: 'Canonical context' });
+  });
+
   it('sanitizes invalid memory schema and self-heals file content', async () => {
     const svc = WorkspaceMemoryService.getInstance();
     const wsPath = path.join(tempRoot, 'ws-schema');

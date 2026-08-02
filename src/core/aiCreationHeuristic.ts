@@ -7,7 +7,12 @@ import {
   type AICreateProfile,
   type CreationStackIntent,
 } from './creationStackIntent';
-import { isFrontendScaffoldFramework, type ScaffoldFramework } from './scaffoldKits';
+import {
+  isDesktopScaffoldFramework,
+  isExtensionScaffoldFramework,
+  isFrontendScaffoldFramework,
+  type ScaffoldFramework,
+} from './scaffoldKits';
 
 type HeuristicModuleRule = {
   slug: string;
@@ -40,6 +45,10 @@ function inferSuggestedModules(promptLower: string, framework: ScaffoldFramework
     framework === 'go' ||
     framework === 'springboot' ||
     framework === 'dotnet' ||
+    framework === 'rust' ||
+    framework === 'laravel' ||
+    isDesktopScaffoldFramework(framework) ||
+    isExtensionScaffoldFramework(framework) ||
     isFrontendScaffoldFramework(framework)
   ) {
     return [];

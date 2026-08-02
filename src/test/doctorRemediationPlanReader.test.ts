@@ -77,6 +77,20 @@ async function writeWorkspacePlan(
             scriptName: 'test',
             scriptValue: 'vitest run',
           },
+          strategy: [
+            {
+              id: 'verify-project',
+              kind: 'verify',
+              description: 'Verify the project Doctor evidence.',
+              risk: 'safe',
+              invocation: {
+                cwd: '/external/products/web',
+                executable: 'npx',
+                args: ['--no-install', 'workspai', 'doctor', 'project', '--json'],
+              },
+              continueWhen: 'previous-passed',
+            },
+          ],
           verifyCommand: 'npx rapidkit doctor project --json',
           refreshCommands: ['npx rapidkit doctor workspace --json'],
         },
@@ -133,6 +147,13 @@ describe('doctorRemediationPlanReader', () => {
       primaryAction: 'Add test script',
       verifyCommand: 'npx rapidkit doctor project --json',
       canApply: true,
+      strategy: [
+        expect.objectContaining({
+          id: 'verify-project',
+          kind: 'verify',
+          invocation: expect.objectContaining({ executable: 'npx' }),
+        }),
+      ],
     });
   });
 
@@ -236,6 +257,21 @@ describe('doctorRemediationPlanReader', () => {
           },
           diffPreview: { summary: 'Review npm lockfile changes after execution.' },
           files: ['package.json', 'package-lock.json'],
+          transaction: {
+            schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
+            kind: 'dependency-security',
+            state: 'planned',
+            projectPath,
+            ecosystem: 'npm',
+            requiredStages: ['reconcile', 'audit', 'test', 'build'],
+            completion: {
+              manifestLockConsistent: true,
+              auditClean: true,
+              declaredTestsPass: true,
+              declaredBuildPass: true,
+              canonicalVerificationRequired: true,
+            },
+          },
           verifyCommand: 'npx workspai doctor workspace --json',
           refreshCommands: ['npx workspai readiness --strict --json'],
         },
@@ -290,9 +326,98 @@ describe('doctorRemediationPlanReader', () => {
       projectPath,
       executable: true,
       primaryAction: 'Apply non-breaking npm vulnerability fixes',
+      transaction: {
+        schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
+        kind: 'dependency-security',
+        state: 'planned',
+        projectPath,
+        ecosystem: 'npm',
+        requiredStages: ['reconcile', 'audit', 'test', 'build'],
+      },
     });
     expect(plan?.visibleSteps[0]?.originalCommand).toContain('npm audit fix');
     expect(plan?.visibleSteps[0]?.originalCommand).not.toContain('--force');
+  });
+
+  it('consumes project-scoped Doctor actions from the canonical artifact remediation plan', async () => {
+    const workspacePath = makeRoot();
+    const projectPath = path.join(workspacePath, 'api');
+    const reportsPath = path.join(workspacePath, '.workspai', 'reports');
+    await fs.outputJSON(path.join(reportsPath, 'doctor-last-run.json'), {
+      generatedAt: new Date().toISOString(),
+    });
+    await fs.outputJSON(path.join(reportsPath, 'artifact-remediation-plan-last-run.json'), {
+      schemaVersion: 'artifact-remediation-plan-v1',
+      generatedAt: new Date(Date.now() + 60_000).toISOString(),
+      actions: [
+        {
+          id: 'doctor.api-security',
+          artifactKind: 'doctor-workspace',
+          cardId: 'doctor',
+          title: 'Repair api dependencies',
+          order: 1,
+          phase: 'dependency-baseline',
+          scope: 'project',
+          projectName: 'api',
+          projectPath: 'api',
+          sourceStepId: 'api-security',
+          dependsOn: [],
+          status: 'ready',
+          mode: 'run-command',
+          risk: 'guarded',
+          requiresApproval: true,
+          blocker: 'api: 4 dependency vulnerabilities reported',
+          summary: 'Apply compatible fixes and reconcile the dependency tree.',
+          command: 'npm audit fix --audit-level=moderate',
+          verifyCommand: 'npx workspai doctor project --json',
+          cwd: 'project',
+          files: ['package.json', 'package-lock.json'],
+          transaction: {
+            schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
+            kind: 'dependency-security',
+            state: 'planned',
+            projectPath,
+            ecosystem: 'npm',
+            requiredStages: ['reconcile', 'audit', 'test', 'build'],
+            completion: {
+              manifestLockConsistent: true,
+              auditClean: true,
+              declaredTestsPass: true,
+              declaredBuildPass: true,
+              canonicalVerificationRequired: true,
+            },
+          },
+          rollback: { available: true, strategy: 'manual' },
+          notes: ['Source Doctor step: api-security'],
+        },
+      ],
+    });
+
+    const plan = await readDoctorRemediationPlanForStudio({
+      workspacePath,
+      handoff: handoff({
+        workspacePath,
+        cardId: 'doctor',
+        cardLabel: 'Workspace Doctor',
+        scope: 'workspace',
+        projectPath: undefined,
+        artifactPath: '.workspai/reports/doctor-last-run.json',
+        blockers: ['api: 4 dependency vulnerabilities reported'],
+      }),
+    });
+
+    expect(plan?.policyProfile).toBe('artifact-remediation-plan-v1');
+    expect(plan?.scope).toBe('workspace');
+    expect(plan?.visibleSteps).toEqual([
+      expect.objectContaining({
+        id: 'doctor.api-security',
+        projectName: 'api',
+        projectPath,
+        transaction: expect.objectContaining({
+          requiredStages: ['reconcile', 'audit', 'test', 'build'],
+        }),
+      }),
+    ]);
   });
 
   it('keeps Agent Grounding remediation focused on the named stale artifact', async () => {

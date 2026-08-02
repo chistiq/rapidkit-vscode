@@ -32,6 +32,10 @@
           "attributeName": "enableModules"
         },
         {
+          "flags": "--project-grounding <mode>",
+          "attributeName": "projectGrounding"
+        },
+        {
           "flags": "--dry-run",
           "attributeName": "dryRun"
         },
@@ -431,6 +435,10 @@
         {
           "flags": "--enable-modules",
           "attributeName": "enableModules"
+        },
+        {
+          "flags": "--project-grounding <mode>",
+          "attributeName": "projectGrounding"
         },
         {
           "flags": "--git",
@@ -839,6 +847,41 @@
     {
       "path": [
         "project",
+        "coverage"
+      ],
+      "command": "coverage",
+      "parent": "project",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Inspect or run runtime-native test coverage and publish normalized project evidence",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--project <path>",
+          "attributeName": "project"
+        },
+        {
+          "flags": "--target <percent>",
+          "attributeName": "target"
+        },
+        {
+          "flags": "--run",
+          "attributeName": "run"
+        },
+        {
+          "flags": "--strict",
+          "attributeName": "strict"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
+        "project",
         "delete"
       ],
       "command": "delete",
@@ -919,6 +962,39 @@
         {
           "flags": "--dry-run",
           "attributeName": "dryRun"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
+        "project",
+        "workspace"
+      ],
+      "command": "workspace",
+      "parent": "project",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Show or repair the canonical workspace binding for the current Workspai project",
+      "hidden": false,
+      "arguments": [
+        {
+          "name": "action",
+          "required": false,
+          "variadic": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--project <path>",
+          "attributeName": "project"
         },
         {
           "flags": "--json",
@@ -1241,6 +1317,10 @@
           "attributeName": "preset"
         },
         {
+          "flags": "--project-grounding <mode>",
+          "attributeName": "projectGrounding"
+        },
+        {
           "flags": "--refresh-context",
           "attributeName": "refreshContext"
         },
@@ -1343,6 +1423,30 @@
         {
           "flags": "--no-gates",
           "attributeName": "gates"
+        },
+        {
+          "flags": "--allow-breaking",
+          "attributeName": "allowBreaking"
+        },
+        {
+          "flags": "--allow-force",
+          "attributeName": "allowForce"
+        },
+        {
+          "flags": "--no-build",
+          "attributeName": "build"
+        },
+        {
+          "flags": "--no-tests",
+          "attributeName": "tests"
+        },
+        {
+          "flags": "--no-run",
+          "attributeName": "run"
+        },
+        {
+          "flags": "--reuse-intelligence",
+          "attributeName": "reuseIntelligence"
         }
       ]
     }

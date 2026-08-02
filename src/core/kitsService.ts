@@ -9,6 +9,8 @@ import * as path from 'path';
 import { run } from '../utils/exec';
 import { buildNpxRapidkitArgs } from '../utils/platformCapabilities';
 import {
+  DESKTOP_SCAFFOLD_KITS,
+  EXTENSION_SCAFFOLD_KITS,
   FRONTEND_SCAFFOLD_KITS,
   type FrontendScaffoldFramework,
   type ScaffoldFramework,
@@ -258,11 +260,43 @@ export class KitsService {
         description:
           'Clean architecture .NET Web API starter aligned with RapidKit workspace contracts.',
       },
+      {
+        name: 'rust.axum',
+        display_name: 'Rust Axum',
+        category: 'rust',
+        version: 'latest-stable',
+        tags: ['rust', 'axum', 'backend'],
+        description: 'Typed Rust backend built with Axum.',
+      },
+      {
+        name: 'php.laravel',
+        display_name: 'Laravel',
+        category: 'laravel',
+        version: 'latest-stable',
+        tags: ['php', 'laravel', 'backend'],
+        description: 'Official latest stable Laravel application.',
+      },
       ...FRONTEND_SCAFFOLD_KITS.map((definition) => ({
         name: definition.kitId,
         display_name: definition.displayName,
         category: definition.framework as FrontendScaffoldFramework,
         version: '0.1.0',
+        tags: definition.tags,
+        description: definition.description,
+      })),
+      ...DESKTOP_SCAFFOLD_KITS.map((definition) => ({
+        name: definition.kitId,
+        display_name: definition.displayName,
+        category: definition.framework,
+        version: 'latest-stable',
+        tags: definition.tags,
+        description: definition.description,
+      })),
+      ...EXTENSION_SCAFFOLD_KITS.map((definition) => ({
+        name: definition.kitId,
+        display_name: definition.displayName,
+        category: definition.framework,
+        version: 'latest-stable',
         tags: definition.tags,
         description: definition.description,
       })),

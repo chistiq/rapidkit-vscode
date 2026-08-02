@@ -2308,7 +2308,7 @@
         },
         {
           "command": "workspai.openProjectDashboard",
-          "when": "view == rapidkitProjects && viewItem == project",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
           "group": "project@2"
         },
         {
@@ -2318,17 +2318,17 @@
         },
         {
           "command": "workspai.openProjectFolder",
-          "when": "view == rapidkitProjects && viewItem == project",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
           "group": "navigation@1"
         },
         {
           "command": "workspai.copyProjectPath",
-          "when": "view == rapidkitProjects && viewItem == project",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
           "group": "navigation@2"
         },
         {
           "command": "workspai.deleteProject",
-          "when": "view == rapidkitProjects && viewItem == project",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
           "group": "z_danger@99"
         },
         {
@@ -2879,10 +2879,11 @@
             "fastapi.standard",
             "fastapi.ddd",
             "nestjs.standard",
+            "springboot.standard",
             "gofiber.standard",
             "gogin.standard",
-            "springboot.standard",
             "dotnet.webapi.clean",
+            "rust.axum",
             "frontend.nextjs",
             "frontend.remix",
             "frontend.vite-react",
@@ -2893,16 +2894,21 @@
             "frontend.nuxt",
             "frontend.angular",
             "frontend.astro",
-            "frontend.sveltekit"
+            "frontend.sveltekit",
+            "desktop.tauri",
+            "desktop.electron",
+            "extension.vscode",
+            "php.laravel"
           ],
           "enumDescriptions": [
             "FastAPI with standard features",
             "FastAPI with DDD-oriented clean architecture",
             "NestJS with standard features",
+            "Spring Boot with standard features",
             "Go/Fiber with standard features",
             "Go/Gin with standard features",
-            "Spring Boot with standard features",
             ".NET Web API with clean architecture",
+            "Rust Axum backend",
             "Next.js via official create-next-app",
             "Remix via official create-remix",
             "Vite + React TypeScript starter",
@@ -2913,7 +2919,11 @@
             "Nuxt via official nuxi init",
             "Angular via official @angular/cli",
             "Astro via official create astro",
-            "SvelteKit via official sv create"
+            "SvelteKit via official sv create",
+            "Tauri via the official create-tauri-app generator",
+            "Electron via Electron Forge",
+            "VS Code Extension via the official generator-code scaffold",
+            "Laravel via the official Composer generator"
           ],
           "description": "Default kit for new projects"
         },

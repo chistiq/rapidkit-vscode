@@ -108,6 +108,7 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(provider).toContain('verify-remediation-step');
     expect(provider).toContain('verifying-remediation-step');
     expect(provider).toContain('isInternalDoctorRepairCommand(commandText)');
+    expect(provider).toContain('(?:workspai|rapidkit):doctor:repair');
     expect(provider).toContain('doctor-remediation-token:${step.id}');
     expect(provider).toContain('Trusted remediation operation applied. Running verify now.');
     expect(provider).toContain('doctor-remediation-step:${step.id}');

@@ -61,7 +61,9 @@ describe('Phase 3 studio contracts parity', () => {
         scope: 'workspace',
         artifactPath: '.rapidkit/reports/workspace-verify-last-run.json',
         blockers: ['workspace.contract.verify is stale'],
+        affectedProjectNames: ['web', 'api'],
       },
+      projectPath: '/tmp/workspai/web',
     });
 
     expect(isStudioBlockerHandoff(handoff)).toBe(true);
@@ -77,6 +79,8 @@ describe('Phase 3 studio contracts parity', () => {
     expect(handoff.dashboardCommandId).toBe('workspaceVerify');
     expect(handoff.executionChannel).toBe('background');
     expect(handoff.capabilityGate).toBe('workspace verify');
+    expect(handoff.affectedProjectNames).toEqual(['web', 'api']);
+    expect(handoff.projectPath).toBeUndefined();
   });
 
   it('carries command safety metadata for guarded Studio handoffs', async () => {

@@ -33,6 +33,21 @@ export type WorkspaceIntelligenceExecutionMilestone = {
   purpose: string;
 };
 
+export type WorkspaceIntelligenceCanonicalStage = WorkspaceIntelligenceExecutionMilestone & {
+  kind: 'stage';
+};
+
+export type WorkspaceIntelligenceExecutionPreflight = WorkspaceIntelligenceExecutionMilestone & {
+  kind: 'preflight';
+};
+
+export type WorkspaceIntelligenceStreamProgress = {
+  id: string;
+  kind: 'preflight' | 'stage';
+  status: 'started' | 'passed' | 'blocked' | 'failed' | 'skipped';
+  message?: string;
+};
+
 type WorkspaceIntelligenceChainContract = {
   schemaVersion: string;
   invariant: string;
@@ -123,6 +138,30 @@ export function getWorkspaceIntelligenceExecutionMilestones(): WorkspaceIntellig
   return milestones;
 }
 
+/**
+ * Return only the immutable Workspace Intelligence loop.
+ *
+ * Sync and baseline are deliberately excluded: the CLI contract defines them
+ * as execution prerequisites, not canonical intelligence stages.
+ */
+export function getWorkspaceIntelligenceCanonicalStages(): WorkspaceIntelligenceCanonicalStage[] {
+  return getWorkspaceIntelligenceChainSteps().map((step) => ({
+    id: step.id,
+    label: step.label,
+    kind: 'stage',
+    phase: step.phase,
+    purpose: step.purpose,
+  }));
+}
+
+/** Return the deterministic execution prerequisites outside the canonical loop. */
+export function getWorkspaceIntelligenceExecutionPreflights(): WorkspaceIntelligenceExecutionPreflight[] {
+  return getWorkspaceIntelligenceExecutionMilestones().filter(
+    (milestone): milestone is WorkspaceIntelligenceExecutionPreflight =>
+      milestone.kind === 'preflight'
+  );
+}
+
 export function getWorkspaceIntelligenceAgentReadOrder(): string[] {
   return [...contract.consumers.agents.canonicalReadOrder];
 }
@@ -135,6 +174,13 @@ export function isWorkspaceIntelligenceMilestoneId(value: unknown): value is str
   return (
     typeof value === 'string' &&
     getWorkspaceIntelligenceExecutionMilestones().some((milestone) => milestone.id === value)
+  );
+}
+
+export function isWorkspaceIntelligenceStageId(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    getWorkspaceIntelligenceCanonicalStages().some((stage) => stage.id === value)
   );
 }
 
@@ -165,6 +211,78 @@ export function resolveWorkspaceIntelligenceRunMilestone(value: unknown): string
 
   return [...milestones].reverse().find((milestone) => byId.get(milestone.id)?.status === 'passed')
     ?.id;
+}
+
+/**
+ * Resolve the canonical stage represented by a unified runner report.
+ *
+ * When a preflight fails, the rail points at the canonical stage it prevented:
+ * sync blocks Model; baseline blocks Diff. The failed prerequisite remains
+ * separately available through `resolveWorkspaceIntelligenceRunPreflight`.
+ */
+export function resolveWorkspaceIntelligenceRunStage(value: unknown): string | undefined {
+  const milestone = resolveWorkspaceIntelligenceRunMilestone(value);
+  if (isWorkspaceIntelligenceStageId(milestone)) {
+    return milestone;
+  }
+  if (milestone === 'sync') {
+    return 'model';
+  }
+  if (milestone === 'baseline') {
+    return 'diff';
+  }
+  return undefined;
+}
+
+export function resolveWorkspaceIntelligenceRunPreflight(value: unknown): string | undefined {
+  const milestone = resolveWorkspaceIntelligenceRunMilestone(value);
+  return getWorkspaceIntelligenceExecutionPreflights().some(
+    (preflight) => preflight.id === milestone
+  )
+    ? milestone
+    : undefined;
+}
+
+/** Parse one CLI log event without scraping its human-readable message. */
+export function resolveWorkspaceIntelligenceStreamProgress(
+  value: unknown
+): WorkspaceIntelligenceStreamProgress | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const event = value as Record<string, unknown>;
+  const metadata =
+    event.metadata && typeof event.metadata === 'object' && !Array.isArray(event.metadata)
+      ? (event.metadata as Record<string, unknown>)
+      : undefined;
+  if (!metadata) {
+    return undefined;
+  }
+  const id = metadata.intelligenceMilestoneId;
+  const kind = metadata.intelligenceMilestoneKind;
+  const status = metadata.intelligenceMilestoneStatus;
+  if (
+    typeof id !== 'string' ||
+    (kind !== 'preflight' && kind !== 'stage') ||
+    !['started', 'passed', 'blocked', 'failed', 'skipped'].includes(String(status))
+  ) {
+    return undefined;
+  }
+  if (
+    (kind === 'stage' && !isWorkspaceIntelligenceStageId(id)) ||
+    (kind === 'preflight' &&
+      !getWorkspaceIntelligenceExecutionPreflights().some((entry) => entry.id === id))
+  ) {
+    return undefined;
+  }
+  return {
+    id,
+    kind,
+    status: status as WorkspaceIntelligenceStreamProgress['status'],
+    ...(typeof event.message === 'string' && event.message.trim()
+      ? { message: event.message.trim() }
+      : {}),
+  };
 }
 
 export function validateWorkspaceIntelligenceChainContract(): string[] {

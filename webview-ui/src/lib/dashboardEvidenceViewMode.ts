@@ -458,7 +458,7 @@ export function buildEvidenceGuidedSteps(input: {
       title: 'Verify gates',
       detail: impactReady
         ? 'Run workspace verify or open Studio for telemetry verify gates.'
-        : 'Run the intelligence chain first (model → snapshot → diff → impact → evidence refresh), then verify.',
+        : 'Run the canonical intelligence chain to refresh the model, impact, evidence, and verification artifacts.',
       cardIds: impactReady
         ? ['workspaceVerify']
         : [

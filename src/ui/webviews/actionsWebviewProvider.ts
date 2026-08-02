@@ -54,6 +54,17 @@ import {
   type StudioDependencyRepairAttempt,
   type StudioDependencyUpgradeCandidate,
 } from '../../core/studioDependencySecurity.js';
+import { completeStudioDependencyTransactions } from '../../core/studioDependencyTransaction.js';
+import {
+  inferVerifiedGoalIntent,
+  assertVerifiedGoalCommandSafety,
+  assertVerifiedGoalPackageManifestSafety,
+  parseVerifiedGoalPlanResult,
+  parseVerifiedGoalVerifyResult,
+  verifiedGoalPlanArgs,
+  verifiedGoalVerifyArgs,
+  type VerifiedGoalContractPayload,
+} from '../../core/verifiedGoalIntent.js';
 import { runStudioActiveBlockerRecovery } from '../../core/studioActiveBlockerRecovery.js';
 import { buildCoreRapidkitShellCommand, runCommandsInTerminal } from '../../utils/terminalExecutor';
 import { buildRapidkitCommand } from '../../utils/platformCapabilities';
@@ -96,8 +107,15 @@ import {
 } from '../../core/studioSidebarDashboardRefresh.js';
 import { buildDashboardEvidenceBundle } from '../../core/dashboardEvidenceBridge.js';
 import { buildStudioIncidentGraph } from '../../core/studioIncidentGraph.js';
-import { STUDIO_CANONICAL_INTELLIGENCE_COMMAND } from '../../core/studioCanonicalIntelligenceRepair.js';
-import { resolveWorkspaceIntelligenceRunMilestone } from '../../core/workspaceIntelligenceChainContract.js';
+import {
+  STUDIO_CANONICAL_INTELLIGENCE_ARGS,
+  STUDIO_CANONICAL_INTELLIGENCE_COMMAND,
+} from '../../core/studioCanonicalIntelligenceRepair.js';
+import {
+  resolveWorkspaceIntelligenceRunPreflight,
+  resolveWorkspaceIntelligenceRunStage,
+  resolveWorkspaceIntelligenceStreamProgress,
+} from '../../core/workspaceIntelligenceChainContract.js';
 import {
   clearDoctorRemediationPlanCache,
   readDoctorRemediationPlanForStudio,
@@ -167,6 +185,10 @@ import {
   runStudioWorkspaceCommand,
   type StudioWorkspaceCommandRequest,
 } from '../../core/studioWorkspaceCommand.js';
+import {
+  captureStudioWorkspaceSourceSnapshot,
+  diffStudioWorkspaceSourceSnapshots,
+} from '../../core/studioWorkspaceSourceSnapshot.js';
 import {
   authorizeStudioWorkspacePatchTargets,
   deleteInspectedStudioWorkspaceFiles,
@@ -320,31 +342,6 @@ async function inspectStudioWorkspaceChanges(input: {
     statusExitCode: status.exitCode,
     diffExitCode: diff.exitCode,
   };
-}
-
-async function captureStudioWorkspaceChangeSnapshot(workspacePath: string): Promise<
-  | {
-      fingerprint: string;
-      changedPaths: string[];
-    }
-  | undefined
-> {
-  try {
-    const observation = await inspectStudioWorkspaceChanges({ workspacePath });
-    if (observation.statusExitCode !== 0 || observation.diffExitCode !== 0) {
-      return undefined;
-    }
-    const status = typeof observation.status === 'string' ? observation.status : '';
-    return {
-      fingerprint: JSON.stringify(observation),
-      changedPaths: status
-        .split(/\r?\n/)
-        .map((line) => line.slice(3).trim())
-        .filter(Boolean),
-    };
-  } catch {
-    return undefined;
-  }
 }
 
 type SidebarStudioActionFailurePayload = {
@@ -575,7 +572,7 @@ function remediationLoopProgressForApply(input: {
 }
 
 function isInternalDoctorRepairCommand(command: string): boolean {
-  return command.trim().startsWith('rapidkit:doctor:repair ');
+  return /^(?:workspai|rapidkit):doctor:repair\s/.test(command.trim());
 }
 
 function remediationStepPathCandidates(step: DoctorRemediationPlanStepView): string[] {
@@ -1054,6 +1051,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
   private _studioEvidenceGeneration = 0;
   private _studioEvidenceChangedPaths = new Set<string>();
   private readonly _activeStudioAgentSessions = new Map<string, StudioAgentSession>();
+  private readonly _activeStudioAgentRepairRuns = new Map<string, Promise<void>>();
   private readonly _studioAgentPatchTransactions = new Map<string, StudioAgentPatchTransaction>();
 
   constructor(
@@ -1895,6 +1893,18 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       'springboot-standard': 'springboot',
       dotnet: 'dotnet',
       'dotnet-webapi-clean': 'dotnet',
+      rust: 'rust',
+      axum: 'rust',
+      'rust-axum': 'rust',
+      laravel: 'laravel',
+      'php-laravel': 'laravel',
+      tauri: 'tauri',
+      'desktop-tauri': 'tauri',
+      electron: 'electron',
+      'desktop-electron': 'electron',
+      vscode: 'vscode-extension',
+      'vscode-extension': 'vscode-extension',
+      'extension-vscode': 'vscode-extension',
     };
     const defaultKitMap: Record<string, string> = {
       fastapi: 'fastapi.standard',
@@ -1911,6 +1921,18 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       'springboot-standard': 'springboot.standard',
       dotnet: 'dotnet.webapi.clean',
       'dotnet-webapi-clean': 'dotnet.webapi.clean',
+      rust: 'rust.axum',
+      axum: 'rust.axum',
+      'rust-axum': 'rust.axum',
+      laravel: 'php.laravel',
+      'php-laravel': 'php.laravel',
+      tauri: 'desktop.tauri',
+      'desktop-tauri': 'desktop.tauri',
+      electron: 'desktop.electron',
+      'desktop-electron': 'desktop.electron',
+      vscode: 'extension.vscode',
+      'vscode-extension': 'extension.vscode',
+      'extension-vscode': 'extension.vscode',
       nextjs: 'frontend.nextjs',
       remix: 'frontend.remix',
       'react-router': 'frontend.remix',
@@ -2417,6 +2439,44 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     const mode = resolveWorkspaiAssistantModeContract(input.assistantMode);
+    const store = new VSCodeStudioAgentSessionStore(this._context);
+    const persistedCandidate = input.sessionId ? await store.load(input.sessionId) : undefined;
+    const persisted =
+      persistedCandidate &&
+      persistedCandidate.workspacePath === input.workspacePath &&
+      persistedCandidate.assistantMode === input.assistantMode &&
+      persistedCandidate.status !== 'completed' &&
+      persistedCandidate.status !== 'cancelled'
+        ? persistedCandidate
+        : undefined;
+    let verifiedGoal: VerifiedGoalContractPayload | undefined = persisted?.goal;
+    if (input.assistantMode === 'agent' && !verifiedGoal) {
+      const intent = inferVerifiedGoalIntent({
+        task: input.task,
+        hasProjectScope: Boolean(input.projectPath),
+      });
+      if (intent) {
+        const planExecution = await runRapidkitStreaming<unknown>({
+          command: verifiedGoalPlanArgs({
+            intent,
+            projectName: input.projectPath
+              ? path.basename(path.resolve(input.projectPath))
+              : undefined,
+          }),
+          cwd: input.workspacePath,
+          featureLabel: 'Verified engineering goal',
+          timeoutMs: 2 * 60_000,
+        });
+        if (planExecution.failed || !planExecution.result) {
+          throw new Error(
+            planExecution.stderr ||
+              planExecution.stdout ||
+              'Workspai CLI could not create the verified goal contract.'
+          );
+        }
+        verifiedGoal = parseVerifiedGoalPlanResult(planExecution.result).goal;
+      }
+    }
     const inspectedSource = new Map<string, string | null>();
     const evidenceUris = await vscode.workspace.findFiles(
       new vscode.RelativePattern(input.workspacePath, '.workspai/**/*'),
@@ -2508,6 +2568,23 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           projectPath: request.projectPath,
           patches: request.patches,
         });
+        if (verifiedGoal) {
+          for (const patch of normalized) {
+            if (!/(?:^|\/)package\.json$/i.test(patch.relativePath)) {
+              continue;
+            }
+            const absolutePath = path.resolve(request.workspacePath, patch.relativePath);
+            const originalContent = await fs.readFile(absolutePath, 'utf8').catch(() => null);
+            if (originalContent !== null) {
+              assertVerifiedGoalPackageManifestSafety({
+                goal: verifiedGoal,
+                relativePath: patch.relativePath,
+                originalContent,
+                patchedContent: patch.patchedContent,
+              });
+            }
+          }
+        }
         const unauthorized = await authorizeStudioWorkspacePatchTargets({
           workspacePath: request.workspacePath,
           patches: normalized,
@@ -2555,6 +2632,21 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         workspacePath: string;
         projectPath?: string;
       }) => {
+        if (
+          verifiedGoal?.kind === 'dependency-security' &&
+          !verifiedGoal.constraints.allowBreakingChanges &&
+          request.paths.some((entry) =>
+            /(?:^|\/)(?:package\.json|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.ya?ml|yarn\.lock|bun\.lockb?)$/i.test(
+              entry
+            )
+          )
+        ) {
+          return {
+            ok: false,
+            error:
+              'The verified dependency goal forbids deleting manifests or lockfiles without breaking-change authorization.',
+          };
+        }
         await this._assertSidebarStudioMutationAllowed({
           workspacePath: request.workspacePath,
           projectPath: request.projectPath,
@@ -2579,32 +2671,117 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           return { ok: false, error: error instanceof Error ? error.message : String(error) };
         }
       },
-      runGovernedCommand: async () => ({
-        ok: false,
-        error: 'A card-specific governed command is required for this operation.',
-      }),
+      runGovernedCommand: async (request: {
+        commandId: StudioEvidenceRefreshCommandId;
+        workspacePath: string;
+        projectPath?: string;
+        reportProgress?: (data: Record<string, unknown>) => Promise<void>;
+      }) => {
+        const plan = resolveDashboardCommandExecutionPlan(request.commandId);
+        if (request.commandId !== 'workspaceIntelligenceChain' && plan.cliArgs.length === 0) {
+          return { ok: false, error: `No governed command exists for ${request.commandId}.` };
+        }
+        const cliArgs =
+          request.commandId === 'workspaceAgentSync'
+            ? preserveAllAgentConsumersForStudioRefresh(plan.cliArgs)
+            : plan.cliArgs;
+        const command =
+          request.commandId === 'workspaceIntelligenceChain'
+            ? [...STUDIO_CANONICAL_INTELLIGENCE_ARGS]
+            : cliArgs;
+        await this._assertSidebarStudioMutationAllowed({
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+          actionLabel: `Workspai Assistant ${request.commandId}`,
+          commandText: buildRapidkitCommand(command),
+        });
+        let progressWrites = Promise.resolve();
+        const execution = await runRapidkitStreaming<Record<string, unknown>>({
+          command,
+          cwd: request.workspacePath,
+          featureLabel:
+            request.commandId === 'workspaceIntelligenceChain'
+              ? 'Workspace Intelligence'
+              : request.commandId,
+          timeoutMs: 10 * 60_000,
+          onEvent: (event) => {
+            if (!request.reportProgress) {
+              return;
+            }
+            const progress =
+              request.commandId === 'workspaceIntelligenceChain'
+                ? resolveWorkspaceIntelligenceStreamProgress(event)
+                : undefined;
+            if (!progress) {
+              return;
+            }
+            progressWrites = progressWrites
+              .then(() => request.reportProgress?.(progress) ?? Promise.resolve())
+              .then(() => undefined);
+          },
+        });
+        await progressWrites;
+        const evidenceRefreshCompleted =
+          execution.failed === false && (execution.exitCode === 0 || execution.exitCode === 2);
+        return {
+          ok: evidenceRefreshCompleted,
+          cardBlocking: execution.exitCode === 2,
+          output: {
+            commandId: request.commandId,
+            exitCode: execution.exitCode,
+            evidenceRefreshCompleted,
+            result: execution.result,
+            stdout: execution.stdout,
+            stderr: execution.stderr,
+          },
+          ...(evidenceRefreshCompleted
+            ? {}
+            : {
+                error:
+                  execution.stderr ||
+                  execution.stdout ||
+                  `${request.commandId} exited with ${execution.exitCode}.`,
+              }),
+        };
+      },
       runWorkspaceCommand: async (request: {
         request: StudioWorkspaceCommandRequest;
         workspacePath: string;
       }) => {
         try {
+          if (verifiedGoal) {
+            assertVerifiedGoalCommandSafety({
+              goal: verifiedGoal,
+              executable: request.request.executable,
+              args: request.request.args,
+            });
+          }
           const plan = resolveStudioWorkspaceCommandPlan({
             workspacePath: request.workspacePath,
             request: request.request,
           });
-          const before = await captureStudioWorkspaceChangeSnapshot(request.workspacePath);
+          const before = plan.mutatesSource
+            ? await captureStudioWorkspaceSourceSnapshot({
+                workspacePath: request.workspacePath,
+                scopePath: plan.cwd,
+              })
+            : undefined;
           const execution = await runStudioWorkspaceCommand(plan);
-          const after = await captureStudioWorkspaceChangeSnapshot(request.workspacePath);
-          const observedSourceChange = Boolean(
-            before && after && before.fingerprint !== after.fingerprint
-          );
-          const changed = observedSourceChange;
+          const after = plan.mutatesSource
+            ? await captureStudioWorkspaceSourceSnapshot({
+                workspacePath: request.workspacePath,
+                scopePath: plan.cwd,
+              })
+            : undefined;
+          const changedPaths = diffStudioWorkspaceSourceSnapshots(before, after);
+          const observedSourceChange = changedPaths.length > 0;
+          const changed = plan.mutatesSource && observedSourceChange;
           return {
             ok: execution.exitCode === 0,
             changed,
             output: {
               ...execution,
-              changedPaths: after?.changedPaths ?? [],
+              changedPaths,
               observedSourceChange,
             },
             ...(execution.exitCode === 0
@@ -2614,6 +2791,45 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
                     execution.stderr ||
                     execution.stdout ||
                     `Workspace command exited with ${execution.exitCode ?? 'no exit code'}.`,
+                }),
+          };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      completeDependencyTransaction: async (request: {
+        projectNames?: string[];
+        changedPaths?: string[];
+        workspacePath: string;
+        projectPath?: string;
+      }) => {
+        try {
+          const before = await captureStudioWorkspaceSourceSnapshot({
+            workspacePath: request.workspacePath,
+            scopePath: request.projectPath ?? request.workspacePath,
+          });
+          const transaction = await completeStudioDependencyTransactions(request);
+          const after = await captureStudioWorkspaceSourceSnapshot({
+            workspacePath: request.workspacePath,
+            scopePath: request.projectPath ?? request.workspacePath,
+          });
+          const changedPaths = diffStudioWorkspaceSourceSnapshots(before, after);
+          return {
+            ok: transaction.closureReady,
+            changed: changedPaths.length > 0,
+            output: {
+              transaction,
+              changedPaths,
+              closureReady: transaction.closureReady,
+              nextAction: transaction.closureReady
+                ? 'workspace-intelligence-chain'
+                : 'general-source-repair',
+            },
+            ...(transaction.closureReady
+              ? {}
+              : {
+                  error:
+                    'Dependency transaction is not closed. Use the unresolved audit candidates or repair the failed project-native validation before verification.',
                 }),
           };
         } catch (error) {
@@ -2640,7 +2856,53 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         ok: false,
         error: 'A blocker card is required to upgrade a vulnerable dependency.',
       }),
-      verify: async (request: { workspacePath: string; projectPath?: string }) => {
+      verify: async (request: { workspacePath: string; projectPath?: string; goalId?: string }) => {
+        if (request.goalId || verifiedGoal) {
+          const goalId = request.goalId ?? verifiedGoal?.id;
+          if (!goalId) {
+            return { ok: false, cardBlocking: true, error: 'Verified goal id is unavailable.' };
+          }
+          const execution = await runRapidkitStreaming<unknown>({
+            command: verifiedGoalVerifyArgs(goalId),
+            cwd: request.workspacePath,
+            featureLabel: 'Verified engineering goal',
+            timeoutMs: 20 * 60_000,
+          });
+          let status: ReturnType<typeof parseVerifiedGoalVerifyResult>['status'] | undefined;
+          let returnedGoal: VerifiedGoalContractPayload | undefined;
+          try {
+            if (execution.result) {
+              const parsed = parseVerifiedGoalVerifyResult(execution.result);
+              status = parsed.status;
+              returnedGoal = parsed.goal;
+            }
+          } catch {
+            // The command failure below preserves bounded stdout/stderr for the
+            // model while refusing to interpret an incompatible result as success.
+          }
+          const verified =
+            execution.exitCode === 0 && status?.goalId === goalId && status.state === 'verified';
+          return {
+            ok: verified,
+            cardBlocking: !verified,
+            output: {
+              goal: returnedGoal ?? verifiedGoal,
+              status,
+              exitCode: execution.exitCode,
+              stdout: execution.stdout,
+              stderr: execution.stderr,
+            },
+            ...(verified
+              ? {}
+              : {
+                  error:
+                    status?.blockingReasons?.[0] ||
+                    execution.stderr ||
+                    execution.stdout ||
+                    'Verified goal criteria are not yet satisfied.',
+                }),
+          };
+        }
         const command = buildRapidkitCommand(['workspace', 'verify', '--json']);
         const execution = await runIncidentInlineCommand({
           command,
@@ -2658,22 +2920,13 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         };
       },
     };
-    const scopeId = input.handoff?.cardId ?? `assistant:${input.assistantMode}`;
+    const scopeId = verifiedGoal?.id ?? input.handoff?.cardId ?? `assistant:${input.assistantMode}`;
     const registry = createStudioAgentWorkspaiToolRegistry({
       host,
       cardId: scopeId,
       assistantMode: input.assistantMode,
+      ...(verifiedGoal ? { goalId: verifiedGoal.id } : {}),
     });
-    const store = new VSCodeStudioAgentSessionStore(this._context);
-    const persistedCandidate = input.sessionId ? await store.load(input.sessionId) : undefined;
-    const persisted =
-      persistedCandidate &&
-      persistedCandidate.workspacePath === input.workspacePath &&
-      persistedCandidate.assistantMode === input.assistantMode &&
-      persistedCandidate.status !== 'completed' &&
-      persistedCandidate.status !== 'cancelled'
-        ? persistedCandidate
-        : undefined;
     const options = {
       id: input.sessionId,
       workspacePath: input.workspacePath,
@@ -2684,6 +2937,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       permissionLevel: mode.permissionLevel,
       requiresVerifiedCompletion: mode.requiresVerifiedCompletion,
       workspaceTrusted: vscode.workspace.isTrusted,
+      ...(verifiedGoal ? { goal: verifiedGoal } : {}),
       ...(persisted ? { restoredSession: persisted } : {}),
     };
     const model = new ContractStudioAgentModelAdapter(input.task, async (prompt, request) => {
@@ -2740,6 +2994,78 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   private async _runAutonomousStudioAgent(input: {
+    task: string;
+    sessionId?: string;
+    requestedModelId?: string;
+    workspacePath: string;
+    projectPath?: string;
+    handoff: StudioBlockerHandoff;
+  }): Promise<void> {
+    const executionInput =
+      input.handoff.scope === 'project'
+        ? {
+            ...input,
+            projectPath: input.projectPath ?? input.handoff.projectPath,
+          }
+        : {
+            ...input,
+            projectPath: undefined,
+          };
+    const repairScopeKey = [
+      path.resolve(executionInput.workspacePath),
+      executionInput.handoff.scope,
+      executionInput.handoff.scope === 'project'
+        ? path.resolve(
+            executionInput.projectPath ??
+              executionInput.handoff.projectPath ??
+              executionInput.workspacePath
+          )
+        : 'workspace',
+      executionInput.handoff.cardId,
+    ].join('::');
+    const activeRun = this._activeStudioAgentRepairRuns.get(repairScopeKey);
+    if (activeRun) {
+      const activeSession = [...this._activeStudioAgentSessions.values()].find((session) => {
+        const snapshot = session.snapshot();
+        return (
+          snapshot.status === 'running' &&
+          path.resolve(snapshot.workspacePath) === path.resolve(executionInput.workspacePath) &&
+          snapshot.cardId === executionInput.handoff.cardId
+        );
+      });
+      activeSession?.steer(
+        [
+          'The same card produced refreshed evidence while this repair is still active.',
+          `Current blockers: ${executionInput.handoff.blockers.join('; ')}`,
+          `Current blocker signature: ${executionInput.handoff.blockerSignature}`,
+          'Continue the existing source transaction; do not start another repair loop.',
+        ].join('\n')
+      );
+      this._postInlineCreate('sidebarStudioActionResult', {
+        sessionId: executionInput.sessionId ?? activeSession?.id,
+        cardId: executionInput.handoff.cardId,
+        action: 'auto-fix',
+        status: 'running',
+        phase: 'continuing-agent',
+        title: 'Continuing the active repair',
+        summary:
+          'A repair already owns this workspace card. Studio merged the refreshed blocker into that durable session instead of starting a competing loop.',
+      });
+      await activeRun;
+      return;
+    }
+    const ownedRun = this._runAutonomousStudioAgentOwned(executionInput);
+    this._activeStudioAgentRepairRuns.set(repairScopeKey, ownedRun);
+    try {
+      await ownedRun;
+    } finally {
+      if (this._activeStudioAgentRepairRuns.get(repairScopeKey) === ownedRun) {
+        this._activeStudioAgentRepairRuns.delete(repairScopeKey);
+      }
+    }
+  }
+
+  private async _runAutonomousStudioAgentOwned(input: {
     task: string;
     sessionId?: string;
     requestedModelId?: string;
@@ -3012,6 +3338,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         commandId: StudioEvidenceRefreshCommandId;
         workspacePath: string;
         projectPath?: string;
+        reportProgress?: (data: Record<string, unknown>) => Promise<void>;
       }) => {
         const priorAttempt = commandAttempts.get(request.commandId);
         const attemptsForBlocker =
@@ -3059,12 +3386,63 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           actionLabel: `Studio Agent ${request.commandId}`,
           commandText: command,
         });
-        const execution = await runIncidentInlineCommand({
-          command,
-          workspacePath: request.workspacePath,
-          projectPath: request.projectPath,
-          actionId: `studio-session-${request.commandId}`,
-        });
+        const execution =
+          request.commandId === 'workspaceIntelligenceChain'
+            ? await (async () => {
+                let progressWrites = Promise.resolve();
+                const streamed = await runRapidkitStreaming({
+                  command: [...STUDIO_CANONICAL_INTELLIGENCE_ARGS],
+                  cwd: request.workspacePath,
+                  featureLabel: 'Workspace Intelligence',
+                  timeoutMs: 10 * 60_000,
+                  onEvent: (event) => {
+                    const progress = resolveWorkspaceIntelligenceStreamProgress(event);
+                    if (
+                      !progress ||
+                      progress.kind !== 'stage' ||
+                      progress.status !== 'started' ||
+                      !request.reportProgress
+                    ) {
+                      return;
+                    }
+                    progressWrites = progressWrites.then(() =>
+                      request.reportProgress!({
+                        intelligencePhase: progress.id,
+                        intelligenceMilestoneKind: progress.kind,
+                        intelligenceMilestoneStatus: progress.status,
+                        message: progress.message,
+                      })
+                    );
+                  },
+                });
+                await progressWrites;
+                const producerCompleted = streamed.exitCode === 0 || streamed.exitCode === 2;
+                const lifecycleMessage = streamed.lastLifecycleEvent?.message?.trim();
+                const stderrTail = streamed.stderr.trim().split('\n').filter(Boolean).pop();
+                return {
+                  command,
+                  success: producerCompleted,
+                  exitCode: streamed.exitCode,
+                  output: streamed.result
+                    ? JSON.stringify(streamed.result).slice(0, 12_000)
+                    : undefined,
+                  stderrTail: producerCompleted ? undefined : stderrTail,
+                  ...(producerCompleted
+                    ? {}
+                    : {
+                        error:
+                          lifecycleMessage ||
+                          stderrTail ||
+                          `Workspace Intelligence exited with code ${streamed.exitCode}.`,
+                      }),
+                };
+              })()
+            : await runIncidentInlineCommand({
+                command,
+                workspacePath: request.workspacePath,
+                projectPath: request.projectPath,
+                actionId: `studio-session-${request.commandId}`,
+              });
         repairEvidence = await collectSidebarStudioRepairEvidence({
           workspacePath: request.workspacePath,
           projectPath: request.projectPath,
@@ -3084,7 +3462,8 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
                 )
                 .catch(() => undefined)
             : undefined;
-        const intelligencePhase = resolveWorkspaceIntelligenceRunMilestone(intelligenceRun);
+        const intelligencePhase = resolveWorkspaceIntelligenceRunStage(intelligenceRun);
+        const intelligencePreflight = resolveWorkspaceIntelligenceRunPreflight(intelligenceRun);
         return {
           ok: producerCompleted,
           changed: false,
@@ -3093,6 +3472,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           output: {
             ...execution,
             ...(intelligencePhase ? { intelligencePhase } : {}),
+            ...(intelligencePreflight ? { intelligencePreflight } : {}),
           },
           ...(producerCompleted
             ? {}
@@ -3117,13 +3497,22 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               commandText: plan.displayCommand,
             });
           }
-          const before = await captureStudioWorkspaceChangeSnapshot(request.workspacePath);
+          const before = plan.mutatesSource
+            ? await captureStudioWorkspaceSourceSnapshot({
+                workspacePath: request.workspacePath,
+                scopePath: plan.cwd,
+              })
+            : undefined;
           const execution = await runStudioWorkspaceCommand(plan);
-          const after = await captureStudioWorkspaceChangeSnapshot(request.workspacePath);
-          const observedSourceChange = Boolean(
-            before && after && before.fingerprint !== after.fingerprint
-          );
-          const changed = observedSourceChange;
+          const after = plan.mutatesSource
+            ? await captureStudioWorkspaceSourceSnapshot({
+                workspacePath: request.workspacePath,
+                scopePath: plan.cwd,
+              })
+            : undefined;
+          const changedPaths = diffStudioWorkspaceSourceSnapshots(before, after);
+          const observedSourceChange = changedPaths.length > 0;
+          const changed = plan.mutatesSource && observedSourceChange;
           if (changed) {
             repairEvidence = await collectSidebarStudioRepairEvidence({
               workspacePath: request.workspacePath,
@@ -3147,7 +3536,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             evidenceGeneration: repairEvidence.evidenceFingerprint,
             output: {
               ...execution,
-              changedPaths: after?.changedPaths ?? [],
+              changedPaths,
               observedSourceChange,
             },
             ...(execution.exitCode === 0
@@ -3157,6 +3546,70 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
                     execution.stderr ||
                     execution.stdout ||
                     `Workspace command exited with ${execution.exitCode ?? 'no exit code'}.`,
+                }),
+          };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      completeDependencyTransaction: async (request: {
+        projectNames?: string[];
+        changedPaths?: string[];
+        workspacePath: string;
+        projectPath?: string;
+      }) => {
+        try {
+          await this._assertSidebarStudioMutationAllowed({
+            workspacePath: request.workspacePath,
+            projectPath: request.projectPath,
+            actionLabel: 'Studio Agent dependency repair transaction',
+            governedRepair: { contractAuthorized: true, reversible: true },
+          });
+          const before = await captureStudioWorkspaceSourceSnapshot({
+            workspacePath: request.workspacePath,
+            scopePath: request.projectPath ?? request.workspacePath,
+          });
+          const transaction = await completeStudioDependencyTransactions(request);
+          const after = await captureStudioWorkspaceSourceSnapshot({
+            workspacePath: request.workspacePath,
+            scopePath: request.projectPath ?? request.workspacePath,
+          });
+          const changedPaths = diffStudioWorkspaceSourceSnapshots(before, after);
+          if (changedPaths.length > 0) {
+            repairEvidence = await collectSidebarStudioRepairEvidence({
+              workspacePath: request.workspacePath,
+              projectPath: request.projectPath,
+              handoff: activeHandoff,
+            });
+          }
+          return {
+            ok: transaction.closureReady,
+            changed: changedPaths.length > 0,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            output: {
+              transaction,
+              changedPaths,
+              closureReady: transaction.closureReady,
+              nextAction: transaction.closureReady
+                ? 'workspace-intelligence-chain'
+                : 'general-source-repair',
+              ...(transaction.closureReady
+                ? {}
+                : {
+                    fallbackCapability: 'general-source-repair',
+                    recommendedTools: [
+                      'inspect-source',
+                      'run-workspace-command',
+                      'apply-workspace-patch',
+                      'inspect-workspace-changes',
+                    ],
+                  }),
+            },
+            ...(transaction.closureReady
+              ? {}
+              : {
+                  error:
+                    'Dependency transaction is not closed. Resolve the remaining audit or project-native validation failure before the governed intelligence chain.',
                 }),
           };
         } catch (error) {
@@ -3301,6 +3754,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         let changed = false;
         let output: unknown;
         let error: string | undefined;
+        let changedPaths: string[] = [];
         let appliedFixes: Array<{ path: string; action: string; outcome: string }> = [];
         if (step.canApply && step.operation) {
           await this._assertSidebarStudioMutationAllowed({
@@ -3332,15 +3786,30 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             actionLabel: `Studio Agent remediation command ${step.id}`,
             commandText: command,
           });
+          const before = await captureStudioWorkspaceSourceSnapshot({
+            workspacePath: request.workspacePath,
+            scopePath: stepProjectPath ?? request.workspacePath,
+          });
           const execution = await runIncidentInlineCommand({
             command,
             workspacePath: request.workspacePath,
             projectPath: stepProjectPath,
             actionId: `studio-session-remediation-${step.id}`,
           });
+          const after = await captureStudioWorkspaceSourceSnapshot({
+            workspacePath: request.workspacePath,
+            scopePath: stepProjectPath ?? request.workspacePath,
+          });
+          changedPaths = diffStudioWorkspaceSourceSnapshots(before, after);
           ok = execution.success;
-          changed = execution.success;
-          output = { stepId: step.id, kind: 'contract-command', execution };
+          changed = changedPaths.length > 0;
+          output = {
+            stepId: step.id,
+            kind: 'contract-command',
+            execution,
+            changedPaths,
+            observedSourceChange: changed,
+          };
           error = execution.success
             ? undefined
             : (execution.error ?? execution.stderrTail ?? `Remediation step ${step.id} failed.`);
@@ -3793,9 +4262,35 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         }
       },
       recoverActiveBlocker: async (request: { workspacePath: string; projectPath?: string }) => {
-        const dependencyTargets = await resolveStudioDependencySecurityTargets({
+        const dependencyIncident = (activeHandoff.blockers ?? []).some((blocker) =>
+          /\b(?:dependency|dependencies|vulnerabilit|security audit|npm audit|pnpm audit|yarn audit)\b/i.test(
+            blocker
+          )
+        );
+        let dependencyTargets = await resolveStudioDependencySecurityTargets({
           workspacePath: request.workspacePath,
         }).catch(() => []);
+        let doctorRefresh: Awaited<ReturnType<typeof refreshDependencyDoctorEvidence>> | undefined;
+        if (dependencyIncident && dependencyTargets.length === 0) {
+          doctorRefresh = await refreshDependencyDoctorEvidence(request.workspacePath);
+          dependencyTargets = await resolveStudioDependencySecurityTargets({
+            workspacePath: request.workspacePath,
+          });
+          if (dependencyTargets.length === 0) {
+            return {
+              ok: true,
+              changed: false,
+              evidenceGeneration: repairEvidence.evidenceFingerprint,
+              blockerSignature: activeBlockerSignature,
+              output: {
+                recoveryPath: 'dependency-security',
+                dependencyBlockerPresent: false,
+                doctorRefresh,
+                nextAction: 'verify-blocker',
+              },
+            };
+          }
+        }
         const scopedDependencyTargets = request.projectPath
           ? dependencyTargets.filter(
               (target) => path.resolve(target.projectPath) === path.resolve(request.projectPath!)
@@ -3880,6 +4375,20 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           output: {
             refresh,
             incidentGraph,
+            cardVerification: {
+              cardId: input.handoff.cardId,
+              resolved: !cardBlocking,
+              blocking: cardBlocking,
+            },
+            workspaceVerification: {
+              resolved: incidentGraph.resolved,
+              blocking: !incidentGraph.resolved,
+              blockingCards: incidentGraph.blockingCards.map((card) => ({
+                id: card.id,
+                label: card.label,
+                scope: card.scope,
+              })),
+            },
             activeHandoff: {
               cardId: activeHandoff.cardId,
               blockers: activeHandoff.blockers,
@@ -3911,7 +4420,6 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       persistedCandidate.workspacePath === input.workspacePath &&
       persistedCandidate.cardId === input.handoff.cardId &&
       persistedCandidate.assistantMode === 'agent' &&
-      persistedCandidate.blockerSignature === input.handoff.blockerSignature &&
       persistedCandidate.status !== 'completed' &&
       persistedCandidate.status !== 'cancelled'
         ? persistedCandidate
@@ -3969,6 +4477,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         sessionId: completed.id,
         modelId: completed.selectedModelId ?? 'auto',
         assistantMode: completed.assistantMode,
+        verified: true,
         answer: 'The blocker was repaired and cleared by refreshed verify evidence.',
       });
       return;
@@ -5923,6 +6432,11 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[Workspai] Sidebar action failed: ${action.id}`, error);
       void vscode.window.showErrorMessage(`Workspai action failed: ${action.label}. ${message}`);
+      this._postInlineCreate('sidebarActionError', {
+        actionId: action.id,
+        title: action.label,
+        error: message,
+      });
     }
   }
 

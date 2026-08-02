@@ -102,9 +102,9 @@ export async function applyBootstrapComplianceRemediation(input: {
   }
 
   const generatedAt = input.generatedAt ?? new Date().toISOString();
-  const rapidkitDir = path.join(input.workspacePath, '.rapidkit');
-  const compatibilityMatrixPath = path.join(rapidkitDir, 'compatibility-matrix.json');
-  const mirrorConfigPath = path.join(rapidkitDir, 'mirror-config.json');
+  const workspaiDir = path.join(input.workspacePath, '.workspai');
+  const compatibilityMatrixPath = path.join(workspaiDir, 'compatibility-matrix.json');
+  const mirrorConfigPath = path.join(workspaiDir, 'mirror-config.json');
   const appliedFixes: BootstrapComplianceRemediationResult['appliedFixes'] = [];
 
   try {

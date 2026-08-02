@@ -536,7 +536,7 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
                     `This is a minimal workspace. To create projects:\n\n` +
                     `1️⃣ Install: npm install -g workspai\n` +
                     `2️⃣ Create projects with Extension commands\n\n` +
-                    `⚠️ Note: Some features require rapidkit-core (not yet on PyPI)`,
+                    `ℹ️ Python-backed kits and modules can add the optional RapidKit Core engine later.`,
                   installAction,
                   openReadme,
                   'OK'
@@ -545,9 +545,9 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
                 if (selected === installAction) {
                   // Open terminal with install command
                   runShellCommandInTerminal({
-                    name: 'Install RapidKit',
+                    name: 'Install Workspai CLI',
                     command: 'npm',
-                    args: ['install', '-g', 'rapidkit'],
+                    args: ['install', '-g', 'workspai'],
                   });
                 } else if (selected === openReadme) {
                   const readmePath = path.join(config.path, 'README.md');
@@ -753,13 +753,21 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
         progress.report({ increment: 100, message: 'Complete!' });
 
         // Check if this was a fallback workspace
-        const fallbackMarkerPath = path.join(config.path, '.rapidkit-workspace');
+        const fallbackMarkerPaths = [
+          path.join(config.path, '.workspai-workspace'),
+          path.join(config.path, '.rapidkit-workspace'),
+        ];
         let isFallback = false;
-        try {
-          const markerData = await fs.readJSON(fallbackMarkerPath);
-          isFallback = markerData.fallbackMode === true;
-        } catch {
-          // Marker doesn't exist or invalid
+        for (const fallbackMarkerPath of fallbackMarkerPaths) {
+          try {
+            const markerData = await fs.readJSON(fallbackMarkerPath);
+            isFallback = markerData.fallbackMode === true;
+            if (isFallback) {
+              break;
+            }
+          } catch {
+            // Try the next canonical or legacy marker.
+          }
         }
 
         // Show success message with appropriate actions
@@ -783,15 +791,15 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
             `To create projects, install: npm install -g workspai\n` +
             `See README.md for full setup instructions`;
         } else {
-          message += `💡 Tip: Add projects with \`rapidkit create\` or use Extension commands`;
+          message += `💡 Tip: Add projects with \`workspai create\` or use Extension commands`;
         }
 
         const handlePostCreateSelection = async (selected: string | undefined) => {
           if (selected === 'Install npm Package') {
             runShellCommandInTerminal({
-              name: 'Install RapidKit',
+              name: 'Install Workspai CLI',
               command: 'npm',
-              args: ['install', '-g', 'rapidkit'],
+              args: ['install', '-g', 'workspai'],
             });
 
             const readmePath = path.join(config.path, 'README.md');
@@ -805,7 +813,7 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
               forceNewWindow: false,
             });
           } else if (selected === docsAction) {
-            await vscode.env.openExternal(vscode.Uri.parse('https://www.workspai.com/docs'));
+            await vscode.env.openExternal(vscode.Uri.parse('https://www.workspai.dev/learn'));
           }
         };
 
@@ -859,7 +867,7 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
 
         if (selected === helpAction) {
           await vscode.env.openExternal(
-            vscode.Uri.parse('https://www.workspai.com/docs/troubleshooting')
+            vscode.Uri.parse('https://www.workspai.dev/learn/workspace-doctor')
           );
         }
       }
@@ -889,9 +897,9 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
 }
 
 /**
- * Create a basic workspace structure when RapidKit Core is not available
- * This fallback creates a structure compatible with npm package workspace
- * Should be as close as possible to the real workspace structure
+ * Create a recovery-mode workspace when the Workspai CLI creation path is unavailable.
+ * The marker is canonical, while the README makes it explicit that intelligence
+ * artifacts must be synchronized once the CLI becomes available.
  */
 async function createBasicWorkspace(workspacePath: string, name: string, initGit: boolean) {
   const logger = Logger.getInstance();
@@ -942,7 +950,7 @@ async function createBasicWorkspace(workspacePath: string, name: string, initGit
     const cliScript = `#!/usr/bin/env bash
 #
 # Workspai CLI - Fallback workspace wrapper
-# This workspace was created without RapidKit Python Core
+# This recovery workspace was created because Workspai CLI creation was unavailable
 #
 # To use Workspai features:
 #   1. Install: npm install -g workspai
@@ -951,7 +959,7 @@ async function createBasicWorkspace(workspacePath: string, name: string, initGit
 
 set -e
 
-echo "⚠️  This is a fallback workspace created without RapidKit Core"
+echo "⚠️  This is a Workspai recovery-mode workspace"
 echo ""
 echo "To create projects:"
 echo "  1. Install npm package: npm install -g workspai"
@@ -966,7 +974,7 @@ echo ""
     // 4b. Create Windows launcher for parity on win32 environments
     const cliScriptCmdPath = path.join(workspacePath, 'workspai.cmd');
     const cliScriptCmd = `@echo off
-  echo ⚠️  This is a fallback workspace created without RapidKit Core
+  echo ⚠️  This is a Workspai recovery-mode workspace
   echo.
   echo To create projects:
   echo   1. Install npm package: npm install -g workspai
@@ -978,190 +986,60 @@ echo ""
     await fs.writeFile(cliScriptCmdPath, cliScriptCmd, 'utf-8');
     logger.info('Created workspai.cmd launcher');
 
-    // 5. Create README.md (comprehensive guide)
+    // 5. Create a concise recovery guide.
     const readmePath = path.join(workspacePath, 'README.md');
     const readmeContent = `# ${name}
 
-> ⚠️ **NOTICE**: This workspace was created in **fallback mode** without RapidKit Python Core
+This is a Workspai recovery-mode workspace. The VS Code extension created its
+canonical boundary because the Workspai CLI creation path was not available.
 
-## 🔄 Workspace Structure
-
-This workspace follows the canonical Workspai structure but requires manual setup:
+## What exists
 
 \`\`\`
 ${name}/
-├── workspai              # CLI wrapper (requires npm package)
-├── .workspai/            # Workspace configuration
-│   └── config.json       # Workspace settings
-├── .workspai-workspace   # Workspace marker
-├── README.md             # This file
-├── .gitignore            # Git ignore rules
-└── [your-projects]/      # Add projects here
+├── .workspai/            # Workspai metadata
+├── .workspai-workspace   # Canonical workspace marker
+├── workspai              # Recovery guidance (Unix)
+├── workspai.cmd          # Recovery guidance (Windows)
+└── README.md
 \`\`\`
 
-## ⚠️ Limitations
+The marker lets the extension discover the workspace. Model, graph, Doctor,
+agent context, and other governed artifacts are not considered current until
+the CLI synchronizes them.
 
-**What Works:**
-- ✅ Workspace detection in VS Code Extension
-- ✅ RapidKit Core integration through global, pipx, or workspace-local install
-- ✅ Workspace/project creation, import, doctor, archive, contract, snapshot, and release gates
-- ✅ npm package integration
-
-## 🚀 Quick Start
-
-### Option 1: Use npm Package (Recommended)
-
-1. **Install Workspai CLI:**
-   \`\`\`bash
-   npm install -g workspai
-   \`\`\`
-
-2. **Verify installation:**
-   \`\`\`bash
-   workspai --version
-   \`\`\`
-
-3. **Create projects:**
-   \`\`\`bash
-   # FastAPI project
-   npx workspai create project fastapi.standard my-api --yes --skip-install
-   
-   # NestJS project
-   npx workspai create project nestjs.standard my-app --yes --skip-install
-
-  # Go Fiber project
-  npx workspai create project gofiber.standard my-go-api --yes --skip-install
-
-  # Spring Boot project
-  npx workspai create project springboot.standard billing-api --yes --skip-install
-
-  # .NET Web API project
-  npx workspai create project dotnet.webapi.clean dotnet-api --yes --skip-install
-   \`\`\`
-
-4. **Or use VS Code Extension:**
-   - Open Command Palette (\`Ctrl+Shift+P\`)
-   - Run: \`Workspai: Create Project\`
-   - Select this workspace
-
-### Option 2: Manual Project Setup
-
-Create projects manually following standard structures:
-
-**FastAPI Project:**
-\`\`\`bash
-mkdir my-api
-cd my-api
-poetry init --name my-api --python "^3.10"
-poetry add fastapi uvicorn
-# Add your code
-\`\`\`
-
-**NestJS Project:**
-\`\`\`bash
-npx @nestjs/cli new my-app
-cd my-app
-npm install
-# Add your code
-\`\`\`
-
-**Spring Boot Project:**
-\`\`\`bash
-mkdir billing-api
-cd billing-api
-curl https://start.spring.io/starter.zip \\
-  -d dependencies=web,actuator \\
-  -d type=maven-project \\
-  -d language=java \\
-  -o starter.zip
-unzip starter.zip && rm starter.zip
-./mvnw spring-boot:run
-\`\`\`
-
-### Option 3: Wait for Full Release
-
-When \`rapidkit-core\` is published to PyPI:
+## Finish setup
 
 \`\`\`bash
-# Install Python Core
-pip install rapidkit-core
-
-# Re-create workspace with full features
-rapidkit ${name}
-
-# Move projects to new workspace
-mv ${name}/* new-workspace/
+npm install -g workspai
+workspai --version
+cd ${JSON.stringify(workspacePath)}
+workspai workspace intelligence run --for-agent generic --strict --json
 \`\`\`
 
-## 📚 Available Templates
+Then use \`workspai create\` to create or add software through the interactive
+flow. RapidKit Core is optional and is only needed for Python-backed kits or
+modules; do not install it for a non-Python workspace unless you need it.
 
-| Template | Stack | Description |
-|----------|-------|-------------|
-| \`fastapi.standard\` | Python + FastAPI | High-performance Python API |
-| \`nestjs.standard\` | TypeScript + NestJS | Enterprise Node.js framework |
-| \`gofiber.standard\` | Go + Fiber | High-performance Go API |
-| \`gogin.standard\` | Go + Gin | Idiomatic Go REST API |
-| \`springboot.standard\` | Java + Spring Boot | Enterprise Java API service |
-| \`dotnet.webapi.clean\` | C# + .NET | Clean architecture Web API service |
+## Help
 
-## 🛠️ Commands
-
-With npm package installed:
-
-\`\`\`bash
-# Create project in workspace
-npx workspai create project <template> <name> --yes --skip-install
-
-# Examples
-npx workspai create project fastapi.standard my-api --yes --skip-install
-npx workspai create project fastapi.ddd my-api --yes --skip-install
-npx workspai create project nestjs.standard my-app --yes --skip-install
-npx workspai create project gofiber.standard my-go-api --yes --skip-install
-npx workspai create project gogin.standard my-gin-api --yes --skip-install
-npx workspai create project springboot.standard billing-api --yes --skip-install
-npx workspai create project dotnet.webapi.clean dotnet-api --yes --skip-install
-\`\`\`
-
-## 🆘 Need Help?
-
-- 📖 Documentation: https://www.workspai.com/docs
-- 💬 GitHub Issues: https://github.com/chistiq/rapidkit-vscode/issues
-- 🔧 VS Code Extension: Run \`Workspai: Run System Check\`
-
-## 🔄 Upgrade to Full Workspace
-
-To upgrade when RapidKit Core becomes available:
-
-1. **Install rapidkit-core:**
-   \`\`\`bash
-   pip install rapidkit-core
-   \`\`\`
-
-2. **Create new workspace:**
-   \`\`\`bash
-   rapidkit new-workspace
-   \`\`\`
-
-3. **Migrate projects:**
-   \`\`\`bash
-   mv ${name}/* new-workspace/
-   \`\`\`
-
-4. **Or continue using this workspace** with npm package
+- Documentation: https://www.workspai.dev/learn
+- CLI: \`workspai --help\`
+- Extension: run \`Workspai: Open Setup & Recovery\`
+- Issues: https://github.com/chistiq/rapidkit-vscode/issues
 
 ---
 
-**Created:** ${new Date().toISOString()}  
-**Mode:** Fallback (npm-compatible structure)  
-**Created By:** VS Code Workspai Extension  
-**Structure:** Compatible with the current Workspai CLI workspace contract
+**Created:** ${new Date().toISOString()}
+**Mode:** Recovery (canonical boundary; intelligence sync pending)
+**Created By:** VS Code Workspai Extension
 `;
     await fs.writeFile(readmePath, readmeContent);
     logger.info('Created README.md');
 
-    // 6. Create .gitignore (same as npm package)
+    // 6. Create .gitignore.
     const gitignorePath = path.join(workspacePath, '.gitignore');
-    const gitignoreContent = `# RapidKit workspace
+    const gitignoreContent = `# Workspai workspace
 .env
 .env.*
 !.env.example
@@ -1201,7 +1079,7 @@ Thumbs.db
 # Logs
 *.log
 
-# RapidKit
+# Workspai compatibility cache
 .rapidkit/templates/
 `;
     await fs.writeFile(gitignorePath, gitignoreContent);

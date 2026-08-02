@@ -45,6 +45,7 @@ import {
   WORKSPACE_EVALUATION_LAST_RUN_REPORT_PATH,
   WORKSPACE_CONTRACT_VERIFY_REPORT_PATH,
   RAPIDKIT_MCP_DESIGN_REPORT_PATH,
+  resolveWorkspaceArtifactPath,
   resolveWorkspaceMetadataDir,
   resolveWorkspaceMarkerPath,
   resolveWorkspaceReportsDir,
@@ -66,6 +67,7 @@ import {
   type StudioIncidentSummary,
 } from '../contracts/studio-blocker-handoff-contract.js';
 import { DEFAULT_VERIFY_COMMAND } from './studioCardSourceShell.js';
+import { resolveWorkspaceArchiveManifestPath } from '../utils/workspaceArchive.js';
 
 export type { DashboardEvidenceCardId };
 
@@ -89,6 +91,8 @@ export type DashboardEvidenceCard = {
   artifactPath?: string;
   metrics?: Record<string, number | string>;
   blockers?: string[];
+  /** Projects explicitly implicated by the evidence producer, not the current UI selection. */
+  affectedProjectNames?: string[];
   /** True only when this card currently prevents a governed release or repair transition. */
   blocking?: boolean;
   detailSections?: Array<{ id: string; title: string; body: string }>;
@@ -133,7 +137,8 @@ function isStaleEvidenceBlocker(blocker: string): boolean {
     lower.includes('evidence is stale') ||
     lower.includes('is stale relative to') ||
     (lower.includes('generated at') && lower.includes('before impact')) ||
-    (lower.includes('stale report:') && lower.includes('.rapidkit/reports/'))
+    (lower.includes('stale report:') &&
+      (lower.includes('.workspai/reports/') || lower.includes('.rapidkit/reports/')))
   );
 }
 
@@ -682,7 +687,10 @@ async function buildImportReadinessCard(
   projectPath: string,
   projectName?: string
 ): Promise<DashboardEvidenceCard | undefined> {
-  const artifactPath = path.join(projectPath, '.rapidkit', IMPORT_READINESS_REPORT);
+  const artifactPath = await resolveWorkspaceArtifactPath(
+    projectPath,
+    path.join('.workspai', IMPORT_READINESS_REPORT)
+  );
   const raw = await readJsonIfExists(artifactPath);
   if (!raw) {
     return undefined;
@@ -928,6 +936,28 @@ function buildDoctorCard(
   const total = Number(healthScore.total ?? passed + warnings + errors);
   const percent = total > 0 ? Math.round((passed / total) * 100) : 0;
   const blockers = extractBlockersFromReport('doctor-last-run', raw, options);
+  const affectedProjectNames = (Array.isArray(raw.projects) ? raw.projects : [])
+    .flatMap((entry) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        return [];
+      }
+      const project = entry as Record<string, unknown>;
+      const probes = Array.isArray(project.probes) ? project.probes : [];
+      const blocked =
+        Number(project.vulnerabilities ?? 0) > 0 ||
+        Number(project.errors ?? 0) > 0 ||
+        probes.some(
+          (probe) =>
+            probe &&
+            typeof probe === 'object' &&
+            !Array.isArray(probe) &&
+            (probe as Record<string, unknown>).status === 'fail'
+        );
+      return blocked && typeof project.name === 'string' && project.name.trim()
+        ? [project.name.trim()]
+        : [];
+    })
+    .filter((name, index, names) => names.indexOf(name) === index);
   const status: DashboardEvidenceStatus = errors > 0 ? 'fail' : warnings > 0 ? 'warn' : 'pass';
 
   return {
@@ -940,6 +970,7 @@ function buildDoctorCard(
     artifactPath,
     metrics: mergeReportMetrics({ percent, errors, warnings, passed, total }, raw),
     blockers,
+    ...(affectedProjectNames.length > 0 ? { affectedProjectNames } : {}),
     incidentStudioTarget: 'doctor',
   };
 }
@@ -1084,9 +1115,8 @@ async function buildHandoffCards(workspacePath: string): Promise<DashboardEviden
     });
   }
 
-  const archiveRaw = await readJsonIfExists(
-    path.join(workspacePath, '.rapidkit', 'archive-manifest.json')
-  );
+  const archiveManifestPath = await resolveWorkspaceArchiveManifestPath(workspacePath);
+  const archiveRaw = await readJsonIfExists(archiveManifestPath);
   if (archiveRaw) {
     const blockers = extractBlockersFromReport('archive-manifest', archiveRaw);
     cards.push({
@@ -1099,7 +1129,7 @@ async function buildHandoffCards(workspacePath: string): Promise<DashboardEviden
           : 'Workspace archive manifest is available.',
       scope: 'workspace',
       generatedAt: typeof archiveRaw.generatedAt === 'string' ? archiveRaw.generatedAt : undefined,
-      artifactPath: path.join(workspacePath, '.rapidkit', 'archive-manifest.json'),
+      artifactPath: archiveManifestPath,
       blockers,
       incidentStudioTarget: 'release',
     });
@@ -1108,7 +1138,7 @@ async function buildHandoffCards(workspacePath: string): Promise<DashboardEviden
       missingCard(
         'archive',
         'Archive',
-        'Export workspace to produce ship-handoff manifest (.rapidkit/archive-manifest.json).',
+        'Export workspace to produce the ship-handoff manifest (.workspai/archive-manifest.json).',
         'workspace',
         'release'
       )

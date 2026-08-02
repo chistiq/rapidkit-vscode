@@ -153,6 +153,156 @@ export function resolvePackageRunnerInvocation(
   return { command: normalized, prefixArgs: [] };
 }
 
+function existingPackageRunnerAt(
+  binDir: string,
+  command: string,
+  platform: NodeJS.Platform
+): string | null {
+  if (!binDir.trim()) {
+    return null;
+  }
+  const extensions = isWindowsPlatform(platform) ? ['.cmd', '.exe', ''] : [''];
+  for (const extension of extensions) {
+    const candidate = path.join(binDir, `${command}${extension}`);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function childDirectories(root: string): string[] {
+  try {
+    return fs
+      .readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(root, entry.name));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Resolve package runners beyond the Extension Host PATH.
+ *
+ * VS Code commonly starts before nvm/fnm/asdf modifies the interactive shell.
+ * The first result remains the canonical invocation; remaining candidates are
+ * bounded, read-only probes of well-known version-manager installations.
+ */
+export function discoverPackageRunnerInvocations(
+  command: 'npm' | 'npx',
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+  homeDir: string = os.homedir()
+): PackageRunnerInvocation[] {
+  const invocations: PackageRunnerInvocation[] = [
+    resolvePackageRunnerInvocation(command, platform, env),
+  ];
+  const binDirectories = new Set<string>();
+  const addBin = (value: string | undefined): void => {
+    if (value?.trim()) {
+      binDirectories.add(value.trim());
+    }
+  };
+
+  addBin(env.NVM_BIN);
+  addBin(env.FNM_MULTISHELL_PATH);
+  addBin(env.VOLTA_HOME ? path.join(env.VOLTA_HOME, 'bin') : undefined);
+  addBin(env.NVM_SYMLINK);
+  addBin(path.join(homeDir, '.volta', 'bin'));
+  addBin(path.join(homeDir, '.asdf', 'shims'));
+  addBin(path.join(homeDir, '.local', 'bin'));
+
+  for (const nodeVersionDir of childDirectories(path.join(homeDir, '.nvm', 'versions', 'node'))) {
+    addBin(path.join(nodeVersionDir, 'bin'));
+  }
+  for (const nodeVersionDir of childDirectories(
+    path.join(homeDir, '.local', 'share', 'fnm', 'node-versions')
+  )) {
+    addBin(path.join(nodeVersionDir, 'installation', 'bin'));
+  }
+
+  for (const binDir of binDirectories) {
+    const executable = existingPackageRunnerAt(binDir, command, platform);
+    if (executable) {
+      invocations.push({ command: executable, prefixArgs: [] });
+    }
+  }
+
+  const seen = new Set<string>();
+  return invocations.filter((invocation) => {
+    const key = `${invocation.command}\0${invocation.prefixArgs.join('\0')}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+export function discoverPythonExecutableCandidates(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+  homeDir: string = os.homedir()
+): string[] {
+  const candidates: string[] = [];
+  const add = (value: string | undefined): void => {
+    if (value?.trim() && fs.existsSync(value.trim())) {
+      candidates.push(value.trim());
+    }
+  };
+
+  const pyenvRoots = new Set<string>([
+    ...(env.PYENV_ROOT?.trim() ? [env.PYENV_ROOT.trim()] : []),
+    path.join(homeDir, '.pyenv'),
+  ]);
+
+  if (isWindowsPlatform(platform)) {
+    for (const root of pyenvRoots) {
+      add(path.join(root, 'pyenv-win', 'shims', 'python.exe'));
+      add(path.join(root, 'shims', 'python.exe'));
+      for (const versionDir of childDirectories(path.join(root, 'versions'))) {
+        add(path.join(versionDir, 'python.exe'));
+      }
+    }
+    add(path.join(homeDir, '.asdf', 'shims', 'python.exe'));
+  } else {
+    for (const root of pyenvRoots) {
+      add(path.join(root, 'shims', 'python'));
+      for (const versionDir of childDirectories(path.join(root, 'versions'))) {
+        add(path.join(versionDir, 'bin', 'python'));
+        add(path.join(versionDir, 'bin', 'python3'));
+      }
+    }
+    add(path.join(homeDir, '.asdf', 'shims', 'python'));
+    add(path.join(homeDir, '.local', 'bin', 'python'));
+    add(path.join(homeDir, '.local', 'bin', 'python3'));
+  }
+
+  return [...new Set(candidates)];
+}
+
+export function buildPackageRunnerInvocationEnv(
+  invocation: PackageRunnerInvocation,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform
+): NodeJS.ProcessEnv {
+  const env = buildPackageRunnerSubprocessEnv(baseEnv, platform);
+  const executableDir =
+    invocation.command.includes('/') || invocation.command.includes('\\')
+      ? path.dirname(invocation.command)
+      : undefined;
+  if (!executableDir) {
+    return env;
+  }
+  const delimiter = isWindowsPlatform(platform) ? ';' : ':';
+  const entries = (env.PATH ?? '').split(delimiter).filter(Boolean);
+  if (!entries.includes(executableDir)) {
+    entries.unshift(executableDir);
+  }
+  return { ...env, PATH: entries.join(delimiter) };
+}
+
 export function setResolvedRapidkitNpmPackageSpecifier(specifier: string | null | undefined): void {
   resolvedPackageSpecifier = specifier;
 }
@@ -301,6 +451,29 @@ export function parseNpmCliVersionOutput(stdout: string): string | null {
 
   const match = trimmed.match(/\b(\d+\.\d+\.\d+(?:-[\w.]+)?)\b/);
   return match?.[1] ?? null;
+}
+
+export function parseGlobalNpmPackageVersionOutput(
+  stdout: string,
+  packageName: string = WORKSPAI_NPM_PACKAGE
+): string | null {
+  const escapedPackage = packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = stdout.match(
+    new RegExp(`(?:^|\\s|[└├─])${escapedPackage}@(\\d+\\.\\d+\\.\\d+(?:-[\\w.]+)?)\\b`, 'm')
+  );
+  return match?.[1] ?? null;
+}
+
+export function parseRapidkitCoreVersion(value: string): string | null {
+  const match = value.trim().match(/\bv?(\d+\.\d+\.\d+(?:(?:rc|a|b)\d+)?)\b/i);
+  return match?.[1] ?? null;
+}
+
+export function parsePipxRapidkitCoreVersion(value: string): string | null {
+  const packageLine = value.match(
+    /\bpackage\s+rapidkit-core\s+(v?\d+\.\d+\.\d+(?:(?:rc|a|b)\d+)?)\b/i
+  );
+  return packageLine ? parseRapidkitCoreVersion(packageLine[1]) : null;
 }
 
 export function getWorkspaceVenvRapidkitCandidates(workspacePath: string): string[] {

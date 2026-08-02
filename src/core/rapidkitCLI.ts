@@ -1,6 +1,6 @@
 /**
  * Workspai CLI wrapper with an explicit RapidKit Core compatibility path.
- * Wraps the rapidkit NPM package for use in VS Code extension.
+ * Wraps the Workspai npm package for use in the VS Code extension.
  *
  * Execution uses unpinned `npx --yes workspai ...` (see platformCapabilities).
  * Frontend generators: `create frontend <id>`; backend kits: `create project <kit>`.
@@ -33,7 +33,7 @@ export interface CreateWorkspaceOptions {
   skipPythonEngine?: boolean;
   /** Preferred install backend. Passed as --install-method to npm CLI. */
   installMethod?: 'poetry' | 'venv' | 'pipx';
-  /** Bootstrap profile written into .rapidkit/workspace.json. Passed as --profile to npm CLI. */
+  /** Bootstrap profile written into canonical .workspai metadata. Passed as --profile to npm CLI. */
   profile?:
     | 'minimal'
     | 'python-only'
@@ -128,7 +128,7 @@ export class WorkspaiCLI {
   }
 
   /**
-   * Create a new RapidKit workspace using npm package
+   * Create a new Workspai workspace using the npm package.
    * Uses the canonical first-install-safe Workspai CLI command.
    * Creates workspace at the specified parent path
    */
@@ -175,7 +175,7 @@ export class WorkspaiCLI {
 
   /**
    * Create a standalone project (Direct mode)
-   * Uses core: npx --yes --package rapidkit rapidkit create project <kit> <project-name> [--skip-git] [--skip-install]
+   * Uses the canonical Workspai create-project surface.
    */
   async createProject(options: CreateProjectOptions): Promise<ExecaReturnValue> {
     const args = buildProjectScaffoldArgs({
@@ -214,7 +214,7 @@ export class WorkspaiCLI {
 
   /**
    * Create a project inside an existing workspace.
-   * Runs from workspace dir: npx --yes --package rapidkit rapidkit create project <kit> <project-name>
+   * Runs the canonical Workspai create-project surface from the workspace directory.
    * So project is created at <workspacePath>/<project-name>.
    */
   async createProjectInWorkspace(

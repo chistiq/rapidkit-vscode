@@ -1409,7 +1409,7 @@ export function registerAIFreeFeatureCommands(
         }
       );
 
-      const memoryFile = path.join(workspaceTarget.path, '.rapidkit', 'workspace-memory.json');
+      const memoryFile = await memoryService.resolveMemoryPath(workspaceTarget.path);
       const action = await vscode.window.showInformationMessage(
         `Workspace memory saved for ${workspaceTarget.name}.`,
         'Open memory file',

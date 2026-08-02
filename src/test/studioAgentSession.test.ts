@@ -29,7 +29,93 @@ function sequenceModel(actions: StudioAgentModelAction[]): StudioAgentModelAdapt
   };
 }
 
+function verifiedDependencyGoal(): NonNullable<StudioAgentPersistedSession['goal']> {
+  return {
+    schemaVersion: 'workspai.verified-goal.v1',
+    id: 'goal-dependency-security-12345678',
+    fingerprint: 'a'.repeat(64),
+    createdAt: '2026-07-30T00:00:00.000Z',
+    updatedAt: '2026-07-30T00:00:00.000Z',
+    workspace: { name: 'workspace', path: '/workspace' },
+    kind: 'dependency-security',
+    summary: 'Resolve dependency vulnerabilities without unsafe changes.',
+    scope: { kind: 'workspace' },
+    constraints: {
+      allowBreakingChanges: false,
+      allowForce: false,
+      requireBuild: true,
+      requireTests: true,
+    },
+    criteria: {
+      kind: 'dependency-security',
+      maximumBlockingVulnerabilities: 0,
+      requireFreshAudit: true,
+    },
+    baseline: {
+      measuredAt: '2026-07-30T00:00:00.000Z',
+      value: 12,
+      target: 0,
+      unit: 'blocking-vulnerabilities',
+      status: 'unsatisfied',
+      evidencePaths: ['.workspai/reports/doctor-last-run.json'],
+      message: '12 blocking dependency vulnerabilities remain.',
+    },
+    artifactPaths: {
+      goal: '.workspai/goals/goal-dependency-security-12345678/goal.json',
+      status: '.workspai/goals/goal-dependency-security-12345678/status.json',
+      latestReport: '.workspai/reports/verified-goal-last-run.json',
+    },
+  };
+}
+
 describe('Studio Agent session runtime', () => {
+  it('persists tool progress so canonical stage movement survives a webview reload', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'run-chain',
+      title: 'Run chain',
+      activity: 'inspect',
+      risk: 'read',
+      async execute(_input, context) {
+        await context.reportProgress?.({
+          intelligencePhase: 'impact',
+          intelligenceMilestoneKind: 'stage',
+          intelligenceMilestoneStatus: 'started',
+        });
+        return { ok: true };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'durable-stage-progress-session',
+        workspacePath: '/workspace',
+        cardId: 'readiness',
+        assistantMode: 'ask',
+        permissionLevel: 'default',
+        workspaceTrusted: true,
+      },
+      sequenceModel([
+        { type: 'tool', toolName: 'run-chain', input: {}, reason: 'Refresh the chain.' },
+        { type: 'complete', summary: 'Observed the current stage.' },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Inspect chain progress');
+
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'tool.progress',
+        data: expect.objectContaining({
+          toolName: 'run-chain',
+          intelligencePhase: 'impact',
+          intelligenceMilestoneStatus: 'started',
+        }),
+      })
+    );
+  });
+
   it('runs deterministic blocker recovery before spending a model decision', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
@@ -418,6 +504,313 @@ describe('Studio Agent session runtime', () => {
         data: expect.objectContaining({ summary: expect.stringContaining('Post-mutation') }),
       })
     );
+  });
+
+  it('routes post-mutation closure through the durable goal verifier', async () => {
+    const registry = new StudioAgentToolRegistry();
+    const verifyBlocker = vi.fn(async () => ({
+      ok: false,
+      cardBlocking: true,
+      error: 'The blocker-card verifier must not own a durable goal.',
+    }));
+    const verifyGoal = vi.fn(async () => ({
+      ok: true,
+      cardBlocking: false,
+      output: { state: 'verified' },
+    }));
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply patch',
+      activity: 'change',
+      risk: 'safe-write',
+      async execute() {
+        return { ok: true, changed: true };
+      },
+    });
+    registry.register({
+      name: 'run-governed-command',
+      title: 'Refresh canonical evidence',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ok: true,
+          cardBlocking: true,
+          changed: false,
+          output: { exitCode: 2, evidenceRefreshCompleted: true },
+        };
+      },
+    });
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Verify blocker',
+      activity: 'verify',
+      risk: 'read',
+      execute: verifyBlocker,
+    });
+    registry.register({
+      name: 'verify-goal',
+      title: 'Verify goal',
+      activity: 'verify',
+      risk: 'read',
+      execute: verifyGoal,
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'verified-goal-closure-session',
+        workspacePath: '/workspace',
+        cardId: 'goal-dependency-security-12345678',
+        assistantMode: 'agent',
+        goal: verifiedDependencyGoal(),
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      sequenceModel([
+        {
+          type: 'tool',
+          toolName: 'apply-workspace-patch',
+          input: { patches: [] },
+          reason: 'Apply a compatible dependency repair.',
+        },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Resolve dependency vulnerabilities without breaking changes');
+
+    expect(result.status).toBe('completed');
+    expect(verifyGoal).toHaveBeenCalledTimes(1);
+    expect(verifyBlocker).not.toHaveBeenCalled();
+    expect(result.goal?.baseline.value).toBe(12);
+  });
+
+  it('withholds the governed chain while a dependency transaction is incomplete', async () => {
+    const registry = new StudioAgentToolRegistry();
+    const chain = vi.fn(async () => ({ ok: true, changed: false }));
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply dependency patch',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return { ok: true, changed: true };
+      },
+    });
+    registry.register({
+      name: 'complete-dependency-transaction',
+      title: 'Complete dependency transaction',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ok: false,
+          changed: true,
+          output: {
+            closureReady: false,
+            nextAction: 'general-source-repair',
+            fallbackCapability: 'general-source-repair',
+          },
+          error: 'Audit still reports a blocker.',
+        };
+      },
+    });
+    registry.register({
+      name: 'run-governed-command',
+      title: 'Run chain',
+      activity: 'change',
+      risk: 'guarded-write',
+      execute: chain,
+    });
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Verify blocker',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        return { ok: false, cardBlocking: true };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'dependency-transaction-pending',
+        workspacePath: '/workspace',
+        cardId: 'doctor',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        maxTurns: 2,
+      },
+      sequenceModel([
+        {
+          type: 'tool',
+          toolName: 'apply-workspace-patch',
+          input: {
+            patches: [
+              {
+                relativePath: 'api/package.json',
+                patchedContent: '{"dependencies":{}}',
+              },
+            ],
+          },
+          reason: 'Update the dependency manifest',
+        },
+        { type: 'complete', summary: 'Not yet closed' },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Repair dependency blocker');
+
+    expect(result.status).toBe('failed');
+    expect(chain).not.toHaveBeenCalled();
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'model.checkpoint',
+        data: expect.objectContaining({ recovery: 'dependency-transaction' }),
+      })
+    );
+  });
+
+  it('runs the governed chain only after dependency transaction closure', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply dependency patch',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return { ok: true, changed: true };
+      },
+    });
+    registry.register({
+      name: 'complete-dependency-transaction',
+      title: 'Complete dependency transaction',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return { ok: true, changed: true, output: { closureReady: true } };
+      },
+    });
+    registry.register({
+      name: 'run-governed-command',
+      title: 'Run chain',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return { ok: true, changed: false };
+      },
+    });
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Verify blocker',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        return { ok: true, cardBlocking: false, blockerSignature: 'resolved' };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'dependency-transaction-closed',
+        workspacePath: '/workspace',
+        cardId: 'doctor',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      sequenceModel([
+        {
+          type: 'tool',
+          toolName: 'apply-workspace-patch',
+          input: {
+            patches: [
+              {
+                relativePath: 'api/package.json',
+                patchedContent: '{"dependencies":{}}',
+              },
+            ],
+          },
+          reason: 'Update the dependency manifest',
+        },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Repair dependency blocker');
+
+    expect(result.status).toBe('completed');
+    const requestedTools = result.events
+      .filter((event) => event.type === 'tool.requested')
+      .map((event) => (event.data as { toolName?: string }).toolName);
+    expect(requestedTools).toEqual([
+      'apply-workspace-patch',
+      'complete-dependency-transaction',
+      'run-governed-command',
+      'verify-blocker',
+    ]);
+  });
+
+  it('closes the governed loop after an explicit dependency transaction even when install is idempotent', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'complete-dependency-transaction',
+      title: 'Complete dependency transaction',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return { ok: true, changed: false, output: { closureReady: true } };
+      },
+    });
+    registry.register({
+      name: 'run-governed-command',
+      title: 'Run chain',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return { ok: true, changed: false };
+      },
+    });
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Verify blocker',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        return { ok: true, cardBlocking: false, blockerSignature: 'resolved' };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'dependency-transaction-explicit',
+        workspacePath: '/workspace',
+        cardId: 'doctor',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      sequenceModel([
+        {
+          type: 'tool',
+          toolName: 'complete-dependency-transaction',
+          input: { projectNames: ['api'] },
+          reason: 'Close the pending dependency transaction',
+        },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Repair dependency blocker');
+
+    expect(result.status).toBe('completed');
+    expect(
+      result.events
+        .filter((event) => event.type === 'tool.requested')
+        .map((event) => (event.data as { toolName?: string }).toolName)
+    ).toEqual(['complete-dependency-transaction', 'run-governed-command', 'verify-blocker']);
   });
 
   it('refuses completion when the canonical chain failed after the latest source mutation', async () => {
@@ -845,6 +1238,552 @@ describe('Studio Agent session runtime', () => {
     expect(turn).toBe(2);
   });
 
+  it('locks an unresolved blocker into the general source plane until runtime verification closes it', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'recover-active-blocker',
+      title: 'Resolve active blocker',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ok: false,
+          changed: false,
+          output: {
+            recoveryPath: 'general-source-repair',
+            nextAction: 'general-source-repair',
+            unresolvedProjects: ['polyglot-api', 'polyglot-app'],
+            sourceCandidates: ['polyglot-api/package.json', 'polyglot-app/package.json'],
+          },
+          error: 'A source repair is required.',
+        };
+      },
+    });
+    registry.register({
+      name: 'inspect-source',
+      title: 'Inspect source',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, output: [] };
+      },
+    });
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply source repair',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return { ok: true, changed: true, evidenceGeneration: 'source-generation-2' };
+      },
+    });
+    registry.register({
+      name: 'inspect-remediation-plan',
+      title: 'Inspect remediation plan',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true };
+      },
+    });
+    registry.register({
+      name: 'run-governed-command',
+      title: 'Run canonical chain',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return { ok: true, changed: false, evidenceGeneration: 'chain-generation-3' };
+      },
+    });
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Verify blocker',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        return { ok: true, cardBlocking: false, blockerSignature: 'resolved' };
+      },
+    });
+    let modelTurns = 0;
+    const session = new StudioAgentSession(
+      {
+        id: 'general-source-plane-session',
+        workspacePath: '/workspace',
+        cardId: 'readiness',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      {
+        async next(context) {
+          modelTurns += 1;
+          expect(context.sourceRepairDirective).toMatchObject({
+            nextAction: 'general-source-repair',
+            unresolvedProjects: ['polyglot-api', 'polyglot-app'],
+          });
+          expect(context.tools.map((tool) => tool.name)).toEqual([
+            'inspect-source',
+            'apply-workspace-patch',
+          ]);
+          return {
+            type: 'tool',
+            toolName: 'apply-workspace-patch',
+            input: { patches: [] },
+            reason: 'Apply the diagnosed source repair.',
+          };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Resolve every dependency blocker');
+
+    expect(result.status).toBe('completed');
+    expect(modelTurns).toBe(1);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'model.checkpoint',
+        data: expect.objectContaining({
+          recovery: 'general-source-inspection',
+          sourceCandidates: ['polyglot-api/package.json', 'polyglot-app/package.json'],
+        }),
+      })
+    );
+    expect(result.events).not.toContainEqual(
+      expect.objectContaining({
+        type: 'tool.requested',
+        data: expect.objectContaining({ toolName: 'inspect-remediation-plan' }),
+      })
+    );
+  });
+
+  it('removes read-only tools after bounded source inspection and requires a repair action', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'recover-active-blocker',
+      title: 'Resolve active blocker',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ok: false,
+          changed: false,
+          output: {
+            recoveryPath: 'general-source-repair',
+            nextAction: 'general-source-repair',
+            sourceCandidates: ['api/src/security.ts'],
+          },
+          error: 'A source repair is required.',
+        };
+      },
+    });
+    registry.register({
+      name: 'inspect-source',
+      title: 'Inspect source',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, changed: false, output: [] };
+      },
+    });
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply source repair',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return { ok: true, changed: true };
+      },
+    });
+    registry.register({
+      name: 'run-governed-command',
+      title: 'Run canonical chain',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return { ok: true, changed: false };
+      },
+    });
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Verify blocker',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        return { ok: true, cardBlocking: false, blockerSignature: 'resolved' };
+      },
+    });
+    let modelTurns = 0;
+    const session = new StudioAgentSession(
+      {
+        id: 'bounded-source-inspection-session',
+        workspacePath: '/workspace',
+        cardId: 'doctor',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        maxModelDecisionsWithoutSourceProgress: 8,
+      },
+      {
+        async next(context) {
+          modelTurns += 1;
+          if (context.sourceActionRequired) {
+            expect(context.tools.map((tool) => tool.name)).toEqual(['apply-workspace-patch']);
+            return {
+              type: 'tool',
+              toolName: 'apply-workspace-patch',
+              input: { patches: [] },
+              reason: 'Advance the repair transaction.',
+            };
+          }
+          return {
+            type: 'tool',
+            toolName: 'inspect-source',
+            input: { paths: [`api/src/security-${modelTurns}.ts`] },
+            reason: 'Inspect source.',
+          };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Resolve the blocker');
+
+    expect(result.status).toBe('completed');
+    expect(modelTurns).toBe(5);
+  });
+
+  it('preserves inspected source in model memory after an intervening diagnostic', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'inspect-source',
+      title: 'Inspect source',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return {
+          ok: true,
+          output: [
+            {
+              path: 'api/package.json',
+              sha256: 'source-sha',
+              content: '{"dependencies":{"example":"1.0.0"}}',
+              truncated: false,
+            },
+          ],
+        };
+      },
+    });
+    registry.register({
+      name: 'inspect-workspace-diagnostics',
+      title: 'Inspect diagnostics',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, output: { diagnostics: [] } };
+      },
+    });
+    let turn = 0;
+    const session = new StudioAgentSession(
+      {
+        id: 'ephemeral-causal-memory-session',
+        workspacePath: '/workspace',
+        cardId: 'assistant:ask',
+        assistantMode: 'ask',
+        permissionLevel: 'default',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: false,
+      },
+      {
+        async next(context) {
+          turn += 1;
+          if (turn === 1) {
+            return {
+              type: 'tool',
+              toolName: 'inspect-source',
+              input: { paths: ['api/package.json'] },
+              reason: 'Read the manifest.',
+            };
+          }
+          if (turn === 2) {
+            return {
+              type: 'tool',
+              toolName: 'inspect-workspace-diagnostics',
+              input: { paths: ['api/package.json'] },
+              reason: 'Check diagnostics.',
+            };
+          }
+          expect(context.recentObservations).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                toolName: 'inspect-source',
+                result: expect.objectContaining({
+                  output: expect.arrayContaining([
+                    expect.objectContaining({
+                      path: 'api/package.json',
+                      content: '{"dependencies":{"example":"1.0.0"}}',
+                    }),
+                  ]),
+                }),
+              }),
+            ])
+          );
+          return { type: 'complete', summary: 'Source remains available.' };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Inspect the project');
+
+    expect(result.status).toBe('completed');
+    const durableInspect = result.events.find(
+      (event) =>
+        event.type === 'tool.completed' &&
+        (event.data as { toolName?: string }).toolName === 'inspect-source'
+    );
+    expect(JSON.stringify(durableInspect)).toContain('[omitted from durable session]');
+    expect(JSON.stringify(durableInspect)).not.toContain('"example":"1.0.0"');
+  });
+
+  it('hands a newly exposed dependent blocker back to deterministic recovery', async () => {
+    const registry = new StudioAgentToolRegistry();
+    let recoveryCalls = 0;
+    registry.register({
+      name: 'recover-active-blocker',
+      title: 'Resolve active blocker',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        recoveryCalls += 1;
+        if (recoveryCalls === 1) {
+          return {
+            ok: false,
+            output: {
+              recoveryPath: 'general-source-repair',
+              nextAction: 'general-source-repair',
+            },
+            error: 'Repair the source.',
+          };
+        }
+        return { ok: true, changed: true, blockerSignature: 'dependent-fixed' };
+      },
+    });
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply source repair',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return { ok: true, changed: true };
+      },
+    });
+    registry.register({
+      name: 'run-governed-command',
+      title: 'Run canonical chain',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return { ok: true, changed: false };
+      },
+    });
+    let verifyCalls = 0;
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Verify blocker',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        verifyCalls += 1;
+        if (verifyCalls === 1) {
+          return {
+            ok: false,
+            cardBlocking: true,
+            blockerSignature: 'workspace-verify-v2',
+            output: {
+              activeHandoff: {
+                cardId: 'workspaceVerify',
+                blockers: ['Readiness passed; workspace verification is now blocking.'],
+              },
+            },
+          };
+        }
+        return { ok: true, cardBlocking: false, blockerSignature: 'resolved-v3' };
+      },
+    });
+    let modelTurns = 0;
+    const session = new StudioAgentSession(
+      {
+        id: 'dependent-blocker-handoff-session',
+        workspacePath: '/workspace',
+        cardId: 'readiness',
+        assistantMode: 'agent',
+        blockerSignature: 'readiness-v1',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      {
+        async next() {
+          modelTurns += 1;
+          return {
+            type: 'tool',
+            toolName: 'apply-workspace-patch',
+            input: { patches: [] },
+            reason: 'Repair the current blocker.',
+          };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Resolve the complete incident graph');
+
+    expect(result.status).toBe('completed');
+    expect(modelTurns).toBe(1);
+    expect(recoveryCalls).toBe(2);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'model.checkpoint',
+        data: expect.objectContaining({
+          recovery: 'dependent-blocker-handoff',
+          previousCardId: 'readiness',
+          activeCardId: 'workspaceVerify',
+        }),
+      })
+    );
+  });
+
+  it('rehydrates a failed durable source-repair session through one fresh deterministic recovery', async () => {
+    const restoredSession: StudioAgentPersistedSession = {
+      schemaVersion: 'workspai.studio-agent-session.v1',
+      id: 'restored-general-source-session',
+      workspacePath: '/workspace',
+      cardId: 'readiness',
+      assistantMode: 'agent',
+      status: 'failed',
+      createdAt: '2026-07-20T00:00:00.000Z',
+      updatedAt: '2026-07-20T00:00:01.000Z',
+      sequence: 1,
+      events: [
+        {
+          schemaVersion: 'workspai.studio-agent-event.v1',
+          id: 'restored-general-source-session:1',
+          sessionId: 'restored-general-source-session',
+          sequence: 1,
+          timestamp: '2026-07-20T00:00:01.000Z',
+          type: 'tool.failed',
+          data: {
+            toolName: 'recover-active-blocker',
+            ok: false,
+            changed: false,
+            output: {
+              recoveryPath: 'general-source-repair',
+              nextAction: 'general-source-repair',
+              sourceCandidates: ['polyglot-app/package.json'],
+            },
+            error: 'Source repair required.',
+          },
+        },
+      ],
+    };
+    const registry = new StudioAgentToolRegistry();
+    let recoveryCalls = 0;
+    registry.register({
+      name: 'recover-active-blocker',
+      title: 'Resolve active blocker',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        recoveryCalls += 1;
+        return {
+          ok: false,
+          changed: false,
+          blockerSignature: 'dependency-generation-2',
+          output: {
+            recoveryPath: 'general-source-repair',
+            nextAction: 'general-source-repair',
+            unresolvedProjects: ['polyglot-app'],
+            sourceCandidates: ['polyglot-app/package.json'],
+            dependencyDiagnostics: [{ projectName: 'polyglot-app', blockedCandidates: [{}] }],
+          },
+          error: 'Fresh dependency evidence still requires a source repair.',
+        };
+      },
+    });
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply source repair',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return { ok: true, changed: true };
+      },
+    });
+    registry.register({
+      name: 'run-governed-command',
+      title: 'Run canonical chain',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return { ok: true, changed: false };
+      },
+    });
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Verify blocker',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        return { ok: true, cardBlocking: false };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        id: restoredSession.id,
+        workspacePath: restoredSession.workspacePath,
+        cardId: restoredSession.cardId,
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        restoredSession,
+      },
+      {
+        async next(context) {
+          expect(context.sourceRepairDirective).toMatchObject({
+            sourceCandidates: ['polyglot-app/package.json'],
+            unresolvedProjects: ['polyglot-app'],
+          });
+          expect(context.tools.map((tool) => tool.name)).toEqual(['apply-workspace-patch']);
+          return {
+            type: 'tool',
+            toolName: 'apply-workspace-patch',
+            input: { patches: [] },
+            reason: 'Continue the durable source repair.',
+          };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Resume readiness repair');
+
+    expect(result.status).toBe('completed');
+    expect(result.blockerSignature).toBe('dependency-generation-2');
+    expect(recoveryCalls).toBe(1);
+    expect(
+      result.events.filter(
+        (event) =>
+          event.type === 'tool.requested' &&
+          (event.data as { toolName?: string }).toolName === 'recover-active-blocker'
+      )
+    ).toHaveLength(1);
+  });
+
   it('fails fast when a model repeatedly misses the native action contract', async () => {
     const session = new StudioAgentSession(
       {
@@ -999,6 +1938,7 @@ describe('Studio Agent session runtime', () => {
     );
     expect(result.events.filter((event) => event.type === 'session.completed')).toHaveLength(1);
     expect(store.saved.at(-1)?.status).toBe('completed');
+    expect(store.saved.at(-1)?.blockerSignature).toBe('healthy-v2');
   });
 
   it('keeps permissions separate from model reasoning', async () => {

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://getrapidkit.com/schemas/workspace-graph-recording.v1.json",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/workspace-graph-recording.v1.json",
   "title": "Workspai Workspace Graph Recording",
   "description": "A bounded, change-driven visual timeline derived from canonical Workspace Graph revisions.",
   "type": "object",

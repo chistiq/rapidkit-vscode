@@ -1,6 +1,8 @@
 import {
   frontendKitIdForFramework,
-  isBackendScaffoldFramework,
+  isScaffoldFramework,
+  isDesktopScaffoldFramework,
+  isExtensionScaffoldFramework,
   isFrontendScaffoldFramework,
   type ScaffoldFramework,
 } from './scaffoldKits';
@@ -23,6 +25,16 @@ const FRAMEWORK_KEYWORDS: Record<ScaffoldFramework, string[]> = {
   go: [' golang', ' go ', 'gin ', 'fiber ', 'go.mod', 'go service', 'go api', 'golang'],
   springboot: ['spring boot', 'springboot', 'spring', 'java', 'kotlin', 'maven', 'gradle'],
   dotnet: ['dotnet', '.net', 'csharp', 'c#', 'asp.net', 'web api', 'nuget'],
+  rust: ['rust', 'axum', 'cargo'],
+  laravel: ['laravel', 'php laravel'],
+  tauri: ['tauri', 'tauri app', 'rust desktop'],
+  electron: ['electron', 'electron forge', 'electron app'],
+  'vscode-extension': [
+    'vscode extension',
+    'vs code extension',
+    'visual studio code extension',
+    'editor extension',
+  ],
   nextjs: ['next.js', 'nextjs', 'next js', 'react app', 'app router', 'next app'],
   remix: ['remix', 'remix.run', 'remix app'],
   'vite-react': [
@@ -101,7 +113,12 @@ const ENTERPRISE_SIGNALS = [
 ];
 
 export function defaultProfileForFramework(framework: ScaffoldFramework): AICreateProfile {
-  if (isFrontendScaffoldFramework(framework) || framework === 'nestjs') {
+  if (
+    isFrontendScaffoldFramework(framework) ||
+    framework === 'nestjs' ||
+    framework === 'electron' ||
+    framework === 'vscode-extension'
+  ) {
     return 'node-only';
   }
   if (framework === 'go') {
@@ -112,6 +129,9 @@ export function defaultProfileForFramework(framework: ScaffoldFramework): AICrea
   }
   if (framework === 'dotnet') {
     return 'dotnet-only';
+  }
+  if (framework === 'rust' || framework === 'tauri' || framework === 'laravel') {
+    return 'minimal';
   }
   return 'python-only';
 }
@@ -131,6 +151,21 @@ export function defaultKitForFramework(framework: ScaffoldFramework, promptLower
   }
   if (framework === 'dotnet') {
     return 'dotnet.webapi.clean';
+  }
+  if (framework === 'rust') {
+    return 'rust.axum';
+  }
+  if (framework === 'laravel') {
+    return 'php.laravel';
+  }
+  if (framework === 'tauri') {
+    return 'desktop.tauri';
+  }
+  if (framework === 'electron') {
+    return 'desktop.electron';
+  }
+  if (framework === 'vscode-extension') {
+    return 'extension.vscode';
   }
   if (
     promptLower.includes('ddd') ||
@@ -198,10 +233,7 @@ export function inferStackIntentFromPrompt(
 }
 
 function isScaffoldFrameworkHint(value: string | undefined): value is ScaffoldFramework {
-  return (
-    typeof value === 'string' &&
-    (isBackendScaffoldFramework(value) || isFrontendScaffoldFramework(value))
-  );
+  return isScaffoldFramework(value);
 }
 
 export function inferFrameworkFromCreationPrompt(
@@ -262,6 +294,12 @@ export function inferFrameworkFromCreationPrompt(
     if (promptLower.includes('.net') || promptLower.includes('csharp')) {
       return 'dotnet';
     }
+    if (promptLower.includes('laravel')) {
+      return 'laravel';
+    }
+    if (promptLower.includes('rust') || promptLower.includes('axum')) {
+      return 'rust';
+    }
     return 'nestjs';
   }
   if (resolvedIntent === 'polyglot') {
@@ -302,7 +340,11 @@ export function inferWorkspaceProfileFromCreationPrompt(
 export function projectNameSuffixForFramework(
   framework: ScaffoldFramework
 ): 'app' | 'api' | 'service' {
-  if (isFrontendScaffoldFramework(framework)) {
+  if (
+    isFrontendScaffoldFramework(framework) ||
+    isDesktopScaffoldFramework(framework) ||
+    isExtensionScaffoldFramework(framework)
+  ) {
     return 'app';
   }
   if (framework === 'go' || framework === 'springboot' || framework === 'dotnet') {
@@ -409,7 +451,11 @@ function bestBackendFrameworkInPrompt(promptLower: string): ScaffoldFramework | 
   let bestScore = 0;
 
   for (const framework of Object.keys(FRAMEWORK_KEYWORDS) as ScaffoldFramework[]) {
-    if (isFrontendScaffoldFramework(framework)) {
+    if (
+      isFrontendScaffoldFramework(framework) ||
+      isDesktopScaffoldFramework(framework) ||
+      isExtensionScaffoldFramework(framework)
+    ) {
       continue;
     }
     const score = scoreFrameworkInPrompt(promptLower, framework);
@@ -452,6 +498,12 @@ export function inferPolyglotCompanionProject(
   }
 
   const primaryIsFrontend = isFrontendScaffoldFramework(primaryFramework);
+  if (
+    isDesktopScaffoldFramework(primaryFramework) ||
+    isExtensionScaffoldFramework(primaryFramework)
+  ) {
+    return undefined;
+  }
   const companionFramework = primaryIsFrontend ? backendFramework : frontendFramework;
   if (companionFramework === primaryFramework) {
     return undefined;

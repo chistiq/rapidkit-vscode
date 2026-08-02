@@ -4,8 +4,9 @@ import type {
   StudioAgentModelContext,
 } from './studioAgentSession.js';
 import {
+  getWorkspaceIntelligenceCanonicalStages,
   getWorkspaceIntelligenceChainInvariant,
-  getWorkspaceIntelligenceExecutionMilestones,
+  getWorkspaceIntelligenceExecutionPreflights,
 } from './workspaceIntelligenceChainContract.js';
 
 export const STUDIO_AGENT_MODEL_ACTION_SCHEMA_VERSION =
@@ -61,7 +62,10 @@ function boundedText(value: string, maxChars = 10_000): string {
   return value.length > maxChars ? `${value.slice(0, maxChars)}…[objective truncated]` : value;
 }
 
-function conciseToolOutput(value: unknown): unknown {
+function conciseToolOutput(
+  value: unknown,
+  options: { sourceEntryLimit?: number; sourceContentLimit?: number } = {}
+): unknown {
   if (Array.isArray(value)) {
     const sourceEntries = value
       .filter(
@@ -72,13 +76,13 @@ function conciseToolOutput(value: unknown): unknown {
           typeof (entry as Record<string, unknown>).path === 'string' &&
           typeof (entry as Record<string, unknown>).content === 'string'
       )
-      .slice(0, 4);
+      .slice(0, options.sourceEntryLimit ?? 4);
     if (sourceEntries.length > 0) {
       return sourceEntries.map((entry) => ({
         path: entry.path,
         sha256: entry.sha256,
         truncated: entry.truncated,
-        content: boundedText(String(entry.content), 6_000),
+        content: boundedText(String(entry.content), options.sourceContentLimit ?? 6_000),
       }));
     }
     return {
@@ -111,9 +115,19 @@ function conciseToolOutput(value: unknown): unknown {
       'upgradeCandidates',
       'resolutionCandidates',
       'blockedCandidates',
+      'dependencyDiagnostics',
+      'sourceCandidates',
+      'unresolvedProjects',
+      'processedProjects',
+      'clearedProjects',
       'fallbackCapability',
       'recommendedTools',
       'exhaustedTools',
+      'incidentGraph',
+      'activeHandoff',
+      'refresh',
+      'blockingCards',
+      'blockers',
       'files',
       'diagnostics',
       'status',
@@ -132,7 +146,10 @@ function conciseToolOutput(value: unknown): unknown {
   );
 }
 
-function conciseLatestObservation(value: StudioAgentModelContext['latestObservation']): unknown {
+function conciseLatestObservation(
+  value: StudioAgentModelContext['latestObservation'],
+  compact = false
+): unknown {
   if (!value) {
     return null;
   }
@@ -144,8 +161,32 @@ function conciseLatestObservation(value: StudioAgentModelContext['latestObservat
     evidenceGeneration: value.evidenceGeneration,
     blockerSignature: value.blockerSignature,
     error: value.error ? boundedText(value.error, 3_000) : undefined,
-    output: conciseToolOutput(value.output),
+    output: conciseToolOutput(
+      value.output,
+      compact ? { sourceEntryLimit: 4, sourceContentLimit: 3_000 } : {}
+    ),
   };
+}
+
+function conciseRecentObservations(
+  value: StudioAgentModelContext['recentObservations'],
+  latestObservation?: StudioAgentModelContext['latestObservation']
+): unknown {
+  const observations = value ?? [];
+  const finalObservation =
+    observations.length > 0 ? observations[observations.length - 1] : undefined;
+  const withoutDuplicatedLatest =
+    finalObservation?.result === latestObservation ? observations.slice(0, -1) : observations;
+  return withoutDuplicatedLatest.slice(-5).map((observation) => ({
+    toolName: observation.toolName,
+    input: observation.input,
+    ok: observation.result.ok,
+    changed: observation.result.changed,
+    cardBlocking: observation.result.cardBlocking,
+    blockerSignature: observation.result.blockerSignature,
+    error: observation.result.error ? boundedText(observation.result.error, 1_600) : undefined,
+    output: conciseToolOutput(observation.result.output),
+  }));
 }
 
 function conciseCausalEvent(event: StudioAgentModelContext['session']['events'][number]) {
@@ -214,7 +255,11 @@ export function parseStudioAgentModelAction(input: {
   };
 }
 
-function promptForTurn(context: StudioAgentModelContext, objective: string): string {
+function promptForTurn(
+  context: StudioAgentModelContext,
+  objective: string,
+  budget: 'standard' | 'compact' = 'standard'
+): string {
   // The objective already carries the current card and evidence generation.
   // Re-sending request/status chatter on every turn wastes model context and
   // previously caused long-lived repair sessions to hit the provider token
@@ -228,34 +273,44 @@ function promptForTurn(context: StudioAgentModelContext, objective: string): str
         event.type === 'tool.failed' ||
         event.type === 'verify.completed'
     )
-    .slice(-8)
+    .slice(budget === 'compact' ? -2 : -8)
     .map(conciseCausalEvent);
   const mode = context.session.assistantMode;
-  const intelligenceLoop = getWorkspaceIntelligenceExecutionMilestones().map(
-    ({ id, kind, label }) => ({ id, kind, label })
+  const intelligenceLoop = getWorkspaceIntelligenceCanonicalStages().map(
+    ({ id, label, phase }) => ({ id, label, phase })
+  );
+  const intelligencePreflights = getWorkspaceIntelligenceExecutionPreflights().map(
+    ({ id, label, purpose }) => ({ id, label, purpose })
   );
   const modeInstructions =
     mode === 'agent'
       ? [
           'Own the task from evidence inspection through source change and final verification.',
+          'When the session includes a verified goal, treat its scope, constraints, baseline, and criteria as the authoritative definition of done. Continue until verify-goal returns state=verified; a plausible patch, higher metric, or successful single command is not completion.',
+          'Verified goals are resumable transactions. Never weaken their target, disable required build/tests, enable force, or permit breaking changes unless the durable goal contract already authorizes it.',
           'Never delegate a resolvable step to the operator. Never claim completion while governed verification is required and still blocking.',
           'Treat .workspai reports as generated evidence: never patch them directly. Run their governed producer, then continue through every downstream gate required by the refreshed blocker.',
           'Prefer the workspaceIntelligenceChain governed command when the complete evidence chain must be regenerated. It is the contract-owned authority for stage order, dependencies, verdict propagation, and downstream artifacts.',
           'The unified intelligence chain does not replace card-specific producers. When a remediation plan is missing or stale, run workspaceRemediationPlan first; use workspaceIntelligenceChain only after source repair or when the complete canonical evidence chain must be refreshed.',
-          'The canonical Workspace Intelligence milestones below are immutable. Never reorder, skip, append, or substitute stages. Auxiliary capabilities may repair the source needed to pass a milestone, but they never become chain stages.',
-          'After every source mutation, the runtime will execute the complete canonical chain. Use any available governed or general workspace tool to repair the currently failing milestone, then let the unified chain prove closure.',
+          'The canonical Workspace Intelligence stages below are immutable. Never reorder, skip, append, or substitute stages. Execution prerequisites are reported separately and never become chain stages. Auxiliary capabilities may repair the source needed to pass a stage, but they never become chain stages.',
+          'After a source mutation, the runtime classifies the change before canonical verification. Dependency edits must first close their manifest/lockfile reconciliation, focused audit, declared tests, and declared build transaction; other edits proceed directly to the complete Workspace Intelligence chain. Use the available governed or general workspace tools to repair the currently failing milestone, then let the runtime prove closure.',
           'Use individual governed producers only for a diagnosed source artifact or a targeted recovery, then run the unified chain before completion.',
           'Repair source manifests, configuration, or project files when evidence identifies a source defect; use governed commands only to regenerate evidence and verify the result.',
           'You have a general workspace capability plane. Discover files, inspect exact source, inspect diagnostics and diffs, run structured no-shell project commands, and create, replace, or delete source through SHA-protected rollback transactions. Use these tools for arbitrary project types instead of waiting for a blocker-specific tool.',
           'A source file becomes patch-authorized after inspect-source returns its sha256. Search results alone are not edit authorization. Review changed files with inspect-workspace-changes when the effect of a command or patch is uncertain.',
           'Use run-workspace-command for project-native diagnosis, tests, builds, formatting, and dependency operations. Choose the narrowest cwd and purpose; never ask the operator to run a command that this tool can execute.',
           'When a blocker has a CLI-authored remediation plan, inspect the current plan and execute eligible steps by stepId. Never emit an unstructured shell string; use the structured workspace command tool when the plan does not cover the diagnosed source cause.',
-          'For a dependency vulnerability blocker, process every vulnerable project named by fresh Doctor evidence. Inspect each project once, run its bounded non-force repair once, and follow the returned nextAction. Never omit sibling projects from a workspace-scoped blocker. When upgradeCandidates are present, call upgrade-dependency-security with that exact direct package; it owns manifest, lockfile, rollback, chain, and verify.',
+          'For a dependency vulnerability blocker, process every vulnerable project named by fresh Doctor evidence. Inspect each project once, run its bounded non-force repair once, and follow the returned nextAction. Never omit sibling projects from a workspace-scoped blocker. When upgradeCandidates are present, call upgrade-dependency-security with that exact direct package. The session controller, not the model, owns transaction closure, rollback evidence, the canonical intelligence chain, and final verification.',
           'When a blocker accelerator returns general-source-repair, no-safe-upgrade, a no-op, or a breaking/downgrade-only candidate, that accelerator is exhausted for the current causal generation. Do not call it again. Move to the general capability plane: inspect exact manifests and compatibility constraints, use structured project-native commands to discover admissible versions or alternatives, apply a SHA-protected source transaction, then build, test, audit, run the unified chain, and verify.',
+          'During an active general-source-repair phase, do not run Doctor, Readiness, Verify, remediation-plan, or Workspace Intelligence commands through run-workspace-command. The runtime has intentionally locked those evidence producers until you make a real source change.',
+          'A project-native diagnostic such as npm audit commonly exits non-zero because it found a problem. Treat its stdout/stderr as causal evidence, not as permission to rerun the same command. Inspect the authorized manifest, choose a compatible source-level resolution, and apply one patch transaction.',
+          'For local Workspai CLI execution through npx, the only valid shape is executable npx with --no-install followed by workspai and its arguments. Never use a bare npx doctor/readiness/verify invocation.',
           'Never repeat an inspection, audit, remediation, or verify action against the same causal evidence generation. Reuse the prior observation and advance to a different causal action.',
           'Never retry a failed bounded dependency repair. Do not hand-edit a package-manager lockfile. Use upgrade-dependency-security for a fresh audit-authorized direct dependency candidate.',
           'Blocker-specific tools are optional accelerators, not capability boundaries. If an accelerator does not cover the diagnosed project or error, continue with discovery, diagnostics, inspected edits, project-native commands, diff review, and governed verification.',
           'Treat failed verification as a new observation: follow its causal blockers, repair every related Workspace Intelligence card, rerun the unified chain, and verify again.',
+          'One repair session owns the complete incident graph, not only the card that opened it. When verification returns activeHandoff or incidentGraph, treat the first blocking card as the current objective and continue until the graph is resolved.',
+          'Recent in-memory observations preserve bounded inspected source for the current run. Reuse that content to patch or run the next causal diagnostic; do not re-inspect a file merely because another tool ran afterward.',
         ]
       : mode === 'plan'
         ? [
@@ -278,16 +333,53 @@ function promptForTurn(context: StudioAgentModelContext, objective: string): str
     `Workspace: ${context.session.workspacePath}`,
     `Scope: ${context.session.cardId}`,
     `Blocker signature: ${context.session.blockerSignature ?? 'unknown'}`,
+    `Verified engineering goal: ${boundedJson(context.session.goal ?? null, 5_000)}`,
     `Canonical Workspace Intelligence invariant: ${getWorkspaceIntelligenceChainInvariant()}`,
-    `Canonical Workspace Intelligence execution: ${boundedJson(intelligenceLoop, 4_000)}`,
+    `Execution prerequisites outside the canonical loop: ${boundedJson(
+      intelligencePreflights,
+      2_000
+    )}`,
+    `Canonical Workspace Intelligence stages: ${boundedJson(intelligenceLoop, 4_000)}`,
     `Tools: ${boundedJson(
       context.tools.map(({ name, title, activity, risk }) => ({ name, title, activity, risk })),
       4_000
     )}`,
+    `Source repair phase: ${
+      context.sourceRepairDirective
+        ? `ACTIVE. Evidence refresh, verify, remediation-plan, and exhausted blocker accelerators are intentionally withheld until a real source transaction occurs. Directive: ${boundedJson(
+            conciseToolOutput(context.sourceRepairDirective),
+            budget === 'compact' ? 3_000 : 8_000
+          )}`
+        : 'inactive'
+    }`,
+    `Source action required: ${
+      context.sourceActionRequired
+        ? 'YES. Repeated inspection has exhausted the bounded read budget. Select one available change tool that advances the repair transaction; do not rerun Doctor, Verify, or another inspection.'
+        : 'no'
+    }`,
     `Steering: ${boundedJson(context.steering, 2_000)}`,
-    `Latest observation: ${boundedJson(conciseLatestObservation(context.latestObservation), 12_000)}`,
-    `Recent causal session events: ${boundedJson(recentEvents, 6_000)}`,
+    `Latest observation: ${boundedJson(
+      conciseLatestObservation(context.latestObservation, budget === 'compact'),
+      budget === 'compact' ? 10_000 : 12_000
+    )}`,
+    `Recent in-memory causal observations: ${boundedJson(
+      budget === 'compact'
+        ? []
+        : conciseRecentObservations(context.recentObservations, context.latestObservation),
+      budget === 'compact' ? 200 : 14_000
+    )}`,
+    `Recent causal session events: ${boundedJson(
+      recentEvents,
+      budget === 'compact' ? 1_500 : 6_000
+    )}`,
   ].join('\n');
+}
+
+function isModelContextLimitError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /message exceeds token limit|context (?:length|window)|maximum context|too many tokens|prompt (?:is )?too (?:large|long)/i.test(
+    message
+  );
 }
 
 export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter {
@@ -298,7 +390,7 @@ export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter 
 
   async next(context: StudioAgentModelContext): Promise<StudioAgentModelAction> {
     const allowedTools = context.tools.map((tool) => tool.name);
-    const response = await this.complete(promptForTurn(context, this.objective), {
+    const request = {
       tools: [
         ...context.tools.map((tool) => ({
           name: tool.name,
@@ -317,7 +409,19 @@ export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter 
           },
         },
       ],
-    });
+    };
+    let response: Awaited<ReturnType<StudioAgentModelCompletion>>;
+    try {
+      response = await this.complete(promptForTurn(context, this.objective), request);
+    } catch (error) {
+      if (!isModelContextLimitError(error)) {
+        throw error;
+      }
+      // Context overflow is a transport constraint, not a blocker outcome.
+      // Retry once with the same latest causal evidence, without replaying
+      // historical observations that the active source inspection supersedes.
+      response = await this.complete(promptForTurn(context, this.objective, 'compact'), request);
+    }
     if (typeof response !== 'string') {
       if (response.toolName === STUDIO_AGENT_COMPLETE_TOOL_NAME) {
         const summary = response.input.summary;

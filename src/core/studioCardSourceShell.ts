@@ -15,7 +15,7 @@ const CARD_SOURCE_SHELL_OVERRIDES: Record<string, string> = {
   workspaceDiff: `npx workspai workspace diff --from ${WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH} --json`,
   workspaceImpact: `npx workspai workspace impact --from ${WORKSPACE_MODEL_DIFF_REPORT_PATH} --json`,
   share: 'npx workspai workspace share --output .workspai/reports/share-bundle.json --json',
-  archive: 'npx workspai workspace export --output team-workspace.rapidkit-archive.zip --json',
+  archive: 'npx workspai workspace export --output team-workspace.workspai-archive.zip --json',
 };
 
 function appendJsonFlag(cliArgs: string[]): string[] {

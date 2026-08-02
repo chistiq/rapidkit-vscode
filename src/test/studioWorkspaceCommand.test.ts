@@ -73,6 +73,26 @@ describe('Studio workspace command capability policy', () => {
         },
       }).mutatesSource
     ).toBe(true);
+    expect(
+      resolveStudioWorkspaceCommandPlan({
+        workspacePath: '/workspace',
+        request: {
+          executable: 'npm',
+          args: ['audit', '--json'],
+          purpose: 'inspect',
+        },
+      }).mutatesSource
+    ).toBe(false);
+    expect(
+      resolveStudioWorkspaceCommandPlan({
+        workspacePath: '/workspace',
+        request: {
+          executable: 'npm',
+          args: ['audit', 'fix', '--audit-level=moderate'],
+          purpose: 'dependency',
+        },
+      }).mutatesSource
+    ).toBe(true);
   });
 
   it.each([

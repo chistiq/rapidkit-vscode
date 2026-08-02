@@ -9,6 +9,7 @@ export type StudioAgentToolContext = {
   projectPath?: string;
   evidenceGeneration?: string;
   signal: AbortSignal;
+  reportProgress?(data: Record<string, unknown>): Promise<void>;
 };
 
 export type StudioAgentToolResult<T = unknown> = {

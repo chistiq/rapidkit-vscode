@@ -21,33 +21,32 @@ function collectQuotedCommandsFromSource(source: string): string[] {
   return Array.from(source.matchAll(/['"]([a-z][A-Za-z0-9]+)['"]/g)).map((match) => match[1]);
 }
 
+function sourceFilesUnder(relPath: string): string[] {
+  const absoluteRoot = path.join(repoRoot, relPath);
+  const files: string[] = [];
+  const visit = (absolutePath: string) => {
+    for (const entry of fs.readdirSync(absolutePath, { withFileTypes: true })) {
+      const child = path.join(absolutePath, entry.name);
+      if (entry.isDirectory()) {
+        visit(child);
+      } else if (/\.(?:ts|tsx)$/.test(entry.name)) {
+        files.push(path.relative(repoRoot, child));
+      }
+    }
+  };
+  visit(absoluteRoot);
+  return files.sort();
+}
+
 function collectPrimaryWebviewPostedCommands(): string[] {
-  const files = [
-    'webview-ui/src/App.tsx',
-    'webview-ui/src/components/Footer.tsx',
-    'webview-ui/src/components/WorkspaiSettingsPanel.tsx',
-    'webview-ui/src/components/CreateProjectModal.tsx',
-    'webview-ui/src/components/CreateWorkspaceModal.tsx',
-    'webview-ui/src/components/ExampleWorkspaces.tsx',
-    'webview-ui/src/lib/dashboardNavigationTelemetry.ts',
-  ];
+  const files = sourceFilesUnder('webview-ui/src').filter(
+    (file) => !file.startsWith('webview-ui/src/sidebar/')
+  );
   return [...new Set(files.flatMap((file) => collectPostMessageCommands(read(file))))].sort();
 }
 
 function collectPrimaryHostHandledCommands(): string[] {
-  const messageFiles = [
-    'src/ui/panels/welcomePanelAiCreationMessages.ts',
-    'src/ui/panels/welcomePanelAiModalMessages.ts',
-    'src/ui/panels/welcomePanelAnalyzeReportMessages.ts',
-    'src/ui/panels/welcomePanelCreationNavigationMessages.ts',
-    'src/ui/panels/welcomePanelDashboardLifecycleMessages.ts',
-    'src/ui/panels/welcomePanelDashboardShortcutMessages.ts',
-    'src/ui/panels/welcomePanelIncidentStudioMessages.ts',
-    'src/ui/panels/welcomePanelModulesCatalog.ts',
-    'src/ui/panels/welcomePanelReadyMessages.ts',
-    'src/ui/panels/welcomePanelWorkspaceSelectionMessages.ts',
-    'src/ui/panels/welcomePanelWorkspaiSettingsMessages.ts',
-  ];
+  const messageFiles = sourceFilesUnder('src/ui/panels');
   const sourceCommands = messageFiles.flatMap((file) =>
     collectQuotedCommandsFromSource(read(file))
   );
@@ -56,10 +55,7 @@ function collectPrimaryHostHandledCommands(): string[] {
 }
 
 function collectSidebarPostedCommands(): string[] {
-  const files = [
-    'webview-ui/src/sidebar/SecondarySidebar.tsx',
-    'webview-ui/src/sidebar/ModelPicker.tsx',
-  ];
+  const files = sourceFilesUnder('webview-ui/src/sidebar');
   return [...new Set(files.flatMap((file) => collectPostMessageCommands(read(file))))].sort();
 }
 
@@ -69,6 +65,30 @@ function collectSidebarHandledCommands(): string[] {
   );
   const surfaceCommands = Object.keys(SIDEBAR_ACTION_SURFACE);
   return [...new Set([...dispatcherCommands, ...surfaceCommands])].sort();
+}
+
+function collectSidebarHostPostedCommands(): string[] {
+  const host = read('src/ui/webviews/actionsWebviewProvider.ts');
+  return [
+    ...new Set(
+      Array.from(host.matchAll(/_postInlineCreate\(\s*['"]([^'"]+)['"]/g)).map((match) => match[1])
+    ),
+  ].sort();
+}
+
+function collectSidebarHostMessageConsumers(): string[] {
+  const secondarySidebar = read('webview-ui/src/sidebar/SecondarySidebar.tsx');
+  const sidebarApp = read('webview-ui/src/sidebar/SidebarApp.tsx');
+  return [
+    ...new Set([
+      ...Array.from(secondarySidebar.matchAll(/case\s+['"]([^'"]+)['"]\s*:/g)).map(
+        (match) => match[1]
+      ),
+      ...Array.from(sidebarApp.matchAll(/command\s*===\s*['"]([^'"]+)['"]/g)).map(
+        (match) => match[1]
+      ),
+    ]),
+  ].sort();
 }
 
 describe('webview command parity', () => {
@@ -84,6 +104,14 @@ describe('webview command parity', () => {
     const posted = collectSidebarPostedCommands();
     const handled = new Set(collectSidebarHandledCommands());
     const missing = posted.filter((command) => !handled.has(command));
+
+    expect(missing).toEqual([]);
+  });
+
+  it('keeps host sidebar responses backed by React message consumers', () => {
+    const posted = collectSidebarHostPostedCommands();
+    const consumed = new Set(collectSidebarHostMessageConsumers());
+    const missing = posted.filter((command) => !consumed.has(command));
 
     expect(missing).toEqual([]);
   });

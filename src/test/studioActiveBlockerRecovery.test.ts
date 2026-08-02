@@ -198,4 +198,70 @@ describe('Studio active blocker recovery', () => {
       output: { nextAction: 'workspaceIntelligenceChain' },
     });
   });
+
+  it('preserves source candidates and audit diagnostics when accelerators delegate to source repair', async () => {
+    const inspectDependencySecurity = vi.fn(async (input: { projectName?: string }) => ({
+      ok: true,
+      output: {
+        target: {
+          projectName: input.projectName,
+          sourceFiles: ['package.json', 'package-lock.json'],
+        },
+        resolutionCandidates: [
+          {
+            packageName: 'next',
+            currentRange: '16.2.12',
+            disposition: 'downgrade-only',
+            autoExecutable: false,
+          },
+        ],
+        blockedCandidates: [
+          {
+            packageName: 'next',
+            currentRange: '16.2.12',
+            disposition: 'downgrade-only',
+            autoExecutable: false,
+          },
+        ],
+        nextAction: 'general-source-repair',
+      },
+    }));
+    const repairDependencySecurity = vi.fn(async () => ({
+      ok: false,
+      changed: false,
+      output: { nextAction: 'general-source-repair' },
+      error: 'No safe direct upgrade exists.',
+    }));
+
+    const result = await runStudioActiveBlockerRecovery({
+      blockers: ['dependency vulnerabilities reported'],
+      dependencyProjectNames: ['polyglot-app'],
+      evidenceGeneration: 'doctor-v3',
+      workspacePath: '/workspace',
+      host: host({
+        inspectDependencySecurity,
+        repairDependencySecurity,
+        inspectRemediationPlan: vi.fn(async () => ({ ok: false })),
+        runGovernedCommand: vi.fn(async () => ({ ok: false })),
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      changed: false,
+      output: {
+        recoveryPath: 'general-source-repair',
+        nextAction: 'general-source-repair',
+        unresolvedProjects: ['polyglot-app'],
+        sourceCandidates: ['polyglot-app/package.json', 'polyglot-app/package-lock.json'],
+        dependencyDiagnostics: [
+          expect.objectContaining({
+            projectName: 'polyglot-app',
+            sourceFiles: ['package.json', 'package-lock.json'],
+            nextAction: 'general-source-repair',
+          }),
+        ],
+      },
+    });
+  });
 });

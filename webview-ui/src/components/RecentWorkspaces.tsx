@@ -68,6 +68,20 @@ const getStatusIcon = (status?: string) => {
           <XCircle className="ws-status-icon ws-status-icon--error" />
         </span>
       );
+    case 'repair-required':
+      return (
+        <span title="Workspace Python environment needs repair" aria-label="Repair required">
+          <AlertTriangle className="ws-status-icon ws-status-icon--warn" />
+        </span>
+      );
+    case 'install-required':
+      return (
+        <span title="Workspace Core environment is not installed" aria-label="Install required">
+          <AlertCircle className="ws-status-icon ws-status-icon--warn" />
+        </span>
+      );
+    case 'not-required':
+      return null;
     case 'error':
       return (
         <span title="Error checking RapidKit Core status" aria-label="Status error">

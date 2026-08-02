@@ -52,6 +52,7 @@ export type StudioIncidentBlockingCard = {
   id: string;
   label: string;
   status: string;
+  scope: DashboardEvidenceCard['scope'];
   artifactPath?: string;
   blockers: string[];
 };
@@ -82,6 +83,7 @@ export function buildStudioIncidentGraph(input: {
       id: card.id,
       label: card.label,
       status: card.status,
+      scope: card.scope,
       ...(card.artifactPath ? { artifactPath: card.artifactPath } : {}),
       blockers: [...(card.blockers ?? [])],
     }))

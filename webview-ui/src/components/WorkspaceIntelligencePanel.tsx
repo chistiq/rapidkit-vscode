@@ -34,6 +34,11 @@ import { ColumnHeader } from './SectionHeader';
 import { IntelligenceDetailAccordion } from './IntelligenceDetailAccordion';
 import { WorkspaceGraphPreview } from './WorkspaceGraphPreview';
 import { findWorkspaceGraphSection } from '@/lib/workspaceModelGraphVisual';
+import { getWorkspaceIntelligenceCanonicalStages } from '@workspai-contracts/workspaceIntelligenceChain';
+
+const CANONICAL_INTELLIGENCE_CHAIN_LABEL = getWorkspaceIntelligenceCanonicalStages()
+  .map((stage) => stage.label)
+  .join(' → ');
 
 interface WorkspaceIntelligencePanelProps {
   workspaceStatus: WorkspaceStatus;
@@ -164,7 +169,7 @@ export function WorkspaceIntelligencePanel({
           fullWidth
           icon={<Sparkles size={15} />}
           label="Intelligence Chain"
-          detail="Model → snapshot → diff → impact → verify → agent context → grounding → explain → why → trace"
+          detail={CANONICAL_INTELLIGENCE_CHAIN_LABEL}
           evidenceStatus={intelligenceRunCard?.status}
           pending={
             isPending('workspaceIntelligenceRun') ||
@@ -200,7 +205,7 @@ export function WorkspaceIntelligencePanel({
             'workspaceIntelligenceChain',
             !hasWorkspace ? 'Select a workspace' : undefined
           )}
-          title="workspai: model → snapshot → diff → impact → evidence refresh → verify → context"
+          title="workspai workspace intelligence run --for-agent vscode --json"
         />
         <ActionTile
           icon={<Network size={15} />}

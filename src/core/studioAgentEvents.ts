@@ -19,6 +19,7 @@ export type StudioAgentEventType =
   | 'tool.requested'
   | 'tool.permission'
   | 'tool.started'
+  | 'tool.progress'
   | 'tool.completed'
   | 'tool.failed'
   | 'verify.completed'
@@ -47,6 +48,53 @@ export type StudioAgentPersistedSession = {
   assistantMode: 'agent' | 'ask' | 'plan';
   selectedModelId?: string;
   blockerSignature?: string;
+  goal?: {
+    schemaVersion: 'workspai.verified-goal.v1';
+    id: string;
+    fingerprint: string;
+    createdAt: string;
+    updatedAt: string;
+    workspace: {
+      name: string;
+      path: string;
+    };
+    kind: 'release-readiness' | 'dependency-security' | 'test-coverage';
+    summary: string;
+    scope: {
+      kind: 'workspace' | 'project';
+      projectName?: string;
+      projectPath?: string;
+    };
+    constraints: {
+      allowBreakingChanges: boolean;
+      allowForce: boolean;
+      requireBuild: boolean;
+      requireTests: boolean;
+    };
+    criteria: Record<string, unknown>;
+    baseline: {
+      measuredAt: string;
+      value: number | null;
+      target: number | null;
+      unit: 'percent' | 'blocking-vulnerabilities' | 'gates' | 'unknown';
+      status: 'satisfied' | 'unsatisfied' | 'unavailable';
+      evidencePaths: string[];
+      message: string;
+    };
+    dependencySafetyBaseline?: {
+      manifests: Array<{
+        path: string;
+        ecosystem: string;
+        sha256: string;
+        dependencies?: Record<string, string>;
+      }>;
+    };
+    artifactPaths: {
+      goal: string;
+      status: string;
+      latestReport: string;
+    };
+  };
   status: StudioAgentSessionStatus;
   createdAt: string;
   updatedAt: string;

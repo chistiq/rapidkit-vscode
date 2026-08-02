@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { resolveWorkspaceArtifactPath, WORKSPAI_REPORTS_DIR } from './workspaceIntelligencePaths';
 import * as path from 'path';
 
 import { runWorkspaceIntelligenceCommandWithProgress } from './workspaceIntelligenceProgressRunner';
@@ -110,7 +111,10 @@ export function summarizeGovernanceGateResult(report: unknown): GovernanceGateSu
 }
 
 async function openPipelineEvidence(workspacePath: string): Promise<void> {
-  const reportPath = path.join(workspacePath, '.rapidkit', 'reports', 'pipeline-last-run.json');
+  const reportPath = await resolveWorkspaceArtifactPath(
+    workspacePath,
+    path.join(WORKSPAI_REPORTS_DIR, 'pipeline-last-run.json')
+  );
   try {
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(reportPath));
     await vscode.window.showTextDocument(doc, { preview: true });

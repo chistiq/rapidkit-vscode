@@ -1,8 +1,9 @@
-import { FolderPlus, Package, Sparkles } from 'lucide-react';
+import { ArchiveRestore, FolderInput, FolderPlus, GitMerge, Package, Sparkles } from 'lucide-react';
 import { Drawer } from '../drawer/Drawer';
+import type { CreateTarget } from '../composer/CreateTargetSelector';
 import {
   STACK_LANES,
-  quickStartsForStackLane,
+  quickStartsForCreateTarget,
   type CreationStackLane,
 } from '@/lib/creationPresets';
 
@@ -10,11 +11,16 @@ export type CreateDrawerId = 'add' | 'workspace' | 'project' | null;
 
 interface CreateAddDrawerProps {
   open: boolean;
+  target: CreateTarget;
   stackLane: CreationStackLane;
+  onTargetChange: (target: CreateTarget) => void;
   onStackLaneChange: (lane: CreationStackLane) => void;
   onClose: () => void;
   onOpenWorkspace: () => void;
   onOpenProject: () => void;
+  onAdoptProject: () => void;
+  onImportProject: () => void;
+  onImportWorkspace: () => void;
   onPickQuickStart: (text: string) => void;
 }
 
@@ -24,23 +30,56 @@ interface CreateAddDrawerProps {
  */
 export function CreateAddDrawer({
   open,
+  target,
   stackLane,
+  onTargetChange,
   onStackLaneChange,
   onClose,
   onOpenWorkspace,
   onOpenProject,
+  onAdoptProject,
+  onImportProject,
+  onImportWorkspace,
   onPickQuickStart,
 }: CreateAddDrawerProps) {
-  const quickStarts = quickStartsForStackLane(stackLane);
+  const quickStarts = quickStartsForCreateTarget(stackLane, target);
 
   return (
     <Drawer
       open={open}
       sizing="auto"
       title="Create"
-      subtitle="Pick a stack focus, quick start, or scaffold manually."
+      subtitle={
+        target === 'project'
+          ? 'Add one project to the selected or default workspace.'
+          : 'Create a governed workspace boundary.'
+      }
       onClose={onClose}
     >
+      <section className="ws-drawer-section ws-drawer-section--flush">
+        <span className="ws-drawer-section__label">Create target</span>
+        <div className="ws-drawer-pills" role="radiogroup" aria-label="Create target">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={target === 'workspace'}
+            className={`ws-drawer-pill${target === 'workspace' ? ' is-selected' : ''}`}
+            onClick={() => onTargetChange('workspace')}
+          >
+            Workspace
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={target === 'project'}
+            className={`ws-drawer-pill${target === 'project' ? ' is-selected' : ''}`}
+            onClick={() => onTargetChange('project')}
+          >
+            Project
+          </button>
+        </div>
+      </section>
+
       <section className="ws-drawer-section ws-drawer-section--flush">
         <span className="ws-drawer-section__label">Stack focus</span>
         <div className="ws-drawer-pills" role="tablist" aria-label="Stack focus">
@@ -60,7 +99,9 @@ export function CreateAddDrawer({
       </section>
 
       <section className="ws-drawer-section">
-        <span className="ws-drawer-section__label">Quick starts</span>
+        <span className="ws-drawer-section__label">
+          {target === 'project' ? 'Project quick starts' : 'Workspace quick starts'}
+        </span>
         <div className="ws-drawer-quick-list">
           {quickStarts.map((example) => (
             <button
@@ -73,6 +114,33 @@ export function CreateAddDrawer({
               <span>{example}</span>
             </button>
           ))}
+        </div>
+      </section>
+
+      <section className="ws-drawer-section">
+        <span className="ws-drawer-section__label">Existing software</span>
+        <div className="ws-drawer-action-row">
+          <button type="button" className="ws-drawer-action" onClick={onAdoptProject}>
+            <GitMerge size={14} aria-hidden={true} />
+            <span>
+              <strong>Adopt project</strong>
+              <small>Keep it in place</small>
+            </span>
+          </button>
+          <button type="button" className="ws-drawer-action" onClick={onImportProject}>
+            <FolderInput size={14} aria-hidden={true} />
+            <span>
+              <strong>Import project</strong>
+              <small>Bring it into a workspace</small>
+            </span>
+          </button>
+          <button type="button" className="ws-drawer-action" onClick={onImportWorkspace}>
+            <ArchiveRestore size={14} aria-hidden={true} />
+            <span>
+              <strong>Import workspace</strong>
+              <small>Folder or archive</small>
+            </span>
+          </button>
         </div>
       </section>
 

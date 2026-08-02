@@ -82,8 +82,8 @@ describe('bootstrap compliance remediation', () => {
         sourceCommand: 'npx rapidkit bootstrap --json',
         blockers: [
           'profile.enterprise.ci: enterprise profile expects --ci for deterministic non-interactive mode.',
-          'profile.enterprise.compatibility-matrix: enterprise profile requires .rapidkit/compatibility-matrix.json.',
-          'profile.enterprise.mirror-config: enterprise profile requires .rapidkit/mirror-config.json.',
+          'profile.enterprise.compatibility-matrix: enterprise profile requires .workspai/compatibility-matrix.json.',
+          'profile.enterprise.mirror-config: enterprise profile requires .workspai/mirror-config.json.',
         ],
       },
     });
@@ -93,25 +93,25 @@ describe('bootstrap compliance remediation', () => {
     expect(result.verifyCommand).toBe('npx rapidkit bootstrap --ci --json');
     expect(result.appliedFixes).toEqual([
       {
-        path: path.join('.rapidkit', 'compatibility-matrix.json'),
+        path: path.join('.workspai', 'compatibility-matrix.json'),
         action: 'file-create',
         outcome: 'applied',
       },
       {
-        path: path.join('.rapidkit', 'mirror-config.json'),
+        path: path.join('.workspai', 'mirror-config.json'),
         action: 'file-create',
         outcome: 'applied',
       },
     ]);
 
     const compatibilityMatrix = await fs.readJson(
-      path.join(workspacePath, '.rapidkit', 'compatibility-matrix.json')
+      path.join(workspacePath, '.workspai', 'compatibility-matrix.json')
     );
     expect(compatibilityMatrix.schemaVersion).toBe('rapidkit.compatibility-matrix.v1');
     expect(compatibilityMatrix.runtimes).toEqual({});
 
     const mirrorConfig = await fs.readJson(
-      path.join(workspacePath, '.rapidkit', 'mirror-config.json')
+      path.join(workspacePath, '.workspai', 'mirror-config.json')
     );
     expect(mirrorConfig.schema_version).toBe('1.0');
     expect(mirrorConfig.enabled).toBe(false);

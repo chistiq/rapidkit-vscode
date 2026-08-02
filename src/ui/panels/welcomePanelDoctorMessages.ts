@@ -1,6 +1,7 @@
 import path from 'node:path';
 import fs from 'fs-extra';
 import * as vscode from 'vscode';
+import { resolveWorkspaceReportsDir } from '../../core/workspaceIntelligencePaths';
 
 import { isWorkspacePathAncestor } from '../../core/aiContextResolver';
 import {
@@ -207,9 +208,9 @@ export async function handleViewProjectDoctorReportMessage(
     return;
   }
 
-  const projectReportsDir = path.join(projectPath, '.rapidkit', 'reports');
+  const projectReportsDir = await resolveWorkspaceReportsDir(projectPath);
   const workspaceReportsDir = workspacePath
-    ? path.join(workspacePath, '.rapidkit', 'reports')
+    ? await resolveWorkspaceReportsDir(workspacePath)
     : undefined;
   const reportCandidates = [
     path.join(projectReportsDir, 'doctor-project-last-run.json'),

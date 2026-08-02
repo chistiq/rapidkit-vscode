@@ -52,6 +52,19 @@ describe('dashboardScaffoldEvidence', () => {
     expect(evidenceCardVisualTone(warnCard, 2)).toBe('warn');
   });
 
+  it('recognizes canonical Workspai stale reports as freshness-only evidence', () => {
+    const canonicalStaleCard: DashboardEvidenceCard = {
+      id: 'workspaceVerify',
+      label: 'Workspace Verify',
+      status: 'fail',
+      summary: 'Refresh the model snapshot.',
+      scope: 'workspace',
+      blockers: ['Stale report: .workspai/reports/workspace-model-snapshot.json'],
+    };
+
+    expect(cardCountsAsReleaseBlocker(canonicalStaleCard, 2)).toBe(false);
+  });
+
   it('keeps failed gates as real blockers for populated workspaces', () => {
     const dependencyCard: DashboardEvidenceCard = {
       id: 'readiness',

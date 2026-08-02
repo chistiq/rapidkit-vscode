@@ -51,6 +51,26 @@ describe('resolveLinkedCliVersion', () => {
     expect(await resolveLinkedCliVersion('/tmp/ws')).toBe('0.40.1');
   });
 
+  it('finds a global Workspai package when the Extension Host PATH is stale', async () => {
+    fetchRuntimeCommandSurface.mockResolvedValueOnce(null);
+    mockedRun
+      .mockResolvedValueOnce({ stdout: '', stderr: 'npx not found', exitCode: 127 })
+      .mockResolvedValueOnce({
+        stdout: '/home/dev/.nvm/versions/node/v20.20.2/lib\n└── workspai@0.51.0\n',
+        stderr: '',
+        exitCode: 0,
+      });
+
+    await expect(resolveLinkedCliVersion('/tmp/ws')).resolves.toBe('0.51.0');
+    expect(mockedRun).toHaveBeenLastCalledWith(
+      expect.any(String),
+      expect.arrayContaining(['list', '-g', 'workspai', '--depth=0']),
+      expect.objectContaining({
+        env: expect.objectContaining({ PATH: expect.any(String) }),
+      })
+    );
+  });
+
   it('returns null when no version can be detected', async () => {
     fetchRuntimeCommandSurface.mockResolvedValueOnce(null);
     mockedRun.mockResolvedValueOnce({ stdout: 'no version here', stderr: '', exitCode: 1 });

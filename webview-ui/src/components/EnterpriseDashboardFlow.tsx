@@ -464,7 +464,7 @@ export function EnterpriseDashboardFlow({
                 label="Export for Ship Handoff"
                 detail={
                   archiveCard?.status === 'missing'
-                    ? 'Create .rapidkit-archive.zip and refresh ship manifest'
+                    ? 'Create .workspai-archive.zip and refresh ship manifest'
                     : archiveCard?.summary || 'Portable workspace archive'
                 }
                 evidenceStatus={archiveCard?.status}

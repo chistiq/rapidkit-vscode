@@ -368,9 +368,9 @@ export async function createProjectCommand(
         if (exitCode !== 0) {
           const stderr = (result as { stderr?: string }).stderr ?? '';
           const stdout = (result as { stdout?: string }).stdout ?? '';
-          logger.error('rapidkit create project failed', { exitCode, stderr, stdout });
+          logger.error('workspai create project failed', { exitCode, stderr, stdout });
           throw new Error(
-            stderr.trim() || stdout.trim() || `rapidkit create project exited with code ${exitCode}`
+            stderr.trim() || stdout.trim() || `workspai create project exited with code ${exitCode}`
           );
         }
 
@@ -462,7 +462,7 @@ export async function createProjectCommand(
           } else if (selected === addModulesAction) {
             await vscode.commands.executeCommand('workspai.addModule', projectPath);
           } else if (selected === docsAction) {
-            await vscode.env.openExternal(vscode.Uri.parse('https://www.workspai.com/docs'));
+            await vscode.env.openExternal(vscode.Uri.parse('https://www.workspai.dev/learn'));
           }
         };
 
@@ -516,7 +516,7 @@ export async function createProjectCommand(
 
         if (selected === helpAction) {
           await vscode.env.openExternal(
-            vscode.Uri.parse('https://www.workspai.com/docs/troubleshooting')
+            vscode.Uri.parse('https://www.workspai.dev/learn/workspace-doctor')
           );
         }
       }

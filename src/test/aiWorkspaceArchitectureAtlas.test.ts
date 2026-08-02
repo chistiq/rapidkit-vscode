@@ -99,6 +99,35 @@ describe('aiWorkspaceArchitectureAtlas', () => {
     expect(fingerprint?.hasRapidKitMarker).toBe(true);
   });
 
+  it('prefers canonical project metadata and module registry over legacy copies', () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-workspai-project-'));
+    tempDirs.push(project);
+    fs.mkdirSync(path.join(project, '.workspai'), { recursive: true });
+    fs.mkdirSync(path.join(project, '.rapidkit'), { recursive: true });
+    fs.mkdirSync(path.join(project, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(project, 'src', 'main.ts'), '');
+    fs.writeFileSync(
+      path.join(project, '.workspai', 'project.json'),
+      JSON.stringify({ kit_name: 'nestjs.standard', module_support: true })
+    );
+    fs.writeFileSync(
+      path.join(project, '.rapidkit', 'project.json'),
+      JSON.stringify({ kit_name: 'fastapi.standard', module_support: false })
+    );
+    fs.writeFileSync(
+      path.join(project, '.workspai', 'registry.json'),
+      JSON.stringify({ installed_modules: [{ slug: 'free/cache/redis' }] })
+    );
+    fs.writeFileSync(
+      path.join(project, '.rapidkit', 'registry.json'),
+      JSON.stringify({ installed_modules: [{ slug: 'legacy/module' }] })
+    );
+
+    const fingerprint = scanProjectArchitectureFingerprint(project);
+    expect(fingerprint?.kit).toBe('nestjs.standard');
+    expect(fingerprint?.installedModuleSlugs).toEqual(['free/cache/redis']);
+  });
+
   it('builds polyglot workspace atlas from multiple projects', async () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-ws-'));
     tempDirs.push(workspace);

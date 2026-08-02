@@ -17,7 +17,7 @@ import { recordTtfvIfNeeded } from './ttfvBridge';
 
 /**
  * Evidence-driven Getting Started walkthrough (roadmap item 2.7). Each checklist
- * step is marked done only when its underlying `.rapidkit/reports/` artifact
+ * step is marked done only when its canonical `.workspai/reports/` artifact
  * exists (and, for doctor, is green) — not merely when the user clicks "Run".
  * Completion is surfaced to VS Code via `setContext` keys consumed by the
  * walkthrough `completionEvents` (`onContext:...`).
@@ -129,7 +129,8 @@ export async function resolveWalkthroughEvidenceState(
  * any evidence refresh path; missing workspace clears all steps.
  *
  * When `options.context` is supplied, also attempts a one-time TTFV record
- * (roadmap item 2.9) from on-disk `.rapidkit/reports/` artifacts.
+ * (roadmap item 2.9) from the canonical on-disk `.workspai/reports/`
+ * authority, with the legacy report directory retained as a read-only fallback.
  */
 export async function syncWalkthroughEvidenceContext(
   workspacePath: string | null | undefined,

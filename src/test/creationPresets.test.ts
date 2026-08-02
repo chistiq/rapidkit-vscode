@@ -4,7 +4,9 @@ import {
   defaultInstallPythonEngineForProfile,
   defaultProfileForStackLane,
   profileRequiresPythonInstallMethod,
+  quickStartsForCreateTarget,
   recommendedProfilesForStackLane,
+  resolveCreatePlaceholder,
   resolveDefaultWorkspaceName,
   resolveManualWorkspaceNamePlaceholder,
   stackLaneGuidance,
@@ -58,5 +60,27 @@ describe('creationPresets manual workspace helpers', () => {
     expect(defaultInstallPythonEngineForProfile('python-only')).toBe(true);
     expect(defaultInstallPythonEngineForProfile('polyglot')).toBe(true);
     expect(defaultInstallPythonEngineForProfile('enterprise')).toBe(true);
+  });
+
+  it('keeps workspace and project quick starts aligned with the selected create target', () => {
+    expect(quickStartsForCreateTarget('polyglot', 'workspace')[0]).toContain('Next.js');
+    expect(quickStartsForCreateTarget('polyglot', 'workspace')[0]).toContain('NestJS');
+
+    const projectPrompts = quickStartsForCreateTarget('polyglot', 'project');
+    expect(projectPrompts).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Next.js full-stack application'),
+        expect.stringContaining('Electron desktop application'),
+      ])
+    );
+    expect(projectPrompts.every((prompt) => !prompt.includes(' + '))).toBe(true);
+  });
+
+  it('uses target- and scope-aware Create composer placeholders', () => {
+    expect(resolveCreatePlaceholder('polyglot', 'workspace')).toContain('Polyglot SaaS');
+    expect(resolveCreatePlaceholder('frontend', 'project', 'commerce-wsp')).toContain(
+      'frontend project to add to commerce-wsp'
+    );
+    expect(resolveCreatePlaceholder('balanced', 'project')).toContain('one project');
   });
 });

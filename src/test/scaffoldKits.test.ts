@@ -16,7 +16,7 @@ describe('scaffold kits', () => {
       expect.arrayContaining(FRONTEND_SCAFFOLD_KITS.map((kit) => kit.kitId))
     );
     expect(FRONTEND_SCAFFOLD_KITS).toHaveLength(11);
-    expect(SCAFFOLD_KIT_IDS).toHaveLength(18);
+    expect(SCAFFOLD_KIT_IDS).toHaveLength(23);
   });
 
   it('resolves frontend kits by kit id and framework alias', () => {
@@ -30,6 +30,8 @@ describe('scaffold kits', () => {
     expect(isBackendScaffoldFramework('nestjs')).toBe(true);
     expect(isBackendScaffoldFramework('nextjs')).toBe(false);
     expect(isBackendScaffoldFramework('vite-vue')).toBe(false);
+    expect(isBackendScaffoldFramework('rust')).toBe(true);
+    expect(isBackendScaffoldFramework('laravel')).toBe(true);
   });
 
   it('keeps the webview enterprise dashboard aligned with eleven frontend starters', () => {

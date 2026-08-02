@@ -68,9 +68,11 @@ import {
   type SidebarStudioActionProgressView,
 } from '@/lib/sidebarStudioActionProgress';
 import { appendStudioRepairTimelineEntry } from '@/lib/studioRepairTimeline';
+import { resolveStudioIncidentRepairStatus } from '@/lib/studioIncidentRepairStatus';
 import {
   resolveStudioIntelligencePhaseFromCard,
   resolveStudioIntelligencePhaseFromToolEvent,
+  studioIntelligencePhaseLabel,
 } from '@/lib/studioIntelligencePhaseRail';
 import {
   scopeFromHandoff,
@@ -431,6 +433,10 @@ export function SecondarySidebar() {
     summary: string;
     nextAction?: string;
   } | null>(null);
+  const [surfaceActionFailure, setSurfaceActionFailure] = useState<{
+    title: string;
+    summary: string;
+  } | null>(null);
 
   useEffect(() => {
     persistStudioRepairState({
@@ -506,13 +512,14 @@ export function SecondarySidebar() {
         key,
         workspaceName: incidentScope.workspaceName,
         workspacePath: incidentScope.workspacePath,
-        projectName: incidentScope.projectName,
-        projectPath: incidentScope.projectPath,
+        projectName: handoff.scope === 'project' ? incidentScope.projectName : undefined,
+        projectPath: handoff.scope === 'project' ? incidentScope.projectPath : undefined,
         cardId: handoff.cardId,
         cardLabel: handoff.cardLabel,
         cardStatus: handoff.cardStatus,
         scope: handoff.scope,
         blockers: handoff.blockers,
+        affectedProjectNames: handoff.affectedProjectNames,
         blockerSignature: handoff.blockerSignature,
         commandRunCount: handoff.commandRunCount,
         resolutionClass: handoff.resolutionClass,
@@ -585,6 +592,7 @@ export function SecondarySidebar() {
       cardLabel: incident.cardLabel,
       cardStatus: incident.cardStatus ?? 'fail',
       blockers: incident.blockers ?? [],
+      affectedProjectNames: incident.affectedProjectNames,
       artifactPath: incident.artifactPath ?? '',
       sourceCommand: incident.sourceCommand ?? '',
       scope: incident.scope ?? 'workspace',
@@ -780,7 +788,30 @@ export function SecondarySidebar() {
         const eventSessionId = typeof event?.sessionId === 'string' ? event.sessionId : undefined;
         const invocationId = typeof event?.toolCallId === 'string' ? event.toolCallId : undefined;
         const replay = data.replay === true;
-        if (eventType === 'tool.started') {
+        if (
+          eventType === 'request.started' &&
+          eventData.goal &&
+          typeof eventData.goal === 'object' &&
+          !Array.isArray(eventData.goal)
+        ) {
+          const goal = eventData.goal as Record<string, unknown>;
+          startStudioActionProgress({
+            action: 'verified-goal',
+            status: 'running',
+            phase: 'goal-baseline',
+            title:
+              goal.kind === 'test-coverage'
+                ? 'Raising verified coverage'
+                : goal.kind === 'dependency-security'
+                  ? 'Securing dependencies'
+                  : 'Preparing release',
+            summary:
+              typeof goal.summary === 'string'
+                ? goal.summary
+                : 'Studio is executing a durable engineering goal.',
+            invocationId,
+          });
+        } else if (eventType === 'tool.started') {
           const toolName = String(eventData.toolName ?? 'studio-agent');
           const copy = studioAgentToolProgressCopy(toolName, 'running');
           const intelligencePhase = resolveStudioIntelligencePhaseFromToolEvent({
@@ -797,6 +828,30 @@ export function SecondarySidebar() {
               typeof eventData.reason === 'string' && eventData.reason.trim()
                 ? eventData.reason
                 : 'Continuing the evidence-backed repair.',
+            intelligencePhase,
+            invocationId,
+          });
+        } else if (
+          eventType === 'tool.progress' &&
+          eventData.intelligenceMilestoneStatus === 'started'
+        ) {
+          const toolName = String(eventData.toolName ?? 'run-governed-command');
+          const intelligencePhase = resolveStudioIntelligencePhaseFromToolEvent({
+            reportedPhase: eventData.intelligencePhase,
+          });
+          if (!intelligencePhase) {
+            break;
+          }
+          const label = studioIntelligencePhaseLabel(intelligencePhase) ?? 'Intelligence stage';
+          startStudioActionProgress({
+            action: toolName,
+            status: 'running',
+            phase: `intelligence-${intelligencePhase}`,
+            title: `Running ${label}`,
+            summary:
+              typeof eventData.message === 'string' && eventData.message.trim()
+                ? eventData.message
+                : `Workspai is executing the ${label} stage from the canonical CLI contract.`,
             intelligencePhase,
             invocationId,
           });
@@ -847,9 +902,17 @@ export function SecondarySidebar() {
             )
             .map((entry) => entry.relativePath)
             .filter((entry): entry is string => typeof entry === 'string');
-          const changedPaths = [...new Set([...appliedFixes, ...patchedPaths])];
+          const reportedChangedPaths = Array.isArray(toolOutput?.changedPaths)
+            ? toolOutput.changedPaths.filter(
+                (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
+              )
+            : [];
+          const changedPaths = [
+            ...new Set([...appliedFixes, ...patchedPaths, ...reportedChangedPaths]),
+          ];
           const changedFiles =
-            toolName === 'apply-workspace-patch' &&
+            (toolName === 'apply-workspace-patch' ||
+              toolName === 'complete-dependency-transaction') &&
             eventType === 'tool.completed' &&
             changedPaths.length > 0;
           startStudioActionProgress({
@@ -874,17 +937,84 @@ export function SecondarySidebar() {
           });
         } else if (eventType === 'verify.completed') {
           const resolved = eventData.ok === true && eventData.cardBlocking === false;
+          const verifyOutput =
+            eventData.output &&
+            typeof eventData.output === 'object' &&
+            !Array.isArray(eventData.output)
+              ? (eventData.output as Record<string, unknown>)
+              : null;
+          const goalStatus =
+            verifyOutput?.status &&
+            typeof verifyOutput.status === 'object' &&
+            !Array.isArray(verifyOutput.status)
+              ? (verifyOutput.status as Record<string, unknown>)
+              : null;
+          if (goalStatus && typeof goalStatus.goalId === 'string') {
+            const progress =
+              goalStatus.progress &&
+              typeof goalStatus.progress === 'object' &&
+              !Array.isArray(goalStatus.progress)
+                ? (goalStatus.progress as Record<string, unknown>)
+                : null;
+            const remaining = Array.isArray(goalStatus.blockingReasons)
+              ? goalStatus.blockingReasons.filter(
+                  (entry): entry is string => typeof entry === 'string'
+                )
+              : [];
+            startStudioActionProgress({
+              action: 'verify-goal',
+              status: resolved ? 'done' : 'running',
+              phase: resolved ? 'goal-verified' : 'goal-progress',
+              title: resolved ? 'Engineering goal verified' : 'Goal still has work',
+              summary: resolved
+                ? String(
+                    progress?.message ?? 'Every required goal criterion has fresh passing evidence.'
+                  )
+                : String(
+                    remaining[0] ??
+                      progress?.message ??
+                      eventData.error ??
+                      'The goal remains active. Studio is continuing from current evidence.'
+                  ),
+              invocationId,
+              intelligencePhase: 'verify',
+            });
+            break;
+          }
+          const cardVerification =
+            verifyOutput?.cardVerification &&
+            typeof verifyOutput.cardVerification === 'object' &&
+            !Array.isArray(verifyOutput.cardVerification)
+              ? (verifyOutput.cardVerification as Record<string, unknown>)
+              : null;
+          const workspaceVerification =
+            verifyOutput?.workspaceVerification &&
+            typeof verifyOutput.workspaceVerification === 'object' &&
+            !Array.isArray(verifyOutput.workspaceVerification)
+              ? (verifyOutput.workspaceVerification as Record<string, unknown>)
+              : null;
+          const localResolved = cardVerification?.resolved === true;
+          const workspaceResolved = workspaceVerification?.resolved === true;
+          const remainingCards = Array.isArray(workspaceVerification?.blockingCards)
+            ? workspaceVerification.blockingCards.length
+            : 0;
           startStudioActionProgress({
             action: 'verify-blocker',
             status: resolved ? 'done' : 'running',
             phase: resolved ? 'verified' : 'verify-observation',
-            title: resolved ? 'Verified' : 'Verify found remaining work',
+            title: resolved
+              ? 'Card and workspace verified'
+              : localResolved && !workspaceResolved
+                ? 'Card cleared · workspace still blocked'
+                : 'Verify found remaining work',
             summary: resolved
-              ? 'Fresh evidence confirms that the card is no longer blocking.'
-              : String(
-                  eventData.error ??
-                    'The blocker remains active. Studio Agent is continuing from this evidence.'
-                ),
+              ? 'Fresh evidence confirms that the selected card and its dependent workspace gates are clear.'
+              : localResolved && !workspaceResolved
+                ? `The selected card is clear. ${remainingCards} related workspace blocker${remainingCards === 1 ? '' : 's'} remain and Studio will continue with the next one.`
+                : String(
+                    eventData.error ??
+                      'The blocker remains active. Studio Agent is continuing from this evidence.'
+                  ),
             invocationId,
             intelligencePhase: 'verify',
           });
@@ -1092,6 +1222,12 @@ export function SecondarySidebar() {
           setScope(resolveScopeFromPayload(data));
         }
         break;
+      case 'sidebarImpactThinking':
+        impact.setActivity(
+          String(data.sessionId ?? ''),
+          typeof data.label === 'string' ? data.label : 'Reading workspace evidence...'
+        );
+        break;
       case 'sidebarImpactChunk':
         impact.appendChunk(String(data.sessionId ?? ''), (data.text as string) || '');
         break;
@@ -1112,6 +1248,12 @@ export function SecondarySidebar() {
           setScope(resolveScopeFromPayload(data));
         }
         break;
+      case 'sidebarStudioThinking':
+        studio.setActivity(
+          String(data.sessionId ?? ''),
+          typeof data.label === 'string' ? data.label : 'Preparing the next safe step...'
+        );
+        break;
       case 'sidebarStudioChunk':
         studio.appendChunk(String(data.sessionId ?? ''), (data.text as string) || '');
         break;
@@ -1123,7 +1265,7 @@ export function SecondarySidebar() {
           data.answer as string | undefined
         );
         const completedIncidentKey = resolveStudioIncidentKeyForSession(completedSessionId);
-        if (completedIncidentKey) {
+        if (completedIncidentKey && data.verified === true) {
           updateStudioIncidentRepairState(completedIncidentKey, {
             repairStatus: 'done',
             lastActionTitle: 'Verified',
@@ -1134,6 +1276,8 @@ export function SecondarySidebar() {
             lastActionAt: new Date().toISOString(),
           });
         }
+        setStudioAutoFixBusy(false);
+        setStudioPatchApplyBusy(false);
         break;
       }
       case 'sidebarStudioEvidencePulse': {
@@ -1177,6 +1321,18 @@ export function SecondarySidebar() {
         setStudioAutoFixBusy(false);
         break;
       }
+      case 'sidebarActionError':
+        setSurfaceActionFailure({
+          title:
+            typeof data.title === 'string' && data.title.trim()
+              ? data.title.trim()
+              : 'Action unavailable',
+          summary:
+            typeof data.error === 'string' && data.error.trim()
+              ? data.error.trim()
+              : 'This action is not available in the current workspace.',
+        });
+        break;
       case 'sidebarBlockerHandoff': {
         const nextHandoff = parseStudioBlockerHandoffView(data.handoff);
         if (nextHandoff) {
@@ -1527,7 +1683,11 @@ export function SecondarySidebar() {
               ),
             }));
             updateStudioIncidentRepairState(progressIncidentKey, {
-              repairStatus: nextProgress.status === 'done' ? 'done' : nextProgress.status,
+              repairStatus: resolveStudioIncidentRepairStatus({
+                progressStatus: nextProgress.status,
+                phase: nextProgress.phase,
+                cardStatus: progressHandoff?.cardStatus,
+              }),
               lastActionTitle: nextProgress.title,
               lastActionSummary: nextProgress.summary,
               lastActionAt: new Date().toISOString(),
@@ -1709,6 +1869,26 @@ export function SecondarySidebar() {
 
   const handleFocusView = (target: 'workspaces' | 'projects') => {
     vscode.postMessage('sidebarFocusView', { target }, META);
+  };
+
+  const handleAdoptProject = () => {
+    vscode.postMessage(
+      'adoptExistingProject',
+      scope.workspacePath ? { workspacePath: scope.workspacePath } : {},
+      META
+    );
+  };
+
+  const handleImportProject = () => {
+    vscode.postMessage(
+      'importExistingProject',
+      scope.workspacePath ? { workspacePath: scope.workspacePath } : {},
+      META
+    );
+  };
+
+  const handleImportWorkspace = () => {
+    vscode.postMessage('importExistingWorkspace', {}, META);
   };
 
   const handleBootstrapCreatedWorkspace = (input: {
@@ -2044,7 +2224,11 @@ export function SecondarySidebar() {
       [incidentKey]: appendStudioRepairTimelineEntry(prev[incidentKey] ?? [], normalizedProgress),
     }));
     updateStudioIncidentRepairState(incidentKey, {
-      repairStatus: normalizedProgress.status === 'done' ? 'done' : normalizedProgress.status,
+      repairStatus: resolveStudioIncidentRepairStatus({
+        progressStatus: normalizedProgress.status,
+        phase: normalizedProgress.phase,
+        cardStatus: progressHandoff?.cardStatus,
+      }),
       lastActionTitle: normalizedProgress.title,
       lastActionSummary: normalizedProgress.summary,
       lastActionAt: new Date().toISOString(),
@@ -2435,6 +2619,22 @@ export function SecondarySidebar() {
           );
         })}
       </div>
+      {surfaceActionFailure ? (
+        <div className="ws-sidebar__advisor-alert" role="alert">
+          <AlertTriangle size={14} strokeWidth={1.8} aria-hidden="true" />
+          <div>
+            <strong>{surfaceActionFailure.title}</strong>
+            <span>{surfaceActionFailure.summary}</span>
+          </div>
+          <button
+            type="button"
+            className="ws-sidebar__inline"
+            onClick={() => setSurfaceActionFailure(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       <CreateTab
         active={activeTab === 'create'}
@@ -2456,6 +2656,9 @@ export function SecondarySidebar() {
         onApprovePlan={handleApprovePlan}
         onRevisePlan={handleRevisePlan}
         onManualCreate={handleManualCreate}
+        onAdoptProject={handleAdoptProject}
+        onImportProject={handleImportProject}
+        onImportWorkspace={handleImportWorkspace}
         onBootstrapWorkspace={handleBootstrapCreatedWorkspace}
         onFocusView={handleFocusView}
       />

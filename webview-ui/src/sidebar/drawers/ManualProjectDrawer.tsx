@@ -12,7 +12,13 @@ const BACKEND_KEYS = [
   'gofiber-standard',
   'gogin-standard',
   'dotnet-webapi-clean',
+  'rust-axum',
+  'php-laravel',
 ];
+
+const DESKTOP_KEYS = ['desktop-tauri', 'desktop-electron'];
+
+const EXTENSION_KEYS = ['vscode-extension'];
 
 const FRONTEND_KEYS = [
   'nextjs',
@@ -76,8 +82,20 @@ export function ManualProjectDrawer({
       setError('Project name is required');
       return false;
     }
-    if (!/^[a-zA-Z0-9_-]+$/.test(value)) {
-      setError('Only letters, numbers, hyphens, and underscores');
+    if (!/^[a-z][a-z0-9_-]*$/.test(value)) {
+      setError('Start with a lowercase letter; use lowercase letters, numbers, - or _');
+      return false;
+    }
+    if (value.length < 2 || value.length > 214) {
+      setError('Use between 2 and 214 characters');
+      return false;
+    }
+    if (
+      ['test', 'tests', 'src', 'dist', 'build', 'lib', 'python', 'pip', 'poetry', 'node', 'npm', 'rapidkit'].includes(
+        value
+      )
+    ) {
+      setError('This name is reserved; choose a different project name');
       return false;
     }
     setError('');
@@ -149,6 +167,8 @@ export function ManualProjectDrawer({
 
       {renderFrameworkRow('Backend', BACKEND_KEYS)}
       {renderFrameworkRow('Frontend', FRONTEND_KEYS)}
+      {renderFrameworkRow('Desktop', DESKTOP_KEYS)}
+      {renderFrameworkRow('Extension', EXTENSION_KEYS)}
 
       <section className="ws-drawer-section">
         <label className="ws-drawer-field">

@@ -35,6 +35,7 @@ export interface ChatSessionIncident {
   cardStatus?: 'pass' | 'warn' | 'fail' | 'missing';
   scope?: 'workspace' | 'project';
   blockers?: string[];
+  affectedProjectNames?: string[];
   blockerSignature?: string;
   commandRunCount?: number;
   resolutionClass?: string;
@@ -76,6 +77,8 @@ export interface ChatSession {
   title: string;
   messages: ChatTurn[];
   status: ChatSessionStatus;
+  /** Short host-authored description of the current model operation. */
+  activityLabel?: string;
   modelId?: string;
   error?: string;
   /** Studio-only: the active mode for the session. */

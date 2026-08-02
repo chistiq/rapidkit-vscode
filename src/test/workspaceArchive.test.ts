@@ -12,6 +12,8 @@ import {
   shouldExcludeWorkspaceArchivePath,
   validateWorkspaceArchiveEntries,
   verifyWorkspaceArchive,
+  LEGACY_WORKSPACE_ARCHIVE_MANIFEST_PATH,
+  resolveWorkspaceArchiveManifestPath,
   WORKSPACE_ARCHIVE_MANIFEST_PATH,
 } from '../utils/workspaceArchive';
 
@@ -43,10 +45,55 @@ describe('workspaceArchive', () => {
     });
 
     expect(manifestPath).toContain('archive-manifest.json');
+    expect(path.relative(workspacePath, manifestPath).replace(/\\/g, '/')).toBe(
+      WORKSPACE_ARCHIVE_MANIFEST_PATH
+    );
     const record = await fs.readJson(manifestPath);
     expect(record.summary).toContain('exported to');
     expect(record.files.length).toBeGreaterThan(0);
     expect(record.exportArchivePath).toContain('demo-workspace.rapidkit-archive.zip');
+  });
+
+  it('resolves canonical ship evidence before the legacy compatibility manifest', async () => {
+    const workspacePath = await makeTempDir('workspai-archive-resolution-');
+    const legacyPath = path.join(workspacePath, LEGACY_WORKSPACE_ARCHIVE_MANIFEST_PATH);
+    const canonicalPath = path.join(workspacePath, WORKSPACE_ARCHIVE_MANIFEST_PATH);
+    await fs.ensureDir(path.dirname(legacyPath));
+    await fs.writeJson(legacyPath, { summary: 'legacy' });
+    expect(await resolveWorkspaceArchiveManifestPath(workspacePath)).toBe(legacyPath);
+
+    await fs.ensureDir(path.dirname(canonicalPath));
+    await fs.writeJson(canonicalPath, { summary: 'canonical' });
+    expect(await resolveWorkspaceArchiveManifestPath(workspacePath)).toBe(canonicalPath);
+  });
+
+  it('continues to verify legacy archives while canonical output becomes authoritative', async () => {
+    const archiveRoot = await makeTempDir('workspai-legacy-archive-');
+    const archivePath = path.join(archiveRoot, 'legacy.rapidkit-archive.zip');
+    const zip = new AdmZip();
+    const marker = Buffer.from('{}');
+    zip.addFile('.rapidkit-workspace', marker);
+    zip.addFile(
+      LEGACY_WORKSPACE_ARCHIVE_MANIFEST_PATH,
+      Buffer.from(
+        JSON.stringify({
+          version: 1,
+          kind: 'workspai.workspace.archive',
+          workspaceName: 'legacy',
+          exportedAt: '2026-06-02T00:00:00.000Z',
+          files: [
+            {
+              path: '.rapidkit-workspace',
+              size: marker.length,
+              sha256: '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+            },
+          ],
+        })
+      )
+    );
+    zip.writeZip(archivePath);
+
+    expect(verifyWorkspaceArchive({ archivePath }).status).toBe('passed');
   });
 
   it('rejects unsafe archive entry names across operating systems', () => {
@@ -64,6 +111,7 @@ describe('workspaceArchive', () => {
 
   it('uses stable archive names and exclusion rules', () => {
     expect(sanitizeWorkspaceArchiveName('My Workspace.rapidkit-archive.zip')).toBe('my-workspace');
+    expect(sanitizeWorkspaceArchiveName('My Workspace.workspai-archive.zip')).toBe('my-workspace');
     expect(sanitizeWorkspaceArchiveName('  ')).toBe('imported-workspace');
 
     expect(shouldExcludeWorkspaceArchivePath('api/node_modules/pkg/index.js')).toBe(true);

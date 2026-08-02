@@ -179,6 +179,24 @@ describe('workspaceHygieneProbes', () => {
       expect(probe.status).toBe('pass');
     });
 
+    it('uses canonical project metadata when no runtime manifest is available', async () => {
+      const projectDir = path.join(workspacePath, 'canonical-api');
+      await fs.ensureDir(path.join(projectDir, '.workspai'));
+      await fs.writeJSON(path.join(projectDir, '.workspai', 'project.json'), {
+        framework: 'nestjs',
+      });
+      await fs.writeFile(
+        path.join(workspacePath, 'README.md'),
+        '# Canonical API\n\nRun this NestJS service with `nest start`.\n',
+        'utf8'
+      );
+
+      const report = await runWorkspaceHygieneProbes(workspacePath);
+      expect(
+        report.probes.find((probe) => probe.probeId === 'readme-framework-alignment')?.status
+      ).toBe('pass');
+    });
+
     it('warns when README.md references FastAPI but the project uses NestJS', async () => {
       // NestJS project
       const projectDir = path.join(workspacePath, 'my-nest-prj');

@@ -201,7 +201,7 @@ export async function addModuleCommand(
 
               if (selected === setupAction) {
                 await vscode.env.openExternal(
-                  vscode.Uri.parse('https://www.workspai.com/docs/troubleshooting/python')
+                  vscode.Uri.parse('https://www.workspai.dev/learn/create-adopt')
                 );
               }
             } else {
@@ -240,7 +240,7 @@ export async function addModuleCommand(
 
           if (selected === viewDocsAction) {
             await vscode.env.openExternal(
-              vscode.Uri.parse(`https://www.workspai.com/docs/modules/${module!.id}`)
+              vscode.Uri.parse(`https://www.getrapidkit.com/modules/${module!.id}`)
             );
           } else if (selected === addMoreAction) {
             await vscode.commands.executeCommand('workspai.addModule', projectPath);

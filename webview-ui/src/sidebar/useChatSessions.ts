@@ -399,8 +399,23 @@ export function useChatSessions(key: StoreKey, idPrefix: string) {
         } else {
           messages.push({ role: 'assistant', content: text });
         }
-        return { ...session, status: 'streaming', messages };
+        return { ...session, status: 'streaming', activityLabel: undefined, messages };
       });
+    },
+    [update]
+  );
+
+  const setActivity = useCallback(
+    (sessionId: string, activityLabel: string) => {
+      const normalized = activityLabel.trim();
+      if (!sessionId || !normalized) {
+        return;
+      }
+      update(sessionId, (session) => ({
+        ...session,
+        status: 'streaming',
+        activityLabel: normalized,
+      }));
     },
     [update]
   );
@@ -413,7 +428,7 @@ export function useChatSessions(key: StoreKey, idPrefix: string) {
         if (finalAnswer && lastIndex >= 0 && messages[lastIndex].role === 'assistant') {
           messages[lastIndex] = { role: 'assistant', content: finalAnswer };
         }
-        return { ...session, status: 'done', modelId, messages };
+        return { ...session, status: 'done', activityLabel: undefined, modelId, messages };
       });
     },
     [update]
@@ -421,7 +436,12 @@ export function useChatSessions(key: StoreKey, idPrefix: string) {
 
   const failSession = useCallback(
     (sessionId: string, error: string) => {
-      update(sessionId, (session) => ({ ...session, status: 'error', error }));
+      update(sessionId, (session) => ({
+        ...session,
+        status: 'error',
+        activityLabel: undefined,
+        error,
+      }));
     },
     [update]
   );
@@ -452,6 +472,7 @@ export function useChatSessions(key: StoreKey, idPrefix: string) {
     selectSession,
     deleteSession,
     startQuery,
+    setActivity,
     appendChunk,
     finishStreaming,
     failSession,

@@ -23,6 +23,11 @@ export type WorkspaiProjectType =
   | 'springboot'
   | 'rails'
   | 'dotnet'
+  | 'rust'
+  | 'laravel'
+  | 'tauri'
+  | 'electron'
+  | 'vscode-extension'
   | 'nextjs'
   | 'react'
   | 'vite'
@@ -84,7 +89,7 @@ export interface WorkspaceConfig {
   name: string;
   path: string;
   initGit: boolean;
-  /** Bootstrap profile written into .rapidkit/workspace.json at creation time. */
+  /** Bootstrap profile written into the canonical Workspai workspace metadata. */
   profile?:
     | 'minimal'
     | 'python-only'

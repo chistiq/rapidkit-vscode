@@ -3,6 +3,10 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { detectRapidkitProject } from './bridge/pythonRapidkit';
+import {
+  resolveWorkspaceArtifactPath,
+  resolveWorkspaceReportsDir,
+} from './workspaceIntelligencePaths';
 
 const execFileAsync = promisify(execFile);
 
@@ -41,10 +45,10 @@ export async function resolveProjectScanRoot(
   }
 
   const projectJson = await safeReadJson<Record<string, unknown>>(
-    path.join(scanRoot, '.rapidkit', 'project.json')
+    await resolveWorkspaceArtifactPath(scanRoot, '.workspai/project.json')
   );
   const contextJson = await safeReadJson<Record<string, unknown>>(
-    path.join(scanRoot, '.rapidkit', 'context.json')
+    await resolveWorkspaceArtifactPath(scanRoot, '.workspai/context.json')
   );
 
   if (typeof projectJson?.kit_name === 'string') {
@@ -182,7 +186,8 @@ async function readDoctorEvidence(scanRoot: string): Promise<{
     };
   };
 } | null> {
-  return await safeReadJson(path.join(scanRoot, '.rapidkit', 'reports', 'doctor-last-run.json'));
+  const reportsDir = await resolveWorkspaceReportsDir(scanRoot);
+  return await safeReadJson(path.join(reportsDir, 'doctor-last-run.json'));
 }
 
 export function normalizeKitName(

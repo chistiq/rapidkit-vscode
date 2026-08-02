@@ -47,7 +47,7 @@ describe('studioCardSourceShell', () => {
 
   it('uses an explicit archive output path for Studio archive refreshes', () => {
     expect(CARD_SOURCE_SHELL.archive).toBe(
-      'npx workspai workspace export --output team-workspace.rapidkit-archive.zip --json'
+      'npx workspai workspace export --output team-workspace.workspai-archive.zip --json'
     );
   });
 

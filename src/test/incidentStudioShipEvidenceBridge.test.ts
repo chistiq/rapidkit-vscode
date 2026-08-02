@@ -39,7 +39,9 @@ describe('incidentStudioShipEvidenceBridge', () => {
         summary: { verdict: 'approved' },
       },
     });
-    await fs.writeJSON(path.join(workspacePath, '.rapidkit', 'archive-manifest.json'), {
+    const archiveManifestPath = path.join(workspacePath, '.workspai', 'archive-manifest.json');
+    await fs.ensureDir(path.dirname(archiveManifestPath));
+    await fs.writeJSON(archiveManifestPath, {
       generatedAt: '2026-06-16T10:03:00.000Z',
       summary: 'Archive ready',
     });

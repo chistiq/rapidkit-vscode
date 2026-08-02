@@ -1,9 +1,9 @@
 import {
-  getWorkspaceIntelligenceExecutionMilestones,
-  isWorkspaceIntelligenceMilestoneId,
+  getWorkspaceIntelligenceCanonicalStages,
+  isWorkspaceIntelligenceStageId,
 } from '@workspai-contracts/workspaceIntelligenceChain';
 
-export const STUDIO_INTELLIGENCE_PHASES = getWorkspaceIntelligenceExecutionMilestones().map(
+export const STUDIO_INTELLIGENCE_PHASES = getWorkspaceIntelligenceCanonicalStages().map(
   ({ id, label, kind }) => ({ id, label, kind })
 );
 
@@ -17,10 +17,7 @@ export type StudioIntelligencePhaseWindowEntry = (typeof STUDIO_INTELLIGENCE_PHA
 export type StudioIntelligencePhaseDirection = 'forward' | 'backward' | 'idle';
 
 const COMMAND_PHASES: Record<string, StudioIntelligencePhaseId> = {
-  workspaceSync: 'sync',
   workspaceModel: 'model',
-  workspaceIntelligenceSnapshot: 'baseline',
-  workspaceSnapshotCreate: 'baseline',
   workspaceDiff: 'diff',
   workspaceImpact: 'impact',
   checkWorkspaceHealth: 'doctor-evidence',
@@ -32,7 +29,7 @@ const COMMAND_PHASES: Record<string, StudioIntelligencePhaseId> = {
   workspaceContextAgent: 'context',
   workspaceAgentSync: 'agent-sync',
   workspaceExplain: 'explain',
-  workspaceIntelligenceChain: 'sync',
+  workspaceIntelligenceChain: 'model',
 };
 
 function objectRecord(value: unknown): Record<string, unknown> | undefined {
@@ -42,11 +39,15 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 function canonicalPhase(value: unknown): StudioIntelligencePhaseId | undefined {
-  return isWorkspaceIntelligenceMilestoneId(value) ? value : undefined;
+  return isWorkspaceIntelligenceStageId(value) ? value : undefined;
 }
 
 export function studioIntelligencePhaseIndex(phase: StudioIntelligencePhaseId): number {
   return STUDIO_INTELLIGENCE_PHASES.findIndex((entry) => entry.id === phase);
+}
+
+export function studioIntelligencePhaseLabel(phase: StudioIntelligencePhaseId): string | undefined {
+  return STUDIO_INTELLIGENCE_PHASES.find((entry) => entry.id === phase)?.label;
 }
 
 export function buildStudioIntelligencePhaseWindow(
@@ -100,7 +101,7 @@ export function resolveStudioIntelligencePhaseFromToolEvent(input: {
 
 export function resolveStudioIntelligencePhaseFromCard(cardId?: string): StudioIntelligencePhaseId {
   if (!cardId) {
-    return 'sync';
+    return 'model';
   }
   if (/readiness/i.test(cardId)) {
     return 'readiness-evidence';
@@ -115,7 +116,7 @@ export function resolveStudioIntelligencePhaseFromCard(cardId?: string): StudioI
     return 'analyze-evidence';
   }
   if (/snapshot|baseline/i.test(cardId)) {
-    return 'baseline';
+    return 'diff';
   }
   if (/diff/i.test(cardId)) {
     return 'diff';
@@ -135,5 +136,5 @@ export function resolveStudioIntelligencePhaseFromCard(cardId?: string): StudioI
   if (/explain/i.test(cardId)) {
     return 'explain';
   }
-  return 'sync';
+  return 'model';
 }

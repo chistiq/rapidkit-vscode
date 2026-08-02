@@ -250,6 +250,13 @@ function commandMutatesSource(
     return true;
   }
   const action = (input.args[0] ?? '').toLowerCase();
+  if (
+    ['npm', 'pnpm', 'yarn'].includes(executableName) &&
+    action === 'audit' &&
+    !input.args.some((arg) => arg === 'fix' || arg === '--fix')
+  ) {
+    return false;
+  }
   if (SOURCE_MUTATING_ACTIONS.has(action)) {
     return true;
   }

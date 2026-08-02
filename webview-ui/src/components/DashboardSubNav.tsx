@@ -135,11 +135,11 @@ export function DashboardSubNav({
               {showProjectBadge ? (
                 <span
                   className="ws-dashboard-sub-nav__badge"
-                  aria-label="Project connected and ready"
-                  title="A project is selected — Project tab is active"
+                  aria-label="Project selected"
+                  title="A project is selected for project-scoped actions"
                 >
                   <span className="ws-dashboard-sub-nav__live-dot" aria-hidden="true" />
-                  Live
+                  Selected
                 </span>
               ) : null}
               {showLibraryBadge ? (

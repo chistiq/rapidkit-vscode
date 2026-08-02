@@ -195,7 +195,7 @@ export class WorkspaceWizard {
             {
               label: '$(search) Auto-detect',
               description: 'Use Poetry if installed, otherwise fall back to venv  (recommended)',
-              detail: 'Same as running rapidkit create workspace without --install-method',
+              detail: 'Same as creating a Workspai workspace without a Python install method',
               value: 'auto',
             },
             {
@@ -241,14 +241,14 @@ export class WorkspaceWizard {
       {
         label: '$(shield) Enable strict policy enforcement',
         description: 'Fail CI on any policy violation  (default: warn-only)',
-        detail: 'Writes policy_mode: strict to .rapidkit/policies.yml',
+        detail: 'Writes policy_mode: strict to .workspai/policies.yml',
         picked: false,
         id: 'strict-policy',
       },
       {
         label: '$(package) Enable dependency sharing',
         description: 'Share installed packages across projects  (default: isolated)',
-        detail: 'Writes dep_sharing: shared to .rapidkit/workspace.json',
+        detail: 'Writes dependency sharing policy to .workspai/policies.yml',
         picked: false,
         id: 'dep-sharing',
       },

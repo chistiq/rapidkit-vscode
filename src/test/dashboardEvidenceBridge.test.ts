@@ -86,6 +86,39 @@ describe('dashboardEvidenceBridge', () => {
     expect(readiness?.status).toBe('pass');
   });
 
+  it('carries the exact Doctor-affected projects into workspace repair handoffs', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'doctor-last-run.json': {
+        generatedAt: '2026-07-30T10:00:00.000Z',
+        healthScore: { passed: 8, warnings: 0, errors: 2, total: 10 },
+        projects: [
+          {
+            name: 'my-api',
+            vulnerabilities: 28,
+            probes: [{ id: 'surface-security-hygiene', status: 'fail' }],
+          },
+          {
+            name: 'my-web-app',
+            vulnerabilities: 12,
+            probes: [{ id: 'surface-security-hygiene', status: 'fail' }],
+          },
+          {
+            name: 'docs',
+            vulnerabilities: 0,
+            probes: [{ id: 'surface-security-hygiene', status: 'pass' }],
+          },
+        ],
+      },
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+
+    expect(bundle.cards.find((card) => card.id === 'doctor')?.affectedProjectNames).toEqual([
+      'my-api',
+      'my-web-app',
+    ]);
+  });
+
   it('publishes the authoritative unified intelligence runner artifact as a dashboard card', async () => {
     const stageIds = [
       'model',
@@ -612,6 +645,30 @@ describe('dashboardEvidenceBridge', () => {
       staleEvidence: 1,
     });
     expect(why?.detailSections?.[0]?.title).toBe('Artifact source');
+  });
+
+  it('marks canonical .workspai stale-report blockers as stale evidence', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'workspace-verify-last-run.json': {
+        schemaVersion: 'workspace-verify.v1',
+        generatedAt: '2026-07-25T10:00:00.000Z',
+        summary: {
+          verdict: 'blocked',
+          stepsPassed: 4,
+          stepsMissing: 1,
+          stepsFailed: 0,
+        },
+        blockingReasons: ['Stale report: .workspai/reports/workspace-model-snapshot.json'],
+      },
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+    const verify = findEvidenceCard(bundle, 'workspaceVerify');
+
+    expect(verify?.metrics).toMatchObject({
+      staleEvidence: 1,
+      staleEvidenceDetail: 'Stale report: .workspai/reports/workspace-model-snapshot.json',
+    });
   });
 
   it('surfaces incompatible explainability artifacts as failed cards', async () => {

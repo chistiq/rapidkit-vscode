@@ -64,6 +64,7 @@ export interface StudioAgentWorkspaiToolHost {
     commandId: StudioEvidenceRefreshCommandId;
     workspacePath: string;
     projectPath?: string;
+    reportProgress?: (data: Record<string, unknown>) => Promise<void>;
   }): Promise<StudioAgentToolResult>;
   runWorkspaceCommand(input: {
     request: StudioWorkspaceCommandRequest;
@@ -96,11 +97,18 @@ export interface StudioAgentWorkspaiToolHost {
     workspacePath: string;
     projectPath?: string;
   }): Promise<StudioAgentToolResult>;
+  completeDependencyTransaction(input: {
+    projectNames?: string[];
+    changedPaths?: string[];
+    workspacePath: string;
+    projectPath?: string;
+  }): Promise<StudioAgentToolResult>;
   verify(input: {
     workspacePath: string;
     projectPath?: string;
     cardId: string;
     blockerSignature?: string;
+    goalId?: string;
   }): Promise<StudioAgentToolResult>;
 }
 
@@ -131,6 +139,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
   cardId: string;
   blockerSignature?: string;
   assistantMode: WorkspaiAssistantMode;
+  goalId?: string;
 }): StudioAgentToolRegistry {
   const registry = new StudioAgentToolRegistry();
   const mode = resolveWorkspaiAssistantModeContract(input.assistantMode);
@@ -186,6 +195,27 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
       });
     },
   });
+
+  if (input.goalId) {
+    register({
+      name: 'verify-goal',
+      title: 'Verify engineering goal',
+      description:
+        'Run the durable goal contract checks. Completion is allowed only when the CLI returns an evidence-derived verified state.',
+      inputSchema: { type: 'object', additionalProperties: false },
+      activity: 'verify',
+      risk: 'read',
+      async execute(_raw, context) {
+        return input.host.verify({
+          workspacePath: context.workspacePath,
+          ...optionalScope(context),
+          cardId: input.cardId,
+          goalId: input.goalId,
+          ...(input.blockerSignature ? { blockerSignature: input.blockerSignature } : {}),
+        });
+      },
+    });
+  }
 
   register({
     name: 'inspect-source',
@@ -389,6 +419,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
         commandId: value.commandId as StudioEvidenceRefreshCommandId,
         workspacePath: context.workspacePath,
         ...optionalScope(context),
+        reportProgress: context.reportProgress,
       });
     },
   });
@@ -430,7 +461,13 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
       additionalProperties: false,
       properties: {
         executable: { type: 'string', minLength: 1 },
-        args: { type: 'array', maxItems: 100, items: { type: 'string' } },
+        args: {
+          type: 'array',
+          maxItems: 100,
+          items: { type: 'string' },
+          description:
+            'Argument vector without shell parsing. For npx, begin with --no-install, then the local package binary; for example ["--no-install", "workspai", "doctor", "project", "--json"].',
+        },
         cwd: {
           type: 'string',
           description: 'Workspace-relative working directory. Defaults to the workspace root.',
@@ -589,6 +626,44 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
           : {}),
         packageName: value.packageName.trim(),
         transactionId: context.toolCallId,
+        workspacePath: context.workspacePath,
+        ...optionalScope(context),
+      });
+    },
+  });
+
+  register({
+    name: 'complete-dependency-transaction',
+    title: 'Complete dependency transaction',
+    description:
+      'Reconcile the manifest and lockfile for affected projects, then run the focused dependency audit, available tests, and build. The canonical Workspace Intelligence chain remains locked until this transaction reports closureReady.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        projectNames: {
+          type: 'array',
+          minItems: 1,
+          items: { type: 'string', minLength: 1 },
+        },
+        changedPaths: {
+          type: 'array',
+          minItems: 1,
+          items: { type: 'string', minLength: 1 },
+        },
+      },
+    },
+    activity: 'change',
+    risk: 'guarded-write',
+    async execute(raw, context) {
+      const value = asRecord(raw);
+      return input.host.completeDependencyTransaction({
+        ...(Array.isArray(value.projectNames)
+          ? { projectNames: stringArray(value.projectNames, 'projectNames') }
+          : {}),
+        ...(Array.isArray(value.changedPaths)
+          ? { changedPaths: stringArray(value.changedPaths, 'changedPaths') }
+          : {}),
         workspacePath: context.workspacePath,
         ...optionalScope(context),
       });

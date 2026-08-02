@@ -93,6 +93,20 @@ export async function resolveWorkspaceArtifactPath(
   return path.join(workspacePath, relativePath);
 }
 
+/** Synchronous variant for UI readers that run inside an already synchronous render bridge. */
+export function resolveWorkspaceArtifactPathSync(
+  workspacePath: string,
+  relativePath: string
+): string {
+  for (const candidate of workspaceArtifactCandidates(relativePath)) {
+    const absolutePath = path.join(workspacePath, candidate);
+    if (fs.existsSync(absolutePath)) {
+      return absolutePath;
+    }
+  }
+  return path.join(workspacePath, relativePath);
+}
+
 export const WORKSPACE_INTELLIGENCE_REPORT_PATHS = [
   AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
   AGENT_REPORTS_INDEX_PATH,

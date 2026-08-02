@@ -110,6 +110,8 @@ export const FRAMEWORK_OPTIONS: { value: string; label: string }[] = [
   { value: 'gofiber-standard', label: 'Go Fiber Standard Kit' },
   { value: 'gogin-standard', label: 'Go Gin Standard Kit' },
   { value: 'dotnet-webapi-clean', label: 'ASP.NET Core Clean Web API' },
+  { value: 'rust-axum', label: 'Rust Axum' },
+  { value: 'php-laravel', label: 'Laravel' },
   { value: 'nextjs', label: 'Next.js' },
   { value: 'react-router', label: 'React Router' },
   { value: 'vite-react', label: 'React + Vite' },
@@ -121,4 +123,7 @@ export const FRAMEWORK_OPTIONS: { value: string; label: string }[] = [
   { value: 'angular', label: 'Angular' },
   { value: 'astro', label: 'Astro' },
   { value: 'sveltekit', label: 'SvelteKit' },
+  { value: 'desktop-tauri', label: 'Tauri Desktop' },
+  { value: 'desktop-electron', label: 'Electron Forge' },
+  { value: 'vscode-extension', label: 'VS Code Extension' },
 ];

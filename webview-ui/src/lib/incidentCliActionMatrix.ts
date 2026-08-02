@@ -61,7 +61,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Build customer archive',
     detail: 'Create workspace archive manifest for ship handoff evidence.',
-    command: 'npx workspai workspace export --output team-workspace.rapidkit-archive.zip --json',
+    command: 'npx workspai workspace export --output team-workspace.workspai-archive.zip --json',
     stability: 'stable',
   },
   {
@@ -103,7 +103,7 @@ const INCIDENT_CLI_ACTION_ENTRIES: IncidentCliActionEntry[] = [
     scope: 'workspace',
     label: 'Run intelligence chain',
     detail:
-      'Model → snapshot → diff → advisor → verify → agent context with workspace intelligence reports.',
+      'Run the CLI-owned Workspace Intelligence stages and produce one durable evidence report.',
     command: buildIntelligenceChainCliSnippet(),
     stability: 'advanced',
     actionTypes: ['workspace-intelligence-chain'],

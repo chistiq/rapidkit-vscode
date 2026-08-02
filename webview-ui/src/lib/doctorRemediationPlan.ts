@@ -22,6 +22,22 @@ export type DoctorRemediationPlanStepView = {
   blockedReason?: string;
   canApply: boolean;
   operation?: { type?: string };
+  strategy?: Array<{
+    id: string;
+    kind: 'diagnose' | 'safe-fix' | 'targeted-upgrade' | 'verify' | 'exception-review';
+    description: string;
+    risk: 'safe' | 'guarded' | 'invasive';
+    invocation?: { cwd: string; executable: string; args: string[] };
+    continueWhen: 'always' | 'previous-passed' | 'blocker-remains' | 'manual-decision';
+  }>;
+  transaction?: {
+    schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1';
+    kind: 'dependency-security';
+    state: 'planned';
+    projectPath: string;
+    ecosystem: string;
+    requiredStages: Array<'reconcile' | 'audit' | 'test' | 'build'>;
+  };
 };
 
 export type DoctorRemediationPlanView = {
@@ -114,6 +130,12 @@ function parseStep(value: unknown): DoctorRemediationPlanStepView | null {
     canApply: booleanValue(value.canApply),
     operation: isRecord(value.operation)
       ? { type: stringValue(value.operation.type) || undefined }
+      : undefined,
+    strategy: Array.isArray(value.strategy)
+      ? (value.strategy as DoctorRemediationPlanStepView['strategy'])
+      : undefined,
+    transaction: isRecord(value.transaction)
+      ? (value.transaction as DoctorRemediationPlanStepView['transaction'])
       : undefined,
   };
 }

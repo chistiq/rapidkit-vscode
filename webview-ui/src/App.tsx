@@ -1705,7 +1705,7 @@ export function App() {
           role="tab"
           aria-selected={activeView === 'dashboard'}
           className={`workspai-view-tab ${activeView === 'dashboard' ? 'is-active' : ''}`}
-          title="Command Center — Home, Run, Repair, Artifacts, Project, Library"
+          title="Command Center — Home, Run, Repair, Artifacts, Graph, Project, Library"
           onClick={() => {
             setActiveView('dashboard');
           }}

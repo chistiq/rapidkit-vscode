@@ -440,6 +440,8 @@ const FRAMEWORK_META: Partial<Record<ScaffoldFramework, { icon: string; iconUri?
         iconUri: (typeof window !== 'undefined' ? (window as any).DOTNET_ICON_URI : undefined),
         label: '.NET',
     },
+    rust: { icon: 'Rs', label: 'Rust Axum' },
+    laravel: { icon: 'Lv', label: 'Laravel' },
     nextjs: { icon: '▲', label: 'Next.js' },
     remix: { icon: '◆', label: 'Remix' },
     'vite-react': { icon: '⚛', label: 'Vite + React' },
@@ -451,6 +453,9 @@ const FRAMEWORK_META: Partial<Record<ScaffoldFramework, { icon: string; iconUri?
     angular: { icon: 'A', label: 'Angular' },
     astro: { icon: '✦', label: 'Astro' },
     sveltekit: { icon: 'S', label: 'SvelteKit' },
+    tauri: { icon: 'Ta', label: 'Tauri' },
+    electron: { icon: 'El', label: 'Electron' },
+    'vscode-extension': { icon: 'VS', label: 'VS Code Extension' },
 };
 
 const MODULE_LABELS: Record<string, string> = {

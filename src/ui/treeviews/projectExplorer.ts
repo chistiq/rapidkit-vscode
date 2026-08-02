@@ -120,6 +120,21 @@ function frameworkLabel(type: string): string {
   if (type === 'dotnet') {
     return '.NET';
   }
+  if (type === 'rust') {
+    return 'Rust · Axum';
+  }
+  if (type === 'laravel') {
+    return 'PHP · Laravel';
+  }
+  if (type === 'tauri') {
+    return 'Desktop · Tauri';
+  }
+  if (type === 'electron') {
+    return 'Desktop · Electron';
+  }
+  if (type === 'vscode-extension') {
+    return 'Extension · VS Code';
+  }
   if (type === 'unknown') {
     return 'Generic';
   }
@@ -157,6 +172,21 @@ function inferKit(type: WorkspaiProject['type']): string {
   }
   if (type === 'dotnet') {
     return 'dotnet.webapi.clean';
+  }
+  if (type === 'rust') {
+    return 'rust.axum';
+  }
+  if (type === 'laravel') {
+    return 'php.laravel';
+  }
+  if (type === 'tauri') {
+    return 'desktop.tauri';
+  }
+  if (type === 'electron') {
+    return 'desktop.electron';
+  }
+  if (type === 'vscode-extension') {
+    return 'extension.vscode';
   }
   return 'generic.imported';
 }
@@ -254,6 +284,21 @@ function stackFromKitName(kitName?: string): WorkspaiProject['type'] {
   }
   if (normalized.startsWith('dotnet.')) {
     return 'dotnet';
+  }
+  if (normalized.startsWith('rust.axum') || normalized.startsWith('axum.')) {
+    return 'rust';
+  }
+  if (normalized.startsWith('php.laravel') || normalized.startsWith('laravel.')) {
+    return 'laravel';
+  }
+  if (normalized.startsWith('desktop.tauri') || normalized.startsWith('tauri.')) {
+    return 'tauri';
+  }
+  if (normalized.startsWith('desktop.electron') || normalized.startsWith('electron.')) {
+    return 'electron';
+  }
+  if (normalized.startsWith('extension.vscode') || normalized.startsWith('vscode-extension.')) {
+    return 'vscode-extension';
   }
 
   return 'unknown';
@@ -799,8 +844,8 @@ export class ProjectTreeItem extends vscode.TreeItem {
 
     // === Project Item (not running) ===
     if (contextValue === 'project' && project) {
-      this.tooltip = `${project.path}\n\nClick Play to start dev server${isSelected ? '\n\nSelected for module operations' : ''}`;
-      this.description = `${projectBadgeLabel(project)} [Ready]${isSelected ? ' [Selected]' : ''}`;
+      this.tooltip = `${project.path}\n\nSelect this project to open its lifecycle and Workspace Intelligence actions${isSelected ? '\n\nSelected for project operations' : ''}`;
+      this.description = `${projectBadgeLabel(project)}${isSelected ? ' [Selected]' : ''}`;
 
       // Use custom framework icons
       if (extensionPath) {
@@ -826,9 +871,17 @@ export class ProjectTreeItem extends vscode.TreeItem {
                   ? 'symbol-namespace'
                   : project.type === 'dotnet'
                     ? 'symbol-interface'
-                    : project.managed
-                      ? 'shield'
-                      : 'package';
+                    : project.type === 'rust'
+                      ? 'symbol-namespace'
+                      : project.type === 'laravel'
+                        ? 'symbol-class'
+                        : project.type === 'tauri' || project.type === 'electron'
+                          ? 'device-desktop'
+                          : project.type === 'vscode-extension'
+                            ? 'extensions'
+                            : project.managed
+                              ? 'shield'
+                              : 'package';
         const colorId = isSelected
           ? 'charts.blue'
           : project.type === 'fastapi'
@@ -841,7 +894,15 @@ export class ProjectTreeItem extends vscode.TreeItem {
                   ? 'charts.blue'
                   : project.type === 'dotnet'
                     ? 'charts.purple'
-                    : 'charts.gray';
+                    : project.type === 'rust'
+                      ? 'charts.orange'
+                      : project.type === 'laravel'
+                        ? 'charts.red'
+                        : project.type === 'tauri' || project.type === 'electron'
+                          ? 'charts.blue'
+                          : project.type === 'vscode-extension'
+                            ? 'charts.purple'
+                            : 'charts.gray';
         this.iconPath = new vscode.ThemeIcon(iconId, new vscode.ThemeColor(colorId));
       }
 

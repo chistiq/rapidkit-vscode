@@ -1,5 +1,9 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import {
+  buildPackageRunnerInvocationEnv,
   buildPackageRunnerSubprocessEnv,
   buildNpmCliVersionVerifyCommands,
   buildNpxRapidkitArgs,
@@ -10,7 +14,12 @@ import {
   buildRapidkitExecutionSpec,
   buildShellCommand,
   detectPlatformKind,
+  discoverPackageRunnerInvocations,
+  discoverPythonExecutableCandidates,
   parseNpmCliVersionOutput,
+  parseGlobalNpmPackageVersionOutput,
+  parsePipxRapidkitCoreVersion,
+  parseRapidkitCoreVersion,
   quoteShellArg,
   resetResolvedRapidkitNpmPackageSpecifier,
   resolvePackageRunnerInvocation,
@@ -276,5 +285,77 @@ describe('platformCapabilities', () => {
     expect(parseNpmCliVersionOutput('0.34.0')).toBe('0.34.0');
     expect(parseNpmCliVersionOutput('RapidKit Version v0.5.4')).toBeNull();
     expect(parseNpmCliVersionOutput('rapidkit@0.34.0')).toBe('0.34.0');
+  });
+
+  it('parses the package version instead of an nvm directory version from npm list', () => {
+    expect(
+      parseGlobalNpmPackageVersionOutput(
+        '/home/dev/.nvm/versions/node/v20.20.2/lib\n└── workspai@0.51.0\n'
+      )
+    ).toBe('0.51.0');
+    expect(parseGlobalNpmPackageVersionOutput('└── (empty)')).toBeNull();
+  });
+
+  it('discovers npm and npx installed under nvm even when Extension Host PATH is stale', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-nvm-probe-'));
+    try {
+      const bin = path.join(home, '.nvm', 'versions', 'node', 'v20.20.2', 'bin');
+      fs.mkdirSync(bin, { recursive: true });
+      for (const command of ['npm', 'npx']) {
+        fs.writeFileSync(path.join(bin, command), '#!/bin/sh\n', { mode: 0o755 });
+      }
+
+      const npmInvocations = discoverPackageRunnerInvocations(
+        'npm',
+        'linux',
+        { PATH: '/usr/bin' },
+        home
+      );
+      const npxInvocations = discoverPackageRunnerInvocations(
+        'npx',
+        'linux',
+        { PATH: '/usr/bin' },
+        home
+      );
+
+      const npmInvocation = npmInvocations.find((entry) => entry.command === path.join(bin, 'npm'));
+      const npxInvocation = npxInvocations.find((entry) => entry.command === path.join(bin, 'npx'));
+      expect(npmInvocation).toBeTruthy();
+      expect(npxInvocation).toBeTruthy();
+      const invocationPath =
+        buildPackageRunnerInvocationEnv(npmInvocation!, { PATH: '/usr/bin' }, 'linux').PATH ?? '';
+      expect(invocationPath.split(':')[0]).toBe(bin);
+      expect(invocationPath.split(':')).toEqual(
+        expect.arrayContaining(['/usr/bin', path.dirname(process.execPath)])
+      );
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('discovers pyenv Python interpreters without relying on interactive shell PATH', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-pyenv-probe-'));
+    try {
+      const python = path.join(home, '.pyenv', 'versions', '3.10.19', 'bin', 'python');
+      fs.mkdirSync(path.dirname(python), { recursive: true });
+      fs.writeFileSync(python, '#!/bin/sh\n', { mode: 0o755 });
+
+      expect(discoverPythonExecutableCandidates('linux', { PATH: '/usr/bin' }, home)).toContain(
+        python
+      );
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects broken pipx metadata prose as a RapidKit Core version', () => {
+    expect(
+      parsePipxRapidkitCoreVersion('package rapidkit-core has missing internal pipx metadata.')
+    ).toBeNull();
+    expect(
+      parsePipxRapidkitCoreVersion('package rapidkit-core 0.6.0, installed using Python 3.10')
+    ).toBe('0.6.0');
+    expect(parseRapidkitCoreVersion('Version: 0.5.5')).toBe('0.5.5');
+    expect(parseRapidkitCoreVersion('has')).toBeNull();
   });
 });

@@ -41,9 +41,64 @@
       "contractPath": "contracts/workspace-archive-operation-result.v1.json",
       "publication": "json-schema"
     },
+    "ingestionPlan": {
+      "schemaVersion": "workspai.ingestion-plan.v1",
+      "contractPath": "contracts/ingestion-plan.v1.json",
+      "publication": "json-schema"
+    },
+    "ingestionResult": {
+      "schemaVersion": "workspai.ingestion-result.v1",
+      "contractPath": "contracts/ingestion-result.v1.json",
+      "publication": "json-schema"
+    },
     "projectEntryCapability": {
       "schemaVersion": "workspai-project-entry-capability-v1",
       "contractPath": "contracts/project-entry-capability.v1.json",
+      "publication": "json-schema"
+    },
+    "projectWorkspaceLink": {
+      "schemaVersion": "project-workspace-link.v1",
+      "contractPath": "contracts/project-workspace-link.v1.json",
+      "publication": "json-schema"
+    },
+    "projectWorkspaceResolution": {
+      "schemaVersion": "project-workspace-resolution.v1",
+      "contractPath": "contracts/project-workspace-resolution.v1.json",
+      "publication": "json-schema"
+    },
+    "projectContextAgent": {
+      "schemaVersion": "project-context-agent.v1",
+      "contractPath": "contracts/workspace-intelligence/project-context-agent.v1.json",
+      "publication": "json-schema"
+    },
+    "doctorProjectEvidence": {
+      "schemaVersion": "doctor-project-evidence-v1",
+      "contractPath": "contracts/doctor-project-evidence.v1.json",
+      "publication": "json-schema"
+    },
+    "doctorWorkspaceEvidence": {
+      "schemaVersion": "doctor-workspace-evidence-v1",
+      "contractPath": "contracts/doctor-workspace-evidence.v1.json",
+      "publication": "json-schema"
+    },
+    "doctorGraphDiagnosis": {
+      "schemaVersion": "doctor-graph-diagnosis.v1",
+      "contractPath": "contracts/workspace-intelligence/doctor-graph-diagnosis.v1.json",
+      "publication": "json-schema"
+    },
+    "projectTestCoverage": {
+      "schemaVersion": "workspai.project-test-coverage.v1",
+      "contractPath": "contracts/project-test-coverage.v1.json",
+      "publication": "json-schema"
+    },
+    "verifiedGoal": {
+      "schemaVersion": "workspai.verified-goal.v1",
+      "contractPath": "contracts/workspace-intelligence/verified-goal.v1.json",
+      "publication": "json-schema"
+    },
+    "verifiedGoalStatus": {
+      "schemaVersion": "workspai.verified-goal-status.v1",
+      "contractPath": "contracts/workspace-intelligence/verified-goal-status.v1.json",
       "publication": "json-schema"
     },
     "workspaceIntelligenceArchitecture": {
@@ -77,7 +132,8 @@
         "explain": "workspace-explain.v1",
         "intelligenceRun": "workspace-intelligence-run.v1",
         "evaluationLive": "workspace-intelligence-evaluation.v1",
-        "evaluationLastRun": "workspace-intelligence-evaluation.v1"
+        "evaluationLastRun": "workspace-intelligence-evaluation.v1",
+        "verifiedGoalStatus": "workspai.verified-goal-status.v1"
       },
       "contractPath": null,
       "publication": "embedded-type",
@@ -181,6 +237,11 @@
           "path": ".workspai/reports/workspace-intelligence-evaluation-last-run.json",
           "schemaVersion": "workspace-intelligence-evaluation.v1",
           "contractPath": "contracts/workspace-intelligence/workspace-intelligence-evaluation.v1.json"
+        },
+        "verifiedGoalStatus": {
+          "path": ".workspai/reports/verified-goal-last-run.json",
+          "schemaVersion": "workspai.verified-goal-status.v1",
+          "contractPath": "contracts/workspace-intelligence/verified-goal-status.v1.json"
         }
       }
     },
@@ -312,6 +373,11 @@
     "doctorRemediationPlan": {
       "schemaVersion": "doctor-remediation-plan-v2",
       "contractPath": "contracts/doctor-remediation-plan.v2.json",
+      "publication": "json-schema"
+    },
+    "doctorDependencyRepairTransaction": {
+      "schemaVersion": "workspai.doctor-dependency-repair-transaction.v1",
+      "contractPath": "contracts/workspace-intelligence/doctor-dependency-repair-transaction.v1.json",
       "publication": "json-schema"
     },
     "artifactRemediationPlan": {

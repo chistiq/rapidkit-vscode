@@ -141,6 +141,7 @@ describe('aiService', () => {
 
   it('prepares a shared AI conversation with scanned workspace context and memory', async () => {
     fs.mkdirSync(path.join(tempProjectPath, 'src', 'app', 'domain'), { recursive: true });
+    fs.mkdirSync(path.join(tempProjectPath, '.workspai'), { recursive: true });
     fs.mkdirSync(path.join(tempProjectPath, '.rapidkit'), { recursive: true });
 
     fs.writeFileSync(
@@ -161,6 +162,22 @@ describe('aiService', () => {
     );
     fs.writeFileSync(
       path.join(tempProjectPath, 'registry.json'),
+      JSON.stringify(
+        {
+          installed_modules: [
+            {
+              slug: 'legacy/root-module',
+              version: '1.0.0',
+              display_name: 'Root compatibility module',
+            },
+          ],
+        },
+        null,
+        2
+      )
+    );
+    fs.writeFileSync(
+      path.join(tempProjectPath, '.workspai', 'registry.json'),
       JSON.stringify(
         {
           installed_modules: [
@@ -841,26 +858,23 @@ describe('aiService', () => {
     expect(systemPrompt).toContain('v2.3.0');
   });
 
-  it('does not translate explicit PHP Laravel creation requests into NestJS', async () => {
-    await expect(
-      parseCreationIntent(
-        'I want a PHP Laravel workspace for project management',
-        'workspace',
-        undefined,
-        tempProjectPath
-      )
-    ).rejects.toMatchObject({
-      name: 'UnsupportedCreationStackError',
-      stackLabel: 'Laravel',
-      capability: {
-        lane: 'official',
-        resolved: 'laravel',
-        canExecuteCreate: false,
-        fallbackLane: 'existing',
-      },
-    });
+  it('keeps explicit Laravel requests on the official Laravel create lane', async () => {
+    mockSelectChatModels.mockResolvedValue([]);
 
-    expect(mockSelectChatModels).not.toHaveBeenCalled();
+    const result = await parseCreationIntent(
+      'I want a PHP Laravel workspace for project management',
+      'workspace',
+      undefined,
+      tempProjectPath
+    );
+
+    expect(result.plan).toMatchObject({
+      framework: 'laravel',
+      kit: 'php.laravel',
+      profile: 'minimal',
+      suggestedModules: [],
+    });
+    expect(result.plan.framework).not.toBe('nestjs');
   });
 
   it('does not translate WordPress creation requests into native scaffolds', async () => {

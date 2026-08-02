@@ -31,7 +31,7 @@ export function Footer() {
           Rate Extension
         </a>
       </div>
-      <div className="copyright">RapidKit Labs · Workspai</div>
+      <div className="copyright">Workspai · Open source by Chistiq</div>
     </div>
   );
 }

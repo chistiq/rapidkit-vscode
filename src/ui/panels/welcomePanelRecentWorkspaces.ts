@@ -29,6 +29,9 @@ export type RecentWorkspaceEntry = {
     | 'not-installed'
     | 'update-available'
     | 'up-to-date'
+    | 'not-required'
+    | 'install-required'
+    | 'repair-required'
     | 'error'
     | 'deprecated';
   coreLocation?: 'workspace' | 'global' | 'pipx';
@@ -221,8 +224,9 @@ export async function buildRecentWorkspaces(
 
           return {
             ...ws,
-            coreVersion: versionInfo.installed,
-            coreLatestVersion: versionInfo.latest,
+            coreVersion: versionInfo.status === 'not-required' ? undefined : versionInfo.installed,
+            coreLatestVersion:
+              versionInfo.status === 'not-required' ? undefined : versionInfo.latest,
             coreStatus: versionInfo.status,
             coreLocation: versionInfo.location as 'workspace' | 'global' | 'pipx' | undefined,
             lastModified,

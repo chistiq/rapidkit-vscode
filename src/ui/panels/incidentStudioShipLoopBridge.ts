@@ -51,7 +51,7 @@ export const SHIP_LOOP_STEP_DEFINITIONS: Record<ShipLoopStepId, ShipLoopStepDefi
     id: 'archive',
     kind: 'inline-command',
     inlineCommand:
-      'npx workspai workspace export --output team-workspace.rapidkit-archive.zip --json',
+      'npx workspai workspace export --output team-workspace.workspai-archive.zip --json',
     mutating: true,
   },
   'autopilot-release': {

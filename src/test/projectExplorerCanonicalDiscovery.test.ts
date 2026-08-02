@@ -101,4 +101,61 @@ describe('primary sidebar canonical project discovery', () => {
       managed: true,
     });
   });
+
+  it('preserves canonical backend, desktop, and extension taxonomy in the project tree', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-sidebar-taxonomy-'));
+    tempRoots.push(workspacePath);
+    const fixtures = [
+      ['rust-api', 'rust.axum', 'rust'],
+      ['laravel-api', 'php.laravel', 'laravel'],
+      ['tauri-app', 'desktop.tauri', 'tauri'],
+      ['electron-app', 'desktop.electron', 'electron'],
+      ['editor-extension', 'extension.vscode', 'vscode-extension'],
+    ] as const;
+    for (const [name, kit] of fixtures) {
+      await fs.ensureDir(path.join(workspacePath, name, '.workspai'));
+      await fs.writeJSON(path.join(workspacePath, name, '.workspai', 'project.json'), {
+        schema_version: '1.0',
+        name,
+        kit_name: kit,
+      });
+    }
+    await fs.ensureDir(path.join(workspacePath, '.workspai'));
+    await fs.writeJSON(path.join(workspacePath, '.workspai', 'workspace-registry.v1.json'), {
+      schemaVersion: 'workspace-registry.v1',
+      kind: 'rapidkit.workspace.registry',
+      generatedAt: new Date().toISOString(),
+      workspacePath,
+      workspaceName: 'taxonomy',
+      projectCount: fixtures.length,
+      authority: 'workspace.contract.json',
+      contractPath: '.workspai/workspace.contract.json',
+      registrySummaryPath: '.workspai/workspace-registry.v1.json',
+      projects: fixtures.map(([name, kit]) => ({
+        slug: name,
+        relativePath: name,
+        framework: kit,
+        kit,
+        source: 'workspace',
+      })),
+      sources: {
+        contract: { exists: true, projectCount: fixtures.length },
+        globalRegistry: { exists: false, projectCount: 0 },
+        legacyWorkspaceJson: { exists: false, projectCount: 0 },
+      },
+    });
+
+    const provider = new ProjectExplorerProvider();
+    (
+      provider as unknown as {
+        selectedWorkspace: { name: string; path: string; mode: 'full'; projects: [] };
+      }
+    ).selectedWorkspace = { name: 'taxonomy', path: workspacePath, mode: 'full', projects: [] };
+
+    const projects = await provider.ensureProjectsLoaded();
+
+    expect(projects.map((project) => [project.name, project.type, project.kit]).sort()).toEqual(
+      fixtures.map(([name, kit, type]) => [name, type, kit]).sort()
+    );
+  });
 });

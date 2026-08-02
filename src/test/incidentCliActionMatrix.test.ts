@@ -2,11 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildIntelligenceChainCliSnippet,
-  buildWorkspaceTraceCliSnippet,
-  buildWorkspaceWhyCliSnippet,
   WORKSPACE_IMPACT_REPORT_PATH,
-  WORKSPACE_MODEL_DIFF_REPORT_PATH,
-  WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH,
 } from '../../webview-ui/src/lib/workspaceIntelligencePaths';
 import { buildIncidentCliActionMatrix } from '../../webview-ui/src/lib/incidentCliActionMatrix';
 
@@ -26,21 +22,19 @@ describe('incidentCliActionMatrix', () => {
     );
 
     expect(chain?.command).toBe(buildIntelligenceChainCliSnippet());
-    expect(chain?.command).toContain(
-      `workspace diff --from ${WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH}`
+    expect(chain?.command).toBe(
+      'npx workspai workspace intelligence run --for-agent vscode --json'
     );
-    expect(chain?.command).toContain(`workspace impact --from ${WORKSPACE_MODEL_DIFF_REPORT_PATH}`);
-    expect(chain?.command).toContain('--for-agent --json --write');
-    expect(chain?.command).toContain(buildWorkspaceWhyCliSnippet());
-    expect(chain?.command).toContain(buildWorkspaceTraceCliSnippet());
-    expect(chain?.command).not.toContain('--for-agent cursor');
+    expect(chain?.command).not.toContain('workspace snapshot');
+    expect(chain?.command).not.toContain('workspace why');
+    expect(chain?.command).not.toContain('workspace trace');
 
     expect(verify?.command).toBe(
       `npx workspai workspace verify --from-impact ${WORKSPACE_IMPACT_REPORT_PATH} --json`
     );
     expect(agentContext?.command).toBe('npx workspai workspace context --for-agent --json --write');
     expect(archive?.command).toBe(
-      'npx workspai workspace export --output team-workspace.rapidkit-archive.zip --json'
+      'npx workspai workspace export --output team-workspace.workspai-archive.zip --json'
     );
   });
 });

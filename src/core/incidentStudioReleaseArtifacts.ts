@@ -2,6 +2,7 @@ import fs from 'fs-extra';
 import path from 'path';
 
 import { readWorkspaceVerifyReport } from './workspaceVerifyReader';
+import { resolveWorkspaceReportsDir } from './workspaceIntelligencePaths';
 
 export type AutopilotReleaseSnapshot = {
   approved: boolean;
@@ -26,7 +27,7 @@ async function readJsonIfExists(filePath: string): Promise<Record<string, unknow
 export async function readAutopilotReleaseSnapshot(
   workspacePath: string
 ): Promise<AutopilotReleaseSnapshot | null> {
-  const reportsDir = path.join(workspacePath, '.rapidkit', 'reports');
+  const reportsDir = await resolveWorkspaceReportsDir(workspacePath);
   const aliasPath = path.join(reportsDir, 'autopilot-release.json');
   const lastRunPath = path.join(reportsDir, 'autopilot-release-last-run.json');
   const raw = (await readJsonIfExists(lastRunPath)) ?? (await readJsonIfExists(aliasPath));

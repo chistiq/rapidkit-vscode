@@ -39,7 +39,9 @@ const CONTRACTS: Record<WorkspaiAssistantMode, WorkspaiAssistantModeContract> = 
       'inspect-dependency-security',
       'repair-dependency-security',
       'upgrade-dependency-security',
+      'complete-dependency-transaction',
       'verify-blocker',
+      'verify-goal',
     ],
   },
   ask: {

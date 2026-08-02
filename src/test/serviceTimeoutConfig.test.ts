@@ -149,7 +149,7 @@ describe('service timeout config', () => {
     await service.getExamples();
 
     expect(mockAxiosGet).toHaveBeenCalledWith(
-      'https://raw.githubusercontent.com/rapidkitlabs/rapidkit-examples/main/examples.json',
+      'https://raw.githubusercontent.com/chistiq/rapidkit-examples/main/examples.json',
       expect.objectContaining({ timeout: 1000 })
     );
   });

@@ -254,7 +254,7 @@ export function registerWorkspaceSelectionCommands(options: {
       [
         {
           label: '$(file-zip) Local archive',
-          description: 'Inspect a .rapidkit-archive.zip file from disk',
+          description: 'Inspect a .workspai-archive.zip file from disk',
           value: 'local',
         },
         {
@@ -298,8 +298,8 @@ export function registerWorkspaceSelectionCommands(options: {
 
     const archiveUrl = await vscode.window.showInputBox({
       title: 'Workspace Archive URL',
-      prompt: 'Paste a HTTPS/HTTP .rapidkit-archive.zip URL',
-      placeHolder: 'https://example.com/team-workspace.rapidkit-archive.zip',
+      prompt: 'Paste an HTTPS/HTTP .workspai-archive.zip URL',
+      placeHolder: 'https://example.com/team-workspace.workspai-archive.zip',
       ignoreFocusOut: true,
       validateInput: (value) => {
         const trimmed = value.trim();
@@ -498,7 +498,7 @@ export function registerWorkspaceSelectionCommands(options: {
         [
           {
             label: '$(export) Export workspace archive',
-            description: 'Create .rapidkit-archive.zip and refresh ship-handoff manifest',
+            description: 'Create .workspai-archive.zip and refresh ship-handoff manifest',
             value: 'export' as const,
           },
           {

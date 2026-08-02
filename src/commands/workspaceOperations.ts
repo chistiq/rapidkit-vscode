@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import path from 'path';
 import { Logger } from '../utils/logger';
-import { runShellCommandInTerminal } from '../utils/terminalExecutor';
+import { runCommandsInTerminal } from '../utils/terminalExecutor';
+import { resolveCoreUpgradePlan } from '../core/coreUpgradePlan';
 import { evaluateWorkspaiContractRuntime } from '../core/workspaiContractRuntime';
 import { exportVerifyPackContractToWorkspace } from '../core/verifyPackContractExporter';
 import { runWorkspaceHygieneProbes } from '../core/workspaceHygieneProbes';
@@ -43,16 +44,22 @@ type WorkspaceTarget = {
   workspaceName?: string;
 };
 
-function summarizeC06Health(input: {
+function summarizeWorkspaceContractHealth(input: {
   evaluated: boolean;
   errors: string[];
   warnings: string[];
   availableKinds: string[];
 }): string {
   if (!input.evaluated) {
-    return 'C06: contracts not found';
+    return 'Workspace contracts need refresh';
   }
-  return `C06: ${input.availableKinds.length} loaded, ${input.errors.length} error(s), ${input.warnings.length} warning(s)`;
+  if (input.errors.length > 0) {
+    return `Workspace contracts: ${input.errors.length} issue(s)`;
+  }
+  if (input.warnings.length > 0) {
+    return `Workspace contracts: ${input.warnings.length} warning(s)`;
+  }
+  return 'Workspace contracts ready';
 }
 
 type WorkspaceHealthAction = 'check' | 'fix' | 'compliance' | 'version' | 'upgrade';
@@ -1887,7 +1894,7 @@ export function registerWorkspaceOperationsCommands(options: {
       logger.info('Running doctor check for workspace:', workspaceName);
 
       const contractRuntime = await evaluateWorkspaiContractRuntime({ workspacePath });
-      const c06HealthSummary = summarizeC06Health(contractRuntime);
+      const contractHealthSummary = summarizeWorkspaceContractHealth(contractRuntime);
 
       const { CoreVersionService } = await import('../core/coreVersionService.js');
       const versionService = CoreVersionService.getInstance();
@@ -1900,9 +1907,18 @@ export function registerWorkspaceOperationsCommands(options: {
         { label: '$(info) Show Version Info', action: 'version' },
       ];
 
-      if (versionInfo.status === 'update-available') {
+      if (
+        versionInfo.status === 'update-available' ||
+        versionInfo.status === 'repair-required' ||
+        versionInfo.status === 'install-required'
+      ) {
         actions.splice(1, 0, {
-          label: `$(arrow-up) Upgrade to v${versionInfo.latest}`,
+          label:
+            versionInfo.status === 'repair-required'
+              ? '$(tools) Repair workspace Core environment'
+              : versionInfo.status === 'install-required'
+                ? '$(cloud-download) Install workspace Core environment'
+                : `$(arrow-up) Upgrade to v${versionInfo.latest}`,
           action: 'upgrade',
         });
       }
@@ -1911,7 +1927,10 @@ export function registerWorkspaceOperationsCommands(options: {
         ? actions.find((action) => action.action === preferredAction)
         : await vscode.window.showQuickPick(actions, {
             placeHolder: `Workspai: Health & Version - ${workspaceName}`,
-            title: `${versionService.getStatusMessage(versionInfo)} · ${c06HealthSummary}`,
+            title:
+              versionInfo.status === 'not-required'
+                ? 'Workspai Health'
+                : versionService.getStatusMessage(versionInfo),
           });
 
       if (!selection) {
@@ -1939,7 +1958,7 @@ export function registerWorkspaceOperationsCommands(options: {
                 progress.report({ increment: 100, message: 'Complete!' });
 
                 vscode.window.showInformationMessage(
-                  `Workspace health check running for "${workspaceName}". ${c06HealthSummary}. Check the terminal for results.`,
+                  `Workspace health check running for "${workspaceName}". ${contractHealthSummary}. Check the terminal for results.`,
                   'OK'
                 );
               } catch (error) {
@@ -1979,7 +1998,7 @@ export function registerWorkspaceOperationsCommands(options: {
                 progress.report({ increment: 100, message: 'Complete!' });
 
                 vscode.window.showInformationMessage(
-                  `Workspace doctor fix is running for "${workspaceName}". ${c06HealthSummary}. Check the terminal for details.`,
+                  `Workspace doctor fix is running for "${workspaceName}". ${contractHealthSummary}. Check the terminal for details.`,
                   'OK'
                 );
               } catch (error) {
@@ -2187,6 +2206,14 @@ export function registerWorkspaceOperationsCommands(options: {
         }
 
         case 'version': {
+          if (versionInfo.status === 'not-required') {
+            await vscode.window.showInformationMessage(
+              'RapidKit Core is optional for this workspace and is not part of its current profile or project contract.',
+              { modal: true },
+              'OK'
+            );
+            break;
+          }
           const locationText = versionInfo.location
             ? `\n\n**Location:** ${toSafePathHint(versionInfo.location)}`
             : '';
@@ -2207,31 +2234,41 @@ export function registerWorkspaceOperationsCommands(options: {
         }
 
         case 'upgrade': {
+          if (versionInfo.status === 'not-required') {
+            vscode.window.showInformationMessage(
+              'RapidKit Core is not required by this workspace. No global package was changed.'
+            );
+            break;
+          }
+          const repairRequired = versionInfo.status === 'repair-required';
+          const installRequired = versionInfo.status === 'install-required';
           const confirmUpgrade = await vscode.window.showInformationMessage(
-            `Upgrade RapidKit Core from v${versionInfo.installed} to v${versionInfo.latest}?`,
-            'Upgrade',
+            repairRequired
+              ? 'The workspace Python environment is broken. Preserve it as a backup, recreate .venv, and install the current RapidKit Core release?'
+              : installRequired
+                ? 'Create a local .venv and install RapidKit Core for this workspace?'
+                : `Upgrade RapidKit Core from v${versionInfo.installed} to v${versionInfo.latest}?`,
+            repairRequired ? 'Repair & Install' : installRequired ? 'Install Locally' : 'Upgrade',
             'Cancel'
           );
 
-          if (confirmUpgrade === 'Upgrade') {
-            if (versionInfo.location === 'workspace') {
-              runShellCommandInTerminal({
-                name: `Workspai: Upgrade - ${workspaceName}`,
-                cwd: workspacePath,
-                command: 'poetry',
-                args: ['update', 'rapidkit-core'],
-              });
-            } else {
-              runShellCommandInTerminal({
-                name: `Workspai: Upgrade - ${workspaceName}`,
-                cwd: workspacePath,
-                command: 'pipx',
-                args: ['upgrade', 'rapidkit-core'],
-              });
-            }
+          if (
+            confirmUpgrade ===
+            (repairRequired ? 'Repair & Install' : installRequired ? 'Install Locally' : 'Upgrade')
+          ) {
+            const upgradePlan = await resolveCoreUpgradePlan(workspacePath);
+            runCommandsInTerminal({
+              name: `Workspai: Upgrade - ${workspaceName}`,
+              cwd: workspacePath,
+              commands: upgradePlan.commands,
+            });
 
             vscode.window.showInformationMessage(
-              'Upgrading RapidKit Core... Check terminal for progress.',
+              upgradePlan.kind === 'workspace-repair'
+                ? `The broken workspace environment will be preserved at ${upgradePlan.backupPath}. Creating a fresh .venv, then upgrading RapidKit Core...`
+                : upgradePlan.kind === 'workspace'
+                  ? 'Upgrading RapidKit Core in the workspace environment...'
+                  : 'Creating a local workspace environment and installing RapidKit Core...',
               'OK'
             );
 

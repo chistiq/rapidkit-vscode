@@ -3,6 +3,7 @@ import * as fs from 'fs-extra';
 import * as os from 'os';
 import * as path from 'path';
 import {
+  LEGACY_WORKSPACE_CONTRACT_PATH,
   readWorkspaceContractGraph,
   WORKSPACE_CONTRACT_PATH,
 } from '../utils/workspaceContractGraph';
@@ -28,6 +29,37 @@ describe('workspaceContractGraph', () => {
 
     expect(graph.status).toBe('missing');
     expect(graph.contractPath).toBe(path.join(workspacePath, WORKSPACE_CONTRACT_PATH));
+  });
+
+  it('prefers the canonical Workspai contract over the legacy compatibility copy', async () => {
+    const workspacePath = await makeTempDir('workspai-contract-priority-');
+    await fs.outputJSON(path.join(workspacePath, LEGACY_WORKSPACE_CONTRACT_PATH), {
+      workspace: { name: 'legacy' },
+      projects: [{ slug: 'legacy-api', relativePath: 'legacy-api' }],
+    });
+    await fs.outputJSON(path.join(workspacePath, WORKSPACE_CONTRACT_PATH), {
+      workspace: { name: 'canonical' },
+      projects: [{ slug: 'canonical-api', relativePath: 'canonical-api' }],
+    });
+
+    const graph = await readWorkspaceContractGraph(workspacePath);
+
+    expect(graph.workspaceName).toBe('canonical');
+    expect(graph.contractPath).toBe(path.join(workspacePath, WORKSPACE_CONTRACT_PATH));
+    expect(graph.projects.map((project) => project.slug)).toEqual(['canonical-api']);
+  });
+
+  it('uses the legacy contract only when no canonical contract exists', async () => {
+    const workspacePath = await makeTempDir('workspai-contract-legacy-');
+    await fs.outputJSON(path.join(workspacePath, LEGACY_WORKSPACE_CONTRACT_PATH), {
+      workspace: { name: 'legacy' },
+      projects: [{ slug: 'legacy-api', relativePath: 'legacy-api' }],
+    });
+
+    const graph = await readWorkspaceContractGraph(workspacePath);
+
+    expect(graph.status).toBe('ready');
+    expect(graph.contractPath).toBe(path.join(workspacePath, LEGACY_WORKSPACE_CONTRACT_PATH));
   });
 
   it('builds dependency, event, and port-conflict topology from contract JSON', async () => {

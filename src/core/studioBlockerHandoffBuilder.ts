@@ -27,7 +27,14 @@ export { CARD_SOURCE_SHELL, buildStudioSourceCommandForCard };
 export type BuildStudioBlockerHandoffInput = {
   card: Pick<
     DashboardEvidenceCard,
-    'id' | 'label' | 'status' | 'blocking' | 'scope' | 'artifactPath' | 'blockers'
+    | 'id'
+    | 'label'
+    | 'status'
+    | 'blocking'
+    | 'scope'
+    | 'artifactPath'
+    | 'blockers'
+    | 'affectedProjectNames'
   >;
   workspacePath: string;
   projectPath?: string;
@@ -39,6 +46,11 @@ export async function buildStudioBlockerHandoff(
   input: BuildStudioBlockerHandoffInput
 ): Promise<StudioBlockerHandoff> {
   const blockers = (input.card.blockers ?? []).map((entry) => entry.trim()).filter(Boolean);
+  const affectedProjectNames = [
+    ...new Set(
+      (input.card.affectedProjectNames ?? []).map((entry) => entry.trim()).filter(Boolean)
+    ),
+  ];
   const dashboardCommandId = resolveDashboardCommandForEvidenceCard(input.card.id);
   const executionPlan = dashboardCommandId
     ? resolveDashboardCommandExecutionPlan(dashboardCommandId)
@@ -81,6 +93,7 @@ export async function buildStudioBlockerHandoff(
 
   const blockerSignature = computeBlockerSignature({
     blockers,
+    ...(affectedProjectNames.length ? { affectedProjectNames } : {}),
     exitCode: null,
   });
   const commandRunCount =
@@ -126,6 +139,7 @@ export async function buildStudioBlockerHandoff(
         }
       : {}),
     scope: input.card.scope,
+    ...(affectedProjectNames.length ? { affectedProjectNames } : {}),
     blockerSignature,
     commandRunCount,
     resolutionHints,
@@ -134,7 +148,9 @@ export async function buildStudioBlockerHandoff(
     verifyArtifact,
     handoffSource: input.handoffSource ?? 'dashboard',
     workspacePath: input.workspacePath,
-    ...(input.projectPath ? { projectPath: input.projectPath } : {}),
+    ...(input.card.scope === 'project' && input.projectPath
+      ? { projectPath: input.projectPath }
+      : {}),
   };
 
   handoff.studioMode = resolveBlockerResolutionClass({

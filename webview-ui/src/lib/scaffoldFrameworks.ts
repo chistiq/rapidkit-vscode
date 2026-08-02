@@ -1,5 +1,7 @@
 import type {
   BackendScaffoldFramework,
+  DesktopScaffoldFramework,
+  ExtensionScaffoldFramework,
   FrontendScaffoldFramework,
   ScaffoldFramework,
 } from '@/types';
@@ -14,6 +16,25 @@ export const BACKEND_STARTERS: Array<{
   { framework: 'go', title: 'Go', detail: 'Go service' },
   { framework: 'springboot', title: 'Spring Boot', detail: 'Java service' },
   { framework: 'dotnet', title: '.NET', detail: 'C# Web API' },
+  { framework: 'rust', title: 'Rust Axum', detail: 'Rust backend' },
+  { framework: 'laravel', title: 'Laravel', detail: 'PHP backend' },
+];
+
+export const DESKTOP_STARTERS: Array<{
+  framework: DesktopScaffoldFramework;
+  title: string;
+  detail: string;
+}> = [
+  { framework: 'tauri', title: 'Tauri', detail: 'Rust desktop app' },
+  { framework: 'electron', title: 'Electron', detail: 'TypeScript desktop app' },
+];
+
+export const EXTENSION_STARTERS: Array<{
+  framework: ExtensionScaffoldFramework;
+  title: string;
+  detail: string;
+}> = [
+  { framework: 'vscode-extension', title: 'VS Code Extension', detail: 'TypeScript extension' },
 ];
 
 export const FRONTEND_STARTERS: Array<{
@@ -34,11 +55,12 @@ export const FRONTEND_STARTERS: Array<{
   { framework: 'sveltekit', title: 'SvelteKit', detail: 'Svelte app' },
 ];
 
-export const SCAFFOLD_STARTERS = [...BACKEND_STARTERS, ...FRONTEND_STARTERS] as Array<{
-  framework: ScaffoldFramework;
-  title: string;
-  detail: string;
-}>;
+export const SCAFFOLD_STARTERS = [
+  ...BACKEND_STARTERS,
+  ...FRONTEND_STARTERS,
+  ...DESKTOP_STARTERS,
+  ...EXTENSION_STARTERS,
+] as Array<{ framework: ScaffoldFramework; title: string; detail: string }>;
 
 export function isBackendScaffoldFramework(
   framework: ScaffoldFramework
@@ -65,7 +87,12 @@ export type WorkspaceBootstrapProfile =
 export function defaultBootstrapProfileForFramework(
   framework: ScaffoldFramework
 ): WorkspaceBootstrapProfile {
-  if (isFrontendScaffoldFramework(framework) || framework === 'nestjs') {
+  if (
+    isFrontendScaffoldFramework(framework) ||
+    framework === 'nestjs' ||
+    framework === 'electron' ||
+    framework === 'vscode-extension'
+  ) {
     return 'node-only';
   }
   if (framework === 'go') {
@@ -76,6 +103,9 @@ export function defaultBootstrapProfileForFramework(
   }
   if (framework === 'dotnet') {
     return 'dotnet-only';
+  }
+  if (framework === 'rust' || framework === 'tauri' || framework === 'laravel') {
+    return 'minimal';
   }
   return 'python-only';
 }
