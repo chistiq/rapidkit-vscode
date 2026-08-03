@@ -1,11 +1,18 @@
 #!/usr/bin/env sh
 
-# Shared contracts (canonical: rapidkit-npm/contracts/)
+# Shared contracts (canonical: workspai/packages/cli/contracts/)
 echo "📋 Validating shared contracts..."
 npm run validate:contracts || {
-	echo "❌ Extension contracts out of sync with rapidkit-npm/contracts/."
-	echo "   From rapidkit-npm: npm run sync:shared-contracts"
+	echo "❌ Extension contracts are out of sync with Workspai CLI contracts."
+	echo "   From workspai: npm run sync:shared-contracts"
 	echo "   Then commit contracts/ in both repos."
+	exit 1
+}
+
+echo "🔒 Validating package-lock integrity..."
+npm run check:lockfile || {
+	echo "❌ package-lock.json is incomplete for npm ci."
+	echo "   Run npm install --package-lock-only and commit package-lock.json."
 	exit 1
 }
 

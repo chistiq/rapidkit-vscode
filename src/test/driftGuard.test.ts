@@ -222,7 +222,7 @@ describe('contract drift guard', () => {
     expect(workflowSource).toContain('--issue-report artifacts/open-issues-report.json');
     expect(workflowSource).toContain('--enforce-open-issues');
     expect(workflowSource).toContain('--block-severities p0,p1');
-    expect(workflowSource).toContain('--marker-max-age-hours 720');
+    expect(workflowSource).not.toContain('--marker-max-age-hours');
     expect(workflowSource).toContain('--release-readiness-validation-mode auto');
     expect(workflowSource).toContain('--predictive-calibration-mode production');
     expect(workflowSource).toContain('--marker releases/wave3-kpi-marker.json');
