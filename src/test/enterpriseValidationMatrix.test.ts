@@ -1,3 +1,5 @@
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
 
@@ -13,6 +15,32 @@ describe('enterprise validation matrix', () => {
     expect(result.errors).toEqual([]);
     expect(result.ok).toBe(true);
     expect(result.scenarioCount).toBeGreaterThanOrEqual(10);
+  });
+
+  it('validates the shipped CLI baseline when the canonical repository is absent', () => {
+    const result = validateEnterpriseValidationMatrix(repoRoot, undefined, {
+      workspaiCliRoot: path.join(os.tmpdir(), 'workspai-cli-not-checked-out'),
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it('requires the canonical CLI only in the dedicated cross-repo gate', () => {
+    const missingCliRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-cli-missing-'));
+    try {
+      const result = validateEnterpriseValidationMatrix(repoRoot, undefined, {
+        workspaiCliRoot: missingCliRoot,
+        requireCanonical: true,
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.errors).toEqual([
+        expect.stringContaining('Cannot verify canonical CLI truth baseline'),
+      ]);
+    } finally {
+      fs.rmSync(missingCliRoot, { recursive: true, force: true });
+    }
   });
 
   it('keeps the New-P P2 gates in the release validation matrix', () => {

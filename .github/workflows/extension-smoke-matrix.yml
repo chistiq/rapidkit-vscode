@@ -48,6 +48,11 @@ jobs:
           WORKSPAI_CLI_REPO_PATH: ${{ github.workspace }}/workspai-cli-canonical/packages/cli
         run: npm run gate:contract-parity
 
+      - name: Validate enterprise baseline against canonical CLI
+        env:
+          WORKSPAI_CLI_REPO_PATH: ${{ github.workspace }}/workspai-cli-canonical/packages/cli
+        run: npm run release:enterprise-matrix -- --require-canonical
+
   smoke:
     name: Smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

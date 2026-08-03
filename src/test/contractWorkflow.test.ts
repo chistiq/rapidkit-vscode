@@ -87,6 +87,7 @@ describe('shared contracts workflow (Wave A + B)', () => {
     expect(parityWorkflow).toContain(
       'WORKSPAI_CLI_REPO_PATH: ${{ github.workspace }}/workspai-cli-canonical/packages/cli'
     );
+    expect(parityWorkflow).toContain('npm run release:enterprise-matrix -- --require-canonical');
     expect(parityWorkflow).not.toContain('RAPIDKIT_NPM_REPO_PATH');
     expect(parityWorkflow).not.toContain('rapidkit-npm-canonical');
     expect(preCommit).toContain('npm run validate:contracts');

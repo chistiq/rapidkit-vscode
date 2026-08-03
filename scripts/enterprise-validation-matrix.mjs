@@ -8,12 +8,15 @@ const DEFAULT_MATRIX_PATH = 'releases/enterprise-validation-matrix.json';
 function parseArgs(argv) {
   const options = {
     matrix: DEFAULT_MATRIX_PATH,
+    requireCanonical: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--matrix') {
       options.matrix = argv[index + 1] ?? DEFAULT_MATRIX_PATH;
       index += 1;
+    } else if (arg === '--require-canonical') {
+      options.requireCanonical = true;
     }
   }
   return options;
@@ -88,21 +91,15 @@ function validatePackageScripts(repoRoot, errors) {
   }
 }
 
-function validateNpmBaseline(repoRoot, matrix, errors) {
-  const npmPackagePath = path.resolve(
-    repoRoot,
-    '..',
-    'workspai',
-    'packages',
-    'cli',
-    'package.json'
-  );
+function validateNpmBaseline(repoRoot, matrix, errors, options = {}) {
+  const workspaiCliRoot = options.workspaiCliRoot
+    ? path.resolve(options.workspaiCliRoot)
+    : process.env.WORKSPAI_CLI_REPO_PATH
+      ? path.resolve(process.env.WORKSPAI_CLI_REPO_PATH)
+      : path.resolve(repoRoot, '..', 'workspai', 'packages', 'cli');
+  const npmPackagePath = path.resolve(workspaiCliRoot, 'package.json');
   const npmCompatibilityPath = path.resolve(
-    repoRoot,
-    '..',
-    'workspai',
-    'packages',
-    'cli',
+    workspaiCliRoot,
     'contracts',
     'extension-cli-compatibility.v1.json'
   );
@@ -112,16 +109,30 @@ function validateNpmBaseline(repoRoot, matrix, errors) {
     'extension-cli-compatibility.v1.json'
   );
 
-  if (!fs.existsSync(npmPackagePath) || !fs.existsSync(npmCompatibilityPath)) {
+  if (!fs.existsSync(extensionCompatibilityPath)) {
+    errors.push('Extension compatibility contract is missing.');
+    return;
+  }
+
+  const extensionCompatibility = readJson(extensionCompatibilityPath).minimumVerifiedCliVersion;
+  if (matrix.npmTruthBaseline !== extensionCompatibility) {
     errors.push(
-      'Cannot verify npm truth baseline: sibling Workspai CLI package/contracts missing.'
+      `Matrix npmTruthBaseline ${matrix.npmTruthBaseline} does not match extension compatibility ${extensionCompatibility}.`
     );
+  }
+
+  if (!fs.existsSync(npmPackagePath) || !fs.existsSync(npmCompatibilityPath)) {
+    if (options.requireCanonical) {
+      errors.push(
+        `Cannot verify canonical CLI truth baseline at ${workspaiCliRoot}. ` +
+          'Set WORKSPAI_CLI_REPO_PATH to the checked-out workspai/packages/cli directory.'
+      );
+    }
     return;
   }
 
   const npmVersion = readJson(npmPackagePath).version;
   const npmCompatibility = readJson(npmCompatibilityPath).minimumVerifiedCliVersion;
-  const extensionCompatibility = readJson(extensionCompatibilityPath).minimumVerifiedCliVersion;
   if (matrix.npmTruthBaseline !== npmVersion) {
     errors.push(
       `Matrix npmTruthBaseline ${matrix.npmTruthBaseline} does not match npm ${npmVersion}.`
@@ -139,7 +150,11 @@ function validateNpmBaseline(repoRoot, matrix, errors) {
   }
 }
 
-export function validateEnterpriseValidationMatrix(repoRoot, matrixPath = DEFAULT_MATRIX_PATH) {
+export function validateEnterpriseValidationMatrix(
+  repoRoot,
+  matrixPath = DEFAULT_MATRIX_PATH,
+  options = {}
+) {
   const errors = [];
   const resolvedMatrixPath = path.resolve(repoRoot, matrixPath);
   const matrix = readJson(resolvedMatrixPath);
@@ -161,7 +176,7 @@ export function validateEnterpriseValidationMatrix(repoRoot, matrixPath = DEFAUL
   }
 
   validatePackageScripts(repoRoot, errors);
-  validateNpmBaseline(repoRoot, matrix, errors);
+  validateNpmBaseline(repoRoot, matrix, errors, options);
 
   return {
     ok: errors.length === 0,
@@ -173,7 +188,9 @@ export function validateEnterpriseValidationMatrix(repoRoot, matrixPath = DEFAUL
 function main() {
   const options = parseArgs(process.argv.slice(2));
   const repoRoot = process.cwd();
-  const result = validateEnterpriseValidationMatrix(repoRoot, options.matrix);
+  const result = validateEnterpriseValidationMatrix(repoRoot, options.matrix, {
+    requireCanonical: options.requireCanonical,
+  });
   if (!result.ok) {
     console.error('Enterprise validation matrix failed:');
     for (const error of result.errors) {
