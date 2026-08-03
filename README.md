@@ -21,7 +21,7 @@ contracts, dependencies, and operational evidence that make up a software system
 
 <p align="center">
   <img
-    src="media/readme/incident-studio.png"
+    src="media/readme/incident-studio.gif"
     alt="Workspai Agent inspecting workspace evidence, changing source, and verifying the result"
     width="94%"
   />
