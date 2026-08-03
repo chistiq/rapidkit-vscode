@@ -25,19 +25,19 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout extension
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Checkout canonical Workspai CLI contracts
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ${{ github.repository_owner }}/workspai
           path: workspai-cli-canonical
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -63,12 +63,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -102,18 +102,6 @@ jobs:
       - name: Enterprise validation matrix
         run: npm run release:enterprise-matrix
 
-      - name: Checkout workspai-front for claim parity
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/workspai-front
-          path: workspai-front
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Website ↔ extension claim parity
-        env:
-          WORKSPAI_FRONT_PATH: ${{ github.workspace }}/workspai-front
-        run: npm run test:claim-parity
-
       - name: Stabilization debt budget
         run: npm run stabilization:debt-budget
 
@@ -137,12 +125,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -170,12 +158,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies

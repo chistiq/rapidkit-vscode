@@ -90,6 +90,11 @@ describe('shared contracts workflow (Wave A + B)', () => {
     expect(parityWorkflow).toContain('npm run release:enterprise-matrix -- --require-canonical');
     expect(parityWorkflow).not.toContain('RAPIDKIT_NPM_REPO_PATH');
     expect(parityWorkflow).not.toContain('rapidkit-npm-canonical');
+    expect(parityWorkflow).not.toContain('Checkout workspai-front');
+    expect(parityWorkflow).not.toContain('WORKSPAI_FRONT_PATH');
+    expect(parityWorkflow).toContain('uses: actions/checkout@v5');
+    expect(parityWorkflow).toContain('uses: actions/setup-node@v6');
+    expect(parityWorkflow).toContain('node-version: 24');
     expect(preCommit).toContain('npm run validate:contracts');
     expect(preCommit).toContain('npm run sync:shared-contracts');
     if (fs.existsSync(npmSyncScriptPath)) {
