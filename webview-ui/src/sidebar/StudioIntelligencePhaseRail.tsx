@@ -20,6 +20,7 @@ export function StudioIntelligencePhaseRail({
   const [direction, setDirection] = useState<'forward' | 'backward' | 'idle'>('idle');
   const activeIndex = Math.max(0, studioIntelligencePhaseIndex(activePhase));
   const activeLabel = studioIntelligencePhaseLabel(activePhase) ?? 'Model';
+  const phaseCount = STUDIO_INTELLIGENCE_PHASES.length;
 
   useEffect(() => {
     setDirection(resolveStudioIntelligencePhaseDirection(previousIndex.current, activeIndex));
@@ -29,21 +30,24 @@ export function StudioIntelligencePhaseRail({
   return (
     <nav
       className="ws-sidebar__intelligence-rail"
+      role="progressbar"
       aria-label="Workspace Intelligence repair loop"
+      aria-valuemax={phaseCount}
+      aria-valuemin={1}
+      aria-valuenow={activeIndex + 1}
+      aria-valuetext={`${activeLabel}, step ${activeIndex + 1} of ${phaseCount}`}
       data-direction={direction}
       data-running={running ? 'true' : 'false'}
-      style={
-        {
-          '--ws-phase-count': STUDIO_INTELLIGENCE_PHASES.length,
-        } as CSSProperties
-      }
+      style={{ '--ws-phase-count': phaseCount } as CSSProperties}
     >
       <div className="ws-sidebar__intelligence-rail-head">
-        <span>Workspace Intelligence</span>
-        <strong>{activeLabel}</strong>
-        <small>
-          {activeIndex + 1}/{STUDIO_INTELLIGENCE_PHASES.length}
-        </small>
+        <span>Intelligence loop</span>
+        <div>
+          <strong>{activeLabel}</strong>
+          <small>
+            {activeIndex + 1} of {phaseCount}
+          </small>
+        </div>
       </div>
       <div className="ws-sidebar__intelligence-rail-track" key={activePhase}>
         {STUDIO_INTELLIGENCE_PHASES.map((phase, index) => (
@@ -51,14 +55,11 @@ export function StudioIntelligencePhaseRail({
             key={phase.id}
             className="ws-sidebar__intelligence-phase"
             data-state={index < activeIndex ? 'past' : index === activeIndex ? 'active' : 'future'}
-            style={{ gridColumn: index + 1 }}
             aria-current={index === activeIndex ? 'step' : undefined}
+            aria-label={`${index + 1}. ${phase.label}`}
             title={`${index + 1}. ${phase.label}`}
           >
-            <span className="ws-sidebar__intelligence-phase-dot" aria-hidden="true" />
-            <span className="ws-sidebar__sr-only">
-              {index + 1}. {phase.label}
-            </span>
+            <span className="ws-sidebar__intelligence-phase-segment" aria-hidden="true" />
           </div>
         ))}
       </div>

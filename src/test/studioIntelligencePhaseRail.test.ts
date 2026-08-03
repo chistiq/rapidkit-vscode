@@ -47,7 +47,10 @@ describe('Studio Workspace Intelligence phase rail', () => {
     );
     expect(source).toContain('STUDIO_INTELLIGENCE_PHASES.map');
     expect(source).toContain('studioIntelligencePhaseLabel(activePhase)');
-    expect(source).toContain("'--ws-phase-count': STUDIO_INTELLIGENCE_PHASES.length");
+    expect(source).toContain('aria-valuetext');
+    expect(source).toContain('ws-sidebar__intelligence-phase-segment');
+    expect(source).toContain("'--ws-phase-count': phaseCount");
+    expect(source).not.toContain('ws-sidebar__sr-only');
     expect(source).not.toContain('buildStudioIntelligencePhaseWindow(activePhase)');
   });
 
