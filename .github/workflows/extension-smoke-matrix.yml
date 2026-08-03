@@ -41,7 +41,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: corepack npm ci
 
       - name: Enforce cross-repo contract parity (fails build on drift)
         env:
@@ -72,7 +72,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: corepack npm ci
 
       - name: Lint
         run: npm run lint
@@ -134,7 +134,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: corepack npm ci
 
       - name: Build VSIX artifact
         run: npm run package:ci
@@ -167,7 +167,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: corepack npm ci
 
       - name: Download inspected VSIX artifact
         uses: actions/download-artifact@v4
