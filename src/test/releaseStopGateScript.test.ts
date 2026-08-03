@@ -199,15 +199,16 @@ describe('release-stop-gate open-issue freshness hardening', () => {
 });
 
 describe('release-stop-gate local toolchain hardening', () => {
-  it('runs contract checks through the local Vitest binary before falling back to npx', () => {
+  it('runs contract checks through Node and the portable Vitest entrypoint', () => {
     const source = fs.readFileSync(path.join(repoRoot, 'scripts/release-stop-gate.mjs'), 'utf8');
 
     expect(source).toContain('path.resolve(');
     expect(source).toContain("'node_modules'");
-    expect(source).toContain("'.bin'");
-    expect(source).toContain("'vitest'");
-    expect(source).toContain("command = fs.existsSync(localVitest) ? localVitest : 'npx'");
-    expect(source).toContain("execFileSync(command, args, { stdio: 'inherit' })");
+    expect(source).toContain("'vitest.mjs'");
+    expect(source).toContain("command = hasLocalVitest ? process.execPath : 'npx'");
+    expect(source).toContain("shell: !hasLocalVitest && process.platform === 'win32'");
+    expect(source).not.toContain("process.platform === 'win32' ? 'vitest.cmd' : 'vitest'");
+    expect(source).not.toContain("'node_modules',\n    '.bin'");
     expect(source).not.toContain("'npx vitest run'");
   });
 });

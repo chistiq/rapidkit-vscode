@@ -590,18 +590,22 @@ function uniqueStrings(values) {
 }
 
 function runContractAndParityChecks(testFiles = DEFAULT_TEST_FILES) {
-  const localVitest = path.resolve(
+  const localVitestEntrypoint = path.resolve(
     process.cwd(),
     'node_modules',
-    '.bin',
-    process.platform === 'win32' ? 'vitest.cmd' : 'vitest'
+    'vitest',
+    'vitest.mjs'
   );
-  const command = fs.existsSync(localVitest) ? localVitest : 'npx';
-  const args = fs.existsSync(localVitest)
-    ? ['run', ...uniqueStrings(testFiles)]
+  const hasLocalVitest = fs.existsSync(localVitestEntrypoint);
+  const command = hasLocalVitest ? process.execPath : 'npx';
+  const args = hasLocalVitest
+    ? [localVitestEntrypoint, 'run', ...uniqueStrings(testFiles)]
     : ['vitest', 'run', ...uniqueStrings(testFiles)];
 
-  execFileSync(command, args, { stdio: 'inherit' });
+  execFileSync(command, args, {
+    stdio: 'inherit',
+    shell: !hasLocalVitest && process.platform === 'win32',
+  });
 }
 
 function readJson(filePath) {
