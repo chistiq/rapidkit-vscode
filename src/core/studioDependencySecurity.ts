@@ -1,7 +1,22 @@
 import fs from 'fs-extra';
 import path from 'node:path';
 
-export type StudioDependencyPackageManager = 'npm' | 'pnpm' | 'yarn';
+export type StudioDependencyPackageManager =
+  | 'npm'
+  | 'pnpm'
+  | 'yarn'
+  | 'bun'
+  | 'deno'
+  | 'pip'
+  | 'go'
+  | 'cargo'
+  | 'composer'
+  | 'bundler'
+  | 'dotnet'
+  | 'maven'
+  | 'gradle'
+  | 'mix'
+  | 'unknown';
 
 export type StudioDependencySecurityTarget = {
   projectName: string;
@@ -9,6 +24,8 @@ export type StudioDependencySecurityTarget = {
   vulnerabilities: number;
   packageManager: StudioDependencyPackageManager;
   sourceFiles: string[];
+  auditCommand?: string;
+  repairCommand?: string;
 };
 
 export type StudioDependencyRepairAttempt = {
@@ -19,7 +36,20 @@ export type StudioDependencyRepairAttempt = {
 
 export type StudioDependencyUpgradeCandidate = {
   packageName: string;
-  currentRange: string;
+  currentRange?: string;
+  currentVersion?: string;
+  relationship?: 'direct' | 'transitive' | 'unknown';
+  ownerPackages?: string[];
+  resolutionStrategies?: Array<
+    | 'direct-upgrade'
+    | 'owner-upgrade'
+    | 'constraint-update'
+    | 'transitive-override'
+    | 'replacement'
+    | 'policy-exception'
+    | 'upstream-wait'
+  >;
+  safeVersionConstraint?: string;
   severity?: string;
   vulnerableRange?: string;
   auditFixVersion?: string;
@@ -100,6 +130,19 @@ function dependencyFixDisposition(input: {
   };
 }
 
+function safeVersionConstraint(vulnerableRange: unknown): string | undefined {
+  if (typeof vulnerableRange !== 'string') {
+    return undefined;
+  }
+  const range = vulnerableRange.trim();
+  const exclusive = /^<\s*(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)$/.exec(range);
+  if (exclusive) {
+    return `>=${exclusive[1]}`;
+  }
+  const inclusive = /^<=\s*(\d+)\.(\d+)\.(\d+)$/.exec(range);
+  return inclusive ? `>=${inclusive[1]}.${inclusive[2]}.${Number(inclusive[3]) + 1}` : undefined;
+}
+
 export async function parseStudioDependencyUpgradeCandidates(input: {
   target: StudioDependencySecurityTarget;
   auditJson: string;
@@ -110,30 +153,68 @@ export async function parseStudioDependencyUpgradeCandidates(input: {
   } catch {
     throw new Error('Dependency audit did not return parseable JSON upgrade evidence.');
   }
-  const manifest = (await fs.readJson(path.join(input.target.projectPath, 'package.json'))) as {
+  const manifest = (await fs
+    .readJson(path.join(input.target.projectPath, 'package.json'))
+    .catch(() => null)) as {
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
     optionalDependencies?: Record<string, string>;
-  };
+  } | null;
+  if (!manifest) {
+    return [];
+  }
   const direct = {
     ...manifest.dependencies,
     ...manifest.devDependencies,
     ...manifest.optionalDependencies,
   };
   const vulnerabilities = record(report.vulnerabilities) ?? {};
-  return Object.entries(vulnerabilities).flatMap(([key, raw]) => {
+  return Object.entries(vulnerabilities).flatMap<StudioDependencyUpgradeCandidate>(([key, raw]) => {
     const vulnerability = record(raw);
     const packageName =
       typeof vulnerability?.name === 'string' ? vulnerability.name.trim() : key.trim();
     const currentRange = direct[packageName];
     const fix = record(vulnerability?.fixAvailable);
-    if (
-      !vulnerability ||
-      vulnerability.isDirect !== true ||
-      !currentRange ||
-      !PACKAGE_NAME_PATTERN.test(packageName) ||
-      (!fix && vulnerability.fixAvailable !== true)
-    ) {
+    if (!vulnerability || !PACKAGE_NAME_PATTERN.test(packageName)) {
+      return [];
+    }
+    const relationship =
+      vulnerability.isDirect === true
+        ? 'direct'
+        : vulnerability.isDirect === false
+          ? 'transitive'
+          : 'unknown';
+    const ownerPackages = Array.isArray(vulnerability.effects)
+      ? vulnerability.effects
+          .filter((entry): entry is string => typeof entry === 'string')
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+      : [];
+    if (relationship !== 'direct') {
+      return [
+        {
+          packageName,
+          relationship,
+          ownerPackages: [...new Set(ownerPackages)].sort(),
+          resolutionStrategies: [
+            ...(ownerPackages.length > 0 ? (['owner-upgrade'] as const) : []),
+            'transitive-override' as const,
+            'replacement' as const,
+            'policy-exception' as const,
+            'upstream-wait' as const,
+          ],
+          ...(typeof vulnerability.range === 'string'
+            ? { vulnerableRange: vulnerability.range }
+            : {}),
+          ...(safeVersionConstraint(vulnerability.range)
+            ? { safeVersionConstraint: safeVersionConstraint(vulnerability.range) }
+            : {}),
+          disposition: 'no-exact-fix' as const,
+          autoExecutable: false,
+        },
+      ];
+    }
+    if (!currentRange || (!fix && vulnerability.fixAvailable !== true)) {
       return [];
     }
     const auditFixVersion = typeof fix?.version === 'string' ? fix.version : undefined;
@@ -141,6 +222,15 @@ export async function parseStudioDependencyUpgradeCandidates(input: {
       {
         packageName,
         currentRange,
+        relationship,
+        ownerPackages: [],
+        resolutionStrategies: [
+          'direct-upgrade',
+          'constraint-update',
+          'replacement',
+          'policy-exception',
+          'upstream-wait',
+        ],
         ...(typeof vulnerability.severity === 'string' ? { severity: vulnerability.severity } : {}),
         ...(typeof vulnerability.range === 'string'
           ? { vulnerableRange: vulnerability.range }
@@ -185,6 +275,11 @@ export function buildStudioDependencyUpgradeCommand(input: {
   if (input.target.packageManager === 'pnpm') {
     return `pnpm add ${spec} --save-exact`;
   }
+  if (input.target.packageManager !== 'yarn') {
+    throw new Error(
+      `${input.target.packageManager} dependency resolution requires a guarded manifest transaction; it is not a Node direct-upgrade candidate.`
+    );
+  }
   return `yarn add ${spec} --exact`;
 }
 
@@ -206,6 +301,7 @@ type DoctorProject = {
   path?: unknown;
   vulnerabilities?: unknown;
   probes?: unknown;
+  dependencyAudit?: unknown;
 };
 
 function isInside(root: string, candidate: string): boolean {
@@ -213,10 +309,117 @@ function isInside(root: string, candidate: string): boolean {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
-async function packageManagerFor(projectPath: string): Promise<{
+const SAFE_AUDIT_EXECUTABLES = new Set([
+  'npm',
+  'pnpm',
+  'yarn',
+  'bun',
+  'deno',
+  'python',
+  'python3',
+  'govulncheck',
+  'cargo',
+  'composer',
+  'bundle-audit',
+  'dotnet',
+  'mix',
+  'mvn',
+  'gradle',
+  'gradlew',
+]);
+const SAFE_AUDIT_ARGUMENT = /^[A-Za-z0-9_@./:=,+-]+$/;
+const SAFE_AUDIT_EXECUTABLE_PATH = /^[A-Za-z0-9_@./:\\-]+$/;
+
+function packageManagerFromAudit(value: unknown): StudioDependencyPackageManager | undefined {
+  const dependencyAudit = record(value);
+  const invocation = record(dependencyAudit?.invocation);
+  const executable = typeof invocation?.executable === 'string' ? invocation.executable : '';
+  const executableName = path
+    .basename(executable)
+    .toLowerCase()
+    .replace(/\.exe$/, '');
+  const runtime = String(dependencyAudit?.runtime ?? '').toLowerCase();
+  const tool = String(dependencyAudit?.tool ?? '').toLowerCase();
+
+  if (executableName === 'npm') {
+    return 'npm';
+  }
+  if (executableName === 'pnpm') {
+    return 'pnpm';
+  }
+  if (executableName === 'yarn') {
+    return 'yarn';
+  }
+  if (executableName === 'bun') {
+    return 'bun';
+  }
+  if (executableName === 'deno') {
+    return 'deno';
+  }
+  if (executableName === 'python' || executableName === 'python3' || tool.includes('pip-audit')) {
+    return 'pip';
+  }
+  if (executableName === 'govulncheck' || runtime === 'go') {
+    return 'go';
+  }
+  if (executableName === 'cargo' || runtime === 'rust') {
+    return 'cargo';
+  }
+  if (executableName === 'composer' || runtime === 'php') {
+    return 'composer';
+  }
+  if (executableName === 'bundle-audit' || runtime === 'ruby') {
+    return 'bundler';
+  }
+  if (executableName === 'dotnet' || runtime === 'dotnet') {
+    return 'dotnet';
+  }
+  if (executableName === 'mix' || runtime === 'elixir') {
+    return 'mix';
+  }
+  if (executableName === 'mvn') {
+    return 'maven';
+  }
+  if (executableName === 'gradle' || executableName === 'gradlew') {
+    return 'gradle';
+  }
+  return undefined;
+}
+
+function trustedAuditCommand(value: unknown): string | undefined {
+  const dependencyAudit = record(value);
+  const invocation = record(dependencyAudit?.invocation);
+  const executable = typeof invocation?.executable === 'string' ? invocation.executable : '';
+  const executableName = path
+    .basename(executable)
+    .toLowerCase()
+    .replace(/\.exe$/, '');
+  const args = Array.isArray(invocation?.args)
+    ? invocation.args.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+  if (
+    !SAFE_AUDIT_EXECUTABLES.has(executableName) ||
+    !SAFE_AUDIT_EXECUTABLE_PATH.test(executable) ||
+    args.length !== (Array.isArray(invocation?.args) ? invocation.args.length : 0) ||
+    args.some((entry) => !SAFE_AUDIT_ARGUMENT.test(entry))
+  ) {
+    return undefined;
+  }
+  // Preserve a governed virtual-environment or toolchain path. Falling back to
+  // the basename here can silently audit a different interpreter than Doctor.
+  return [executable, ...args].join(' ');
+}
+
+async function packageManagerFor(
+  projectPath: string,
+  dependencyAudit?: unknown
+): Promise<{
   packageManager: StudioDependencyPackageManager;
   sourceFiles: string[];
+  auditCommand?: string;
+  repairCommand?: string;
 }> {
+  const preferredPackageManager = packageManagerFromAudit(dependencyAudit);
   const candidates = [
     { file: 'package-lock.json', packageManager: 'npm' as const },
     { file: 'pnpm-lock.yaml', packageManager: 'pnpm' as const },
@@ -224,24 +427,146 @@ async function packageManagerFor(projectPath: string): Promise<{
   ];
   const sourceFiles = ['package.json'];
   for (const candidate of candidates) {
+    if (
+      preferredPackageManager &&
+      !(['npm', 'pnpm', 'yarn'] as StudioDependencyPackageManager[]).includes(
+        preferredPackageManager
+      )
+    ) {
+      break;
+    }
+    if (
+      preferredPackageManager &&
+      (['npm', 'pnpm', 'yarn'] as StudioDependencyPackageManager[]).includes(
+        preferredPackageManager
+      ) &&
+      candidate.packageManager !== preferredPackageManager
+    ) {
+      continue;
+    }
     if (await fs.pathExists(path.join(projectPath, candidate.file))) {
       sourceFiles.push(candidate.file);
-      return { packageManager: candidate.packageManager, sourceFiles };
+      const repairCommand =
+        candidate.packageManager === 'npm'
+          ? 'npm audit fix --audit-level=moderate'
+          : candidate.packageManager === 'pnpm'
+            ? 'pnpm audit --fix'
+            : undefined;
+      return {
+        packageManager: candidate.packageManager,
+        sourceFiles,
+        auditCommand:
+          trustedAuditCommand(dependencyAudit) ??
+          (candidate.packageManager === 'npm'
+            ? 'npm audit --json'
+            : candidate.packageManager === 'pnpm'
+              ? 'pnpm audit --json'
+              : 'yarn npm audit --json'),
+        ...(repairCommand ? { repairCommand } : {}),
+      };
     }
   }
-  if (await fs.pathExists(path.join(projectPath, 'package.json'))) {
-    return { packageManager: 'npm', sourceFiles };
+  if (
+    (!preferredPackageManager ||
+      (['npm', 'pnpm', 'yarn'] as StudioDependencyPackageManager[]).includes(
+        preferredPackageManager
+      )) &&
+    (await fs.pathExists(path.join(projectPath, 'package.json')))
+  ) {
+    const packageManager =
+      preferredPackageManager &&
+      (['npm', 'pnpm', 'yarn'] as StudioDependencyPackageManager[]).includes(
+        preferredPackageManager
+      )
+        ? preferredPackageManager
+        : 'npm';
+    return {
+      packageManager,
+      sourceFiles,
+      auditCommand:
+        trustedAuditCommand(dependencyAudit) ??
+        (packageManager === 'pnpm'
+          ? 'pnpm audit --json'
+          : packageManager === 'yarn'
+            ? 'yarn npm audit --json'
+            : 'npm audit --json'),
+      ...(packageManager !== 'yarn'
+        ? {
+            repairCommand:
+              packageManager === 'pnpm'
+                ? 'pnpm audit --fix'
+                : 'npm audit fix --audit-level=moderate',
+          }
+        : {}),
+    };
   }
-  throw new Error('Dependency security target has no supported Node manifest.');
+  const topLevelFiles = await fs.readdir(projectPath).catch(() => [] as string[]);
+  const dotnetProjectFiles = topLevelFiles.filter((file) =>
+    /\.(?:cs|fs|vb)proj$|\.sln$/i.test(file)
+  );
+  const ecosystems: Array<{
+    packageManager: StudioDependencyPackageManager;
+    files: string[];
+    auditCommand?: string;
+  }> = [
+    {
+      packageManager: 'pip',
+      files: ['pyproject.toml', 'requirements.txt', 'poetry.lock', 'uv.lock'],
+    },
+    { packageManager: 'go', files: ['go.mod', 'go.sum'] },
+    { packageManager: 'cargo', files: ['Cargo.toml', 'Cargo.lock'] },
+    { packageManager: 'composer', files: ['composer.json', 'composer.lock'] },
+    { packageManager: 'bundler', files: ['Gemfile', 'Gemfile.lock'] },
+    {
+      packageManager: 'dotnet',
+      files: ['Directory.Packages.props', 'packages.lock.json', ...dotnetProjectFiles],
+    },
+    { packageManager: 'maven', files: ['pom.xml'] },
+    { packageManager: 'gradle', files: ['build.gradle', 'build.gradle.kts', 'gradle.lockfile'] },
+    { packageManager: 'mix', files: ['mix.exs', 'mix.lock'] },
+    { packageManager: 'deno', files: ['deno.json', 'deno.jsonc', 'deno.lock'] },
+    { packageManager: 'bun', files: ['bun.lock', 'bun.lockb'] },
+  ];
+  const orderedEcosystems = preferredPackageManager
+    ? [
+        ...ecosystems.filter((ecosystem) => ecosystem.packageManager === preferredPackageManager),
+        ...ecosystems.filter((ecosystem) => ecosystem.packageManager !== preferredPackageManager),
+      ]
+    : ecosystems;
+  for (const ecosystem of orderedEcosystems) {
+    const existing = [];
+    for (const file of ecosystem.files) {
+      if (await fs.pathExists(path.join(projectPath, file))) {
+        existing.push(file);
+      }
+    }
+    if (existing.length > 0) {
+      return {
+        packageManager: ecosystem.packageManager,
+        sourceFiles: existing,
+        ...(trustedAuditCommand(dependencyAudit)
+          ? { auditCommand: trustedAuditCommand(dependencyAudit) }
+          : {}),
+      };
+    }
+  }
+  return {
+    packageManager: 'unknown',
+    sourceFiles: [],
+    ...(trustedAuditCommand(dependencyAudit)
+      ? { auditCommand: trustedAuditCommand(dependencyAudit) }
+      : {}),
+  };
 }
 
 export async function resolveStudioDependencySecurityTargetFromProject(input: {
   projectPath: string;
   projectName?: string;
   vulnerabilities?: number;
+  dependencyAudit?: unknown;
 }): Promise<StudioDependencySecurityTarget> {
   const projectPath = path.resolve(input.projectPath);
-  const manager = await packageManagerFor(projectPath);
+  const manager = await packageManagerFor(projectPath, input.dependencyAudit);
   return {
     projectName: input.projectName?.trim() || path.basename(projectPath),
     projectPath,
@@ -293,6 +618,7 @@ export async function resolveStudioDependencySecurityTargets(input: {
         projectName,
         projectPath,
         vulnerabilities: project.vulnerabilities as number,
+        dependencyAudit: project.dependencyAudit,
       });
     })
   );
@@ -326,16 +652,22 @@ export function buildStudioDependencySecurityCommand(
   target: StudioDependencySecurityTarget,
   action: 'inspect' | 'repair'
 ): string {
+  if (action === 'inspect' && target.auditCommand) {
+    return target.auditCommand;
+  }
+  if (action === 'repair' && target.repairCommand) {
+    return target.repairCommand;
+  }
   if (target.packageManager === 'npm') {
     return action === 'inspect' ? 'npm audit --json' : 'npm audit fix --audit-level=moderate';
   }
   if (target.packageManager === 'pnpm') {
     return action === 'inspect' ? 'pnpm audit --json' : 'pnpm audit --fix';
   }
-  if (action === 'inspect') {
+  if (target.packageManager === 'yarn' && action === 'inspect') {
     return 'yarn npm audit --json';
   }
   throw new Error(
-    'Yarn does not expose a deterministic non-force audit fix. Inspect the advisory and patch the authorized manifest instead.'
+    `${target.packageManager} does not expose a deterministic non-force repair through Studio. Inspect the governed audit evidence and patch the authorized manifest through a guarded source transaction instead.`
   );
 }

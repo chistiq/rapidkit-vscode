@@ -1,6 +1,6 @@
 # Workspai UI surface guide
 
-> Extension 0.35.0 · Workspai CLI 0.52.1+
+> Extension 0.35.0 · Workspai CLI 0.52.2+
 
 This guide documents the current user-facing surfaces. It is a review aid for
 maintainers; it is not a second command reference.
@@ -118,6 +118,8 @@ Rules:
 - only fresh non-blocking verification can complete a session;
 - repeated inspection without a causal change is bounded;
 - safe contract-authored operations may continue automatically;
+- an exhausted audit accelerator delegates to guarded, project-native source
+  repair before Studio asks for a breaking decision;
 - breaking, invasive, destructive, external, or unsupported actions stop at a
   clear review boundary;
 - rollback and changed-file evidence remain attached to the session.

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Planned as extension **0.35.0**, aligned with Workspai CLI **0.52.0+**.
+Planned as extension **0.35.0**, aligned with Workspai CLI **0.52.2+**.
 
 Current release scope:
 
@@ -73,6 +73,7 @@ or names for traceability; it is not usage guidance.
 
 ### Fixed
 
+* Fixed dependency incidents stopping at an unsafe npm downgrade even when a compatible owner upgrade, transitive constraint, or runtime-native source transaction remained available. Studio now preserves CLI-authored resolution candidates, respects the Doctor-selected ecosystem in polyglot projects, and reaches a user decision only after bounded compatibility investigation.
 * Fixed every multi-tool VS Code LM request failing before its first model turn because `LanguageModelChatToolMode.Required` was used with more than one tool.
 * Fixed `copilotcli` and other session-only providers appearing as runnable Workspai models even though they cannot answer extension LM requests.
 * Fixed missing/retired models and empty provider streams terminating Studio without trying another callable model.

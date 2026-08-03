@@ -2,7 +2,7 @@
 
 ## Workspace Intelligence, verified goals, and a dependable Studio Agent
 
-This release aligns the extension with Workspai CLI 0.52.0 and makes the same
+This release aligns the extension with Workspai CLI 0.52.2 and makes the same
 workspace contracts available across the primary sidebar, Dashboard, Create,
 and Assistant surfaces.
 
@@ -54,6 +54,11 @@ inspect → change → reconcile → audit/test/build → intelligence loop → 
   `rapidkit:doctor:repair` token are both understood.
 - Repeated model inspection is bounded, while real source changes reopen the
   causal repair path.
+- If a direct audit fix is unsafe or absent, Studio investigates CLI-authored
+  direct/transitive resolution candidates through the project-native manifest
+  and toolchain before asking for a breaking decision.
+- Polyglot projects keep the Doctor-selected npm, pnpm, Yarn, Bun, Deno,
+  Python, Go, Rust, PHP, Ruby, .NET, JVM, or Elixir remediation boundary.
 - Only fresh non-blocking evidence can complete the session.
 
 ### Clearer workspace and project navigation
@@ -77,15 +82,15 @@ inspect → change → reconcile → audit/test/build → intelligence loop → 
 ## Compatibility
 
 - VS Code 1.106.0 or newer
-- Workspai CLI 0.52.0 or newer
+- Workspai CLI 0.52.2 or newer
 - RapidKit Core 0.6.0 only when a Python-backed kit/module requires it
 
 ## Validation
 
 - Contract parity: passed
 - Palette surface: 172 commands synchronized
-- Test files: 356 passed
-- Tests: 2510 passed, 2 skipped
+- Test files: 357 passed
+- Tests: 2530 passed, 2 skipped
 - TypeScript host and webview checks: passed
 - Production host/webview build: passed
 

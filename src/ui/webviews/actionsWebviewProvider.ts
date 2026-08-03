@@ -3913,12 +3913,30 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             captureStdout: true,
           });
           const auditCompleted = execution.exitCode === 0 || execution.exitCode === 1;
-          const resolutionCandidates = execution.capturedStdout
+          const parsedResolutionCandidates = execution.capturedStdout
             ? await parseStudioDependencyUpgradeCandidates({
                 target,
                 auditJson: execution.capturedStdout,
               }).catch(() => [])
             : [];
+          const resolutionCandidates =
+            parsedResolutionCandidates.length > 0 || target.repairCommand
+              ? parsedResolutionCandidates
+              : [
+                  {
+                    packageName: `${target.packageManager}-dependency-graph`,
+                    relationship: 'unknown' as const,
+                    ownerPackages: [],
+                    resolutionStrategies: [
+                      'constraint-update' as const,
+                      'replacement' as const,
+                      'policy-exception' as const,
+                      'upstream-wait' as const,
+                    ],
+                    disposition: 'no-exact-fix' as const,
+                    autoExecutable: false,
+                  },
+                ];
           const upgradeCandidates = resolutionCandidates.filter(
             (candidate) => candidate.autoExecutable
           );

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "workspai-enterprise-validation-matrix.v1",
   "generatedFor": "rapidkit-vscode",
-  "npmTruthBaseline": "0.52.1",
+  "npmTruthBaseline": "0.52.2",
   "scenarios": [
     {
       "id": "cli.version.below_minimum",

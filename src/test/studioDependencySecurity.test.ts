@@ -8,6 +8,7 @@ import {
   buildStudioDependencySecurityCommand,
   dependencyRepairAttemptsForGeneration,
   parseStudioDependencyUpgradeCandidates,
+  resolveStudioDependencySecurityTargetFromProject,
   resolveStudioDependencySecurityTarget,
   resolveStudioDependencySecurityTargets,
 } from '../core/studioDependencySecurity.js';
@@ -176,6 +177,13 @@ describe('Studio dependency security capability', () => {
         disposition: 'downgrade-only',
         autoExecutable: false,
       }),
+      expect.objectContaining({
+        packageName: 'postcss',
+        relationship: 'transitive',
+        disposition: 'no-exact-fix',
+        autoExecutable: false,
+        resolutionStrategies: expect.arrayContaining(['transitive-override']),
+      }),
     ]);
     expect(() => buildStudioDependencyUpgradeCommand({ target, candidate: candidates[0] })).toThrow(
       'not safe for automatic execution'
@@ -187,6 +195,140 @@ describe('Studio dependency security capability', () => {
       })
     ).toThrow('package name is invalid');
   });
+
+  it('keeps transitive owner and safe-range evidence for guarded source repair', async () => {
+    const root = await fixture();
+    const target = await resolveStudioDependencySecurityTarget({ workspacePath: root });
+    const candidates = await parseStudioDependencyUpgradeCandidates({
+      target,
+      auditJson: JSON.stringify({
+        vulnerabilities: {
+          sharp: {
+            name: 'sharp',
+            severity: 'high',
+            isDirect: false,
+            range: '<0.35.0',
+            effects: ['next'],
+            fixAvailable: { name: 'next', version: '9.3.3', isSemVerMajor: true },
+          },
+        },
+      }),
+    });
+
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        packageName: 'sharp',
+        relationship: 'transitive',
+        ownerPackages: ['next'],
+        safeVersionConstraint: '>=0.35.0',
+        resolutionStrategies: expect.arrayContaining(['owner-upgrade', 'transitive-override']),
+        autoExecutable: false,
+      }),
+    ]);
+  });
+
+  it('resolves a Python blocker to governed manifests without pretending npm owns it', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-security-python-'));
+    roots.push(root);
+    const projectPath = path.join(root, 'atlas-python');
+    await fs.ensureDir(path.join(root, '.workspai', 'reports'));
+    await fs.ensureDir(projectPath);
+    await fs.writeJson(path.join(projectPath, 'package.json'), {
+      name: 'polyglot-helper-surface',
+    });
+    await fs.writeFile(path.join(projectPath, 'pyproject.toml'), '[project]\nname = "atlas"\n');
+    await fs.writeFile(path.join(projectPath, 'poetry.lock'), '');
+    const governedPython = path.join(projectPath, '.venv', 'bin', 'python');
+    await fs.writeJson(path.join(root, '.workspai', 'reports', 'doctor-last-run.json'), {
+      projects: [
+        {
+          name: 'atlas-python',
+          path: projectPath,
+          vulnerabilities: 1,
+          dependencyAudit: {
+            invocation: {
+              executable: governedPython,
+              args: ['-m', 'pip_audit', '--format', 'json'],
+            },
+          },
+          probes: [
+            {
+              id: 'surface-security-hygiene',
+              status: 'fail',
+              freshness: { status: 'fresh', expiresAt: '2099-01-01T00:00:00.000Z' },
+            },
+          ],
+        },
+      ],
+    });
+
+    const target = await resolveStudioDependencySecurityTarget({ workspacePath: root });
+    expect(target).toMatchObject({
+      packageManager: 'pip',
+      sourceFiles: ['pyproject.toml', 'poetry.lock'],
+      auditCommand: `${governedPython} -m pip_audit --format json`,
+    });
+    expect(buildStudioDependencySecurityCommand(target, 'inspect')).toBe(
+      `${governedPython} -m pip_audit --format json`
+    );
+    expect(() => buildStudioDependencySecurityCommand(target, 'repair')).toThrow(
+      'guarded source transaction'
+    );
+  });
+
+  it.each([
+    ['go', ['go.mod', 'go.sum'], 'govulncheck', ['-json', './...'], 'go'],
+    ['cargo', ['Cargo.toml', 'Cargo.lock'], 'cargo', ['audit', '--json'], 'rust'],
+    ['composer', ['composer.json', 'composer.lock'], 'composer', ['audit', '--format=json'], 'php'],
+    ['bundler', ['Gemfile', 'Gemfile.lock'], 'bundle-audit', ['check', '--format', 'json'], 'ruby'],
+    [
+      'dotnet',
+      ['Directory.Packages.props', 'atlas.csproj'],
+      'dotnet',
+      ['package', 'list', '--vulnerable', '--format', 'json'],
+      'dotnet',
+    ],
+    ['maven', ['pom.xml'], 'mvn', ['dependency-check:check'], 'java'],
+    [
+      'gradle',
+      ['build.gradle.kts', 'gradle.lockfile'],
+      'gradlew',
+      ['dependencyCheckAnalyze'],
+      'kotlin',
+    ],
+    ['mix', ['mix.exs', 'mix.lock'], 'mix', ['hex.audit'], 'elixir'],
+    ['deno', ['deno.json', 'deno.lock'], 'deno', ['audit'], 'deno'],
+    ['bun', ['bun.lock'], 'bun', ['audit', '--json'], 'bun'],
+  ] as const)(
+    'keeps %s remediation bound to its runtime-native dependency surface',
+    async (packageManager, files, executable, args, runtime) => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), `workspai-security-${packageManager}-`));
+      roots.push(root);
+      // A secondary package.json proves the Doctor audit runtime, not filename
+      // ordering, owns the active remediation boundary in polyglot projects.
+      await fs.writeJson(path.join(root, 'package.json'), { name: 'polyglot-helper' });
+      for (const file of files) {
+        await fs.outputFile(path.join(root, file), '');
+      }
+
+      const target = await resolveStudioDependencySecurityTargetFromProject({
+        projectPath: root,
+        vulnerabilities: 1,
+        dependencyAudit: {
+          runtime,
+          tool: executable,
+          invocation: { executable, args },
+        },
+      });
+
+      expect(target).toMatchObject({
+        packageManager,
+        sourceFiles: files,
+        auditCommand: [executable, ...args].join(' '),
+      });
+      expect(target.sourceFiles).not.toContain('package.json');
+    }
+  );
 
   it('builds an exact transaction only for a non-breaking forward audit fix', async () => {
     const root = await fixture();

@@ -222,24 +222,36 @@ export async function runStudioActiveBlockerRecovery(input: {
         evidenceGeneration: input.evidenceGeneration,
         blockerSignature: input.blockerSignature,
         output: {
-          recoveryPath: 'dependency-security',
+          recoveryPath: 'general-source-repair',
           observations,
           processedProjects: [...input.dependencyProjectNames],
           clearedProjects,
           unresolvedProjects,
           dependencyDiagnostics,
-          nextAction: 'review-required',
-          terminalReason: 'safe-fix-unavailable',
-          requiresUserDecision: true,
+          sourceCandidates: dependencyDiagnostics.flatMap((entry) =>
+            entry.sourceFiles.map((file) => `${entry.projectName}/${file}`)
+          ),
+          nextAction: 'general-source-repair',
+          exhaustedTools: [
+            'inspect-dependency-security',
+            'repair-dependency-security',
+            'upgrade-dependency-security',
+          ],
+          recommendedTools: [
+            'inspect-source',
+            'run-workspace-command',
+            'apply-workspace-patch',
+            'inspect-workspace-changes',
+          ],
           recommendedActions: [
-            'Review an explicit dependency replacement or compatible migration.',
-            'Record a time-bounded policy exception when the residual risk is accepted.',
-            'Wait for an upstream patch and rerun Doctor before release.',
+            'Inspect the exact manifest, lockfile, vulnerable transitive packages, and owning dependency constraints.',
+            'Discover a compatible owner upgrade or guarded package-manager constraint before considering a breaking change.',
+            'After one source transaction, reconcile the lockfile and run focused audit, test, and build verification.',
           ],
         },
         error:
-          `No compatible non-breaking remediation is currently available for ${unresolvedProjects.length} affected project(s). ` +
-          'Studio paused before applying a downgrade, force install, or breaking dependency change.',
+          `The bounded audit fix could not safely repair ${unresolvedProjects.length} affected project(s). ` +
+          'Continue through the general source-repair plane; require a user decision only if compatibility discovery leaves a breaking, forced, downgrade, or policy-exception choice.',
       };
     }
   }

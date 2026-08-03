@@ -1,6 +1,6 @@
 # Getting started with Workspai for VS Code
 
-> Extension 0.35.0 · compatible with Workspai CLI 0.52.1+
+> Extension 0.35.0 · compatible with Workspai CLI 0.52.2+
 
 Workspai helps people and AI tools understand and change the same workspace
 using a shared model, graph, health evidence, and verification loop.
@@ -8,7 +8,7 @@ using a shared model, graph, health evidence, and verification loop.
 ## What you need
 
 - VS Code 1.106.0 or newer
-- Workspai CLI 0.52.1 or newer
+- Workspai CLI 0.52.2 or newer
 - Node.js supported by the installed Workspai CLI
 - Git when you want change, impact, or `--since` evidence
 
@@ -114,8 +114,12 @@ Agent mode works for ordinary requests and blocker cards. Examples:
 For dependency changes, Studio does not treat a manifest edit as completion. It
 must reconcile the lockfile and installed tree, rerun the focused audit, run
 declared tests/build, refresh Workspace Intelligence, and verify current
-evidence. Breaking, invasive, destructive, or unsupported repairs remain
-explicit review boundaries.
+evidence. “No direct automatic fix” moves Agent mode into guarded source
+investigation; it does not immediately stop the session. Studio first inspects
+the runtime-owned manifest, lock/baseline, transitive advisory path, and
+compatible owner or constraint options. Breaking, forced, downgrade,
+destructive, external, or policy-exception choices remain explicit review
+boundaries.
 
 ## The governed loop
 

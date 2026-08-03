@@ -149,7 +149,8 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
     contractPath: 'doctor-project-evidence.v1.json',
     mode: 'evidence-consumed',
     extensionSurface: 'Project health evidence and Project lifecycle',
-    usage: 'Reads project doctor evidence for blockers, warnings, health, and capability status.',
+    usage:
+      'Reads project Doctor evidence for blockers, warnings, health, capability status, and guarded direct/transitive dependency resolution candidates.',
   },
   {
     contractPath: 'doctor-remediation-plan.v1.json',
@@ -162,7 +163,8 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
     contractPath: 'doctor-workspace-evidence.v1.json',
     mode: 'evidence-consumed',
     extensionSurface: 'Workspace health evidence and repair flow',
-    usage: 'Reads workspace doctor evidence for primary blockers and next safe actions.',
+    usage:
+      'Reads workspace Doctor evidence for primary blockers, runtime-native audit provenance, structured resolution candidates, and next safe actions.',
   },
   {
     contractPath: 'infra-stack.v1.json',

@@ -20,7 +20,7 @@ function readRoadmapFile(fileName: string): string {
 }
 
 describe('RC baseline contract', () => {
-  it('pins the extension release line to Workspai CLI 0.52.1 and extension 0.35.0', () => {
+  it('pins the extension release line to Workspai CLI 0.52.2 and extension 0.35.0', () => {
     const packageJson = readJson<{ version: string }>('package.json');
     const matrix = readJson<{ npmTruthBaseline: string }>(
       'releases/enterprise-validation-matrix.json'
@@ -28,8 +28,8 @@ describe('RC baseline contract', () => {
     const baseline = readRoadmapFile('WORKSPAI_EXTENSION_RC_BASELINE_2026-06-28.md');
 
     expect(packageJson.version).toBe('0.35.0');
-    expect(MIN_RAPIDKIT_CLI_VERSION).toBe('0.52.1');
-    expect(matrix.npmTruthBaseline).toBe('0.52.1');
+    expect(MIN_RAPIDKIT_CLI_VERSION).toBe('0.52.2');
+    expect(matrix.npmTruthBaseline).toBe('0.52.2');
     expect(baseline).toContain('rapidkit@0.42.0');
     expect(baseline).toContain('rapidkit-vscode@0.35.0');
   });

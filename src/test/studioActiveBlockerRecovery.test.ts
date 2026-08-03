@@ -204,7 +204,7 @@ describe('Studio active blocker recovery', () => {
     });
   });
 
-  it('stops before provider calls when every audit candidate requires a breaking decision', async () => {
+  it('delegates to guarded source repair before asking for a breaking decision', async () => {
     const inspectDependencySecurity = vi.fn(async (input: { projectName?: string }) => ({
       ok: true,
       output: {
@@ -256,10 +256,9 @@ describe('Studio active blocker recovery', () => {
       ok: false,
       changed: false,
       output: {
-        recoveryPath: 'dependency-security',
-        nextAction: 'review-required',
-        terminalReason: 'safe-fix-unavailable',
-        requiresUserDecision: true,
+        recoveryPath: 'general-source-repair',
+        nextAction: 'general-source-repair',
+        sourceCandidates: ['polyglot-app/package.json', 'polyglot-app/package-lock.json'],
         unresolvedProjects: ['polyglot-app'],
         dependencyDiagnostics: [
           expect.objectContaining({
@@ -270,6 +269,6 @@ describe('Studio active blocker recovery', () => {
         ],
       },
     });
-    expect(result.error).toContain('No compatible non-breaking remediation');
+    expect(result.error).toContain('Continue through the general source-repair plane');
   });
 });
