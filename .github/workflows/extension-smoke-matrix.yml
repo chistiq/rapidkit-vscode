@@ -27,11 +27,11 @@ jobs:
       - name: Checkout extension
         uses: actions/checkout@v4
 
-      - name: Checkout canonical rapidkit-npm contracts
+      - name: Checkout canonical Workspai CLI contracts
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.repository_owner }}/rapidkit-npm
-          path: rapidkit-npm-canonical
+          repository: ${{ github.repository_owner }}/workspai
+          path: workspai-cli-canonical
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node
@@ -45,7 +45,7 @@ jobs:
 
       - name: Enforce cross-repo contract parity (fails build on drift)
         env:
-          RAPIDKIT_NPM_REPO_PATH: ${{ github.workspace }}/rapidkit-npm-canonical
+          WORKSPAI_CLI_REPO_PATH: ${{ github.workspace }}/workspai-cli-canonical/packages/cli
         run: npm run gate:contract-parity
 
   smoke:

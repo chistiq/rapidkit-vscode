@@ -9,7 +9,11 @@ import {
 } from '../core/npmContractSupportMatrix';
 
 const repoRoot = path.resolve(__dirname, '../..');
-const npmContractsRoot = path.resolve(repoRoot, '..', 'workspai', 'packages', 'cli', 'contracts');
+const extensionContractsRoot = path.resolve(repoRoot, 'contracts');
+const extensionOwnedContracts = new Set([
+  'workspace-intelligence/workspace-graph-recording.v1.json',
+  'workspai-ai-narrative.v1.json',
+]);
 
 function listJsonContracts(dir: string, prefix = ''): string[] {
   if (!fs.existsSync(dir)) {
@@ -19,7 +23,7 @@ function listJsonContracts(dir: string, prefix = ''): string[] {
   return fs
     .readdirSync(dir, { withFileTypes: true })
     .flatMap((entry) => {
-      const relativePath = path.join(prefix, entry.name);
+      const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
       const absolutePath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         return listJsonContracts(absolutePath, relativePath);
@@ -31,7 +35,9 @@ function listJsonContracts(dir: string, prefix = ''): string[] {
 
 describe('npm contract support matrix', () => {
   it('classifies every npm contract shipped into the extension', () => {
-    const npmContracts = listJsonContracts(npmContractsRoot);
+    const npmContracts = listJsonContracts(extensionContractsRoot).filter(
+      (contractPath) => !extensionOwnedContracts.has(contractPath)
+    );
     const matrixContracts = NPM_CONTRACT_SUPPORT_MATRIX.map((entry) => entry.contractPath).sort();
     const uniqueMatrixContracts = [...new Set(matrixContracts)];
 
@@ -40,7 +46,7 @@ describe('npm contract support matrix', () => {
     expect(matrixContracts).toEqual(npmContracts);
 
     for (const contractPath of npmContracts) {
-      expect(fs.existsSync(path.join(repoRoot, 'contracts', contractPath)), contractPath).toBe(
+      expect(fs.existsSync(path.join(extensionContractsRoot, contractPath)), contractPath).toBe(
         true
       );
     }
@@ -112,11 +118,11 @@ describe('npm contract support matrix', () => {
       const srcCopy = JSON.parse(
         fs.readFileSync(path.join(repoRoot, 'src', 'contracts', contractPath), 'utf8')
       );
-      const npmCopy = JSON.parse(
-        fs.readFileSync(path.join(npmContractsRoot, contractPath), 'utf8')
+      const shippedCopy = JSON.parse(
+        fs.readFileSync(path.join(extensionContractsRoot, contractPath), 'utf8')
       );
 
-      expect(srcCopy, contractPath).toEqual(npmCopy);
+      expect(srcCopy, contractPath).toEqual(shippedCopy);
     }
   });
 });

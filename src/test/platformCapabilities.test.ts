@@ -300,33 +300,43 @@ describe('platformCapabilities', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-nvm-probe-'));
     try {
       const bin = path.join(home, '.nvm', 'versions', 'node', 'v20.20.2', 'bin');
+      const platform = process.platform;
+      const executableSuffix = platform === 'win32' ? '.cmd' : '';
+      const stalePath = platform === 'win32' ? 'C:\\Windows\\System32' : '/usr/bin';
       fs.mkdirSync(bin, { recursive: true });
       for (const command of ['npm', 'npx']) {
-        fs.writeFileSync(path.join(bin, command), '#!/bin/sh\n', { mode: 0o755 });
+        fs.writeFileSync(path.join(bin, `${command}${executableSuffix}`), '#!/bin/sh\n', {
+          mode: 0o755,
+        });
       }
 
       const npmInvocations = discoverPackageRunnerInvocations(
         'npm',
-        'linux',
-        { PATH: '/usr/bin' },
+        platform,
+        { PATH: stalePath },
         home
       );
       const npxInvocations = discoverPackageRunnerInvocations(
         'npx',
-        'linux',
-        { PATH: '/usr/bin' },
+        platform,
+        { PATH: stalePath },
         home
       );
 
-      const npmInvocation = npmInvocations.find((entry) => entry.command === path.join(bin, 'npm'));
-      const npxInvocation = npxInvocations.find((entry) => entry.command === path.join(bin, 'npx'));
+      const npmInvocation = npmInvocations.find(
+        (entry) => entry.command === path.join(bin, `npm${executableSuffix}`)
+      );
+      const npxInvocation = npxInvocations.find(
+        (entry) => entry.command === path.join(bin, `npx${executableSuffix}`)
+      );
       expect(npmInvocation).toBeTruthy();
       expect(npxInvocation).toBeTruthy();
       const invocationPath =
-        buildPackageRunnerInvocationEnv(npmInvocation!, { PATH: '/usr/bin' }, 'linux').PATH ?? '';
-      expect(invocationPath.split(':')[0]).toBe(bin);
-      expect(invocationPath.split(':')).toEqual(
-        expect.arrayContaining(['/usr/bin', path.dirname(process.execPath)])
+        buildPackageRunnerInvocationEnv(npmInvocation!, { PATH: stalePath }, platform).PATH ?? '';
+      const pathEntries = invocationPath.split(path.delimiter);
+      expect(pathEntries[0]).toBe(bin);
+      expect(pathEntries).toEqual(
+        expect.arrayContaining([stalePath, path.dirname(process.execPath)])
       );
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
