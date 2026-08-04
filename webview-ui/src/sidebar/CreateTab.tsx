@@ -24,6 +24,7 @@ interface CreateTabProps {
   messages: CreateMessage[];
   sessions: CreateSession[];
   activeSessionId: string | null;
+  activeOperationSessionId: string | null;
   onNewSession: () => void;
   onSelectSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
@@ -149,6 +150,7 @@ export function CreateTab(props: CreateTabProps) {
         open={historyOpen}
         sessions={props.sessions}
         activeSessionId={props.activeSessionId}
+        activeOperationSessionId={props.activeOperationSessionId}
         onClose={() => setHistoryOpen(false)}
         onNewSession={() => {
           startNewSession();

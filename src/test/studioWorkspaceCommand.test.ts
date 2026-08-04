@@ -134,6 +134,30 @@ describe('Studio workspace command capability policy', () => {
     ).toBe(false);
   });
 
+  it('enforces the canonical workspace remediation-plan command shape', () => {
+    expect(() =>
+      resolveStudioWorkspaceCommandPlan({
+        workspacePath: '/workspace',
+        request: {
+          executable: 'npx',
+          args: ['--no-install', 'workspai', 'remediation-plan', 'project', '--json'],
+          purpose: 'inspect',
+        },
+      })
+    ).toThrow('workspai workspace remediation-plan');
+
+    expect(
+      resolveStudioWorkspaceCommandPlan({
+        workspacePath: '/workspace',
+        request: {
+          executable: 'npx',
+          args: ['--no-install', 'workspai', 'workspace', 'remediation-plan', '--json'],
+          purpose: 'inspect',
+        },
+      }).args
+    ).toEqual(['--no-install', 'workspai', 'workspace', 'remediation-plan', '--json']);
+  });
+
   it('rejects cwd and project-local executable escapes', () => {
     expect(() =>
       resolveStudioWorkspaceCommandPlan({

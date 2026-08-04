@@ -7,11 +7,6 @@ vi.mock('vscode', () => ({
 
 vi.mock('../utils/exec', () => ({ run: vi.fn() }));
 
-const fetchRuntimeCommandSurface = vi.fn();
-vi.mock('../core/runtimeCommandSurface', () => ({
-  fetchRuntimeCommandSurface: (...args: unknown[]) => fetchRuntimeCommandSurface(...args),
-}));
-
 import { run } from '../utils/exec';
 import {
   decideCliVersionGate,
@@ -26,33 +21,58 @@ const mockedRun = vi.mocked(run);
 describe('resolveLinkedCliVersion', () => {
   beforeEach(() => {
     mockedRun.mockReset();
-    fetchRuntimeCommandSurface.mockReset();
   });
 
-  it('prefers the version from the commands --json surface', async () => {
-    fetchRuntimeCommandSurface.mockResolvedValueOnce({ version: '0.39.0' });
-    expect(await resolveLinkedCliVersion('/tmp/ws')).toBe('0.39.0');
+  it('prefers workspace-local package metadata without spawning a command', async () => {
+    expect(
+      await resolveLinkedCliVersion('/tmp/ws', {
+        installedPackages: [
+          {
+            name: 'workspai',
+            version: '0.52.2',
+            manifestPath: '/tmp/ws/node_modules/workspai/package.json',
+            source: 'workspace',
+          },
+        ],
+      })
+    ).toBe('0.52.2');
     expect(mockedRun).not.toHaveBeenCalled();
   });
 
-  it('falls back to --version --json when the surface is unavailable', async () => {
-    fetchRuntimeCommandSurface.mockResolvedValueOnce(null);
+  it('reads --version --json from a directly executable CLI', async () => {
     mockedRun.mockResolvedValueOnce({
       stdout: JSON.stringify({ schemaVersion: 'rapidkit-version-v1', version: '0.38.2' }),
       stderr: '',
       exitCode: 0,
     });
-    expect(await resolveLinkedCliVersion('/tmp/ws')).toBe('0.38.2');
+    expect(await resolveLinkedCliVersion('/tmp/ws', { installedPackages: [] })).toBe('0.38.2');
   });
 
   it('falls back to a bare semver token in --version output', async () => {
-    fetchRuntimeCommandSurface.mockResolvedValueOnce(null);
     mockedRun.mockResolvedValueOnce({ stdout: 'rapidkit 0.40.1\n', stderr: '', exitCode: 0 });
-    expect(await resolveLinkedCliVersion('/tmp/ws')).toBe('0.40.1');
+    expect(await resolveLinkedCliVersion('/tmp/ws', { installedPackages: [] })).toBe('0.40.1');
+  });
+
+  it('uses NVM package metadata when the Extension Host PATH is stale', async () => {
+    mockedRun.mockResolvedValueOnce({ stdout: '', stderr: 'workspai not found', exitCode: 127 });
+
+    await expect(
+      resolveLinkedCliVersion('/tmp/ws', {
+        installedPackages: [
+          {
+            name: 'workspai',
+            version: '0.52.2',
+            manifestPath:
+              '/home/dev/.nvm/versions/node/v20.20.2/lib/node_modules/workspai/package.json',
+            source: 'global',
+          },
+        ],
+      })
+    ).resolves.toBe('0.52.2');
+    expect(mockedRun).toHaveBeenCalledTimes(1);
   });
 
   it('finds a global Workspai package when the Extension Host PATH is stale', async () => {
-    fetchRuntimeCommandSurface.mockResolvedValueOnce(null);
     mockedRun
       .mockResolvedValueOnce({ stdout: '', stderr: 'npx not found', exitCode: 127 })
       .mockResolvedValueOnce({
@@ -61,7 +81,9 @@ describe('resolveLinkedCliVersion', () => {
         exitCode: 0,
       });
 
-    await expect(resolveLinkedCliVersion('/tmp/ws')).resolves.toBe('0.51.0');
+    await expect(
+      resolveLinkedCliVersion('/tmp/ws', { installedPackages: [], homeDir: '/missing-home' })
+    ).resolves.toBe('0.51.0');
     expect(mockedRun).toHaveBeenLastCalledWith(
       expect.any(String),
       expect.arrayContaining(['list', '-g', 'workspai', '--depth=0']),
@@ -72,9 +94,14 @@ describe('resolveLinkedCliVersion', () => {
   });
 
   it('returns null when no version can be detected', async () => {
-    fetchRuntimeCommandSurface.mockResolvedValueOnce(null);
     mockedRun.mockResolvedValueOnce({ stdout: 'no version here', stderr: '', exitCode: 1 });
-    expect(await resolveLinkedCliVersion('/tmp/ws')).toBeNull();
+    expect(
+      await resolveLinkedCliVersion('/tmp/ws', {
+        installedPackages: [],
+        homeDir: '/missing-home',
+        env: { PATH: '/missing-bin' },
+      })
+    ).toBeNull();
   });
 });
 
@@ -105,13 +132,12 @@ describe('decideCliVersionGate', () => {
 describe('gateCompatibleCliVersion', () => {
   beforeEach(() => {
     mockedRun.mockReset();
-    fetchRuntimeCommandSurface.mockReset();
     vi.mocked(vscode.window.showErrorMessage).mockReset();
     vi.mocked(vscode.commands.executeCommand).mockReset();
   });
 
   it('allows compatible enterprise workflows', async () => {
-    fetchRuntimeCommandSurface.mockResolvedValueOnce({ version: '0.99.0' });
+    mockedRun.mockResolvedValueOnce({ stdout: '0.99.0', stderr: '', exitCode: 0 });
     await expect(
       gateCompatibleCliVersion({ cwd: '/tmp/ws', featureLabel: 'Dashboard Evidence' })
     ).resolves.toBe(true);
@@ -119,7 +145,7 @@ describe('gateCompatibleCliVersion', () => {
   });
 
   it('blocks below-minimum enterprise workflows without a continue option', async () => {
-    fetchRuntimeCommandSurface.mockResolvedValueOnce({ version: '0.1.0' });
+    mockedRun.mockResolvedValueOnce({ stdout: '0.1.0', stderr: '', exitCode: 0 });
     await expect(
       gateCompatibleCliVersion({ cwd: '/tmp/ws', featureLabel: 'Dashboard Evidence' })
     ).resolves.toBe(false);

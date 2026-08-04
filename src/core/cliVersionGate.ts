@@ -3,17 +3,16 @@ import * as vscode from 'vscode';
 import { run } from '../utils/exec';
 import {
   buildPackageRunnerInvocationEnv,
-  buildNpxRapidkitVersionProbeArgs,
-  buildRapidkitExecutionSpec,
+  discoverInstalledNpmPackages,
   discoverPackageRunnerInvocations,
   parseGlobalNpmPackageVersionOutput,
-  parseNpmCliVersionOutput,
+  type InstalledNpmPackageMetadata,
 } from '../utils/platformCapabilities';
 import { runShellCommandInTerminal } from '../utils/terminalExecutor';
 import { parseTrailingJson } from './canonicalProjectLifecycle';
-import { fetchRuntimeCommandSurface } from './runtimeCommandSurface';
 import {
   assessCliVersion,
+  compareSemver,
   formatCliVersionMismatchMessage,
   type CliVersionAssessment,
 } from './cliVersionPolicy';
@@ -21,23 +20,42 @@ import {
 const SEMVER_TOKEN = /\b\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\b/;
 
 /**
- * Resolve the linked Workspai CLI version. Prefers the structured
- * `commands --json` surface (already cached from capability detection); falls
- * back to `--version --json` (`rapidkit-version-v1`) and then a bare
- * `--version` string. Returns `null` when no version can be detected.
+ * Resolve an installed or linked Workspai CLI version without downloading a
+ * package during extension activation. Workspace-local package metadata wins;
+ * then the executable PATH, version-manager package metadata, and bounded npm
+ * global probes are checked. Returns `null` only after every local source has
+ * been exhausted.
  */
-export async function resolveLinkedCliVersion(cwd?: string): Promise<string | null> {
-  const surface = await fetchRuntimeCommandSurface({ cwd });
-  if (surface?.version) {
-    return surface.version;
+export async function resolveLinkedCliVersion(
+  cwd?: string,
+  options: {
+    platform?: NodeJS.Platform;
+    env?: NodeJS.ProcessEnv;
+    homeDir?: string;
+    installedPackages?: InstalledNpmPackageMetadata[];
+  } = {}
+): Promise<string | null> {
+  const platform = options.platform ?? process.platform;
+  const env = options.env ?? process.env;
+  const installedPackages =
+    options.installedPackages ??
+    discoverInstalledNpmPackages('workspai', {
+      cwd,
+      platform,
+      env,
+      homeDir: options.homeDir,
+    });
+  const workspacePackage = installedPackages.find((entry) => entry.source === 'workspace');
+  if (workspacePackage) {
+    return workspacePackage.version;
   }
 
   try {
-    const execution = buildRapidkitExecutionSpec(['--version', '--json']);
-    const result = await run(execution.command, execution.args, {
+    const result = await run('workspai', ['--version', '--json'], {
       cwd,
-      shell: execution.shell,
-      timeout: 15_000,
+      shell: platform === 'win32',
+      timeout: 5_000,
+      env,
     });
     if (result.exitCode === 0) {
       const parsed = parseTrailingJson<{ version?: unknown }>(result.stdout ?? '');
@@ -50,44 +68,37 @@ export async function resolveLinkedCliVersion(cwd?: string): Promise<string | nu
       }
     }
   } catch {
-    // Fall through to package-manager discovery. VS Code can retain a stale
-    // Extension Host PATH when Node is managed by nvm/fnm/asdf.
+    // Fall through to filesystem and package-manager discovery. VS Code can
+    // retain a stale Extension Host PATH when Node is managed by nvm/fnm/asdf.
   }
 
-  for (const npmInvocation of discoverPackageRunnerInvocations('npm')) {
+  const globalPackageVersions = installedPackages
+    .filter((entry) => entry.source === 'global')
+    .map((entry) => entry.version)
+    .filter((version, index, versions) => versions.indexOf(version) === index)
+    .sort((left, right) => compareSemver(right, left));
+  if (globalPackageVersions[0]) {
+    return globalPackageVersions[0];
+  }
+
+  for (const npmInvocation of discoverPackageRunnerInvocations(
+    'npm',
+    platform,
+    env,
+    options.homeDir
+  )) {
     try {
       const result = await run(
         npmInvocation.command,
         [...npmInvocation.prefixArgs, 'list', '-g', 'workspai', '--depth=0'],
         {
           cwd,
-          shell: process.platform === 'win32',
+          shell: platform === 'win32',
           timeout: 5_000,
-          env: buildPackageRunnerInvocationEnv(npmInvocation),
+          env: buildPackageRunnerInvocationEnv(npmInvocation, env, platform),
         }
       );
       const version = parseGlobalNpmPackageVersionOutput(result.stdout ?? '');
-      if (result.exitCode === 0 && version) {
-        return version;
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  for (const npxInvocation of discoverPackageRunnerInvocations('npx')) {
-    try {
-      const result = await run(
-        npxInvocation.command,
-        [...npxInvocation.prefixArgs, ...buildNpxRapidkitVersionProbeArgs()],
-        {
-          cwd,
-          shell: process.platform === 'win32',
-          timeout: 8_000,
-          env: buildPackageRunnerInvocationEnv(npxInvocation),
-        }
-      );
-      const version = parseNpmCliVersionOutput(result.stdout ?? '');
       if (result.exitCode === 0 && version) {
         return version;
       }

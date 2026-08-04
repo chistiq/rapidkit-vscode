@@ -11,10 +11,10 @@ on:
         description: 'Commit SHA tested by extension-smoke-matrix and used in the VSIX artifact name'
         required: true
         type: string
-      rapidkit_npm_version:
-        description: 'Published rapidkit npm version required by this extension release'
+      workspai_cli_version:
+        description: 'Published Workspai CLI version required by this extension release'
         required: true
-        default: '0.41.0'
+        default: '0.52.3'
         type: string
       publish_target:
         description: 'Use dry-run to verify gates without publishing'
@@ -54,8 +54,11 @@ jobs:
       - name: Install dependencies
         run: corepack npm ci
 
-      - name: Verify target rapidkit npm package is published
-        run: npm view rapidkit@${{ inputs.rapidkit_npm_version }} version
+      - name: Verify target Workspai CLI package is published
+        run: npm view workspai@${{ inputs.workspai_cli_version }} version
+
+      - name: Validate Discord release announcement
+        run: npm run release:discord:check
 
       - name: Download inspected VSIX artifact from smoke matrix
         uses: actions/download-artifact@v4

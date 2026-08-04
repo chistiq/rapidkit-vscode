@@ -135,6 +135,86 @@ describe('Studio active blocker recovery', () => {
     });
   });
 
+  it('continues through the contract plan when an evidence producer makes no source edit', async () => {
+    const inspectRemediationPlan = vi.fn(async () => ({
+      ok: true,
+      output: {
+        steps: [
+          {
+            id: 'refresh-readiness',
+            order: 1,
+            risk: 'safe',
+            studioState: 'ready',
+            executable: true,
+          },
+        ],
+      },
+    }));
+    const executeRemediationStep = vi.fn(async () => ({ ok: true, changed: false }));
+    const runGovernedCommand = vi.fn(async () => ({ ok: true, changed: false }));
+
+    const result = await runStudioActiveBlockerRecovery({
+      blockers: ['readiness evidence is stale'],
+      dependencyProjectNames: [],
+      evidenceGeneration: 'readiness-v2',
+      workspacePath: '/workspace',
+      host: host({ inspectRemediationPlan, executeRemediationStep, runGovernedCommand }),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: false,
+      output: {
+        recoveryPath: 'contract-remediation-plan',
+        nextAction: 'inspect-remediation-plan',
+      },
+    });
+    expect(runGovernedCommand).toHaveBeenCalledWith({
+      commandId: 'workspaceRemediationPlan',
+      workspacePath: '/workspace',
+    });
+  });
+
+  it('does not execute an aggregate action while a declared dependency remains', async () => {
+    const inspectRemediationPlan = vi.fn(async () => ({
+      ok: true,
+      output: {
+        steps: [
+          {
+            id: 'pipeline-rerun',
+            dependsOn: ['doctor-root-fix'],
+            order: 1,
+            risk: 'guarded',
+            studioState: 'ready',
+            executable: true,
+          },
+          {
+            id: 'doctor-root-fix',
+            dependsOn: [],
+            order: 2,
+            risk: 'safe',
+            studioState: 'ready',
+            executable: true,
+          },
+        ],
+      },
+    }));
+    const executeRemediationStep = vi.fn(async () => ({ ok: true, changed: true }));
+
+    await runStudioActiveBlockerRecovery({
+      blockers: ['doctor workspace gate failed'],
+      dependencyProjectNames: [],
+      evidenceGeneration: 'pipeline-v2',
+      workspacePath: '/workspace',
+      host: host({ inspectRemediationPlan, executeRemediationStep }),
+    });
+
+    expect(executeRemediationStep).toHaveBeenCalledWith({
+      stepId: 'doctor-root-fix',
+      workspacePath: '/workspace',
+    });
+  });
+
   it('routes directly to verify when refreshed audits report every project clear', async () => {
     const inspectDependencySecurity = vi.fn(async () => ({
       ok: true,

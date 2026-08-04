@@ -20,6 +20,12 @@ function recordArray(value: unknown): Record<string, unknown>[] {
     : [];
 }
 
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+    : [];
+}
+
 function valueRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -281,12 +287,18 @@ export async function runStudioActiveBlockerRecovery(input: {
   }
 
   const steps = recordArray(outputRecord(plan)?.steps);
+  const currentStepIds = new Set(
+    steps
+      .map((step) => step.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0)
+  );
   const executableStep = steps
     .filter(
       (step) =>
         step.risk !== 'invasive' &&
         (step.studioState === 'ready' || step.studioState === 'review-required') &&
-        (step.canApply === true || step.executable === true)
+        (step.canApply === true || step.executable === true) &&
+        stringArray(step.dependsOn).every((dependency) => !currentStepIds.has(dependency))
     )
     .sort(
       (left, right) =>
@@ -300,12 +312,26 @@ export async function runStudioActiveBlockerRecovery(input: {
       ...scopedProject(input.projectPath),
     });
     observations.push({ capability: 'execute-remediation-step', result: execution });
+    if (execution.ok && !execution.changed) {
+      const refreshedPlan = await input.host.runGovernedCommand({
+        commandId: 'workspaceRemediationPlan',
+        workspacePath: input.workspacePath,
+      });
+      observations.push({
+        capability: 'workspaceRemediationPlan:post-step',
+        result: refreshedPlan,
+      });
+    }
     return {
       ...execution,
       output: {
         recoveryPath: 'contract-remediation-plan',
         observations,
-        nextAction: execution.changed ? 'workspaceIntelligenceChain' : 'general-source-repair',
+        nextAction: execution.ok
+          ? execution.changed
+            ? 'workspaceIntelligenceChain'
+            : 'inspect-remediation-plan'
+          : 'general-source-repair',
       },
     };
   }

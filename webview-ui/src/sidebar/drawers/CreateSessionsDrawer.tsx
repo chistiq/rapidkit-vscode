@@ -6,6 +6,7 @@ interface CreateSessionsDrawerProps {
   open: boolean;
   sessions: CreateSession[];
   activeSessionId: string | null;
+  activeOperationSessionId: string | null;
   onClose: () => void;
   onNewSession: () => void;
   onSelectSession: (sessionId: string) => void;
@@ -66,10 +67,10 @@ export function CreateSessionsDrawer(props: CreateSessionsDrawerProps) {
                     type="button"
                     className="ws-drawer-session__delete"
                     aria-label={`Delete ${session.title}`}
-                    disabled={session.status === 'planning' || session.status === 'running'}
+                    disabled={session.sessionId === props.activeOperationSessionId}
                     title={
-                      session.status === 'planning' || session.status === 'running'
-                        ? 'A running creation session cannot be deleted'
+                      session.sessionId === props.activeOperationSessionId
+                        ? 'Stop or finish the active creation before deleting it'
                         : 'Delete creation session'
                     }
                     onClick={() => props.onDeleteSession(session.sessionId)}

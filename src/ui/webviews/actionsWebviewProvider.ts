@@ -3658,6 +3658,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             hiddenStepCount: plan.hiddenStepCount,
             steps: plan.visibleSteps.map((step) => ({
               id: step.id,
+              dependsOn: step.dependsOn,
               order: step.order,
               phase: step.phase,
               projectName: step.projectName,
@@ -3829,6 +3830,26 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             ok: false,
             evidenceGeneration: repairEvidence.evidenceFingerprint,
             error: `Remediation step ${step.id} has neither a deterministic operation nor an executable contract command.`,
+          };
+        }
+
+        if (ok && step.verifyCommand?.trim()) {
+          const verifyExecution = await runIncidentInlineCommand({
+            command: step.verifyCommand.trim(),
+            workspacePath: request.workspacePath,
+            projectPath: stepProjectPath,
+            actionId: `studio-session-remediation-verify-${step.id}`,
+            captureStdout: true,
+          });
+          output = {
+            action: output,
+            verification: {
+              command: step.verifyCommand.trim(),
+              exitCode: verifyExecution.exitCode,
+              success: verifyExecution.success,
+              summary:
+                verifyExecution.output ?? verifyExecution.error ?? verifyExecution.stderrTail ?? '',
+            },
           };
         }
 

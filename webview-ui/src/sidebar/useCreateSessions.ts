@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { vscode } from '@/vscode';
+import { settleInterruptedCreateSessions } from '@/lib/createSessionLifecycle';
 import type { CreateMessage, CreateSession, CreateSessionStatus } from './createTypes';
 
 type PersistedCreateState = {
@@ -13,7 +14,10 @@ function loadCreateSessions(): { sessions: CreateSession[]; activeId: string | n
   const stored = (vscode.getState() ?? {}) as PersistedCreateState;
   const slice = stored.workspaiCreate;
   return slice && Array.isArray(slice.sessions)
-    ? { sessions: slice.sessions, activeId: slice.activeId ?? null }
+    ? {
+        sessions: settleInterruptedCreateSessions(slice.sessions),
+        activeId: slice.activeId ?? null,
+      }
     : { sessions: [], activeId: null };
 }
 

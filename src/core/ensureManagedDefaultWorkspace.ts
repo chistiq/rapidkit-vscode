@@ -1,4 +1,5 @@
 import * as path from 'path';
+import fs from 'fs-extra';
 
 import { WorkspaiCLI } from '../core/rapidkitCLI';
 import { WorkspaceManager } from '../core/workspaceManager';
@@ -14,26 +15,72 @@ export type EnsuredManagedDefaultWorkspace = {
   created: boolean;
 };
 
+const workspaceCreationByPath = new Map<string, Promise<void>>();
+
+function describeCliFailure(result: Record<string, unknown>): string {
+  for (const candidate of [
+    result.stderr,
+    result.stdout,
+    result.shortMessage,
+    result.originalMessage,
+    result.message,
+  ]) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  const exitCode = typeof result.exitCode === 'number' ? result.exitCode : undefined;
+  const signal = typeof result.signal === 'string' ? result.signal : undefined;
+  if (exitCode !== undefined) {
+    return `CLI exited with code ${exitCode}${signal ? ` (${signal})` : ''}.`;
+  }
+  return 'The CLI process did not return diagnostic output.';
+}
+
 async function ensureWorkspaceViaNpm(workspacePath: string, workspaceName: string): Promise<void> {
   if (hasWorkspaceRootMarkers(workspacePath)) {
     return;
   }
 
-  const cli = new WorkspaiCLI();
-  const result = await cli.createWorkspace({
-    name: workspaceName,
-    parentPath: path.dirname(workspacePath),
-    profile: 'polyglot',
-    skipPythonEngine: true,
-    skipGit: true,
-  });
+  const normalizedPath = path.resolve(workspacePath);
+  const inFlight = workspaceCreationByPath.get(normalizedPath);
+  if (inFlight) {
+    await inFlight;
+    return;
+  }
 
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `Failed to create workspace "${workspaceName}" via Workspai CLI: ${
-        result.stderr || result.stdout || 'unknown error'
-      }`
-    );
+  const creation = (async () => {
+    const parentPath = path.dirname(normalizedPath);
+    await fs.ensureDir(parentPath);
+
+    const cli = new WorkspaiCLI();
+    const result = await cli.createWorkspace({
+      name: workspaceName,
+      parentPath,
+      profile: 'minimal',
+      skipPythonEngine: true,
+      skipGit: true,
+    });
+
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `Failed to create workspace "${workspaceName}" via Workspai CLI: ${describeCliFailure(result)}`
+      );
+    }
+    if (!hasWorkspaceRootMarkers(normalizedPath)) {
+      throw new Error(
+        `Workspai CLI reported success but did not create a workspace marker at "${normalizedPath}".`
+      );
+    }
+  })();
+
+  workspaceCreationByPath.set(normalizedPath, creation);
+  try {
+    await creation;
+  } finally {
+    if (workspaceCreationByPath.get(normalizedPath) === creation) {
+      workspaceCreationByPath.delete(normalizedPath);
+    }
   }
 }
 

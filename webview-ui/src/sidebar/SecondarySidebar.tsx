@@ -70,6 +70,11 @@ import {
 import { appendStudioRepairTimelineEntry } from '@/lib/studioRepairTimeline';
 import { resolveStudioIncidentRepairStatus } from '@/lib/studioIncidentRepairStatus';
 import {
+  isStudioRepairActivelyOwned,
+  settleStudioTimeline,
+  terminalizeStudioProgress,
+} from '@/lib/studioSessionLifecycle';
+import {
   resolveStudioIntelligencePhaseFromCard,
   resolveStudioIntelligencePhaseFromToolEvent,
   studioIntelligencePhaseLabel,
@@ -370,6 +375,7 @@ export function SecondarySidebar() {
   );
 
   const [createBusy, setCreateBusy] = useState(false);
+  const [activeCreateOperationId, setActiveCreateOperationId] = useState<string | null>(null);
   const [createDrawerFocus, setCreateDrawerFocus] = useState<{
     drawer: CreateDrawerId;
     key: number;
@@ -954,7 +960,7 @@ export function SecondarySidebar() {
               : [];
             startStudioActionProgress({
               action: 'verify-goal',
-              status: resolved ? 'done' : 'running',
+              status: resolved ? 'done' : 'review',
               phase: resolved ? 'goal-verified' : 'goal-progress',
               title: resolved ? 'Engineering goal verified' : 'Goal still has work',
               summary: resolved
@@ -991,7 +997,7 @@ export function SecondarySidebar() {
             : 0;
           startStudioActionProgress({
             action: 'verify-blocker',
-            status: resolved ? 'done' : 'running',
+            status: resolved ? 'done' : 'review',
             phase: resolved ? 'verified' : 'verify-observation',
             title: resolved
               ? 'Card and workspace verified'
@@ -1022,28 +1028,54 @@ export function SecondarySidebar() {
           }
         } else if (eventType === 'session.failed' || eventType === 'session.cancelled') {
           setStudioAutoFixBusy(false);
+          setStudioPatchApplyBusy(false);
           if (eventSessionId) {
-            studio.failSession(
-              eventSessionId,
-              String(eventData.error ?? eventData.reason ?? eventType)
+            const failedIncidentKey = resolveStudioIncidentKeyForSession(eventSessionId);
+            const requiresUserDecision =
+              eventType === 'session.failed' && eventData.requiresUserDecision === true;
+            const failureMessage = humanizeStudioError(
+              String(
+                eventData.error ??
+                  eventData.reason ??
+                  (eventType === 'session.cancelled'
+                    ? 'Studio was stopped by the user.'
+                    : 'The bounded repair session ended with remaining work.')
+              )
             );
-            if (eventType === 'session.failed' && eventData.requiresUserDecision === true) {
-              const failedIncidentKey = resolveStudioIncidentKeyForSession(eventSessionId);
-              const failureMessage = humanizeStudioError(
-                String(eventData.error ?? 'Studio requires an engineering decision to continue.')
+            studio.failSession(eventSessionId, failureMessage);
+            if (failedIncidentKey) {
+              const terminalTitle = requiresUserDecision ? 'Decision required' : 'Repair stopped';
+              setStudioIncidentProgress((previous) => {
+                const terminal = terminalizeStudioProgress(previous[failedIncidentKey], {
+                  title: terminalTitle,
+                  summary: failureMessage,
+                  reviewRequired: requiresUserDecision,
+                });
+                return terminal ? { ...previous, [failedIncidentKey]: terminal } : previous;
+              });
+              setStudioIncidentTimeline((previous) => ({
+                ...previous,
+                [failedIncidentKey]: settleStudioTimeline(previous[failedIncidentKey] ?? []),
+              }));
+              setStudioActionProgress((current) =>
+                terminalizeStudioProgress(current, {
+                  title: terminalTitle,
+                  summary: failureMessage,
+                  reviewRequired: requiresUserDecision,
+                })
               );
-              if (failedIncidentKey) {
+              if (requiresUserDecision) {
                 setStudioIncidentRepairHolds((previous) => ({
                   ...previous,
                   [failedIncidentKey]: failureMessage,
                 }));
-                updateStudioIncidentRepairState(failedIncidentKey, {
-                  repairStatus: 'review',
-                  lastActionTitle: 'Decision required',
-                  lastActionSummary: failureMessage,
-                  lastActionAt: new Date().toISOString(),
-                });
               }
+              updateStudioIncidentRepairState(failedIncidentKey, {
+                repairStatus: requiresUserDecision ? 'review' : 'blocked',
+                lastActionTitle: terminalTitle,
+                lastActionSummary: failureMessage,
+                lastActionAt: new Date().toISOString(),
+              });
             }
           }
         }
@@ -1060,6 +1092,7 @@ export function SecondarySidebar() {
           break;
         }
         setStudioAutoFixBusy(false);
+        setStudioPatchApplyBusy(false);
         if (data.requiresUserDecision === true) {
           const reviewIncidentKey = resolveStudioIncidentKeyForSession(statusSessionId);
           const reviewMessage = humanizeStudioError(
@@ -1084,12 +1117,35 @@ export function SecondarySidebar() {
         const hydratedSession = studio.sessions.find(
           (session) => session.sessionId === statusSessionId
         );
+        const hydratedIncidentKey = hydratedSession?.incident?.key;
+        if (hydratedIncidentKey) {
+          const inactiveMessage =
+            typeof data.error === 'string' && data.error.trim()
+              ? humanizeStudioError(data.error)
+              : 'No live Studio process owns this persisted repair. Resume only when you choose to continue.';
+          setStudioIncidentProgress((previous) => {
+            const terminal = terminalizeStudioProgress(previous[hydratedIncidentKey], {
+              title: 'Repair paused',
+              summary: inactiveMessage,
+            });
+            return terminal ? { ...previous, [hydratedIncidentKey]: terminal } : previous;
+          });
+          setStudioIncidentTimeline((previous) => ({
+            ...previous,
+            [hydratedIncidentKey]: settleStudioTimeline(previous[hydratedIncidentKey] ?? []),
+          }));
+          setStudioActionProgress((current) =>
+            terminalizeStudioProgress(current, {
+              title: 'Repair paused',
+              summary: inactiveMessage,
+            })
+          );
+        }
         if (hydratedSession?.status === 'streaming') {
           studio.failSession(
             statusSessionId,
             'This repair is paused. Review the latest evidence, then press Resume repair when you are ready.'
           );
-          const hydratedIncidentKey = hydratedSession.incident?.key;
           if (hydratedIncidentKey) {
             updateStudioIncidentRepairState(hydratedIncidentKey, {
               repairStatus: 'blocked',
@@ -1155,6 +1211,7 @@ export function SecondarySidebar() {
         const sessionId = createSessionIdForEvent(data);
         dropThinking(sessionId);
         setCreateBusy(false);
+        setActiveCreateOperationId((current) => (current === sessionId ? null : current));
         create.setStatus(sessionId, 'ready');
         const plan = (data.plan as CreationPlan) || null;
         if (plan) {
@@ -1194,6 +1251,7 @@ export function SecondarySidebar() {
         const sessionId = createSessionIdForEvent(data);
         dropThinking(sessionId);
         setCreateBusy(false);
+        setActiveCreateOperationId((current) => (current === sessionId ? null : current));
         create.setStatus(sessionId, 'done');
         appendCreate(
           {
@@ -1211,6 +1269,7 @@ export function SecondarySidebar() {
         const sessionId = createSessionIdForEvent(data);
         dropThinking(sessionId);
         setCreateBusy(false);
+        setActiveCreateOperationId((current) => (current === sessionId ? null : current));
         create.setStatus(sessionId, 'error');
         appendCreate(
           {
@@ -1228,6 +1287,7 @@ export function SecondarySidebar() {
         const sessionId = createSessionIdForEvent(data);
         dropThinking(sessionId);
         setCreateBusy(false);
+        setActiveCreateOperationId((current) => (current === sessionId ? null : current));
         if (data.status === 'done') {
           create.setStatus(sessionId, 'done');
           const createdWorkspacePath =
@@ -1348,7 +1408,7 @@ export function SecondarySidebar() {
         const pulse = parseSidebarStudioActionProgress({
           ...data,
           action: 'live-evidence',
-          status: 'running',
+          status: 'done',
           phase: 'observing-evidence',
           title: 'Evidence refreshed',
           summary:
@@ -1370,24 +1430,45 @@ export function SecondarySidebar() {
       case 'sidebarStudioError': {
         const failedSessionId = String(data.sessionId ?? '');
         const failureMessage = humanizeStudioError((data.error as string) || 'Unknown error');
-        studio.failSession(failedSessionId, failureMessage);
         const failedIncidentKey = resolveStudioIncidentKeyForSession(failedSessionId);
+        studio.failSession(failedSessionId, failureMessage);
         if (failedIncidentKey) {
+          const requiresUserDecision = data.requiresUserDecision === true;
+          const terminalTitle = requiresUserDecision ? 'Decision required' : 'Repair stopped';
           if (data.requiresUserDecision === true) {
             setStudioIncidentRepairHolds((previous) => ({
               ...previous,
               [failedIncidentKey]: failureMessage,
             }));
           }
+          setStudioIncidentProgress((previous) => {
+            const terminal = terminalizeStudioProgress(previous[failedIncidentKey], {
+              title: terminalTitle,
+              summary: failureMessage,
+              reviewRequired: requiresUserDecision,
+            });
+            return terminal ? { ...previous, [failedIncidentKey]: terminal } : previous;
+          });
+          setStudioIncidentTimeline((previous) => ({
+            ...previous,
+            [failedIncidentKey]: settleStudioTimeline(previous[failedIncidentKey] ?? []),
+          }));
+          setStudioActionProgress((current) =>
+            terminalizeStudioProgress(current, {
+              title: terminalTitle,
+              summary: failureMessage,
+              reviewRequired: requiresUserDecision,
+            })
+          );
           updateStudioIncidentRepairState(failedIncidentKey, {
-            repairStatus: data.requiresUserDecision === true ? 'review' : 'blocked',
-            lastActionTitle:
-              data.requiresUserDecision === true ? 'Decision required' : 'Repair stopped',
+            repairStatus: requiresUserDecision ? 'review' : 'blocked',
+            lastActionTitle: terminalTitle,
             lastActionSummary: failureMessage,
             lastActionAt: new Date().toISOString(),
           });
         }
         setStudioAutoFixBusy(false);
+        setStudioPatchApplyBusy(false);
         break;
       }
       case 'sidebarActionError':
@@ -1829,6 +1910,7 @@ export function SecondarySidebar() {
       initialMessage: { id: nextId(), role: 'user', kind: 'text', text: prompt },
     });
     setCreateBusy(true);
+    setActiveCreateOperationId(sessionId);
     vscode.postMessage(
       'sidebarAiCreatePlan',
       {
@@ -1852,6 +1934,7 @@ export function SecondarySidebar() {
     );
     create.setStatus(sessionId, 'running');
     setCreateBusy(true);
+    setActiveCreateOperationId(sessionId);
     vscode.postMessage(
       'sidebarAiCreateConfirm',
       {
@@ -1891,6 +1974,7 @@ export function SecondarySidebar() {
         },
       });
       setCreateBusy(true);
+      setActiveCreateOperationId(sessionId);
       vscode.postMessage(
         'sidebarManualCreate',
         {
@@ -1919,6 +2003,7 @@ export function SecondarySidebar() {
       initialMessage: { id: nextId(), role: 'user', kind: 'text', text: request },
     });
     setCreateBusy(true);
+    setActiveCreateOperationId(sessionId);
     vscode.postMessage(
       'sidebarManualCreate',
       {
@@ -2210,9 +2295,12 @@ export function SecondarySidebar() {
   const activeStudioReviewRequired = Boolean(
     activeStudioRepairHold || activeStudio?.incident?.repairStatus === 'review'
   );
-  const activeStudioRepairRunning = Boolean(
-    studioAutoFixBusy || studioPatchApplyBusy || activeStudioActionProgress?.status === 'running'
-  );
+  const activeStudioRepairRunning = isStudioRepairActivelyOwned({
+    sessionStatus: activeStudio?.status,
+    autoFixBusy: studioAutoFixBusy,
+    patchApplyBusy: studioPatchApplyBusy,
+    progressStatus: activeStudioActionProgress?.status,
+  });
   const activeStudioIntelligencePhase =
     activeStudioActionProgress?.intelligencePhase ??
     resolveStudioIntelligencePhaseFromCard(activeBlockerHandoff?.cardId);
@@ -2693,6 +2781,7 @@ export function SecondarySidebar() {
         messages={createMessages}
         sessions={create.sessions}
         activeSessionId={create.activeId}
+        activeOperationSessionId={activeCreateOperationId}
         onNewSession={create.newSession}
         onSelectSession={create.selectSession}
         onDeleteSession={create.deleteSession}

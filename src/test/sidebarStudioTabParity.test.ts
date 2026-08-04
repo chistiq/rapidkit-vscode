@@ -321,6 +321,11 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(secondary).not.toContain('Ready for the next repair step');
     expect(secondary).not.toContain('Continue fix');
     expect(secondary).toContain('activeStudioRepairRunning');
+    expect(secondary).toContain('isStudioRepairActivelyOwned');
+    expect(secondary).toContain('terminalizeStudioProgress');
+    expect(secondary).toContain('settleStudioTimeline');
+    expect(secondary).toContain("status: resolved ? 'done' : 'review'");
+    expect(secondary).toContain("status: 'done',\n          phase: 'observing-evidence'");
     expect(secondary).toContain('visibleStudioVerifyFailureForResult');
     expect(secondary).toContain('visibleStudioReturnStateForResult');
     expect(secondary).toContain('visibleStudioRollbackCommandForResult');

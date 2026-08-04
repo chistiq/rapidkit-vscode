@@ -16,6 +16,13 @@ export type PackageRunnerInvocation = {
   prefixArgs: string[];
 };
 
+export type InstalledNpmPackageMetadata = {
+  name: string;
+  version: string;
+  manifestPath: string;
+  source: 'workspace' | 'global';
+};
+
 /** Cached npm package specifier from global link / env. Undefined = not warmed yet. */
 let resolvedPackageSpecifier: string | null | undefined;
 
@@ -180,6 +187,127 @@ function childDirectories(root: string): string[] {
   } catch {
     return [];
   }
+}
+
+function readInstalledNpmPackageMetadata(
+  manifestPath: string,
+  packageName: string,
+  source: InstalledNpmPackageMetadata['source']
+): InstalledNpmPackageMetadata | null {
+  try {
+    const manifest = fs.readJsonSync(manifestPath) as {
+      name?: unknown;
+      version?: unknown;
+    };
+    if (
+      manifest.name !== packageName ||
+      typeof manifest.version !== 'string' ||
+      !manifest.version.trim()
+    ) {
+      return null;
+    }
+    return {
+      name: packageName,
+      version: manifest.version.trim(),
+      manifestPath,
+      source,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Discover installed npm package metadata without spawning npm or contacting a
+ * registry. This is the activation-safe source of truth for version gates when
+ * the VS Code Extension Host inherited a stale PATH from before nvm/fnm/asdf
+ * initialized the user's shell.
+ */
+export function discoverInstalledNpmPackages(
+  packageName: string,
+  options: {
+    cwd?: string;
+    platform?: NodeJS.Platform;
+    env?: NodeJS.ProcessEnv;
+    homeDir?: string;
+  } = {}
+): InstalledNpmPackageMetadata[] {
+  const platform = options.platform ?? process.platform;
+  const env = options.env ?? process.env;
+  const homeDir = options.homeDir ?? os.homedir();
+  const manifests: Array<{
+    path: string;
+    source: InstalledNpmPackageMetadata['source'];
+  }> = [];
+  const seenManifestPaths = new Set<string>();
+  const addManifest = (
+    manifestPath: string,
+    source: InstalledNpmPackageMetadata['source']
+  ): void => {
+    const normalized = path.normalize(manifestPath);
+    if (!seenManifestPaths.has(normalized)) {
+      seenManifestPaths.add(normalized);
+      manifests.push({ path: normalized, source });
+    }
+  };
+  const addGlobalRoot = (root: string | undefined): void => {
+    if (root?.trim()) {
+      addManifest(path.join(root.trim(), packageName, 'package.json'), 'global');
+    }
+  };
+  const addPrefix = (prefix: string | undefined): void => {
+    if (!prefix?.trim()) {
+      return;
+    }
+    addGlobalRoot(path.join(prefix.trim(), 'lib', 'node_modules'));
+    addGlobalRoot(path.join(prefix.trim(), 'lib64', 'node_modules'));
+    addGlobalRoot(path.join(prefix.trim(), 'node_modules'));
+  };
+
+  if (options.cwd?.trim()) {
+    let current = path.resolve(options.cwd);
+    let previous = '';
+    while (current !== previous) {
+      addManifest(path.join(current, 'node_modules', packageName, 'package.json'), 'workspace');
+      previous = current;
+      current = path.dirname(current);
+    }
+  }
+
+  addPrefix(env.npm_config_prefix);
+  addPrefix(env.NVM_BIN ? path.dirname(env.NVM_BIN) : undefined);
+  addPrefix(path.dirname(path.dirname(process.execPath)));
+
+  for (const versionDir of childDirectories(path.join(homeDir, '.nvm', 'versions', 'node'))) {
+    addPrefix(versionDir);
+  }
+  for (const versionDir of childDirectories(
+    path.join(homeDir, '.local', 'share', 'fnm', 'node-versions')
+  )) {
+    addPrefix(path.join(versionDir, 'installation'));
+  }
+
+  addGlobalRoot(
+    path.join(homeDir, '.volta', 'tools', 'image', 'packages', packageName, 'lib', 'node_modules')
+  );
+  addGlobalRoot(path.join('/usr', 'local', 'lib', 'node_modules'));
+  addGlobalRoot(path.join('/usr', 'lib', 'node_modules'));
+  if (isWindowsPlatform(platform)) {
+    addGlobalRoot(env.APPDATA ? path.join(env.APPDATA, 'npm', 'node_modules') : undefined);
+    addPrefix(env.NVM_SYMLINK);
+  }
+
+  for (const invocation of discoverPackageRunnerInvocations('npm', platform, env, homeDir)) {
+    if (path.isAbsolute(invocation.command)) {
+      addPrefix(path.dirname(path.dirname(invocation.command)));
+    }
+  }
+
+  return manifests
+    .map((candidate) =>
+      readInstalledNpmPackageMetadata(candidate.path, packageName, candidate.source)
+    )
+    .filter((candidate): candidate is InstalledNpmPackageMetadata => candidate !== null);
 }
 
 /**

@@ -155,6 +155,12 @@ describe('actionsWebviewProvider — sidebar protocol handlers', () => {
     );
   });
 
+  it('refreshes contract evidence immediately after a remediation step', () => {
+    expect(source).toContain('if (ok && step.verifyCommand?.trim())');
+    expect(source).toContain('actionId: `studio-session-remediation-verify-${step.id}`');
+    expect(source).toContain('command: step.verifyCommand.trim()');
+  });
+
   it('keeps RUN_ONCE Studio source commands project-scoped when a handoff has a project path', () => {
     const runOnceBranch = source.slice(
       source.indexOf("if (mode === 'RUN_ONCE')"),

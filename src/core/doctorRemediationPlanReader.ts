@@ -23,6 +23,7 @@ export type DoctorRemediationStrategyStage = {
 
 export type DoctorRemediationPlanStepView = {
   id: string;
+  dependsOn: string[];
   phase: string;
   order: number;
   projectName: string;
@@ -582,6 +583,7 @@ function mapStep(step: Record<string, unknown>): DoctorRemediationPlanStepView {
   const studioState = normalizeStudioState(studioStatus.state);
   return {
     id: readString(step.id, 'unknown'),
+    dependsOn: readStringArray(step.dependsOn),
     phase: readString(step.phase, 'manual-review'),
     order: readNumber(step.order, 0),
     projectName: readString(step.projectName, 'workspace'),
@@ -706,14 +708,30 @@ function artifactActionMatchesHandoff(
   action: ArtifactRemediationAction,
   handoff: StudioBlockerHandoff
 ): boolean {
+  const aggregateCardDependencies: Record<string, Set<string>> = {
+    pipeline: new Set([
+      'doctor',
+      'analyze',
+      'readiness',
+      'workspaceRun',
+      'workspaceVerify',
+      'pipeline',
+    ]),
+    workspaceVerify: new Set(['doctor', 'readiness', 'workspaceRun', 'workspaceVerify']),
+    readiness: new Set(['doctor', 'readiness']),
+  };
+  const aggregateDependencies = aggregateCardDependencies[handoff.cardId];
   const aggregateOwnsProjectAction =
     handoff.scope === 'workspace' &&
     action.scope === 'project' &&
-    isDoctorRemediationHandoff(handoff);
+    (isDoctorRemediationHandoff(handoff) || Boolean(aggregateDependencies));
   if (action.scope !== handoff.scope && !aggregateOwnsProjectAction) {
     return false;
   }
   if (action.cardId === handoff.cardId) {
+    return true;
+  }
+  if (aggregateDependencies?.has(action.cardId)) {
     return true;
   }
   const normalizedActionKind = action.artifactKind.toLowerCase();
@@ -724,6 +742,34 @@ function artifactActionMatchesHandoff(
     (normalizedCardLabel.includes(normalizedActionKind) ||
       normalizedArtifact.includes(normalizedActionKind))
   );
+}
+
+function selectBlockerFocusedActions(
+  matchingActions: ArtifactRemediationAction[],
+  handoff: StudioBlockerHandoff
+): ArtifactRemediationAction[] {
+  const focused = matchingActions.filter((action) =>
+    artifactActionDirectlyMatchesBlocker(action, handoff)
+  );
+  if (focused.length === 0) {
+    return matchingActions;
+  }
+
+  const byId = new Map(matchingActions.map((action) => [action.id, action]));
+  const selectedIds = new Set(focused.map((action) => action.id));
+  const pending = [...focused];
+  while (pending.length > 0) {
+    const action = pending.pop();
+    for (const dependencyId of action?.dependsOn ?? []) {
+      const dependency = byId.get(dependencyId);
+      if (!dependency || selectedIds.has(dependency.id)) {
+        continue;
+      }
+      selectedIds.add(dependency.id);
+      pending.push(dependency);
+    }
+  }
+  return matchingActions.filter((action) => selectedIds.has(action.id));
 }
 
 function mapArtifactActionToStep(input: {
@@ -751,6 +797,7 @@ function mapArtifactActionToStep(input: {
   );
   return {
     id: action.id,
+    dependsOn: action.dependsOn ?? [],
     phase: action.phase,
     order: action.order,
     projectName,
@@ -839,10 +886,7 @@ async function readArtifactRemediationPlanForStudio(input: {
     .filter((entry): entry is ArtifactRemediationAction => Boolean(entry))
     .filter((action) => artifactActionMatchesHandoff(action, input.handoff))
     .sort((a, b) => a.order - b.order);
-  const blockerFocusedActions = matchingActions.filter((action) =>
-    artifactActionDirectlyMatchesBlocker(action, input.handoff)
-  );
-  const actions = blockerFocusedActions.length > 0 ? blockerFocusedActions : matchingActions;
+  const actions = selectBlockerFocusedActions(matchingActions, input.handoff);
   if (actions.length === 0) {
     return null;
   }

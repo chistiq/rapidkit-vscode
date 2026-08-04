@@ -14,6 +14,8 @@ describe('Create tab durable session contract', () => {
   const secondary = read('webview-ui/src/sidebar/SecondarySidebar.tsx');
   const provider = read('src/ui/webviews/actionsWebviewProvider.ts');
   const targetSelector = read('webview-ui/src/sidebar/composer/CreateTargetSelector.tsx');
+  const createDrawer = read('webview-ui/src/sidebar/drawers/CreateSessionsDrawer.tsx');
+  const lifecycle = read('webview-ui/src/lib/createSessionLifecycle.ts');
 
   it('reuses the shared session chrome and persists operation-scoped creation history', () => {
     expect(createTab).toContain("import { ChatSessionBar } from './composer/ChatSessionBar'");
@@ -22,6 +24,19 @@ describe('Create tab durable session contract', () => {
     expect(createHook).toContain('workspaiCreate');
     expect(createHook).toContain('startSession');
     expect(createHook).toContain('MAX_SESSIONS');
+  });
+
+  it('settles orphaned operations after rehydration and only locks the live operation', () => {
+    expect(createHook).toContain('settleInterruptedCreateSessions(slice.sessions)');
+    expect(lifecycle).toContain("session.status !== 'planning'");
+    expect(lifecycle).toContain("session.status !== 'running'");
+    expect(lifecycle).toContain("status: 'error'");
+    expect(createDrawer).toContain('activeOperationSessionId');
+    expect(createDrawer).toContain('session.sessionId === props.activeOperationSessionId');
+    expect(createDrawer).not.toContain(
+      "disabled={session.status === 'planning' || session.status === 'running'}"
+    );
+    expect(secondary).toContain('setActiveCreateOperationId(sessionId)');
   });
 
   it('opens separate AI and manual sessions for workspace and project operations', () => {

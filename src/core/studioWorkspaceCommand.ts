@@ -203,6 +203,12 @@ function validateCommandSemantics(executableName: string, args: readonly string[
         `${executableName} must use --no-install/--no so autonomous execution cannot fetch an unreviewed package.`
       );
     }
+    const workspaiIndex = args.findIndex((arg) => arg === 'workspai');
+    if (workspaiIndex >= 0 && args[workspaiIndex + 1] === 'remediation-plan') {
+      throw new Error(
+        'The canonical command is `workspai workspace remediation-plan`. Use the inspect-remediation-plan tool, or insert `workspace` before `remediation-plan`.'
+      );
+    }
   }
   if (executableName === 'git') {
     const action = (args[0] ?? '').toLowerCase();

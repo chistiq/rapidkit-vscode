@@ -14,6 +14,7 @@ import {
   buildRapidkitExecutionSpec,
   buildShellCommand,
   detectPlatformKind,
+  discoverInstalledNpmPackages,
   discoverPackageRunnerInvocations,
   discoverPythonExecutableCandidates,
   parseNpmCliVersionOutput,
@@ -337,6 +338,43 @@ describe('platformCapabilities', () => {
       expect(pathEntries[0]).toBe(bin);
       expect(pathEntries).toEqual(
         expect.arrayContaining([stalePath, path.dirname(process.execPath)])
+      );
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('discovers a globally installed Workspai package from NVM metadata without PATH', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-nvm-package-'));
+    try {
+      const manifest = path.join(
+        home,
+        '.nvm',
+        'versions',
+        'node',
+        'v20.20.2',
+        'lib',
+        'node_modules',
+        'workspai',
+        'package.json'
+      );
+      fs.mkdirSync(path.dirname(manifest), { recursive: true });
+      fs.writeFileSync(manifest, JSON.stringify({ name: 'workspai', version: '0.52.2' }), 'utf8');
+
+      expect(
+        discoverInstalledNpmPackages('workspai', {
+          platform: 'linux',
+          env: { PATH: '/usr/bin' },
+          homeDir: home,
+        })
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            source: 'global',
+            version: '0.52.2',
+            manifestPath: manifest,
+          }),
+        ])
       );
     } finally {
       fs.rmSync(home, { recursive: true, force: true });

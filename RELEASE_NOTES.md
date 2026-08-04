@@ -1,6 +1,39 @@
 # Release Notes
 
-## v0.35.0 (unreleased)
+## v0.36.0 (unreleased)
+
+### Reliable sessions and first-install-safe creation
+
+This release aligns Workspai for VS Code with CLI 0.52.3 and makes ownership of
+Studio and Create operations explicit across reloads, failures, and fresh
+machines.
+
+Highlights:
+
+- Studio no longer treats persisted repair history as proof that a provider
+  process is still running.
+- Interrupted Create sessions become truthful, removable stopped records.
+- Creating the first project can safely establish
+  `~/.workspai/workspaces/workspai` even when no Workspai directories exist.
+- The default managed workspace is runtime-neutral and does not install the
+  optional Python engine.
+- CLI discovery recognizes global npm and common Node version managers without
+  contacting the registry during activation.
+- Dependency remediation retains guarded, project-native resolution paths when
+  no safe automatic fix exists.
+
+Compatibility:
+
+- VS Code 1.106.0+
+- Workspai CLI 0.52.3+
+- RapidKit Core 0.6.0 only for Python-backed kits/modules
+
+Full detail:
+[releases/RELEASE_NOTES_v0.36.0.md](releases/RELEASE_NOTES_v0.36.0.md)
+
+Release posture: `session-ownership-and-first-install-reliability`
+
+## v0.35.0 (August 2, 2026)
 
 ### Workspace Intelligence, verified goals, and dependable Studio repair
 

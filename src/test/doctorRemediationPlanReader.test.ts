@@ -420,6 +420,97 @@ describe('doctorRemediationPlanReader', () => {
     ]);
   });
 
+  it('keeps upstream dependencies when an aggregate Pipeline blocker is focused', async () => {
+    const workspacePath = makeRoot();
+    const reportsPath = path.join(workspacePath, '.workspai', 'reports');
+    await fs.outputJSON(path.join(reportsPath, 'pipeline-last-run.json'), {
+      generatedAt: new Date().toISOString(),
+    });
+    const action = (input: {
+      id: string;
+      cardId: string;
+      artifactKind: string;
+      order: number;
+      blocker: string;
+      command: string;
+      dependsOn?: string[];
+    }) => ({
+      ...input,
+      title: input.id,
+      phase: 'repair',
+      scope: 'workspace',
+      status: 'ready',
+      mode: 'run-command',
+      risk: 'safe',
+      requiresApproval: true,
+      summary: input.blocker,
+      verifyCommand: input.command,
+      cwd: 'workspace',
+      files: [],
+      operation: { type: 'run-command', command: input.command, cwd: 'workspace' },
+      rollback: { available: false, strategy: 'none' },
+      notes: [],
+    });
+    await fs.outputJSON(path.join(reportsPath, 'artifact-remediation-plan-last-run.json'), {
+      schemaVersion: 'artifact-remediation-plan-v1',
+      generatedAt: new Date(Date.now() + 60_000).toISOString(),
+      actions: [
+        action({
+          id: 'readiness.toolchain.node.setup',
+          cardId: 'readiness',
+          artifactKind: 'readiness',
+          order: 1,
+          blocker: 'Node is not pinned.',
+          command: 'npx workspai setup node --json',
+        }),
+        action({
+          id: 'readiness.toolchain.node.bootstrap',
+          cardId: 'readiness',
+          artifactKind: 'readiness',
+          order: 2,
+          blocker: 'Node foundation is stale.',
+          command: 'npx workspai bootstrap --ci --json',
+          dependsOn: ['readiness.toolchain.node.setup'],
+        }),
+        action({
+          id: 'pipeline.refresh.3',
+          cardId: 'pipeline',
+          artifactKind: 'pipeline',
+          order: 3,
+          blocker: 'doctor workspace gate failed',
+          command: 'npx workspai pipeline --json --strict',
+          dependsOn: ['readiness.toolchain.node.setup', 'readiness.toolchain.node.bootstrap'],
+        }),
+      ],
+    });
+
+    const plan = await readDoctorRemediationPlanForStudio({
+      workspacePath,
+      maxSteps: 8,
+      handoff: handoff({
+        workspacePath,
+        cardId: 'pipeline',
+        cardLabel: 'Governance Gate',
+        artifactPath: '.workspai/reports/pipeline-last-run.json',
+        sourceCommand: 'npx workspai pipeline --json --strict',
+        verifyCommand: 'npx workspai pipeline --json --strict',
+        scope: 'workspace',
+        projectPath: undefined,
+        blockers: ['doctor workspace gate failed'],
+      }),
+    });
+
+    expect(plan?.visibleSteps.map((step) => step.id)).toEqual([
+      'readiness.toolchain.node.setup',
+      'readiness.toolchain.node.bootstrap',
+      'pipeline.refresh.3',
+    ]);
+    expect(plan?.visibleSteps[2]?.dependsOn).toEqual([
+      'readiness.toolchain.node.setup',
+      'readiness.toolchain.node.bootstrap',
+    ]);
+  });
+
   it('keeps Agent Grounding remediation focused on the named stale artifact', async () => {
     const workspacePath = makeRoot();
     const reportsPath = path.join(workspacePath, '.rapidkit', 'reports');

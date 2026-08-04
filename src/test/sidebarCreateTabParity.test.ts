@@ -242,7 +242,10 @@ describe('React Create tab ↔ host protocol parity (roadmap 2.11d)', () => {
     expect(secondary).toContain('workspacePath: input.workspacePath');
     expect(provider).toContain('const scope = resolveExplicitWorkspaceScope(payloadRecord.scope)');
     expect(provider).toContain('let workspacePath = scope.workspacePath');
-    expect(managedDefaultWorkspace).toContain("profile: 'polyglot'");
+    expect(managedDefaultWorkspace).toContain("profile: 'minimal'");
+    expect(managedDefaultWorkspace).toContain('await fs.ensureDir(parentPath)');
+    expect(managedDefaultWorkspace).toContain('workspaceCreationByPath');
+    expect(managedDefaultWorkspace).toContain('hasWorkspaceRootMarkers(normalizedPath)');
     expect(managedDefaultWorkspace).toContain('skipPythonEngine: true');
     expect(managedDefaultWorkspace).toContain('skipGit: true');
     expect(managedDefaultWorkspace).toContain(

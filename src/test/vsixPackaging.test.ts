@@ -156,15 +156,15 @@ describe('VSIX packaging exclusions', () => {
     expect(workflow).toContain('xvfb-run -a npm run smoke:vsix-electron');
   });
 
-  it('gates marketplace publish on the inspected VSIX artifact and npm target version', () => {
+  it('gates marketplace publish on the inspected VSIX artifact and Workspai CLI version', () => {
     const workflow = read('.github/workflows/release-extension.yml');
     const guard = read('scripts/guard-vsix-publish.mjs');
 
     expect(workflow).toContain('workflow_dispatch:');
     expect(workflow).toContain('smoke_run_id:');
     expect(workflow).toContain('commit_sha:');
-    expect(workflow).toContain('rapidkit_npm_version:');
-    expect(workflow).toContain('npm view rapidkit@${{ inputs.rapidkit_npm_version }} version');
+    expect(workflow).toContain('workspai_cli_version:');
+    expect(workflow).toContain('npm view workspai@${{ inputs.workspai_cli_version }} version');
     expect(workflow).toContain('actions/download-artifact@v4');
     expect(workflow).toContain('name: workspai-vsix-${{ inputs.commit_sha }}');
     expect(workflow).toContain('run-id: ${{ inputs.smoke_run_id }}');

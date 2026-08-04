@@ -53,6 +53,9 @@ jobs:
           WORKSPAI_CLI_REPO_PATH: ${{ github.workspace }}/workspai-cli-canonical/packages/cli
         run: npm run release:enterprise-matrix -- --require-canonical
 
+      - name: Validate Discord release announcement
+        run: npm run release:discord:check
+
   smoke:
     name: Smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

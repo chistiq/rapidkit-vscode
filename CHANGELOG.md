@@ -7,106 +7,139 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Planned as extension **0.35.0**, aligned with Workspai CLI **0.52.2+**.
+No unreleased changes yet.
 
-Current release scope:
-
-- Dashboard sections: Home, Run, Repair, Artifacts, Graph, Project, and Library.
-- Canonical create, adopt, and import flows across all currently available kits.
-- Assistant modes: Ask, Plan, and Agent over explicit workspace/project scope.
-- Verified goals for release readiness, non-breaking dependency repair, and
-  coverage targets.
-- Transaction-backed Studio repair with source-change evidence, focused checks,
-  Workspace Intelligence refresh, and final verification.
-- Current CLI/extension contract parity, project taxonomy, Setup discovery, and
-  Python-optional recovery behavior.
-
-See [`releases/RELEASE_NOTES_v0.35.0.md`](releases/RELEASE_NOTES_v0.35.0.md) for
-the current user-facing detail. The implementation ledger below records the
-development history of this release and may retain legacy internal command IDs
-or names for traceability; it is not usage guidance.
+## [0.36.0] - 2026-08-03
 
 ### Added
 
-* **Native Studio Agent runtime**: durable Agent / Ask / Plan sessions, governed Workspai tools, causal blocker traversal, source patch transactions, dependency-security repair, and evidence-derived completion.
-* **Callable model selector contract**: provider-qualified model identities with session-only transports excluded and retryable model failover for native Studio tool calls.
-* **Enterprise dashboard evidence loop**: Command → Evidence → Next Step with activity trail, outcome review, next-step rail, and contract-aware command dispatch (`dashboardCommandContracts`, `dashboardCommandRegistry`).
-* **Dashboard UX polish (v0.35)**: Studio Command Center handoff strip (Evidence · Run · Project · Home); Home Workspace Advisor entry and clickable health metrics; navigation telemetry dedup on re-selected tabs; responsive Run sub-nav scroll on narrow widths.
-* **Enterprise-minimal stabilization pass**: Evidence Guided mode now renders one current path instead of duplicating attention cards; Evidence view controls use compact `Guided / Workflows / All` labels; Studio uses a calmer panel workspace with carded chat/context/sidebar surfaces; Workspai now contributes a standard VS Code Secondary Sidebar tab plus Activity Bar fallback, with `Create with AI / Workspace Advisor / Studio` as the minimal AI surface and a live creation timeline.
-* **Evidence surfaces**: `CommandActivityPanel`, `EvidenceOutcomePanel`, `ReleaseHub`, `DashboardEvidenceSection`, governance/sparse empty states, and Incident Studio handoff from evidence cards.
-* **Governance onboarding**: fresh-install onboarding, ops-chain banner, and automatic `bootstrap → doctor → analyze` chain after workspace create, clone, import, or add.
-* **Operate & governance UI**: `EnterpriseDashboardFlow`, `WorkspaceGovernancePanel`, `ActionTile`, `SectionHeader`, `FrameworkIcon`, and `CommandCheatsheet`.
-* **Settings bridge**: embedded `WorkspaiSettingsPanel` aligned with dashboard design tokens via `workspaiSettingsBridge`.
-* **Incident Studio VNext**: primary studio surface replacing the legacy monolith, with `ChatSurface`, `ContextPanel`, `WorkspaceSidebar`, `CommandRibbon`, `CliSurfaceSection`, `ShipLoopSection`, `ActionOutcomePanel`, and `MissionControlHeader`.
-* **Ship loop**: analyze → verify-gates → readiness → archive → autopilot-release with host bridges, ship evidence refresh, and stabilization loop.
-* **Studio session persistence**: reload-safe state for ship loop, CLI surface, and chat brain sessions.
-* **AI action framework** (host): action contract, registry, executor, safety/redaction layers, command policy, and `aiProviderService` for LLM routing.
-* **Studio policy gates**: telemetry policy core, policy gate mapper parity (host + webview), guided-mode blocks for advanced CLI, and mutation gate before fix/archive/autopilot paths.
-* **Studio CLI surface**: `incidentCliActionMatrix`, inline command bridge (pinned npm wrapper), doctor evidence bridge, repro pack and enterprise export bridges.
-* **Studio action registry**: analyze, workspace advisor, governed fix, verify-gates, and terminal-bridge actions with audit trail.
-* **Workspai design system**: token layers (`workspai-tokens`, `workspai-primitives`, studio chrome, analyze report CSS), `WorkspaiThemeProvider`, `WorkspaiEmptyState`, `WorkspaiBanner`, and contributor `DESIGN_SYSTEM.md`.
-* **Design-system CI**: drift guard tests, studio chrome CSS extract/verify scripts, and website/extension parity check script.
-* **AI creation intent**: `aiCreationHeuristic` and structured `languageModelResponse` parsing for safer create flows and module suggestions.
-* **Analyze scoping**: `analyzeReportBridge` so dashboard and studio analyze viewers respect workspace vs project context.
-* **Setup command-center**: embedded Setup & Settings with full-width host, theme-safe loading skeletons, `ToolRow` matrix, and collapsible optional/advanced sections.
-* **npm governance pipeline parity** (npm `0.34.0` CLI): `workspai.workspacePipeline` (`pipeline --json --strict`), `pipeline` evidence card from `pipeline-last-run.json`, Release hub orchestrator banner, and sidebar Run & Release / Governance menu entries.
-* **Vitest expansion**: dashboard bridges, studio redesign contracts, design-system drift, ship-loop integration, AI action framework, presentation contracts, and smoke stabilization suites.
-* **Enterprise hardening modules**: `workspacePathBoundary`, `incidentInlineCommandRunner`, `incidentStudioStabilizationPolicy`, `dashboardEvidencePending`, and `dashboardEvidenceRefreshSchedule` (webview).
-* **Workspace adoption parity**: extension adoption now delegates to canonical `rapidkit adopt --json` first, with a schema-aligned local fallback for offline or unavailable npm CLI scenarios.
-* **Multi-stack adopted project discovery**: adopted frontend and backend projects can be registered outside the workspace tree and still appear in Dashboard, Evidence, Sidebar, and project discovery flows.
+- Durable Create-session recovery that turns orphaned planning/running records
+  into explicit, removable stopped sessions after a Webview reload.
+- First-install-safe managed workspace creation, including parent-directory
+  creation, concurrent-request deduplication, marker verification, and useful
+  subprocess diagnostics.
+- Cross-runtime remediation-plan detail for dependency resolution paths that
+  require guarded project-native investigation rather than an unsafe automatic
+  fix.
 
 ### Changed
 
-* Assistant Agent mode now owns the complete card incident graph and may finish only after a fresh, non-blocking verify observation; generated reports are refreshed through canonical producers rather than edited.
-* Studio turn limits are now explicit host/test boundaries only. Production Agent sessions compact into durable checkpoints and retain ownership until verified completion, cancellation, or a real provider/protocol failure.
-* Native tool execution is causal-generation aware: duplicate inspections, audits, remediations, and verifies are suppressed until source or governed evidence advances; source patch results refresh the generation before the next repair step.
-* Long-running Agent prompts retain causal tool and verify events while dropping duplicate request/status chatter, keeping repair sessions within provider context budgets.
-* Retired legacy **`AIIncidentStudio.tsx`** (~7.5k lines) in favor of **`IncidentStudioVNext`** and modular studio regions.
-* Replaced **`CommandReference`** with **`CommandCheatsheet`**; removed **`QuickLinks`**, **`HeroAction`**, and **`AIActions`** from the dashboard shell.
-* Reworked **`welcomePanel`** and **`App.tsx`** for dashboard dispatch, evidence refresh, and studio integration at scale.
-* Expanded workspace and project treeviews to notify governance ops chain and honor dashboard workspace payloads.
-* **npm CLI verify**: Setup version probe uses developer-style `npx rapidkit --version` so terminal output matches the card; orchestration commands remain pinned.
-* Guided/lite/responsive studio polish (Wave Y): denser guided conversation, action outcome essentials, collapsible sections, and responsive studio chrome.
-* **Evidence refresh**: replaced multi-timer refresh storm (0 / 1.8s / 5s / 12s) with debounced coalescing (750ms + one 5s follow-up); refresh only when commands opt in via `refreshEvidence: true`.
-* **Project adoption UX**: “convert generic project” is now “adopt project into Workspai workspace”; known stacks are no longer skipped and are adopted through the same governance contract.
-* **Package build contract**: VSIX prepublish now builds webview assets in production mode so dev source maps do not enter the release package.
+- Studio now distinguishes a persisted repair record from a live provider-owned
+  process and returns control to the user when no active process owns the session.
+- The Create history locks only the operation currently owned by the live
+  Webview; historical interrupted sessions can be removed normally.
+- CLI discovery now recognizes direct, global npm, NVM, FNM, asdf, Volta, and
+  package-metadata installations without using a network-backed `npx` probe at
+  activation time.
+- The managed default workspace uses the CLI-aligned `minimal` profile and does
+  not install the optional Python engine for unrelated project kits.
 
 ### Fixed
 
-* Fixed dependency incidents stopping at an unsafe npm downgrade even when a compatible owner upgrade, transitive constraint, or runtime-native source transaction remained available. Studio now preserves CLI-authored resolution candidates, respects the Doctor-selected ecosystem in polyglot projects, and reaches a user decision only after bounded compatibility investigation.
-* Fixed every multi-tool VS Code LM request failing before its first model turn because `LanguageModelChatToolMode.Required` was used with more than one tool.
-* Fixed `copilotcli` and other session-only providers appearing as runnable Workspai models even though they cannot answer extension LM requests.
-* Fixed missing/retired models and empty provider streams terminating Studio without trying another callable model.
-* Fixed Readiness repairs exhausting an arbitrary 80-turn budget after repeatedly auditing the same dependency advisory; duplicate observations now remain in the model ledger but are omitted from the user-facing timeline.
-* Fixed dependency repair retry state surviving a successful source patch, which could prevent the Agent from regenerating the lockfile after applying an evidence-supported manifest override.
-* Fixed underspecified native patch-tool input: models now receive the exact workspace-relative full-file replacement and source-hash contract.
-* Updated `adm-zip` and `axios` to patched releases and made security audit / VSIX packaging use the pinned Corepack package manager path instead of relying on a globally installed `npm` binary.
-* Raised the VS Code engine floor to `1.106.0`, where contributed Secondary Sidebar containers became stable, preventing Workspai from silently falling back into Explorer or requiring a proposed API.
-* Hardened Electron smoke so proposed-API rejection and missing Workspai view-container diagnostics fail the release even when the extension host exits with code zero.
-* Incident Studio stable wiring gaps (doctor scope payloads, sync graph, telemetry refresh).
-* AI creation intent planning and module suggestion boundaries for supported project types.
-* `UserMode` typing (`standard`) and shell-view lifecycle guards for Settings/Setup tabs.
-* Doctor telemetry refresh alignment with scoped workspace/project evidence.
-* **Security (P0)**: user-supplied paths cannot escape the active workspace; shell metacharacters rejected; Studio inline CLI restricted to an allowlisted RapidKit surface executed without a shell.
-* **Dashboard ops chain (P0)**: cross-workspace chain bleed in the webview; bootstrap step stall without timeout; silent no-op when contract dispatch fails (now warns + `dashboardCommandFailed`).
-* **Evidence (P0)**: workspace-level project-doctor artifacts without project identity no longer attach to the wrong selected project; missing bootstrap card always shown.
-* **Studio (P1)**: mutation gate parity via shared stabilization policy; standalone panel `incomingMessage` merge and project path/name injection.
-* **Reliability (P1)**: pending evidence cards reconcile from resolved cards and activity `completed`/`failed`; removed blind 15s pending timeout.
-* **Incident Studio stabilization (0.35.0)**: resync analyze-backed VNext state after report reload; project scope for standalone chat brain and palette open; CLI mutation detection without `cliActionId`; session persistence queue before load; scope selector disabled without project; ContextPanel AI/verify gate parity; chat-brain error banner; mission-control ErrorBoundary; coalesced App embed host-handler refs for CLI/ship loop.
-* **Adopted project visibility**: external adopted projects written to `.rapidkit/imported-projects.json` are now resolved by workspace manager, project explorer, and welcome-panel project discovery instead of disappearing after refresh.
-* **Fallback adoption drift**: if npm CLI adoption is unavailable, the extension writes aligned `project.json`, `adopt.json`, `adopt-readiness.json`, `context.json`, and workspace registry metadata instead of legacy partial markers.
+- Fixed fresh-install project creation failing with `unknown error` when
+  `~/.workspai/workspaces` did not exist yet.
+- Fixed stale Create sessions remaining permanently labelled `Creating` and
+  blocking deletion after reload or an interrupted host operation.
+- Fixed false CLI-missing notifications when Workspai was installed under a
+  Node version manager but absent from the Extension Host's stale `PATH`.
+- Fixed Studio repair recovery loops that could imply an active repair after
+  the owning process had already stopped.
+
+### Compatibility
+
+- VS Code 1.106.0+
+- Workspai CLI 0.52.3+
+- RapidKit Core 0.6.0 only for Python-backed kits and modules
+
+See [`releases/RELEASE_NOTES_v0.36.0.md`](releases/RELEASE_NOTES_v0.36.0.md).
+
+## [0.35.0] - 2026-08-02
+
+The implementation ledger below records the development history of this
+release and may retain legacy internal command IDs or names for traceability;
+it is not current usage guidance.
+
+### Added
+
+- **Native Studio Agent runtime**: durable Agent / Ask / Plan sessions, governed Workspai tools, causal blocker traversal, source patch transactions, dependency-security repair, and evidence-derived completion.
+- **Callable model selector contract**: provider-qualified model identities with session-only transports excluded and retryable model failover for native Studio tool calls.
+- **Enterprise dashboard evidence loop**: Command → Evidence → Next Step with activity trail, outcome review, next-step rail, and contract-aware command dispatch (`dashboardCommandContracts`, `dashboardCommandRegistry`).
+- **Dashboard UX polish (v0.35)**: Studio Command Center handoff strip (Evidence · Run · Project · Home); Home Workspace Advisor entry and clickable health metrics; navigation telemetry dedup on re-selected tabs; responsive Run sub-nav scroll on narrow widths.
+- **Enterprise-minimal stabilization pass**: Evidence Guided mode now renders one current path instead of duplicating attention cards; Evidence view controls use compact `Guided / Workflows / All` labels; Studio uses a calmer panel workspace with carded chat/context/sidebar surfaces; Workspai now contributes a standard VS Code Secondary Sidebar tab plus Activity Bar fallback, with `Create with AI / Workspace Advisor / Studio` as the minimal AI surface and a live creation timeline.
+- **Evidence surfaces**: `CommandActivityPanel`, `EvidenceOutcomePanel`, `ReleaseHub`, `DashboardEvidenceSection`, governance/sparse empty states, and Incident Studio handoff from evidence cards.
+- **Governance onboarding**: fresh-install onboarding, ops-chain banner, and automatic `bootstrap → doctor → analyze` chain after workspace create, clone, import, or add.
+- **Operate & governance UI**: `EnterpriseDashboardFlow`, `WorkspaceGovernancePanel`, `ActionTile`, `SectionHeader`, `FrameworkIcon`, and `CommandCheatsheet`.
+- **Settings bridge**: embedded `WorkspaiSettingsPanel` aligned with dashboard design tokens via `workspaiSettingsBridge`.
+- **Incident Studio VNext**: primary studio surface replacing the legacy monolith, with `ChatSurface`, `ContextPanel`, `WorkspaceSidebar`, `CommandRibbon`, `CliSurfaceSection`, `ShipLoopSection`, `ActionOutcomePanel`, and `MissionControlHeader`.
+- **Ship loop**: analyze → verify-gates → readiness → archive → autopilot-release with host bridges, ship evidence refresh, and stabilization loop.
+- **Studio session persistence**: reload-safe state for ship loop, CLI surface, and chat brain sessions.
+- **AI action framework** (host): action contract, registry, executor, safety/redaction layers, command policy, and `aiProviderService` for LLM routing.
+- **Studio policy gates**: telemetry policy core, policy gate mapper parity (host + webview), guided-mode blocks for advanced CLI, and mutation gate before fix/archive/autopilot paths.
+- **Studio CLI surface**: `incidentCliActionMatrix`, inline command bridge (pinned npm wrapper), doctor evidence bridge, repro pack and enterprise export bridges.
+- **Studio action registry**: analyze, workspace advisor, governed fix, verify-gates, and terminal-bridge actions with audit trail.
+- **Workspai design system**: token layers (`workspai-tokens`, `workspai-primitives`, studio chrome, analyze report CSS), `WorkspaiThemeProvider`, `WorkspaiEmptyState`, `WorkspaiBanner`, and contributor `DESIGN_SYSTEM.md`.
+- **Design-system CI**: drift guard tests, studio chrome CSS extract/verify scripts, and website/extension parity check script.
+- **AI creation intent**: `aiCreationHeuristic` and structured `languageModelResponse` parsing for safer create flows and module suggestions.
+- **Analyze scoping**: `analyzeReportBridge` so dashboard and studio analyze viewers respect workspace vs project context.
+- **Setup command-center**: embedded Setup & Settings with full-width host, theme-safe loading skeletons, `ToolRow` matrix, and collapsible optional/advanced sections.
+- **npm governance pipeline parity** (npm `0.34.0` CLI): `workspai.workspacePipeline` (`pipeline --json --strict`), `pipeline` evidence card from `pipeline-last-run.json`, Release hub orchestrator banner, and sidebar Run & Release / Governance menu entries.
+- **Vitest expansion**: dashboard bridges, studio redesign contracts, design-system drift, ship-loop integration, AI action framework, presentation contracts, and smoke stabilization suites.
+- **Enterprise hardening modules**: `workspacePathBoundary`, `incidentInlineCommandRunner`, `incidentStudioStabilizationPolicy`, `dashboardEvidencePending`, and `dashboardEvidenceRefreshSchedule` (webview).
+- **Workspace adoption parity**: extension adoption now delegates to canonical `rapidkit adopt --json` first, with a schema-aligned local fallback for offline or unavailable npm CLI scenarios.
+- **Multi-stack adopted project discovery**: adopted frontend and backend projects can be registered outside the workspace tree and still appear in Dashboard, Evidence, Sidebar, and project discovery flows.
+
+### Changed
+
+- Assistant Agent mode now owns the complete card incident graph and may finish only after a fresh, non-blocking verify observation; generated reports are refreshed through canonical producers rather than edited.
+- Studio turn limits are now explicit host/test boundaries only. Production Agent sessions compact into durable checkpoints and retain ownership until verified completion, cancellation, or a real provider/protocol failure.
+- Native tool execution is causal-generation aware: duplicate inspections, audits, remediations, and verifies are suppressed until source or governed evidence advances; source patch results refresh the generation before the next repair step.
+- Long-running Agent prompts retain causal tool and verify events while dropping duplicate request/status chatter, keeping repair sessions within provider context budgets.
+- Retired legacy **`AIIncidentStudio.tsx`** (~7.5k lines) in favor of **`IncidentStudioVNext`** and modular studio regions.
+- Replaced **`CommandReference`** with **`CommandCheatsheet`**; removed **`QuickLinks`**, **`HeroAction`**, and **`AIActions`** from the dashboard shell.
+- Reworked **`welcomePanel`** and **`App.tsx`** for dashboard dispatch, evidence refresh, and studio integration at scale.
+- Expanded workspace and project treeviews to notify governance ops chain and honor dashboard workspace payloads.
+- **npm CLI verify**: Setup version probe uses developer-style `npx rapidkit --version` so terminal output matches the card; orchestration commands remain pinned.
+- Guided/lite/responsive studio polish (Wave Y): denser guided conversation, action outcome essentials, collapsible sections, and responsive studio chrome.
+- **Evidence refresh**: replaced multi-timer refresh storm (0 / 1.8s / 5s / 12s) with debounced coalescing (750ms + one 5s follow-up); refresh only when commands opt in via `refreshEvidence: true`.
+- **Project adoption UX**: “convert generic project” is now “adopt project into Workspai workspace”; known stacks are no longer skipped and are adopted through the same governance contract.
+- **Package build contract**: VSIX prepublish now builds webview assets in production mode so dev source maps do not enter the release package.
+
+### Fixed
+
+- Fixed dependency incidents stopping at an unsafe npm downgrade even when a compatible owner upgrade, transitive constraint, or runtime-native source transaction remained available. Studio now preserves CLI-authored resolution candidates, respects the Doctor-selected ecosystem in polyglot projects, and reaches a user decision only after bounded compatibility investigation.
+- Fixed every multi-tool VS Code LM request failing before its first model turn because `LanguageModelChatToolMode.Required` was used with more than one tool.
+- Fixed `copilotcli` and other session-only providers appearing as runnable Workspai models even though they cannot answer extension LM requests.
+- Fixed missing/retired models and empty provider streams terminating Studio without trying another callable model.
+- Fixed Readiness repairs exhausting an arbitrary 80-turn budget after repeatedly auditing the same dependency advisory; duplicate observations now remain in the model ledger but are omitted from the user-facing timeline.
+- Fixed dependency repair retry state surviving a successful source patch, which could prevent the Agent from regenerating the lockfile after applying an evidence-supported manifest override.
+- Fixed underspecified native patch-tool input: models now receive the exact workspace-relative full-file replacement and source-hash contract.
+- Updated `adm-zip` and `axios` to patched releases and made security audit / VSIX packaging use the pinned Corepack package manager path instead of relying on a globally installed `npm` binary.
+- Raised the VS Code engine floor to `1.106.0`, where contributed Secondary Sidebar containers became stable, preventing Workspai from silently falling back into Explorer or requiring a proposed API.
+- Hardened Electron smoke so proposed-API rejection and missing Workspai view-container diagnostics fail the release even when the extension host exits with code zero.
+- Incident Studio stable wiring gaps (doctor scope payloads, sync graph, telemetry refresh).
+- AI creation intent planning and module suggestion boundaries for supported project types.
+- `UserMode` typing (`standard`) and shell-view lifecycle guards for Settings/Setup tabs.
+- Doctor telemetry refresh alignment with scoped workspace/project evidence.
+- **Security (P0)**: user-supplied paths cannot escape the active workspace; shell metacharacters rejected; Studio inline CLI restricted to an allowlisted RapidKit surface executed without a shell.
+- **Dashboard ops chain (P0)**: cross-workspace chain bleed in the webview; bootstrap step stall without timeout; silent no-op when contract dispatch fails (now warns + `dashboardCommandFailed`).
+- **Evidence (P0)**: workspace-level project-doctor artifacts without project identity no longer attach to the wrong selected project; missing bootstrap card always shown.
+- **Studio (P1)**: mutation gate parity via shared stabilization policy; standalone panel `incomingMessage` merge and project path/name injection.
+- **Reliability (P1)**: pending evidence cards reconcile from resolved cards and activity `completed`/`failed`; removed blind 15s pending timeout.
+- **Incident Studio stabilization (0.35.0)**: resync analyze-backed VNext state after report reload; project scope for standalone chat brain and palette open; CLI mutation detection without `cliActionId`; session persistence queue before load; scope selector disabled without project; ContextPanel AI/verify gate parity; chat-brain error banner; mission-control ErrorBoundary; coalesced App embed host-handler refs for CLI/ship loop.
+- **Adopted project visibility**: external adopted projects written to `.rapidkit/imported-projects.json` are now resolved by workspace manager, project explorer, and welcome-panel project discovery instead of disappearing after refresh.
+- **Fallback adoption drift**: if npm CLI adoption is unavailable, the extension writes aligned `project.json`, `adopt.json`, `adopt-readiness.json`, `context.json`, and workspace registry metadata instead of legacy partial markers.
 
 ### Removed
 
-* Legacy `AIIncidentStudio` component and interaction tests (superseded by `studioRedesignContracts` and presentation contract suites).
-* Dashboard **`CommandReference.tsx`**, **`QuickLinks.tsx`**, **`HeroAction.tsx`**, **`AIActions.tsx`**.
+- Legacy `AIIncidentStudio` component and interaction tests (superseded by `studioRedesignContracts` and presentation contract suites).
+- Dashboard **`CommandReference.tsx`**, **`QuickLinks.tsx`**, **`HeroAction.tsx`**, **`AIActions.tsx`**.
 
 ### Verification
 
-* `./node_modules/.bin/tsc --noEmit`
-* `corepack npm test` (321 files / 2282 passed / 2 skipped)
-* `node scripts/release-stop-gate.mjs --skip-kpi`
-* `env PATH=/tmp:$PATH ./node_modules/.bin/vsce package --no-dependencies --out /tmp/workspai-0.35.0.vsix`
+- `./node_modules/.bin/tsc --noEmit`
+- `corepack npm test` (321 files / 2282 passed / 2 skipped)
+- `node scripts/release-stop-gate.mjs --skip-kpi`
+- `env PATH=/tmp:$PATH ./node_modules/.bin/vsce package --no-dependencies --out /tmp/workspai-0.35.0.vsix`
 
 See also: [`releases/RELEASE_NOTES_v0.35.0.md`](releases/RELEASE_NOTES_v0.35.0.md)
 
@@ -114,164 +147,164 @@ See also: [`releases/RELEASE_NOTES_v0.35.0.md`](releases/RELEASE_NOTES_v0.35.0.m
 
 ### Added
 
-* Workspace **Infrastructure** commands: plan, up, down, status, and open compose file, with Docker pre-flight checks, optional flags, and a dedicated workspace sidebar submenu.
-* **Workspace Foundation: Ensure** command with non-destructive and force re-sync modes plus modal confirmation before rewriting foundation files.
-* Project lifecycle commands for **Build**, **Start (production)**, **Lint**, and **Format** from the Projects tree, including running-server conflict handling on start.
-* **Module Maintenance** commands: upgrade, diff, checkpoint, rollback, and uninstall, with registry-backed module selection, dry-run modes, and guarded confirmations for destructive actions.
-* Vitest coverage for infra, foundation, project lifecycle stage, and module maintenance terminal dispatch paths.
+- Workspace **Infrastructure** commands: plan, up, down, status, and open compose file, with Docker pre-flight checks, optional flags, and a dedicated workspace sidebar submenu.
+- **Workspace Foundation: Ensure** command with non-destructive and force re-sync modes plus modal confirmation before rewriting foundation files.
+- Project lifecycle commands for **Build**, **Start (production)**, **Lint**, and **Format** from the Projects tree, including running-server conflict handling on start.
+- **Module Maintenance** commands: upgrade, diff, checkpoint, rollback, and uninstall, with registry-backed module selection, dry-run modes, and guarded confirmations for destructive actions.
+- Vitest coverage for infra, foundation, project lifecycle stage, and module maintenance terminal dispatch paths.
 
 ### Changed
 
-* Expanded `package.json` command palette, workspace context menus, and project context menus to expose the new CLI parity surfaces.
+- Expanded `package.json` command palette, workspace context menus, and project context menus to expose the new CLI parity surfaces.
 
 ### Verification
 
-* `npm run compile`
-* `npm run lint`
-* `vitest run` (1094 tests)
+- `npm run compile`
+- `npm run lint`
+- `vitest run` (1094 tests)
 
 ## [0.33.0] - 2026-06-08
 
 ### Added
 
-* Full `.NET` setup-runtime support across the command palette setup flow and the dashboard setup experience.
-* `dotnet-only` workspace bootstrap profile across schemas, completion, hover help, AI create flows, command reference, and workspace creation UI.
-* Drift guard coverage that keeps `.NET` and `dotnet-only` surfaced in setup/runtime/profile experiences.
+- Full `.NET` setup-runtime support across the command palette setup flow and the dashboard setup experience.
+- `dotnet-only` workspace bootstrap profile across schemas, completion, hover help, AI create flows, command reference, and workspace creation UI.
+- Drift guard coverage that keeps `.NET` and `dotnet-only` surfaced in setup/runtime/profile experiences.
 
 ### Changed
 
-* Updated marketplace/package metadata to include `.NET Web API` and C# discovery terms.
-* Expanded polyglot and enterprise workspace profile copy to include `.NET` alongside Python, Node.js, Go, and Java.
-* Hardened release-stop-gate tests so script subprocesses run with a clean Node CLI environment instead of inheriting Vitest worker hooks.
-* Reset RapidKit CLI test mocks between tests and aligned fallback expectations with the actual direct-binary-to-npx execution path.
+- Updated marketplace/package metadata to include `.NET Web API` and C# discovery terms.
+- Expanded polyglot and enterprise workspace profile copy to include `.NET` alongside Python, Node.js, Go, and Java.
+- Hardened release-stop-gate tests so script subprocesses run with a clean Node CLI environment instead of inheriting Vitest worker hooks.
+- Reset RapidKit CLI test mocks between tests and aligned fallback expectations with the actual direct-binary-to-npx execution path.
 
 ### Fixed
 
-* Fixed setup/runtime UI drift where `.NET` projects were supported by project creation but missing from runtime verification flows.
-* Fixed dashboard setup guidance so `.NET SDK 8+` install, verify, path detection, and AI setup suggestions are visible.
-* Fixed profile parity gaps where `dotnet-only` could be accepted by the CLI surface but omitted from extension schemas or UI helpers.
+- Fixed setup/runtime UI drift where `.NET` projects were supported by project creation but missing from runtime verification flows.
+- Fixed dashboard setup guidance so `.NET SDK 8+` install, verify, path detection, and AI setup suggestions are visible.
+- Fixed profile parity gaps where `dotnet-only` could be accepted by the CLI surface but omitted from extension schemas or UI helpers.
 
 ### Verification
 
-* `./node_modules/.bin/tsc --noEmit`
-* `./node_modules/.bin/vitest run`
-* `./node_modules/.bin/eslint src --ext ts --max-warnings 100`
-* `node scripts/sync-import-stack-parity-snapshot.mjs --check`
-* `node esbuild.js --production`
-* `node esbuild.js` from `webview-ui`
+- `./node_modules/.bin/tsc --noEmit`
+- `./node_modules/.bin/vitest run`
+- `./node_modules/.bin/eslint src --ext ts --max-warnings 100`
+- `node scripts/sync-import-stack-parity-snapshot.mjs --check`
+- `node esbuild.js --production`
+- `node esbuild.js` from `webview-ui`
 
 ## [0.32.1] - 2026-06-08
 
 ### Added
 
-* Shared runtime command surface contract for extension/npm parity covering scaffold kits, module-support boundaries, lifecycle commands, and runtime tiers.
-* Runtime command surface parity tests to keep dashboard, AI creation, module suggestions, and CLI snippets aligned with the npm wrapper.
-* .NET project creation and dashboard surfaces alongside the existing FastAPI, NestJS, Go, and Spring Boot flows.
+- Shared runtime command surface contract for extension/npm parity covering scaffold kits, module-support boundaries, lifecycle commands, and runtime tiers.
+- Runtime command surface parity tests to keep dashboard, AI creation, module suggestions, and CLI snippets aligned with the npm wrapper.
+- .NET project creation and dashboard surfaces alongside the existing FastAPI, NestJS, Go, and Spring Boot flows.
 
 ### Changed
 
-* Updated extension-host RapidKit calls to use the pinned npm wrapper form: `npx --yes --package rapidkit rapidkit ...`.
-* Aligned dashboard command reference, quick links, setup flows, project creation, and module browser copy with the latest RapidKit npm command surface.
-* Restricted AI module suggestions to FastAPI and NestJS, with explicit native package ecosystem guidance for Go, Spring Boot, and .NET.
-* Hardened AI prompt guidance so generated recommendations use current doctor/project/module command scopes.
+- Updated extension-host RapidKit calls to use the pinned npm wrapper form: `npx --yes --package rapidkit rapidkit ...`.
+- Aligned dashboard command reference, quick links, setup flows, project creation, and module browser copy with the latest RapidKit npm command surface.
+- Restricted AI module suggestions to FastAPI and NestJS, with explicit native package ecosystem guidance for Go, Spring Boot, and .NET.
+- Hardened AI prompt guidance so generated recommendations use current doctor/project/module command scopes.
 
 ### Fixed
 
-* Fixed `.NET` AI creation messaging that could incorrectly describe Spring Boot module behavior.
-* Fixed user-facing module install snippets that used unpinned `rapidkit add module` commands.
-* Fixed stale doctor command examples such as `rapidkit doctor --scope=workspace` in Studio surfaces.
-* Fixed module details and browser command previews so they copy the same supported CLI form documented by npm.
+- Fixed `.NET` AI creation messaging that could incorrectly describe Spring Boot module behavior.
+- Fixed user-facing module install snippets that used unpinned `rapidkit add module` commands.
+- Fixed stale doctor command examples such as `rapidkit doctor --scope=workspace` in Studio surfaces.
+- Fixed module details and browser command previews so they copy the same supported CLI form documented by npm.
 
 ### Verification
 
-* `npm run typecheck`
-* `npm run check:parity-snapshot`
-* `vitest run src/test/runtimeCommandSurfaceParity.test.ts src/test/driftGuard.test.ts src/test/platformCapabilities.test.ts src/test/springSupportContracts.test.ts src/test/aiService.test.ts`
-* `npm run lint:stabilization` (passes with existing warning budget)
-* `npm run build`
-* `git diff --check`
+- `npm run typecheck`
+- `npm run check:parity-snapshot`
+- `vitest run src/test/runtimeCommandSurfaceParity.test.ts src/test/driftGuard.test.ts src/test/platformCapabilities.test.ts src/test/springSupportContracts.test.ts src/test/aiService.test.ts`
+- `npm run lint:stabilization` (passes with existing warning budget)
+- `npm run build`
+- `git diff --check`
 
 ## [0.32.0] - 2026-06-02
 
 ### Added
 
-* Enterprise Workspai dashboard flow with clearer workspace operations, project build, share/handoff, recent workspace, template, and module browsing sections.
-* Workspace Contract Registry documentation surface with screenshot coverage for sidebar Contract Graph and `workspace.contract.json` inspection.
-* Shared enterprise modal foundation for workspace creation, project creation, module installation, module details, and AI creation flows.
-* Webview error boundary support so dashboard rendering failures can surface recoverable errors instead of blank screens.
-* Updated screenshot inventory, README tour, and media documentation for Marketplace/readme preparation.
+- Enterprise Workspai dashboard flow with clearer workspace operations, project build, share/handoff, recent workspace, template, and module browsing sections.
+- Workspace Contract Registry documentation surface with screenshot coverage for sidebar Contract Graph and `workspace.contract.json` inspection.
+- Shared enterprise modal foundation for workspace creation, project creation, module installation, module details, and AI creation flows.
+- Webview error boundary support so dashboard rendering failures can surface recoverable errors instead of blank screens.
+- Updated screenshot inventory, README tour, and media documentation for Marketplace/readme preparation.
 
 ### Changed
 
-* Reworked dashboard IA so workspace-level actions, project-level actions, and share/archive flows sit in their correct scopes.
-* Refined Project Actions and Module Browser copy to show selected project/workspace context without exposing local absolute paths.
-* Simplified onboarding and setup entry points around Workspai command-center language.
-* Refreshed modal interaction design with denser enterprise layout, command previews, clearer targets, and consistent footer actions.
-* Updated package metadata version to `0.32.0` across `package.json` and `package-lock.json`.
-* Added safe npm overrides for vulnerable transitive test dependencies while keeping the VS Code test CLI on the current release line.
+- Reworked dashboard IA so workspace-level actions, project-level actions, and share/archive flows sit in their correct scopes.
+- Refined Project Actions and Module Browser copy to show selected project/workspace context without exposing local absolute paths.
+- Simplified onboarding and setup entry points around Workspai command-center language.
+- Refreshed modal interaction design with denser enterprise layout, command previews, clearer targets, and consistent footer actions.
+- Updated package metadata version to `0.32.0` across `package.json` and `package-lock.json`.
+- Added safe npm overrides for vulnerable transitive test dependencies while keeping the VS Code test CLI on the current release line.
 
 ### Fixed
 
-* Fixed dashboard switch/selection refresh behavior paths covered by the redesigned workspace overview flow.
-* Fixed module install/details surfaces that previously showed workspace paths where project context was expected.
-* Fixed duplicate webview message-case behavior encountered during dashboard/modal integration.
-* Cleared npm audit findings for the release package without using `npm audit fix --force`.
+- Fixed dashboard switch/selection refresh behavior paths covered by the redesigned workspace overview flow.
+- Fixed module install/details surfaces that previously showed workspace paths where project context was expected.
+- Fixed duplicate webview message-case behavior encountered during dashboard/modal integration.
+- Cleared npm audit findings for the release package without using `npm audit fix --force`.
 
 ### Verification
 
-* `./node_modules/.bin/tsc --noEmit`
-* `node esbuild.js` from `webview-ui`
-* `npm audit --json` reports 0 vulnerabilities
-* `git diff --check`
+- `./node_modules/.bin/tsc --noEmit`
+- `node esbuild.js` from `webview-ui`
+- `npm audit --json` reports 0 vulnerabilities
+- `git diff --check`
 
 ## [0.31.0] - 2026-05-31
 
 ### Added
 
-* Modular workspace analyze helper with stable `runAnalyze`, `loadReport`, and `revealEvidence` message handlers.
-* Dedicated `Workspace Live Diagnosis` analyze card for stable incident workflows.
+- Modular workspace analyze helper with stable `runAnalyze`, `loadReport`, and `revealEvidence` message handlers.
+- Dedicated `Workspace Live Diagnosis` analyze card for stable incident workflows.
 
 ### Changed
 
-* Moved analyze lifecycle from the redesign-only Incident Studio path into the stable WelcomePanel / AIIncidentStudio experience.
-* Added clearer guidance for missing analyze output and prompt users to run `rapidkit analyze`.
+- Moved analyze lifecycle from the redesign-only Incident Studio path into the stable WelcomePanel / AIIncidentStudio experience.
+- Added clearer guidance for missing analyze output and prompt users to run `rapidkit analyze`.
 
 ### Fixed
 
-* Fixed missing analyze output flow so users are guided to rerun analysis instead of seeing an empty state.
+- Fixed missing analyze output flow so users are guided to rerun analysis instead of seeing an empty state.
 
 ### Other
 
-* Recommended validation: `npm run compile` and `npm run test`.
+- Recommended validation: `npm run compile` and `npm run test`.
 
 ## [0.30.0] - 2026-05-27
 
 ### New
 
-* Structured AI response cards in Studio were refined with clearer semantics and improved presentation for better readability.
-* Modal evidence contract is now surfaced across AI incident and debugging workflows, improving traceability and diagnostic transparency.
-* AI output quality gate introduced to strengthen response consistency before downstream execution.
-* Workspace snapshot recovery added to improve resilience during failed imports or workspace restoration scenarios.
+- Structured AI response cards in Studio were refined with clearer semantics and improved presentation for better readability.
+- Modal evidence contract is now surfaced across AI incident and debugging workflows, improving traceability and diagnostic transparency.
+- AI output quality gate introduced to strengthen response consistency before downstream execution.
+- Workspace snapshot recovery added to improve resilience during failed imports or workspace restoration scenarios.
 
 ### Changed
 
-* AI chat interaction clarity improved, including stronger stream timeout handling for more reliable conversational flows.
-* Editor debugging surfaces expanded with richer AI debug actions and enhanced architecture lens visibility.
-* Incident verification workflows hardened with stricter verify-first release gating behavior.
-* Workspace import pipeline strengthened with additional hardening safeguards.
-* Organization and documentation domain references migrated to `rapidkitlabs` / `www.workspai.com`.
+- AI chat interaction clarity improved, including stronger stream timeout handling for more reliable conversational flows.
+- Editor debugging surfaces expanded with richer AI debug actions and enhanced architecture lens visibility.
+- Incident verification workflows hardened with stricter verify-first release gating behavior.
+- Workspace import pipeline strengthened with additional hardening safeguards.
+- Organization and documentation domain references migrated to `rapidkitlabs` / `www.workspai.com`.
 
 ### Fix
 
-* Stream timeout instability and chat clarity regressions addressed in AI interaction flows.
-* Verification gate edge cases in incident release workflows resolved to reduce release validation failures.
-* Workspace import robustness issues mitigated through recovery and defensive import handling.
+- Stream timeout instability and chat clarity regressions addressed in AI interaction flows.
+- Verification gate edge cases in incident release workflows resolved to reduce release validation failures.
+- Workspace import robustness issues mitigated through recovery and defensive import handling.
 
 ### Other
 
-* This release primarily focuses on platform stabilization, reliability improvements, and operational hardening across AI, Editor, Incident, and Workspace flows.
-* Recommended release verification steps remain: `npm run compile` and `npm run build` prior to VSIX publishing or marketplace release creation.
-* Commit scope included in this release covers the latest delivery set through `v0.30.0`.
+- This release primarily focuses on platform stabilization, reliability improvements, and operational hardening across AI, Editor, Incident, and Workspace flows.
+- Recommended release verification steps remain: `npm run compile` and `npm run build` prior to VSIX publishing or marketplace release creation.
+- Commit scope included in this release covers the latest delivery set through `v0.30.0`.
 
 Commit-level audit (recent 8 commits):
 
@@ -283,7 +316,6 @@ Commit-level audit (recent 8 commits):
 - `551a9d1` — feat(ai): add output quality gate
 - `6709580` — feat(workspace): add snapshot recovery and import hardening
 - `59aa208` — chore: migrate organization and domain references
-
 
 ## [0.29.1] - 2026-05-23
 
@@ -311,8 +343,6 @@ Commit-level audit (v0.29.0..HEAD):
 
 - `96a6fab` — fix(stabilization): harden polyglot watchers and AI stream reliability
   - touched: `src/core/aiModelSelection.ts`, `src/core/aiService.ts`, `src/extension.ts`, `src/ui/panels/welcomePanel.shared.ts`, `src/ui/panels/welcomePanel.ts`
-
-
 
 ## [0.29.0] - 2026-05-19
 
@@ -718,8 +748,6 @@ Commit-level audit (v0.29.0..HEAD):
 - 🛡️ **AI module slug validation** — module slugs returned by AI are validated against the live module list and the `vendor/category/slug` regex before being applied, preventing hallucinated module names from reaching the CLI.
 - 📐 **AI project context enrichment** — context payload now includes `python_version`, `rapidkit_cli_version`, `rapidkit_core_version`, `installed_modules`, `workspace_health`, `runtime`, and `engine` fields so the model has complete environment awareness.
 
-
-
 ### Changed
 
 - 🧭 **Workspai positioning sync** across the extension README, Marketplace description, and webview header so public-facing messaging consistently uses the canonical product line: "The AI workspace for backend teams"
@@ -812,8 +840,6 @@ Commit-level audit (v0.29.0..HEAD):
 ### Fixed
 
 - `AIModal.tsx` — added `context` to `useEffect` dependency array so that `prefillQuestion` is correctly applied even when the modal is already mounted with a previous context
-
-
 
 ### Added
 
@@ -1019,7 +1045,7 @@ Commit-level audit (v0.29.0..HEAD):
 
 - 📦 **Full Workspace Export/Import** - Complete backup and restore functionality
   - Export workspace as ZIP archive with all files (~MB sized)
-  - Smart exclusion patterns (node_modules, __pycache__, .venv, .git, etc.)
+  - Smart exclusion patterns (node_modules, **pycache**, .venv, .git, etc.)
   - Import from ZIP archive with extraction and validation
   - Import existing workspace folder (register only)
   - Progress tracking with detailed status messages
@@ -1344,8 +1370,6 @@ Commit-level audit (v0.29.0..HEAD):
 - 🧩 Module Browser: added copy-to-clipboard for module install commands; improved actions layout and consistent button styling
 - 🏷️ Header shows current extension version alongside update status (e.g., `v0.6.1 — Up to date`)
 
-
-
 ## [0.6.0] - 2026-02-03
 
 ### Added
@@ -1565,13 +1589,14 @@ Commit-level audit (v0.29.0..HEAD):
 
 ### Documentation
 
-  - PYTHON_DETECTION_METHODS.md now fully English
-  - Improved clarity for international users
-  - Better maintainability
+- PYTHON_DETECTION_METHODS.md now fully English
+- Improved clarity for international users
+- Better maintainability
 
 ### Technical Details
 
 **New Files:**
+
 - `src/commands/checkSystem.ts` — Quick system status check
 - `src/utils/errorParser.ts` — Error parsing and suggestions
 - `docs/PYTHON_DETECTION_METHODS.md` — Detection methods documentation
@@ -1582,6 +1607,7 @@ Commit-level audit (v0.29.0..HEAD):
 - `releases/RELEASE_NOTES_v0.5.1.md` — Release notes
 
 **Modified Files:**
+
 - `src/commands/doctor.ts` — Added version checking and npm detection
 - `src/utils/pythonChecker.ts` — Added 8-method detection (4 more methods)
 - `src/ui/panels/welcomePanel.ts` — Complete wizard integration
@@ -1705,11 +1731,13 @@ Commit-level audit (v0.29.0..HEAD):
 ### Technical Details
 
 **New Files:**
+
 - `src/core/bridge/pythonRapidkit.ts` — Python bridge with Scenario A/B/C resolution
 - `src/utils/exec.ts` — Cross-platform command execution wrapper
 - `src/core/selectedProject.ts` — Project context management
 
 **Refactored Files:**
+
 - `src/core/rapidkitCLI.ts` — Bridge integration
 - `src/commands/{addModule,createProject,createWorkspace,doctor}.ts` — Bridge delegation
 - `src/core/{workspaceDetector,workspaceManager}.ts` — Enhanced detection
