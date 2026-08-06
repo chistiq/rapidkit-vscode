@@ -51,7 +51,6 @@ interface EnterpriseDashboardFlowProps {
   pendingCardIds?: DashboardEvidenceCardId[];
   activeOperateZone?: Extract<DashboardOperateZone, 'quick' | 'build' | 'share'>;
 }
-
 const frameworks = SCAFFOLD_STARTERS;
 
 function workspaceRunStageDetail(
@@ -226,7 +225,7 @@ export function EnterpriseDashboardFlow({
                 'workspacePipeline',
                 !hasWorkspace ? 'Select a workspace' : undefined
               )}
-              title="rapidkit pipeline --json --strict"
+              title="npx workspai pipeline --json --strict"
             />
             <ActionTile
               icon={<HeartPulse size={15} />}
@@ -426,7 +425,7 @@ export function EnterpriseDashboardFlow({
                 <Package size={15} />
                 <span>
                   <strong>Adopt Project</strong>
-                  <small>Register an on-disk folder with RapidKit metadata</small>
+                  <small>Register an on-disk folder with Workspai workspace metadata</small>
                 </span>
               </button>
               <button

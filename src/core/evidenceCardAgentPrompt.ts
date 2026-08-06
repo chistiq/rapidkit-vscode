@@ -236,7 +236,7 @@ export function buildEvidenceCardCopilotQuestion(input: EvidenceCardAgentContext
     return input.userQuestion.trim();
   }
   if (!input.card) {
-    return 'Summarize this workspace using the attached intelligence pack and list the safest next RapidKit commands.';
+    return 'Summarize this workspace using the attached intelligence pack and list the safest next Workspai commands.';
   }
   const statusLabel =
     input.card.status === 'fail'

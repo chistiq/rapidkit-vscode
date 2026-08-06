@@ -526,7 +526,7 @@ async function promptToRegisterDetectedWorkspaceRoots(
   const addAction = 'Add to Workspai';
   const notNowAction = 'Not now';
   const choice = await vscode.window.showInformationMessage(
-    `RapidKit workspace detected: ${candidate.name}. Add it to Workspai?`,
+    `Workspai workspace detected: ${candidate.name}. Add it to Workspai?`,
     addAction,
     notNowAction
   );

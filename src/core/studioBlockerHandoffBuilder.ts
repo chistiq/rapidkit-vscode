@@ -1,8 +1,8 @@
 import type * as vscode from 'vscode';
 
 import type { DashboardEvidenceCard } from './dashboardEvidenceBridge.js';
-import { WORKSPACE_VERIFY_REPORT_PATH } from './workspaceIntelligencePaths.js';
 import { readWorkspaceVerifyReport } from './workspaceVerifyReader.js';
+import { requireStudioCardRepairCapability } from '../contracts/studioCardRepairCapabilities.js';
 import {
   buildStudioIncidentSummary,
   STUDIO_BLOCKER_HANDOFF_SCHEMA_VERSION,
@@ -16,11 +16,7 @@ import { readStudioBlockerCommandRunCount } from './studioBlockerCommandLedger.j
 import { resolveStudioFixActionForHandoff } from './studioBlockerFixRouting.js';
 import { resolveDashboardCommandExecutionPlan } from './dashboardCommandExecutionPlan.js';
 import { resolveDashboardCommandForEvidenceCard } from './dashboardReportRegistry.js';
-import {
-  buildStudioSourceCommandForCard,
-  CARD_SOURCE_SHELL,
-  DEFAULT_VERIFY_COMMAND,
-} from './studioCardSourceShell.js';
+import { buildStudioSourceCommandForCard, CARD_SOURCE_SHELL } from './studioCardSourceShell.js';
 
 export { CARD_SOURCE_SHELL, buildStudioSourceCommandForCard };
 
@@ -56,17 +52,9 @@ export async function buildStudioBlockerHandoff(
     ? resolveDashboardCommandExecutionPlan(dashboardCommandId)
     : undefined;
   const sourceCommand = buildStudioSourceCommandForCard(input.card.id);
-  // Re-run the producer for Workspace Run so verify refreshes the exact card
-  // artifact and gate state. A generic workspace verify can pass while the
-  // workspace-run-last.json card remains blocked and stale.
-  const verifyCommand =
-    input.card.id === 'workspaceRun' || input.card.id === 'readiness'
-      ? sourceCommand
-      : DEFAULT_VERIFY_COMMAND;
-  const verifyArtifact =
-    (input.card.id === 'workspaceRun' || input.card.id === 'readiness') && input.card.artifactPath
-      ? input.card.artifactPath
-      : WORKSPACE_VERIFY_REPORT_PATH;
+  const repairCapability = requireStudioCardRepairCapability(input.card.id);
+  const verifyCommand = repairCapability.verifyCommand;
+  const verifyArtifact = repairCapability.verifyArtifact;
 
   let resolutionHints = buildResolutionHintsForBlockingReasons({
     blockingReasons: blockers.length > 0 ? blockers : [`${input.card.id}: blocked`],

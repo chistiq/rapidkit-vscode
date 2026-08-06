@@ -309,7 +309,7 @@ function ProgressRing({
             <span className={'spc-ring-value' + (allDone ? ' done' : '')}>
               {value}/{max}
             </span>
-            <span className="spc-ring-caption">Core Ready</span>
+            <span className="spc-ring-caption">Required Ready</span>
           </>
         )}
       </div>
@@ -323,7 +323,7 @@ function SetupLoadingBanner({ refreshing }: { refreshing: boolean }) {
       <Loader2 size={16} className="workspai-spinner" aria-hidden={true} />
       <div className="ws-setup-loading-banner__copy">
         <strong>{refreshing ? 'Refreshing environment' : 'Scanning your toolchain'}</strong>
-        <span>Checking Python, Node, RapidKit Core, and optional runtimes…</span>
+        <span>Checking the Workspai CLI and optional runtime toolchains…</span>
       </div>
     </div>
   );
@@ -662,9 +662,9 @@ function AllSetBanner() {
     <div className="spc-allset">
       <Zap size={18} className="spc-allset-icon" />
       <div>
-        <div className="spc-allset-title">All systems ready</div>
+        <div className="spc-allset-title">Workspace commands ready</div>
         <div className="spc-allset-sub">
-          Your dev environment is fully configured for all Workspai workflows.
+          Add optional runtimes only when a selected project, kit, or module needs them.
         </div>
       </div>
     </div>
@@ -896,7 +896,7 @@ function renderAdvancedConfiguration({
               className="ws-btn"
               onClick={() => vscode.postMessage('upgradePipCore')}
             >
-              Upgrade Core
+              Upgrade detected Core
             </button>
             <button
               type="button"
@@ -1050,8 +1050,8 @@ export function SetupExperience({ embedded = false }: { embedded?: boolean }) {
         iconSrc: window.PYTHON_ICON_URI,
         color: wsBrand.python,
         title: 'Python 3.10+',
-        subtitle: 'Required for RapidKit Core',
-        required: true,
+        subtitle: 'Optional runtime for Python-backed kits and modules',
+        required: false,
         installed: pythonOk,
         version: s?.pythonVersion,
         detection: s?.detections?.python,
@@ -1076,15 +1076,15 @@ export function SetupExperience({ embedded = false }: { embedded?: boolean }) {
         iconSrc: window.RAPIDKIT_ICON_URI,
         color: wsBrand.core,
         title: 'RapidKit Core',
-        subtitle: 'Python engine for scaffolding',
-        required: true,
+        subtitle: 'Optional Python engine for Python-backed kits and modules',
+        required: false,
         installed: Boolean(s?.coreInstalled),
         version: s?.coreVersion,
         detection: s?.detections?.core,
         hint:
           s?.coreInstallType === 'workspace'
-            ? 'Workspace-only install (global recommended)'
-            : 'Required for all scaffold and lifecycle commands',
+            ? 'Workspace-local install (preferred when this workspace uses Python-backed capabilities)'
+            : 'Install only when a selected kit or module requires the Python engine',
         canUpgrade: coreUpgradeable,
         primaryAction: {
           label: 'Install',
@@ -1274,26 +1274,29 @@ export function SetupExperience({ embedded = false }: { embedded?: boolean }) {
     ];
   }, [status, preferences.manualPaths.dotnet]);
 
-  const coreReady = useMemo(() => coreTools.filter((t) => t.installed).length, [coreTools]);
   const allTools = useMemo(
     () => [...coreTools, ...pythonTools, ...goTools, ...dotnetTools, ...javaTools],
     [coreTools, pythonTools, goTools, dotnetTools, javaTools]
   );
-  const allReady = useMemo(() => allTools.every((t) => t.installed), [allTools]);
+  const requiredTools = useMemo(() => allTools.filter((tool) => tool.required), [allTools]);
+  const requiredReady = useMemo(
+    () => requiredTools.filter((tool) => tool.installed).length,
+    [requiredTools]
+  );
+  const allReady = requiredTools.length > 0 && requiredReady === requiredTools.length;
   const readinessScore = useMemo(() => {
-    if (allTools.length === 0) {
+    if (requiredTools.length === 0) {
       return 0;
     }
-    const installedCount = allTools.filter((tool) => tool.installed).length;
-    return Math.round((installedCount / allTools.length) * 100);
-  }, [allTools]);
+    return Math.round((requiredReady / requiredTools.length) * 100);
+  }, [requiredReady, requiredTools.length]);
 
   const readinessGaps = useMemo(() => {
-    return allTools
+    return requiredTools
       .filter((tool) => !tool.installed)
       .slice(0, 5)
       .map((tool) => `${tool.title}: ${tool.hint || 'Not detected'}`);
-  }, [allTools]);
+  }, [requiredTools]);
 
   const aiInsights = useMemo(() => {
     const suggestions: string[] = [];
@@ -1302,27 +1305,14 @@ export function SetupExperience({ embedded = false }: { embedded?: boolean }) {
     if (validationResult) {
       suggestions.push(validationResult.summary);
     }
-    if (!s?.pythonInstalled) {
-      suggestions.push('Python missing. Install Python 3.10+ first, then rerun Setup checks.');
-    }
     if (s?.pythonInstalled && s?.pythonNeedsUpgrade) {
       suggestions.push(
         `Python ${s.pythonVersion} detected. Upgrade to 3.10+ to avoid template/runtime drift.`
       );
     }
-    if (!s?.coreInstalled && s?.pipxInstalled) {
-      suggestions.push(
-        'RapidKit Core missing while pipx exists. Best next step: Install Core via pipx.'
-      );
-    }
     if (!s?.goInstalled && preferences.manualPaths.go) {
       suggestions.push(
         'Go not detected but manual path exists. Run Verify Go; if it still fails, fix executable permission.'
-      );
-    }
-    if (!s?.dotnetInstalled) {
-      suggestions.push(
-        '.NET SDK missing. Install .NET SDK 8+ for ASP.NET Core services, then run Verify .NET.'
       );
     }
     if (!s?.dotnetInstalled && preferences.manualPaths.dotnet) {
@@ -1331,11 +1321,6 @@ export function SetupExperience({ embedded = false }: { embedded?: boolean }) {
       );
     }
     // Java-specific insights
-    if (!s?.javaInstalled) {
-      suggestions.push(
-        'Java (JDK) missing. Install Temurin 21+ via adoptium.net or use SDKMAN: sdk install java 21-tem'
-      );
-    }
     if (s?.javaInstalled && !s?.mavenInstalled && !s?.gradleInstalled) {
       suggestions.push(
         'Java detected but no build tool found. Install Maven (sdk install maven) or Gradle (sdk install gradle).'
@@ -1371,7 +1356,7 @@ export function SetupExperience({ embedded = false }: { embedded?: boolean }) {
     }
     if (readinessScore >= 85) {
       suggestions.push(
-        'Local tooling is mostly ready for the selected runtimes. Export the setup report to share this environment baseline with your team.'
+        'Required Workspai tooling is ready. Optional runtime cards show which additional project families this machine can run.'
       );
     }
     if (suggestions.length === 0) {
@@ -1486,7 +1471,7 @@ export function SetupExperience({ embedded = false }: { embedded?: boolean }) {
                 ) : (
                   <>
                     <span className="ws-setup-hero-score">{readinessScore}%</span>
-                    <span className="ws-setup-hero-score-label">Overall readiness</span>
+                    <span className="ws-setup-hero-score-label">Required tooling</span>
                     {readinessGaps.length > 0 ? (
                       <span className="ws-chip ws-chip--warn">
                         {readinessGaps.length} gap{readinessGaps.length === 1 ? '' : 's'}
@@ -1500,8 +1485,8 @@ export function SetupExperience({ embedded = false }: { embedded?: boolean }) {
           {allReady && !loading && <AllSetBanner />}
         </div>
         <ProgressRing
-          value={coreReady}
-          max={coreTools.length}
+          value={requiredReady}
+          max={requiredTools.length}
           loading={loading}
           compact={embedded}
         />
@@ -1511,7 +1496,7 @@ export function SetupExperience({ embedded = false }: { embedded?: boolean }) {
         <div className="ws-setup-command-center">
           <div className="ws-setup-command-center__primary">
             <ToolGroup
-              title="Core Requirements"
+              title="Workspai foundation"
               tools={coreTools}
               loading={loading}
               defaultOpen
@@ -1636,7 +1621,7 @@ export function SetupExperience({ embedded = false }: { embedded?: boolean }) {
                 <span>Readiness Score</span>
               </div>
               <div className="spc-score-value">{readinessScore}%</div>
-              <div className="spc-score-caption">Installed tools coverage</div>
+              <div className="spc-score-caption">Required tooling coverage</div>
               {readinessGaps.length > 0 && (
                 <ul className="spc-plain-list">
                   {readinessGaps.map((gap) => (

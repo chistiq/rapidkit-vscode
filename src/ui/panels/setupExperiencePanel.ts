@@ -22,6 +22,8 @@ import {
   discoverPackageRunnerInvocations,
   discoverPythonExecutableCandidates,
 } from '../../utils/platformCapabilities';
+import { resolveCoreUpgradePlan } from '../../core/coreUpgradePlan';
+import { findWorkspaceRootUp } from '../../core/workspacePaths';
 
 const SETUP_PREFERENCES_KEY = 'workspai.setup.preferences';
 
@@ -476,8 +478,33 @@ export class SetupPanel {
         break;
       }
       case 'upgradePipCore': {
+        const installStatus = await this._checkInstallationStatus();
+        const workspaceRoot = (vscode.workspace.workspaceFolders || [])
+          .map((folder) => findWorkspaceRootUp(folder.uri.fsPath))
+          .find((candidate): candidate is string => Boolean(candidate));
+
+        if (installStatus.coreInstallType === 'workspace') {
+          if (!workspaceRoot) {
+            vscode.window.showErrorMessage(
+              'RapidKit Core was detected as workspace-local, but the owning Workspai workspace could not be resolved. Open that workspace before upgrading; no global package was changed.'
+            );
+            break;
+          }
+          const upgradePlan = await resolveCoreUpgradePlan(workspaceRoot);
+          runCommandsInTerminal({
+            name: 'Upgrade Workspace RapidKit Core',
+            cwd: workspaceRoot,
+            commands: upgradePlan.commands,
+          });
+          setTimeout(async () => {
+            const newStatus = await this._checkInstallationStatus();
+            this._safePostMessage({ command: 'statusUpdate', status: newStatus });
+          }, 10000);
+          break;
+        }
+
         runCommandsInTerminal({
-          name: 'Upgrade RapidKit Core',
+          name: 'Upgrade Global RapidKit Core',
           commands: [
             process.platform === 'win32'
               ? 'python -m pipx upgrade rapidkit-core'

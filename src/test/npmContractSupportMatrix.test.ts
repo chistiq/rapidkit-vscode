@@ -77,6 +77,10 @@ describe('npm contract support matrix', () => {
       'module-support.v1.json',
       'release-readiness.v1.json',
       'runtime-command-surface.v1.json',
+      'studio-card-repair-capabilities.v1.json',
+      'workspace-repair-capabilities.v1.json',
+      'workspace-intelligence/workspace-repair-proposal.v1.json',
+      'workspace-intelligence/workspace-repair-transaction.v1.json',
       'workspace-registry.v1.json',
     ]) {
       expect(byPath.get(contractPath)?.mode, contractPath).toBe('runtime-consumed');
@@ -113,6 +117,8 @@ describe('npm contract support matrix', () => {
       'agent-customization-pack.v1.json',
       'create-planner-capabilities.v1.json',
       'release-readiness.v1.json',
+      'studio-card-repair-capabilities.v1.json',
+      'workspace-repair-capabilities.v1.json',
       'workspace-registry.v1.json',
     ]) {
       const srcCopy = JSON.parse(

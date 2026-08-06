@@ -4,6 +4,7 @@
  * Requires VS Code >= 1.90 and an active Copilot / compatible LLM subscription.
  */
 
+import { randomUUID } from 'node:crypto';
 import * as vscode from 'vscode';
 import { Logger } from '../utils/logger';
 import {
@@ -64,10 +65,27 @@ import {
 } from './aiContextContract';
 export { extractContractTelemetry } from './aiContextContract';
 
-export interface AIMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
+export type AIMessage =
+  | {
+      role: 'user' | 'assistant';
+      content: string;
+    }
+  | {
+      role: 'assistant';
+      toolCall: {
+        callId: string;
+        name: string;
+        input: Record<string, unknown>;
+      };
+    }
+  | {
+      role: 'tool';
+      toolResult: {
+        callId: string;
+        name: string;
+        content: string;
+      };
+    };
 
 export interface AIStreamChunk {
   text: string;
@@ -101,7 +119,13 @@ export interface AIModelToolDefinition {
 }
 
 export type AIModelToolActionResponse =
-  | { type: 'tool'; modelId: string; toolName: string; input: Record<string, unknown> }
+  | {
+      type: 'tool';
+      modelId: string;
+      callId: string;
+      toolName: string;
+      input: Record<string, unknown>;
+    }
   | { type: 'text'; modelId: string; text: string };
 
 function isRetryableToolModelError(error: unknown): boolean {
@@ -150,11 +174,29 @@ export async function requestAIModelToolAction(
     model = (await selectModelAuto()).model;
   }
 
-  const lmMessages = messages.map((message) =>
-    message.role === 'user'
+  const lmMessages = messages.map((message) => {
+    if ('toolCall' in message) {
+      return vscode.LanguageModelChatMessage.Assistant([
+        new vscode.LanguageModelToolCallPart(
+          message.toolCall.callId,
+          message.toolCall.name,
+          message.toolCall.input
+        ),
+      ]);
+    }
+    if ('toolResult' in message) {
+      return vscode.LanguageModelChatMessage.User([
+        new vscode.LanguageModelToolResultPart(message.toolResult.callId, [
+          new vscode.LanguageModelTextPart(
+            sanitizePromptText(message.toolResult.content, 96 * 1024)
+          ),
+        ]),
+      ]);
+    }
+    return message.role === 'user'
       ? vscode.LanguageModelChatMessage.User(sanitizePromptText(message.content, 96 * 1024))
-      : vscode.LanguageModelChatMessage.Assistant(sanitizePromptText(message.content, 96 * 1024))
-  );
+      : vscode.LanguageModelChatMessage.Assistant(sanitizePromptText(message.content, 96 * 1024));
+  });
   const requestTokenSource = new vscode.CancellationTokenSource();
   const cancellation = token?.onCancellationRequested(() => requestTokenSource.cancel());
   const timeoutMs = getAIStreamTimeoutMs();
@@ -216,6 +258,10 @@ export async function requestAIModelToolAction(
             return {
               type: 'tool',
               modelId,
+              callId:
+                typeof candidate.callId === 'string' && candidate.callId.trim()
+                  ? candidate.callId
+                  : randomUUID(),
               toolName: candidate.name,
               input:
                 candidate.input &&
@@ -371,11 +417,29 @@ export async function streamAIResponse(
     throw err;
   }
 
-  const lmMessages = messages.map((m) =>
-    m.role === 'user'
-      ? vscode.LanguageModelChatMessage.User(sanitizePromptText(m.content, 96 * 1024))
-      : vscode.LanguageModelChatMessage.Assistant(sanitizePromptText(m.content, 96 * 1024))
-  );
+  const lmMessages = messages.map((message) => {
+    if ('toolCall' in message) {
+      return vscode.LanguageModelChatMessage.Assistant([
+        new vscode.LanguageModelToolCallPart(
+          message.toolCall.callId,
+          message.toolCall.name,
+          message.toolCall.input
+        ),
+      ]);
+    }
+    if ('toolResult' in message) {
+      return vscode.LanguageModelChatMessage.User([
+        new vscode.LanguageModelToolResultPart(message.toolResult.callId, [
+          new vscode.LanguageModelTextPart(
+            sanitizePromptText(message.toolResult.content, 96 * 1024)
+          ),
+        ]),
+      ]);
+    }
+    return message.role === 'user'
+      ? vscode.LanguageModelChatMessage.User(sanitizePromptText(message.content, 96 * 1024))
+      : vscode.LanguageModelChatMessage.Assistant(sanitizePromptText(message.content, 96 * 1024));
+  });
 
   const requestTimeoutMs = getAIStreamTimeoutMs();
 

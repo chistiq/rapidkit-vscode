@@ -26,6 +26,7 @@ export const REQUIRED_WORKSPACE_INTELLIGENCE_SUBCOMMANDS = [
   'context',
   'agent-sync',
   'remediation-plan',
+  'repair',
   'explain',
   'why',
   'trace',

@@ -1,0 +1,47 @@
+import contract from './studio-card-repair-capabilities.v1.json';
+
+import { DASHBOARD_EVIDENCE_CARD_IDS } from './dashboardEvidenceCards.js';
+
+export type StudioCardRepairCapability = {
+  cardId: string;
+  scope: 'workspace' | 'project';
+  producerCommand: string;
+  producerArtifact: string;
+  verifyCommand: string;
+  verifyArtifact: string;
+  aggregateVerifyCommand: string;
+  repairPolicy: 'diagnose-and-repair' | 'source-repair-then-produce' | 'refresh-producer';
+  remediationArtifacts: string[];
+};
+
+const capabilities = contract.cards as StudioCardRepairCapability[];
+const byCardId = new Map(capabilities.map((entry) => [entry.cardId, entry]));
+
+if (
+  capabilities.length !== DASHBOARD_EVIDENCE_CARD_IDS.length ||
+  DASHBOARD_EVIDENCE_CARD_IDS.some((cardId) => !byCardId.has(cardId))
+) {
+  throw new Error(
+    'Studio card repair capabilities are incomplete. Sync canonical Workspai CLI contracts.'
+  );
+}
+
+export const STUDIO_CARD_REPAIR_CAPABILITIES =
+  capabilities as readonly StudioCardRepairCapability[];
+
+export function resolveStudioCardRepairCapability(
+  cardId: string
+): StudioCardRepairCapability | undefined {
+  return byCardId.get(cardId);
+}
+
+export function requireStudioCardRepairCapability(cardId: string): StudioCardRepairCapability {
+  const capability = resolveStudioCardRepairCapability(cardId);
+  if (!capability) {
+    throw new Error(
+      `No canonical Studio repair capability is published for card "${cardId}". ` +
+        'Repair cannot fall back to an unrelated evidence producer.'
+    );
+  }
+  return capability;
+}

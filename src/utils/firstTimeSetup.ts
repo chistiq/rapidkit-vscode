@@ -50,11 +50,9 @@ export async function showFirstTimeSetupMessage(): Promise<boolean> {
 
   const message =
     '👋 Welcome to Workspai!\n\n' +
-    'First-time setup will:\n' +
-    '  • Download Workspai CLI (~5-10 seconds)\n' +
-    '  • Create a Python virtual environment\n' +
-    '  • Install RapidKit Core engine\n\n' +
-    'This may take 30-60 seconds. Ready to continue?';
+    'Workspai will guide you through workspace creation and use the Workspai CLI for governed workspace commands.\n\n' +
+    'Python and RapidKit Core are optional. They are offered only when the selected workspace profile, kit, or module needs Python-backed capabilities.\n\n' +
+    'Ready to continue?';
 
   const continueAction = 'Continue';
   const learnMoreAction = 'Learn More';

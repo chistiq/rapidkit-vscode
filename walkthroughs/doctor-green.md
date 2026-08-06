@@ -12,5 +12,7 @@ Project Doctor results retain project identity under
 
 The **Workspace Health** view distinguishes passed, warning, blocked, missing,
 and stale evidence. Use **Fix with Workspai** to open a scoped Agent repair
-session. A green state requires current evidence with no remaining error or
-warning; command success alone is not enough.
+session. Release verification requires current evidence with no remaining
+blocking finding. Warnings remain visible as advisories and should be reviewed,
+fixed, or documented according to workspace policy; command success alone is
+not enough.

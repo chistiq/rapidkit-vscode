@@ -222,7 +222,7 @@ export function RecentWorkspaces({
                     {workspace.complianceStatus === 'failing' && (
                       <span
                         className="ws-tag ws-tag--danger"
-                        title="Bootstrap compliance failing — run: rapidkit bootstrap"
+                        title="Bootstrap compliance failing — run: npx workspai bootstrap"
                       >
                         <AlertTriangle size={11} aria-hidden="true" /> Policy
                       </span>
@@ -242,7 +242,7 @@ export function RecentWorkspaces({
                     {workspace.mirrorStatus === 'stale' && (
                       <span
                         className="ws-tag ws-tag--mirror-stale ws-hover-show"
-                        title="Mirror is stale — run: rapidkit mirror sync"
+                        title="Mirror is stale — run: npx workspai mirror sync"
                       >
                         mirror stale
                       </span>
@@ -333,7 +333,7 @@ export function RecentWorkspaces({
                               e.stopPropagation();
                               withBusy(workspace.path, () => onBootstrap(workspace));
                             }}
-                            title="Fix bootstrap compliance (rapidkit bootstrap)"
+                            title="Fix bootstrap compliance (npx workspai bootstrap)"
                             aria-label={`Bootstrap ${workspace.name}`}
                           >
                             <ShieldCheck size={12} />
@@ -346,7 +346,7 @@ export function RecentWorkspaces({
                               e.stopPropagation();
                               withBusy(workspace.path, () => onMirrorSync(workspace));
                             }}
-                            title="Sync stale mirror (rapidkit mirror sync)"
+                            title="Sync stale mirror (npx workspai mirror sync)"
                             aria-label={`Sync mirror for ${workspace.name}`}
                           >
                             <Database size={12} />

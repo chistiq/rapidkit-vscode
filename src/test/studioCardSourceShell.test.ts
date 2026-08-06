@@ -56,4 +56,10 @@ describe('studioCardSourceShell', () => {
       'npx workspai workspace share --output .workspai/reports/share-bundle.json --json'
     );
   });
+
+  it('fails closed when a future card has no canonical producer contract', () => {
+    expect(() => buildStudioSourceCommandForCard('future-uncontracted-card')).toThrow(
+      /No canonical Studio repair capability/
+    );
+  });
 });

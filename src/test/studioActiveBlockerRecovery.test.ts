@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { runStudioActiveBlockerRecovery } from '../core/studioActiveBlockerRecovery.js';
+import { isDependencySecurityBlocker } from '../core/studioDependencyIncident.js';
 import type { StudioAgentWorkspaiToolHost } from '../core/studioAgentWorkspaiTools.js';
 
 function host(overrides: Partial<StudioAgentWorkspaiToolHost> = {}): StudioAgentWorkspaiToolHost {
@@ -26,6 +27,56 @@ function host(overrides: Partial<StudioAgentWorkspaiToolHost> = {}): StudioAgent
 }
 
 describe('Studio active blocker recovery', () => {
+  it('distinguishes a missing audit-tooling contract from observed vulnerabilities', () => {
+    expect(
+      isDependencySecurityBlocker(
+        '2 moderate/high/critical dependency vulnerability(ies) reported.'
+      )
+    ).toBe(true);
+    expect(
+      isDependencySecurityBlocker('No runtime-native security audit tooling marker detected.')
+    ).toBe(false);
+    expect(isDependencySecurityBlocker('Missing dependency audit script for CI.')).toBe(false);
+  });
+
+  it('uses the contract remediation plan for audit-tooling governance gaps', async () => {
+    const inspectDependencySecurity = vi.fn(async () => ({ ok: true }));
+    const inspectRemediationPlan = vi.fn(async () => ({
+      ok: true,
+      output: {
+        steps: [
+          {
+            id: 'doctor.web.runtime-security-tooling.package-script',
+            order: 1,
+            risk: 'guarded',
+            studioState: 'ready',
+            executable: true,
+          },
+        ],
+      },
+    }));
+    const executeRemediationStep = vi.fn(async () => ({ ok: true, changed: true }));
+
+    const result = await runStudioActiveBlockerRecovery({
+      blockers: ['No runtime-native security audit tooling marker detected.'],
+      dependencyProjectNames: ['web'],
+      evidenceGeneration: 'pipeline-v1',
+      workspacePath: '/workspace',
+      host: host({ inspectDependencySecurity, inspectRemediationPlan, executeRemediationStep }),
+    });
+
+    expect(inspectDependencySecurity).not.toHaveBeenCalled();
+    expect(executeRemediationStep).toHaveBeenCalledWith({
+      stepId: 'doctor.web.runtime-security-tooling.package-script',
+      workspacePath: '/workspace',
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      changed: true,
+      output: { recoveryPath: 'contract-remediation-plan' },
+    });
+  });
+
   it('repairs every vulnerable project before returning to canonical verification', async () => {
     const inspectDependencySecurity = vi.fn(async (input: { projectName?: string }) => ({
       ok: true,

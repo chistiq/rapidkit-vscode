@@ -344,6 +344,10 @@ describe('Studio Agent session runtime', () => {
             nextAction: 'review-required',
             terminalReason: 'safe-fix-unavailable',
             requiresUserDecision: true,
+            transaction: {
+              transactionId: 'tx-decision',
+              decision: { options: ['allow-breaking', 'manual-repair', 'cancel'] },
+            },
           },
           error: 'No compatible non-breaking remediation is available.',
         };
@@ -379,6 +383,72 @@ describe('Studio Agent session runtime', () => {
         data: expect.objectContaining({
           error: 'No compatible non-breaking remediation is available.',
           terminalReason: 'safe-fix-unavailable',
+          requiresUserDecision: true,
+          transactionId: 'tx-decision',
+          decisionOptions: ['allow-breaking', 'manual-repair', 'cancel'],
+        }),
+      })
+    );
+  });
+
+  it('stops after any CLI-owned mutation reports decision-required', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply source proposal',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ok: false,
+          changed: false,
+          output: {
+            nextAction: 'review-required',
+            terminalReason: 'cli-repair-decision-required',
+            requiresUserDecision: true,
+            transaction: {
+              transactionId: 'tx-source',
+              decision: { options: ['approve-invasive', 'cancel'] },
+            },
+          },
+          error: 'The CLI requires explicit approval for invasive source repair.',
+        };
+      },
+    });
+    let modelTurns = 0;
+    const session = new StudioAgentSession(
+      {
+        id: 'source-review-required-session',
+        workspacePath: '/workspace',
+        cardId: 'doctor',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      {
+        async next() {
+          modelTurns += 1;
+          return {
+            type: 'tool',
+            toolName: 'apply-workspace-patch',
+            input: { patches: [] },
+          };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Apply an inspected source repair');
+
+    expect(modelTurns).toBe(1);
+    expect(result.status).toBe('failed');
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'session.failed',
+        data: expect.objectContaining({
+          transactionId: 'tx-source',
+          decisionOptions: ['approve-invasive', 'cancel'],
           requiresUserDecision: true,
         }),
       })
@@ -2535,5 +2605,252 @@ describe('Studio Agent session runtime', () => {
         }),
       })
     );
+  });
+
+  it('runs the canonical stop gate when the model requests completion', async () => {
+    const registry = new StudioAgentToolRegistry();
+    let verifyCalls = 0;
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Verify',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        verifyCalls += 1;
+        return { ok: true, cardBlocking: false, evidenceGeneration: 'verified-v2' };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'completion-stop-gate-session',
+        workspacePath: '/workspace',
+        cardId: 'pipeline',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: true,
+      },
+      sequenceModel([{ type: 'complete', summary: 'The repair is complete.' }]),
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Repair pipeline');
+
+    expect(result.status).toBe('completed');
+    expect(verifyCalls).toBe(1);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'model.checkpoint',
+        data: expect.objectContaining({ recovery: 'completion-stop-gate' }),
+      })
+    );
+  });
+
+  it('streams bounded file diffs to the live UI without persisting source bodies', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply patch',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ok: true,
+          changed: true,
+          output: {
+            patchResult: {
+              patches: [
+                {
+                  relativePath: 'src/example.ts',
+                  status: 'applied',
+                  originalContent: 'const oldValue = 1;',
+                  patchedContent: 'const newValue = 2;',
+                  hunks: [
+                    {
+                      startLine: 1,
+                      removedLines: ['const oldValue = 1;'],
+                      addedLines: ['const newValue = 2;'],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'live-diff-session',
+        workspacePath: '/workspace',
+        cardId: 'workspaceImpact',
+        assistantMode: 'ask',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: false,
+      },
+      sequenceModel([
+        {
+          type: 'tool',
+          toolName: 'apply-workspace-patch',
+          input: { patches: [] },
+          reason: 'Apply the inspected edit.',
+        },
+        { type: 'complete', summary: 'Applied.' },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+    const liveEvents: Array<Record<string, unknown>> = [];
+    session.onEvent((event) => {
+      if (event.type === 'tool.completed') {
+        liveEvents.push(event.data as Record<string, unknown>);
+      }
+    });
+
+    const result = await session.run('Apply an edit');
+    const liveOutput = liveEvents[0]?.output as Record<string, unknown>;
+    expect(liveOutput.fileChanges).toEqual([
+      expect.objectContaining({
+        relativePath: 'src/example.ts',
+        diffLines: [
+          { type: 'removed', content: 'const oldValue = 1;' },
+          { type: 'added', content: 'const newValue = 2;' },
+        ],
+      }),
+    ]);
+    const durableEvent = result.events.find((event) => event.type === 'tool.completed');
+    expect(JSON.stringify(durableEvent)).not.toContain('const oldValue');
+    expect(JSON.stringify(durableEvent)).not.toContain('const newValue');
+    expect(JSON.stringify(durableEvent)).not.toContain('fileChanges');
+  });
+
+  it('preserves provider call ids through execution and causal observations', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'inspect-source',
+      title: 'Inspect source',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, output: { inspected: true } };
+      },
+    });
+    let turn = 0;
+    const session = new StudioAgentSession(
+      {
+        id: 'native-call-correlation-session',
+        workspacePath: '/workspace',
+        cardId: 'assistant:ask',
+        assistantMode: 'ask',
+        permissionLevel: 'default',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: false,
+      },
+      {
+        async next(context) {
+          turn += 1;
+          if (turn === 1) {
+            return {
+              type: 'tool',
+              callId: 'provider-call-17',
+              toolName: 'inspect-source',
+              input: { paths: ['package.json'] },
+              reason: 'Inspect the exact source.',
+            };
+          }
+          expect(context.recentObservations).toContainEqual(
+            expect.objectContaining({
+              toolCallId: 'provider-call-17',
+              toolName: 'inspect-source',
+            })
+          );
+          return { type: 'complete', summary: 'Inspected.' };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Inspect source');
+    const correlatedEvents = result.events.filter((event) =>
+      ['tool.requested', 'tool.started', 'tool.completed'].includes(event.type)
+    );
+    expect(correlatedEvents).toHaveLength(3);
+    expect(correlatedEvents.every((event) => event.toolCallId === 'provider-call-17')).toBe(true);
+  });
+
+  it('streams command-produced unified diffs without persisting source bodies', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'run-workspace-command',
+      title: 'Run command',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ok: true,
+          changed: true,
+          output: {
+            diff: [
+              'diff --git a/package.json b/package.json',
+              'index 1111111..2222222 100644',
+              '--- a/package.json',
+              '+++ b/package.json',
+              '@@ -1,3 +1,3 @@',
+              ' {',
+              '-  "version": "1.0.0"',
+              '+  "version": "1.0.1"',
+              ' }',
+            ].join('\n'),
+          },
+        };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'command-live-diff-session',
+        workspacePath: '/workspace',
+        cardId: 'assistant:ask',
+        assistantMode: 'ask',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: false,
+      },
+      sequenceModel([
+        {
+          type: 'tool',
+          toolName: 'run-workspace-command',
+          input: { command: 'npm install' },
+          reason: 'Reconcile dependencies.',
+        },
+        { type: 'complete', summary: 'Reconciled.' },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+    const liveEvents: Array<Record<string, unknown>> = [];
+    session.onEvent((event) => {
+      if (event.type === 'tool.completed') {
+        liveEvents.push(event.data as Record<string, unknown>);
+      }
+    });
+
+    const result = await session.run('Reconcile dependencies');
+    const liveOutput = liveEvents[0]?.output as Record<string, unknown>;
+    expect(liveOutput.fileChanges).toEqual([
+      expect.objectContaining({
+        relativePath: 'package.json',
+        diffLines: [
+          { type: 'unchanged', content: '{' },
+          { type: 'removed', content: '  "version": "1.0.0"' },
+          { type: 'added', content: '  "version": "1.0.1"' },
+          { type: 'unchanged', content: '}' },
+        ],
+      }),
+    ]);
+    expect(JSON.stringify(result.events)).not.toContain('"version": "1.0.0"');
+    expect(JSON.stringify(result.events)).not.toContain('fileChanges');
   });
 });

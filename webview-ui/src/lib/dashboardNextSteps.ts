@@ -46,12 +46,14 @@ function enrichDashboardNextStep(step: DashboardNextStep): DashboardNextStep {
 export function buildDashboardNextSteps(input: {
   workspaceStatus: WorkspaceStatus;
   activeWorkspace?: Workspace | null;
-  installStatusChecked: boolean;
-  coreInstalled: boolean;
+  installStatusChecked?: boolean;
+  cliInstalled?: boolean;
+  /** @deprecated Core is optional and must never gate workspace-native dashboard actions. */
+  coreInstalled?: boolean;
   evidence?: DashboardEvidencePayload | null;
 }): DashboardNextStep[] {
   const steps: DashboardNextStep[] = [];
-  const { workspaceStatus, activeWorkspace, installStatusChecked, coreInstalled, evidence } = input;
+  const { workspaceStatus, activeWorkspace, installStatusChecked, cliInstalled, evidence } = input;
   const onboarding = evidence?.onboarding;
   const hasWorkspace = Boolean(workspaceStatus.hasWorkspace && workspaceStatus.workspacePath);
   const hasProject = workspaceStatus.hasProjectSelected === true;
@@ -72,11 +74,11 @@ export function buildDashboardNextSteps(input: {
   const isFreshInstall =
     onboarding?.isFreshInstall ?? (recentWorkspaceCount === 0 && !hasWorkspace);
 
-  if (installStatusChecked && !coreInstalled) {
+  if (installStatusChecked && cliInstalled === false) {
     steps.push({
-      id: 'install-core',
-      title: 'Install RapidKit Core',
-      detail: 'Open Setup & Installation to enable CLI-backed dashboard actions.',
+      id: 'install-cli',
+      title: 'Install or link the Workspai CLI',
+      detail: 'Open Setup & Installation to enable workspace commands and governed evidence.',
       priority: 'critical',
       command: 'openSetup',
     });

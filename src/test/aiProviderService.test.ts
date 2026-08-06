@@ -82,6 +82,7 @@ describe('aiProviderService', () => {
     mockRequestAIModelToolAction.mockResolvedValue({
       type: 'tool',
       modelId: 'copilotcli/auto',
+      callId: 'vscode-call-1',
       toolName: 'verify-blocker',
       input: {},
     });
@@ -154,7 +155,25 @@ describe('aiProviderService', () => {
     await expect(
       askConfiguredAIProviderForToolAction(
         context,
-        [{ role: 'user', content: 'Repair readiness' }],
+        [
+          { role: 'user', content: 'Repair readiness' },
+          {
+            role: 'assistant',
+            toolCall: {
+              callId: 'prior-call',
+              name: 'inspect-remediation-plan',
+              input: {},
+            },
+          },
+          {
+            role: 'tool',
+            toolResult: {
+              callId: 'prior-call',
+              name: 'inspect-remediation-plan',
+              content: '{"ok":true}',
+            },
+          },
+        ],
         [{ name: 'verify-blocker', description: 'Verify', inputSchema: { type: 'object' } }],
         undefined,
         'copilotcli/auto'
@@ -162,6 +181,7 @@ describe('aiProviderService', () => {
     ).resolves.toEqual({
       type: 'tool',
       provider: 'vscode-lm',
+      callId: 'vscode-call-1',
       toolName: 'verify-blocker',
       input: {},
     });
@@ -194,7 +214,25 @@ describe('aiProviderService', () => {
     await expect(
       askConfiguredAIProviderForToolAction(
         context,
-        [{ role: 'user', content: 'Repair readiness' }],
+        [
+          { role: 'user', content: 'Repair readiness' },
+          {
+            role: 'assistant',
+            toolCall: {
+              callId: 'prior-call',
+              name: 'inspect-remediation-plan',
+              input: {},
+            },
+          },
+          {
+            role: 'tool',
+            toolResult: {
+              callId: 'prior-call',
+              name: 'inspect-remediation-plan',
+              content: '{"ok":true}',
+            },
+          },
+        ],
         [
           {
             name: 'inspect-remediation-plan',
@@ -206,12 +244,31 @@ describe('aiProviderService', () => {
     ).resolves.toEqual({
       type: 'tool',
       provider: 'openai-compatible',
+      callId: 'call-1',
       toolName: 'inspect-remediation-plan',
       input: {},
     });
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     expect(body.tool_choice).toBe('required');
+    expect(body.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'assistant',
+          tool_calls: [
+            expect.objectContaining({
+              id: 'prior-call',
+              function: expect.objectContaining({ name: 'inspect-remediation-plan' }),
+            }),
+          ],
+        }),
+        expect.objectContaining({
+          role: 'tool',
+          tool_call_id: 'prior-call',
+          content: '{"ok":true}',
+        }),
+      ])
+    );
     expect(body.tools).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -332,12 +389,31 @@ describe('aiProviderService', () => {
     await expect(
       askConfiguredAIProviderForToolAction(
         context,
-        [{ role: 'user', content: 'Verify readiness' }],
+        [
+          { role: 'user', content: 'Verify readiness' },
+          {
+            role: 'assistant',
+            toolCall: {
+              callId: 'prior-anthropic-call',
+              name: 'verify-blocker',
+              input: {},
+            },
+          },
+          {
+            role: 'tool',
+            toolResult: {
+              callId: 'prior-anthropic-call',
+              name: 'verify-blocker',
+              content: '{"ok":false}',
+            },
+          },
+        ],
         [{ name: 'verify-blocker', description: 'Verify the blocker' }]
       )
     ).resolves.toEqual({
       type: 'tool',
       provider: 'anthropic',
+      callId: 'tool-1',
       toolName: 'verify-blocker',
       input: { strict: true },
     });
@@ -353,6 +429,29 @@ describe('aiProviderService', () => {
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     expect(body.tool_choice).toEqual({ type: 'any' });
+    expect(body.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'assistant',
+          content: [
+            expect.objectContaining({
+              type: 'tool_use',
+              id: 'prior-anthropic-call',
+              name: 'verify-blocker',
+            }),
+          ],
+        }),
+        expect.objectContaining({
+          role: 'user',
+          content: [
+            expect.objectContaining({
+              type: 'tool_result',
+              tool_use_id: 'prior-anthropic-call',
+            }),
+          ],
+        }),
+      ])
+    );
   });
 
   it('returns setup failures without making network requests', async () => {

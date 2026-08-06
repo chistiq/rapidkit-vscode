@@ -9,10 +9,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 No unreleased changes yet.
 
-## [0.36.0] - 2026-08-03
+## [0.37.0] - 2026-08-06
 
 ### Added
 
+- CLI-owned Repair Engine integration with durable plan, precondition,
+  approval, checkpoint, execution, reconciliation, verification, rollback, and
+  decision-required states.
+- Synchronized card-repair, repair-capabilities, proposal, transaction,
+  runtime-command, and artifact contracts from Workspai CLI 0.53.0.
+- Exact repair-capability and Stop Gate coverage for every Dashboard evidence
+  card.
+- Live command, changed-file, and bounded unified-diff review inside Studio
+  sessions, including safe review of untracked text files.
+- Durable native tool-call correlation across model requests, execution events,
+  observations, reloads, and resumed sessions.
+- Contract and scenario coverage for sidebar density, optional Core behavior,
+  public product links, card repair, dependency transactions, and live change
+  review.
+
+### Changed
+
+- Made Workspai CLI the sole owner of mutation, reconciliation, canonical
+  verification, closure, and rollback for blocker repair.
+- Made Studio responsible for workspace/project scope, model interaction,
+  progress, diff presentation, and explicit user decisions instead of owning a
+  competing repair executor.
+- Made Setup require only Workspai CLI; Python and RapidKit Core remain optional
+  until a Python-backed capability needs them.
+- Made workspace-local Core upgrades use the owning `.venv` and fail closed when
+  that workspace cannot be resolved.
+- Rebuilt Studio subprocess PATH from local npm and Node-version-manager
+  discovery so stale Extension Host environments can still run governed CLI
+  transactions.
+- Reduced primary sidebar inline actions to the most frequent commands while
+  retaining workspace, project, terminal, lifecycle, import, and export actions
+  in grouped menus.
+- Updated Getting Started and UI surface documentation for extension 0.37.0 and
+  Workspai CLI 0.53.0.
+
+### Fixed
+
+- Fixed Studio accepting model completion before the exact card verification
+  contract and canonical post-mutation chain had closed.
+- Fixed repaired or restored sessions losing provider call identity and
+  reviewable command/change evidence across native tool rounds.
+- Fixed Dashboard creation and next-step guidance treating missing optional
+  RapidKit Core as a universal blocker.
+- Fixed workspace-local Core recovery falling through to an unrelated global
+  `pipx` upgrade.
+- Fixed stale NVM/FNM/asdf/Volta PATH state preventing Studio subprocesses from
+  resolving the installed Workspai CLI and package manager.
+- Fixed over-dense workspace and project rows obscuring the primary actions.
+- Fixed remaining user-facing RapidKit command and workspace terminology on
+  active Workspai surfaces.
+
+### Compatibility
+
+- VS Code 1.106.0+
+- Workspai CLI 0.53.0+
+- RapidKit Core 0.6.0 only for Python-backed kits and modules
+
+### Verification
+
+- 368 test files passed; 2,652 tests passed and 2 were explicitly skipped.
+- Host/Webview type checking, formatting, linting, production build, exact
+  CLI-contract parity, 22 enterprise scenarios, 3 local CLI integration
+  scenarios, VSIX packaging, artifact smoke, and dependency audit passed.
+
+See [`releases/RELEASE_NOTES_v0.37.0.md`](releases/RELEASE_NOTES_v0.37.0.md).
+
+## [0.36.0] - 2026-08-03
+
+### Added
 - Durable Create-session recovery that turns orphaned planning/running records
   into explicit, removable stopped sessions after a Webview reload.
 - First-install-safe managed workspace creation, including parent-directory
@@ -23,7 +92,6 @@ No unreleased changes yet.
   fix.
 
 ### Changed
-
 - Studio now distinguishes a persisted repair record from a live provider-owned
   process and returns control to the user when no active process owns the session.
 - The Create history locks only the operation currently owned by the live

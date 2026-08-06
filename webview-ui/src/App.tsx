@@ -107,10 +107,7 @@ import type {
   DashboardEvidenceCardId,
   DashboardEvidencePayload,
 } from '@/lib/dashboardEvidence';
-import {
-  countOperateAttention,
-  filterOpsChainForActiveWorkspace,
-} from '@/lib/dashboardEvidence';
+import { countOperateAttention, filterOpsChainForActiveWorkspace } from '@/lib/dashboardEvidence';
 import { countEvidenceAttentionBuckets } from '@/lib/evidenceAgentContext';
 import {
   applyDashboardCommandFailures,
@@ -796,7 +793,7 @@ export function App() {
     ) {
       const reason =
         getDashboardLifecycleDisableReason(workspaceStatus.projectCapabilities, command) ||
-        'This project action is not supported by RapidKit for the selected runtime.';
+        'This project action is not supported by Workspai for the selected runtime.';
       setDashboardCommandNotice({
         title: 'Project command blocked',
         body: reason,
@@ -840,13 +837,10 @@ export function App() {
   const isEmptyWorkspaceHome = dashboardSection === 'overview' && !hasActiveWorkspace;
   const showDashboardContextBar = dashboardSection !== 'catalog' && hasActiveWorkspace;
   const showOverviewDiagnostics = dashboardSection === 'overview' && hasActiveWorkspace;
-  const evidenceAttentionCount = useMemo(
-    () => {
-      const buckets = countEvidenceAttentionBuckets(effectiveDashboardEvidence);
-      return buckets.blocked + buckets.attention;
-    },
-    [effectiveDashboardEvidence]
-  );
+  const evidenceAttentionCount = useMemo(() => {
+    const buckets = countEvidenceAttentionBuckets(effectiveDashboardEvidence);
+    return buckets.blocked + buckets.attention;
+  }, [effectiveDashboardEvidence]);
   const operateAttentionCount = useMemo(
     () =>
       countOperateAttention({
@@ -1511,10 +1505,6 @@ export function App() {
   };
 
   const handleOpenProjectModal = (framework: ScaffoldFramework, _kitName?: string) => {
-    if (installStatusChecked && !installStatus.coreInstalled) {
-      openSetupInDashboard();
-      return;
-    }
     setAICreateMode('project');
     setAICreateFramework(framework);
     setAICreationPlan(null);
@@ -1529,10 +1519,6 @@ export function App() {
   };
 
   const handleOpenManualProjectModal = (framework: ScaffoldFramework) => {
-    if (installStatusChecked && !installStatus.coreInstalled) {
-      openSetupInDashboard();
-      return;
-    }
     setSelectedFramework(framework);
     setShowProjectModal(true);
   };

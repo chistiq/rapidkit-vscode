@@ -582,8 +582,8 @@ export function SecondarySidebar() {
     sessionId?: unknown;
   }): string | undefined => {
     return (
-      resolveStudioIncidentKeyForCard(data.cardId) ??
-      resolveStudioIncidentKeyForSession(data.sessionId)
+      resolveStudioIncidentKeyForSession(data.sessionId) ??
+      resolveStudioIncidentKeyForCard(data.cardId)
     );
   };
 
@@ -907,6 +907,44 @@ export function SecondarySidebar() {
           const changedPaths = [
             ...new Set([...appliedFixes, ...patchedPaths, ...reportedChangedPaths]),
           ];
+          const fileChanges = parseSidebarPatchReviewItems(toolOutput?.fileChanges);
+          const toolInput =
+            eventData.input &&
+            typeof eventData.input === 'object' &&
+            !Array.isArray(eventData.input)
+              ? (eventData.input as Record<string, unknown>)
+              : null;
+          const commandText =
+            typeof toolOutput?.displayCommand === 'string'
+              ? toolOutput.displayCommand
+              : typeof toolOutput?.command === 'string'
+                ? toolOutput.command
+                : typeof toolInput?.executable === 'string'
+                  ? [
+                      toolInput.executable,
+                      ...(Array.isArray(toolInput.args)
+                        ? toolInput.args.filter(
+                            (entry): entry is string => typeof entry === 'string'
+                          )
+                        : []),
+                    ].join(' ')
+                  : undefined;
+          const activityPaths = Array.isArray(toolOutput?.files)
+            ? toolOutput.files
+                .map((entry) =>
+                  entry && typeof entry === 'object' && !Array.isArray(entry)
+                    ? (entry as Record<string, unknown>).path
+                    : undefined
+                )
+                .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+                .slice(0, 12)
+            : [];
+          const outputText = [toolOutput?.stdout, toolOutput?.stderr]
+            .filter(
+              (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
+            )
+            .join('\n')
+            .slice(0, 4_000);
           const changedFiles =
             (toolName === 'apply-workspace-patch' ||
               toolName === 'complete-dependency-transaction') &&
@@ -928,6 +966,10 @@ export function SecondarySidebar() {
                   ? 'The edit transaction was applied with rollback metadata. Studio is verifying the result.'
                   : 'The result was returned to the model; Studio is choosing the next step.',
             changedPaths,
+            fileChanges,
+            activityPaths,
+            commandText,
+            ...(outputText ? { outputText } : {}),
             intelligencePhase,
             invocationId,
             canUndo: changedFiles && Boolean(invocationId),
@@ -1742,7 +1784,21 @@ export function SecondarySidebar() {
       case 'sidebarStudioCardRefreshed': {
         const nextHandoff = parseStudioBlockerHandoffView(data.handoff);
         if (nextHandoff) {
-          const refreshedKey = openStudioIncidentSession(nextHandoff);
+          const refreshedKey = openStudioIncidentSession(nextHandoff, {
+            workspaceName:
+              nextHandoff.workspacePath?.split(/[\\/]/).filter(Boolean).pop() ??
+              scope.workspaceName,
+            workspacePath: nextHandoff.workspacePath ?? scope.workspacePath,
+            projectName:
+              nextHandoff.scope === 'project'
+                ? (nextHandoff.projectPath?.split(/[\\/]/).filter(Boolean).pop() ??
+                  scope.projectName)
+                : undefined,
+            projectPath:
+              nextHandoff.scope === 'project'
+                ? (nextHandoff.projectPath ?? scope.projectPath)
+                : undefined,
+          });
           setBlockerHandoff(nextHandoff);
           setStudioIncidentHandoffs((prev) => ({ ...prev, [refreshedKey]: nextHandoff }));
           setStudioFixApplied(nextHandoff.cardStatus === 'pass' ? false : true);
@@ -1758,15 +1814,24 @@ export function SecondarySidebar() {
             cardStatus: nextHandoff.cardStatus,
             blockers: nextHandoff.blockers,
             blockerSignature: nextHandoff.blockerSignature,
-            repairStatus: nextHandoff.cardStatus === 'pass' ? 'done' : 'ready',
+            repairStatus:
+              nextHandoff.cardStatus === 'pass'
+                ? 'done'
+                : data.agentOwned === true
+                  ? 'running'
+                  : 'ready',
             lastActionTitle:
               nextHandoff.cardStatus === 'pass'
                 ? 'Card verified'
-                : (nextReturnState?.title ?? 'Card refreshed'),
+                : data.agentOwned === true
+                  ? 'Evidence refreshed; repair continues'
+                  : (nextReturnState?.title ?? 'Card refreshed'),
             lastActionSummary:
               nextHandoff.cardStatus === 'pass'
                 ? 'The latest evidence reports this card as passing.'
-                : (nextReturnState?.detail ?? 'Studio refreshed the card evidence.'),
+                : data.agentOwned === true
+                  ? 'Studio still owns this repair and is continuing with the refreshed blocker state.'
+                  : (nextReturnState?.detail ?? 'Studio refreshed the card evidence.'),
             lastActionAt: new Date().toISOString(),
           });
           if (nextHandoff.cardStatus === 'pass') {
@@ -2481,11 +2546,20 @@ export function SecondarySidebar() {
     );
   };
   const reviewStudioRepairOptions = () => {
-    setAssistantMode('plan');
-    setStudioPrefill(
-      'Review the unresolved dependency blocker and present the available compatible migration or replacement, time-bounded exception, and upstream-wait options. Do not apply a breaking, forced, or downgrade dependency change without my explicit approval.'
+    if (!activeBlockerHandoff) {
+      return;
+    }
+    vscode.postMessage(
+      'sidebarStudioAction',
+      {
+        action: 'repair-decision',
+        sessionId: studio.activeId ?? undefined,
+        scope: scopePayloadForSession(activeStudio, scope),
+        scopeMode: sessionScopeMode(activeStudio),
+        blockerHandoff: activeBlockerHandoff,
+      },
+      META
     );
-    setStudioPrefillKey((key) => key + 1);
   };
   const studioAutoFix = () => {
     if (!activeBlockerHandoff) {

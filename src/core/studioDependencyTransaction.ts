@@ -126,6 +126,14 @@ function commandFor(
   target: StudioDependencySecurityTarget,
   stage: StudioDependencyTransactionStage['id']
 ): { executable: string; args: string[]; purpose: StudioWorkspaceCommandPurpose } | undefined {
+  // The v1 transaction executor can prove install/audit/test/build closure only
+  // for Node package-manager contracts. Discovery intentionally knows about
+  // every Doctor ecosystem, but silently routing an unknown manager through
+  // yarn would mutate the wrong dependency graph. Non-Node transactions stay
+  // blocked until the CLI publishes their exact governed stage invocations.
+  if (!['npm', 'pnpm', 'yarn'].includes(target.packageManager)) {
+    return undefined;
+  }
   if (stage === 'reconcile') {
     return target.packageManager === 'npm'
       ? { executable: 'npm', args: ['install'], purpose: 'dependency' }
@@ -195,7 +203,23 @@ async function runProjectTransaction(input: {
   target: StudioDependencySecurityTarget;
 }): Promise<StudioDependencyProjectTransaction> {
   const stages: StudioDependencyTransactionStage[] = [];
-  const reconcile = commandFor(input.target, 'reconcile')!;
+  const reconcile = commandFor(input.target, 'reconcile');
+  if (!reconcile) {
+    stages.push({
+      id: 'reconcile',
+      status: 'blocking',
+      summary: `${input.target.packageManager} dependency closure requires runtime-native stage invocations from the canonical CLI transaction contract; Studio refused to guess a package-manager command.`,
+    });
+    return {
+      projectName: input.target.projectName,
+      projectPath: input.target.projectPath,
+      packageManager: input.target.packageManager,
+      state: 'blocked',
+      closureReady: false,
+      stages,
+      unresolvedCandidates: [],
+    };
+  }
   const reconcileExecution = await execute({
     workspacePath: input.workspacePath,
     projectPath: input.target.projectPath,
@@ -214,7 +238,23 @@ async function runProjectTransaction(input: {
     };
   }
 
-  const auditCommand = commandFor(input.target, 'audit')!;
+  const auditCommand = commandFor(input.target, 'audit');
+  if (!auditCommand) {
+    stages.push({
+      id: 'audit',
+      status: 'blocking',
+      summary: `${input.target.packageManager} audit invocation is not available from the executable transaction contract.`,
+    });
+    return {
+      projectName: input.target.projectName,
+      projectPath: input.target.projectPath,
+      packageManager: input.target.packageManager,
+      state: 'blocked',
+      closureReady: false,
+      stages,
+      unresolvedCandidates: [],
+    };
+  }
   const auditExecution = await execute({
     workspacePath: input.workspacePath,
     projectPath: input.target.projectPath,

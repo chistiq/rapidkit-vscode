@@ -53,12 +53,14 @@ export interface StudioAgentWorkspaiToolHost {
     transactionId: string;
     workspacePath: string;
     projectPath?: string;
+    reportProgress?: (data: Record<string, unknown>) => Promise<void>;
   }): Promise<StudioAgentToolResult>;
   deleteFiles(input: {
     paths: string[];
     transactionId: string;
     workspacePath: string;
     projectPath?: string;
+    reportProgress?: (data: Record<string, unknown>) => Promise<void>;
   }): Promise<StudioAgentToolResult>;
   runGovernedCommand(input: {
     commandId: StudioEvidenceRefreshCommandId;
@@ -79,6 +81,7 @@ export interface StudioAgentWorkspaiToolHost {
     stepId: string;
     workspacePath: string;
     projectPath?: string;
+    reportProgress?: (data: Record<string, unknown>) => Promise<void>;
   }): Promise<StudioAgentToolResult>;
   inspectDependencySecurity(input: {
     projectName?: string;
@@ -89,6 +92,7 @@ export interface StudioAgentWorkspaiToolHost {
     projectName?: string;
     workspacePath: string;
     projectPath?: string;
+    reportProgress?: (data: Record<string, unknown>) => Promise<void>;
   }): Promise<StudioAgentToolResult>;
   upgradeDependencySecurity(input: {
     projectName?: string;
@@ -96,12 +100,14 @@ export interface StudioAgentWorkspaiToolHost {
     transactionId: string;
     workspacePath: string;
     projectPath?: string;
+    reportProgress?: (data: Record<string, unknown>) => Promise<void>;
   }): Promise<StudioAgentToolResult>;
   completeDependencyTransaction(input: {
     projectNames?: string[];
     changedPaths?: string[];
     workspacePath: string;
     projectPath?: string;
+    reportProgress?: (data: Record<string, unknown>) => Promise<void>;
   }): Promise<StudioAgentToolResult>;
   verify(input: {
     workspacePath: string;
@@ -349,7 +355,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
     name: 'apply-workspace-patch',
     title: 'Apply workspace patch',
     description:
-      'Create or replace workspace files through one SHA-protected patch transaction with rollback metadata. Existing files must be inspected first; a new file must declare baseSha256 null.',
+      'Submit complete inspected file replacements as a SHA-protected proposal. Workspai CLI owns approval binding, checkpoint, execution, runtime-native validation, canonical verification, closure, and rollback.',
     inputSchema: {
       type: 'object',
       required: ['patches'],
@@ -394,6 +400,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
         transactionId: context.toolCallId,
         workspacePath: context.workspacePath,
         ...optionalScope(context),
+        reportProgress: context.reportProgress,
       });
     },
   });
@@ -428,7 +435,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
     name: 'delete-workspace-files',
     title: 'Delete inspected workspace files',
     description:
-      'Delete regular source files that were explicitly inspected in this session. The host checks their exact SHA, rejects sensitive/generated paths and symlinks, and records rollback content.',
+      'Propose deletion of regular source files that were explicitly inspected in this session. Workspai CLI validates their exact SHA and owns checkpoint, execution, validation, canonical verification, and rollback.',
     inputSchema: {
       type: 'object',
       required: ['paths'],
@@ -446,6 +453,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
         transactionId: context.toolCallId,
         workspacePath: context.workspacePath,
         ...optionalScope(context),
+        reportProgress: context.reportProgress,
       });
     },
   });
@@ -454,7 +462,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
     name: 'run-workspace-command',
     title: 'Run workspace command',
     description:
-      'Run a structured, no-shell project command inside the selected workspace for diagnostics, tests, builds, formatting, or dependency repair. The command policy blocks shell interpreters, destructive operations, publishing, inline code, external paths, and unreviewed package execution.',
+      'Run a structured, no-shell, non-mutating project command for inspection, diagnostics, tests, or builds. All source, formatting, and dependency mutations must use the CLI-owned repair transaction.',
     inputSchema: {
       type: 'object',
       required: ['executable', 'args', 'purpose'],
@@ -474,7 +482,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
         },
         purpose: {
           type: 'string',
-          enum: ['inspect', 'diagnose', 'test', 'build', 'format', 'dependency'],
+          enum: ['inspect', 'diagnose', 'test', 'build'],
         },
         timeoutMs: { type: 'number', minimum: 1000, maximum: 600000 },
       },
@@ -491,7 +499,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
       }
       if (
         typeof value.purpose !== 'string' ||
-        !['inspect', 'diagnose', 'test', 'build', 'format', 'dependency'].includes(value.purpose)
+        !['inspect', 'diagnose', 'test', 'build'].includes(value.purpose)
       ) {
         throw new Error('Studio workspace command purpose is invalid.');
       }
@@ -529,7 +537,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
     name: 'execute-remediation-step',
     title: 'Execute remediation step',
     description:
-      'Execute one fresh CLI-authored remediation step by immutable stepId. Arbitrary command text is never accepted; invasive steps remain blocked.',
+      'Ask the CLI Repair Engine to compile and execute one fresh remediation action by immutable stepId. Arbitrary command text is never accepted; invasive steps require a user decision.',
     inputSchema: {
       type: 'object',
       required: ['stepId'],
@@ -547,6 +555,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
         stepId: value.stepId.trim(),
         workspacePath: context.workspacePath,
         ...optionalScope(context),
+        reportProgress: context.reportProgress,
       });
     },
   });
@@ -579,7 +588,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
     name: 'repair-dependency-security',
     title: 'Repair dependency security',
     description:
-      'Apply the package-manager native non-force audit fix only to a project named by fresh failed Doctor security evidence. Force upgrades are never allowed.',
+      'Start a CLI-owned dependency repair transaction for a project named by fresh failed Doctor evidence. Reconcile, audit, tests, build, canonical verify, and rollback are inseparable stages.',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -595,6 +604,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
           : {}),
         workspacePath: context.workspacePath,
         ...optionalScope(context),
+        reportProgress: context.reportProgress,
       });
     },
   });
@@ -603,7 +613,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
     name: 'upgrade-dependency-security',
     title: 'Upgrade vulnerable direct dependency',
     description:
-      'Resolve an inspected direct dependency advisory through a package-manager transaction. The host validates the package against fresh audit evidence, installs its latest registry release, updates the lockfile, and preserves rollback data.',
+      'Request a CLI-owned dependency repair after inspecting an advisory candidate. The package hint is evidence only; CLI policy and the immutable remediation plan remain authoritative.',
     inputSchema: {
       type: 'object',
       required: ['packageName'],
@@ -628,6 +638,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
         transactionId: context.toolCallId,
         workspacePath: context.workspacePath,
         ...optionalScope(context),
+        reportProgress: context.reportProgress,
       });
     },
   });
@@ -636,7 +647,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
     name: 'complete-dependency-transaction',
     title: 'Complete dependency transaction',
     description:
-      'Reconcile the manifest and lockfile for affected projects, then run the focused dependency audit, available tests, and build. The canonical Workspace Intelligence chain remains locked until this transaction reports closureReady.',
+      'Resume the CLI-owned repair transaction. CLI reconciles manifests and lockfiles, runs audit/tests/build, then performs canonical verification before reporting closed.',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -666,6 +677,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
           : {}),
         workspacePath: context.workspacePath,
         ...optionalScope(context),
+        reportProgress: context.reportProgress,
       });
     },
   });

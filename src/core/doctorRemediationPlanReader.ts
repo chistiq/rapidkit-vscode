@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs-extra';
 
 import type { StudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
+import { isDependencySecurityBlocker } from './studioDependencyIncident.js';
 import { workspaceArtifactCandidates } from './workspaceIntelligencePaths.js';
 
 export const DOCTOR_REMEDIATION_PLAN_SCHEMA_VERSION = 'doctor-remediation-plan-v2' as const;
@@ -447,18 +448,14 @@ function isDoctorRemediationHandoff(handoff: StudioBlockerHandoff): boolean {
   // Readiness, Verify, and other aggregate gates report failures owned by an
   // upstream producer. Dependency/security blockers are repaired by Doctor's
   // project-scoped capability, not by rerunning the aggregate gate.
-  return handoff.blockers.some((blocker) =>
-    /dependenc(?:y|ies).*vulnerabil|vulnerabil.*dependenc(?:y|ies)|security audit/i.test(blocker)
-  );
+  return handoff.blockers.some(isDependencySecurityBlocker);
 }
 
 function isAggregateUpstreamDoctorHandoff(handoff: StudioBlockerHandoff): boolean {
   if (handoff.cardId === 'agentGrounding') {
     return true;
   }
-  return handoff.blockers.some((blocker) =>
-    /dependenc(?:y|ies).*vulnerabil|vulnerabil.*dependenc(?:y|ies)|security audit/i.test(blocker)
-  );
+  return handoff.blockers.some(isDependencySecurityBlocker);
 }
 
 function artifactActionDirectlyMatchesBlocker(

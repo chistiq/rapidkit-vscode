@@ -4,6 +4,8 @@ import {
   ContractStudioAgentModelAdapter,
   STUDIO_AGENT_COMPLETE_TOOL_NAME,
   parseStudioAgentModelAction,
+  restoreStudioAgentNativeConversation,
+  type StudioAgentConversationMessage,
 } from '../core/studioAgentModelProtocol.js';
 import type { StudioAgentModelContext } from '../core/studioAgentSession.js';
 
@@ -118,6 +120,172 @@ describe('Studio Agent model protocol', () => {
         expect.objectContaining({ name: STUDIO_AGENT_COMPLETE_TOOL_NAME }),
       ])
     );
+    expect(complete.mock.calls[0]?.[1].messages).toEqual([
+      expect.objectContaining({
+        role: 'user',
+        content: expect.stringContaining('Clear readiness'),
+      }),
+    ]);
+  });
+
+  it('keeps prior model decisions in the next provider conversation', async () => {
+    const requests: StudioAgentConversationMessage[][] = [];
+    const adapter = new ContractStudioAgentModelAdapter(
+      'Repair the blocker',
+      async (_prompt, request) => {
+        requests.push(request.messages);
+        return requests.length === 1
+          ? {
+              callId: 'inspect-source-call-1',
+              toolName: 'inspect-source',
+              input: { paths: ['src/app.ts'] },
+            }
+          : { toolName: STUDIO_AGENT_COMPLETE_TOOL_NAME, input: { summary: 'Verified' } };
+      }
+    );
+    const baseContext = {
+      session: {
+        schemaVersion: 'workspai.studio-agent-session.v1',
+        id: 'conversation-session',
+        workspacePath: '/workspace',
+        cardId: 'doctor',
+        assistantMode: 'agent',
+        status: 'running',
+        createdAt: '2026-08-04T00:00:00.000Z',
+        updatedAt: '2026-08-04T00:00:00.000Z',
+        sequence: 0,
+        events: [],
+      },
+      tools: [
+        {
+          name: 'inspect-source',
+          title: 'Inspect source',
+          description: 'Read source.',
+          inputSchema: { type: 'object' },
+          activity: 'inspect',
+          risk: 'read',
+        },
+      ],
+      steering: [],
+    } satisfies StudioAgentModelContext;
+
+    await expect(adapter.next(baseContext)).resolves.toMatchObject({
+      type: 'tool',
+      callId: 'inspect-source-call-1',
+    });
+    await adapter.next({
+      ...baseContext,
+      latestObservation: { ok: false, error: 'later-automatic-observation' },
+      recentObservations: [
+        {
+          toolCallId: 'inspect-source-call-1',
+          toolName: 'inspect-source',
+          input: { paths: ['src/app.ts'] },
+          result: { ok: false, error: 'exact-native-tool-result' },
+        },
+      ],
+    });
+
+    expect(requests[1]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'assistant',
+          toolCall: expect.objectContaining({
+            callId: 'inspect-source-call-1',
+            name: 'inspect-source',
+          }),
+        }),
+        expect.objectContaining({
+          role: 'tool',
+          toolResult: expect.objectContaining({
+            callId: 'inspect-source-call-1',
+            name: 'inspect-source',
+            content: expect.stringContaining('exact-native-tool-result'),
+          }),
+        }),
+      ])
+    );
+    const correlatedToolResult = requests[1]?.find((message) => message.role === 'tool');
+    expect(JSON.stringify(correlatedToolResult)).not.toContain('later-automatic-observation');
+    expect(requests[1]?.at(-1)?.role).toBe('user');
+  });
+
+  it('restores only completed native tool rounds from a durable session', () => {
+    const session = {
+      schemaVersion: 'workspai.studio-agent-session.v1',
+      id: 'restored-native-session',
+      workspacePath: '/workspace',
+      cardId: 'doctor',
+      assistantMode: 'agent',
+      status: 'running',
+      createdAt: '2026-08-04T00:00:00.000Z',
+      updatedAt: '2026-08-04T00:00:03.000Z',
+      sequence: 4,
+      events: [
+        {
+          schemaVersion: 'workspai.studio-agent-event.v1',
+          id: 'restored-native-session:1',
+          sessionId: 'restored-native-session',
+          sequence: 1,
+          timestamp: '2026-08-04T00:00:00.000Z',
+          type: 'request.started',
+          data: { request: 'Repair the dependency blocker.' },
+        },
+        {
+          schemaVersion: 'workspai.studio-agent-event.v1',
+          id: 'restored-native-session:2',
+          sessionId: 'restored-native-session',
+          sequence: 2,
+          timestamp: '2026-08-04T00:00:01.000Z',
+          type: 'tool.requested',
+          toolCallId: 'completed-call',
+          data: { toolName: 'inspect-source', input: { paths: ['package.json'] } },
+        },
+        {
+          schemaVersion: 'workspai.studio-agent-event.v1',
+          id: 'restored-native-session:3',
+          sessionId: 'restored-native-session',
+          sequence: 3,
+          timestamp: '2026-08-04T00:00:02.000Z',
+          type: 'tool.completed',
+          toolCallId: 'completed-call',
+          data: { toolName: 'inspect-source', ok: true, output: { paths: ['package.json'] } },
+        },
+        {
+          schemaVersion: 'workspai.studio-agent-event.v1',
+          id: 'restored-native-session:4',
+          sessionId: 'restored-native-session',
+          sequence: 4,
+          timestamp: '2026-08-04T00:00:03.000Z',
+          type: 'tool.requested',
+          toolCallId: 'orphaned-call',
+          data: { toolName: 'run-workspace-command', input: { command: 'npm test' } },
+        },
+      ],
+    } as const;
+
+    const restored = restoreStudioAgentNativeConversation(session);
+
+    expect(restored).toEqual([
+      { role: 'user', content: 'Repair the dependency blocker.' },
+      {
+        role: 'assistant',
+        toolCall: {
+          callId: 'completed-call',
+          name: 'inspect-source',
+          input: { paths: ['package.json'] },
+        },
+      },
+      expect.objectContaining({
+        role: 'tool',
+        toolResult: expect.objectContaining({
+          callId: 'completed-call',
+          name: 'inspect-source',
+          content: expect.stringContaining('package.json'),
+        }),
+      }),
+    ]);
+    expect(JSON.stringify(restored)).not.toContain('orphaned-call');
   });
 
   it('keeps the active source-repair directive visible on every constrained model turn', async () => {
@@ -195,8 +363,9 @@ describe('Studio Agent model protocol', () => {
       toolName: 'inspect-remediation-plan',
       input: {},
     }));
-    await expect(inspect.next(context)).resolves.toEqual({
+    await expect(inspect.next(context)).resolves.toMatchObject({
       type: 'tool',
+      callId: expect.any(String),
       toolName: 'inspect-remediation-plan',
       input: {},
       reason: 'Model selected governed tool inspect-remediation-plan.',
@@ -403,6 +572,7 @@ describe('Studio Agent model protocol', () => {
       },
       recentObservations: [
         {
+          toolCallId: 'inspect-source-call',
           toolName: 'inspect-source',
           input: { paths: ['api/package.json'] },
           result: {
@@ -464,6 +634,7 @@ describe('Studio Agent model protocol', () => {
       latestObservation,
       recentObservations: [
         {
+          toolCallId: 'inspect-source-call',
           toolName: 'inspect-source',
           input: { paths: ['app/package.json'] },
           result: latestObservation,
@@ -514,6 +685,7 @@ describe('Studio Agent model protocol', () => {
       },
       recentObservations: [
         {
+          toolCallId: 'prior-inspect-source-call',
           toolName: 'inspect-source',
           input: { paths: ['old/package.json'] },
           result: {

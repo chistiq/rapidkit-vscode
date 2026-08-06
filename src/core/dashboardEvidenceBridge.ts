@@ -66,7 +66,7 @@ import {
   buildStudioIncidentSummary,
   type StudioIncidentSummary,
 } from '../contracts/studio-blocker-handoff-contract.js';
-import { DEFAULT_VERIFY_COMMAND } from './studioCardSourceShell.js';
+import { requireStudioCardRepairCapability } from '../contracts/studioCardRepairCapabilities.js';
 import { resolveWorkspaceArchiveManifestPath } from '../utils/workspaceArchive.js';
 
 export type { DashboardEvidenceCardId };
@@ -117,7 +117,10 @@ function attachDashboardIncidentSummary(card: DashboardEvidenceCard): DashboardE
       cardId: card.id,
       cardLabel: card.label,
       cardStatus: card.status,
-      verifyCommand: card.status === 'pass' ? undefined : DEFAULT_VERIFY_COMMAND,
+      verifyCommand:
+        card.status === 'pass'
+          ? undefined
+          : requireStudioCardRepairCapability(card.id).verifyCommand,
       auditStatus: 'not-started',
     }),
   };

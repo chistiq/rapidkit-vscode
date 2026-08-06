@@ -1,3 +1,7 @@
+import { randomUUID } from 'node:crypto';
+
+import type { AIMessage } from './aiService.js';
+import type { StudioAgentPersistedSession } from './studioAgentEvents.js';
 import type {
   StudioAgentModelAction,
   StudioAgentModelAdapter,
@@ -14,9 +18,100 @@ export const STUDIO_AGENT_MODEL_ACTION_SCHEMA_VERSION =
 export const STUDIO_AGENT_COMPLETE_TOOL_NAME = 'workspai-complete' as const;
 
 export type StudioAgentNativeToolAction = {
+  callId?: string;
   toolName: string;
   input: Record<string, unknown>;
 };
+
+export type StudioAgentConversationMessage = AIMessage;
+
+export function restoreStudioAgentNativeConversation(
+  session?: StudioAgentPersistedSession
+): StudioAgentConversationMessage[] {
+  if (!session) {
+    return [];
+  }
+  const terminalByCallId = new Map(
+    session.events
+      .filter(
+        (event) =>
+          Boolean(event.toolCallId) &&
+          (event.type === 'tool.completed' || event.type === 'tool.failed')
+      )
+      .map((event) => [event.toolCallId!, event] as const)
+  );
+  const requests = session.events
+    .filter(
+      (event) =>
+        event.type === 'tool.requested' &&
+        Boolean(event.toolCallId) &&
+        terminalByCallId.has(event.toolCallId!)
+    )
+    .slice(-4);
+  if (requests.length === 0) {
+    return [];
+  }
+  const latestRequest = [...session.events]
+    .reverse()
+    .find((event) => event.type === 'request.started');
+  const requestData =
+    latestRequest?.data &&
+    typeof latestRequest.data === 'object' &&
+    !Array.isArray(latestRequest.data)
+      ? (latestRequest.data as Record<string, unknown>)
+      : undefined;
+  const messages: StudioAgentConversationMessage[] = [
+    {
+      role: 'user',
+      content: boundedText(
+        typeof requestData?.request === 'string'
+          ? requestData.request
+          : `Resume the durable Workspai repair session for ${session.cardId}.`,
+        4_000
+      ),
+    },
+  ];
+  for (const request of requests) {
+    const callId = request.toolCallId!;
+    const requestPayload =
+      request.data && typeof request.data === 'object' && !Array.isArray(request.data)
+        ? (request.data as Record<string, unknown>)
+        : {};
+    const terminal = terminalByCallId.get(callId)!;
+    const terminalPayload =
+      terminal.data && typeof terminal.data === 'object' && !Array.isArray(terminal.data)
+        ? (terminal.data as Record<string, unknown>)
+        : {};
+    const name =
+      typeof requestPayload.toolName === 'string' && requestPayload.toolName.trim()
+        ? requestPayload.toolName.trim()
+        : 'workspai-restored-tool';
+    const toolInput =
+      requestPayload.input &&
+      typeof requestPayload.input === 'object' &&
+      !Array.isArray(requestPayload.input)
+        ? (requestPayload.input as Record<string, unknown>)
+        : {};
+    messages.push(
+      { role: 'assistant', toolCall: { callId, name, input: toolInput } },
+      {
+        role: 'tool',
+        toolResult: {
+          callId,
+          name,
+          content: boundedJson(
+            {
+              ok: terminal.type === 'tool.completed',
+              ...terminalPayload,
+            },
+            12_000
+          ),
+        },
+      }
+    );
+  }
+  return messages;
+}
 
 export type StudioAgentModelCompletion = (
   prompt: string,
@@ -26,6 +121,7 @@ export type StudioAgentModelCompletion = (
       description: string;
       inputSchema: Record<string, unknown>;
     }>;
+    messages: StudioAgentConversationMessage[];
   }
 ) => Promise<string | StudioAgentNativeToolAction>;
 
@@ -384,12 +480,54 @@ function isModelContextLimitError(error: unknown): boolean {
 }
 
 export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter {
+  private conversation: StudioAgentConversationMessage[];
+  private pendingToolCall:
+    | { callId: string; name: string; input: Record<string, unknown> }
+    | undefined;
+
   constructor(
     private readonly objective: string,
-    private readonly complete: StudioAgentModelCompletion
-  ) {}
+    private readonly complete: StudioAgentModelCompletion,
+    restoredSession?: StudioAgentPersistedSession
+  ) {
+    this.conversation = restoreStudioAgentNativeConversation(restoredSession);
+  }
+
+  private conversationWindow(limit: number): StudioAgentConversationMessage[] {
+    const window = this.conversation.slice(-limit);
+    while (window.length > 0 && (!('content' in window[0]) || window[0].role !== 'user')) {
+      window.shift();
+    }
+    return window;
+  }
 
   async next(context: StudioAgentModelContext): Promise<StudioAgentModelAction> {
+    if (this.pendingToolCall) {
+      const directObservation = [...(context.recentObservations ?? [])]
+        .reverse()
+        .find((observation) => observation.toolCallId === this.pendingToolCall?.callId);
+      this.conversation.push({
+        role: 'tool',
+        toolResult: {
+          callId: this.pendingToolCall.callId,
+          name: this.pendingToolCall.name,
+          content: boundedJson(
+            {
+              selectedTool: this.pendingToolCall.name,
+              latestObservation: conciseLatestObservation(
+                directObservation?.result ?? context.latestObservation
+              ),
+              recentObservations: conciseRecentObservations(
+                context.recentObservations,
+                context.latestObservation
+              ),
+            },
+            24_000
+          ),
+        },
+      });
+      this.pendingToolCall = undefined;
+    }
     const allowedTools = context.tools.map((tool) => tool.name);
     const request = {
       tools: [
@@ -411,9 +549,18 @@ export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter 
         },
       ],
     };
+    const standardPrompt = promptForTurn(context, this.objective);
+    const requestWithConversation = (prompt: string, compact = false) => ({
+      ...request,
+      messages: [
+        ...this.conversationWindow(compact ? 4 : 10),
+        { role: 'user' as const, content: prompt },
+      ],
+    });
     let response: Awaited<ReturnType<StudioAgentModelCompletion>>;
+    let prompt = standardPrompt;
     try {
-      response = await this.complete(promptForTurn(context, this.objective), request);
+      response = await this.complete(prompt, requestWithConversation(prompt));
     } catch (error) {
       if (!isModelContextLimitError(error)) {
         throw error;
@@ -421,7 +568,32 @@ export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter 
       // Context overflow is a transport constraint, not a blocker outcome.
       // Retry once with the same latest causal evidence, without replaying
       // historical observations that the active source inspection supersedes.
-      response = await this.complete(promptForTurn(context, this.objective, 'compact'), request);
+      prompt = promptForTurn(context, this.objective, 'compact');
+      response = await this.complete(prompt, requestWithConversation(prompt, true));
+    }
+    this.conversation.push({ role: 'user', content: prompt });
+    let selectedCallId: string | undefined;
+    if (typeof response === 'string') {
+      this.conversation.push({ role: 'assistant', content: response });
+    } else {
+      const callId = response.callId?.trim() || randomUUID();
+      selectedCallId = callId;
+      this.conversation.push({
+        role: 'assistant',
+        toolCall: {
+          callId,
+          name: response.toolName,
+          input: response.input,
+        },
+      });
+      this.pendingToolCall = {
+        callId,
+        name: response.toolName,
+        input: response.input,
+      };
+    }
+    if (this.conversation.length > 12) {
+      this.conversation = this.conversationWindow(12);
     }
     if (typeof response !== 'string') {
       if (response.toolName === STUDIO_AGENT_COMPLETE_TOOL_NAME) {
@@ -436,6 +608,7 @@ export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter 
       return allowedTools.includes(response.toolName)
         ? {
             type: 'tool',
+            callId: selectedCallId,
             toolName: response.toolName,
             input: response.input,
             reason: `Model selected governed tool ${response.toolName}.`,

@@ -73,7 +73,7 @@ describe('workspace explorer activation ordering', () => {
     expect(detector).toContain('hasWorkspaceRootMarkers(workspacePath)');
     expect(extension).toContain('promptToRegisterDetectedWorkspaceRoots');
     expect(extension).toContain(
-      'RapidKit workspace detected: ${candidate.name}. Add it to Workspai?'
+      'Workspai workspace detected: ${candidate.name}. Add it to Workspai?'
     );
     expect(extension).toContain("const addAction = 'Add to Workspai'");
     expect(extension).toContain("const notNowAction = 'Not now'");

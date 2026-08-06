@@ -3,7 +3,7 @@ import { WORKSPACE_CONTEXT_AGENT_REPORT_PATH } from './workspaceIntelligencePath
 /** Copilot Chat paste prompt — attach the agent context report via #file. */
 export function buildCopilotChatContextPrompt(userQuestion?: string): string {
   const question =
-    userQuestion?.trim() || 'Summarize this workspace and list the safest next RapidKit commands.';
+    userQuestion?.trim() || 'Summarize this workspace and list the safest next Workspai commands.';
   return [
     '@workspace',
     `#file:${WORKSPACE_CONTEXT_AGENT_REPORT_PATH}`,

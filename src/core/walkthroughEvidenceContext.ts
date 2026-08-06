@@ -18,7 +18,7 @@ import { recordTtfvIfNeeded } from './ttfvBridge';
 /**
  * Evidence-driven Getting Started walkthrough (roadmap item 2.7). Each checklist
  * step is marked done only when its canonical `.workspai/reports/` artifact
- * exists (and, for doctor, is green) — not merely when the user clicks "Run".
+ * exists (and, for doctor, has no blocking error) — not merely when the user clicks "Run".
  * Completion is surfaced to VS Code via `setContext` keys consumed by the
  * walkthrough `completionEvents` (`onContext:...`).
  */
@@ -39,8 +39,10 @@ const EMPTY_STATE: WalkthroughEvidenceState = {
 };
 
 /**
- * Pure: a doctor run is "green" only when its health score reports zero errors
- * and zero warnings (warnings-only is amber, not green).
+ * Pure: the legacy "doctorGreen" walkthrough context means Doctor has current,
+ * scored evidence with no blocking error. Warnings remain visible advisories and
+ * do not trap users in onboarding unless workspace policy promotes them to a
+ * blocking verification finding.
  */
 export function evaluateDoctorGreen(report: unknown): boolean {
   if (!report || typeof report !== 'object') {
@@ -53,8 +55,7 @@ export function evaluateDoctorGreen(report: unknown): boolean {
   const score = healthScore as Record<string, unknown>;
   const total = Number(score.total ?? 0);
   const errors = Number(score.errors ?? 0);
-  const warnings = Number(score.warnings ?? 0);
-  return total > 0 && errors === 0 && warnings === 0;
+  return total > 0 && errors === 0;
 }
 
 async function fileExists(filePath: string): Promise<boolean> {

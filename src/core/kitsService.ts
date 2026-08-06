@@ -258,7 +258,7 @@ export class KitsService {
         version: '0.1.0',
         tags: ['dotnet', 'csharp', 'webapi', 'clean-architecture', 'enterprise'],
         description:
-          'Clean architecture .NET Web API starter aligned with RapidKit workspace contracts.',
+          'Clean architecture .NET Web API starter aligned with Workspai workspace contracts.',
       },
       {
         name: 'rust.axum',

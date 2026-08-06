@@ -29,13 +29,13 @@ function makeTempDir(): string {
 }
 
 describe('evaluateDoctorGreen', () => {
-  it('is green only with zero errors and zero warnings', () => {
+  it('is ready with scored evidence and zero blocking errors', () => {
     expect(
       evaluateDoctorGreen({ healthScore: { total: 10, passed: 10, warnings: 0, errors: 0 } })
     ).toBe(true);
     expect(
       evaluateDoctorGreen({ healthScore: { total: 10, passed: 9, warnings: 1, errors: 0 } })
-    ).toBe(false);
+    ).toBe(true);
     expect(
       evaluateDoctorGreen({ healthScore: { total: 10, passed: 8, warnings: 0, errors: 2 } })
     ).toBe(false);
@@ -105,7 +105,7 @@ describe('resolveWalkthroughEvidenceState', () => {
     expect(state.hasWorkspaceModel).toBe(false);
   });
 
-  it('marks doctor not green when warnings exist', async () => {
+  it('completes the Doctor step when only advisory warnings remain', async () => {
     const workspacePath = makeTempDir();
     const reportsDir = path.join(workspacePath, '.rapidkit', 'reports');
     await fs.ensureDir(reportsDir);
@@ -113,6 +113,6 @@ describe('resolveWalkthroughEvidenceState', () => {
       healthScore: { total: 10, passed: 9, warnings: 1, errors: 0 },
     });
     const state = await resolveWalkthroughEvidenceState(workspacePath);
-    expect(state.doctorGreen).toBe(false);
+    expect(state.doctorGreen).toBe(true);
   });
 });

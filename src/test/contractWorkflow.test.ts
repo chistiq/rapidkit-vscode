@@ -43,6 +43,7 @@ describe('shared contracts workflow (Wave A + B)', () => {
     'pipeline-last-run.v1.json',
     'release-readiness.v1.json',
     'runtime-command-surface.v1.json',
+    'studio-card-repair-capabilities.v1.json',
     'workspace-registry.v1.json',
     'workspace-run-last.v1.json',
   ];
@@ -125,6 +126,7 @@ describe('shared contracts workflow (Wave A + B)', () => {
       'agent-customization-pack.v1.json',
       'create-planner-capabilities.v1.json',
       'release-readiness.v1.json',
+      'studio-card-repair-capabilities.v1.json',
       'workspace-registry.v1.json',
     ];
 

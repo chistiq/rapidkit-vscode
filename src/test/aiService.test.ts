@@ -52,6 +52,12 @@ vi.mock('vscode', () => ({
       public input: Record<string, unknown>
     ) {}
   },
+  LanguageModelToolResultPart: class {
+    constructor(
+      public callId: string,
+      public content: unknown[]
+    ) {}
+  },
   LanguageModelChatToolMode: { Auto: 1, Required: 2 },
   CancellationTokenSource: class {
     private _isCancellationRequested = false;
@@ -551,6 +557,7 @@ describe('aiService', () => {
     ).resolves.toEqual({
       type: 'tool',
       modelId: 'copilot/auto',
+      callId: 'call-1',
       toolName: 'inspect-remediation-plan',
       input: {},
     });

@@ -5,6 +5,7 @@ import { resolveCoreUpgradePlan } from '../../core/coreUpgradePlan';
 import { CoreVersionService } from '../../core/coreVersionService';
 import { getWebviewMessageDataRecord, readStringField } from '../../contracts/webviewProtocol';
 import { runCommandsInTerminal } from '../../utils/terminalExecutor';
+import { URLS } from '../../utils/constants';
 
 export type DashboardShortcutMessageHost = {
   context: vscode.ExtensionContext;
@@ -49,12 +50,10 @@ export async function tryDispatchDashboardShortcutWebviewMessage(
       await vscode.env.openExternal(vscode.Uri.parse('https://www.workspai.dev/learn'));
       break;
     case 'openGitHub':
-      await vscode.env.openExternal(vscode.Uri.parse('https://github.com/rapidkit/rapidkit'));
+      await vscode.env.openExternal(vscode.Uri.parse(URLS.GITHUB));
       break;
     case 'openMarketplace':
-      await vscode.env.openExternal(
-        vscode.Uri.parse('https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit')
-      );
+      await vscode.env.openExternal(vscode.Uri.parse(URLS.MARKETPLACE));
       break;
     case 'openUrl': {
       const url = readStringField(payload, 'url');

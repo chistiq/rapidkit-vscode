@@ -42,10 +42,20 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(sessions).toContain('steerSession');
   });
 
+  it('routes repair decisions to the CLI transaction instead of prompting the model', () => {
+    expect(secondary).toContain("action: 'repair-decision'");
+    expect(provider).toContain("action === 'repair-decision'");
+    expect(provider).toContain('readLatestCliOwnedRepair');
+    expect(provider).toContain('decideCliOwnedRepair');
+    expect(provider).toContain('vscode:explicit-user-decision');
+    expect(secondary).not.toContain(
+      'Review the unresolved dependency blocker and present the available compatible migration'
+    );
+  });
+
   it('handles every studio inbound command the host emits', () => {
     for (const command of [
       'sidebarStudioScope',
-      'sidebarStudioChunk',
       'sidebarStudioDone',
       'sidebarStudioError',
       'sidebarStudioSessionState',
@@ -53,6 +63,8 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
       expect(secondary, `React should handle inbound "${command}"`).toContain(`case '${command}'`);
       expect(provider, `host should emit "${command}"`).toContain(`'${command}'`);
     }
+    expect(secondary).toContain("case 'sidebarStudioChunk'");
+    expect(provider).toContain("'sidebarStudioAgentEvent'");
   });
 
   it('wires the studio modes + command-card actions', () => {
@@ -126,26 +138,20 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
       'const refreshSucceeded = evidenceExecution.success && planExecution.success'
     );
     expect(provider).toContain('--plan --json');
-    expect(provider).toContain('verify-remediation-command');
-    expect(provider).toContain('verify-remediation-step');
-    expect(provider).toContain('verifying-remediation-step');
-    expect(provider).toContain('isInternalDoctorRepairCommand(commandText)');
-    expect(provider).toContain('(?:workspai|rapidkit):doctor:repair');
-    expect(provider).toContain('doctor-remediation-token:${step.id}');
-    expect(provider).toContain('Trusted remediation operation applied. Running verify now.');
-    expect(provider).toContain('doctor-remediation-step:${step.id}');
-    expect(provider).toContain('rollbackCommand');
+    expect(provider).toContain('publishCliOwnedRepairOutcome');
+    expect(provider).toContain('executeCliOwnedCanonicalRepair');
+    expect(provider).toContain('executeCliOwnedPatchRepair');
+    expect(provider).toContain("phase: 'starting-cli-owned-repair'");
+    expect(provider).toContain('CLI-owned Studio remediation step');
+    expect(provider).toContain(
+      'The CLI is compiling the selected contract action; the extension will not execute its command text directly.'
+    );
     expect(provider).toContain('_postSidebarDoctorRemediationPlan');
     expect(provider).toContain('dashboardEvidenceCardIsBlocking(refresh.primaryCard)');
     expect(provider).toContain("action === 'apply-patch'");
     expect(provider).toContain('_runAutonomousStudioAgent');
     expect(provider).toContain('new StudioAgentSession');
     expect(provider).toContain('createStudioAgentWorkspaiToolRegistry');
-    expect(provider).toContain('verify-sidebar-patch');
-    expect(provider).toContain('Patch applied. Running verify now.');
-    expect(provider).toContain('Patch applied and verify completed.');
-    expect(provider).toContain('result.responseText?.trim()');
-    expect(provider).toContain("'sidebarStudioChunk'");
     expect(provider).toContain("'sidebarStudioDone'");
     expect(provider).toContain('_runUnifiedAssistantSession');
     expect(provider).toContain("input.assistantMode === 'agent' && input.handoff");
@@ -153,11 +159,6 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(provider).toContain('normalizePatchesForWorkspaceScope');
     expect(provider).toContain('Inspect every target before editing');
     expect(provider).toContain('requiresVerifiedCompletion: mode.requiresVerifiedCompletion');
-    expect(provider).toContain('AI diagnosis needs an actionable patch');
-    expect(provider).toContain('Retrying AI repair');
-    expect(provider).toContain(
-      'Studio will retry with the preserved evidence and bounded repair budget.'
-    );
     expect(provider).toContain('projectPath: handoff.projectPath ?? scope.projectPath');
     expect(provider).toContain('dispatchSidebarShipLoopStep');
     expect(provider).toContain('sidebarStudioShipLoop');
@@ -175,33 +176,12 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(provider).toContain('hasRepairPlan');
     expect(provider).toContain("? 'continue-remediation'");
     expect(provider).toContain("? 'Apply next safe step'");
-    expect(provider).toContain('private async _runStudioVerifyContinuation');
-    expect(provider).toContain("verifyActionId: 'verify-remediation-step'");
-    expect(provider).toContain(
-      'const verifyExecutionCommand = ensureDoctorRemediationPlanRefreshCommand(input.verifyCommand)'
-    );
-    expect(provider).toContain(
-      'const effectiveProjectPath = input.projectPath ?? input.handoff.projectPath'
-    );
-    expect(provider).toContain('projectPath: effectiveProjectPath');
     expect(provider).toContain('resolveProjectPathFromRemediationStep');
     expect(provider).toContain('remediationStepPathCandidates');
     expect(provider).toContain("path.join(cursor, '.rapidkit', 'project.json')");
     expect(provider).toContain('handoffProjectPath: handoff.projectPath');
     expect(provider).toContain('scopeProjectPath: scope.projectPath');
-    expect(provider).toContain(
-      'const changedPaths = collectAppliedPatchPaths(applyResult.appliedFixes)'
-    );
-    expect(provider).toContain("entry.outcome === 'unchanged'");
-    expect(provider).toContain('appliedCount: changedPaths.length');
-    expect(provider).toContain('The fix was already in place. Running verify now.');
-    expect(provider).toContain('failureSummary: verifyFailureSummary');
-    expect(provider).toContain('automaticRollback && !automaticRollback.ok');
-    expect(provider).toContain('? undefined : loopProgress.nextAction');
-    expect(provider).toContain('? undefined : loopProgress.nextActionLabel');
     expect(provider).toContain('await this._postSidebarDoctorRemediationPlan({');
-    expect(provider).toContain("verifyActionId: 'verify-doctor-fix'");
-    expect(provider).toContain('Doctor fix completed. Running verify now.');
     expect(provider).not.toContain('private async _executeSidebarEvidenceRepair');
     expect(provider).toContain('resolveDashboardCommandExecutionPlan(request.commandId)');
     expect(provider).toContain('preserveAllAgentConsumersForStudioRefresh');
@@ -214,16 +194,9 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(provider).toContain("'.workspai/**/*'");
     expect(provider).toContain('evidenceGeneration: repairEvidence.evidenceFingerprint');
     expect(provider).toContain('_ensureStudioEvidenceWatcher(handoff, sessionId)');
-    expect(provider).toContain("verifyActionId: 'verify-run-once'");
-    expect(provider).toContain('Source command completed. Running verify now.');
-    expect(provider).toContain('verifyActionId: `verify-${fixAction}`');
-    expect(provider).toContain(
-      'Studio action ${fixAction} completed and verify refreshed the card.'
-    );
     expect(provider).not.toContain('projectPath: step.projectPath || scope.projectPath');
-    expect(provider).toContain('const actionSucceeded = actionResult?.gatePassed !== false');
-    expect(provider).toContain("title: actionSucceeded ? undefined : 'Gate still blocked'");
-    expect(provider).toContain("status: actionSucceeded ? 'done' : 'failed'");
+    expect(provider).not.toContain('private async _runStudioVerifyContinuation');
+    expect(provider).not.toContain('applyDoctorRemediationStep');
 
     const patchBridge = read('src/core/sidebarStudioPatchBridge.ts');
     expect(patchBridge).toContain('buildSidebarCardRepairPatchPrompt');
@@ -239,7 +212,6 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(patchBridge).toContain('Governed artifacts changed while the model was reasoning');
     expect(patchBridge).not.toContain("buildInlineQueryFromAction('apply-debug-patch'");
     expect(provider).toContain('function sidebarPatchReviewKey');
-    expect(provider).toContain('sidebarPatchReviewKey(handoff.cardId, sessionId)');
     expect(provider).toContain('studioHost.getPendingPatches(handoff.cardId, sessionId)');
     expect(provider).toContain('studioHost.deletePendingPatches(handoff.cardId, sessionId)');
 
@@ -349,13 +321,12 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(progressParser).toContain(
       "'running-doctor-fix': 'Doctor fix is running against workspace evidence'"
     );
-    expect(provider).toContain('const doctorFixHeartbeat = setInterval');
-    expect(provider).toContain('clearInterval(doctorFixHeartbeat)');
     expect(secondary).toContain("action === 'continue-remediation'");
     expect(secondary).not.toContain('selectNextStudioFileRemediationStep');
     expect(secondary).not.toContain('studioAutonomousStepCountsRef');
-    expect(provider).toContain("if (mode === 'FIX')");
-    expect(provider).toContain('Resolve every blocker for ${handoff.cardLabel ?? handoff.cardId}');
+    expect(provider).toContain(
+      'Resolve the active ${handoff.cardLabel ?? handoff.cardId} blocker completely through the CLI Repair Engine.'
+    );
     const remediationPlan = read('webview-ui/src/sidebar/StudioRemediationPlan.tsx');
     expect(remediationPlan).toContain('capability?.primaryLabel');
     expect(remediationPlan).toContain('capability?.secondaryLabel');
@@ -383,6 +354,13 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(secondary).toContain(
       'const progressIncidentKey = resolveStudioIncidentKeyForEvent(data)'
     );
+    expect(secondary.indexOf('resolveStudioIncidentKeyForSession(data.sessionId)')).toBeLessThan(
+      secondary.indexOf('resolveStudioIncidentKeyForCard(data.cardId)')
+    );
+    expect(provider).toContain('sessionId: input.sessionId');
+    expect(provider).toContain('agentOwned: input.agentOwned === true');
+    expect(secondary).toContain("? 'running'");
+    expect(secondary).toContain('Evidence refreshed; repair continues');
     expect(secondary).toContain("action: 'apply-patch'");
     expect(secondary).toContain("action: 'ship-loop-step'");
     expect(secondary).toContain('rollbackCommand');

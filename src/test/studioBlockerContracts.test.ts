@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 
 import { buildStudioBlockerHandoff } from '../core/studioBlockerHandoffBuilder.js';
 import { isStudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
+import { DASHBOARD_EVIDENCE_CARD_IDS } from '../contracts/dashboardEvidenceCards.js';
+import { requireStudioCardRepairCapability } from '../contracts/studioCardRepairCapabilities.js';
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const workspaiCliContractsRoot = path.resolve(
@@ -18,6 +20,7 @@ const workspaiCliContractsRoot = path.resolve(
 const PHASE3_CONTRACTS = [
   'workspace-intelligence/blocker-resolution.v1.json',
   'workspace-intelligence/studio-blocker-handoff.v1.json',
+  'studio-card-repair-capabilities.v1.json',
 ];
 
 describe('Phase 3 studio contracts parity', () => {
@@ -123,4 +126,50 @@ describe('Phase 3 studio contracts parity', () => {
     expect(handoff.verifyCommand).toBe(handoff.sourceCommand);
     expect(handoff.verifyArtifact).toBe('.workspai/reports/workspace-run-last.json');
   });
+
+  it('verifies Governance Gate by regenerating Pipeline evidence before aggregate verify', async () => {
+    const handoff = await buildStudioBlockerHandoff({
+      workspacePath: '/tmp/workspai',
+      card: {
+        id: 'pipeline',
+        label: 'Governance Gate',
+        status: 'fail',
+        scope: 'workspace',
+        artifactPath: '.workspai/reports/pipeline-last-run.json',
+        blockers: ['doctor: web: No frontend environment contract marker detected.'],
+      },
+    });
+
+    expect(handoff.verifyCommand).toBe(handoff.sourceCommand);
+    expect(handoff.verifyCommand).toContain('pipeline');
+    expect(handoff.verifyArtifact).toBe('.workspai/reports/pipeline-last-run.json');
+  });
+
+  it.each(DASHBOARD_EVIDENCE_CARD_IDS)(
+    'binds %s to its exact canonical producer and verification artifact',
+    async (cardId) => {
+      const capability = requireStudioCardRepairCapability(cardId);
+      const handoff = await buildStudioBlockerHandoff({
+        workspacePath: '/tmp/workspai-card-matrix',
+        card: {
+          id: cardId,
+          label: cardId,
+          status: 'fail',
+          scope: capability.scope,
+          artifactPath: capability.producerArtifact,
+          blockers: [`${cardId}: fixture blocker`],
+        },
+        ...(capability.scope === 'project'
+          ? { projectPath: '/tmp/workspai-card-matrix/project' }
+          : {}),
+      });
+
+      expect(handoff.sourceCommand).toBe(capability.producerCommand);
+      expect(handoff.verifyCommand).toBe(capability.verifyCommand);
+      expect(handoff.verifyArtifact).toBe(capability.verifyArtifact);
+      if (!['doctor', 'projectDoctor', 'importReadiness'].includes(cardId)) {
+        expect(handoff.sourceCommand).not.toContain(' doctor ');
+      }
+    }
+  );
 });

@@ -208,6 +208,7 @@ describe('Studio Agent Workspai tool registry', () => {
       transactionId: 'tool-1',
       workspacePath: '/workspace',
       projectPath: '/workspace/web',
+      reportProgress: context.reportProgress,
     });
     expect(host.runGovernedCommand).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -234,6 +235,7 @@ describe('Studio Agent Workspai tool registry', () => {
       stepId: 'dependency-sync',
       workspacePath: '/workspace',
       projectPath: '/workspace/web',
+      reportProgress: context.reportProgress,
     });
     expect(host.inspectDependencySecurity).toHaveBeenCalledWith({
       projectName: 'web',
@@ -245,11 +247,13 @@ describe('Studio Agent Workspai tool registry', () => {
       changedPaths: ['web/package.json'],
       workspacePath: '/workspace',
       projectPath: '/workspace/web',
+      reportProgress: context.reportProgress,
     });
     expect(host.repairDependencySecurity).toHaveBeenCalledWith({
       projectName: 'web',
       workspacePath: '/workspace',
       projectPath: '/workspace/web',
+      reportProgress: context.reportProgress,
     });
     expect(host.upgradeDependencySecurity).toHaveBeenCalledWith({
       projectName: 'web',
@@ -257,6 +261,7 @@ describe('Studio Agent Workspai tool registry', () => {
       transactionId: 'tool-1',
       workspacePath: '/workspace',
       projectPath: '/workspace/web',
+      reportProgress: context.reportProgress,
     });
     expect(host.verify).toHaveBeenCalledWith(
       expect.objectContaining({

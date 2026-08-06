@@ -1,7 +1,7 @@
 {
   "schemaVersion": "workspai-enterprise-validation-matrix.v1",
   "generatedFor": "rapidkit-vscode",
-  "npmTruthBaseline": "0.52.3",
+  "npmTruthBaseline": "0.53.0",
   "scenarios": [
     {
       "id": "cli.version.below_minimum",
@@ -97,7 +97,7 @@
       ],
       "requiredSnippets": [
         "does not reuse a successful verify from an earlier restored request",
-        "Completion rejected: successful non-blocking verification and canonical post-mutation chain closure are required.",
+        "The model requested completion. Studio is running the exact card verification contract before accepting it.",
         "verify-blocker"
       ]
     },
@@ -294,6 +294,22 @@
       ]
     },
     {
+      "id": "studio.native_tool_loop.durable",
+      "label": "Native tool calls remain correlated, resumable, and reviewable",
+      "category": "studio",
+      "priority": "P0",
+      "evidence": [
+        "src/test/studioAgentModelProtocol.test.ts",
+        "src/test/studioAgentSession.test.ts",
+        "src/test/studioWorkspaceChangeReview.test.ts"
+      ],
+      "requiredSnippets": [
+        "restores only completed native tool rounds from a durable session",
+        "preserves provider call ids through execution and causal observations",
+        "renders bounded untracked text files as live unified diffs"
+      ]
+    },
+    {
       "id": "vsix.package_artifact_gate",
       "label": "CI builds and inspects the exact VSIX artifact before publish",
       "category": "supply-chain",
@@ -307,6 +323,20 @@
         "vsix-package-smoke:",
         "npm run smoke:vsix-artifact",
         "npm view workspai@${{ inputs.workspai_cli_version }} version"
+      ]
+    },
+    {
+      "id": "studio.dependency_transaction.fail_closed",
+      "label": "Dependency transactions never guess across package-manager ecosystems",
+      "category": "studio",
+      "priority": "P0",
+      "evidence": [
+        "src/core/studioDependencyTransaction.ts",
+        "src/test/studioDependencyTransaction.test.ts"
+      ],
+      "requiredSnippets": [
+        "Studio refused to guess a package-manager command",
+        "fails closed instead of routing a non-Node project through yarn"
       ]
     }
   ]

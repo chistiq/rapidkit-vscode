@@ -817,7 +817,7 @@ describe('dashboard minimal UX guard', () => {
 
     expect(flow).toContain('label="Governance Gate"');
     expect(flow).toContain("runWorkspaceAction('workspacePipeline')");
-    expect(flow).toContain('title="rapidkit pipeline --json --strict"');
+    expect(flow).toContain('title="npx workspai pipeline --json --strict"');
     expect(flow).toContain('variant="primary"');
     expect(flow.indexOf('label="Governance Gate"')).toBeLessThan(flow.indexOf('label="Doctor"'));
   });

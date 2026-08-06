@@ -66,6 +66,7 @@ import {
   type VerifiedGoalContractPayload,
 } from '../../core/verifiedGoalIntent.js';
 import { runStudioActiveBlockerRecovery } from '../../core/studioActiveBlockerRecovery.js';
+import { isDependencySecurityBlocker } from '../../core/studioDependencyIncident.js';
 import { buildCoreRapidkitShellCommand, runCommandsInTerminal } from '../../utils/terminalExecutor';
 import { buildRapidkitCommand } from '../../utils/platformCapabilities';
 import { createWorkspaceCommand } from '../../commands/createWorkspace';
@@ -74,21 +75,11 @@ import {
   isStudioBlockerHandoff,
   type StudioBlockerHandoff,
 } from '../../contracts/studio-blocker-handoff-contract.js';
-import { executeStudioActionById } from '../panels/incidentStudioActionBridge.js';
-import {
-  buildStudioBlockerHandoff,
-  pickStudioFixActionId,
-} from '../../core/studioBlockerHandoffBuilder.js';
-import { shouldUseEvidencePatchRepair } from '../../core/studioBlockerFixRouting.js';
+import { buildStudioBlockerHandoff } from '../../core/studioBlockerHandoffBuilder.js';
 import { recordStudioBlockerCommandRun } from '../../core/studioBlockerCommandLedger.js';
 import { runRapidkitStreaming } from '../../core/streamingRapidkitRunner.js';
 import { gateIncidentStudioRapidkitCommand } from '../../core/rapidkitEnterpriseCliGate.js';
-import { extractDoctorFixResult } from '../../core/doctorFixResultReader.js';
-import { resolveStudioDoctorFixInvocation } from '../../core/studioDoctorFixCommand.js';
-import {
-  applyBootstrapComplianceRemediation,
-  normalizeBootstrapComplianceCommand,
-} from '../../core/bootstrapComplianceRemediation.js';
+import { normalizeBootstrapComplianceCommand } from '../../core/bootstrapComplianceRemediation.js';
 import {
   isMutatingRapidkitCliCommand,
   runIncidentInlineCommand,
@@ -98,7 +89,6 @@ import {
   resolveGovernedStudioRepairMutationBlockReason,
   resolveStudioMutationBlockReason,
 } from '../panels/incidentStudioMutationGate.js';
-import type { StudioActionId } from '../../core/studioActionCommands.js';
 import {
   dashboardEvidenceCardIsBlocking,
   formatStudioCardRefreshToast,
@@ -124,37 +114,27 @@ import {
 import { resolveDashboardCommandContractByVscodeCommand } from '../../core/dashboardCommandContracts.js';
 import { gateDashboardCommandCapability } from '../../core/dashboardCommandCapabilityGate.js';
 import { resolveDashboardCommandExecutionPlan } from '../../core/dashboardCommandExecutionPlan.js';
-import { applyDoctorRemediationStep } from '../../core/doctorRemediationApply.js';
 import {
   applySidebarPendingPatches,
   collectSidebarStudioRepairEvidence,
 } from '../../core/sidebarStudioPatchBridge.js';
 import type { StudioEvidenceRefreshCommandId } from '../../core/sidebarStudioAgentRuntime.js';
-import type { StudioPatchTransactionResult } from '../../core/studioPatchTransaction.js';
-import { studioAgentRepairIsComplete } from '../../core/sidebarStudioAgentRuntime.js';
 import {
-  applyPatches,
   normalizePatchesForWorkspaceScope,
   preparePatchesForReview,
   rollbackAppliedPatches,
   type FilePatch,
   type MultiFilePatchResult,
 } from '../../core/patchApplyEngine.js';
-import { computeLineDiff } from '../panels/incidentStudioVerifyDiff.js';
 import {
   clearSidebarPendingPatches,
   readSidebarPendingPatches,
-  saveSidebarPendingPatches,
 } from '../../core/sidebarStudioRepairState.js';
 import {
   dispatchSidebarShipLoopStep,
   isSidebarShipLoopStepId,
   resolveSidebarShipLoopPayload,
 } from '../../core/sidebarStudioShipLoopBridge.js';
-import {
-  buildSidebarPatchRollbackHint,
-  collectAppliedPatchPaths,
-} from '../../core/sidebarStudioRollbackHint.js';
 import {
   attachAdvisorHandoffSource,
   buildAdvisorStudioPrefill,
@@ -189,6 +169,15 @@ import {
   captureStudioWorkspaceSourceSnapshot,
   diffStudioWorkspaceSourceSnapshots,
 } from '../../core/studioWorkspaceSourceSnapshot.js';
+import { buildStudioUntrackedFileDiffs } from '../../core/studioWorkspaceChangeReview.js';
+import {
+  decideCliOwnedRepair,
+  executeCliOwnedCanonicalRepair,
+  executeCliOwnedPatchRepair,
+  readLatestCliOwnedRepair,
+  type WorkspaceRepairDecision,
+  type WorkspaceRepairProgress,
+} from '../../core/workspaceRepairCliClient.js';
 import {
   authorizeStudioWorkspacePatchTargets,
   deleteInspectedStudioWorkspaceFiles,
@@ -322,7 +311,11 @@ async function inspectStudioWorkspaceChanges(input: {
   const pathArgs = input.paths?.length ? ['--', ...input.paths] : [];
   const statusPlan = resolveStudioWorkspaceCommandPlan({
     workspacePath: input.workspacePath,
-    request: { executable: 'git', args: ['status', '--short'], purpose: 'inspect' },
+    request: {
+      executable: 'git',
+      args: ['status', '--short', '--untracked-files=all', '-z', ...pathArgs],
+      purpose: 'inspect',
+    },
   });
   const diffPlan = resolveStudioWorkspaceCommandPlan({
     workspacePath: input.workspacePath,
@@ -336,9 +329,15 @@ async function inspectStudioWorkspaceChanges(input: {
     runStudioWorkspaceCommand(statusPlan),
     runStudioWorkspaceCommand(diffPlan),
   ]);
+  const untrackedDiff = await buildStudioUntrackedFileDiffs({
+    workspacePath: input.workspacePath,
+    statusPorcelainZ: status.stdout,
+    includedPaths: input.paths,
+  });
+  const combinedDiff = [diff.stdout.trim(), untrackedDiff.trim()].filter(Boolean).join('\n');
   return {
-    status: status.stdout,
-    diff: diff.stdout,
+    status: status.stdout.split('\0').filter(Boolean).join('\n'),
+    diff: combinedDiff,
     statusExitCode: status.exitCode,
     diffExitCode: diff.exitCode,
   };
@@ -495,86 +494,6 @@ function resolveArtifactRemediationPlanExecution(): {
   };
 }
 
-function remediationLoopProgressForApply(input: {
-  verifySucceeded: boolean;
-  cardStatus?: string;
-  cardBlocking?: boolean;
-  refreshedPlanSteps: number;
-  failureSummary?: string;
-}): {
-  status: 'done' | 'review' | 'failed';
-  title?: string;
-  summary: string;
-  nextAction?: 'continue-remediation' | 'auto-fix';
-  nextActionLabel?: string;
-} {
-  if (input.cardBlocking === false) {
-    return {
-      status: 'done',
-      title: 'Verified with attention',
-      summary:
-        'Evidence refreshed. Remaining findings are advisory and do not block the workspace.',
-    };
-  }
-  if (!input.verifySucceeded) {
-    if (input.refreshedPlanSteps > 0) {
-      return {
-        status: 'review',
-        title: 'Next safe step ready',
-        summary:
-          input.failureSummary ||
-          'Verify still reports a blocker, and Studio loaded the next deterministic repair step.',
-        nextAction: 'continue-remediation',
-        nextActionLabel: 'Continue repair',
-      };
-    }
-    if (input.cardStatus !== 'pass') {
-      return {
-        status: 'review',
-        title: 'Source fix needed',
-        summary:
-          input.failureSummary ||
-          'Verify still reports a blocker, and no deterministic repair step is available. I can continue with an AI-assisted fix using the refreshed evidence.',
-        nextAction: 'auto-fix',
-        nextActionLabel: 'Continue with AI fix',
-      };
-    }
-    return {
-      status: 'failed',
-      title: 'Verify failed',
-      summary: input.failureSummary || 'The fix was applied, but verification failed.',
-    };
-  }
-  if (input.cardStatus === 'pass') {
-    return {
-      status: 'done',
-      summary: 'Fix applied and the card is now verified.',
-    };
-  }
-  if (input.refreshedPlanSteps > 0) {
-    return {
-      status: 'review',
-      title: 'Next safe step ready',
-      summary:
-        'This step is complete. The card still needs attention, and Studio loaded the next deterministic repair step.',
-      nextAction: 'continue-remediation',
-      nextActionLabel: 'Continue repair',
-    };
-  }
-  return {
-    status: 'review',
-    title: 'Source fix needed',
-    summary:
-      'This deterministic step is complete, but no more safe file operation is available. I can continue with an AI-assisted repair using the refreshed evidence.',
-    nextAction: 'auto-fix',
-    nextActionLabel: 'Continue with AI fix',
-  };
-}
-
-function isInternalDoctorRepairCommand(command: string): boolean {
-  return /^(?:workspai|rapidkit):doctor:repair\s/.test(command.trim());
-}
-
 function remediationStepPathCandidates(step: DoctorRemediationPlanStepView): string[] {
   const candidates = new Set<string>();
   for (const filePath of step.files) {
@@ -715,55 +634,8 @@ function buildSidebarStudioActionFailurePayload(input: {
   };
 }
 
-function serializeSidebarPatchReviewItems(patches: FilePatch[]): Array<{
-  relativePath: string;
-  status: string;
-  isNewFile?: boolean;
-  failReason?: string;
-  diffLines: Array<{ type: 'added' | 'removed' | 'unchanged'; content: string }>;
-}> {
-  return patches.map((patch) => ({
-    relativePath: patch.relativePath,
-    status: patch.status,
-    isNewFile: patch.isNewFile,
-    failReason: patch.failReason,
-    diffLines: computeLineDiff(
-      (patch.originalContent ?? '').split(/\r?\n/),
-      patch.patchedContent.split(/\r?\n/)
-    )
-      .filter((line) => line.type !== 'unchanged' || line.content.trim().length > 0)
-      .slice(0, 400)
-      .map(({ type, content }) => ({ type, content })),
-  }));
-}
-
 function sidebarPatchReviewKey(cardId: string, sessionId?: string): string {
   return sessionId?.trim() ? `${sessionId.trim()}::${cardId}` : cardId;
-}
-
-function buildSidebarPatchAuditMetadata(input: {
-  sourceAction: 'auto-fix' | 'apply-patch';
-  reviewRequired: boolean;
-  patchResult?: StudioPatchTransactionResult['patchResult'];
-  appliedFixes?: Array<{ path: string; action: string; outcome: string }>;
-  rollbackCommand?: string | null;
-}): SidebarStudioPatchAuditMetadata | undefined {
-  const affectedFiles = collectAppliedPatchPaths(input.appliedFixes);
-  const patchResult = input.patchResult;
-  if (!patchResult && affectedFiles.length === 0) {
-    return undefined;
-  }
-  return {
-    ...(patchResult?.patchId ? { patchId: patchResult.patchId } : {}),
-    sourceAction: input.sourceAction,
-    reviewRequired: input.reviewRequired,
-    ...(patchResult?.branchCreated ? { branchCreated: patchResult.branchCreated } : {}),
-    appliedCount: patchResult?.appliedCount ?? affectedFiles.length,
-    rejectedCount: patchResult?.rejectedCount ?? 0,
-    failedCount: patchResult?.failedCount ?? 0,
-    affectedFiles,
-    ...(input.rollbackCommand ? { rollbackCommand: input.rollbackCommand } : {}),
-  };
 }
 
 async function readWorkspaceProfileFromManifest(
@@ -925,7 +797,7 @@ function resolveEditorIssueContext(value: unknown): AIModalContext | null {
     framework: languageId,
     moduleSlug: 'editor-issue',
     moduleDescription:
-      'Standalone editor diagnostic session. Do not assume RapidKit workspace evidence unless the user supplies it.',
+      'Standalone editor diagnostic session. Do not assume Workspai workspace evidence unless the user supplies it.',
   };
 }
 
@@ -1139,8 +1011,6 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       retryLastSidebarStudioAudit: (sessionId) => this._retryLastSidebarStudioAudit(sessionId),
       runSidebarAutoFix: (handoff, sessionId, payloadScope, requestedModelId) =>
         this._runSidebarAutoFix(handoff, sessionId, payloadScope, requestedModelId),
-      finalizeStudioPatchTransaction: (handoff, sessionId, result, sourceAction, scope) =>
-        this._finalizeStudioPatchTransaction(handoff, sessionId, result, sourceAction, scope),
       auditSidebarStudioFix: (input) => this._auditSidebarStudioFix(input),
       refreshSidebarShipLoop: (input) => this._refreshSidebarShipLoop(input),
       finalizeStudioVerifyHandoff: (input) => this._finalizeStudioVerifyHandoff(input),
@@ -1996,7 +1866,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         if (exitCode !== 0) {
           const stderr = (result as { stderr?: string }).stderr ?? '';
           const stdout = (result as { stdout?: string }).stdout ?? '';
-          throw new Error(stderr || stdout || 'RapidKit project creation failed.');
+          throw new Error(stderr || stdout || 'Workspai project creation failed.');
         }
         const summary = `${name} · ${kitName}`;
 
@@ -2562,6 +2432,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         transactionId: string;
         workspacePath: string;
         projectPath?: string;
+        reportProgress?: (data: Record<string, unknown>) => Promise<void>;
       }) => {
         const normalized = normalizePatchesForWorkspaceScope({
           workspacePath: request.workspacePath,
@@ -2601,29 +2472,44 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           projectPath: request.projectPath,
           actionLabel: 'Workspai Assistant inspected workspace patch',
         });
-        const result = await applyPatches({
-          actionId: `assistant-${input.sessionId ?? input.assistantMode}`,
+        const result = await executeCliOwnedPatchRepair({
           workspacePath: request.workspacePath,
-          patches: normalized,
-          branchSafeApply: false,
-          acceptedPaths: normalized.map((entry) => entry.relativePath),
-          expectedBaseSha256: Object.fromEntries(inspectedSource),
+          projectPath: request.projectPath,
+          projectName: request.projectPath ? path.basename(request.projectPath) : undefined,
+          cardId: input.handoff?.cardId ?? verifiedGoal?.id ?? `assistant:${input.assistantMode}`,
+          approvedBy: `vscode:${input.assistantMode}`,
+          patches: normalized.map((patch) => ({
+            relativePath: patch.relativePath,
+            operation: patch.operation,
+            baseSha256: patch.baseSha256 ?? inspectedSource.get(patch.relativePath),
+            patchedContent: patch.patchedContent,
+          })),
+          reportProgress: request.reportProgress
+            ? (progress: WorkspaceRepairProgress) => request.reportProgress!({ repair: progress })
+            : undefined,
         });
-        if (result.appliedCount > 0) {
-          this._rememberStudioAgentPatchTransaction(request.transactionId, {
-            workspacePath: request.workspacePath,
-            cardId: input.handoff?.cardId ?? `assistant:${input.assistantMode}`,
-            sessionId: input.sessionId,
-            patchResult: result,
-          });
-        }
+        const changeReview = result.changedPaths.length
+          ? await inspectStudioWorkspaceChanges({
+              workspacePath: request.workspacePath,
+              paths: result.changedPaths,
+            })
+          : undefined;
+        const closed = result.transaction.state === 'closed';
         return {
-          ok: result.failedCount === 0 && result.appliedCount > 0,
-          changed: result.appliedCount > 0,
-          output: result,
-          ...(result.failedCount > 0
-            ? { error: 'One or more inspected patches could not be applied.' }
-            : {}),
+          ok: closed,
+          changed: result.changedPaths.length > 0,
+          output: {
+            transaction: result.transaction,
+            changedPaths: result.changedPaths,
+            ...(typeof changeReview?.diff === 'string' ? { diff: changeReview.diff } : {}),
+          },
+          ...(closed
+            ? {}
+            : {
+                error:
+                  result.transaction.decision?.reason ??
+                  `CLI repair ended in ${result.transaction.state}.`,
+              }),
         };
       },
       deleteFiles: async (request: {
@@ -2631,6 +2517,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         transactionId: string;
         workspacePath: string;
         projectPath?: string;
+        reportProgress?: (data: Record<string, unknown>) => Promise<void>;
       }) => {
         if (
           verifiedGoal?.kind === 'dependency-security' &&
@@ -2654,19 +2541,44 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           governedRepair: { contractAuthorized: true, reversible: true },
         });
         try {
-          const result = await deleteInspectedStudioWorkspaceFiles({
+          const result = await executeCliOwnedPatchRepair({
             workspacePath: request.workspacePath,
-            paths: request.paths,
-            inspectedSource,
-            actionId: request.transactionId,
+            projectPath: request.projectPath,
+            projectName: request.projectPath ? path.basename(request.projectPath) : undefined,
+            cardId: input.handoff?.cardId ?? verifiedGoal?.id ?? `assistant:${input.assistantMode}`,
+            approvedBy: `vscode:${input.assistantMode}`,
+            patches: request.paths.map((relativePath) => ({
+              relativePath,
+              operation: 'delete',
+              baseSha256: inspectedSource.get(relativePath),
+            })),
+            reportProgress: request.reportProgress
+              ? (progress: WorkspaceRepairProgress) => request.reportProgress!({ repair: progress })
+              : undefined,
           });
-          this._rememberStudioAgentPatchTransaction(request.transactionId, {
-            workspacePath: request.workspacePath,
-            cardId: input.handoff?.cardId ?? `assistant:${input.assistantMode}`,
-            sessionId: input.sessionId,
-            patchResult: result,
-          });
-          return { ok: true, changed: true, output: result };
+          const changeReview = result.changedPaths.length
+            ? await inspectStudioWorkspaceChanges({
+                workspacePath: request.workspacePath,
+                paths: result.changedPaths,
+              })
+            : undefined;
+          const closed = result.transaction.state === 'closed';
+          return {
+            ok: closed,
+            changed: result.changedPaths.length > 0,
+            output: {
+              transaction: result.transaction,
+              changedPaths: result.changedPaths,
+              ...(typeof changeReview?.diff === 'string' ? { diff: changeReview.diff } : {}),
+            },
+            ...(closed
+              ? {}
+              : {
+                  error:
+                    result.transaction.decision?.reason ??
+                    `CLI repair ended in ${result.transaction.state}.`,
+                }),
+          };
         } catch (error) {
           return { ok: false, error: error instanceof Error ? error.message : String(error) };
         }
@@ -2760,6 +2672,13 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             workspacePath: request.workspacePath,
             request: request.request,
           });
+          if (plan.mutatesSource) {
+            return {
+              ok: false,
+              error:
+                'Studio cannot execute mutating workspace commands directly. Submit a source proposal or start a CLI-owned repair transaction.',
+            };
+          }
           const before = plan.mutatesSource
             ? await captureStudioWorkspaceSourceSnapshot({
                 workspacePath: request.workspacePath,
@@ -2776,6 +2695,12 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           const changedPaths = diffStudioWorkspaceSourceSnapshots(before, after);
           const observedSourceChange = changedPaths.length > 0;
           const changed = plan.mutatesSource && observedSourceChange;
+          const changeReview = changed
+            ? await inspectStudioWorkspaceChanges({
+                workspacePath: request.workspacePath,
+                paths: changedPaths,
+              })
+            : undefined;
           return {
             ok: execution.exitCode === 0,
             changed,
@@ -2783,6 +2708,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               ...execution,
               changedPaths,
               observedSourceChange,
+              ...(typeof changeReview?.diff === 'string' ? { diff: changeReview.diff } : {}),
             },
             ...(execution.exitCode === 0
               ? {}
@@ -2802,34 +2728,49 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         changedPaths?: string[];
         workspacePath: string;
         projectPath?: string;
+        reportProgress?: (data: Record<string, unknown>) => Promise<void>;
       }) => {
         try {
-          const before = await captureStudioWorkspaceSourceSnapshot({
+          await this._assertSidebarStudioMutationAllowed({
             workspacePath: request.workspacePath,
-            scopePath: request.projectPath ?? request.workspacePath,
+            projectPath: request.projectPath,
+            actionLabel: 'Workspai Assistant CLI-owned dependency repair',
+            governedRepair: { contractAuthorized: true, reversible: true },
           });
-          const transaction = await completeStudioDependencyTransactions(request);
-          const after = await captureStudioWorkspaceSourceSnapshot({
+          const result = await executeCliOwnedCanonicalRepair({
             workspacePath: request.workspacePath,
-            scopePath: request.projectPath ?? request.workspacePath,
+            cardId: input.handoff?.cardId ?? 'doctor',
+            projectName:
+              request.projectNames?.[0] ??
+              (request.projectPath ? path.basename(request.projectPath) : undefined),
+            approvedBy: `vscode:${input.assistantMode}`,
+            reportProgress: request.reportProgress
+              ? (progress: WorkspaceRepairProgress) => request.reportProgress!({ repair: progress })
+              : undefined,
           });
-          const changedPaths = diffStudioWorkspaceSourceSnapshots(before, after);
+          const changeReview = result.changedPaths.length
+            ? await inspectStudioWorkspaceChanges({
+                workspacePath: request.workspacePath,
+                paths: result.changedPaths,
+              })
+            : undefined;
+          const closed = result.transaction.state === 'closed';
           return {
-            ok: transaction.closureReady,
-            changed: changedPaths.length > 0,
+            ok: closed,
+            changed: result.changedPaths.length > 0,
             output: {
-              transaction,
-              changedPaths,
-              closureReady: transaction.closureReady,
-              nextAction: transaction.closureReady
-                ? 'workspace-intelligence-chain'
-                : 'general-source-repair',
+              transaction: result.transaction,
+              changedPaths: result.changedPaths,
+              ...(typeof changeReview?.diff === 'string' ? { diff: changeReview.diff } : {}),
+              closureReady: closed,
+              nextAction: closed ? 'closed' : 'user-decision',
             },
-            ...(transaction.closureReady
+            ...(closed
               ? {}
               : {
                   error:
-                    'Dependency transaction is not closed. Use the unresolved audit candidates or repair the failed project-native validation before verification.',
+                    result.transaction.decision?.reason ??
+                    `CLI dependency repair ended in ${result.transaction.state}.`,
                 }),
           };
         } catch (error) {
@@ -2994,6 +2935,12 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               typeof failureData.terminalReason === 'string'
                 ? failureData.terminalReason
                 : 'review-required',
+            ...(typeof failureData.transactionId === 'string'
+              ? { transactionId: failureData.transactionId }
+              : {}),
+            ...(Array.isArray(failureData.decisionOptions)
+              ? { decisionOptions: failureData.decisionOptions }
+              : {}),
           }
         : {}),
       error:
@@ -3690,6 +3637,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         stepId: string;
         workspacePath: string;
         projectPath?: string;
+        reportProgress?: (data: Record<string, unknown>) => Promise<void>;
       }) => {
         const priorAttempt = remediationStepAttempts.get(request.stepId);
         const attemptsForBlocker =
@@ -3699,185 +3647,61 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             ok: false,
             evidenceGeneration: repairEvidence.evidenceFingerprint,
             blockerSignature: activeBlockerSignature,
-            error: `${request.stepId} already ran twice for the same semantic blocker. Inspect the result and repair the next causal blocker instead of repeating it.`,
+            error: `${request.stepId} already ran twice for the same semantic blocker. Review the durable CLI transaction instead of starting another attempt.`,
           };
         }
         remediationStepAttempts.set(request.stepId, {
           blockerSignature: activeBlockerSignature,
           count: attemptsForBlocker + 1,
         });
-
-        clearDoctorRemediationPlanCache();
-        const plan = await readDoctorRemediationPlanForStudio({
+        await this._assertSidebarStudioMutationAllowed({
           workspacePath: request.workspacePath,
-          handoff: {
-            ...activeHandoff,
-            ...(request.projectPath ? { projectPath: request.projectPath } : {}),
-          },
-          maxSteps: 64,
+          projectPath: request.projectPath,
+          actionLabel: `CLI-owned Studio remediation step ${request.stepId}`,
+          governedRepair: { contractAuthorized: true, reversible: true },
         });
-        if (!plan) {
-          return {
-            ok: false,
-            evidenceGeneration: repairEvidence.evidenceFingerprint,
-            error:
-              'No contract-authored remediation plan is available. Run the workspaceRemediationPlan governed producer first.',
-          };
-        }
-        if (plan.freshness.verdict === 'stale') {
-          return {
-            ok: false,
-            evidenceGeneration: repairEvidence.evidenceFingerprint,
-            error:
-              plan.freshness.reason ??
-              'The remediation plan is stale. Refresh its governed source evidence first.',
-          };
-        }
-        const step = plan.visibleSteps.find((entry) => entry.id === request.stepId);
-        if (!step) {
-          return {
-            ok: false,
-            evidenceGeneration: repairEvidence.evidenceFingerprint,
-            error: `Remediation step ${request.stepId} is not present in the latest plan. Inspect the plan again.`,
-          };
-        }
-        if (step.risk === 'invasive') {
-          return {
-            ok: false,
-            evidenceGeneration: repairEvidence.evidenceFingerprint,
-            error: `Remediation step ${step.id} is invasive and cannot run in unattended Agent mode.`,
-          };
-        }
-        if (step.studioState !== 'ready' && step.studioState !== 'review-required') {
-          return {
-            ok: false,
-            evidenceGeneration: repairEvidence.evidenceFingerprint,
-            error: step.studioReason || `Remediation step ${step.id} is not executable.`,
-          };
-        }
-        const stepProjectPath = await resolveProjectPathFromRemediationStep({
-          step,
+        const result = await executeCliOwnedCanonicalRepair({
           workspacePath: request.workspacePath,
-          handoffProjectPath: activeHandoff.projectPath,
-          scopeProjectPath: request.projectPath,
+          cardId: activeHandoff.cardId,
+          projectName: request.projectPath ? path.basename(request.projectPath) : undefined,
+          actionId: request.stepId,
+          approvedBy: 'vscode:studio-agent',
+          reportProgress: request.reportProgress
+            ? (progress: WorkspaceRepairProgress) => request.reportProgress!({ repair: progress })
+            : undefined,
         });
-
-        let ok = false;
-        let changed = false;
-        let output: unknown;
-        let error: string | undefined;
-        let changedPaths: string[] = [];
-        let appliedFixes: Array<{ path: string; action: string; outcome: string }> = [];
-        if (step.canApply && step.operation) {
-          await this._assertSidebarStudioMutationAllowed({
-            workspacePath: request.workspacePath,
-            projectPath: stepProjectPath,
-            actionLabel: `Studio Agent remediation step ${step.id}`,
-          });
-          const applyResult = await applyDoctorRemediationStep({
-            workspacePath: request.workspacePath,
-            step,
-          });
-          ok = applyResult.status === 'applied';
-          appliedFixes = applyResult.appliedFixes;
-          changed = appliedFixes.some((entry) => entry.outcome === 'applied');
-          output = { stepId: step.id, kind: 'deterministic-operation', applyResult };
-          error = ok ? undefined : applyResult.summary;
-        } else if (step.executable && step.originalCommand.trim()) {
-          const command = step.originalCommand.trim();
-          if (isInternalDoctorRepairCommand(command)) {
-            return {
-              ok: false,
-              evidenceGeneration: repairEvidence.evidenceFingerprint,
-              error: `Internal remediation token ${step.id} has no deterministic operation in the latest plan. Refresh the plan instead of executing the token.`,
-            };
-          }
-          await this._assertSidebarStudioMutationAllowed({
-            workspacePath: request.workspacePath,
-            projectPath: stepProjectPath,
-            actionLabel: `Studio Agent remediation command ${step.id}`,
-            commandText: command,
-          });
-          const before = await captureStudioWorkspaceSourceSnapshot({
-            workspacePath: request.workspacePath,
-            scopePath: stepProjectPath ?? request.workspacePath,
-          });
-          const execution = await runIncidentInlineCommand({
-            command,
-            workspacePath: request.workspacePath,
-            projectPath: stepProjectPath,
-            actionId: `studio-session-remediation-${step.id}`,
-          });
-          const after = await captureStudioWorkspaceSourceSnapshot({
-            workspacePath: request.workspacePath,
-            scopePath: stepProjectPath ?? request.workspacePath,
-          });
-          changedPaths = diffStudioWorkspaceSourceSnapshots(before, after);
-          ok = execution.success;
-          changed = changedPaths.length > 0;
-          output = {
-            stepId: step.id,
-            kind: 'contract-command',
-            execution,
-            changedPaths,
-            observedSourceChange: changed,
-          };
-          error = execution.success
-            ? undefined
-            : (execution.error ?? execution.stderrTail ?? `Remediation step ${step.id} failed.`);
-        } else {
-          return {
-            ok: false,
-            evidenceGeneration: repairEvidence.evidenceFingerprint,
-            error: `Remediation step ${step.id} has neither a deterministic operation nor an executable contract command.`,
-          };
-        }
-
-        if (ok && step.verifyCommand?.trim()) {
-          const verifyExecution = await runIncidentInlineCommand({
-            command: step.verifyCommand.trim(),
-            workspacePath: request.workspacePath,
-            projectPath: stepProjectPath,
-            actionId: `studio-session-remediation-verify-${step.id}`,
-            captureStdout: true,
-          });
-          output = {
-            action: output,
-            verification: {
-              command: step.verifyCommand.trim(),
-              exitCode: verifyExecution.exitCode,
-              success: verifyExecution.success,
-              summary:
-                verifyExecution.output ?? verifyExecution.error ?? verifyExecution.stderrTail ?? '',
-            },
-          };
-        }
-
-        clearDoctorRemediationPlanCache();
+        const changeReview = result.changedPaths.length
+          ? await inspectStudioWorkspaceChanges({
+              workspacePath: request.workspacePath,
+              paths: result.changedPaths,
+            })
+          : undefined;
         repairEvidence = await collectSidebarStudioRepairEvidence({
           workspacePath: request.workspacePath,
-          projectPath: stepProjectPath ?? request.projectPath,
+          projectPath: request.projectPath,
           handoff: activeHandoff,
         });
-        await this._auditSidebarStudioFix({
-          sessionId: input.sessionId,
-          workspacePath: request.workspacePath,
-          handoff: {
-            ...activeHandoff,
-            ...(stepProjectPath ? { projectPath: stepProjectPath } : {}),
-          },
-          kind: step.operation ? 'apply-patch' : 'auto-fix',
-          actionId: `studio-agent-remediation:${step.id}`,
-          summary: ok ? `Remediation step ${step.id} completed.` : (error ?? 'Remediation failed.'),
-          ok,
-          appliedFixes,
-        });
+        const closed = result.transaction.state === 'closed';
         return {
-          ok,
-          changed,
+          ok: closed,
+          changed: result.changedPaths.length > 0,
           evidenceGeneration: repairEvidence.evidenceFingerprint,
-          output,
-          ...(error ? { error } : {}),
+          blockerSignature: activeBlockerSignature,
+          output: {
+            transaction: result.transaction,
+            changedPaths: result.changedPaths,
+            ...(typeof changeReview?.diff === 'string' ? { diff: changeReview.diff } : {}),
+            nextAction: closed ? 'closed' : 'review-required',
+            requiresUserDecision: !closed,
+            terminalReason: !closed ? 'cli-repair-decision-required' : undefined,
+          },
+          ...(closed
+            ? {}
+            : {
+                error:
+                  result.transaction.decision?.reason ??
+                  `CLI repair ended in ${result.transaction.state}.`,
+              }),
         };
       },
       inspectDependencySecurity: async (request: {
@@ -4312,11 +4136,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         }
       },
       recoverActiveBlocker: async (request: { workspacePath: string; projectPath?: string }) => {
-        const dependencyIncident = (activeHandoff.blockers ?? []).some((blocker) =>
-          /\b(?:dependency|dependencies|vulnerabilit|security audit|npm audit|pnpm audit|yarn audit)\b/i.test(
-            blocker
-          )
-        );
+        const dependencyIncident = (activeHandoff.blockers ?? []).some(isDependencySecurityBlocker);
         let dependencyTargets = await resolveStudioDependencySecurityTargets({
           workspacePath: request.workspacePath,
         }).catch(() => []);
@@ -4457,6 +4277,194 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         };
       },
     };
+
+    // Studio is a model/UI client of the CLI Repair Engine. These bindings
+    // deliberately replace every mutation-capable host method before the tool
+    // registry can observe it. The extension may inspect and propose; only the
+    // installed CLI can checkpoint, mutate, reconcile, validate, verify, close,
+    // or roll back a repair transaction.
+    const reportCliRepairProgress = (
+      reportProgress: ((data: Record<string, unknown>) => Promise<void>) | undefined
+    ) =>
+      reportProgress
+        ? (progress: WorkspaceRepairProgress) => reportProgress({ repair: progress })
+        : undefined;
+    const presentCliRepairResult = async (
+      result: Awaited<ReturnType<typeof executeCliOwnedCanonicalRepair>>
+    ) => {
+      const changeReview = result.changedPaths.length
+        ? await inspectStudioWorkspaceChanges({
+            workspacePath: input.workspacePath,
+            paths: result.changedPaths,
+          })
+        : undefined;
+      repairEvidence = await collectSidebarStudioRepairEvidence({
+        workspacePath: input.workspacePath,
+        projectPath: input.projectPath,
+        handoff: activeHandoff,
+      });
+      const closed = result.transaction.state === 'closed';
+      return {
+        ok: closed,
+        changed: result.changedPaths.length > 0,
+        evidenceGeneration: repairEvidence.evidenceFingerprint,
+        output: {
+          transaction: result.transaction,
+          changedPaths: result.changedPaths,
+          ...(typeof changeReview?.diff === 'string' ? { diff: changeReview.diff } : {}),
+          nextAction: closed ? 'closed' : 'review-required',
+          requiresUserDecision: !closed,
+          terminalReason: !closed ? 'cli-repair-decision-required' : undefined,
+          decision: result.transaction.decision,
+        },
+        ...(closed
+          ? {}
+          : {
+              error:
+                result.transaction.decision?.reason ??
+                `CLI repair ended in ${result.transaction.state}.`,
+            }),
+      };
+    };
+    const executeCanonicalRepair = async (request: {
+      workspacePath: string;
+      projectPath?: string;
+      projectName?: string;
+      actionId?: string;
+      reportProgress?: (data: Record<string, unknown>) => Promise<void>;
+    }) => {
+      await this._assertSidebarStudioMutationAllowed({
+        workspacePath: request.workspacePath,
+        projectPath: request.projectPath,
+        actionLabel: 'Studio Agent CLI-owned repair transaction',
+        governedRepair: { contractAuthorized: true, reversible: true },
+      });
+      return presentCliRepairResult(
+        await executeCliOwnedCanonicalRepair({
+          workspacePath: request.workspacePath,
+          cardId: activeHandoff.cardId,
+          projectName:
+            request.projectName ??
+            (request.projectPath ? path.basename(request.projectPath) : undefined),
+          actionId: request.actionId,
+          approvedBy: 'vscode:studio-agent',
+          reportProgress: reportCliRepairProgress(request.reportProgress),
+        })
+      );
+    };
+
+    host.applyPatches = async (request) => {
+      const normalized = normalizePatchesForWorkspaceScope({
+        workspacePath: request.workspacePath,
+        projectPath: request.projectPath,
+        patches: request.patches,
+      });
+      const unauthorized = await authorizeStudioWorkspacePatchTargets({
+        workspacePath: request.workspacePath,
+        patches: normalized,
+        inspectedSource,
+      });
+      if (unauthorized.length > 0) {
+        return {
+          ok: false,
+          error: `Inspect every target before proposing a repair: ${unauthorized
+            .map((entry) => entry.relativePath)
+            .join(', ')}`,
+        };
+      }
+      await this._assertSidebarStudioMutationAllowed({
+        workspacePath: request.workspacePath,
+        projectPath: request.projectPath,
+        actionLabel: 'Studio Agent CLI-owned source repair',
+        governedRepair: { contractAuthorized: true, reversible: true },
+      });
+      const result = await executeCliOwnedPatchRepair({
+        workspacePath: request.workspacePath,
+        projectPath: request.projectPath,
+        projectName: request.projectPath ? path.basename(request.projectPath) : undefined,
+        cardId: activeHandoff.cardId,
+        approvedBy: 'vscode:studio-agent',
+        patches: normalized.map((patch) => ({
+          relativePath: patch.relativePath,
+          operation: patch.operation,
+          baseSha256:
+            patch.baseSha256 ??
+            inspectedSource.get(patch.relativePath) ??
+            repairEvidence.expectedBaseSha256[patch.relativePath],
+          patchedContent: patch.patchedContent,
+        })),
+        reportProgress: reportCliRepairProgress(request.reportProgress),
+      });
+      return presentCliRepairResult(result);
+    };
+    host.deleteFiles = async (request) => {
+      await this._assertSidebarStudioMutationAllowed({
+        workspacePath: request.workspacePath,
+        projectPath: request.projectPath,
+        actionLabel: 'Studio Agent CLI-owned source deletion',
+        governedRepair: { contractAuthorized: true, reversible: true },
+      });
+      const result = await executeCliOwnedPatchRepair({
+        workspacePath: request.workspacePath,
+        projectPath: request.projectPath,
+        projectName: request.projectPath ? path.basename(request.projectPath) : undefined,
+        cardId: activeHandoff.cardId,
+        approvedBy: 'vscode:studio-agent',
+        patches: request.paths.map((relativePath) => ({
+          relativePath,
+          operation: 'delete',
+          baseSha256:
+            inspectedSource.get(relativePath) ?? repairEvidence.expectedBaseSha256[relativePath],
+        })),
+        reportProgress: reportCliRepairProgress(request.reportProgress),
+      });
+      return presentCliRepairResult(result);
+    };
+    const readOnlyWorkspaceCommand = host.runWorkspaceCommand;
+    host.runWorkspaceCommand = async (request) => {
+      const plan = resolveStudioWorkspaceCommandPlan({
+        workspacePath: request.workspacePath,
+        request: request.request,
+      });
+      if (plan.mutatesSource) {
+        return {
+          ok: false,
+          evidenceGeneration: repairEvidence.evidenceFingerprint,
+          error:
+            'Studio cannot execute mutating workspace commands directly. Submit a source proposal or start a CLI-owned repair transaction.',
+        };
+      }
+      return readOnlyWorkspaceCommand(request);
+    };
+    host.executeRemediationStep = (request) =>
+      executeCanonicalRepair({
+        workspacePath: request.workspacePath,
+        projectPath: request.projectPath,
+        actionId: request.stepId,
+        reportProgress: request.reportProgress,
+      });
+    host.repairDependencySecurity = (request) =>
+      executeCanonicalRepair({
+        workspacePath: request.workspacePath,
+        projectPath: request.projectPath,
+        projectName: request.projectName,
+        reportProgress: request.reportProgress,
+      });
+    host.upgradeDependencySecurity = (request) =>
+      executeCanonicalRepair({
+        workspacePath: request.workspacePath,
+        projectPath: request.projectPath,
+        projectName: request.projectName,
+        reportProgress: request.reportProgress,
+      });
+    host.completeDependencyTransaction = (request) =>
+      executeCanonicalRepair({
+        workspacePath: request.workspacePath,
+        projectPath: request.projectPath,
+        projectName: request.projectNames?.[0],
+        reportProgress: request.reportProgress,
+      });
+
     const registry = createStudioAgentWorkspaiToolRegistry({
       host,
       cardId: input.handoff.cardId,
@@ -4487,18 +4495,22 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       requiresVerifiedCompletion: true,
       ...(persisted ? { restoredSession: persisted } : {}),
     };
-    const model = new ContractStudioAgentModelAdapter(objective, async (prompt, request) => {
-      const response = await askConfiguredAIProviderForToolAction(
-        this._context!,
-        [{ role: 'user', content: prompt }],
-        request.tools,
-        undefined,
-        input.requestedModelId
-      );
-      return response.type === 'tool'
-        ? { toolName: response.toolName, input: response.input }
-        : response.text;
-    });
+    const model = new ContractStudioAgentModelAdapter(
+      objective,
+      async (_prompt, request) => {
+        const response = await askConfiguredAIProviderForToolAction(
+          this._context!,
+          request.messages,
+          request.tools,
+          undefined,
+          input.requestedModelId
+        );
+        return response.type === 'tool'
+          ? { callId: response.callId, toolName: response.toolName, input: response.input }
+          : response.text;
+      },
+      persisted
+    );
     const session = new StudioAgentSession(options, model, registry, store);
     if (persisted) {
       persisted.events
@@ -4551,6 +4563,12 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               typeof failureData.terminalReason === 'string'
                 ? failureData.terminalReason
                 : 'review-required',
+            ...(typeof failureData.transactionId === 'string'
+              ? { transactionId: failureData.transactionId }
+              : {}),
+            ...(Array.isArray(failureData.decisionOptions)
+              ? { decisionOptions: failureData.decisionOptions }
+              : {}),
           }
         : {}),
       error:
@@ -4568,6 +4586,61 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       studioHost.getActiveBlockerHandoff(),
       parseStudioBlockerHandoffPayload
     );
+    const publishCliOwnedRepairOutcome = async (input: {
+      workspacePath: string;
+      projectPath?: string;
+      action: string;
+      handoff: StudioBlockerHandoff;
+      result: Awaited<ReturnType<typeof executeCliOwnedCanonicalRepair>>;
+    }): Promise<void> => {
+      const { transaction, changedPaths } = input.result;
+      const closed = transaction.state === 'closed';
+      const requiresUserDecision =
+        transaction.state === 'decision-required' && Boolean(transaction.decision);
+      const changeReview = changedPaths.length
+        ? await inspectStudioWorkspaceChanges({
+            workspacePath: input.workspacePath,
+            paths: changedPaths,
+          })
+        : undefined;
+      await studioHost.refreshSidebarShipLoop({
+        workspacePath: input.workspacePath,
+        projectPath: input.projectPath,
+      });
+      await WelcomePanel.refreshDashboardForWorkspacePath(input.workspacePath);
+      studioHost.postInlineCreate('sidebarStudioActionResult', {
+        sessionId,
+        cardId: input.handoff.cardId,
+        action: input.action,
+        status: closed ? 'done' : requiresUserDecision ? 'review' : 'failed',
+        phase: closed
+          ? 'repair-closed'
+          : requiresUserDecision
+            ? 'repair-decision-required'
+            : `repair-${transaction.state}`,
+        title: closed
+          ? 'Repair verified'
+          : requiresUserDecision
+            ? 'Decision required'
+            : 'Repair did not close',
+        summary: closed
+          ? 'The CLI closed the transaction after canonical verification.'
+          : (transaction.decision?.reason ?? `The CLI repair ended in ${transaction.state}.`),
+        changedPaths,
+        transaction,
+        ...(typeof changeReview?.diff === 'string' ? { diff: changeReview.diff } : {}),
+      });
+      studioHost.postInlineCreate('sidebarStudioSessionState', {
+        sessionId,
+        cardId: input.handoff.cardId,
+        active: false,
+        status: closed ? 'completed' : 'failed',
+        requiresUserDecision,
+        transactionId: transaction.transactionId,
+        decisionOptions: transaction.decision?.options ?? [],
+        error: closed ? undefined : transaction.decision?.reason,
+      });
+    };
     try {
       if (action === 'agent-status') {
         const session = sessionId ? this._activeStudioAgentSessions.get(sessionId) : undefined;
@@ -4598,6 +4671,12 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
                   typeof terminalFailureData.terminalReason === 'string'
                     ? terminalFailureData.terminalReason
                     : 'review-required',
+                ...(typeof terminalFailureData.transactionId === 'string'
+                  ? { transactionId: terminalFailureData.transactionId }
+                  : {}),
+                ...(Array.isArray(terminalFailureData.decisionOptions)
+                  ? { decisionOptions: terminalFailureData.decisionOptions }
+                  : {}),
                 error:
                   typeof terminalFailureData.error === 'string'
                     ? terminalFailureData.error
@@ -4642,6 +4721,115 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       }
       if (action === 'retry-audit') {
         await studioHost.retryLastSidebarStudioAudit(sessionId);
+        return;
+      }
+      if (action === 'repair-decision') {
+        if (!handoff) {
+          throw new Error('No blocker handoff is active for this repair decision.');
+        }
+        const scope = resolveStudioActionScope(payloadRecord.scope);
+        const workspacePath =
+          handoff.workspacePath ??
+          scope.workspacePath ??
+          (await resolvePreferredAIModalContext()).workspaceRootPath;
+        if (!workspacePath) {
+          throw new Error('No workspace is active for this repair decision.');
+        }
+        const transaction = await readLatestCliOwnedRepair({ workspacePath });
+        if (transaction?.state !== 'decision-required' || !transaction.decision) {
+          throw new Error('The CLI Repair Engine is not waiting for a user decision.');
+        }
+        const labels: Record<WorkspaceRepairDecision, { label: string; detail: string }> = {
+          'approve-guarded': {
+            label: 'Approve guarded repair',
+            detail: 'Create a fresh plan that permits guarded, reversible changes.',
+          },
+          'approve-invasive': {
+            label: 'Approve invasive repair',
+            detail: 'Create a fresh plan with the broader invasive risk boundary.',
+          },
+          'allow-breaking': {
+            label: 'Allow breaking change',
+            detail: 'Create a fresh plan that may include a verified breaking dependency change.',
+          },
+          'allow-force': {
+            label: 'Allow force-based repair',
+            detail: 'Create a fresh plan that may use the package manager force path.',
+          },
+          'manual-repair': {
+            label: 'Take over manually',
+            detail: 'Cancel this transaction without mutation and release source ownership.',
+          },
+          rollback: {
+            label: 'Roll back checkpoint',
+            detail: 'Restore the bounded checkpoint captured by the CLI.',
+          },
+          cancel: {
+            label: 'Cancel repair',
+            detail: 'Cancel the transaction before any further mutation.',
+          },
+        };
+        const selection = await vscode.window.showQuickPick(
+          transaction.decision.options.map((decision) => ({
+            decision,
+            label: labels[decision].label,
+            description: decision,
+            detail: labels[decision].detail,
+          })),
+          {
+            title: 'Workspai Repair Engine decision',
+            placeHolder: transaction.decision.reason,
+            ignoreFocusOut: true,
+          }
+        );
+        if (!selection) {
+          return;
+        }
+        studioHost.postInlineCreate('sidebarStudioActionResult', {
+          sessionId,
+          cardId: handoff.cardId,
+          action,
+          status: 'running',
+          phase: 'submitting-repair-decision',
+          title: 'Applying your decision',
+          summary: selection.detail,
+        });
+        const result = await decideCliOwnedRepair({
+          workspacePath,
+          transactionId: transaction.transactionId,
+          decision: selection.decision,
+          approvedBy: 'vscode:explicit-user-decision',
+        });
+        await studioHost.refreshSidebarShipLoop({
+          workspacePath,
+          projectPath: handoff.projectPath ?? scope.projectPath,
+        });
+        await WelcomePanel.refreshDashboardForWorkspacePath(workspacePath);
+        const closed = result.transaction.state === 'closed';
+        studioHost.postInlineCreate('sidebarStudioActionResult', {
+          sessionId,
+          cardId: handoff.cardId,
+          action,
+          status: closed ? 'done' : 'review',
+          phase: closed ? 'repair-closed' : 'repair-decision-required',
+          title: closed ? 'Repair verified' : 'Repair still needs a decision',
+          summary: closed
+            ? 'The CLI closed the transaction after canonical verification.'
+            : (result.transaction.decision?.reason ??
+              `The CLI repair ended in ${result.transaction.state}.`),
+          changedPaths: result.changedPaths,
+          transaction: result.transaction,
+        });
+        studioHost.postInlineCreate('sidebarStudioSessionState', {
+          sessionId,
+          cardId: handoff.cardId,
+          active: false,
+          status: closed ? 'completed' : 'failed',
+          requiresUserDecision: !closed && result.transaction.state === 'decision-required',
+          transactionId: result.transaction.transactionId,
+          decisionOptions: result.transaction.decision?.options ?? [],
+          error: closed ? undefined : result.transaction.decision?.reason,
+        });
         return;
       }
       if (action === 'auto-fix') {
@@ -4795,13 +4983,6 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         if (!workspacePath) {
           throw new Error('No workspace is selected for remediation apply.');
         }
-        studioHost.postInlineCreate('sidebarStudioActionResult', {
-          sessionId,
-          cardId: handoff.cardId,
-          action,
-          status: 'running',
-          phase: 'applying-remediation-step',
-        });
         const plan = await readDoctorRemediationPlanForStudio({
           workspacePath,
           handoff,
@@ -4827,7 +5008,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         }
         const autonomous = payloadRecord.autonomous === true;
         if (!autonomous && (step.requiresApproval || step.studioState === 'review-required')) {
-          const approvalLabel = 'Apply and verify';
+          const approvalLabel = 'Apply through CLI Repair Engine';
           const approval = await vscode.window.showWarningMessage(
             `Workspai Studio wants to apply: ${step.previewTitle || step.primaryAction}`,
             {
@@ -4835,7 +5016,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               detail:
                 step.diffSummary ||
                 step.previewSummary ||
-                'This contract-authored remediation step requires explicit operator approval.',
+                'Approval will be bound to the immutable CLI plan before any source mutation.',
             },
             approvalLabel
           );
@@ -4846,7 +5027,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               action,
               status: 'review',
               title: 'Approval required',
-              summary: 'The guarded remediation step was not applied.',
+              summary: 'The remediation transaction was not started.',
               requiresApproval: true,
               nextAction: 'continue-remediation',
               nextActionLabel: 'Review again',
@@ -4863,91 +5044,32 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         await this._assertSidebarStudioMutationAllowed({
           workspacePath,
           projectPath: stepProjectPath,
-          actionLabel: 'Studio remediation apply',
+          actionLabel: 'CLI-owned Studio remediation step',
+          governedRepair: { contractAuthorized: true, reversible: true },
         });
-        const applyResult = await applyDoctorRemediationStep({ workspacePath, step });
-        const ok = applyResult.status === 'applied';
-        const verifyCommand = step.verifyCommand ?? handoff.verifyCommand;
-        const verifyHandoff: StudioBlockerHandoff = {
-          ...handoff,
-          verifyCommand,
-          ...(stepProjectPath ? { projectPath: stepProjectPath } : {}),
-        };
-        const rollbackCommand = buildSidebarPatchRollbackHint(
-          collectAppliedPatchPaths(applyResult.appliedFixes)
-        );
-        const changedPaths = collectAppliedPatchPaths(applyResult.appliedFixes);
-        const unchangedCount = applyResult.appliedFixes.filter(
-          (entry) => entry.outcome === 'unchanged'
-        ).length;
-        const patchMetadata =
-          ok && applyResult.appliedFixes.length > 0
-            ? {
-                patchId: `doctor-remediation-step:${step.id}`,
-                sourceAction: 'apply-patch' as const,
-                reviewRequired: true,
-                appliedCount: changedPaths.length,
-                rejectedCount: 0,
-                failedCount: 0,
-                affectedFiles: changedPaths,
-                rollbackCommand: rollbackCommand ?? undefined,
-              }
-            : undefined;
-        if (ok) {
-          studioHost.postInlineCreate('sidebarStudioFixApplied', {
-            cardId: handoff.cardId,
-            appliedFixes: applyResult.appliedFixes,
-            verifyCommand,
-            verifyArtifact: handoff.verifyArtifact,
-            requiresVerify: Boolean(verifyCommand),
-            phase: verifyCommand ? 'awaiting-verify' : 'fixing',
-            blockerSignatureBefore: handoff.blockerSignature,
-            summary: applyResult.summary,
-            ...(rollbackCommand ? { rollbackCommand } : {}),
-          });
-        }
-        await studioHost.auditSidebarStudioFix({
+        studioHost.postInlineCreate('sidebarStudioActionResult', {
           sessionId,
-          workspacePath,
-          handoff: verifyHandoff,
-          kind: 'apply-patch',
-          actionId: `doctor-remediation-step:${step.id}`,
-          summary: applyResult.summary,
-          ok,
-          appliedFixes: applyResult.appliedFixes,
-          rollbackCommand: rollbackCommand ?? undefined,
-          patchMetadata,
+          cardId: handoff.cardId,
+          action,
+          status: 'running',
+          phase: 'planning-cli-repair',
+          summary: 'The CLI is compiling the selected remediation step into one transaction.',
         });
-        if (ok && verifyCommand) {
-          await this._runStudioVerifyContinuation({
-            sessionId,
-            handoff: verifyHandoff,
-            workspacePath,
-            projectPath: stepProjectPath,
-            action,
-            verifyCommand,
-            verifyActionId: 'verify-remediation-step',
-            runningPhase: 'verifying-remediation-step',
-            runningSummary:
-              changedPaths.length > 0
-                ? 'Fix applied. Running verify now.'
-                : unchangedCount > 0
-                  ? 'The fix was already in place. Running verify now.'
-                  : 'Running verify after the approved repair step.',
-            failureFallbackSummary: applyResult.summary,
-            rollbackCommand: rollbackCommand ?? undefined,
-            refreshShipLoopOnSuccess: true,
-            recordVerifyPassMilestone: true,
-          });
-        } else {
-          studioHost.postInlineCreate('sidebarStudioActionResult', {
-            sessionId,
-            cardId: handoff.cardId,
-            action,
-            status: ok ? 'done' : 'failed',
-            summary: applyResult.summary,
-          });
-        }
+        const result = await executeCliOwnedCanonicalRepair({
+          workspacePath,
+          cardId: handoff.cardId,
+          projectName:
+            step.projectName ?? (stepProjectPath ? path.basename(stepProjectPath) : undefined),
+          actionId: step.id,
+          approvedBy: autonomous ? 'vscode:studio-agent' : 'vscode:explicit-remediation-review',
+        });
+        await publishCliOwnedRepairOutcome({
+          workspacePath,
+          projectPath: stepProjectPath,
+          action,
+          handoff,
+          result,
+        });
         return;
       }
       if (action === 'run-remediation-command') {
@@ -4991,180 +5113,36 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           handoffProjectPath: handoff.projectPath,
           scopeProjectPath: scope.projectPath,
         });
-        if (isInternalDoctorRepairCommand(commandText)) {
-          if (!step.canApply || !step.operation) {
-            throw new Error(
-              'This internal remediation step is not ready for automatic apply. Refresh source evidence first.'
-            );
-          }
-          await this._assertSidebarStudioMutationAllowed({
-            workspacePath,
-            projectPath: stepProjectPath,
-            actionLabel: 'Studio internal remediation apply',
-          });
-          studioHost.postInlineCreate('sidebarStudioActionResult', {
-            sessionId,
-            cardId: handoff.cardId,
-            action,
-            status: 'running',
-            phase: 'applying-remediation-step',
-            summary:
-              'Applying the trusted remediation operation instead of running an internal token command.',
-          });
-          const applyResult = await applyDoctorRemediationStep({ workspacePath, step });
-          const ok = applyResult.status === 'applied';
-          const verifyCommand = step.verifyCommand ?? handoff.verifyCommand;
-          const verifyHandoff: StudioBlockerHandoff = {
-            ...handoff,
-            verifyCommand,
-            ...(stepProjectPath ? { projectPath: stepProjectPath } : {}),
-          };
-          const rollbackCommand = buildSidebarPatchRollbackHint(
-            collectAppliedPatchPaths(applyResult.appliedFixes)
-          );
-          if (ok) {
-            studioHost.postInlineCreate('sidebarStudioFixApplied', {
-              cardId: handoff.cardId,
-              appliedFixes: applyResult.appliedFixes,
-              verifyCommand,
-              verifyArtifact: handoff.verifyArtifact,
-              requiresVerify: Boolean(verifyCommand),
-              phase: verifyCommand ? 'awaiting-verify' : 'fixing',
-              blockerSignatureBefore: handoff.blockerSignature,
-              summary: applyResult.summary,
-              ...(rollbackCommand ? { rollbackCommand } : {}),
-            });
-          }
-          await studioHost.auditSidebarStudioFix({
-            sessionId,
-            workspacePath,
-            handoff: verifyHandoff,
-            kind: 'apply-patch',
-            actionId: `doctor-remediation-token:${step.id}`,
-            summary: applyResult.summary,
-            ok,
-            appliedFixes: applyResult.appliedFixes,
-            rollbackCommand: rollbackCommand ?? undefined,
-          });
-          if (ok && verifyCommand) {
-            await this._runStudioVerifyContinuation({
-              sessionId,
-              handoff: verifyHandoff,
-              workspacePath,
-              projectPath: stepProjectPath,
-              action,
-              verifyCommand,
-              verifyActionId: 'verify-remediation-token-step',
-              runningPhase: 'verifying-remediation-command',
-              runningSummary: 'Trusted remediation operation applied. Running verify now.',
-              failureFallbackSummary: applyResult.summary,
-              rollbackCommand: rollbackCommand ?? undefined,
-              refreshShipLoopOnSuccess: true,
-              recordVerifyPassMilestone: true,
-            });
-          } else {
-            studioHost.postInlineCreate('sidebarStudioActionResult', {
-              sessionId,
-              cardId: handoff.cardId,
-              action,
-              status: ok ? 'done' : 'failed',
-              summary: applyResult.summary,
-            });
-          }
-          return;
-        }
+        await this._assertSidebarStudioMutationAllowed({
+          workspacePath,
+          projectPath: stepProjectPath,
+          actionLabel: 'CLI-owned Studio remediation command',
+          governedRepair: { contractAuthorized: true, reversible: true },
+        });
         studioHost.postInlineCreate('sidebarStudioActionResult', {
           sessionId,
           cardId: handoff.cardId,
           action,
           status: 'running',
-          phase: 'running-remediation-command',
-          summary: 'Running the selected repair command.',
+          phase: 'planning-cli-repair',
+          summary:
+            'The CLI is compiling the selected contract action; the extension will not execute its command text directly.',
           commandText,
         });
-        await this._assertSidebarStudioMutationAllowed({
+        const result = await executeCliOwnedCanonicalRepair({
           workspacePath,
-          projectPath: stepProjectPath,
-          actionLabel: 'Studio remediation command',
-          commandText,
-        });
-        const execution = await runIncidentInlineCommand({
-          command: commandText,
-          workspacePath,
-          projectPath: stepProjectPath,
-          actionId: 'run-remediation-command',
-        });
-        await studioHost.auditSidebarStudioFix({
-          sessionId,
-          workspacePath,
-          handoff,
-          kind: 'auto-fix',
-          actionId: `doctor-remediation-command:${step.id}`,
-          summary: execution.success
-            ? 'Remediation command completed.'
-            : (execution.error ?? 'Remediation command failed.'),
-          ok: execution.success,
-          appliedFixes: execution.success
-            ? [
-                {
-                  path: handoff.artifactPath,
-                  action: 'run-remediation-command',
-                  outcome: 'applied',
-                },
-              ]
-            : [],
-        });
-        if (execution.success) {
-          const stepProjectPath = await resolveProjectPathFromRemediationStep({
-            step,
-            workspacePath,
-            handoffProjectPath: handoff.projectPath,
-            scopeProjectPath: scope.projectPath,
-          });
-          await studioHost.refreshSidebarShipLoop({
-            workspacePath,
-            projectPath: stepProjectPath,
-          });
-          const verifyCommand = step.verifyCommand ?? handoff.verifyCommand;
-          if (verifyCommand) {
-            const verifyHandoff: StudioBlockerHandoff = {
-              ...handoff,
-              verifyCommand,
-              ...(stepProjectPath ? { projectPath: stepProjectPath } : {}),
-            };
-            await this._runStudioVerifyContinuation({
-              sessionId,
-              handoff: verifyHandoff,
-              workspacePath,
-              projectPath: stepProjectPath,
-              action,
-              verifyCommand,
-              verifyActionId: 'verify-remediation-command',
-              runningPhase: 'verifying-remediation-command',
-              runningSummary: 'Repair command completed. Running verify now.',
-              failureFallbackSummary: 'Verify failed.',
-            });
-            return;
-          }
-          void this._postSidebarDoctorRemediationPlan({ handoff, workspacePath, sessionId });
-        } else {
-          void this._postSidebarDoctorRemediationPlan({ handoff, workspacePath, sessionId });
-        }
-        studioHost.postInlineCreate('sidebarStudioActionResult', {
-          sessionId,
           cardId: handoff.cardId,
+          projectName:
+            step.projectName ?? (stepProjectPath ? path.basename(stepProjectPath) : undefined),
+          actionId: step.id,
+          approvedBy: 'vscode:explicit-remediation-command-review',
+        });
+        await publishCliOwnedRepairOutcome({
+          workspacePath,
+          projectPath: stepProjectPath,
           action,
-          status: execution.success ? 'done' : 'failed',
-          title: execution.success ? undefined : 'Remediation command failed',
-          summary: execution.success
-            ? 'Repair command completed and evidence refresh started.'
-            : (execution.error ?? execution.stderrTail ?? 'Repair command failed.'),
-          commandText,
-          exitCode: execution.exitCode,
-          stderrTail: execution.stderrTail,
-          topBlocker: execution.success ? undefined : (execution.error ?? handoff.blockers[0]),
-          error: execution.error,
-          nextAction: execution.success ? undefined : studioActionFailureNextAction('run-command'),
+          handoff,
+          result,
         });
         return;
       }
@@ -5201,22 +5179,36 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           status: 'running',
           phase: 'applying-patch',
         });
-        const patchResult = await applySidebarPendingPatches({
+        const selectedPatches = acceptedPaths?.length
+          ? pendingPatches.filter((patch) => acceptedPaths.includes(patch.relativePath))
+          : pendingPatches;
+        if (selectedPatches.length === 0) {
+          throw new Error('No reviewed patch targets were selected.');
+        }
+        const result = await executeCliOwnedPatchRepair({
           workspacePath,
-          handoff,
-          patches: pendingPatches,
-          acceptedPaths,
+          projectPath: handoff.projectPath ?? scope.projectPath,
+          projectName: handoff.projectPath
+            ? path.basename(handoff.projectPath)
+            : scope.projectPath
+              ? path.basename(scope.projectPath)
+              : undefined,
+          cardId: handoff.cardId,
+          approvedBy: 'vscode:explicit-patch-review',
+          patches: selectedPatches.map((patch) => ({
+            relativePath: patch.relativePath,
+            operation: patch.operation,
+            baseSha256: patch.baseSha256,
+            patchedContent: patch.patchedContent,
+          })),
         });
-        await studioHost.finalizeStudioPatchTransaction(
+        await publishCliOwnedRepairOutcome({
+          workspacePath,
+          projectPath: handoff.projectPath ?? scope.projectPath,
+          action,
           handoff,
-          sessionId,
-          patchResult,
-          'apply-patch',
-          {
-            workspacePath,
-            projectPath: handoff.projectPath ?? scope.projectPath,
-          }
-        );
+          result,
+        });
         studioHost.deletePendingPatches(handoff.cardId, sessionId);
         return;
       }
@@ -5591,6 +5583,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     this._activeBlockerHandoff = nextHandoff;
 
     this._postInlineCreate('sidebarStudioCardRefreshed', {
+      sessionId: input.sessionId,
       handoff: nextHandoff,
       cardId: input.handoff.cardId,
       cardStatus: refresh.primaryCard?.status,
@@ -5598,6 +5591,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       refreshedCardIds: refresh.cardIds,
       verifySucceeded: verifyResolved,
       evidenceOutcome: refresh.evidenceOutcome,
+      agentOwned: input.agentOwned === true,
     });
     if (!input.agentOwned && dashboardEvidenceCardIsBlocking(refresh.primaryCard)) {
       void this._postSidebarDoctorRemediationPlan({
@@ -5653,377 +5647,6 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     return refresh;
   }
 
-  private async _runStudioVerifyContinuation(input: {
-    sessionId?: string;
-    handoff: StudioBlockerHandoff;
-    workspacePath: string;
-    projectPath?: string;
-    action: string;
-    verifyCommand: string;
-    verifyActionId: string;
-    runningPhase: string;
-    runningSummary: string;
-    failureFallbackSummary: string;
-    rollbackCommand?: string;
-    refreshShipLoopOnSuccess?: boolean;
-    recordVerifyPassMilestone?: boolean;
-  }): Promise<{ verifySucceeded: boolean; summary: string }> {
-    const verifyExecutionCommand = ensureDoctorRemediationPlanRefreshCommand(input.verifyCommand);
-    const effectiveProjectPath = input.projectPath ?? input.handoff.projectPath;
-    this._postInlineCreate('sidebarStudioActionResult', {
-      sessionId: input.sessionId,
-      cardId: input.handoff.cardId,
-      action: input.action,
-      status: 'running',
-      phase: input.runningPhase,
-      summary: input.runningSummary,
-      commandText: verifyExecutionCommand,
-    });
-
-    const verifyHandoff: StudioBlockerHandoff = {
-      ...input.handoff,
-      verifyCommand: verifyExecutionCommand,
-    };
-    const verifyExecution = await runIncidentInlineCommand({
-      command: verifyExecutionCommand,
-      workspacePath: input.workspacePath,
-      projectPath: effectiveProjectPath,
-      actionId: input.verifyActionId,
-    });
-    const refreshResult = await this._finalizeStudioVerifyHandoff({
-      handoff: verifyHandoff,
-      workspacePath: input.workspacePath,
-      projectPath: effectiveProjectPath,
-      sessionId: input.sessionId,
-      verifySucceeded: verifyExecution.success,
-      verifyExitCode: verifyExecution.exitCode ?? (verifyExecution.success ? 0 : 1),
-      verifyError: verifyExecution.error,
-    });
-
-    let refreshedPlanStepCount = 0;
-    if (dashboardEvidenceCardIsBlocking(refreshResult.primaryCard)) {
-      const refreshedPlan = await this._postSidebarDoctorRemediationPlan({
-        handoff: {
-          ...verifyHandoff,
-          cardStatus: refreshResult.primaryCard?.status ?? verifyHandoff.cardStatus,
-          blockers: refreshResult.primaryCard?.blockers ?? verifyHandoff.blockers,
-        },
-        workspacePath: input.workspacePath,
-        sessionId: input.sessionId,
-      });
-      refreshedPlanStepCount = refreshedPlan?.visibleSteps.length ?? 0;
-    }
-    const verifyFailureSummary =
-      verifyExecution.error ?? verifyExecution.stderrTail ?? input.failureFallbackSummary;
-
-    const loopProgress = remediationLoopProgressForApply({
-      verifySucceeded: verifyExecution.success,
-      cardStatus: refreshResult.primaryCard?.status,
-      cardBlocking: dashboardEvidenceCardIsBlocking(refreshResult.primaryCard),
-      refreshedPlanSteps: refreshedPlanStepCount,
-      failureSummary: verifyFailureSummary,
-    });
-    const cardResolved =
-      refreshResult.evidenceOutcome === 'resolved' &&
-      studioAgentRepairIsComplete({
-        verifyRan: true,
-        verifySucceeded: verifyExecution.success,
-        cardBlocking: dashboardEvidenceCardIsBlocking(refreshResult.primaryCard),
-      });
-    const finalSummary = verifyExecution.success ? loopProgress.summary : loopProgress.summary;
-    this._postInlineCreate('sidebarStudioActionResult', {
-      sessionId: input.sessionId,
-      cardId: input.handoff.cardId,
-      action: input.action,
-      status: loopProgress.status,
-      title: loopProgress.title,
-      summary: finalSummary,
-      commandText: verifyExecutionCommand,
-      exitCode: verifyExecution.exitCode,
-      stderrTail: verifyExecution.stderrTail,
-      topBlocker: cardResolved ? undefined : (verifyExecution.error ?? input.handoff.blockers[0]),
-      error: verifyExecution.error,
-      nextAction: verifyExecution.success ? loopProgress.nextAction : loopProgress.nextAction,
-      nextActionLabel: loopProgress.nextActionLabel,
-      ...(!verifyExecution.success && input.rollbackCommand
-        ? { rollbackCommand: input.rollbackCommand }
-        : {}),
-    });
-
-    if (cardResolved && input.refreshShipLoopOnSuccess) {
-      await this._refreshSidebarShipLoop({
-        workspacePath: input.workspacePath,
-        projectPath: effectiveProjectPath,
-      });
-    }
-    if (cardResolved && input.recordVerifyPassMilestone) {
-      void recordRetentionMilestone(this._context, 'verify_pass_after_studio_fix', {
-        surface: 'studio',
-      });
-    }
-    return {
-      verifySucceeded: cardResolved,
-      summary: finalSummary,
-    };
-  }
-
-  private async _finalizeStudioPatchTransaction(
-    handoff: StudioBlockerHandoff,
-    sessionId: string | undefined,
-    result: StudioPatchTransactionResult,
-    sourceAction: 'auto-fix' | 'apply-patch' = 'auto-fix',
-    scope: { workspacePath?: string; projectPath?: string } = {}
-  ): Promise<void> {
-    if (sessionId && result.responseText?.trim()) {
-      if (!result.responseStreamed) {
-        this._postInlineCreate('sidebarStudioChunk', {
-          sessionId,
-          text: result.responseText.trim(),
-        });
-      }
-      this._postInlineCreate('sidebarStudioDone', {
-        sessionId,
-        answer: result.responseText.trim(),
-      });
-    }
-
-    if (result.status === 'review' && result.pendingPatches && result.pendingPatches.length > 0) {
-      const reviewKey = sidebarPatchReviewKey(handoff.cardId, sessionId);
-      if (!this._context) {
-        throw new Error('Studio cannot persist the pending patch transaction.');
-      }
-      await saveSidebarPendingPatches(this._context, reviewKey, result.pendingPatches);
-      this._pendingSidebarPatches.set(reviewKey, result.pendingPatches);
-      this._postInlineCreate('sidebarStudioPatchReview', {
-        sessionId,
-        cardId: handoff.cardId,
-        summary: result.summary,
-        riskSummary: `Elevated-risk mutation: review ${result.pendingPatches.length} file patch(es) before apply.`,
-        patches: serializeSidebarPatchReviewItems(result.pendingPatches),
-      });
-      this._postInlineCreate('sidebarStudioActionResult', {
-        sessionId,
-        cardId: handoff.cardId,
-        action: sourceAction,
-        status: 'review',
-        summary: result.summary,
-      });
-      return;
-    }
-
-    if (result.responseText && result.status !== 'applied') {
-      this._pendingSidebarPatches.delete(sidebarPatchReviewKey(handoff.cardId, sessionId));
-      this._pendingSidebarPatches.delete(handoff.cardId);
-      this._postInlineCreate('sidebarStudioActionResult', {
-        sessionId,
-        cardId: handoff.cardId,
-        action: sourceAction,
-        status: 'review',
-        title: 'AI diagnosis needs an actionable patch',
-        summary:
-          'The AI diagnosis did not contain complete path-scoped patches. Studio will retry with the preserved evidence and bounded repair budget.',
-        requiresApproval: false,
-        nextAction: 'auto-fix',
-        nextActionLabel: 'Retrying AI repair',
-      });
-      return;
-    }
-
-    if (result.status === 'applied') {
-      if (this._context) {
-        await recordStudioBlockerCommandRun(this._context, {
-          cardId: handoff.cardId,
-          sourceCommand: handoff.sourceCommand,
-          blockers: handoff.blockers,
-          ...studioCommandLedgerMetadata(handoff),
-          exitCode: 0,
-        });
-      }
-      this._pendingSidebarPatches.delete(sidebarPatchReviewKey(handoff.cardId, sessionId));
-      this._pendingSidebarPatches.delete(handoff.cardId);
-      this._postInlineCreate('sidebarStudioPatchReview', {
-        sessionId,
-        cardId: handoff.cardId,
-        cleared: true,
-        patches: [],
-      });
-      const appliedFixes = result.appliedFixes ?? [
-        { path: handoff.artifactPath, action: 'apply-debug-patch', outcome: 'applied' },
-      ];
-      const rollbackCommand = buildSidebarPatchRollbackHint(collectAppliedPatchPaths(appliedFixes));
-      const workspacePath =
-        scope.workspacePath ??
-        handoff.workspacePath ??
-        (await resolvePreferredAIModalContext()).workspaceRootPath ??
-        undefined;
-      const projectPath = handoff.projectPath ?? scope.projectPath;
-      const patchMetadata = buildSidebarPatchAuditMetadata({
-        sourceAction,
-        reviewRequired: sourceAction === 'apply-patch',
-        patchResult: result.patchResult,
-        appliedFixes,
-        rollbackCommand,
-      });
-      this._postInlineCreate('sidebarStudioFixApplied', {
-        cardId: handoff.cardId,
-        appliedFixes,
-        verifyCommand: handoff.verifyCommand,
-        verifyArtifact: handoff.verifyArtifact,
-        requiresVerify: true,
-        phase: 'awaiting-verify',
-        blockerSignatureBefore: handoff.blockerSignature,
-        summary: result.summary,
-        ...(rollbackCommand ? { rollbackCommand } : {}),
-      });
-      if (workspacePath && handoff.verifyCommand) {
-        const verifyExecutionCommand = ensureDoctorRemediationPlanRefreshCommand(
-          handoff.verifyCommand
-        );
-        this._postInlineCreate('sidebarStudioActionResult', {
-          sessionId,
-          cardId: handoff.cardId,
-          action: sourceAction,
-          status: 'running',
-          phase: 'verifying-patch',
-          summary: 'Patch applied. Running verify now.',
-          commandText: verifyExecutionCommand,
-        });
-        const verifyHandoff: StudioBlockerHandoff = {
-          ...handoff,
-          verifyCommand: verifyExecutionCommand,
-        };
-        const verifyExecution = await runIncidentInlineCommand({
-          command: verifyExecutionCommand,
-          workspacePath,
-          projectPath,
-          actionId: 'verify-sidebar-patch',
-        });
-        const refreshResult = await this._finalizeStudioVerifyHandoff({
-          handoff: verifyHandoff,
-          workspacePath,
-          projectPath,
-          sessionId,
-          verifySucceeded: verifyExecution.success,
-          verifyExitCode: verifyExecution.exitCode ?? (verifyExecution.success ? 0 : 1),
-          verifyError: verifyExecution.error,
-        });
-        let refreshedPlanStepCount = 0;
-        if (dashboardEvidenceCardIsBlocking(refreshResult.primaryCard)) {
-          const refreshedPlan = await this._postSidebarDoctorRemediationPlan({
-            handoff: {
-              ...verifyHandoff,
-              cardStatus: refreshResult.primaryCard?.status ?? verifyHandoff.cardStatus,
-              blockers: refreshResult.primaryCard?.blockers ?? verifyHandoff.blockers,
-            },
-            workspacePath,
-            sessionId,
-          });
-          refreshedPlanStepCount = refreshedPlan?.visibleSteps.length ?? 0;
-        }
-        const verifyFailureSummary =
-          verifyExecution.error ?? verifyExecution.stderrTail ?? result.summary;
-        const loopProgress = remediationLoopProgressForApply({
-          verifySucceeded: verifyExecution.success,
-          cardStatus: refreshResult.primaryCard?.status,
-          cardBlocking: dashboardEvidenceCardIsBlocking(refreshResult.primaryCard),
-          refreshedPlanSteps: refreshedPlanStepCount,
-          failureSummary: verifyFailureSummary,
-        });
-        const cardResolved =
-          refreshResult.evidenceOutcome === 'resolved' &&
-          studioAgentRepairIsComplete({
-            verifyRan: true,
-            verifySucceeded: verifyExecution.success,
-            cardBlocking: dashboardEvidenceCardIsBlocking(refreshResult.primaryCard),
-          });
-        const automaticRollback =
-          !cardResolved && result.patchResult
-            ? await rollbackAppliedPatches({
-                workspacePath,
-                patches: result.patchResult.patches,
-              })
-            : null;
-        const rollbackSummary = automaticRollback
-          ? automaticRollback.ok
-            ? ` Studio rolled back ${automaticRollback.restoredPaths.length} auto-applied file(s) before trying another strategy.`
-            : ` Automatic rollback paused because source changed: ${automaticRollback.failedPaths
-                .map((entry) => `${entry.path}: ${entry.reason}`)
-                .join('; ')}`
-          : '';
-        void this._auditSidebarStudioFix({
-          sessionId,
-          workspacePath,
-          handoff: verifyHandoff,
-          kind: sourceAction === 'apply-patch' ? 'apply-patch' : 'auto-fix',
-          actionId: 'apply-debug-patch',
-          summary: cardResolved
-            ? 'Patch applied and verify completed.'
-            : `${verifyExecution.error ?? verifyExecution.stderrTail ?? result.summary}${rollbackSummary}`,
-          ok: cardResolved,
-          appliedFixes,
-          rollbackCommand: rollbackCommand ?? undefined,
-          patchMetadata,
-        });
-        this._postInlineCreate('sidebarStudioActionResult', {
-          sessionId,
-          cardId: handoff.cardId,
-          action: sourceAction,
-          status: automaticRollback && !automaticRollback.ok ? 'review' : loopProgress.status,
-          title:
-            automaticRollback && !automaticRollback.ok
-              ? 'Rollback requires review'
-              : loopProgress.title,
-          summary: `${loopProgress.summary}${rollbackSummary}`,
-          commandText: verifyExecutionCommand,
-          exitCode: verifyExecution.exitCode,
-          stderrTail: verifyExecution.stderrTail,
-          topBlocker: cardResolved ? undefined : (verifyExecution.error ?? handoff.blockers[0]),
-          error: verifyExecution.error,
-          nextAction:
-            automaticRollback && !automaticRollback.ok ? undefined : loopProgress.nextAction,
-          nextActionLabel:
-            automaticRollback && !automaticRollback.ok ? undefined : loopProgress.nextActionLabel,
-          ...(automaticRollback && !automaticRollback.ok ? { requiresApproval: true } : {}),
-          ...(!cardResolved && rollbackCommand ? { rollbackCommand } : {}),
-        });
-      } else {
-        void this._auditSidebarStudioFix({
-          sessionId,
-          workspacePath: workspacePath ?? '',
-          handoff,
-          kind: sourceAction === 'apply-patch' ? 'apply-patch' : 'auto-fix',
-          actionId: 'apply-debug-patch',
-          summary: result.summary,
-          ok: false,
-          appliedFixes,
-          rollbackCommand: rollbackCommand ?? undefined,
-          patchMetadata,
-        });
-        this._postInlineCreate('sidebarStudioActionResult', {
-          sessionId,
-          cardId: handoff.cardId,
-          action: sourceAction,
-          status: 'review',
-          title: 'Verification contract missing',
-          summary:
-            'Patch applied, but Studio cannot claim completion without a workspace and verify command. Review and verify manually.',
-          requiresApproval: true,
-        });
-      }
-      return;
-    }
-
-    this._pendingSidebarPatches.delete(sidebarPatchReviewKey(handoff.cardId, sessionId));
-    this._pendingSidebarPatches.delete(handoff.cardId);
-    this._postInlineCreate('sidebarStudioActionResult', {
-      sessionId,
-      cardId: handoff.cardId,
-      action: sourceAction,
-      status: 'failed',
-      summary: result.summary,
-    });
-  }
-
   private async _runSidebarAutoFix(
     handoff: StudioBlockerHandoff,
     sessionId?: string,
@@ -6037,443 +5660,37 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     if (!workspacePath) {
       throw new Error('No workspace is selected for Studio auto-fix.');
     }
-    const workspaceName = path.basename(workspacePath);
-    const mode = handoff.studioMode ?? 'FIX';
     const scope = resolveStudioActionScope(payloadScope);
     const projectPath = handoff.projectPath ?? scope.projectPath;
+    const mode = handoff.studioMode ?? 'FIX';
     this._ensureStudioEvidenceWatcher(handoff, sessionId);
-
+    await this._assertSidebarStudioMutationAllowed({
+      workspacePath,
+      projectPath,
+      actionLabel: 'Studio CLI-owned repair session',
+      governedRepair: { contractAuthorized: true, reversible: true },
+    });
     this._postInlineCreate('sidebarStudioActionResult', {
       sessionId,
       cardId: handoff.cardId,
       action: 'auto-fix',
       status: 'running',
-      phase: mode === 'RUN_ONCE' ? 'running-source-command' : 'fixing',
+      phase: 'starting-cli-owned-repair',
+      summary:
+        'Studio is starting the model loop. Every source change will be planned, checkpointed, executed, verified, and rolled back by the Workspai CLI.',
     });
-
-    if (mode === 'RUN_ONCE') {
-      await this._assertSidebarStudioMutationAllowed({
-        workspacePath,
-        projectPath,
-        actionLabel: 'Studio run-once source command',
-        commandText: handoff.sourceCommand,
-      });
-      const execution = await runIncidentInlineCommand({
-        command: handoff.sourceCommand,
-        workspacePath,
-        projectPath,
-        actionId: `run-once-${handoff.cardId}`,
-      });
-      if (this._context) {
-        await recordStudioBlockerCommandRun(this._context, {
-          cardId: handoff.cardId,
-          sourceCommand: handoff.sourceCommand,
-          blockers: handoff.blockers,
-          ...studioCommandLedgerMetadata(handoff),
-          exitCode: execution.success ? 0 : 1,
-        });
-      }
-      this._postInlineCreate('sidebarStudioFixApplied', {
-        cardId: handoff.cardId,
-        appliedFixes: [
-          {
-            path: handoff.artifactPath,
-            action: 'run-once',
-            outcome: execution.success ? 'pass' : 'fail',
-          },
-        ],
-        verifyCommand: handoff.verifyCommand,
-        verifyArtifact: handoff.verifyArtifact,
-        requiresVerify: true,
-        phase: 'awaiting-verify',
-        blockerSignatureBefore: handoff.blockerSignature,
-      });
-      if (execution.success && handoff.verifyCommand) {
-        await this._runStudioVerifyContinuation({
-          sessionId,
-          handoff,
-          workspacePath,
-          projectPath,
-          action: 'auto-fix',
-          verifyCommand: handoff.verifyCommand,
-          verifyActionId: 'verify-run-once',
-          runningPhase: 'verifying-remediation-step',
-          runningSummary: 'Source command completed. Running verify now.',
-          failureFallbackSummary: 'Verify after source command failed.',
-          refreshShipLoopOnSuccess: true,
-        });
-      } else {
-        this._postInlineCreate('sidebarStudioActionResult', {
-          sessionId,
-          cardId: handoff.cardId,
-          action: 'auto-fix',
-          status: execution.success ? 'done' : 'failed',
-          summary: execution.success
-            ? 'Source command completed. Run verify to refresh the card.'
-            : (execution.error ?? 'Source command failed.'),
-        });
-      }
-      void this._auditSidebarStudioFix({
-        sessionId,
-        workspacePath,
-        handoff,
-        kind: 'auto-fix',
-        actionId: 'run-once',
-        summary: execution.success
-          ? 'Source command completed.'
-          : (execution.error ?? 'Source command failed.'),
-        ok: execution.success,
-        appliedFixes: [
-          {
-            path: handoff.artifactPath,
-            action: 'run-once',
-            outcome: execution.success ? 'pass' : 'fail',
-          },
-        ],
-      });
-      return;
-    }
-
-    if (mode === 'FIX') {
-      await this._runAutonomousStudioAgent({
-        task: `Resolve every blocker for ${handoff.cardLabel ?? handoff.cardId}, refresh the required producers, and stop only after fresh non-blocking verify evidence.`,
-        sessionId,
-        requestedModelId,
-        workspacePath,
-        projectPath,
-        handoff,
-      });
-      return;
-    }
-
-    await this._assertSidebarStudioMutationAllowed({
+    await this._runAutonomousStudioAgent({
+      task:
+        mode === 'RUN_ONCE'
+          ? `Run the requested card action for ${handoff.cardLabel ?? handoff.cardId}, then close it only through canonical verification.`
+          : `Resolve the active ${handoff.cardLabel ?? handoff.cardId} blocker completely through the CLI Repair Engine.`,
+      sessionId,
+      requestedModelId,
       workspacePath,
       projectPath,
-      actionLabel: 'Studio auto-fix',
-    });
-    const bootstrapComplianceFix = await applyBootstrapComplianceRemediation({
-      workspacePath,
       handoff,
-    });
-    if (bootstrapComplianceFix.handled) {
-      if (!bootstrapComplianceFix.ok) {
-        this._postInlineCreate('sidebarStudioActionResult', {
-          sessionId,
-          cardId: handoff.cardId,
-          action: 'auto-fix',
-          status: 'failed',
-          title: 'Bootstrap compliance fix failed',
-          summary: bootstrapComplianceFix.summary,
-          nextAction: studioActionFailureNextAction('auto-fix'),
-        });
-        return;
-      }
-      this._postInlineCreate('sidebarStudioFixApplied', {
-        cardId: handoff.cardId,
-        appliedFixes: bootstrapComplianceFix.appliedFixes,
-        verifyCommand: bootstrapComplianceFix.verifyCommand,
-        verifyArtifact: handoff.verifyArtifact,
-        requiresVerify: true,
-        phase: 'awaiting-verify',
-        blockerSignatureBefore: handoff.blockerSignature,
-        summary: bootstrapComplianceFix.summary,
-        ...(bootstrapComplianceFix.rollbackCommand
-          ? { rollbackCommand: bootstrapComplianceFix.rollbackCommand }
-          : {}),
-      });
-      const verifyHandoff: StudioBlockerHandoff = {
-        ...handoff,
-        verifyCommand: bootstrapComplianceFix.verifyCommand,
-      };
-      const verifyContinuation = await this._runStudioVerifyContinuation({
-        sessionId,
-        handoff: verifyHandoff,
-        workspacePath,
-        projectPath,
-        action: 'auto-fix',
-        verifyCommand: bootstrapComplianceFix.verifyCommand,
-        verifyActionId: 'verify-bootstrap-compliance-fix',
-        runningPhase: 'verifying-bootstrap-compliance',
-        runningSummary: 'Bootstrap compliance baseline is ready. Running deterministic verify now.',
-        failureFallbackSummary: bootstrapComplianceFix.summary,
-        rollbackCommand: bootstrapComplianceFix.rollbackCommand,
-        refreshShipLoopOnSuccess: true,
-        recordVerifyPassMilestone: true,
-      });
-      await this._auditSidebarStudioFix({
-        sessionId,
-        workspacePath,
-        handoff: verifyHandoff,
-        kind: 'auto-fix',
-        actionId: 'bootstrap-compliance-fix',
-        summary: verifyContinuation.verifySucceeded
-          ? 'Bootstrap compliance fixed and verified in CI mode.'
-          : verifyContinuation.summary,
-        ok: verifyContinuation.verifySucceeded,
-        appliedFixes: bootstrapComplianceFix.appliedFixes,
-        rollbackCommand: bootstrapComplianceFix.rollbackCommand,
-      });
-      return;
-    }
-
-    const fixAction = pickStudioFixActionId(handoff);
-    const shouldUseEvidencePatch = shouldUseEvidencePatchRepair(handoff, fixAction);
-    if (shouldUseEvidencePatch) {
-      await this._runAutonomousStudioAgent({
-        task: `Resolve the active ${handoff.cardLabel ?? handoff.cardId} blocker completely.`,
-        sessionId,
-        requestedModelId,
-        workspacePath,
-        projectPath,
-        handoff,
-      });
-      return;
-    }
-    if (fixAction === 'doctor-fix') {
-      const doctorInvocation = resolveStudioDoctorFixInvocation({ workspacePath, handoff });
-      this._postInlineCreate('sidebarStudioActionResult', {
-        sessionId,
-        cardId: handoff.cardId,
-        action: 'auto-fix',
-        status: 'running',
-        phase: 'preparing-doctor-fix',
-        summary: 'Preparing Doctor fix with the current card evidence.',
-        commandText: doctorInvocation.command,
-      });
-      let doctorFixElapsedSeconds = 0;
-      const doctorFixHeartbeat = setInterval(() => {
-        doctorFixElapsedSeconds += 10;
-        this._postInlineCreate('sidebarStudioActionResult', {
-          sessionId,
-          cardId: handoff.cardId,
-          action: 'auto-fix',
-          status: 'running',
-          phase: 'running-doctor-fix',
-          summary: `Doctor fix is still running (${doctorFixElapsedSeconds}s). Keeping this repair session live.`,
-          commandText: doctorInvocation.command,
-        });
-      }, 10_000);
-      let doctorRun: Awaited<ReturnType<typeof runRapidkitStreaming<{ fixResult?: unknown }>>>;
-      try {
-        this._postInlineCreate('sidebarStudioActionResult', {
-          sessionId,
-          cardId: handoff.cardId,
-          action: 'auto-fix',
-          status: 'running',
-          phase: 'running-doctor-fix',
-          summary: 'Running Doctor fix. I will verify the card when it finishes.',
-          commandText: doctorInvocation.command,
-        });
-        doctorRun = await runRapidkitStreaming<{ fixResult?: unknown }>({
-          command: doctorInvocation.command,
-          cwd: doctorInvocation.cwd,
-          featureLabel: 'Studio doctor-fix',
-          timeoutMs: 180_000,
-        });
-      } finally {
-        clearInterval(doctorFixHeartbeat);
-      }
-      this._postInlineCreate('sidebarStudioActionResult', {
-        sessionId,
-        cardId: handoff.cardId,
-        action: 'auto-fix',
-        status: 'running',
-        phase: 'reading-doctor-fix-result',
-        summary: 'Doctor fix returned. Reading applied fixes and remaining blockers.',
-        commandText: doctorInvocation.command,
-      });
-      const fixResult = extractDoctorFixResult(doctorRun.result);
-      const doctorOk =
-        !doctorRun.failed && fixResult != null && fixResult.remainingBlockers.length === 0;
-      if (this._context) {
-        await recordStudioBlockerCommandRun(this._context, {
-          cardId: handoff.cardId,
-          sourceCommand: handoff.sourceCommand,
-          blockers: handoff.blockers,
-          ...studioCommandLedgerMetadata(handoff),
-          exitCode: doctorRun.exitCode,
-        });
-      }
-      this._postInlineCreate('sidebarStudioFixApplied', {
-        cardId: handoff.cardId,
-        appliedFixes: (fixResult?.appliedFixes ?? []).map((entry) => ({
-          path: entry.path,
-          action: entry.action,
-          outcome: entry.outcome,
-        })),
-        verifyCommand: fixResult?.verifyRecommended ?? handoff.verifyCommand,
-        verifyArtifact: handoff.verifyArtifact,
-        requiresVerify: true,
-        phase: 'awaiting-verify',
-        blockerSignatureBefore: handoff.blockerSignature,
-      });
-      const verifyCommand = fixResult?.verifyRecommended ?? handoff.verifyCommand;
-      if (!doctorRun.failed && verifyCommand) {
-        const verifyHandoff: StudioBlockerHandoff = { ...handoff, verifyCommand };
-        const verifyContinuation = await this._runStudioVerifyContinuation({
-          sessionId,
-          handoff: verifyHandoff,
-          workspacePath,
-          projectPath,
-          action: 'auto-fix',
-          verifyCommand,
-          verifyActionId: 'verify-doctor-fix',
-          runningPhase: 'verifying-remediation-step',
-          runningSummary: 'Doctor fix completed. Running verify now.',
-          failureFallbackSummary: fixResult?.remainingBlockers[0] ?? 'Doctor fix verify failed.',
-          refreshShipLoopOnSuccess: true,
-        });
-        await this._auditSidebarStudioFix({
-          sessionId,
-          workspacePath,
-          handoff: verifyHandoff,
-          kind: 'auto-fix',
-          actionId: 'doctor-fix',
-          summary: verifyContinuation.verifySucceeded
-            ? 'Doctor fix completed and verify refreshed the card.'
-            : verifyContinuation.summary,
-          ok: verifyContinuation.verifySucceeded,
-          appliedFixes: (fixResult?.appliedFixes ?? []).map((entry) => ({
-            path: entry.path,
-            action: entry.action,
-            outcome: entry.outcome,
-          })),
-        });
-        return;
-      }
-      this._postInlineCreate('sidebarStudioActionResult', {
-        sessionId,
-        cardId: handoff.cardId,
-        action: 'auto-fix',
-        status: doctorOk ? 'done' : 'failed',
-        summary: doctorOk
-          ? 'Doctor fix completed. Run verify to refresh the card.'
-          : (fixResult?.remainingBlockers[0] ?? 'Doctor fix reported remaining blockers.'),
-        nextAction: doctorOk ? undefined : studioActionFailureNextAction('verify-handoff'),
-      });
-      void this._auditSidebarStudioFix({
-        sessionId,
-        workspacePath,
-        handoff,
-        kind: 'auto-fix',
-        actionId: 'doctor-fix',
-        summary: doctorOk
-          ? 'Doctor fix completed from sidebar Studio.'
-          : (fixResult?.remainingBlockers.join('; ') ?? 'Doctor fix failed.'),
-        ok: doctorOk,
-        appliedFixes: (fixResult?.appliedFixes ?? []).map((entry) => ({
-          path: entry.path,
-          action: entry.action,
-          outcome: entry.outcome,
-        })),
-      });
-      return;
-    }
-
-    if (!this._context) {
-      throw new Error('Studio fix engine requires extension context.');
-    }
-
-    if (fixAction === 'fix-lens') {
-      await this._runAutonomousStudioAgent({
-        task: `Resolve the active ${handoff.cardLabel ?? handoff.cardId} blocker completely.`,
-        sessionId,
-        requestedModelId,
-        workspacePath,
-        projectPath,
-        handoff,
-      });
-      return;
-    }
-
-    const { actionResult } = await executeStudioActionById(
-      this._context,
-      { workspacePath, workspaceName },
-      fixAction as StudioActionId,
-      {
-        source: 'workspai-secondary-sidebar',
-        trigger: 'studio-auto-fix',
-        cardId: handoff.cardId,
-      }
-    );
-    const actionSucceeded = actionResult?.gatePassed !== false;
-    if (this._context) {
-      await recordStudioBlockerCommandRun(this._context, {
-        cardId: handoff.cardId,
-        sourceCommand: handoff.sourceCommand,
-        blockers: handoff.blockers,
-        ...studioCommandLedgerMetadata(handoff),
-        exitCode: actionSucceeded ? 0 : 1,
-      });
-    }
-    if (actionSucceeded) {
-      this._postInlineCreate('sidebarStudioFixApplied', {
-        cardId: handoff.cardId,
-        appliedFixes: [{ path: handoff.artifactPath, action: fixAction, outcome: 'applied' }],
-        verifyCommand: handoff.verifyCommand,
-        verifyArtifact: handoff.verifyArtifact,
-        requiresVerify: true,
-        phase: 'awaiting-verify',
-        blockerSignatureBefore: handoff.blockerSignature,
-        summary: actionResult?.summary,
-      });
-    }
-    if (actionSucceeded && handoff.verifyCommand) {
-      const verifyHandoff: StudioBlockerHandoff = {
-        ...handoff,
-        verifyCommand: handoff.verifyCommand,
-      };
-      const verifyContinuation = await this._runStudioVerifyContinuation({
-        sessionId,
-        handoff: verifyHandoff,
-        workspacePath,
-        projectPath,
-        action: 'auto-fix',
-        verifyCommand: handoff.verifyCommand,
-        verifyActionId: `verify-${fixAction}`,
-        runningPhase: 'verifying-remediation-step',
-        runningSummary: `${actionResult?.summary ?? `Studio action ${fixAction} completed.`} Running verify now.`,
-        failureFallbackSummary:
-          actionResult?.summary ?? `Studio action ${fixAction} verify failed.`,
-        refreshShipLoopOnSuccess: true,
-      });
-      await this._auditSidebarStudioFix({
-        sessionId,
-        workspacePath,
-        handoff: verifyHandoff,
-        kind: 'auto-fix',
-        actionId: fixAction,
-        summary: verifyContinuation.verifySucceeded
-          ? `Studio action ${fixAction} completed and verify refreshed the card.`
-          : verifyContinuation.summary,
-        ok: verifyContinuation.verifySucceeded,
-        appliedFixes: [{ path: handoff.artifactPath, action: fixAction, outcome: 'applied' }],
-      });
-      return;
-    }
-    this._postInlineCreate('sidebarStudioActionResult', {
-      sessionId,
-      cardId: handoff.cardId,
-      action: 'auto-fix',
-      status: actionSucceeded ? 'done' : 'failed',
-      title: actionSucceeded ? undefined : 'Gate still blocked',
-      summary: actionResult?.summary ?? `Studio action ${fixAction} completed.`,
-      nextAction: actionSucceeded ? undefined : studioActionFailureNextAction('verify-handoff'),
-    });
-    void this._auditSidebarStudioFix({
-      sessionId,
-      workspacePath,
-      handoff,
-      kind: 'auto-fix',
-      actionId: fixAction,
-      summary: actionResult?.summary ?? `Studio action ${fixAction} completed.`,
-      ok: actionSucceeded,
-      appliedFixes: actionSucceeded
-        ? [{ path: handoff.artifactPath, action: fixAction, outcome: 'applied' }]
-        : [],
     });
   }
-
   private async _runSidebarAction(
     action: SidebarActionSurfaceMeta,
     invocationPayload?: unknown

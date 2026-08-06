@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import * as vscode from 'vscode';
 
 import type { AIMessage } from './aiService';
@@ -42,7 +43,13 @@ export interface ConfiguredAIProviderTool {
 }
 
 export type ConfiguredAIProviderAction =
-  | { type: 'tool'; provider: AIProviderKind; toolName: string; input: Record<string, unknown> }
+  | {
+      type: 'tool';
+      provider: AIProviderKind;
+      callId: string;
+      toolName: string;
+      input: Record<string, unknown>;
+    }
   | { type: 'text'; provider: AIProviderKind; text: string };
 
 function providerSecretKey(provider: AIProviderKind): string {
@@ -280,14 +287,70 @@ function createOpenAIHeaders(provider: AIProviderKind, apiKey?: string): Record<
   return headers;
 }
 
+function toOpenAIMessages(messages: AIMessage[]): Array<Record<string, unknown>> {
+  return messages.map((message) => {
+    if ('toolCall' in message) {
+      return {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          {
+            id: message.toolCall.callId,
+            type: 'function',
+            function: {
+              name: message.toolCall.name,
+              arguments: JSON.stringify(message.toolCall.input),
+            },
+          },
+        ],
+      };
+    }
+    if ('toolResult' in message) {
+      return {
+        role: 'tool',
+        tool_call_id: message.toolResult.callId,
+        content: message.toolResult.content,
+      };
+    }
+    return { role: message.role, content: message.content };
+  });
+}
+
 function toAnthropicMessages(messages: AIMessage[]): {
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  messages: Array<Record<string, unknown>>;
 } {
   return {
-    messages: messages.map((message) => ({
-      role: message.role === 'assistant' ? ('assistant' as const) : ('user' as const),
-      content: message.content,
-    })),
+    messages: messages.map((message) => {
+      if ('toolCall' in message) {
+        return {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              id: message.toolCall.callId,
+              name: message.toolCall.name,
+              input: message.toolCall.input,
+            },
+          ],
+        };
+      }
+      if ('toolResult' in message) {
+        return {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: message.toolResult.callId,
+              content: message.toolResult.content,
+            },
+          ],
+        };
+      }
+      return {
+        role: message.role === 'assistant' ? 'assistant' : 'user',
+        content: message.content,
+      };
+    }),
   };
 }
 
@@ -315,7 +378,7 @@ async function askOpenAICompatible(
       headers: createOpenAIHeaders(provider.id, apiKey),
       body: JSON.stringify({
         model: settings.customAIModel,
-        messages,
+        messages: toOpenAIMessages(messages),
         temperature: 0.2,
         stream: false,
       }),
@@ -418,7 +481,7 @@ async function askOpenAICompatibleToolAction(
       headers: createOpenAIHeaders(provider.id, apiKey),
       body: JSON.stringify({
         model: settings.customAIModel,
-        messages,
+        messages: toOpenAIMessages(messages),
         temperature: 0.1,
         stream: false,
         tools: tools.map((tool) => ({
@@ -444,7 +507,7 @@ async function askOpenAICompatibleToolAction(
     const message = choice?.message;
     const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
     const first = toolCalls[0] as
-      | { function?: { name?: unknown; arguments?: unknown } }
+      | { id?: unknown; function?: { name?: unknown; arguments?: unknown } }
       | undefined;
     const name = first?.function?.name;
     if (typeof name === 'string') {
@@ -456,7 +519,13 @@ async function askOpenAICompatibleToolAction(
           parsed = value as Record<string, unknown>;
         }
       }
-      return { type: 'tool', provider: provider.id, toolName: name, input: parsed };
+      return {
+        type: 'tool',
+        provider: provider.id,
+        callId: typeof first?.id === 'string' && first.id.trim() ? first.id : randomUUID(),
+        toolName: name,
+        input: parsed,
+      };
     }
     return {
       type: 'text',
@@ -513,11 +582,12 @@ async function askAnthropicToolAction(
     const toolUse = content.find(
       (block) =>
         block && typeof block === 'object' && (block as { type?: unknown }).type === 'tool_use'
-    ) as { name?: unknown; input?: unknown } | undefined;
+    ) as { id?: unknown; name?: unknown; input?: unknown } | undefined;
     if (typeof toolUse?.name === 'string') {
       return {
         type: 'tool',
         provider: provider.id,
+        callId: typeof toolUse.id === 'string' && toolUse.id.trim() ? toolUse.id : randomUUID(),
         toolName: toolUse.name,
         input:
           toolUse.input && typeof toolUse.input === 'object' && !Array.isArray(toolUse.input)
@@ -554,6 +624,7 @@ export async function askConfiguredAIProviderForToolAction(
     ? {
         type: 'tool',
         provider: 'vscode-lm',
+        callId: response.callId,
         toolName: response.toolName,
         input: response.input,
       }

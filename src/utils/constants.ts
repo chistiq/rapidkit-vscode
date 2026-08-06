@@ -10,7 +10,8 @@ import * as vscode from 'vscode';
  */
 export function getExtensionVersion(): string {
   const extension = vscode.extensions.getExtension('rapidkit.rapidkit-vscode');
-  return extension?.packageJSON?.version || '0.4.4';
+  const version = extension?.packageJSON?.version;
+  return typeof version === 'string' && version.trim() ? version.trim() : 'unknown';
 }
 
 /**

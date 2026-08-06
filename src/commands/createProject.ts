@@ -64,7 +64,7 @@ export async function createProjectCommand(
 
       if (explorerContext.isAlreadyManagedProject) {
         const action = await vscode.window.showWarningMessage(
-          `"${path.basename(explorerContext.folderPath)}" is already a RapidKit project. Scaffold a sibling from the parent folder, or adopt it into a workspace.`,
+          `"${path.basename(explorerContext.folderPath)}" is already a Workspai-managed project. Scaffold a sibling from the parent folder, or adopt it into a workspace.`,
           'Adopt with RapidKit',
           'Cancel'
         );

@@ -1,6 +1,40 @@
 # Release Notes
 
-## v0.36.0 (unreleased)
+## v0.37.0 (August 6, 2026)
+
+### Governed repair with live change review
+
+This release aligns Workspai for VS Code with CLI 0.53.0. The CLI owns blocker
+mutation, reconciliation, rollback, and canonical verification; Studio owns
+scope, model interaction, progress, diffs, and explicit user decisions.
+
+Highlights:
+
+- Durable CLI Repair Engine transactions replace the competing extension-side
+  repair executor.
+- Every Dashboard blocker maps to an exact producer, artifact, scope, repair
+  capability, and Stop Gate.
+- Studio shows commands, changed files, and bounded unified diffs while repair
+  is running.
+- Native model tool calls retain provider identity and causal observations
+  across reload and resume.
+- Primary sidebar actions are grouped around frequent user tasks without
+  removing advanced workspace/project commands.
+- Workspai CLI is the only universal Setup requirement; RapidKit Core remains
+  workspace-local and optional.
+
+Compatibility:
+
+- VS Code 1.106.0+
+- Workspai CLI 0.53.0+
+- RapidKit Core 0.6.0 only for Python-backed kits/modules
+
+Full detail:
+[releases/RELEASE_NOTES_v0.37.0.md](releases/RELEASE_NOTES_v0.37.0.md)
+
+Release posture: `cli-owned-repair-and-live-change-review`
+
+## v0.36.0 (August 3, 2026)
 
 ### Reliable sessions and first-install-safe creation
 

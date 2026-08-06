@@ -205,6 +205,20 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
       'Pins scaffold kits, lifecycle command support, module support, and create planner capability lanes.',
   },
   {
+    contractPath: 'studio-card-repair-capabilities.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Studio card repair engine and exact Stop Gate routing',
+    usage:
+      'Binds every dashboard evidence card to its exact CLI producer, evidence artifact, and verification command.',
+  },
+  {
+    contractPath: 'workspace-repair-capabilities.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Studio CLI Repair Engine preflight and decision rendering',
+    usage:
+      'Consumes the canonical multi-runtime adapter inventory and fail-closed support boundaries while transaction state remains CLI-owned.',
+  },
+  {
     contractPath: 'workspace-intelligence-architecture.v1.json',
     mode: 'runtime-consumed',
     extensionSurface: 'Workspace Intelligence positioning, AI grounding, and claim boundary',
@@ -331,6 +345,20 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
     mode: 'schema-guarded',
     extensionSurface: 'Operational skills parity',
     usage: 'Guards canonical .rapidkit/skills/ record shape against npm generator.',
+  },
+  {
+    contractPath: 'workspace-intelligence/workspace-repair-proposal.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Studio model-to-CLI repair proposal boundary',
+    usage:
+      'Validates bounded model proposals before the CLI creates an immutable repair plan, approval boundary, checkpoint, and executable transaction.',
+  },
+  {
+    contractPath: 'workspace-intelligence/workspace-repair-transaction.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Studio repair progress, decisions, diffs, and terminal outcomes',
+    usage:
+      'Consumes the CLI-owned durable transaction state for progress, required decisions, changed paths, verification, rollback, and closure without duplicating orchestration in the extension.',
   },
   {
     contractPath: 'workspace-intelligence/agent-action-outcome.v1.json',

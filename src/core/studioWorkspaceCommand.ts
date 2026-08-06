@@ -1,5 +1,10 @@
 import * as path from 'node:path';
 
+import {
+  buildPackageRunnerInvocationEnv,
+  discoverPackageRunnerInvocations,
+} from '../utils/platformCapabilities.js';
+
 export type StudioWorkspaceCommandPurpose =
   | 'inspect'
   | 'diagnose'
@@ -347,12 +352,15 @@ export async function runStudioWorkspaceCommand(
   plan: StudioWorkspaceCommandPlan
 ): Promise<StudioWorkspaceCommandExecution> {
   const { execa } = await import('execa');
-  const protectedEnvironment = Object.fromEntries(
+  let protectedEnvironment = Object.fromEntries(
     Object.entries(process.env).filter(
       ([key]) =>
         !/(?:TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY|CREDENTIAL|COOKIE|AUTH)/i.test(key)
     )
   );
+  for (const invocation of discoverPackageRunnerInvocations('npm')) {
+    protectedEnvironment = buildPackageRunnerInvocationEnv(invocation, protectedEnvironment);
+  }
   const result = await execa(plan.executable, plan.args, {
     cwd: plan.cwd,
     shell: false,

@@ -105,6 +105,30 @@ export function StudioActionProgress({
             <span>{summary}</span>
           </details>
         ) : null}
+        {progress.commandText ? (
+          <pre className="ws-sidebar__studio-patch-diff" aria-label="Executed command">
+            <span data-type="unchanged">$ {progress.commandText}</span>
+          </pre>
+        ) : null}
+        {progress.activityPaths?.length ? (
+          <ul className="ws-sidebar__studio-changed-files" aria-label="Inspected files">
+            {progress.activityPaths.map((activityPath) => (
+              <li key={activityPath}>
+                <button type="button" onClick={() => onOpenFile?.(activityPath)}>
+                  <code>{compactStudioPathText(activityPath)}</code>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {progress.outputText ? (
+          <details className="ws-sidebar__studio-action-details">
+            <summary>Command output</summary>
+            <pre className="ws-sidebar__studio-patch-diff">
+              <span data-type="unchanged">{progress.outputText}</span>
+            </pre>
+          </details>
+        ) : null}
         {progress.changedPaths?.length ? (
           <ul className="ws-sidebar__studio-changed-files" aria-label="Changed files">
             {progress.changedPaths.map((changedPath) => (
@@ -119,6 +143,41 @@ export function StudioActionProgress({
               </li>
             ))}
           </ul>
+        ) : null}
+        {progress.fileChanges?.some((file) => file.diffLines?.length) ? (
+          <details className="ws-sidebar__studio-patch-details">
+            <summary>Review live diff</summary>
+            <ul className="ws-sidebar__studio-patch-list">
+              {progress.fileChanges.map((file) => {
+                const added = file.diffLines?.filter((line) => line.type === 'added').length ?? 0;
+                const removed =
+                  file.diffLines?.filter((line) => line.type === 'removed').length ?? 0;
+                return (
+                  <li key={file.relativePath} data-status={file.status}>
+                    <div className="ws-sidebar__studio-patch-summary">
+                      <button type="button" onClick={() => onOpenFile?.(file.relativePath)}>
+                        <code>{compactStudioPathText(file.relativePath)}</code>
+                      </button>
+                      <span>
+                        +{added} −{removed}
+                      </span>
+                    </div>
+                    <pre
+                      className="ws-sidebar__studio-patch-diff"
+                      aria-label={`Diff for ${file.relativePath}`}
+                    >
+                      {file.diffLines?.map((line, index) => (
+                        <span key={`${line.type}-${index}`} data-type={line.type}>
+                          {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
+                          {line.content}
+                        </span>
+                      ))}
+                    </pre>
+                  </li>
+                );
+              })}
+            </ul>
+          </details>
         ) : null}
         {progress.canUndo && progress.invocationId && onUndo ? (
           <button

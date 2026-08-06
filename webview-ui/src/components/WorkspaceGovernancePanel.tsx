@@ -114,7 +114,7 @@ export function WorkspaceGovernancePanel({
             'workspaceBootstrap',
             !hasWorkspace ? 'Select a workspace' : undefined
           )}
-          title="rapidkit bootstrap"
+          title="npx workspai bootstrap"
         />
         <ActionTile
           icon={<RefreshCw size={15} />}
@@ -158,7 +158,7 @@ export function WorkspaceGovernancePanel({
             'workspaceReadiness',
             !hasWorkspace ? 'Select a workspace' : undefined
           )}
-          title="rapidkit readiness"
+          title="npx workspai readiness"
         />
         <ActionTile
           icon={<Rocket size={15} />}
@@ -172,7 +172,7 @@ export function WorkspaceGovernancePanel({
             'workspaceAutopilotRelease',
             !hasWorkspace ? 'Select a workspace' : undefined
           )}
-          title="rapidkit autopilot release"
+          title="npx workspai autopilot release"
         />
       </ActionTileGrid>
       <details
@@ -197,7 +197,7 @@ export function WorkspaceGovernancePanel({
                 'workspaceSetup',
                 !hasWorkspace ? 'Select a workspace' : undefined
               )}
-              title="rapidkit setup"
+              title="npx workspai setup"
             />
             <ActionTile
               icon={<FileCheck2 size={15} />}
@@ -232,11 +232,7 @@ export function WorkspaceGovernancePanel({
             <ActionTile
               icon={<Database size={15} />}
               label="Mirror Operations"
-              detail={governanceDetail(
-                evidence,
-                'mirror',
-                'Status · sync · verify · rotate'
-              )}
+              detail={governanceDetail(evidence, 'mirror', 'Status · sync · verify · rotate')}
               evidenceStatus={mirrorCard?.status}
               pending={isPending('mirror')}
               onClick={onMirrorOps}
@@ -245,7 +241,7 @@ export function WorkspaceGovernancePanel({
                 'mirrorOps',
                 !hasWorkspace ? 'Select a workspace' : undefined
               )}
-              title="rapidkit mirror status | sync | verify | rotate"
+              title="npx workspai mirror status | sync | verify | rotate"
             />
             <ActionTile
               icon={<HardDrive size={15} />}
@@ -259,7 +255,7 @@ export function WorkspaceGovernancePanel({
                 'cacheStatus',
                 !hasWorkspace ? 'Select a workspace' : undefined
               )}
-              title="rapidkit cache status"
+              title="npx workspai cache status"
             />
             <ActionTile
               icon={<Scale size={15} />}
@@ -287,7 +283,7 @@ export function WorkspaceGovernancePanel({
                 'workspaceInfra',
                 !hasWorkspace ? 'Select a workspace' : undefined
               )}
-              title="rapidkit infra"
+              title="npx workspai infra"
             />
           </ActionTileGrid>
         </div>

@@ -29,7 +29,7 @@ export type E2ECliStep = {
   args: string[] | ((ctx: E2EStepContext, projectName?: string) => string[]);
   /** Dashboard evidence card ids this step should refresh (when applicable). */
   cardIds?: string[];
-  /** Step must exit 0 for scenario success. */
+  /** Step must complete or emit its current structured governance verdict. */
   required?: boolean;
   /** Required only when workspace has projects. */
   requiredWhenProjects?: boolean;
@@ -53,6 +53,9 @@ export type E2EStepResult = {
   label: string;
   cliArgs: string[];
   exitCode: number | null;
+  /** True when the command exited cleanly or produced a current, structured governance verdict. */
+  accepted: boolean;
+  outcome: 'completed' | 'structured-verdict' | 'failed';
   durationMs: number;
   required: boolean;
   artifactsPresent: string[];
@@ -64,6 +67,43 @@ export type E2EStepResult = {
     blockingReasons: string[];
   };
 };
+
+function parseCliJsonObject(output: string): Record<string, unknown> | null {
+  const normalized = output.trim();
+  if (!normalized.startsWith('{') || !normalized.endsWith('}')) {
+    return null;
+  }
+  try {
+    const value: unknown = JSON.parse(normalized);
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function isAcceptedStructuredVerdict(input: {
+  step: E2ECliStep;
+  run: E2ECliRunResult;
+  artifactsPresent: string[];
+  artifactsMissing: string[];
+}): boolean {
+  if (input.run.status === 0) {
+    return false;
+  }
+  if (input.step.id !== 'doctorWorkspace' || input.artifactsMissing.length > 0) {
+    return false;
+  }
+  const payload = parseCliJsonObject(input.run.cliOutput);
+  const contract = payload?.contract as Record<string, unknown> | undefined;
+  const summary = payload?.summary as Record<string, unknown> | undefined;
+  return (
+    contract?.version === 'doctor-evidence-v1' &&
+    ['passed', 'attention', 'blocked'].includes(String(summary?.verdict ?? '')) &&
+    input.artifactsPresent.includes('.workspai/reports/doctor-last-run.json')
+  );
+}
 
 export type E2EScenarioResult = {
   name: string;
@@ -836,6 +876,13 @@ export async function runIntelligenceScenario(input: {
       const run = runWorkspaiCli(input.dist, cliArgs, executionCwd, input.env);
       const artifactPaths = artifactsForStep(step);
       const { present, missing } = await checkArtifacts(input.workspacePath, artifactPaths);
+      const structuredVerdict = isAcceptedStructuredVerdict({
+        step,
+        run,
+        artifactsPresent: present,
+        artifactsMissing: missing,
+      });
+      const accepted = run.status === 0 || structuredVerdict;
       let verification: E2EStepResult['verification'];
       if (step.id === 'workspaceVerify') {
         const verifyPath = path.join(input.workspacePath, WORKSPACE_VERIFY_REPORT_PATH);
@@ -859,6 +906,9 @@ export async function runIntelligenceScenario(input: {
         label: step.label,
         cliArgs,
         exitCode: run.status,
+        accepted,
+        outcome:
+          run.status === 0 ? 'completed' : structuredVerdict ? 'structured-verdict' : 'failed',
         durationMs: run.durationMs,
         required,
         artifactsPresent: present,
@@ -877,7 +927,7 @@ export async function runIntelligenceScenario(input: {
   );
 
   const failedRequiredSteps = results
-    .filter((step) => step.required && step.exitCode !== 0)
+    .filter((step) => step.required && !step.accepted)
     .map((step) => step.id);
 
   return {
@@ -912,7 +962,7 @@ export function analyzeE2EReport(report: E2EReport): string {
 
     const required = scenario.steps.filter((step) => step.required);
     const optional = scenario.steps.filter((step) => !step.required);
-    const requiredPass = required.filter((step) => step.exitCode === 0).length;
+    const requiredPass = required.filter((step) => step.accepted).length;
     lines.push(
       `- Required steps: ${requiredPass}/${required.length} passed` +
         (scenario.failedRequiredSteps.length
@@ -920,12 +970,12 @@ export function analyzeE2EReport(report: E2EReport): string {
           : '')
     );
     const advisoryFailures = scenario.steps
-      .filter((step) => !step.required && step.exitCode !== 0)
+      .filter((step) => !step.required && !step.accepted)
       .map((step) => step.id);
     const coreFailures = scenario.steps
       .filter(
         (step) =>
-          step.exitCode !== 0 &&
+          !step.accepted &&
           [
             'workspaceSync',
             'foundationEnsure',

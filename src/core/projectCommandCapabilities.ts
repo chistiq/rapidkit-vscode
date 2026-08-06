@@ -93,7 +93,7 @@ export function getUnsupportedProjectCommandReason(
     return entry.reason;
   }
   if (entry?.status === 'global') {
-    return `${command} is a global RapidKit command, not a project lifecycle action.`;
+    return `${command} is a global Workspai command, not a project lifecycle action.`;
   }
   return `rapidkit ${command} is not supported for ${capabilities.frameworkDisplayName} projects.`;
 }

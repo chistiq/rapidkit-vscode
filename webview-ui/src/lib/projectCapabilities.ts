@@ -46,7 +46,7 @@ export function getProjectLifecycleDisableReason(
     return entry.reason;
   }
   const framework = capabilities.frameworkDisplayName || 'this runtime';
-  return `rapidkit ${command} is not supported for ${framework} projects.`;
+  return `workspai ${command} is not supported for ${framework} projects.`;
 }
 
 export function isDashboardLifecycleCommandSupported(

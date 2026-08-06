@@ -19,6 +19,15 @@ export type SidebarStudioActionProgressView = {
   nextAction?: 'auto-fix' | 'continue-remediation';
   nextActionLabel?: string;
   changedPaths?: string[];
+  activityPaths?: string[];
+  outputText?: string;
+  fileChanges?: Array<{
+    relativePath: string;
+    status: string;
+    isNewFile?: boolean;
+    failReason?: string;
+    diffLines?: Array<{ type: 'added' | 'removed' | 'unchanged'; content: string }>;
+  }>;
   invocationId?: string;
   canUndo?: boolean;
 };

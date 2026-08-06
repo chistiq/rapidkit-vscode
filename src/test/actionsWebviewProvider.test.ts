@@ -123,10 +123,10 @@ describe('actionsWebviewProvider — sidebar protocol handlers', () => {
       'sidebarImpactError',
       'sidebarAdvisorActionResult',
       'sidebarStudioScope',
-      'sidebarStudioChunk',
       'sidebarStudioDone',
       'sidebarStudioError',
       'sidebarStudioActionResult',
+      'sidebarStudioAgentEvent',
     ]) {
       expect(source, command).toContain(`this._postInlineCreate('${command}'`);
     }
@@ -148,33 +148,28 @@ describe('actionsWebviewProvider — sidebar protocol handlers', () => {
     expect(source).toContain("featureLabel: 'Studio command'");
     expect(source).toContain('resolveRapidkitExecutionPlan');
     expect(source).toContain('runCommandsInTerminal');
-    expect(source).toContain('exitCode: execution.exitCode');
-    expect(source).toContain('stderrTail: execution.stderrTail');
-    expect(source).toContain(
-      'topBlocker: execution.success ? undefined : (execution.error ?? handoff.blockers[0])'
-    );
+    expect(source).toContain('executeCliOwnedCanonicalRepair');
+    expect(source).toContain('executeCliOwnedPatchRepair');
+    expect(source).toContain('publishCliOwnedRepairOutcome');
   });
 
-  it('refreshes contract evidence immediately after a remediation step', () => {
-    expect(source).toContain('if (ok && step.verifyCommand?.trim())');
-    expect(source).toContain('actionId: `studio-session-remediation-verify-${step.id}`');
-    expect(source).toContain('command: step.verifyCommand.trim()');
+  it('delegates remediation verification and closure to the CLI transaction', () => {
+    expect(source).toContain('CLI-owned Studio remediation step');
+    expect(source).toContain('executeCliOwnedCanonicalRepair({');
+    expect(source).toContain('publishCliOwnedRepairOutcome({');
+    expect(source).not.toContain('if (ok && step.verifyCommand?.trim())');
   });
 
-  it('keeps RUN_ONCE Studio source commands project-scoped when a handoff has a project path', () => {
-    const runOnceBranch = source.slice(
-      source.indexOf("if (mode === 'RUN_ONCE')"),
-      source.indexOf('if (execution.success && handoff.verifyCommand)')
-    );
+  it('keeps RUN_ONCE Studio work inside the CLI-owned agent repair session', () => {
+    const autoFixStart = source.indexOf('private async _runSidebarAutoFix(');
+    const autoFixEnd = source.indexOf('private async _runSidebarAction(', autoFixStart);
+    const runOnceBranch = source.slice(autoFixStart, autoFixEnd);
 
-    expect(runOnceBranch).toContain('this._assertSidebarStudioMutationAllowed({');
-    expect(runOnceBranch.indexOf('this._assertSidebarStudioMutationAllowed({')).toBeLessThan(
-      runOnceBranch.indexOf('runIncidentInlineCommand({')
-    );
-    expect(runOnceBranch).toContain('command: handoff.sourceCommand');
+    expect(runOnceBranch).toContain("mode === 'RUN_ONCE'");
+    expect(runOnceBranch).toContain('_runAutonomousStudioAgent({');
     expect(runOnceBranch).toContain('workspacePath');
     expect(runOnceBranch).toContain('projectPath');
-    expect(runOnceBranch).toContain('actionId: `run-once-${handoff.cardId}`');
+    expect(runOnceBranch).not.toContain('runIncidentInlineCommand({');
   });
 
   it('keeps mutating Studio repair paths behind the enterprise mutation gate', () => {
@@ -185,13 +180,11 @@ describe('actionsWebviewProvider — sidebar protocol handlers', () => {
     for (const label of [
       'Studio remediation evidence refresh',
       'Studio remediation plan refresh',
-      'Studio remediation apply',
-      'Studio internal remediation apply',
-      'Studio remediation command',
+      'CLI-owned Studio remediation step',
+      'CLI-owned Studio remediation command',
       'Studio patch apply',
       'Studio command',
-      'Studio run-once source command',
-      'Studio auto-fix',
+      'Studio CLI-owned repair session',
     ]) {
       expect(source, label).toContain(`actionLabel: '${label}'`);
     }
@@ -230,7 +223,6 @@ describe('actionsWebviewProvider — sidebar protocol handlers', () => {
     for (const hostCall of [
       'studioHost.retryLastSidebarStudioAudit(',
       'studioHost.runSidebarAutoFix(',
-      'studioHost.finalizeStudioPatchTransaction(',
       'studioHost.auditSidebarStudioFix(',
       'studioHost.refreshSidebarShipLoop(',
       'studioHost.finalizeStudioVerifyHandoff(',

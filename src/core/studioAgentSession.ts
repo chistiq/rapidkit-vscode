@@ -16,7 +16,7 @@ import {
 import type { WorkspaiAssistantMode } from './assistantModeContract.js';
 
 export type StudioAgentModelAction =
-  | { type: 'tool'; toolName: string; input: unknown; reason: string }
+  | { type: 'tool'; callId?: string; toolName: string; input: unknown; reason: string }
   | { type: 'message'; text: string }
   | { type: 'complete'; summary: string };
 
@@ -45,6 +45,7 @@ export type StudioAgentModelContext = {
 };
 
 export type StudioAgentRecentObservation = {
+  toolCallId: string;
   toolName: string;
   input: unknown;
   result: StudioAgentToolResult;
@@ -80,11 +81,19 @@ const DEPENDENCY_SOURCE_FILE_PATTERN =
 class StudioAgentReviewRequiredError extends Error {
   readonly terminalReason: string;
   readonly requiresUserDecision = true;
+  readonly transactionId?: string;
+  readonly decisionOptions: string[];
 
-  constructor(message: string, terminalReason = 'review-required') {
+  constructor(
+    message: string,
+    terminalReason = 'review-required',
+    input?: { transactionId?: string; decisionOptions?: string[] }
+  ) {
     super(message);
     this.name = 'StudioAgentReviewRequiredError';
     this.terminalReason = terminalReason;
+    this.transactionId = input?.transactionId;
+    this.decisionOptions = input?.decisionOptions ?? [];
   }
 }
 
@@ -171,6 +180,31 @@ function requestsGeneralSourceRepair(result: StudioAgentToolResult): boolean {
 function requestsReviewDecision(result: StudioAgentToolResult): boolean {
   const output = toolOutputRecord(result);
   return output?.nextAction === 'review-required' && output?.requiresUserDecision === true;
+}
+
+function reviewDecisionMetadata(result: StudioAgentToolResult): {
+  transactionId?: string;
+  decisionOptions: string[];
+} {
+  const output = toolOutputRecord(result);
+  const transaction =
+    output?.transaction &&
+    typeof output.transaction === 'object' &&
+    !Array.isArray(output.transaction)
+      ? (output.transaction as Record<string, unknown>)
+      : undefined;
+  const decision =
+    transaction?.decision &&
+    typeof transaction.decision === 'object' &&
+    !Array.isArray(transaction.decision)
+      ? (transaction.decision as Record<string, unknown>)
+      : undefined;
+  return {
+    ...(typeof transaction?.transactionId === 'string'
+      ? { transactionId: transaction.transactionId }
+      : {}),
+    decisionOptions: stringValues(decision?.options),
+  };
 }
 
 function generalSourceRepairCommandViolation(
@@ -276,6 +310,168 @@ function durableEventValue(value: unknown, depth = 0): unknown {
 
 function durableToolResult(result: StudioAgentToolResult): StudioAgentToolResult {
   return durableEventValue(result) as StudioAgentToolResult;
+}
+
+type LiveFileChange = {
+  relativePath: string;
+  status: string;
+  isNewFile?: boolean;
+  failReason?: string;
+  diffLines: Array<{ type: 'added' | 'removed' | 'unchanged'; content: string }>;
+};
+
+function unifiedDiffFileChanges(diff: string): LiveFileChange[] {
+  const files: LiveFileChange[] = [];
+  let current: LiveFileChange | undefined;
+  let insideHunk = false;
+  for (const line of diff.split(/\r?\n/)) {
+    const header = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
+    if (header) {
+      current = {
+        relativePath: header[2],
+        status: 'modified',
+        diffLines: [],
+      };
+      files.push(current);
+      insideHunk = false;
+      if (files.length >= 40) {
+        break;
+      }
+      continue;
+    }
+    if (!current) {
+      continue;
+    }
+    if (line === '--- /dev/null') {
+      current.isNewFile = true;
+      current.status = 'created';
+      continue;
+    }
+    if (line.startsWith('@@')) {
+      insideHunk = true;
+      continue;
+    }
+    if (!insideHunk || current.diffLines.length >= 400) {
+      continue;
+    }
+    if (line.startsWith('+') && !line.startsWith('+++')) {
+      current.diffLines.push({ type: 'added', content: line.slice(1) });
+    } else if (line.startsWith('-') && !line.startsWith('---')) {
+      current.diffLines.push({ type: 'removed', content: line.slice(1) });
+    } else if (line.startsWith(' ')) {
+      current.diffLines.push({ type: 'unchanged', content: line.slice(1) });
+    }
+  }
+  return files.filter((file) => file.diffLines.length > 0);
+}
+
+function liveFileChanges(result: StudioAgentToolResult): LiveFileChange[] {
+  const output = toolOutputRecord(result);
+  const patchResult =
+    output?.patchResult &&
+    typeof output.patchResult === 'object' &&
+    !Array.isArray(output.patchResult)
+      ? (output.patchResult as Record<string, unknown>)
+      : undefined;
+  const candidates = Array.isArray(output?.patches)
+    ? output.patches
+    : Array.isArray(patchResult?.patches)
+      ? patchResult.patches
+      : [];
+  const patchChanges = candidates
+    .filter(
+      (entry): entry is Record<string, unknown> =>
+        Boolean(entry) &&
+        typeof entry === 'object' &&
+        !Array.isArray(entry) &&
+        typeof (entry as Record<string, unknown>).relativePath === 'string'
+    )
+    .map((patch) => {
+      const hunks = Array.isArray(patch.hunks)
+        ? patch.hunks.filter(
+            (entry): entry is Record<string, unknown> =>
+              Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)
+          )
+        : [];
+      const diffLines = hunks
+        .flatMap((hunk) => [
+          ...stringValues(hunk.removedLines).map((content) => ({
+            type: 'removed' as const,
+            content,
+          })),
+          ...stringValues(hunk.addedLines).map((content) => ({
+            type: 'added' as const,
+            content,
+          })),
+        ])
+        .slice(0, 400);
+      return {
+        relativePath: String(patch.relativePath),
+        status: typeof patch.status === 'string' ? patch.status : 'applied',
+        ...(patch.isNewFile === true ? { isNewFile: true } : {}),
+        ...(typeof patch.failReason === 'string' ? { failReason: patch.failReason } : {}),
+        diffLines,
+      };
+    });
+  if (patchChanges.length > 0) {
+    return patchChanges;
+  }
+  return typeof output?.diff === 'string' ? unifiedDiffFileChanges(output.diff) : [];
+}
+
+function liveToolResult(result: StudioAgentToolResult): StudioAgentToolResult {
+  const fileChanges = liveFileChanges(result);
+  const output = toolOutputRecord(result);
+  if (fileChanges.length === 0 || !output) {
+    return result;
+  }
+  return { ...result, output: { ...output, fileChanges } };
+}
+
+function semanticProgressFingerprint(
+  action: Extract<StudioAgentModelAction, { type: 'tool' }>,
+  result: StudioAgentToolResult
+): string | undefined {
+  const output = toolOutputRecord(result);
+  const inspectedSource =
+    Array.isArray(result.output) &&
+    result.output.some(
+      (entry) =>
+        Boolean(entry) &&
+        typeof entry === 'object' &&
+        !Array.isArray(entry) &&
+        typeof (entry as Record<string, unknown>).path === 'string'
+    );
+  const materialObservation =
+    result.changed === true ||
+    Boolean(result.evidenceGeneration) ||
+    Boolean(result.blockerSignature) ||
+    result.cardBlocking !== undefined ||
+    Array.isArray(output?.sourceCandidates) ||
+    Array.isArray(output?.upgradeCandidates) ||
+    Array.isArray(output?.files) ||
+    Array.isArray(output?.diagnostics) ||
+    typeof output?.stdout === 'string' ||
+    typeof output?.stderr === 'string' ||
+    typeof output?.exitCode === 'number' ||
+    typeof output?.nextAction === 'string' ||
+    typeof output?.activeHandoff === 'object' ||
+    inspectedSource;
+  if (!materialObservation) {
+    return undefined;
+  }
+  return canonicalJson({
+    toolName: action.toolName,
+    input: action.input,
+    ok: result.ok,
+    changed: result.changed,
+    evidenceGeneration: result.evidenceGeneration,
+    blockerSignature: result.blockerSignature,
+    cardBlocking: result.cardBlocking,
+    nextAction: output?.nextAction,
+    sourceCandidates: output?.sourceCandidates,
+    upgradeCandidates: output?.upgradeCandidates,
+  });
 }
 
 export type StudioAgentSessionOptions = {
@@ -429,7 +625,8 @@ export class StudioAgentSession {
     let consecutiveProtocolMisses = 0;
     let consecutiveCausalRejections = 0;
     let causalRecoveryAttempts = 0;
-    let modelDecisionsWithoutSourceProgress = 0;
+    let consecutiveModelDecisionsWithoutSemanticProgress = 0;
+    const semanticProgress = new Set<string>();
     const resumedFailedAgentSession =
       this.state.assistantMode === 'agent' && this.options.restoredSession?.status === 'failed';
     let deterministicRecoveryPending =
@@ -460,7 +657,7 @@ export class StudioAgentSession {
         const modelDecisionLimit = this.options.maxModelDecisionsWithoutSourceProgress ?? 12;
         if (
           this.state.assistantMode === 'agent' &&
-          modelDecisionsWithoutSourceProgress >= modelDecisionLimit
+          consecutiveModelDecisionsWithoutSemanticProgress >= modelDecisionLimit
         ) {
           const verificationToolName = this.verificationToolName();
           if (verificationToolName) {
@@ -470,7 +667,7 @@ export class StudioAgentSession {
                 summary:
                   'Provider-call circuit breaker reached. Studio is verifying once without spending another model call.',
                 recovery: 'provider-call-circuit-breaker',
-                modelDecisions: modelDecisionsWithoutSourceProgress,
+                modelDecisions: consecutiveModelDecisionsWithoutSemanticProgress,
               },
               requestId
             );
@@ -495,7 +692,7 @@ export class StudioAgentSession {
             }
           }
           throw new Error(
-            `Studio stopped provider calls after ${modelDecisionLimit} model decisions without a source change. ` +
+            `Studio stopped provider calls after ${modelDecisionLimit} consecutive model decisions without semantic progress. ` +
               'The blocker remains verified as unresolved; no additional model credit was spent.'
           );
         }
@@ -511,7 +708,7 @@ export class StudioAgentSession {
               this.modelContext(
                 latestObservation,
                 this.generalSourceRepairActive &&
-                  modelDecisionsWithoutSourceProgress >=
+                  consecutiveModelDecisionsWithoutSemanticProgress >=
                     Math.min(4, Math.max(1, modelDecisionLimit - 1))
               )
             );
@@ -527,7 +724,7 @@ export class StudioAgentSession {
             requestId
           );
         } else {
-          modelDecisionsWithoutSourceProgress += 1;
+          consecutiveModelDecisionsWithoutSemanticProgress += 1;
         }
         turnsSinceCheckpoint += 1;
         if (action.type === 'message') {
@@ -553,11 +750,50 @@ export class StudioAgentSession {
             await this.setStatus('completed');
             return this.snapshot();
           }
-          latestObservation = {
-            ok: false,
-            error:
-              'Completion rejected: successful non-blocking verification and canonical post-mutation chain closure are required.',
-          };
+          const verificationToolName = this.verificationToolName();
+          if (!verificationToolName) {
+            latestObservation = {
+              ok: false,
+              error:
+                'Completion rejected: no canonical verification tool is registered for this session.',
+            };
+          } else {
+            await this.emit(
+              'model.checkpoint',
+              {
+                summary:
+                  'The model requested completion. Studio is running the exact card verification contract before accepting it.',
+                recovery: 'completion-stop-gate',
+              },
+              requestId
+            );
+            latestObservation = await this.executeTool(
+              {
+                type: 'tool',
+                toolName: verificationToolName,
+                input: {},
+                reason: 'Prove the requested completion with fresh canonical card evidence.',
+              },
+              requestId,
+              { allowDependencyTransaction: true }
+            );
+            if (
+              latestObservation.ok === true &&
+              latestObservation.cardBlocking === false &&
+              this.hasCanonicalChainClosure(requestId)
+            ) {
+              await this.emit('session.completed', { summary: action.summary }, requestId);
+              await this.setStatus('completed');
+              return this.snapshot();
+            }
+            latestObservation = {
+              ...latestObservation,
+              ok: false,
+              error:
+                latestObservation.error ??
+                'Completion rejected: exact card verification still reports a blocker.',
+            };
+          }
         } else {
           consecutiveProtocolMisses = 0;
           const causalEpochBeforeTool = this.causalEpoch;
@@ -565,17 +801,24 @@ export class StudioAgentSession {
           const activeCardBeforeAction = this.latestActiveCardId;
           let effectiveAction = action;
           latestObservation = await this.executeTool(effectiveAction, requestId);
-          if (
-            effectiveAction.toolName === 'recover-active-blocker' &&
-            requestsReviewDecision(latestObservation)
-          ) {
+          const initialProgressFingerprint = semanticProgressFingerprint(
+            effectiveAction,
+            latestObservation
+          );
+          if (initialProgressFingerprint && !semanticProgress.has(initialProgressFingerprint)) {
+            semanticProgress.add(initialProgressFingerprint);
+            consecutiveModelDecisionsWithoutSemanticProgress = 0;
+          }
+          if (requestsReviewDecision(latestObservation)) {
             const terminalReason = String(
               toolOutputRecord(latestObservation)?.terminalReason ?? 'review-required'
             );
+            const decisionMetadata = reviewDecisionMetadata(latestObservation);
             throw new StudioAgentReviewRequiredError(
               latestObservation.error ??
                 'No compatible non-breaking remediation is currently available. Studio requires an explicit engineering decision before continuing.',
-              terminalReason
+              terminalReason,
+              decisionMetadata
             );
           }
           const dependencyPlan = (observation: StudioAgentToolResult) => {
@@ -675,7 +918,7 @@ export class StudioAgentSession {
             effectiveAction.toolName !== 'verify-blocker' &&
             effectiveAction.toolName !== 'verify-goal'
           ) {
-            modelDecisionsWithoutSourceProgress = 0;
+            consecutiveModelDecisionsWithoutSemanticProgress = 0;
           }
           if (
             this.state.assistantMode === 'agent' &&
@@ -858,7 +1101,7 @@ export class StudioAgentSession {
             this.sourceRepairDirective = undefined;
             this.exhaustedTools.clear();
             deterministicRecoveryPending = true;
-            modelDecisionsWithoutSourceProgress = 0;
+            consecutiveModelDecisionsWithoutSemanticProgress = 0;
             consecutiveCausalRejections = 0;
             causalRecoveryAttempts = 0;
             await this.emit(
@@ -950,6 +1193,10 @@ export class StudioAgentSession {
             ? {
                 terminalReason: error.terminalReason,
                 requiresUserDecision: error.requiresUserDecision,
+                ...(error.transactionId ? { transactionId: error.transactionId } : {}),
+                ...(error.decisionOptions.length > 0
+                  ? { decisionOptions: error.decisionOptions }
+                  : {}),
               }
             : {}),
         },
@@ -966,7 +1213,7 @@ export class StudioAgentSession {
     executionPolicy: { allowDependencyTransaction?: boolean } = {}
   ): Promise<StudioAgentToolResult> {
     const tool = this.registry.get(action.toolName);
-    const toolCallId = crypto.randomUUID();
+    const toolCallId = action.callId?.trim() || crypto.randomUUID();
     const durableInput = durableEventValue(action.input);
     await this.emit(
       'tool.requested',
@@ -1145,6 +1392,7 @@ export class StudioAgentSession {
       this.causalEpoch += 1;
     }
     this.recentObservations.push({
+      toolCallId,
       toolName: tool.name,
       input: structuredClone(action.input),
       result,
@@ -1156,11 +1404,13 @@ export class StudioAgentSession {
       );
     }
     const durableResult = durableToolResult(result);
+    const transientResult = liveToolResult(result);
     await this.emit(
       result.ok ? 'tool.completed' : 'tool.failed',
       { toolName: tool.name, input: durableInput, reason: action.reason, ...durableResult },
       requestId,
-      toolCallId
+      toolCallId,
+      { toolName: tool.name, input: durableInput, reason: action.reason, ...transientResult }
     );
     if (tool.activity === 'verify') {
       await this.emit('verify.completed', durableResult, requestId, toolCallId);
@@ -1249,6 +1499,7 @@ export class StudioAgentSession {
       tools,
       latestObservation,
       recentObservations: this.recentObservations.map((observation) => ({
+        toolCallId: observation.toolCallId,
         toolName: observation.toolName,
         input: structuredClone(observation.input),
         result: observation.result,
@@ -1285,7 +1536,8 @@ export class StudioAgentSession {
     type: StudioAgentEvent['type'],
     data: T,
     requestId?: string,
-    toolCallId?: string
+    toolCallId?: string,
+    transientData?: T
   ): Promise<void> {
     const sequence = this.state.sequence + 1;
     const event = createStudioAgentEvent({
@@ -1304,7 +1556,11 @@ export class StudioAgentSession {
       this.state.events = this.state.events.slice(-StudioAgentSession.MAX_IN_MEMORY_EVENTS);
     }
     await this.store.save(this.snapshot());
-    this.listeners.forEach((listener) => listener(event as StudioAgentEvent));
+    const listenerEvent =
+      transientData === undefined
+        ? event
+        : ({ ...event, data: transientData } as StudioAgentEvent<T>);
+    this.listeners.forEach((listener) => listener(listenerEvent as StudioAgentEvent));
   }
 }
 

@@ -24,7 +24,7 @@ const MODE_COPY: Record<
   },
   adopt: {
     title: 'Adopt Project',
-    subtitle: 'Register an on-disk folder with RapidKit metadata and registry',
+    subtitle: 'Register an on-disk folder with Workspai workspace metadata and registry',
     kicker: 'Onboarding',
     icon: ArrowLeftRight,
   },
@@ -78,8 +78,8 @@ export function ImportAdoptOptionsModal({
       <EnterpriseModalNotice tone="info">
         <Package size={14} />
         <span>
-          Module commands (<code>add</code>, <code>modules</code>, …) are only supported for
-          FastAPI and NestJS when <code>--enable-modules</code> is passed.
+          Module commands (<code>add</code>, <code>modules</code>, …) are only supported for FastAPI
+          and NestJS when <code>--enable-modules</code> is passed.
         </span>
       </EnterpriseModalNotice>
 

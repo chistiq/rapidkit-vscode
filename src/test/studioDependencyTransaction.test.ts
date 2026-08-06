@@ -29,6 +29,7 @@ vi.mock('../core/studioWorkspaceCommand.js', async (importOriginal) => {
 });
 
 import { completeStudioDependencyTransactions } from '../core/studioDependencyTransaction.js';
+import { runStudioWorkspaceCommand } from '../core/studioWorkspaceCommand.js';
 
 const roots: string[] = [];
 
@@ -51,6 +52,7 @@ async function projectFixture(): Promise<{
 
 beforeEach(() => {
   executions.queue.splice(0);
+  vi.mocked(runStudioWorkspaceCommand).mockClear();
 });
 
 afterEach(async () => {
@@ -176,5 +178,43 @@ describe('Studio dependency repair transaction', () => {
         summary: 'tests failed',
       })
     );
+  });
+
+  it('fails closed instead of routing a non-Node project through yarn', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-dependency-tx-'));
+    roots.push(workspacePath);
+    const projectPath = path.join(workspacePath, 'api');
+    await fs.ensureDir(projectPath);
+    await fs.writeFile(
+      path.join(projectPath, 'pyproject.toml'),
+      '[project]\nname = "api"\nversion = "0.1.0"\n'
+    );
+    await fs.writeFile(path.join(projectPath, 'requirements.txt'), 'fastapi>=0.116\n');
+
+    const transaction = await completeStudioDependencyTransactions({
+      workspacePath,
+      projectPath,
+    });
+
+    expect(runStudioWorkspaceCommand).not.toHaveBeenCalled();
+    expect(transaction).toMatchObject({
+      state: 'blocked',
+      closureReady: false,
+      projects: [
+        {
+          projectName: 'api',
+          packageManager: 'pip',
+          state: 'blocked',
+          closureReady: false,
+          stages: [
+            {
+              id: 'reconcile',
+              status: 'blocking',
+              summary: expect.stringContaining('refused to guess'),
+            },
+          ],
+        },
+      ],
+    });
   });
 });

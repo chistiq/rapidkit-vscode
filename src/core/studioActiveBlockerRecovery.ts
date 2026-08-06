@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 
 import type { StudioAgentToolResult } from './studioAgentToolRegistry.js';
 import type { StudioAgentWorkspaiToolHost } from './studioAgentWorkspaiTools.js';
+import { isDependencySecurityBlocker } from './studioDependencyIncident.js';
 
 type RecoveryObservation = { capability: string; result: unknown };
 
@@ -47,11 +48,7 @@ export async function runStudioActiveBlockerRecovery(input: {
   transactionId?: () => string;
 }): Promise<StudioAgentToolResult> {
   const observations: RecoveryObservation[] = [];
-  const dependencyIncident = input.blockers.some((blocker) =>
-    /\b(?:dependency|dependencies|vulnerabilit|security audit|npm audit|pnpm audit|yarn audit)\b/i.test(
-      blocker
-    )
-  );
+  const dependencyIncident = input.blockers.some(isDependencySecurityBlocker);
   const dependencyDiagnostics: Array<{
     projectName: string;
     sourceFiles: string[];
