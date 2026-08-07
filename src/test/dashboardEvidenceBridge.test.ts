@@ -119,6 +119,39 @@ describe('dashboardEvidenceBridge', () => {
     ]);
   });
 
+  it('includes a project blocked only by a legacy runtime issue in the Doctor repair scope', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'doctor-last-run.json': {
+        generatedAt: '2026-08-07T00:02:54.004Z',
+        healthScore: { passed: 35, warnings: 23, errors: 2, total: 60 },
+        blockers: [
+          'catalog-api: Dependencies not installed (node_modules empty or missing)',
+          'pulse-app: 3 moderate/high/critical dependency vulnerability(ies) reported.',
+        ],
+        projects: [
+          {
+            name: 'catalog-api',
+            issues: ['Dependencies not installed (node_modules empty or missing)'],
+            vulnerabilities: 0,
+            probes: [],
+          },
+          {
+            name: 'pulse-app',
+            vulnerabilities: 3,
+            probes: [{ id: 'surface-security-hygiene', status: 'fail' }],
+          },
+        ],
+      },
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+
+    expect(bundle.cards.find((card) => card.id === 'doctor')?.affectedProjectNames).toEqual([
+      'catalog-api',
+      'pulse-app',
+    ]);
+  });
+
   it('publishes the authoritative unified intelligence runner artifact as a dashboard card', async () => {
     const stageIds = [
       'model',

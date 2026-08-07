@@ -1,8 +1,8 @@
 <!-- workspai-release-announcement
 {
   "productId": "workspai-vscode",
-  "headline": "Governed Repair with Live Change Review",
-  "summary": "Workspai for VS Code now delegates blocker mutation and verification to the CLI-owned Repair Engine while Studio keeps the user in control with durable progress, commands, changed files, bounded diffs, and explicit decisions.",
+  "headline": "Governed, Target-Aware Repair",
+  "summary": "Workspai for VS Code now delegates blocker mutation and target-aware verification to the CLI-owned Repair Engine while Studio keeps the user in control with durable progress, commands, changed files, bounded diffs, and explicit decisions.",
   "highlights": [
     {
       "icon": "🛠️",
@@ -13,16 +13,16 @@
       "text": "Commands, changed files, and bounded unified diffs stay visible inside the active repair"
     },
     {
+      "icon": "🎯",
+      "text": "The selected repair can close while unrelated workspace blockers remain visible"
+    },
+    {
       "icon": "🛡️",
       "text": "Every Dashboard blocker maps to its producer, artifact, scope, and canonical Stop Gate"
     },
     {
       "icon": "⏯️",
       "text": "Durable sessions preserve progress while start, stop, resume, and guarded decisions remain explicit"
-    },
-    {
-      "icon": "🧩",
-      "text": "Setup requires only the Workspai CLI and keeps RapidKit Core workspace-local and optional"
     }
   ]
 }
@@ -30,11 +30,11 @@
 
 # Workspai VS Code v0.37.0
 
-Released August 6, 2026.
+Released August 7, 2026.
 
-## Governed repair with live change review
+## Governed, target-aware repair with live change review
 
-Workspai 0.37.0 aligns the extension with Workspai CLI 0.53.0 and gives the
+Workspai 0.37.0 aligns the extension with Workspai CLI 0.54.0 and gives the
 canonical Repair Engine ownership of blocker mutation, reconciliation,
 verification, rollback, and closure.
 
@@ -58,6 +58,11 @@ plan → preconditions → approval → checkpoint → execute
 - Source changes retain inspected-file hashes and the CLI transaction receipt.
 - Dependency edits remain incomplete until install/lockfile reconciliation,
   audit, declared tests, declared build, and canonical verification agree.
+- Missing installed dependency trees use the same transaction without requiring
+  an artificial manifest or lockfile edit before reconciliation can begin.
+- Target status and workspace status remain separate: closing the selected
+  blocker does not hide other findings, and unrelated blockers do not undo the
+  completed repair.
 - A reload restores durable events and passed stages without pretending a model
   or subprocess is still running.
 - Start, stop, resume, rollback, and guarded choices remain explicit user or
@@ -73,6 +78,10 @@ oversized, or unsafe paths remain outside inline review.
 The model can reason over Workspai evidence and propose bounded work, but a
 completion request is accepted only after the exact card verification contract
 and canonical post-mutation loop pass.
+
+Bounded conversation history retains complete native tool-call/result pairs.
+Orphaned results are discarded instead of being sent to an OpenAI-compatible
+provider as invalid causal history.
 
 ## Workspace scope stays visible
 
@@ -111,7 +120,7 @@ installations without requiring a registry-backed version probe.
 ## Compatibility
 
 - VS Code 1.106.0 or newer
-- Workspai CLI 0.53.0 or newer
+- Workspai CLI 0.54.0 or newer
 - RapidKit Core 0.6.0 only when a Python-backed kit or module requires it
 
 There are no intentional breaking changes to existing workspaces, Create
@@ -131,7 +140,7 @@ CLI needs verification.
 ## Validation
 
 - Host and Webview type checking, formatting, and linting passed.
-- 368 test files passed; 2,652 tests passed and 2 remained explicitly skipped.
+- 368 test files passed; 2,657 tests passed and 2 remained explicitly skipped.
 - Exact CLI/extension contract parity and all 22 enterprise validation scenarios
   passed against the local Workspai CLI source.
 - Real local CLI integration passed all three repair-boundary scenarios.

@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { runStudioActiveBlockerRecovery } from '../core/studioActiveBlockerRecovery.js';
-import { isDependencySecurityBlocker } from '../core/studioDependencyIncident.js';
+import {
+  isDependencyMaterializationBlocker,
+  isDependencySecurityBlocker,
+} from '../core/studioDependencyIncident.js';
 import type { StudioAgentWorkspaiToolHost } from '../core/studioAgentWorkspaiTools.js';
 
 function host(overrides: Partial<StudioAgentWorkspaiToolHost> = {}): StudioAgentWorkspaiToolHost {
@@ -37,6 +40,62 @@ describe('Studio active blocker recovery', () => {
       isDependencySecurityBlocker('No runtime-native security audit tooling marker detected.')
     ).toBe(false);
     expect(isDependencySecurityBlocker('Missing dependency audit script for CI.')).toBe(false);
+    expect(
+      isDependencyMaterializationBlocker('Dependencies are not installed for catalog-api.')
+    ).toBe(true);
+    expect(
+      isDependencyMaterializationBlocker(
+        'catalog-api: Dependencies not installed (node_modules empty or missing)'
+      )
+    ).toBe(true);
+  });
+
+  it('executes canonical materialization before vulnerability heuristics in a mixed incident', async () => {
+    const inspectDependencySecurity = vi.fn(async () => ({ ok: true }));
+    const inspectRemediationPlan = vi.fn(async () => ({
+      ok: true,
+      output: {
+        steps: [
+          {
+            id: 'doctor.catalog-api.runtime-dependency-materialization.dependency-materialization',
+            order: 1,
+            risk: 'guarded',
+            studioState: 'ready',
+            executable: true,
+          },
+        ],
+      },
+    }));
+    const executeRemediationStep = vi.fn(async () => ({
+      ok: true,
+      changed: false,
+      output: { transaction: { state: 'closed' } },
+    }));
+
+    const result = await runStudioActiveBlockerRecovery({
+      blockers: [
+        'catalog-api: Dependencies not installed (node_modules empty or missing)',
+        'pulse-app: 3 moderate/high/critical dependency vulnerability(ies) reported.',
+      ],
+      dependencyProjectNames: ['pulse-app'],
+      evidenceGeneration: 'doctor-mixed-v1',
+      workspacePath: '/workspace',
+      host: host({ inspectDependencySecurity, inspectRemediationPlan, executeRemediationStep }),
+    });
+
+    expect(inspectDependencySecurity).not.toHaveBeenCalled();
+    expect(executeRemediationStep).toHaveBeenCalledWith({
+      stepId: 'doctor.catalog-api.runtime-dependency-materialization.dependency-materialization',
+      workspacePath: '/workspace',
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      changed: false,
+      output: {
+        recoveryPath: 'contract-remediation-plan',
+        nextAction: 'inspect-remediation-plan',
+      },
+    });
   });
 
   it('uses the contract remediation plan for audit-tooling governance gaps', async () => {

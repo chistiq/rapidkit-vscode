@@ -60,6 +60,15 @@ afterEach(async () => {
 });
 
 describe('Studio dependency repair transaction', () => {
+  it('is not imported by the production Studio host after CLI ownership', async () => {
+    const provider = await fs.readFile(
+      path.resolve('src/ui/webviews/actionsWebviewProvider.ts'),
+      'utf8'
+    );
+    expect(provider).not.toContain('completeStudioDependencyTransactions');
+    expect(provider).toContain('executeCliOwnedCanonicalRepair');
+  });
+
   it('discovers a changed manifest without depending on stale Doctor evidence', async () => {
     const { workspacePath, projectPath } = await projectFixture();
     executions.queue.push(

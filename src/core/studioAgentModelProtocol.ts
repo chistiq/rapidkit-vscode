@@ -25,6 +25,39 @@ export type StudioAgentNativeToolAction = {
 
 export type StudioAgentConversationMessage = AIMessage;
 
+function coherentConversationWindow(
+  messages: StudioAgentConversationMessage[],
+  limit: number
+): StudioAgentConversationMessage[] {
+  const bounded = messages.slice(-limit);
+  const coherent: StudioAgentConversationMessage[] = [];
+  for (let index = 0; index < bounded.length; index += 1) {
+    const message = bounded[index];
+    if ('toolResult' in message) {
+      // A result whose assistant tool call fell outside the bounded window is
+      // invalid for OpenAI-compatible providers and carries no safe context.
+      continue;
+    }
+    if ('toolCall' in message) {
+      const result = bounded[index + 1];
+      if (
+        result &&
+        'toolResult' in result &&
+        result.toolResult.callId === message.toolCall.callId
+      ) {
+        coherent.push(message, result);
+        index += 1;
+      }
+      continue;
+    }
+    coherent.push(message);
+  }
+  while (coherent.length > 0 && coherent[0].role !== 'user') {
+    coherent.shift();
+  }
+  return coherent;
+}
+
 export function restoreStudioAgentNativeConversation(
   session?: StudioAgentPersistedSession
 ): StudioAgentConversationMessage[] {
@@ -202,6 +235,11 @@ function conciseToolOutput(
       'recoveryPath',
       'dependencyBlockerPresent',
       'nextAction',
+      'closureReady',
+      'transaction',
+      'requiresUserDecision',
+      'terminalReason',
+      'decisionOptions',
       'auditExitCode',
       'auditSummary',
       'command',
@@ -215,10 +253,15 @@ function conciseToolOutput(
       'sourceCandidates',
       'unresolvedProjects',
       'processedProjects',
+      'projectNames',
       'clearedProjects',
       'fallbackCapability',
       'recommendedTools',
+      'recommendedActions',
       'exhaustedTools',
+      'observations',
+      'evidenceGeneration',
+      'blockerSignature',
       'incidentGraph',
       'activeHandoff',
       'refresh',
@@ -494,11 +537,7 @@ export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter 
   }
 
   private conversationWindow(limit: number): StudioAgentConversationMessage[] {
-    const window = this.conversation.slice(-limit);
-    while (window.length > 0 && (!('content' in window[0]) || window[0].role !== 'user')) {
-      window.shift();
-    }
-    return window;
+    return coherentConversationWindow(this.conversation, limit);
   }
 
   async next(context: StudioAgentModelContext): Promise<StudioAgentModelAction> {

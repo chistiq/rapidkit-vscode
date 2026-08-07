@@ -774,8 +774,7 @@ export class StudioAgentSession {
                 input: {},
                 reason: 'Prove the requested completion with fresh canonical card evidence.',
               },
-              requestId,
-              { allowDependencyTransaction: true }
+              requestId
             );
             if (
               latestObservation.ok === true &&
@@ -944,8 +943,7 @@ export class StudioAgentSession {
                 input: {},
                 reason: 'Verify that refreshed blocker evidence is non-blocking.',
               },
-              requestId,
-              { allowDependencyTransaction: true }
+              requestId
             );
             if (latestObservation.ok === true && latestObservation.cardBlocking === false) {
               await this.emit(
@@ -1019,8 +1017,7 @@ export class StudioAgentSession {
                 input: dependencyScope,
                 reason: 'Close the dependency transaction before canonical evidence regeneration.',
               },
-              requestId,
-              { allowDependencyTransaction: true }
+              requestId
             );
             dependencyClosureReady =
               toolOutputRecord(latestObservation)?.closureReady === true &&
@@ -1209,8 +1206,7 @@ export class StudioAgentSession {
 
   private async executeTool(
     action: Extract<StudioAgentModelAction, { type: 'tool' }>,
-    requestId: string,
-    executionPolicy: { allowDependencyTransaction?: boolean } = {}
+    requestId: string
   ): Promise<StudioAgentToolResult> {
     const tool = this.registry.get(action.toolName);
     const toolCallId = action.callId?.trim() || crypto.randomUUID();
@@ -1231,23 +1227,6 @@ export class StudioAgentSession {
       : undefined;
     if (phaseViolation) {
       const result = { ok: false, error: phaseViolation };
-      await this.emit(
-        'tool.failed',
-        { toolName: tool.name, input: durableInput, policyRejected: true, ...result },
-        requestId,
-        toolCallId
-      );
-      return result;
-    }
-    if (
-      tool.name === 'complete-dependency-transaction' &&
-      executionPolicy.allowDependencyTransaction !== true
-    ) {
-      const result = {
-        ok: false,
-        error:
-          'Dependency transaction rejected: no causal dependency source mutation was observed. Apply a manifest or lockfile change first; Studio will then run transaction closure automatically.',
-      };
       await this.emit(
         'tool.failed',
         { toolName: tool.name, input: durableInput, policyRejected: true, ...result },

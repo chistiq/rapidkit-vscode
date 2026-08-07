@@ -54,7 +54,6 @@ import {
   type StudioDependencyRepairAttempt,
   type StudioDependencyUpgradeCandidate,
 } from '../../core/studioDependencySecurity.js';
-import { completeStudioDependencyTransactions } from '../../core/studioDependencyTransaction.js';
 import {
   inferVerifiedGoalIntent,
   assertVerifiedGoalCommandSafety,
@@ -2740,9 +2739,11 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           const result = await executeCliOwnedCanonicalRepair({
             workspacePath: request.workspacePath,
             cardId: input.handoff?.cardId ?? 'doctor',
-            projectName:
-              request.projectNames?.[0] ??
-              (request.projectPath ? path.basename(request.projectPath) : undefined),
+            projectName: request.projectPath
+              ? path.basename(request.projectPath)
+              : request.projectNames?.length === 1
+                ? request.projectNames[0]
+                : undefined,
             approvedBy: `vscode:${input.assistantMode}`,
             reportProgress: request.reportProgress
               ? (progress: WorkspaceRepairProgress) => request.reportProgress!({ repair: progress })
@@ -3515,6 +3516,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         changedPaths?: string[];
         workspacePath: string;
         projectPath?: string;
+        reportProgress?: (data: Record<string, unknown>) => Promise<void>;
       }) => {
         try {
           await this._assertSidebarStudioMutationAllowed({
@@ -3523,17 +3525,27 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             actionLabel: 'Studio Agent dependency repair transaction',
             governedRepair: { contractAuthorized: true, reversible: true },
           });
-          const before = await captureStudioWorkspaceSourceSnapshot({
+          const result = await executeCliOwnedCanonicalRepair({
             workspacePath: request.workspacePath,
-            scopePath: request.projectPath ?? request.workspacePath,
+            cardId: activeHandoff.cardId,
+            projectName: request.projectPath
+              ? path.basename(request.projectPath)
+              : request.projectNames?.length === 1
+                ? request.projectNames[0]
+                : undefined,
+            approvedBy: 'vscode:studio-agent',
+            reportProgress: request.reportProgress
+              ? (progress: WorkspaceRepairProgress) => request.reportProgress!({ repair: progress })
+              : undefined,
           });
-          const transaction = await completeStudioDependencyTransactions(request);
-          const after = await captureStudioWorkspaceSourceSnapshot({
-            workspacePath: request.workspacePath,
-            scopePath: request.projectPath ?? request.workspacePath,
-          });
-          const changedPaths = diffStudioWorkspaceSourceSnapshots(before, after);
-          if (changedPaths.length > 0) {
+          const closed = result.transaction.state === 'closed';
+          const changeReview = result.changedPaths.length
+            ? await inspectStudioWorkspaceChanges({
+                workspacePath: request.workspacePath,
+                paths: result.changedPaths,
+              })
+            : undefined;
+          if (result.changedPaths.length > 0) {
             repairEvidence = await collectSidebarStudioRepairEvidence({
               workspacePath: request.workspacePath,
               projectPath: request.projectPath,
@@ -3541,33 +3553,22 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             });
           }
           return {
-            ok: transaction.closureReady,
-            changed: changedPaths.length > 0,
+            ok: closed,
+            changed: result.changedPaths.length > 0,
             evidenceGeneration: repairEvidence.evidenceFingerprint,
             output: {
-              transaction,
-              changedPaths,
-              closureReady: transaction.closureReady,
-              nextAction: transaction.closureReady
-                ? 'workspace-intelligence-chain'
-                : 'general-source-repair',
-              ...(transaction.closureReady
-                ? {}
-                : {
-                    fallbackCapability: 'general-source-repair',
-                    recommendedTools: [
-                      'inspect-source',
-                      'run-workspace-command',
-                      'apply-workspace-patch',
-                      'inspect-workspace-changes',
-                    ],
-                  }),
+              transaction: result.transaction,
+              changedPaths: result.changedPaths,
+              ...(typeof changeReview?.diff === 'string' ? { diff: changeReview.diff } : {}),
+              closureReady: closed,
+              nextAction: closed ? 'workspace-intelligence-chain' : 'user-decision',
             },
-            ...(transaction.closureReady
+            ...(closed
               ? {}
               : {
                   error:
-                    'Dependency transaction is not closed. Resolve the remaining audit or project-native validation failure before the governed intelligence chain.',
+                    result.transaction.decision?.reason ??
+                    `CLI dependency repair ended in ${result.transaction.state}.`,
                 }),
           };
         } catch (error) {

@@ -45,6 +45,14 @@ VS Code: progress, diff, evidence, and exact user decisions
 - Transactions may expose `adapterEvaluations` for every affected ecosystem.
   Studio treats `partial` and `unsupported` as actionable CLI decisions, never
   as permission for the model to bypass the engine.
+- Missing installed dependency trees use the CLI's typed
+  `dependency-materialization` transaction. Studio accepts a closed install or
+  restore even when no manifest or lockfile diff was produced; declared
+  validation and canonical Doctor evidence are the proof.
+- A workspace-scoped incident with multiple projects is submitted as one card
+  scope. Studio never selects the first project implicitly. The CLI orders
+  eligible actions and may close safe work before returning an explicit
+  decision for a different project.
 
 ## Mutation invariant
 
@@ -52,11 +60,16 @@ The model may inspect, search, diagnose, test, and build. All source edits,
 deletions, formatting changes, dependency repairs, and governed remediation
 steps must cross the CLI transaction boundary. The extension can display a
 diff after execution, but the diff is not evidence of completion. Only the
-CLI-owned canonical verification can close the transaction.
+CLI-owned canonical verification can close the transaction. Its durable
+receipt separates the selected `targetStatus` from the full
+`workspaceStatus`, so Studio can close proven work and advance to an unrelated
+remaining blocker without concealing the blocked workspace gate.
 
 This invariant is source-guarded in tests: the active model-tool bindings,
 manual Studio mutation actions, and Auto-fix entry point must not call legacy
 patch, Doctor-remediation, bootstrap-remediation, or inline-command executors.
+The older extension-local dependency transaction helper is not imported by a
+production surface; package-manager execution authority remains in the CLI.
 
 ## Failure and rollback
 

@@ -2,7 +2,10 @@ import crypto from 'node:crypto';
 
 import type { StudioAgentToolResult } from './studioAgentToolRegistry.js';
 import type { StudioAgentWorkspaiToolHost } from './studioAgentWorkspaiTools.js';
-import { isDependencySecurityBlocker } from './studioDependencyIncident.js';
+import {
+  isDependencyMaterializationBlocker,
+  isDependencySecurityBlocker,
+} from './studioDependencyIncident.js';
 
 type RecoveryObservation = { capability: string; result: unknown };
 
@@ -49,6 +52,7 @@ export async function runStudioActiveBlockerRecovery(input: {
 }): Promise<StudioAgentToolResult> {
   const observations: RecoveryObservation[] = [];
   const dependencyIncident = input.blockers.some(isDependencySecurityBlocker);
+  const dependencyMaterializationIncident = input.blockers.some(isDependencyMaterializationBlocker);
   const dependencyDiagnostics: Array<{
     projectName: string;
     sourceFiles: string[];
@@ -76,7 +80,15 @@ export async function runStudioActiveBlockerRecovery(input: {
     }
   };
 
-  if (dependencyIncident && input.dependencyProjectNames.length > 0) {
+  // A missing installed dependency tree is already represented by a typed,
+  // runtime-native CLI remediation transaction. In mixed incidents it must run
+  // before advisory-specific heuristics; otherwise an unrelated vulnerability
+  // decision can prevent a safe install/restore in another project.
+  if (
+    !dependencyMaterializationIncident &&
+    dependencyIncident &&
+    input.dependencyProjectNames.length > 0
+  ) {
     let dependencySourceChanged = false;
     const unresolvedProjects: string[] = [];
     const clearedProjects: string[] = [];

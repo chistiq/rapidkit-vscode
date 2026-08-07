@@ -35,7 +35,7 @@ function operation(artifact: WorkspaceRepairCliTransaction): string {
   });
 }
 
-async function installedPackage(root: string, version = '0.53.0') {
+async function installedPackage(root: string, version = '0.54.0') {
   const packageRoot = path.join(root, 'node_modules', 'workspai');
   const manifestPath = path.join(packageRoot, 'package.json');
   await fs.outputFile(path.join(packageRoot, 'dist', 'index.js'), '#!/usr/bin/env node\n');
@@ -167,25 +167,44 @@ describe('CLI-owned Workspace Repair client', () => {
     const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-client-'));
     const metadata = await installedPackage(workspacePath);
     const active = transaction('tx-active', 'approved');
+    active.verification = {
+      status: 'not-run',
+      artifact: '.workspai/reports/workspace-intelligence-run-last-run.json',
+      exitCode: null,
+      summary: 'Legacy v1 receipt without target/workspace outcome fields.',
+    };
     await fs.outputJson(
       path.join(workspacePath, '.workspai', 'reports', 'workspace-repair-last-run.json'),
       active
     );
     const actions: string[] = [];
+    const progress: string[] = [];
 
     const result = await executeCliOwnedCanonicalRepair({
       workspacePath,
       cardId: 'doctor',
       approvedBy: 'vscode:test',
       installedPackages: [metadata],
+      reportProgress: async (entry) => progress.push(entry.message),
       runner: async ({ args }) => {
         actions.push(args[2]);
-        return { exitCode: 0, stdout: operation(transaction('tx-active', 'closed')), stderr: '' };
+        const closed = transaction('tx-active', 'closed');
+        closed.verification = {
+          status: 'passed',
+          targetStatus: 'passed',
+          workspaceStatus: 'blocked',
+          remainingActionIds: [],
+          artifact: '.workspai/reports/workspace-intelligence-run-last-run.json',
+          exitCode: 2,
+          summary: 'Selected repair passed; other findings remain.',
+        };
+        return { exitCode: 2, stdout: operation(closed), stderr: '' };
       },
     });
 
     expect(actions).toEqual(['resume']);
     expect(result.transaction.state).toBe('closed');
+    expect(progress.at(-1)).toContain('Other governed workspace findings remain');
   });
 
   it('submits only an explicit CLI decision and binds a fresh plan to fresh approval', async () => {
@@ -223,6 +242,54 @@ describe('CLI-owned Workspace Repair client', () => {
     });
 
     expect(actions).toEqual(['decide', 'approve', 'execute']);
+    expect(result.transaction).toMatchObject({ transactionId: 'tx-fresh', state: 'closed' });
+  });
+
+  it('replans a stale manual-only decision instead of trapping Resume on it forever', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-client-'));
+    const metadata = await installedPackage(workspacePath);
+    const stale = transaction('tx-stale', 'decision-required');
+    stale.decision = {
+      reason: 'No compatible automatic action was available in the previous evidence.',
+      options: ['manual-repair', 'cancel'],
+    };
+    await fs.outputJson(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-repair-last-run.json'),
+      stale
+    );
+    const actions: string[] = [];
+
+    const result = await executeCliOwnedCanonicalRepair({
+      workspacePath,
+      cardId: 'doctor',
+      approvedBy: 'vscode:test',
+      installedPackages: [metadata],
+      runner: async ({ args }) => {
+        const action = args[2];
+        actions.push(action);
+        if (action === 'plan') {
+          return {
+            exitCode: 0,
+            stdout: operation(transaction('tx-fresh', 'awaiting-approval')),
+            stderr: '',
+          };
+        }
+        if (action === 'approve') {
+          return {
+            exitCode: 0,
+            stdout: operation(transaction('tx-fresh', 'approved')),
+            stderr: '',
+          };
+        }
+        return {
+          exitCode: 0,
+          stdout: operation(transaction('tx-fresh', 'closed')),
+          stderr: '',
+        };
+      },
+    });
+
+    expect(actions).toEqual(['plan', 'approve', 'execute']);
     expect(result.transaction).toMatchObject({ transactionId: 'tx-fresh', state: 'closed' });
   });
 

@@ -101,11 +101,30 @@ export type WorkspaceRepairCliTransaction = {
     summary: string;
     changedPaths?: string[];
   }>;
+  verification?: {
+    status: 'passed' | 'failed' | 'not-run';
+    targetStatus?: 'passed' | 'failed' | 'unknown';
+    workspaceStatus?: 'passed' | 'blocked' | 'failed';
+    remainingActionIds?: string[];
+    artifact: '.workspai/reports/workspace-intelligence-run-last-run.json';
+    exitCode: number | null;
+    summary: string;
+  };
   decision?: {
     reason: string;
     options: WorkspaceRepairDecision[];
   };
 };
+
+function completedRepairMessage(transaction: WorkspaceRepairCliTransaction): string {
+  if (transaction.state !== 'closed') {
+    return transaction.decision?.reason ?? `Repair ended in ${transaction.state}.`;
+  }
+  if (transaction.verification?.workspaceStatus === 'blocked') {
+    return 'Selected repair closed. Other governed workspace findings remain and are available as the next repair target.';
+  }
+  return transaction.verification?.summary ?? 'Repair closed after canonical verification.';
+}
 
 export type WorkspaceRepairProgress = {
   phase: 'plan' | 'approval' | 'execute' | 'complete';
@@ -319,7 +338,15 @@ function isRepairTransaction(value: unknown): value is WorkspaceRepairCliTransac
       (typeof candidate.decision.reason === 'string' &&
         Array.isArray(decisionOptions) &&
         decisionOptions.length > 0 &&
-        decisionOptions.every((decision) => REPAIR_DECISIONS.has(decision))))
+        decisionOptions.every((decision) => REPAIR_DECISIONS.has(decision)))) &&
+    (!candidate.verification ||
+      (['passed', 'failed', 'not-run'].includes(candidate.verification.status) &&
+        (candidate.verification.targetStatus === undefined ||
+          ['passed', 'failed', 'unknown'].includes(candidate.verification.targetStatus)) &&
+        (candidate.verification.workspaceStatus === undefined ||
+          ['passed', 'blocked', 'failed'].includes(candidate.verification.workspaceStatus)) &&
+        (candidate.verification.remainingActionIds === undefined ||
+          Array.isArray(candidate.verification.remainingActionIds))))
   );
 }
 
@@ -395,10 +422,7 @@ async function advanceApprovedRepair(input: {
     phase: 'complete',
     state: transaction.state,
     transactionId: transaction.transactionId,
-    message:
-      transaction.state === 'closed'
-        ? 'Repair closed after canonical verification.'
-        : (transaction.decision?.reason ?? `Repair ended in ${transaction.state}.`),
+    message: completedRepairMessage(transaction),
   });
   return { transaction, changedPaths: changedPaths(transaction) };
 }
@@ -449,10 +473,7 @@ async function resumeRepair(input: {
     phase: 'complete',
     state: transaction.state,
     transactionId: transaction.transactionId,
-    message:
-      transaction.state === 'closed'
-        ? 'Repair closed after canonical verification.'
-        : (transaction.decision?.reason ?? `Repair ended in ${transaction.state}.`),
+    message: completedRepairMessage(transaction),
   });
   return { transaction, changedPaths: changedPaths(transaction) };
 }
@@ -597,10 +618,14 @@ export async function executeCliOwnedCanonicalRepair(input: {
     installedPackages: input.installedPackages,
   });
   const active = await readLatestCliOwnedRepair({ workspacePath: input.workspacePath });
+  const activeRequiresExplicitRiskDecision = active?.decision?.options.some((option) =>
+    ['approve-guarded', 'approve-invasive', 'allow-breaking', 'allow-force'].includes(option)
+  );
   if (
     active &&
     active.target.cardId === input.cardId &&
     (!input.projectName || active.target.projectName === input.projectName) &&
+    (active.state !== 'decision-required' || activeRequiresExplicitRiskDecision) &&
     !['closed', 'rolled-back', 'cancelled', 'failed'].includes(active.state)
   ) {
     return resumeRepair({

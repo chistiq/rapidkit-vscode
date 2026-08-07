@@ -1047,7 +1047,7 @@ describe('Studio Agent session runtime', () => {
     ]);
   });
 
-  it('rejects a model-declared dependency transaction without an observed source mutation', async () => {
+  it('delegates a model-declared dependency transaction to the CLI without requiring source mutation', async () => {
     const registry = new StudioAgentToolRegistry();
     let transactionRuns = 0;
     registry.register({
@@ -1075,7 +1075,7 @@ describe('Studio Agent session runtime', () => {
           type: 'tool',
           toolName: 'complete-dependency-transaction',
           input: { projectNames: ['api'] },
-          reason: 'Claim transaction closure without changing source.',
+          reason: 'Materialize the missing dependency tree through the CLI-owned transaction.',
         },
       ]),
       registry,
@@ -1085,11 +1085,11 @@ describe('Studio Agent session runtime', () => {
     const result = await session.run('Repair dependency blocker');
 
     expect(result.status).toBe('failed');
-    expect(transactionRuns).toBe(0);
+    expect(transactionRuns).toBe(1);
     expect(result.events).toContainEqual(
       expect.objectContaining({
-        type: 'tool.failed',
-        data: expect.objectContaining({ policyRejected: true }),
+        type: 'tool.completed',
+        data: expect.objectContaining({ toolName: 'complete-dependency-transaction', ok: true }),
       })
     );
   });

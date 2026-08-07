@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 No unreleased changes yet.
 
-## [0.37.0] - 2026-08-06
+## [0.37.0] - 2026-08-07
 
 ### Added
 
@@ -17,7 +17,11 @@ No unreleased changes yet.
   approval, checkpoint, execution, reconciliation, verification, rollback, and
   decision-required states.
 - Synchronized card-repair, repair-capabilities, proposal, transaction,
-  runtime-command, and artifact contracts from Workspai CLI 0.53.0.
+  runtime-command, and artifact contracts from Workspai CLI 0.54.0.
+- Target-aware CLI transaction receipts that distinguish the selected repair
+  result from unrelated blockers elsewhere in the workspace.
+- Typed dependency-materialization recovery for declared projects whose local
+  installed dependency tree is absent or incomplete.
 - Exact repair-capability and Stop Gate coverage for every Dashboard evidence
   card.
 - Live command, changed-file, and bounded unified-diff review inside Studio
@@ -35,6 +39,10 @@ No unreleased changes yet.
 - Made Studio responsible for workspace/project scope, model interaction,
   progress, diff presentation, and explicit user decisions instead of owning a
   competing repair executor.
+- Made canonical repairs preserve exact project scope and avoid guessing the
+  first affected project in multi-project incidents.
+- Made bounded model history retain only coherent tool-call/result pairs so a
+  restored or truncated session remains valid for OpenAI-compatible providers.
 - Made Setup require only Workspai CLI; Python and RapidKit Core remain optional
   until a Python-backed capability needs them.
 - Made workspace-local Core upgrades use the owning `.venv` and fail closed when
@@ -46,12 +54,18 @@ No unreleased changes yet.
   retaining workspace, project, terminal, lifecycle, import, and export actions
   in grouped menus.
 - Updated Getting Started and UI surface documentation for extension 0.37.0 and
-  Workspai CLI 0.53.0.
+  Workspai CLI 0.54.0.
 
 ### Fixed
 
 - Fixed Studio accepting model completion before the exact card verification
   contract and canonical post-mutation chain had closed.
+- Fixed a successful dependency installation being rejected merely because it
+  did not require a manifest or lockfile edit.
+- Fixed an unrelated workspace blocker causing a completed target repair to be
+  shown as failed or repeatedly resumed.
+- Fixed stale manual-only decisions trapping Resume instead of producing a
+  fresh CLI-owned plan.
 - Fixed repaired or restored sessions losing provider call identity and
   reviewable command/change evidence across native tool rounds.
 - Fixed Dashboard creation and next-step guidance treating missing optional
@@ -67,12 +81,12 @@ No unreleased changes yet.
 ### Compatibility
 
 - VS Code 1.106.0+
-- Workspai CLI 0.53.0+
+- Workspai CLI 0.54.0+
 - RapidKit Core 0.6.0 only for Python-backed kits and modules
 
 ### Verification
 
-- 368 test files passed; 2,652 tests passed and 2 were explicitly skipped.
+- 368 test files passed; 2,657 tests passed and 2 were explicitly skipped.
 - Host/Webview type checking, formatting, linting, production build, exact
   CLI-contract parity, 22 enterprise scenarios, 3 local CLI integration
   scenarios, VSIX packaging, artifact smoke, and dependency audit passed.

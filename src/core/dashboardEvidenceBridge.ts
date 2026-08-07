@@ -945,8 +945,11 @@ function buildDoctorCard(
         return [];
       }
       const project = entry as Record<string, unknown>;
+      const projectName = typeof project.name === 'string' ? project.name.trim() : '';
       const probes = Array.isArray(project.probes) ? project.probes : [];
       const blocked =
+        (projectName.length > 0 &&
+          blockers.some((blocker) => blocker.trim().startsWith(`${projectName}:`))) ||
         Number(project.vulnerabilities ?? 0) > 0 ||
         Number(project.errors ?? 0) > 0 ||
         probes.some(
@@ -956,9 +959,7 @@ function buildDoctorCard(
             !Array.isArray(probe) &&
             (probe as Record<string, unknown>).status === 'fail'
         );
-      return blocked && typeof project.name === 'string' && project.name.trim()
-        ? [project.name.trim()]
-        : [];
+      return blocked && projectName ? [projectName] : [];
     })
     .filter((name, index, names) => names.indexOf(name) === index);
   const status: DashboardEvidenceStatus = errors > 0 ? 'fail' : warnings > 0 ? 'warn' : 'pass';

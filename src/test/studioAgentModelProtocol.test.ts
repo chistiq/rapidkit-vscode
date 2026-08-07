@@ -210,6 +210,77 @@ describe('Studio Agent model protocol', () => {
     expect(requests[1]?.at(-1)?.role).toBe('user');
   });
 
+  it('never emits an orphaned tool result when the provider conversation window is bounded', async () => {
+    const requests: StudioAgentConversationMessage[][] = [];
+    let turn = 0;
+    const adapter = new ContractStudioAgentModelAdapter(
+      'Materialize dependencies',
+      async (_prompt, request) => {
+        requests.push(request.messages);
+        turn += 1;
+        return {
+          callId: `dependency-call-${turn}`,
+          toolName: 'complete-dependency-transaction',
+          input: { projectNames: ['catalog-api'] },
+        };
+      }
+    );
+    const baseContext = {
+      session: {
+        schemaVersion: 'workspai.studio-agent-session.v1',
+        id: 'bounded-tool-conversation',
+        workspacePath: '/workspace',
+        cardId: 'doctor',
+        assistantMode: 'agent',
+        status: 'running',
+        createdAt: '2026-08-04T00:00:00.000Z',
+        updatedAt: '2026-08-04T00:00:00.000Z',
+        sequence: 0,
+        events: [],
+      },
+      tools: [
+        {
+          name: 'complete-dependency-transaction',
+          title: 'Complete dependency transaction',
+          description: 'Delegate repair to the CLI.',
+          inputSchema: { type: 'object' },
+          activity: 'change',
+          risk: 'guarded-write',
+        },
+      ],
+      steering: [],
+    } satisfies StudioAgentModelContext;
+
+    for (let index = 0; index < 8; index += 1) {
+      const previousCallId = index > 0 ? `dependency-call-${index}` : undefined;
+      await adapter.next({
+        ...baseContext,
+        latestObservation: { ok: false, error: `observation-${index}` },
+        recentObservations: previousCallId
+          ? [
+              {
+                toolCallId: previousCallId,
+                toolName: 'complete-dependency-transaction',
+                input: { projectNames: ['catalog-api'] },
+                result: { ok: false, error: `observation-${index}` },
+              },
+            ]
+          : [],
+      });
+    }
+
+    for (const messages of requests) {
+      messages.forEach((message, index) => {
+        if (!('toolResult' in message)) return;
+        const preceding = messages[index - 1];
+        expect(preceding && 'toolCall' in preceding).toBe(true);
+        if (preceding && 'toolCall' in preceding) {
+          expect(preceding.toolCall.callId).toBe(message.toolResult.callId);
+        }
+      });
+    }
+  });
+
   it('restores only completed native tool rounds from a durable session', () => {
     const session = {
       schemaVersion: 'workspai.studio-agent-session.v1',

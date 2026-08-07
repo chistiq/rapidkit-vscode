@@ -30,3 +30,24 @@ export function isDependencySecurityBlocker(blocker: string): boolean {
     )
   );
 }
+
+/**
+ * Classify a dependency definition whose local installed/runtime tree is
+ * absent or incomplete. This is deliberately separate from dependency
+ * security: materializing an already-declared tree is a valid repair even
+ * when no manifest or lockfile source mutation is observed.
+ */
+export function isDependencyMaterializationBlocker(blocker: string): boolean {
+  const normalized = blocker.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return (
+    /\bdependencies\s+are\s+not\s+installed\b/i.test(normalized) ||
+    /\bdependencies\s+not\s+installed\b/i.test(normalized) ||
+    /\bnode_modules\b[^.]*\b(?:empty|missing|not\s+found)\b/i.test(normalized) ||
+    /\b(?:installed|runtime)\s+dependency\s+tree\b[^.]*\b(?:empty|missing|incomplete)\b/i.test(
+      normalized
+    )
+  );
+}
