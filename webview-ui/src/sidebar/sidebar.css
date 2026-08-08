@@ -3810,6 +3810,102 @@ body {
   font-weight: 600;
 }
 
+.ws-sidebar__studio-file-changes {
+  margin-top: 4px;
+  padding: 7px;
+  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 34%, var(--vscode-panel-border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 94%, var(--vscode-focusBorder) 6%);
+}
+
+.ws-sidebar__studio-file-changes > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ws-sidebar__studio-file-changes > header strong {
+  color: var(--vscode-foreground);
+  font-size: var(--ws-sidebar-text-xs);
+  font-weight: 650;
+}
+
+.ws-sidebar__studio-file-changes > header small {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 10px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  text-align: center;
+}
+
+.ws-sidebar__studio-file-changes .ws-sidebar__studio-patch-list > li {
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--vscode-panel-border) 62%, transparent);
+}
+
+.ws-sidebar__studio-file-changes .ws-sidebar__studio-patch-summary {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.ws-sidebar__studio-file-changes .ws-sidebar__studio-patch-summary > button:first-child {
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--vscode-textLink-foreground);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-sidebar__studio-file-changes .ws-sidebar__studio-patch-summary > button:first-child code {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-sidebar__studio-file-changes .ws-sidebar__studio-patch-summary > span {
+  padding: 0;
+  border: 0;
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--ws-sidebar-text-xxs);
+  white-space: nowrap;
+}
+
+.ws-sidebar__studio-diff-button {
+  padding: 2px 6px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 4px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  font-size: var(--ws-sidebar-text-xxs);
+  cursor: pointer;
+}
+
+.ws-sidebar__studio-diff-button:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.ws-sidebar__studio-file-preview {
+  margin-top: 5px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.ws-sidebar__studio-file-preview > summary {
+  cursor: pointer;
+  font-size: var(--ws-sidebar-text-xxs);
+  user-select: none;
+}
+
+.ws-sidebar__studio-file-preview .ws-sidebar__studio-patch-diff {
+  margin-left: 0;
+}
+
 .ws-sidebar__studio-patch-list {
   margin: 6px 0 0;
   padding: 0;

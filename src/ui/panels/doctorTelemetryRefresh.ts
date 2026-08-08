@@ -59,10 +59,19 @@ export function extractWorkspacePathFromReportPath(filePath: string): string | u
       return rootCandidate;
     }
 
-    const archiveSuffix = `${path.sep}${metadataDir}${path.sep}archive-manifest.json`;
-    const archiveIdx = filePath.lastIndexOf(archiveSuffix);
-    if (archiveIdx > 0) {
-      return filePath.slice(0, archiveIdx);
+    for (const metadataFile of [
+      'archive-manifest.json',
+      'workspace.json',
+      'workspace.contract.json',
+      'toolchain.lock',
+      'policies.yml',
+      'policies.yaml',
+    ]) {
+      const metadataSuffix = `${path.sep}${metadataDir}${path.sep}${metadataFile}`;
+      const metadataIdx = filePath.lastIndexOf(metadataSuffix);
+      if (metadataIdx > 0) {
+        return filePath.slice(0, metadataIdx);
+      }
     }
   }
 

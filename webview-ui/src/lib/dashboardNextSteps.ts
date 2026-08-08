@@ -12,7 +12,7 @@ import type {
   DashboardNextStep,
   DashboardNextStepPriority,
 } from './dashboardEvidence';
-import { findEvidenceCard } from './dashboardEvidence';
+import { findEvidenceCard, resolveEvidenceCardPosture } from './dashboardEvidence';
 import { getDashboardCommandMeta } from './dashboardCommandRegistry';
 import { buildEvidenceCardCommandData } from './dashboardEvidenceDirectRun';
 import {
@@ -102,7 +102,8 @@ export function buildDashboardNextSteps(input: {
   }
 
   const doctorCard = findEvidenceCard(evidence, 'doctor');
-  if (doctorCard?.status === 'fail') {
+  const doctorPosture = doctorCard ? resolveEvidenceCardPosture(doctorCard) : null;
+  if (doctorCard && doctorPosture === 'blocked') {
     steps.push({
       id: 'doctor-errors',
       title: 'Resolve doctor blockers',
@@ -115,7 +116,7 @@ export function buildDashboardNextSteps(input: {
         ? { path: activeWorkspace.path, name: activeWorkspace.name, preferredAction: 'check' }
         : undefined,
     });
-  } else if (doctorCard?.status === 'warn') {
+  } else if (doctorCard && doctorPosture === 'attention') {
     steps.push({
       id: 'doctor-warnings',
       title: 'Review doctor warnings',
@@ -131,7 +132,10 @@ export function buildDashboardNextSteps(input: {
   }
 
   const projectDoctorCard = findEvidenceCard(evidence, 'projectDoctor');
-  if (hasProject && projectDoctorCard?.status === 'fail') {
+  const projectDoctorPosture = projectDoctorCard
+    ? resolveEvidenceCardPosture(projectDoctorCard)
+    : null;
+  if (hasProject && projectDoctorCard && projectDoctorPosture === 'blocked') {
     steps.push({
       id: 'project-doctor-errors',
       title: 'Fix project doctor blockers',
@@ -141,10 +145,23 @@ export function buildDashboardNextSteps(input: {
       command: 'projectDoctor',
       incidentStudioTarget: 'doctor',
     });
+  } else if (hasProject && projectDoctorCard && projectDoctorPosture === 'attention') {
+    steps.push({
+      id: 'project-doctor-review',
+      title: 'Review project health',
+      detail: projectDoctorCard.blockers?.[0] ?? projectDoctorCard.summary,
+      priority: 'recommended',
+      section: 'console',
+      command: 'projectDoctor',
+      incidentStudioTarget: 'doctor',
+    });
   }
 
   const importReadinessCard = findEvidenceCard(evidence, 'importReadiness');
-  if (hasProject && importReadinessCard?.status === 'fail') {
+  const importReadinessPosture = importReadinessCard
+    ? resolveEvidenceCardPosture(importReadinessCard)
+    : null;
+  if (hasProject && importReadinessCard && importReadinessPosture === 'blocked') {
     steps.push({
       id: 'import-readiness-blocked',
       title: 'Resolve import readiness blockers',
@@ -153,7 +170,7 @@ export function buildDashboardNextSteps(input: {
       section: 'console',
       command: 'projectDoctor',
     });
-  } else if (hasProject && importReadinessCard?.status === 'warn') {
+  } else if (hasProject && importReadinessCard && importReadinessPosture === 'attention') {
     steps.push({
       id: 'import-readiness-review',
       title: 'Review import readiness',
@@ -181,7 +198,8 @@ export function buildDashboardNextSteps(input: {
     workspaceIsEmpty || (!hasProject && !workspaceHasRegisteredProjects);
 
   const analyzeCard = findEvidenceCard(evidence, 'analyze');
-  if (!deferReleaseEvidenceSteps && analyzeCard?.status === 'fail') {
+  const analyzePosture = analyzeCard ? resolveEvidenceCardPosture(analyzeCard) : null;
+  if (!deferReleaseEvidenceSteps && analyzeCard && analyzePosture === 'blocked') {
     steps.push({
       id: 'analyze-blockers',
       title: 'Fix analyze findings',
@@ -191,11 +209,15 @@ export function buildDashboardNextSteps(input: {
       command: 'workspaceAnalyze',
       incidentStudioTarget: 'analyze',
     });
-  } else if (!deferReleaseEvidenceSteps && analyzeCard?.status === 'missing') {
+  } else if (!deferReleaseEvidenceSteps && analyzeCard && analyzePosture === 'attention') {
     steps.push({
-      id: 'run-analyze',
-      title: 'Generate analyze evidence',
-      detail: 'Run workspace Analyze to populate the ops evidence loop.',
+      id: analyzeCard.status === 'missing' ? 'run-analyze' : 'review-analyze',
+      title:
+        analyzeCard.status === 'missing' ? 'Generate analyze evidence' : 'Review analyze findings',
+      detail:
+        analyzeCard.status === 'missing'
+          ? 'Run workspace Analyze to populate the ops evidence loop.'
+          : (analyzeCard.blockers?.[0] ?? analyzeCard.summary),
       priority: 'recommended',
       section: 'repair',
       command: 'workspaceAnalyze',
@@ -203,7 +225,8 @@ export function buildDashboardNextSteps(input: {
   }
 
   const pipelineCard = findEvidenceCard(evidence, 'pipeline');
-  if (!deferReleaseEvidenceSteps && pipelineCard?.status === 'fail') {
+  const pipelinePosture = pipelineCard ? resolveEvidenceCardPosture(pipelineCard) : null;
+  if (!deferReleaseEvidenceSteps && pipelineCard && pipelinePosture === 'blocked') {
     steps.push({
       id: 'pipeline-blockers',
       title: 'Clear governance pipeline blockers',
@@ -213,10 +236,21 @@ export function buildDashboardNextSteps(input: {
       command: 'workspacePipeline',
       incidentStudioTarget: 'readiness',
     });
+  } else if (!deferReleaseEvidenceSteps && pipelineCard && pipelinePosture === 'attention') {
+    steps.push({
+      id: 'pipeline-review',
+      title: 'Review governance pipeline',
+      detail: pipelineCard.blockers?.[0] ?? pipelineCard.summary,
+      priority: 'recommended',
+      section: 'repair',
+      command: 'workspacePipeline',
+      incidentStudioTarget: 'readiness',
+    });
   }
 
   const readinessCard = findEvidenceCard(evidence, 'readiness');
-  if (!deferReleaseEvidenceSteps && readinessCard?.status === 'fail') {
+  const readinessPosture = readinessCard ? resolveEvidenceCardPosture(readinessCard) : null;
+  if (!deferReleaseEvidenceSteps && readinessCard && readinessPosture === 'blocked') {
     steps.push({
       id: 'readiness-blockers',
       title: 'Clear readiness blockers',
@@ -226,10 +260,21 @@ export function buildDashboardNextSteps(input: {
       command: 'workspaceReadiness',
       incidentStudioTarget: 'readiness',
     });
+  } else if (!deferReleaseEvidenceSteps && readinessCard && readinessPosture === 'attention') {
+    steps.push({
+      id: 'readiness-review',
+      title: 'Review release readiness',
+      detail: readinessCard.blockers?.[0] ?? readinessCard.summary,
+      priority: 'recommended',
+      section: 'repair',
+      command: 'workspaceReadiness',
+      incidentStudioTarget: 'readiness',
+    });
   }
 
   const autopilotCard = findEvidenceCard(evidence, 'autopilot');
-  if (!deferReleaseEvidenceSteps && autopilotCard?.status === 'fail') {
+  const autopilotPosture = autopilotCard ? resolveEvidenceCardPosture(autopilotCard) : null;
+  if (!deferReleaseEvidenceSteps && autopilotCard && autopilotPosture === 'blocked') {
     steps.push({
       id: 'autopilot-blockers',
       title: 'Review autopilot release blockers',
@@ -239,10 +284,20 @@ export function buildDashboardNextSteps(input: {
       command: 'workspaceAutopilotRelease',
       incidentStudioTarget: 'release',
     });
+  } else if (!deferReleaseEvidenceSteps && autopilotCard && autopilotPosture === 'attention') {
+    steps.push({
+      id: 'autopilot-review',
+      title: 'Review release evidence',
+      detail: autopilotCard.blockers?.[0] ?? autopilotCard.summary,
+      priority: 'recommended',
+      section: 'repair',
+      command: 'workspaceAutopilotRelease',
+      incidentStudioTarget: 'release',
+    });
   }
 
   const shareCard = findEvidenceCard(evidence, 'share');
-  if (shareCard && (shareCard.status === 'warn' || shareCard.status === 'fail')) {
+  if (shareCard && resolveEvidenceCardPosture(shareCard) !== 'healthy') {
     steps.push({
       id: 'share-handoff',
       title: 'Review share bundle health',
@@ -254,7 +309,7 @@ export function buildDashboardNextSteps(input: {
   }
 
   const snapshotCard = findEvidenceCard(evidence, 'snapshot');
-  if (snapshotCard?.status === 'fail') {
+  if (snapshotCard && resolveEvidenceCardPosture(snapshotCard) !== 'healthy') {
     steps.push({
       id: 'snapshot-review',
       title: 'Review snapshot evidence',
@@ -279,7 +334,8 @@ export function buildDashboardNextSteps(input: {
 
   const bootstrapCard = findEvidenceCard(evidence, 'bootstrap');
   const bootstrapPending = Number(bootstrapCard?.metrics?.pendingBootstrap ?? 0) === 1;
-  if (bootstrapCard?.status === 'fail' || activeWorkspace?.complianceStatus === 'failing') {
+  const bootstrapPosture = bootstrapCard ? resolveEvidenceCardPosture(bootstrapCard) : null;
+  if (bootstrapPosture === 'blocked' || activeWorkspace?.complianceStatus === 'failing') {
     steps.push({
       id: 'bootstrap-fix',
       title: 'Fix bootstrap compliance',
@@ -295,7 +351,7 @@ export function buildDashboardNextSteps(input: {
             })
           : undefined,
     });
-  } else if (bootstrapPending && !workspaceIsEmpty) {
+  } else if ((bootstrapPending || bootstrapPosture === 'attention') && !workspaceIsEmpty) {
     steps.push({
       id: 'bootstrap-run',
       title: 'Run bootstrap compliance',
@@ -317,7 +373,8 @@ export function buildDashboardNextSteps(input: {
   }
 
   const setupCard = findEvidenceCard(evidence, 'setup');
-  if (setupCard?.status === 'fail') {
+  const setupPosture = setupCard ? resolveEvidenceCardPosture(setupCard) : null;
+  if (setupCard && setupPosture === 'blocked') {
     steps.push({
       id: 'setup-blockers',
       title: 'Fix toolchain setup blockers',
@@ -327,7 +384,7 @@ export function buildDashboardNextSteps(input: {
       operateZone: 'governance',
       command: 'workspaceSetup',
     });
-  } else if (setupCard?.status === 'warn') {
+  } else if (setupCard && setupPosture === 'attention') {
     steps.push({
       id: 'setup-review',
       title: 'Review toolchain setup',
@@ -340,7 +397,10 @@ export function buildDashboardNextSteps(input: {
   }
 
   const workspaceRunCard = findEvidenceCard(evidence, 'workspaceRun');
-  if (!workspaceIsEmpty && workspaceRunCard?.status === 'fail') {
+  const workspaceRunPosture = workspaceRunCard
+    ? resolveEvidenceCardPosture(workspaceRunCard)
+    : null;
+  if (!workspaceIsEmpty && workspaceRunCard && workspaceRunPosture === 'blocked') {
     const metrics = workspaceRunCard.metrics ?? {};
     const buildFailed = Number(metrics.buildFailed ?? 0);
     const testFailed = Number(metrics.testFailed ?? 0);
@@ -361,7 +421,7 @@ export function buildDashboardNextSteps(input: {
       operateZone: 'quick',
       command: runStage,
     });
-  } else if (!workspaceIsEmpty && workspaceRunCard?.status === 'warn') {
+  } else if (!workspaceIsEmpty && workspaceRunCard && workspaceRunPosture === 'attention') {
     steps.push({
       id: 'workspace-run-review',
       title: 'Review workspace run evidence',

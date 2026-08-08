@@ -9,6 +9,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 No unreleased changes yet.
 
+## [0.38.0] - 2026-08-08
+
+### Added
+
+- Canonical Dashboard evidence posture with separate producer status and
+  user-facing `healthy`, `attention`, and `blocked` states.
+- Explicit posture icons and compact status copy shared across Dashboard
+  cards, workflows, governance, repair, and artifact surfaces.
+- Typed CLI repair-decision handling for missing executables, unsupported
+  adapters, failed preconditions, guarded policy choices, and source repair.
+- Selected-workspace file watchers for report and foundation artifacts outside
+  the editor's currently open folders.
+- Complete example-catalog projection for runnable workspaces and published
+  profile foundations across FastAPI, NestJS, Go, Spring Boot, and .NET.
+- Exact transaction diff actions beside bounded inline previews in Studio.
+
+### Changed
+
+- Aligned all mirrored contracts, minimum CLI policy, release baseline, and
+  active user guides with Workspai CLI 0.55.1.
+- Made Workspace Explain consume canonical release verdict, evidence freshness,
+  and blocking state rather than inferring a blocker from high risk alone.
+- Made Studio classify non-closed CLI transactions from structured decision
+  causes rather than English blocker text.
+- Consolidated repeated policy-rejected actions and hid rejected commands from
+  the executed-command presentation.
+- Kept Recent Workspaces on Home and reduced the Library to the complete
+  workspace-template catalog instead of duplicating the module browser.
+- Simplified Dashboard navigation, artifact presentation, action density, and
+  Studio change review around one current workspace and one current outcome.
+
+### Fixed
+
+- Fixed `needs-attention` Workspace Explain evidence with zero blocking reasons
+  appearing as a red release-blocking card.
+- Fixed managed workspaces outside the open VS Code folder failing to refresh
+  Dashboard cards when canonical evidence changed.
+- Fixed profile workspaces and non-FastAPI/NestJS examples being omitted from
+  the Library even when published by the examples repository.
+- Fixed repeated forbidden evidence-producer calls flooding Studio until the
+  model decision circuit breaker stopped the session.
+- Fixed changed paths and inline previews competing with each other instead of
+  presenting one coherent file-review surface.
+
+### Compatibility
+
+- VS Code 1.106.0+
+- Workspai CLI 0.55.1+
+- RapidKit Core 0.6.0 only for Python-backed kits and modules
+
+### Verification
+
+- 372 test files passed; 2,705 tests passed and 4 were explicitly skipped.
+- Host/Webview type checking, formatting, linting, exact CLI contract parity,
+  172-command palette parity, and all 22 enterprise scenarios passed.
+- Production build, zero-high/critical dependency audit, VSIX packaging, and
+  artifact smoke passed.
+
+See [`releases/RELEASE_NOTES_v0.38.0.md`](releases/RELEASE_NOTES_v0.38.0.md).
+
 ## [0.37.0] - 2026-08-07
 
 ### Added

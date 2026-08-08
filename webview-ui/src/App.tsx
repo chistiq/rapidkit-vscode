@@ -1758,7 +1758,7 @@ export function App() {
                     updateDashboardSection(section, { navigationSource: 'tab' })
                   }
                   hasProjectSelected={Boolean(workspaceStatus.hasProjectSelected)}
-                  recentWorkspaceCount={recentWorkspaces.length}
+                  templateCount={exampleWorkspaces.length}
                   evidenceAttentionCount={evidenceAttentionCount}
                   operateAttentionCount={operateAttentionCount}
                 />
@@ -1810,18 +1810,70 @@ export function App() {
               </div>
 
               {dashboardSection === 'overview' ? (
-                <div className="home-onboarding-handoffs">
-                  <HomeCreateHandoff
-                    workspaceStatus={workspaceStatus}
-                    isCreatingWorkspace={isCreatingWorkspace}
-                    onCreateAIWorkspace={handleOpenAICreateWorkspace}
-                    onCreateAIProject={handleOpenAICreateProject}
+                <>
+                  <div className="home-onboarding-handoffs">
+                    <HomeCreateHandoff
+                      workspaceStatus={workspaceStatus}
+                      isCreatingWorkspace={isCreatingWorkspace}
+                      onCreateAIWorkspace={handleOpenAICreateWorkspace}
+                      onCreateAIProject={handleOpenAICreateProject}
+                    />
+                    <HomeImportAdoptHandoff
+                      workspaceStatus={workspaceStatus}
+                      onRunCommand={handleDashboardCommand}
+                    />
+                  </div>
+                  <RecentWorkspaces
+                    workspaces={recentWorkspaces}
+                    isRefreshing={isRefreshingWorkspaces}
+                    onRefresh={() => {
+                      setIsRefreshingWorkspaces(true);
+                      vscode.postMessage('refreshWorkspaces');
+                    }}
+                    onSelect={(workspace) =>
+                      vscode.postMessage('openWorkspaceFolder', { path: workspace.path })
+                    }
+                    onRemove={(workspace) =>
+                      vscode.postMessage('removeWorkspace', { path: workspace.path })
+                    }
+                    onUpgrade={(workspace) =>
+                      vscode.postMessage('upgradeCore', {
+                        path: workspace.path,
+                        version: workspace.coreLatestVersion,
+                      })
+                    }
+                    onCheckHealth={(workspace) =>
+                      dispatchDashboardCommand('checkWorkspaceHealth', {
+                        path: workspace.path,
+                        name: workspace.name,
+                      })
+                    }
+                    onExport={(workspace) =>
+                      dispatchDashboardCommand('exportWorkspace', { path: workspace.path })
+                    }
+                    onAI={(workspace) =>
+                      vscode.postMessage('openWorkspaceAdvisorTab', {
+                        workspacePath: workspace.path,
+                        workspaceName: workspace.name,
+                        source: 'dashboard',
+                        trigger: 'recent-workspace-ai',
+                      })
+                    }
+                    onAnalyze={handleAnalyzeWorkspace}
+                    onBootstrap={(workspace) =>
+                      dispatchDashboardCommand('workspaceBootstrap', {
+                        path: workspace.path,
+                        name: workspace.name,
+                      })
+                    }
+                    onMirrorSync={(workspace) =>
+                      dispatchDashboardCommand('mirrorSync', {
+                        path: workspace.path,
+                        name: workspace.name,
+                      })
+                    }
                   />
-                  <HomeImportAdoptHandoff
-                    workspaceStatus={workspaceStatus}
-                    onRunCommand={handleDashboardCommand}
-                  />
-                </div>
+                </>
               ) : null}
 
               {dashboardSection === 'operate' &&
@@ -2211,89 +2263,18 @@ export function App() {
                   className="ws-dashboard-panel ws-dashboard-panel--catalog"
                 >
                   <p className="dashboard-section-hint">
-                    Your workspaces, starter templates, and the module catalog. Installed modules
-                    for the active project are managed from the <strong>Project</strong> tab.
-                  </p>
-                  <RecentWorkspaces
-                    workspaces={recentWorkspaces}
-                    isRefreshing={isRefreshingWorkspaces}
-                    onRefresh={() => {
-                      setIsRefreshingWorkspaces(true);
-                      vscode.postMessage('refreshWorkspaces');
-                    }}
-                    onSelect={(workspace) =>
-                      vscode.postMessage('openWorkspaceFolder', { path: workspace.path })
-                    }
-                    onRemove={(workspace) =>
-                      vscode.postMessage('removeWorkspace', { path: workspace.path })
-                    }
-                    onUpgrade={(workspace) =>
-                      vscode.postMessage('upgradeCore', {
-                        path: workspace.path,
-                        version: workspace.coreLatestVersion,
-                      })
-                    }
-                    onCheckHealth={(workspace) =>
-                      dispatchDashboardCommand('checkWorkspaceHealth', {
-                        path: workspace.path,
-                        name: workspace.name,
-                      })
-                    }
-                    onExport={(workspace) =>
-                      dispatchDashboardCommand('exportWorkspace', { path: workspace.path })
-                    }
-                    onAI={(workspace) =>
-                      vscode.postMessage('openWorkspaceAdvisorTab', {
-                        workspacePath: workspace.path,
-                        workspaceName: workspace.name,
-                        source: 'dashboard',
-                        trigger: 'recent-workspace-ai',
-                      })
-                    }
-                    onAnalyze={handleAnalyzeWorkspace}
-                    onBootstrap={(workspace) =>
-                      dispatchDashboardCommand('workspaceBootstrap', {
-                        path: workspace.path,
-                        name: workspace.name,
-                      })
-                    }
-                    onMirrorSync={(workspace) =>
-                      dispatchDashboardCommand('mirrorSync', {
-                        path: workspace.path,
-                        name: workspace.name,
-                      })
-                    }
-                  />
-                  {dashboardCatalogTimedOut ? (
-                    <WorkspaiBanner title="Library load delayed">
-                      <p className="workspai-banner__body">
-                        Module catalog did not confirm within 12 seconds. Showing last known data —
-                        use Refresh on the module catalog if entries look stale.
-                      </p>
-                    </WorkspaiBanner>
-                  ) : null}
-                  <p className="dashboard-section-hint dashboard-section-hint--secondary">
-                    Starter templates and module catalog browse.
+                    Browse reusable workspace examples and profile foundations. Recent workspaces
+                    are available from <strong>Home</strong>; modules for the active project are
+                    managed from <strong>Project</strong>.
                   </p>
                   {dashboardTemplatesReady ? (
-                    <>
-                      <ExampleWorkspaces
-                        examples={exampleWorkspaces}
-                        onClone={(example) => vscode.postMessage('cloneExample', example)}
-                        onUpdate={(example) => vscode.postMessage('updateExample', example)}
-                        cloningExample={cloningExample}
-                        updatingExample={updatingExample}
-                      />
-
-                      {dashboardModulesReady ? (
-                        <DashboardModuleCatalogSurface
-                          {...dashboardModuleCatalogSurfaceProps}
-                          surface="catalog"
-                        />
-                      ) : (
-                        <DashboardCatalogLoadingShell variant="modules" />
-                      )}
-                    </>
+                    <ExampleWorkspaces
+                      examples={exampleWorkspaces}
+                      onClone={(example) => vscode.postMessage('cloneExample', example)}
+                      onUpdate={(example) => vscode.postMessage('updateExample', example)}
+                      cloningExample={cloningExample}
+                      updatingExample={updatingExample}
+                    />
                   ) : (
                     <DashboardCatalogLoadingShell variant="templates" />
                   )}

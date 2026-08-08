@@ -25,7 +25,7 @@ interface DashboardSubNavProps {
   activeSection: DashboardSection;
   onSectionChange: (section: DashboardSection) => void;
   hasProjectSelected: boolean;
-  recentWorkspaceCount: number;
+  templateCount: number;
   evidenceAttentionCount?: number;
   operateAttentionCount?: number;
 }
@@ -34,7 +34,7 @@ export function DashboardSubNav({
   activeSection,
   onSectionChange,
   hasProjectSelected,
-  recentWorkspaceCount,
+  templateCount,
   evidenceAttentionCount = 0,
   operateAttentionCount = 0,
 }: DashboardSubNavProps) {
@@ -82,7 +82,7 @@ export function DashboardSubNav({
         const Icon = SECTION_ICONS[section.id];
         const isActive = activeSection === section.id;
         const showProjectBadge = section.id === 'console' && hasProjectSelected;
-        const showLibraryBadge = section.id === 'catalog' && recentWorkspaceCount > 0;
+        const showLibraryBadge = section.id === 'catalog' && templateCount > 0;
         const showArtifactBadge = section.id === 'evidence' && evidenceAttentionCount > 0;
         const showOperateBadge = section.id === 'operate' && operateAttentionCount > 0;
 
@@ -145,10 +145,10 @@ export function DashboardSubNav({
               {showLibraryBadge ? (
                 <span
                   className="ws-dashboard-sub-nav__count"
-                  aria-label={`${recentWorkspaceCount} recent workspaces`}
+                  aria-label={`${templateCount} workspace templates`}
                 >
                   <FolderKanban size={10} aria-hidden="true" />
-                  {recentWorkspaceCount}
+                  {templateCount}
                 </span>
               ) : null}
             </span>

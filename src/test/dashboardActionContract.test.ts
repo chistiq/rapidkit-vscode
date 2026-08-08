@@ -207,6 +207,26 @@ describe('dashboard action contract', () => {
     });
   });
 
+  it('keeps advisory failures out of the blocking repair lane and preserves the posture in handoff payloads', () => {
+    const card: DashboardEvidenceCard = {
+      id: 'workspaceExplain',
+      label: 'Workspace Explain',
+      status: 'fail',
+      blocking: false,
+      summary: 'Release posture needs attention with no blocking reasons.',
+      scope: 'workspace',
+      blockers: [],
+    };
+
+    const contract = buildDashboardEvidenceActionContract(card, {
+      workspace: { path: '/tmp/ws', name: 'ws' },
+    });
+
+    expect(contract.primaryAction).toEqual({ type: 'studio', label: 'Open in Studio' });
+    expect(contract.studioPayload.card.blocking).toBe(false);
+    expect(contract.copilotPayload.card.blocking).toBe(false);
+  });
+
   it('maps Studio execution-mode incident summaries to the Repair primary CTA', () => {
     const baseCard = {
       id: 'readiness',

@@ -111,6 +111,7 @@ function repairProtocolRunner(
             targetClosure: 'selected-causal-action-set',
             changeReceipt: 'checkpoint-hash-delta',
             consumerTimeline: 'durable-transaction-events',
+            typedDecisionCauses: true,
           },
           consumerProtocol: {
             protocolVersion: 'workspai.workspace-repair-consumer-protocol.v1',
@@ -345,6 +346,16 @@ describe('CLI-owned Workspace Repair client', () => {
     decision.decision = {
       reason: 'The plan exceeds guarded risk.',
       options: ['approve-invasive', 'manual-repair', 'cancel'],
+      causes: [
+        {
+          kind: 'missing-executable',
+          id: 'tool:api:python:pip-audit',
+          message: 'Required executable(s) unavailable: pip-audit.',
+          projectPath: 'api',
+          adapterId: 'python',
+          executable: 'pip-audit',
+        },
+      ],
     };
     decision.adapterEvaluations = [
       {

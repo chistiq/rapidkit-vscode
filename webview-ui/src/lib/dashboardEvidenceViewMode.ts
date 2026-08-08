@@ -5,7 +5,11 @@ import type {
   DashboardEvidencePayload,
   DashboardEvidenceStatus,
 } from './dashboardEvidence';
-import { findEvidenceCard, isBootstrapPendingCard } from './dashboardEvidence';
+import {
+  findEvidenceCard,
+  isBootstrapPendingCard,
+  resolveEvidenceCardPosture,
+} from './dashboardEvidence';
 import { workspaceRegisteredProjectCount } from './dashboardReleaseReadiness';
 import { cardCountsAsReleaseBlocker } from './dashboardScaffoldEvidence';
 
@@ -258,8 +262,8 @@ export function pickGuidedStepPrimaryCard(
       return undefined;
     }
     return (
-      actionable.find((entry) => entry.status === 'fail') ??
-      actionable.find((entry) => entry.status === 'warn') ??
+      actionable.find((entry) => resolveEvidenceCardPosture(entry) === 'blocked') ??
+      actionable.find((entry) => resolveEvidenceCardPosture(entry) === 'attention') ??
       actionable[0]
     );
   }
@@ -275,10 +279,9 @@ export function pickGuidedStepPrimaryCard(
   }
 
   return (
-    cards.find((entry) => entry.status === 'fail') ??
-    cards.find((entry) => entry.status === 'warn') ??
+    cards.find((entry) => resolveEvidenceCardPosture(entry) === 'blocked') ??
+    cards.find((entry) => resolveEvidenceCardPosture(entry) === 'attention') ??
     cards.find((entry) => isBootstrapPendingCard(entry)) ??
-    cards.find((entry) => entry.status === 'missing') ??
     cards[0]
   );
 }
@@ -337,17 +340,22 @@ function healthStepNeedsAttention(evidence: DashboardEvidencePayload | null | un
   const bootstrap = findEvidenceCard(evidence, 'bootstrap');
   const setup = findEvidenceCard(evidence, 'setup');
   const workspaceSync = findEvidenceCard(evidence, 'workspaceSync');
-  const projectCount = workspaceRegisteredProjectCount(evidence);
+  const doctorPosture = doctor ? resolveEvidenceCardPosture(doctor) : undefined;
+  const bootstrapPosture = bootstrap ? resolveEvidenceCardPosture(bootstrap) : undefined;
+  const setupPosture = setup ? resolveEvidenceCardPosture(setup) : undefined;
+  const workspaceSyncPosture = workspaceSync
+    ? resolveEvidenceCardPosture(workspaceSync)
+    : undefined;
+  const isFinding = (
+    card: DashboardEvidenceCard | undefined,
+    posture: ReturnType<typeof resolveEvidenceCardPosture> | undefined
+  ) => card?.status !== 'missing' && (posture === 'blocked' || posture === 'attention');
   return (
-    (doctor?.status === 'fail' && cardCountsAsReleaseBlocker(doctor, projectCount)) ||
-    doctor?.status === 'warn' ||
+    isFinding(doctor, doctorPosture) ||
     isBootstrapPendingCard(bootstrap) ||
-    bootstrap?.status === 'fail' ||
-    bootstrap?.status === 'warn' ||
-    setup?.status === 'fail' ||
-    setup?.status === 'warn' ||
-    workspaceSync?.status === 'fail' ||
-    (workspaceSync?.status === 'warn' && !isEmptyWorkspaceRegistryWarn(workspaceSync))
+    isFinding(bootstrap, bootstrapPosture) ||
+    isFinding(setup, setupPosture) ||
+    (isFinding(workspaceSync, workspaceSyncPosture) && !isEmptyWorkspaceRegistryWarn(workspaceSync))
   );
 }
 

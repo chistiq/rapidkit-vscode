@@ -109,7 +109,7 @@ describe('smoke: dashboard section navigation', () => {
 
     expect(homeEvidenceMetricValue(evidence, 0)).toBe('Healthy');
     expect(formatHomeEvidenceDetail(evidence)).toContain('Doctor: All checks passed');
-    expect(homeGovernanceMetricValue(evidence, 0, true)).toBe('Attention');
+    expect(homeGovernanceMetricValue(evidence, 0, true)).toBe('Needs attention');
     expect(formatHomeGovernanceDetail(evidence)).toContain('Pipeline: Readiness gate pending');
   });
 });
@@ -211,7 +211,9 @@ describe('smoke: dashboard next steps', () => {
             id: 'doctor',
             label: 'Doctor',
             status: 'fail',
+            blocking: true,
             summary: '2 errors blocking release',
+            blockers: ['2 errors blocking release'],
           },
         ],
         activity: [],
@@ -245,7 +247,9 @@ describe('smoke: dashboard next steps', () => {
             id: 'analyze',
             label: 'Analyze',
             status: 'fail',
+            blocking: true,
             summary: 'Strict analyze failed',
+            blockers: ['Strict analyze failed'],
           },
         ],
         activity: [],

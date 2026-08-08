@@ -52,6 +52,13 @@ export async function cloneExampleWorkspace(
     }
 
     const parentFolder = result[0].fsPath;
+    if (
+      path.basename(example.name) !== example.name ||
+      example.name === '.' ||
+      example.name === '..'
+    ) {
+      throw new Error('The published template name is not a safe workspace directory name.');
+    }
     const targetPath = path.join(parentFolder, example.name);
 
     if (await fs.pathExists(targetPath)) {
@@ -85,7 +92,11 @@ export async function cloneExampleWorkspace(
     await new Promise((resolve) => setTimeout(resolve, 8000));
 
     const tempRepoPath = path.join(parentFolder, 'rapidkit-examples-temp');
-    const sourceWorkspacePath = path.join(tempRepoPath, example.name);
+    const sourceWorkspacePath = path.resolve(tempRepoPath, example.path || example.name);
+    const sourceBoundary = path.relative(tempRepoPath, sourceWorkspacePath);
+    if (!sourceBoundary || sourceBoundary.startsWith('..') || path.isAbsolute(sourceBoundary)) {
+      throw new Error('The published template path is outside the examples repository.');
+    }
 
     if (await fs.pathExists(sourceWorkspacePath)) {
       await fs.move(sourceWorkspacePath, targetPath);

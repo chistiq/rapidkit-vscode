@@ -1,8 +1,70 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildStudioVerifiedRepairReceipt } from '../core/studioRepairReceipt.js';
+import {
+  buildStudioVerifiedRepairReceipt,
+  resolveStudioCliRepairDisposition,
+} from '../core/studioRepairReceipt.js';
 
 describe('Studio verified repair receipt', () => {
+  it('keeps missing SDK/toolchain preconditions out of general source repair', () => {
+    expect(
+      resolveStudioCliRepairDisposition({
+        transaction: {
+          state: 'decision-required',
+          decision: {
+            options: ['manual-repair', 'cancel'],
+            causes: [
+              {
+                kind: 'missing-executable',
+                projectPath: 'atlas-api',
+                executable: 'dotnet',
+              },
+              {
+                kind: 'missing-executable',
+                projectPath: 'compass-service',
+                executable: 'cargo',
+              },
+            ],
+          },
+          adapterEvaluations: [
+            { projectPath: 'atlas-api', missingExecutables: ['dotnet'] },
+            { projectPath: 'compass-service', missingExecutables: ['cargo'] },
+          ],
+        },
+        sourceCandidates: ['atlas-api/atlas-api.sln', 'compass-service/Cargo.toml'],
+      })
+    ).toEqual({
+      closed: false,
+      generalSourceRepair: false,
+      requiresUserDecision: true,
+      terminalReason: 'repair-toolchain-unavailable',
+      missingExecutables: [
+        { projectPath: 'atlas-api', executable: 'dotnet' },
+        { projectPath: 'compass-service', executable: 'cargo' },
+      ],
+    });
+  });
+
+  it('delegates a manual-only decision to source repair only when source candidates exist', () => {
+    expect(
+      resolveStudioCliRepairDisposition({
+        transaction: {
+          state: 'decision-required',
+          decision: {
+            options: ['manual-repair', 'cancel'],
+            causes: [{ kind: 'source-repair-required', projectPath: 'web' }],
+          },
+          adapterEvaluations: [],
+        },
+        sourceCandidates: ['web/package.json'],
+      })
+    ).toMatchObject({
+      generalSourceRepair: true,
+      requiresUserDecision: false,
+      missingExecutables: [],
+    });
+  });
+
   it('derives changed files, transaction identity, and full closure from durable events', () => {
     const receipt = buildStudioVerifiedRepairReceipt({
       events: [

@@ -119,7 +119,11 @@ export function StudioActionProgress({
       <div className="ws-sidebar__studio-action-progress-copy">
         <div className="ws-sidebar__studio-action-progress-head">
           <strong>{progress.title}</strong>
-          <small data-status={progress.status}>{copy.label}</small>
+          <small data-status={progress.status}>
+            {progress.occurrences && progress.occurrences > 1
+              ? `${progress.occurrences} attempts combined`
+              : copy.label}
+          </small>
         </div>
         {summary ? <p className="ws-sidebar__studio-action-summary">{summary}</p> : null}
         {progress.technicalDetail ? (
@@ -130,7 +134,7 @@ export function StudioActionProgress({
             </pre>
           </details>
         ) : null}
-        {progress.commandText ? (
+        {progress.commandText && !progress.policyRejected ? (
           <pre className="ws-sidebar__studio-patch-diff" aria-label="Executed command">
             <span data-type="unchanged">$ {progress.commandText}</span>
           </pre>
@@ -178,7 +182,7 @@ export function StudioActionProgress({
             </ol>
           </details>
         ) : null}
-        {progress.changedPaths?.length ? (
+        {progress.changedPaths?.length && !progress.fileChanges?.length ? (
           <ul className="ws-sidebar__studio-changed-files" aria-label="Changed files">
             {progress.changedPaths.map((changedPath) => (
               <li key={changedPath}>
@@ -194,8 +198,11 @@ export function StudioActionProgress({
           </ul>
         ) : null}
         {progress.fileChanges?.length ? (
-          <details className="ws-sidebar__studio-patch-details">
-            <summary>Review live diff</summary>
+          <section className="ws-sidebar__studio-file-changes" aria-label="Files changed">
+            <header>
+              <strong>Files changed</strong>
+              <small>{progress.fileChanges.length}</small>
+            </header>
             <ul className="ws-sidebar__studio-patch-list">
               {progress.fileChanges.map((file) => {
                 const added = file.diffLines?.filter((line) => line.type === 'added').length ?? 0;
@@ -211,42 +218,47 @@ export function StudioActionProgress({
                     <div className="ws-sidebar__studio-patch-summary">
                       <button
                         type="button"
-                        onClick={() =>
-                          exactDiffAvailable
-                            ? onOpenDiff!(file.relativePath, progress.transactionId!)
-                            : onOpenFile?.(file.relativePath)
-                        }
-                        title={
-                          exactDiffAvailable
-                            ? `Open transaction diff for ${file.relativePath}`
-                            : file.failReason || file.relativePath
-                        }
+                        onClick={() => onOpenFile?.(file.relativePath)}
+                        title={file.failReason || file.relativePath}
                       >
                         <code>{compactStudioPathText(file.relativePath)}</code>
                       </button>
                       <span>
                         +{added} −{removed}
                       </span>
+                      {exactDiffAvailable ? (
+                        <button
+                          type="button"
+                          className="ws-sidebar__studio-diff-button"
+                          onClick={() => onOpenDiff!(file.relativePath, progress.transactionId!)}
+                          title={`Open exact before/after diff for ${file.relativePath}`}
+                        >
+                          Open diff
+                        </button>
+                      ) : null}
                     </div>
                     {file.failReason ? <small>{file.failReason}</small> : null}
                     {file.stale !== true && file.diffLines?.length ? (
-                      <pre
-                        className="ws-sidebar__studio-patch-diff"
-                        aria-label={`Diff for ${file.relativePath}`}
-                      >
-                        {file.diffLines.map((line, index) => (
-                          <span key={`${line.type}-${index}`} data-type={line.type}>
-                            {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
-                            {line.content}
-                          </span>
-                        ))}
-                      </pre>
+                      <details className="ws-sidebar__studio-file-preview">
+                        <summary>Preview</summary>
+                        <pre
+                          className="ws-sidebar__studio-patch-diff"
+                          aria-label={`Diff for ${file.relativePath}`}
+                        >
+                          {file.diffLines.map((line, index) => (
+                            <span key={`${line.type}-${index}`} data-type={line.type}>
+                              {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
+                              {line.content}
+                            </span>
+                          ))}
+                        </pre>
+                      </details>
                     ) : null}
                   </li>
                 );
               })}
             </ul>
-          </details>
+          </section>
         ) : null}
         {progress.canUndo && progress.transactionId && onUndo ? (
           <button

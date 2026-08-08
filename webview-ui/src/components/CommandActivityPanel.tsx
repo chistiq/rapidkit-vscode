@@ -1,13 +1,13 @@
-import { Activity, CheckCircle2, ChevronDown, Clock3, XCircle } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
+import { EvidencePostureIcon } from '@/components/EvidencePostureIcon';
 import type {
   DashboardActivityEntry,
   DashboardEvidenceCard,
   DashboardEvidenceCardId,
   DashboardEvidencePayload,
-  DashboardEvidenceStatus,
 } from '@/lib/dashboardEvidence';
-import { evidenceCardStatusLabel } from '@/lib/dashboardEvidence';
+import { evidenceCardStatusLabel, resolveEvidenceCardPosture } from '@/lib/dashboardEvidence';
 import {
   ACTIVITY_VISIBLE_EXPANDED,
   activityEntryCountLabel,
@@ -19,7 +19,6 @@ import { evidenceCardPendingLabel } from '@/lib/dashboardEvidencePending';
 import { EvidenceCardActions } from '@/components/EvidenceCardActions';
 import { EvidenceCardLogDrawer } from '@/components/EvidenceCardLogDrawer';
 import { cardNeedsAgentAttention } from '@/lib/evidenceAgentContext';
-import { buildDashboardIncidentCopy } from '@/lib/dashboardIncidentContract';
 import type { EvidenceViewMode } from '@/lib/dashboardEvidenceViewMode';
 import {
   filterEvidenceCardsForViewMode,
@@ -43,20 +42,6 @@ interface CommandActivityPanelProps {
   onRevealArtifact?: (artifactPath: string) => void;
   onClearActivity?: () => void;
 }
-
-const statusIcon: Record<DashboardEvidenceStatus, typeof CheckCircle2> = {
-  pass: CheckCircle2,
-  warn: Clock3,
-  fail: XCircle,
-  missing: Activity,
-};
-
-const statusChipClass: Record<DashboardEvidenceStatus, string> = {
-  pass: 'ws-chip ws-chip--success',
-  warn: 'ws-chip ws-chip--warn',
-  fail: 'ws-chip ws-chip--error',
-  missing: 'ws-chip ws-chip--muted',
-};
 
 const ARCHIVE_CARD_PAGE_SIZE = 12;
 
@@ -100,9 +85,9 @@ export function CommandActivityPanel({
       aria-label="Command activity and artifacts"
     >
       <div className="command-activity-panel__head">
-        <span className="command-activity-panel__title">Artifact archive</span>
+        <span className="command-activity-panel__title">Artifacts</span>
         <span className="ws-kicker command-activity-panel__meta">
-          Command → artifact → outcome → next step
+          Generated evidence and its current posture
         </span>
         {activity.length > 0 && onClearActivity ? (
           <button
@@ -140,9 +125,7 @@ export function CommandActivityPanel({
                       onSendEvidenceToCopilot,
                       onCopyEvidenceAgentHandoff,
                       onShowEvidenceOutput,
-                      onRevealArtifact,
-                      statusIcon,
-                      statusChipClass
+                      onRevealArtifact
                     )
                   )}
                 </div>
@@ -166,9 +149,7 @@ export function CommandActivityPanel({
                 onSendEvidenceToCopilot,
                 onCopyEvidenceAgentHandoff,
                 onShowEvidenceOutput,
-                onRevealArtifact,
-                statusIcon,
-                statusChipClass
+                onRevealArtifact
               )
             )}
             {hiddenArchiveCardCount > 0 ? (
@@ -235,13 +216,10 @@ function renderEvidenceCard(
   onSendEvidenceToCopilot: ((card: DashboardEvidenceCard) => void) | undefined,
   onCopyEvidenceAgentHandoff: ((card: DashboardEvidenceCard) => void) | undefined,
   onShowEvidenceOutput: (() => void) | undefined,
-  onRevealArtifact: ((artifactPath: string) => void) | undefined,
-  statusIconMap: Record<DashboardEvidenceStatus, typeof CheckCircle2>,
-  chipClass: Record<DashboardEvidenceStatus, string>
+  onRevealArtifact: ((artifactPath: string) => void) | undefined
 ) {
-  const Icon = statusIconMap[card.status];
+  const posture = resolveEvidenceCardPosture(card);
   const actionContract = buildDashboardEvidenceActionContract(card, { workspace, evidence });
-  const incident = buildDashboardIncidentCopy({ card, contract: actionContract });
   const runAction = actionContract.commandAction;
   const runPending = pendingRunCardIds.includes(card.id);
   const refreshPending = pendingRefreshCardIds.includes(card.id);
@@ -251,12 +229,14 @@ function renderEvidenceCard(
   const showAgentActions = cardNeedsAgentAttention(card);
   const cardMainContent = (
     <>
-      <Icon size={14} aria-hidden="true" />
+      <EvidencePostureIcon posture={posture} size={20} />
       <span className="command-activity-panel__card-copy">
         <strong>{card.label}</strong>
         <small>{card.summary}</small>
       </span>
-      <span className={chipClass[card.status]}>
+      <span
+        className={`ws-chip ${posture === 'blocked' ? 'ws-chip--error' : posture === 'healthy' ? 'ws-chip--success' : 'ws-chip--warn'}`}
+      >
         {pendingLabel ?? evidenceCardStatusLabel(card)}
       </span>
     </>
@@ -265,7 +245,7 @@ function renderEvidenceCard(
   return (
     <div
       key={`${card.scope}-${card.id}`}
-      className={`command-activity-panel__card command-activity-panel__card--${card.status}${pending ? ' command-activity-panel__card--pending' : ''}`}
+      className={`command-activity-panel__card command-activity-panel__card--${posture}${pending ? ' command-activity-panel__card--pending' : ''}`}
       aria-busy={pending || undefined}
     >
       {clickable ? (
@@ -310,13 +290,10 @@ function renderEvidenceCard(
         }
         executionChannel={actionContract.executionChannel}
       />
-      <div className="command-activity-panel__card-contract" aria-label="Action contract">
-        <span>{incident.compactLabel}</span>
-      </div>
       <EvidenceCardLogDrawer
         card={card}
         activity={evidence?.activity}
-        defaultExpanded={viewMode === 'expanded'}
+        defaultExpanded={false}
         onOpenOutputChannel={onShowEvidenceOutput}
         onRevealArtifact={onRevealArtifact}
       />

@@ -1,7 +1,7 @@
 import type { DashboardCommandExecutionChannel } from '@workspai-contracts/dashboardCommandExecutionChannel';
 import { resolveDashboardCommandExecutionChannel } from '@workspai-contracts/dashboardCommandExecutionChannel';
 import type { DashboardEvidenceCard, DashboardEvidencePayload } from './dashboardEvidence';
-import { isCorruptArtifactCard } from './dashboardEvidence';
+import { isCorruptArtifactCard, resolveEvidenceCardPosture } from './dashboardEvidence';
 import type { EvidenceWorkspaceContext } from './dashboardEvidenceDirectRun';
 import {
   buildIncidentStudioEvidenceOpen,
@@ -48,6 +48,7 @@ export type DashboardEvidenceAgentCard = Pick<
   | 'scope'
   | 'artifactPath'
   | 'blockers'
+  | 'blocking'
   | 'metrics'
   | 'incidentSummary'
 >;
@@ -88,6 +89,7 @@ function serializeEvidenceCardForAgent(card: DashboardEvidenceCard): DashboardEv
     scope: card.scope,
     artifactPath: card.artifactPath,
     blockers: card.blockers,
+    blocking: card.blocking,
     metrics: card.metrics,
     incidentSummary: card.incidentSummary,
   };
@@ -130,19 +132,25 @@ function resolvePrimaryEvidenceAction(input: {
   commandAction?: DashboardEvidenceCommandAction;
   studioTarget?: ReturnType<typeof buildIncidentStudioEvidenceOpen>;
 }): DashboardEvidencePrimaryAction {
-  if (input.card.status === 'pass') {
+  const posture = resolveEvidenceCardPosture(input.card);
+  if (posture === 'healthy') {
     return { type: 'done', label: 'Done' };
   }
 
+  const normalizedIncidentAction = normalizeDashboardIncidentPrimaryAction(
+    input.card.incidentSummary?.primaryAction,
+    input.card.incidentSummary?.phase
+  );
   const incidentAction =
-    normalizeDashboardIncidentPrimaryAction(
-      input.card.incidentSummary?.primaryAction,
-      input.card.incidentSummary?.phase
-    ) ||
-    fallbackDashboardIncidentPrimaryAction({
-      status: input.card.status,
-      phase: input.card.incidentSummary?.phase,
-    });
+    posture === 'attention' && normalizedIncidentAction === 'Fix by Workspai'
+      ? 'Open in Studio'
+      : normalizedIncidentAction ||
+        (posture === 'attention'
+          ? 'Open in Studio'
+          : fallbackDashboardIncidentPrimaryAction({
+              status: input.card.status,
+              phase: input.card.incidentSummary?.phase ?? (posture === 'blocked' ? 'fix' : 'audit'),
+            }));
 
   if (isCorruptArtifactCard(input.card) && input.commandAction) {
     return { type: 'run', label: 'Re-run command' };
@@ -156,7 +164,7 @@ function resolvePrimaryEvidenceAction(input: {
   if (incidentAction === 'Run verify' && input.commandAction) {
     return { type: 'run', label: incidentAction };
   }
-  if ((input.card.status === 'fail' || input.card.status === 'warn') && input.studioTarget) {
+  if ((posture === 'blocked' || posture === 'attention') && input.studioTarget) {
     return {
       type: 'studio',
       label:
@@ -164,7 +172,7 @@ function resolvePrimaryEvidenceAction(input: {
         incidentAction === 'Fix by Workspai' ||
         incidentAction === 'Open in Studio'
           ? incidentAction
-          : input.card.status === 'fail'
+          : posture === 'blocked'
             ? 'Fix by Workspai'
             : 'Open in Studio',
     };
@@ -172,7 +180,14 @@ function resolvePrimaryEvidenceAction(input: {
   if (input.commandAction) {
     return { type: 'run', label: input.commandAction.label };
   }
-  return { type: 'studio', label: input.studioTarget ? 'Open in Studio' : 'Review' };
+  return {
+    type: 'studio',
+    label: input.studioTarget
+      ? posture === 'blocked'
+        ? 'Fix by Workspai'
+        : 'Review in Studio'
+      : 'Review',
+  };
 }
 
 export function buildDashboardEvidenceActionContract(

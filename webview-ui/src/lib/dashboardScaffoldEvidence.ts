@@ -3,12 +3,18 @@
  * Keep patterns aligned with the Workspai CLI workspace scaffold contract.
  */
 
-import type {
-  DashboardEvidenceCard,
-  DashboardEvidencePayload,
-  DashboardEvidenceStatus,
+import {
+  isBootstrapPendingCard,
+  type DashboardEvidenceCard,
+  type DashboardEvidencePayload,
+  type DashboardEvidenceStatus,
 } from './dashboardEvidence';
 import { workspaceRegisteredProjectCount } from './dashboardReleaseReadiness';
+import {
+  dashboardEvidencePostureLabel,
+  dashboardEvidencePostureTone,
+  resolveDashboardEvidencePosture,
+} from '@workspai-contracts/dashboardEvidencePosture';
 
 export function isEmptyWorkspaceScaffoldBlocker(text: string): boolean {
   const lower = text.toLowerCase();
@@ -103,34 +109,20 @@ export function cardCountsAsReleaseBlocker(
   if (effectiveBlockers.length > 0 && effectiveBlockers.every(isFreshnessOnlyBlocker)) {
     return false;
   }
-  return card.status === 'fail';
+  return card.status === 'fail' && effectiveBlockers.length > 0;
 }
 
 export function evidenceCardVisualTone(
   card: DashboardEvidenceCard,
   workspaceProjectCount: number | null
 ): 'danger' | 'warn' | 'good' | 'neutral' {
-  if (Number(card.metrics?.staleEvidence ?? 0) > 0 && card.status !== 'fail') {
-    return 'warn';
-  }
-  if (workspaceProjectCount === 0 && !cardCountsAsReleaseBlocker(card, workspaceProjectCount)) {
-    if (card.status === 'fail' || card.status === 'warn') {
-      return 'warn';
-    }
-  }
-  if (cardCountsAsReleaseBlocker(card, workspaceProjectCount)) {
-    return 'danger';
-  }
-  if (card.status === 'fail') {
-    return 'danger';
-  }
-  if (card.status === 'warn') {
-    return 'warn';
-  }
-  if (card.status === 'pass') {
-    return 'good';
-  }
-  return 'neutral';
+  const posture = resolveDashboardEvidencePosture({
+    status: card.status,
+    blocking: cardCountsAsReleaseBlocker(card, workspaceProjectCount),
+    stale: Number(card.metrics?.staleEvidence ?? 0) > 0,
+    pending: isBootstrapPendingCard(card),
+  });
+  return dashboardEvidencePostureTone(posture);
 }
 
 export function evidenceCardStatusLabelForWorkspace(
@@ -145,16 +137,9 @@ export function evidenceCardStatusLabelForWorkspace(
     return 'Expected before first project';
   }
   const tone = evidenceCardVisualTone(card, workspaceProjectCount);
-  if (tone === 'danger') {
-    return 'Blocked';
-  }
-  if (tone === 'warn') {
-    return 'Attention';
-  }
-  if (tone === 'good') {
-    return 'Passed';
-  }
-  return 'Missing';
+  return dashboardEvidencePostureLabel(
+    tone === 'danger' ? 'blocked' : tone === 'warn' ? 'attention' : 'healthy'
+  );
 }
 
 export function resolveWorkspaceProjectCountFromEvidence(

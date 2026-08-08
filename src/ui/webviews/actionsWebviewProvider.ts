@@ -136,7 +136,10 @@ import {
   type WorkspaiAssistantMode,
 } from '../../core/assistantModeContract.js';
 import { StudioAgentSession } from '../../core/studioAgentSession.js';
-import { buildStudioVerifiedRepairReceipt } from '../../core/studioRepairReceipt.js';
+import {
+  buildStudioVerifiedRepairReceipt,
+  resolveStudioCliRepairDisposition,
+} from '../../core/studioRepairReceipt.js';
 import { VSCodeStudioAgentSessionStore } from '../../core/studioAgentSessionStore.js';
 import { ContractStudioAgentModelAdapter } from '../../core/studioAgentModelProtocol.js';
 import {
@@ -3925,21 +3928,26 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         projectPath: input.projectPath,
         handoff: activeHandoff,
       });
-      const closed = result.transaction.state === 'closed';
-      const decisionOptions = result.transaction.decision?.options ?? [];
-      const generalSourceRepair =
-        result.transaction.state === 'decision-required' &&
-        decisionOptions.length > 0 &&
-        decisionOptions.every((option) => option === 'manual-repair' || option === 'cancel');
-      const sourceCandidates = result.transaction.checkpoint.files
-        .map((file) => file.path)
+      const sourceCandidates = [
+        ...new Set([
+          ...result.transaction.checkpoint.files
+            .filter((file) => file.existed)
+            .map((file) => file.path),
+          ...repairEvidence.autonomousTargetPaths,
+        ]),
+      ]
         .filter(
           (file) =>
-            !/(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.ya?ml|yarn\.lock|bun\.lockb?)$/i.test(
+            !/(?:^|\/)(?:\.workspai(?:\/|$)|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.ya?ml|yarn\.lock|bun\.lockb?)$/i.test(
               file
             )
         )
         .slice(0, 12);
+      const disposition = resolveStudioCliRepairDisposition({
+        transaction: result.transaction,
+        sourceCandidates,
+      });
+      const { closed, generalSourceRepair, requiresUserDecision, terminalReason } = disposition;
       return {
         ok: closed,
         changed: result.changedPaths.length > 0,
@@ -3954,10 +3962,10 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             : generalSourceRepair
               ? 'general-source-repair'
               : 'review-required',
-          requiresUserDecision: !closed && !generalSourceRepair,
-          terminalReason:
-            !closed && !generalSourceRepair ? 'cli-repair-decision-required' : undefined,
+          requiresUserDecision,
+          terminalReason,
           decision: result.transaction.decision,
+          missingExecutables: disposition.missingExecutables,
           ...(generalSourceRepair
             ? {
                 recoveryPath: 'general-source-repair',

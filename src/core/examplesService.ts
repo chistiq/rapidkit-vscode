@@ -11,7 +11,7 @@ import axios from 'axios';
 export interface ExampleProject {
   id: string;
   name: string;
-  type: 'fastapi' | 'nestjs';
+  type: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
   displayName: string;
   description: string;
   path: string;
@@ -35,6 +35,8 @@ export interface ExampleWorkspace {
     platform: string;
   }>;
   projects: ExampleProject[];
+  catalogKind?: 'runnable-example' | 'profile-foundation';
+  profile?: string;
   requirements?: {
     python?: string;
     node?: string;
@@ -51,6 +53,16 @@ export interface ExamplesMetadata {
   lastUpdated: string;
   repository: string;
   workspaces: ExampleWorkspace[];
+  profileWorkspaces?: Array<{
+    id: string;
+    name: string;
+    profile: string;
+    path: string;
+    kind: 'raw-profile-fixture';
+    projects: ExampleProject[];
+    pythonEngine?: string;
+    lifecycleStatus?: string;
+  }>;
 }
 
 export interface ClonedExampleInfo {
@@ -65,12 +77,24 @@ export interface ClonedExampleInfo {
 interface ExamplesCache {
   metadata: ExamplesMetadata;
   timestamp: number;
+  projectionVersion?: number;
 }
 
 const DEFAULT_EXAMPLES_METADATA_TIMEOUT_MS = 5000;
 const DEFAULT_EXAMPLES_UPDATES_TIMEOUT_MS = 10000;
 const MIN_NETWORK_TIMEOUT_MS = 1000;
 const MAX_NETWORK_TIMEOUT_MS = 60000;
+const EXAMPLES_CATALOG_PROJECTION_VERSION = 2;
+const PROFILE_LABELS: Readonly<Record<string, string>> = {
+  minimal: 'Minimal',
+  'java-only': 'Java',
+  'python-only': 'Python',
+  'node-only': 'Node.js',
+  'go-only': 'Go',
+  'dotnet-only': '.NET',
+  polyglot: 'Polyglot',
+  enterprise: 'Enterprise',
+};
 
 export class ExamplesService {
   private static instance: ExamplesService | null = null;
@@ -124,9 +148,13 @@ export class ExamplesService {
     try {
       // Check cache first
       const cached = await this._loadCache();
-      if (cached && Date.now() - cached.timestamp < this.ttlMs) {
+      if (
+        cached &&
+        cached.projectionVersion === EXAMPLES_CATALOG_PROJECTION_VERSION &&
+        Date.now() - cached.timestamp < this.ttlMs
+      ) {
         console.log('[ExamplesService] Using cached metadata');
-        return cached.metadata.workspaces;
+        return this._getPublishedCatalog(cached.metadata);
       }
 
       // Fetch from GitHub
@@ -141,10 +169,14 @@ export class ExamplesService {
       const metadata = response.data;
 
       // Save to cache
-      await this._saveCache({ metadata, timestamp: Date.now() });
+      await this._saveCache({
+        metadata,
+        timestamp: Date.now(),
+        projectionVersion: EXAMPLES_CATALOG_PROJECTION_VERSION,
+      });
       console.log('[ExamplesService] Metadata fetched and cached');
 
-      return metadata.workspaces;
+      return this._getPublishedCatalog(metadata);
     } catch (error: any) {
       console.error('[ExamplesService] Failed to fetch metadata:', error.message);
 
@@ -152,7 +184,7 @@ export class ExamplesService {
       const cached = await this._loadCache();
       if (cached) {
         console.log('[ExamplesService] Using stale cache as fallback');
-        return cached.metadata.workspaces;
+        return this._getPublishedCatalog(cached.metadata);
       }
 
       // Ultimate fallback: return hardcoded example
@@ -342,6 +374,45 @@ export class ExamplesService {
       console.error('[ExamplesService] Failed to load tracking:', error);
     }
     return {};
+  }
+
+  private _getPublishedCatalog(metadata: ExamplesMetadata): ExampleWorkspace[] {
+    const runnableExamples = (metadata.workspaces ?? []).map((workspace) => ({
+      ...workspace,
+      catalogKind: workspace.catalogKind ?? ('runnable-example' as const),
+    }));
+    const profileFoundations = (metadata.profileWorkspaces ?? [])
+      .filter((workspace) => workspace.lifecycleStatus === 'published')
+      .map((workspace): ExampleWorkspace => {
+        const label =
+          PROFILE_LABELS[workspace.profile] ??
+          workspace.profile
+            .split('-')
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(' ');
+        return {
+          id: workspace.id,
+          name: workspace.name,
+          title: `${label} Workspace Foundation`,
+          description: `A clean ${label} Workspace Intelligence foundation for adding or adopting projects without changing their framework.`,
+          path: workspace.path,
+          profile: workspace.profile,
+          catalogKind: 'profile-foundation',
+          tags: ['Profile', label, 'Workspace Foundation'],
+          difficulty: 'beginner',
+          projects: Array.isArray(workspace.projects) ? workspace.projects : [],
+        };
+      });
+
+    const seen = new Set<string>();
+    return [...runnableExamples, ...profileFoundations].filter((workspace) => {
+      const identity = workspace.id || workspace.name;
+      if (!identity || seen.has(identity)) {
+        return false;
+      }
+      seen.add(identity);
+      return true;
+    });
   }
 
   private _getFallbackExamples(): ExampleWorkspace[] {

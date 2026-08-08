@@ -1,4 +1,4 @@
-import { AlertTriangle, ShieldAlert } from 'lucide-react';
+import { EvidencePostureIcon } from '@/components/EvidencePostureIcon';
 import { EvidenceCardActions } from '@/components/EvidenceCardActions';
 import { evidenceCardPendingLabel } from '@/lib/dashboardEvidencePending';
 import type { DashboardEvidenceCard, DashboardEvidencePayload } from '@/lib/dashboardEvidence';
@@ -92,7 +92,7 @@ function AttentionRow({
   onRevealArtifact?: (artifactPath: string) => void;
   onOpenProjectLifecycle?: () => void;
 }) {
-  const Icon = item.severity === 'fail' ? ShieldAlert : AlertTriangle;
+  const posture = item.severity === 'fail' ? 'blocked' : 'attention';
   const freshness = resolveEvidenceFreshness(item.card);
   const actionContract = buildDashboardEvidenceActionContract(item.card, { evidence, workspace });
   const commandAction = actionContract.commandAction;
@@ -111,7 +111,7 @@ function AttentionRow({
   );
   const content = (
     <>
-      <Icon size={14} aria-hidden="true" />
+      <EvidencePostureIcon posture={posture} size={20} />
       <span className="evidence-attention-inbox__copy">
         <strong>{item.card.label}</strong>
         <small>{pendingLabel ? `${pendingLabel}…` : copy.issue}</small>

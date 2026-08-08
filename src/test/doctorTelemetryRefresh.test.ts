@@ -31,6 +31,12 @@ describe('doctorTelemetryRefresh', () => {
     expect(extractWorkspacePathFromReportPath('/tmp/demo/.rapidkit/archive-manifest.json')).toBe(
       '/tmp/demo'
     );
+    expect(extractWorkspacePathFromReportPath('/tmp/demo/.workspai/workspace.contract.json')).toBe(
+      '/tmp/demo'
+    );
+    expect(extractWorkspacePathFromReportPath('/tmp/demo/.workspai/toolchain.lock')).toBe(
+      '/tmp/demo'
+    );
   });
 
   it('walks up from project doctor reports to the workspace marker', async () => {

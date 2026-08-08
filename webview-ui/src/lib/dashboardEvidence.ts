@@ -3,6 +3,11 @@ import type { DashboardOperateZone } from './dashboardOperateZones';
 import type { DashboardCommand, DashboardCommandScope } from './dashboardCommandRegistry';
 import type { DashboardEvidenceCardId } from '@workspai-contracts/dashboardEvidenceCards';
 import type { StudioIncidentSummaryView } from './studioBlockerHandoff';
+import {
+  dashboardEvidencePostureLabel,
+  resolveDashboardEvidencePosture,
+  type DashboardEvidencePosture,
+} from '@workspai-contracts/dashboardEvidencePosture';
 
 export type { DashboardEvidenceCardId };
 
@@ -232,7 +237,7 @@ export function evidenceCardStatusLabel(card: DashboardEvidenceCard): string {
   if (isBootstrapPendingCard(card)) {
     return 'Running';
   }
-  return evidenceStatusLabel(card.status);
+  return dashboardEvidencePostureLabel(resolveEvidenceCardPosture(card));
 }
 
 function formatEvidenceAge(ageMs: number): string {
@@ -313,16 +318,39 @@ export function evidenceNeedsFreshnessAttention(
   return card.status !== 'missing' && resolveEvidenceFreshness(card, nowMs).status === 'stale';
 }
 
+export function resolveEvidenceCardPosture(
+  card: DashboardEvidenceCard,
+  nowMs = Date.now()
+): DashboardEvidencePosture {
+  const blockers = card.blockers ?? [];
+  const freshnessOnly = (value: string) => {
+    const lower = value.toLowerCase();
+    return (
+      lower.includes('evidence is stale') ||
+      lower.includes('is stale relative to') ||
+      lower.includes('stale report:') ||
+      (lower.includes('generated at') && lower.includes('before impact'))
+    );
+  };
+  const blocking =
+    card.blocking ??
+    (card.status === 'fail' &&
+      blockers.length > 0 &&
+      !blockers.every((blocker) => freshnessOnly(blocker)));
+  return resolveDashboardEvidencePosture({
+    status: card.status,
+    blocking,
+    stale: resolveEvidenceFreshness(card, nowMs).status === 'stale',
+    pending: isBootstrapPendingCard(card),
+  });
+}
+
 export function outcomeCards(
   payload: DashboardEvidencePayload | null | undefined,
   nowMs = Date.now()
 ): DashboardEvidenceCard[] {
   return (payload?.cards ?? []).filter(
-    (card) =>
-      card.status === 'fail' ||
-      card.status === 'warn' ||
-      (card.blockers?.length ?? 0) > 0 ||
-      evidenceNeedsFreshnessAttention(card, nowMs)
+    (card) => resolveEvidenceCardPosture(card, nowMs) !== 'healthy'
   );
 }
 
@@ -416,15 +444,15 @@ export function formatHomeEvidenceDetail(
   const readiness = findEvidenceCard(evidence, 'readiness');
   const workspaceRun = findEvidenceCard(evidence, 'workspaceRun');
   const parts = [
-    doctor ? `Doctor: ${compactEvidenceSummary(doctor, evidenceStatusLabel(doctor.status))}` : null,
+    doctor ? `Doctor: ${compactEvidenceSummary(doctor, evidenceCardStatusLabel(doctor))}` : null,
     analyze
-      ? `Analyze: ${compactEvidenceSummary(analyze, evidenceStatusLabel(analyze.status))}`
+      ? `Analyze: ${compactEvidenceSummary(analyze, evidenceCardStatusLabel(analyze))}`
       : null,
     readiness
-      ? `Readiness: ${compactEvidenceSummary(readiness, evidenceStatusLabel(readiness.status))}`
+      ? `Readiness: ${compactEvidenceSummary(readiness, evidenceCardStatusLabel(readiness))}`
       : null,
     workspaceRun && workspaceRun.status !== 'missing'
-      ? `Run: ${compactEvidenceSummary(workspaceRun, evidenceStatusLabel(workspaceRun.status))}`
+      ? `Run: ${compactEvidenceSummary(workspaceRun, evidenceCardStatusLabel(workspaceRun))}`
       : null,
   ].filter((part): part is string => Boolean(part));
 
@@ -443,15 +471,15 @@ export function formatHomeGovernanceDetail(
   const mirror = findEvidenceCard(evidence, 'mirror');
   const parts = [
     pipeline
-      ? `Pipeline: ${compactEvidenceSummary(pipeline, evidenceStatusLabel(pipeline.status))}`
+      ? `Pipeline: ${compactEvidenceSummary(pipeline, evidenceCardStatusLabel(pipeline))}`
       : null,
     bootstrap
-      ? `Bootstrap: ${compactEvidenceSummary(bootstrap, evidenceStatusLabel(bootstrap.status))}`
+      ? `Bootstrap: ${compactEvidenceSummary(bootstrap, evidenceCardStatusLabel(bootstrap))}`
       : null,
     setup && setup.status !== 'missing'
-      ? `Setup: ${compactEvidenceSummary(setup, evidenceStatusLabel(setup.status))}`
+      ? `Setup: ${compactEvidenceSummary(setup, evidenceCardStatusLabel(setup))}`
       : null,
-    mirror ? `Mirror: ${compactEvidenceSummary(mirror, evidenceStatusLabel(mirror.status))}` : null,
+    mirror ? `Mirror: ${compactEvidenceSummary(mirror, evidenceCardStatusLabel(mirror))}` : null,
   ].filter((part): part is string => Boolean(part));
 
   if (parts.length === 0) {
@@ -474,7 +502,7 @@ export function homeEvidenceMetricValue(
   if (doctor.status === 'pass') {
     return 'Healthy';
   }
-  return evidenceStatusLabel(doctor.status);
+  return evidenceCardStatusLabel(doctor);
 }
 
 export function homeGovernanceMetricValue(
@@ -497,9 +525,8 @@ export function homeGovernanceMetricValue(
     bootstrap?.status === 'warn' ||
     setup?.status === 'warn'
   ) {
-    return evidenceStatusLabel(
-      bootstrap?.status === 'fail' || setup?.status === 'fail' ? 'fail' : 'warn'
-    );
+    const postureCard = [bootstrap, setup].find((card) => card && card.status !== 'pass');
+    return postureCard ? evidenceCardStatusLabel(postureCard) : 'Needs attention';
   }
   if (!pipeline || pipeline.status === 'missing') {
     return 'Missing';
@@ -507,7 +534,7 @@ export function homeGovernanceMetricValue(
   if (pipeline.status === 'pass') {
     return 'Pipeline passed';
   }
-  return evidenceStatusLabel(pipeline.status);
+  return evidenceCardStatusLabel(pipeline);
 }
 
 export type DashboardNextStepPriority = 'critical' | 'recommended' | 'optional';

@@ -10,7 +10,6 @@ import {
   RefreshCw,
   ShieldCheck,
   Square,
-  Stethoscope,
   Terminal,
   TestTube,
   Globe,
@@ -21,7 +20,12 @@ import {
 import type { ReactNode } from 'react';
 import type { WorkspaceStatus } from '@/types';
 import type { DashboardEvidenceCard, DashboardEvidencePayload } from '@/lib/dashboardEvidence';
-import { evidenceStatusLabel, findEvidenceCard } from '@/lib/dashboardEvidence';
+import {
+  evidenceCardStatusLabel,
+  findEvidenceCard,
+  resolveEvidenceCardPosture,
+} from '@/lib/dashboardEvidence';
+import type { DashboardEvidencePosture } from '@workspai-contracts/dashboardEvidencePosture';
 import type { DashboardCommand, DashboardEvidenceCardId } from '@/lib/dashboardCommandRegistry';
 import type { DashboardScopeDescriptor } from '@/lib/dashboardScope';
 import { dashboardScopeDetail, dashboardScopeLabel } from '@/lib/dashboardScope';
@@ -32,6 +36,7 @@ import {
 } from '@/lib/projectCapabilities';
 import { ActionTile, ActionTileGrid } from './ActionTile';
 import { ColumnHeader } from './SectionHeader';
+import { EvidencePostureIcon } from './EvidencePostureIcon';
 import {
   WORKSPAI_AI_ASSISTANT_PROJECT_TITLE,
   WORKSPAI_AI_ASSISTANT_SHORT_LABEL,
@@ -88,8 +93,8 @@ function formatProjectDoctorTime(generatedAt?: string): string {
   return `Updated ${Math.round(elapsedHours / 24)}d ago`;
 }
 
-function projectDoctorStatusTone(card?: DashboardEvidenceCard): 'pass' | 'warn' | 'fail' | 'missing' {
-  return card?.status ?? 'missing';
+function projectDoctorStatusTone(card?: DashboardEvidenceCard): DashboardEvidencePosture {
+  return card ? resolveEvidenceCardPosture(card) : 'attention';
 }
 
 export function ProjectActions({
@@ -143,7 +148,7 @@ export function ProjectActions({
   const doctorTone = projectDoctorStatusTone(projectDoctorCard);
   const doctorBlockers = projectDoctorCard?.blockers?.filter(Boolean).slice(0, 2) ?? [];
   const doctorHasArtifact = Boolean(projectDoctorCard?.artifactPath?.trim());
-  const doctorCanFix = doctorTone === 'fail';
+  const doctorCanFix = projectDoctorCard?.status === 'fail';
   const doctorActionLabel =
     projectDoctorCard && projectDoctorCard.status !== 'missing' ? 'Re-run' : 'Run';
 
@@ -211,7 +216,7 @@ export function ProjectActions({
         >
           <div className="project-doctor-card__header">
             <span className="project-doctor-card__icon" aria-hidden="true">
-              <Stethoscope size={15} />
+              <EvidencePostureIcon posture={doctorTone} size={17} />
             </span>
             <span className="project-doctor-card__title">
               <strong>Doctor</strong>
@@ -220,7 +225,11 @@ export function ProjectActions({
             <span
               className={`project-doctor-card__status project-doctor-card__status--${doctorTone}`}
             >
-              {isPending('projectDoctor') ? 'Running' : evidenceStatusLabel(doctorTone)}
+              {isPending('projectDoctor')
+                ? 'Running'
+                : projectDoctorCard
+                  ? evidenceCardStatusLabel(projectDoctorCard)
+                  : 'Needs attention'}
             </span>
           </div>
           <div className="project-doctor-card__meta">
@@ -336,6 +345,7 @@ export function ProjectActions({
                 label="Import readiness"
                 detail={importReadinessCard.summary}
                 evidenceStatus={importReadinessCard.status}
+                evidenceCard={importReadinessCard}
                 pending={isPending('importReadiness')}
                 onClick={onDoctor}
                 actionContract={commandContract('projectDoctor')}

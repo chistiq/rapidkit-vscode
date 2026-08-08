@@ -5,10 +5,10 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Circle,
   Lock,
   Loader2,
 } from 'lucide-react';
+import { EvidencePostureIcon } from '@/components/EvidencePostureIcon';
 import type {
   DashboardEvidenceCard,
   DashboardEvidenceCardId,
@@ -17,6 +17,7 @@ import type {
 import {
   evidenceCardStatusLabel,
   isBootstrapPendingCard,
+  resolveEvidenceCardPosture,
   resolveEvidenceFreshness,
 } from '@/lib/dashboardEvidence';
 import {
@@ -109,16 +110,8 @@ function cardStatusTone(card: DashboardEvidenceCard, pending: boolean): string {
   if (isBootstrapPendingCard(card)) {
     return 'pending';
   }
-  if (card.status === 'pass') {
-    return 'pass';
-  }
-  if (card.status === 'warn') {
-    return 'warn';
-  }
-  if (card.status === 'fail') {
-    return 'fail';
-  }
-  return 'missing';
+  const posture = resolveEvidenceCardPosture(card);
+  return posture === 'blocked' ? 'fail' : posture === 'healthy' ? 'pass' : 'warn';
 }
 
 export function EvidenceGuidedPath({
@@ -400,6 +393,7 @@ function GuidedStepSlide({
           {stepCards.map((card) => {
             const cardPending = pendingCardIds.includes(card.id);
             const tone = cardStatusTone(card, cardPending);
+            const posture = resolveEvidenceCardPosture(card);
             const freshness = resolveEvidenceFreshness(card);
             const actionContract = buildDashboardEvidenceActionContract(card, {
               workspace,
@@ -413,12 +407,8 @@ function GuidedStepSlide({
                 <span className="evidence-guided-path__check-mark" aria-hidden="true">
                   {cardPending ? (
                     <Loader2 size={11} className="evidence-guided-path__check-spinner" />
-                  ) : tone === 'pass' ? (
-                    <Check size={11} strokeWidth={2.5} />
-                  ) : tone === 'fail' || tone === 'warn' || tone === 'pending' ? (
-                    <AlertTriangle size={11} />
                   ) : (
-                    <Circle size={7} fill="currentColor" strokeWidth={0} />
+                    <EvidencePostureIcon posture={posture} size={15} />
                   )}
                 </span>
                 <div className="evidence-guided-path__check-copy">

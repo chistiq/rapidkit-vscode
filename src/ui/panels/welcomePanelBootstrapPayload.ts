@@ -79,10 +79,14 @@ export async function sendRecentWorkspacesPayload(host: BootstrapPayloadHost): P
 }
 
 export async function sendExampleWorkspaces(
-  host: Pick<BootstrapPayloadHost, 'postWebviewMessage'>
+  host: Pick<BootstrapPayloadHost, 'postWebviewMessage'>,
+  options?: { forceRefresh?: boolean }
 ): Promise<void> {
   try {
     const examplesService = ExamplesService.getInstance();
+    if (options?.forceRefresh) {
+      await examplesService.invalidateCache();
+    }
     const examples = await examplesService.getExamples();
 
     const enrichedExamples = await Promise.all(

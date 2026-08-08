@@ -66,7 +66,8 @@ describe('host console diagnostics guard', () => {
     const kits = read('src/core/kitsService.ts');
 
     expect(examples).toContain('Using stale cache as fallback');
-    expect(examples).toContain('return cached.metadata.workspaces');
+    expect(examples).toContain('return this._getPublishedCatalog(cached.metadata)');
+    expect(examples).toContain('profileWorkspaces');
     expect(examples).toContain('return this._getFallbackExamples()');
     expect(kits).toContain('Using stale cache as fallback');
     expect(kits).toContain('return this._mergeWithFallback(cached.kits)');

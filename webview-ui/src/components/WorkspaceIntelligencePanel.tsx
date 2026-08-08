@@ -25,8 +25,10 @@ import type { DashboardEvidenceCard, DashboardEvidencePayload } from '@/lib/dash
 import {
   evidenceCardStatusLabel,
   findEvidenceCard,
+  resolveEvidenceCardPosture,
   resolveEvidenceFreshness,
 } from '@/lib/dashboardEvidence';
+import { EvidencePostureIcon } from './EvidencePostureIcon';
 import { buildDashboardCommandActionContract } from '@/lib/dashboardCommandActionContract';
 import type { WorkspaceStatus } from '@/types';
 import { ActionTile, ActionTileGrid } from './ActionTile';
@@ -171,6 +173,7 @@ export function WorkspaceIntelligencePanel({
           label="Intelligence Chain"
           detail={CANONICAL_INTELLIGENCE_CHAIN_LABEL}
           evidenceStatus={intelligenceRunCard?.status}
+          evidenceCard={intelligenceRunCard}
           pending={
             isPending('workspaceIntelligenceRun') ||
             isPending('workspaceModel') ||
@@ -216,6 +219,7 @@ export function WorkspaceIntelligencePanel({
             'Canonical project graph and command surface'
           )}
           evidenceStatus={modelCard?.status}
+          evidenceCard={modelCard}
           pending={isPending('workspaceModel')}
           onClick={onWorkspaceModel}
           disabled={!hasWorkspace}
@@ -248,6 +252,7 @@ export function WorkspaceIntelligencePanel({
             'Evaluate Workspace Advisor verification evidence'
           )}
           evidenceStatus={verifyCard?.status}
+          evidenceCard={verifyCard}
           pending={isPending('workspaceVerify')}
           onClick={onWorkspaceVerify}
           disabled={!hasWorkspace}
@@ -267,6 +272,7 @@ export function WorkspaceIntelligencePanel({
               'Human narrative for release blockers and project posture'
             )}
             evidenceStatus={explainCard?.status}
+            evidenceCard={explainCard}
             pending={isPending('workspaceExplain')}
             onClick={onWorkspaceExplain}
             disabled={!hasWorkspace}
@@ -287,6 +293,7 @@ export function WorkspaceIntelligencePanel({
               'Blocker narrative for agents (alias of explain)'
             )}
             evidenceStatus={whyCard?.status}
+            evidenceCard={whyCard}
             pending={isPending('workspaceWhy')}
             onClick={onWorkspaceWhy}
             disabled={!hasWorkspace}
@@ -307,6 +314,7 @@ export function WorkspaceIntelligencePanel({
               'Trace narrative from last workspace diff'
             )}
             evidenceStatus={traceCard?.status}
+            evidenceCard={traceCard}
             pending={isPending('workspaceTrace')}
             onClick={onWorkspaceTrace}
             disabled={!hasWorkspace}
@@ -352,13 +360,17 @@ export function WorkspaceIntelligencePanel({
                 },
               ].map((item) => {
                 const freshness = item.card ? resolveEvidenceFreshness(item.card) : null;
+                const posture = item.card ? resolveEvidenceCardPosture(item.card) : 'attention';
                 return (
                   <article
                     key={item.label}
-                    className={`workspace-explainability-stack__item workspace-explainability-stack__item--${item.card?.status ?? 'missing'}`}
+                    className={`workspace-explainability-stack__item workspace-explainability-stack__item--${posture}`}
                   >
                     <header>
-                      <strong>{item.label}</strong>
+                      <strong>
+                        <EvidencePostureIcon posture={posture} size={15} />
+                        {item.label}
+                      </strong>
                       <span>{item.card ? evidenceCardStatusLabel(item.card) : 'Missing'}</span>
                     </header>
                     <p>{item.question}</p>
@@ -396,6 +408,7 @@ export function WorkspaceIntelligencePanel({
               'One-shot model/graph refresh (--once)'
             )}
             evidenceStatus={watchCard?.status}
+            evidenceCard={watchCard}
             pending={isPending('workspaceWatch')}
             onClick={onWorkspaceWatch}
             disabled={!hasWorkspace}
@@ -414,6 +427,7 @@ export function WorkspaceIntelligencePanel({
             evidenceStatus={
               groundingCard?.summary?.includes('MCP-ready') ? groundingCard.status : undefined
             }
+            evidenceCard={groundingCard?.summary?.includes('MCP-ready') ? groundingCard : undefined}
             onClick={onWorkspaceMcp}
             disabled={!hasWorkspace}
             actionContract={commandContract(
@@ -429,6 +443,7 @@ export function WorkspaceIntelligencePanel({
             label="Workspace Advisor"
             detail="Open Workspai advisor with intelligence context"
             evidenceStatus={impactCard?.status}
+            evidenceCard={impactCard}
             pending={
               isPending('workspaceImpact') ||
               isPending('workspaceDiff') ||
@@ -470,6 +485,7 @@ export function WorkspaceIntelligencePanel({
             'Safe commands and fleet stages for AI agents'
           )}
           evidenceStatus={contextCard?.status}
+          evidenceCard={contextCard}
           pending={isPending('workspaceContextAgent')}
           onClick={onWorkspaceContextAgent}
           disabled={!hasWorkspace}
@@ -488,6 +504,7 @@ export function WorkspaceIntelligencePanel({
             'Sync INDEX.json, AGENTS.md, Copilot, Cursor, and Claude hooks'
           )}
           evidenceStatus={groundingCard?.status}
+          evidenceCard={groundingCard}
           pending={isPending('agentGrounding')}
           onClick={onWorkspaceAgentSync ?? onWorkspaceContextAgent}
           disabled={!hasWorkspace}
@@ -526,6 +543,7 @@ export function WorkspaceIntelligencePanel({
                 'Point-in-time workspace model capture'
               )}
               evidenceStatus={snapshotCard?.status}
+              evidenceCard={snapshotCard}
               pending={isPending('intelligenceSnapshot')}
               onClick={onIntelligenceSnapshot}
               disabled={!hasWorkspace}
@@ -544,6 +562,7 @@ export function WorkspaceIntelligencePanel({
                 'Compare snapshot against current workspace model'
               )}
               evidenceStatus={diffCard?.status}
+              evidenceCard={diffCard}
               pending={isPending('workspaceDiff')}
               onClick={onWorkspaceDiff}
               disabled={!hasWorkspace}
@@ -562,6 +581,7 @@ export function WorkspaceIntelligencePanel({
                 'Deterministic blast radius from model diff'
               )}
               evidenceStatus={impactCard?.status}
+              evidenceCard={impactCard}
               pending={isPending('workspaceImpact')}
               onClick={onWorkspaceImpact}
               actionContract={commandContract(
@@ -577,6 +597,7 @@ export function WorkspaceIntelligencePanel({
                 label="Impact Lens"
                 detail="Run snapshot → diff → impact CLI chain"
                 evidenceStatus={impactCard?.status}
+                evidenceCard={impactCard}
                 pending={
                   isPending('workspaceImpact') ||
                   isPending('workspaceDiff') ||

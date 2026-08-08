@@ -11,6 +11,7 @@ export type ExampleWorkspaceDescriptor = {
   name: string;
   title: string;
   cloneUrl?: string;
+  path?: string;
 };
 
 export type WorkspaceSelectionMessageHost = {

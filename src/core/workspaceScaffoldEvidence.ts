@@ -73,6 +73,17 @@ export function filterBlockersForEmptyWorkspace(
   return filterEmptyWorkspaceScaffoldBlockers(blockers);
 }
 
+function isFreshnessOnlyBlocker(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes('evidence is stale') ||
+    lower.includes('is stale relative to') ||
+    (lower.includes('generated at') && lower.includes('before impact')) ||
+    (lower.includes('stale report:') &&
+      (lower.includes('.workspai/reports/') || lower.includes('.rapidkit/reports/')))
+  );
+}
+
 export function cardCountsAsReleaseBlocker(input: {
   status: string;
   blockers: string[];
@@ -92,5 +103,12 @@ export function cardCountsAsReleaseBlocker(input: {
   if (input.blocking !== undefined) {
     return input.blocking;
   }
-  return input.status === 'fail';
+  if (effectiveBlockers.length > 0 && effectiveBlockers.every(isFreshnessOnlyBlocker)) {
+    return false;
+  }
+  // A red producer status without an explicit reason is not enough to claim a
+  // governed blocker. This keeps diagnostic risk and advisory failures out of
+  // the release-blocker lane while corrupt/failed gate artifacts still carry
+  // their concrete extracted blockers.
+  return input.status === 'fail' && effectiveBlockers.length > 0;
 }

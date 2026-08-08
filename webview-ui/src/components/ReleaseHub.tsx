@@ -1,16 +1,23 @@
-import { ArrowRight, Rocket, ScanSearch, Server, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import type { DashboardEvidenceCardId } from '@/lib/dashboardCommandRegistry';
-import type { DashboardEvidencePayload, DashboardEvidenceStatus } from '@/lib/dashboardEvidence';
+import type {
+  DashboardEvidenceCard,
+  DashboardEvidencePayload,
+  DashboardEvidenceStatus,
+} from '@/lib/dashboardEvidence';
 import type { EvidenceViewMode } from '@/lib/dashboardEvidenceViewMode';
 import {
-  evidenceStatusLabel,
+  evidenceCardStatusLabel,
   findEvidenceCard,
   releaseHubStageStatus,
+  resolveEvidenceCardPosture,
 } from '@/lib/dashboardEvidence';
 import {
   deriveDashboardReleaseGateReadiness,
   isWorkspaceEmptyForRelease,
 } from '@/lib/dashboardReleaseReadiness';
+import { EvidencePostureIcon } from './EvidencePostureIcon';
+import type { DashboardEvidencePosture } from '@workspai-contracts/dashboardEvidencePosture';
 
 interface ReleaseHubProps {
   evidence: DashboardEvidencePayload | null;
@@ -30,16 +37,21 @@ type ReleaseStage = {
   id: 'readiness' | 'analyze' | 'verify' | 'release';
   label: string;
   detail: string;
-  icon: typeof ShieldCheck;
   status: DashboardEvidenceStatus;
+  card?: DashboardEvidenceCard;
   action: () => void;
   actionLabel: string;
   pending: boolean;
   disabled?: boolean;
 };
 
-const statusClass = (status: DashboardEvidenceStatus) =>
-  `release-hub__stage--${status === 'missing' ? 'idle' : status}`;
+const stagePosture = (
+  card: DashboardEvidenceCard | undefined,
+  status: DashboardEvidenceStatus
+): DashboardEvidencePosture =>
+  card ? resolveEvidenceCardPosture(card) : status === 'pass' ? 'healthy' : 'attention';
+
+const statusClass = (posture: DashboardEvidencePosture) => `release-hub__stage--${posture}`;
 
 export function ReleaseHub({
   evidence,
@@ -89,9 +101,11 @@ export function ReleaseHub({
   const readinessStatus = releaseHubStageStatus(evidence, 'readiness');
   const analyzeStatus = releaseHubStageStatus(evidence, 'analyze');
   const autopilotStatus = releaseHubStageStatus(evidence, 'release');
+  const readinessCard = findEvidenceCard(evidence, 'readiness');
+  const analyzeCard = findEvidenceCard(evidence, 'analyze');
+  const autopilotCard = findEvidenceCard(evidence, 'autopilot');
   const isPending = (cardId: DashboardEvidenceCardId) => pendingCardIds.includes(cardId);
-  const releaseBlockedDetail =
-    releaseGate.blockedReason ?? 'Complete readiness and analyze first';
+  const releaseBlockedDetail = releaseGate.blockedReason ?? 'Complete readiness and analyze first';
 
   const verifyCard = findEvidenceCard(evidence, 'workspaceVerify');
   const verifyStatus = releaseGate.verifyStatus;
@@ -105,8 +119,8 @@ export function ReleaseHub({
         viewMode === 'guided'
           ? 'Release policy and bootstrap checks'
           : 'Release policy and bootstrap evidence',
-      icon: ShieldCheck,
       status: readinessStatus,
+      card: readinessCard,
       action: onReadiness,
       actionLabel: readinessStatus === 'missing' ? 'Run readiness' : 'Refresh',
       pending: isPending('readiness'),
@@ -118,8 +132,8 @@ export function ReleaseHub({
         viewMode === 'guided'
           ? 'Strict workspace analyze report'
           : 'Strict workspace analyze report',
-      icon: ScanSearch,
       status: analyzeStatus,
+      card: analyzeCard,
       action: onAnalyze,
       actionLabel: analyzeStatus === 'missing' ? 'Run analyze' : 'Refresh',
       pending: isPending('analyze'),
@@ -129,12 +143,12 @@ export function ReleaseHub({
       label: viewMode === 'guided' ? 'Verify' : 'Verify gates',
       detail: releaseGate.needsStudioVerify
         ? 'Open Studio to run telemetry verify gates before release'
-        : verifyCard?.summary ?? 'Workspace verify report and Studio hard gates',
-      icon: ShieldAlert,
+        : (verifyCard?.summary ?? 'Workspace verify report and Studio hard gates'),
       status: verifyStatus,
+      card: verifyCard,
       action: releaseGate.needsStudioVerify
-        ? onOpenStudioVerify ?? onWorkspaceVerify ?? onAnalyze
-        : onWorkspaceVerify ?? onOpenStudioVerify ?? onAnalyze,
+        ? (onOpenStudioVerify ?? onWorkspaceVerify ?? onAnalyze)
+        : (onWorkspaceVerify ?? onOpenStudioVerify ?? onAnalyze),
       actionLabel: releaseGate.needsStudioVerify
         ? 'Open Studio'
         : verifyStatus === 'missing'
@@ -150,8 +164,8 @@ export function ReleaseHub({
           ? 'Latest autopilot release evidence is green'
           : 'Gates are green enough to attempt release'
         : releaseBlockedDetail,
-      icon: Rocket,
       status: autopilotStatus === 'missing' ? (releaseReady ? 'warn' : 'missing') : autopilotStatus,
+      card: autopilotCard,
       action: onAutopilotRelease,
       actionLabel: autopilotStatus === 'missing' ? 'Release' : 'Refresh',
       pending: isPending('autopilot') || isPending('readiness') || isPending('analyze'),
@@ -173,15 +187,16 @@ export function ReleaseHub({
       : stages;
 
   const showPipelineOrchestrator = viewMode !== 'guided';
+  const pipelinePosture = stagePosture(pipelineCard, pipelineStatus);
 
   return (
     <section className="release-hub" aria-label="Release pipeline">
       {showPipelineOrchestrator ? (
         <div
-          className={`release-hub__orchestrator ${statusClass(pipelineStatus)}${pipelinePending ? ' release-hub__orchestrator--pending' : ''}`}
+          className={`release-hub__orchestrator ${statusClass(pipelinePosture)}${pipelinePending ? ' release-hub__orchestrator--pending' : ''}`}
           aria-busy={pipelinePending || undefined}
         >
-          <Server size={16} aria-hidden="true" />
+          <EvidencePostureIcon posture={pipelinePosture} size={17} />
           <div className="release-hub__orchestrator-copy">
             <strong>Governance pipeline</strong>
             <small>
@@ -190,14 +205,20 @@ export function ReleaseHub({
                 : pipelineCard?.summary}
             </small>
           </div>
-          <span className="release-hub__badge">{evidenceStatusLabel(pipelineStatus)}</span>
+          <span className="release-hub__badge">
+            {pipelineCard ? evidenceCardStatusLabel(pipelineCard) : 'Needs attention'}
+          </span>
           <button
             type="button"
             className="release-hub__action release-hub__action--primary"
             onClick={onPipeline}
             disabled={pipelinePending}
           >
-            {pipelinePending ? 'Running' : pipelineStatus === 'missing' ? 'Run pipeline' : 'Refresh'}
+            {pipelinePending
+              ? 'Running'
+              : pipelineStatus === 'missing'
+                ? 'Run pipeline'
+                : 'Refresh'}
           </button>
         </div>
       ) : null}
@@ -212,19 +233,21 @@ export function ReleaseHub({
       </div>
       <div className="release-hub__pipeline">
         {visibleStages.map((stage, index) => {
-          const Icon = stage.icon;
+          const posture = stagePosture(stage.card, stage.status);
           return (
             <div key={stage.id} className="release-hub__stage-wrap">
               <div
-                className={`release-hub__stage ${statusClass(stage.status)}${stage.pending ? ' release-hub__stage--pending' : ''}`}
+                className={`release-hub__stage ${statusClass(posture)}${stage.pending ? ' release-hub__stage--pending' : ''}`}
                 aria-busy={stage.pending || undefined}
               >
-                <Icon size={15} aria-hidden="true" />
+                <EvidencePostureIcon posture={posture} size={16} />
                 <div className="release-hub__stage-copy">
                   <strong>{stage.label}</strong>
                   <small>{stage.detail}</small>
                 </div>
-                <span className="release-hub__badge">{evidenceStatusLabel(stage.status)}</span>
+                <span className="release-hub__badge">
+                  {stage.card ? evidenceCardStatusLabel(stage.card) : 'Needs attention'}
+                </span>
                 <button
                   type="button"
                   className="release-hub__action"

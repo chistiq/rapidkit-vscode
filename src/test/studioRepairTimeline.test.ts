@@ -96,4 +96,34 @@ describe('Studio repair timeline', () => {
 
     expect(timeline).toEqual([readDiagnostics, repair]);
   });
+
+  it('combines repeated controller-owned command rejections across tool calls', () => {
+    const rejected = {
+      action: 'run-workspace-command',
+      status: 'failed' as const,
+      phase: 'run-workspace-command',
+      title: 'Verification remains controller-owned',
+      summary: 'The controller blocked duplicate verification.',
+      commandText: 'npx --no-install workspai doctor workspace --json',
+      policyRejected: true,
+      invocationId: 'tool-call-1',
+    };
+
+    let timeline = appendStudioRepairTimelineEntry([], rejected);
+    timeline = appendStudioRepairTimelineEntry(timeline, {
+      ...rejected,
+      invocationId: 'tool-call-2',
+    });
+    timeline = appendStudioRepairTimelineEntry(timeline, {
+      ...rejected,
+      invocationId: 'tool-call-3',
+    });
+
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0]).toMatchObject({
+      policyRejected: true,
+      occurrences: 3,
+      invocationId: 'tool-call-3',
+    });
+  });
 });

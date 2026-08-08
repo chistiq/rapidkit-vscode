@@ -10,6 +10,92 @@ export type StudioVerifiedRepairReceipt = {
   verificationSummary: string;
 };
 
+export type StudioCliRepairDisposition = {
+  closed: boolean;
+  generalSourceRepair: boolean;
+  requiresUserDecision: boolean;
+  terminalReason?: 'cli-repair-decision-required' | 'repair-toolchain-unavailable';
+  missingExecutables: Array<{ projectPath: string; executable: string }>;
+};
+
+type StudioRepairDecisionCause = {
+  kind:
+    | 'missing-executable'
+    | 'unsupported-adapter'
+    | 'failed-precondition'
+    | 'risk-approval'
+    | 'policy-exception'
+    | 'source-repair-required';
+  projectPath?: string;
+  executable?: string;
+};
+
+/**
+ * Classify a non-closed CLI transaction without guessing from its prose.
+ *
+ * Decision causes are emitted by the CLI repair engine. The extension never
+ * infers source repair, missing tools, runtime support, or policy decisions
+ * from English prose or blocker-specific conditions.
+ */
+export function resolveStudioCliRepairDisposition(input: {
+  transaction: {
+    state: string;
+    decision?: { options?: string[]; causes?: StudioRepairDecisionCause[] };
+    adapterEvaluations?: Array<{
+      projectPath: string;
+      missingExecutables?: string[];
+    }>;
+  };
+  sourceCandidates: readonly string[];
+}): StudioCliRepairDisposition {
+  const closed = input.transaction.state === 'closed';
+  const decisionCauses = input.transaction.decision?.causes ?? [];
+  const typedMissingExecutables = decisionCauses
+    .filter(
+      (cause): cause is StudioRepairDecisionCause & { executable: string } =>
+        cause.kind === 'missing-executable' && Boolean(cause.executable)
+    )
+    .map((cause) => ({
+      projectPath: cause.projectPath ?? '.',
+      executable: cause.executable,
+    }));
+  const adapterMissingExecutables = (input.transaction.adapterEvaluations ?? []).flatMap(
+    (adapter) =>
+      (adapter.missingExecutables ?? []).map((executable) => ({
+        projectPath: adapter.projectPath,
+        executable,
+      }))
+  );
+  const missingExecutables = [
+    ...new Map(
+      [...typedMissingExecutables, ...adapterMissingExecutables].map((entry) => [
+        `${entry.projectPath}\0${entry.executable}`,
+        entry,
+      ])
+    ).values(),
+  ];
+  const sourceRepairDecision =
+    input.transaction.state === 'decision-required' &&
+    decisionCauses.length > 0 &&
+    decisionCauses.every((cause) => cause.kind === 'source-repair-required');
+  const generalSourceRepair = !closed && sourceRepairDecision && input.sourceCandidates.length > 0;
+  const requiresUserDecision = !closed && !generalSourceRepair;
+  return {
+    closed,
+    generalSourceRepair,
+    requiresUserDecision,
+    ...(requiresUserDecision
+      ? {
+          terminalReason:
+            missingExecutables.length > 0
+              ? ('repair-toolchain-unavailable' as const)
+              : ('cli-repair-decision-required' as const),
+        }
+      : {}),
+    missingExecutables,
+  };
+}
+
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)

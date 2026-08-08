@@ -803,8 +803,11 @@ describe('welcomePanelDoctorEvidenceWatcher', () => {
     );
 
     expect(source).toContain('export function registerWelcomePanelDoctorEvidenceWatcher');
-    expect(source).toContain('{.workspai,.rapidkit}/reports/**/*.json');
+    expect(source).toContain("const REPORT_GLOB = '{.workspai,.rapidkit}/reports/**/*.json'");
+    expect(source).toContain('new vscode.RelativePattern');
+    expect(source).toContain('watcher.onDidDelete(onFileSystemEvent)');
     expect(welcomePanelSource).toContain('registerWelcomePanelDoctorEvidenceWatcher');
+    expect(welcomePanelSource).toContain('this._dashboardEvidenceWatcher?.watchWorkspace');
     expect(welcomePanelSource).not.toContain('_registerDoctorEvidenceWatcher');
   });
 });

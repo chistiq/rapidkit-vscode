@@ -210,6 +210,8 @@ export interface ExampleWorkspace {
   cloneUrl?: string;
   path?: string;
   projects: ExampleProject[];
+  catalogKind?: 'runnable-example' | 'profile-foundation';
+  profile?: string;
   tags?: string[];
   featured?: boolean;
   difficulty?: 'beginner' | 'intermediate' | 'advanced';

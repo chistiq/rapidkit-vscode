@@ -107,6 +107,11 @@ describe('Phase 3 studio contracts parity', () => {
     expect(handoff.safetyRefreshCommands).toEqual([
       'npx workspai workspace contract inspect --json',
     ]);
+    expect(handoff.studioMode).toBe('EXPLAIN');
+    expect(handoff.incidentSummary).toMatchObject({
+      phase: 'diagnose',
+      primaryAction: 'Explain blockers',
+    });
   });
 
   it('verifies Workspace Run by regenerating its own evidence artifact', async () => {

@@ -66,7 +66,15 @@ function buildWorkspaceImpactCardStudioSection(report: WorkspaceImpactReport | n
 export type EvidenceCardAgentContextInput = {
   card?: Pick<
     DashboardEvidenceCard,
-    'id' | 'label' | 'status' | 'summary' | 'scope' | 'artifactPath' | 'blockers' | 'metrics'
+    | 'id'
+    | 'label'
+    | 'status'
+    | 'summary'
+    | 'scope'
+    | 'artifactPath'
+    | 'blockers'
+    | 'blocking'
+    | 'metrics'
   >;
   workspacePath: string;
   workspaceName?: string;

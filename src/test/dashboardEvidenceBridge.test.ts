@@ -261,7 +261,7 @@ describe('dashboardEvidenceBridge', () => {
     });
   });
 
-  it('attaches Studio incident summaries to blocked handoff artifacts', async () => {
+  it('attaches posture-aware Studio incident summaries to handoff artifacts', async () => {
     const workspacePath = await createWorkspaceWithReports({
       'share-bundle.json': {
         generatedAt: '2026-06-10T10:02:00.000Z',
@@ -284,15 +284,16 @@ describe('dashboardEvidenceBridge', () => {
     expect(share?.status).toBe('warn');
     expect(share?.incidentSummary).toMatchObject({
       title: 'Share bundle',
-      phase: 'fix',
-      primaryAction: 'Fix source issue',
+      phase: 'diagnose',
+      primaryAction: 'Explain blockers',
       verifyRequired: true,
     });
     expect(snapshot?.status).toBe('fail');
+    expect(snapshot?.blocking).toBe(false);
     expect(snapshot?.incidentSummary).toMatchObject({
       title: 'Recovery Snapshot',
-      phase: 'fix',
-      primaryAction: 'Fix source issue',
+      phase: 'diagnose',
+      primaryAction: 'Explain blockers',
       verifyRequired: true,
     });
   });
@@ -644,6 +645,72 @@ describe('dashboardEvidenceBridge', () => {
     expect(findEvidenceCard(bundle, 'workspaceWhy')?.summary).toContain('Why release');
     expect(findEvidenceCard(bundle, 'workspaceTrace')?.summary).toContain('Trace from diff');
     expect(findEvidenceCard(bundle, 'workspaceWatch')?.status).toBe('pass');
+  });
+
+  it('keeps needs-attention explain evidence advisory when no release blocker exists', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'workspace-model.json': {
+        generatedAt: '2026-08-08T10:00:00.000Z',
+        summary: { projectCount: 1 },
+        projects: [{ name: 'api' }],
+        validation: { status: 'pass', errors: 0, warnings: 0 },
+      },
+      'workspace-explain-last-run.json': {
+        schemaVersion: 'workspace-explain.v1',
+        generatedAt: '2026-08-08T10:04:00.000Z',
+        workspacePath: '/tmp/advisory-explain-workspace',
+        target: { kind: 'release-blocked' },
+        summary: 'Release posture: needs-attention with 0 blocking reason(s). · risk high.',
+        sections: [{ id: 'release', title: 'Release', body: 'Review high-risk impact.' }],
+        releaseVerdict: 'needs-attention',
+        evidenceFreshness: 'fresh',
+        blocking: false,
+        releaseRisk: 'high',
+        blockingReasons: [],
+      },
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+    const explain = findEvidenceCard(bundle, 'workspaceExplain');
+
+    expect(explain).toMatchObject({ status: 'warn', blocking: false });
+    expect(explain?.incidentSummary?.phase).not.toBe('fix');
+    expect(explain?.incidentSummary?.primaryAction).not.toBe('Fix by Workspai');
+  });
+
+  it('keeps legacy needs-attention explain artifacts advisory before typed posture fields exist', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'workspace-model.json': {
+        generatedAt: '2026-08-08T17:20:00.000Z',
+        summary: { projectCount: 1 },
+        projects: [{ name: 'api' }],
+        validation: { status: 'pass', errors: 0, warnings: 0 },
+      },
+      'workspace-explain-last-run.json': {
+        schemaVersion: 'workspace-explain.v1',
+        generatedAt: '2026-08-08T17:26:54.343Z',
+        workspacePath: '/tmp/legacy-advisory-explain-workspace',
+        target: { kind: 'release-blocked' },
+        summary: 'Release posture: needs-attention with 0 blocking reason(s).',
+        sections: [
+          {
+            id: 'verdict',
+            title: 'Release verdict',
+            body: 'Verdict: **needs-attention** (exit 1). Risk: **high**. Freshness: **stale**.',
+          },
+        ],
+        releaseRisk: 'high',
+        blockingReasons: [],
+      },
+    });
+
+    const explain = findEvidenceCard(
+      await buildDashboardEvidenceBundle({ workspacePath }),
+      'workspaceExplain'
+    );
+
+    expect(explain).toMatchObject({ status: 'warn', blocking: false });
+    expect(explain?.incidentSummary).toMatchObject({ phase: 'diagnose' });
   });
 
   it('marks Workspace Why as derived when the dedicated why artifact is missing', async () => {

@@ -94,7 +94,10 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(secondary).toContain("eventType === 'tool.completed' || eventType === 'tool.failed'");
     expect(secondary).toContain("action: 'cli-repair-engine'");
     expect(secondary).toContain('Repair transaction verified');
-    expect(secondary).toContain("status: eventType === 'tool.completed' ? 'done' : 'failed'");
+    expect(secondary).toContain(
+      "status: policyRejected ? 'done' : eventType === 'tool.completed' ? 'done' : 'failed'"
+    );
+    expect(secondary).toContain("'Verification remains controller-owned'");
     expect(secondary).toContain("'sidebarOpenWorkspaceDiff'");
     expect(actionProgress).toContain('exactDiffAvailable');
     expect(actionProgress).toContain('file.failReason');

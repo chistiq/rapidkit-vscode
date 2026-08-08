@@ -28,6 +28,23 @@ interface ExampleWorkspacesProps {
   updatingExample?: string | null;
 }
 
+type FrameworkFilter = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet';
+
+const PROFILE_FRAMEWORK_FILTER: Readonly<Record<string, FrameworkFilter>> = {
+  'python-only': 'fastapi',
+  'node-only': 'nestjs',
+  'go-only': 'go',
+  'java-only': 'springboot',
+  'dotnet-only': 'dotnet',
+};
+
+function exampleMatchesFramework(example: ExampleWorkspace, framework: FrameworkFilter): boolean {
+  return (
+    example.projects.some((project) => project.type === framework) ||
+    (example.profile ? PROFILE_FRAMEWORK_FILTER[example.profile] === framework : false)
+  );
+}
+
 const getProjectTypeLabel = (
   type: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet'
 ): string => {
@@ -57,17 +74,18 @@ export function ExampleWorkspaces({
   const [showAll, setShowAll] = useState(false);
   const [query, setQuery] = useState('');
   const [framework, setFramework] = useState<
-    'all' | 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet'
+    'all' | 'profiles' | 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet'
   >('all');
   const [readiness, setReadiness] = useState<'all' | 'cloned' | 'updates' | 'available'>('all');
 
   const frameworkCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: examples.length };
-    for (const example of examples) {
-      for (const project of example.projects) {
-        counts[project.type] = (counts[project.type] || 0) + 1;
-      }
+    const counts: Record<string, number> = { all: examples.length, profiles: 0 };
+    for (const item of ['fastapi', 'nestjs', 'go', 'springboot', 'dotnet'] as const) {
+      counts[item] = examples.filter((example) => exampleMatchesFramework(example, item)).length;
     }
+    counts.profiles = examples.filter(
+      (example) => example.catalogKind === 'profile-foundation'
+    ).length;
     return counts;
   }, [examples]);
 
@@ -76,7 +94,10 @@ export function ExampleWorkspaces({
     return examples.filter((example) => {
       const cloneStatus = example.cloneStatus || 'not-cloned';
       const matchesFramework =
-        framework === 'all' || example.projects.some((project) => project.type === framework);
+        framework === 'all' ||
+        (framework === 'profiles'
+          ? example.catalogKind === 'profile-foundation'
+          : exampleMatchesFramework(example, framework));
       const matchesReadiness =
         readiness === 'all' ||
         (readiness === 'cloned' && cloneStatus === 'cloned') ||
@@ -137,21 +158,31 @@ export function ExampleWorkspaces({
             placeholder="Search templates, frameworks, tags..."
           />
         </label>
-        <div className="template-filter-group" aria-label="Framework filter">
-          {(['all', 'fastapi', 'nestjs', 'go', 'springboot', 'dotnet'] as const).map((item) => (
-            <button
-              key={item}
-              type="button"
-              className={`ws-chip ${framework === item ? 'is-active' : ''}`}
-              onClick={() => {
-                setFramework(item);
-                setShowAll(false);
-              }}
-            >
-              {item === 'all' ? 'All' : item}
-              <span>{frameworkCounts[item] || 0}</span>
-            </button>
-          ))}
+        <div className="template-filter-group" aria-label="Runtime or framework filter">
+          {(['all', 'profiles', 'fastapi', 'nestjs', 'go', 'springboot', 'dotnet'] as const).map(
+            (item) => (
+              <button
+                key={item}
+                type="button"
+                className={`ws-chip ${framework === item ? 'is-active' : ''}`}
+                onClick={() => {
+                  setFramework(item);
+                  setShowAll(false);
+                }}
+              >
+                {item === 'all'
+                  ? 'All'
+                  : item === 'profiles'
+                    ? 'Profiles'
+                    : item === 'springboot'
+                      ? 'Spring Boot'
+                      : item === 'dotnet'
+                        ? '.NET'
+                        : item}
+                <span>{frameworkCounts[item] || 0}</span>
+              </button>
+            )
+          )}
         </div>
         <div className="template-filter-group" aria-label="Clone status filter">
           {[
@@ -275,18 +306,26 @@ export function ExampleWorkspaces({
 
               {/* Projects list - collapsible */}
               <div className="example-projects">
-                <button
-                  className="example-projects-toggle"
-                  onClick={() => setExpandedExample(isExpanded ? null : example.name)}
-                >
-                  <span className="example-projects-count">
-                    {example.projects.length}{' '}
-                    {example.projects.length === 1 ? 'project' : 'projects'}
-                  </span>
-                  <span className={`example-chevron ${isExpanded ? 'expanded' : ''}`}>
-                    <ChevronDown size={12} aria-hidden="true" />
-                  </span>
-                </button>
+                {example.projects.length > 0 ? (
+                  <button
+                    className="example-projects-toggle"
+                    onClick={() => setExpandedExample(isExpanded ? null : example.name)}
+                  >
+                    <span className="example-projects-count">
+                      {example.projects.length}{' '}
+                      {example.projects.length === 1 ? 'project' : 'projects'}
+                    </span>
+                    <span className={`example-chevron ${isExpanded ? 'expanded' : ''}`}>
+                      <ChevronDown size={12} aria-hidden="true" />
+                    </span>
+                  </button>
+                ) : (
+                  <div className="example-projects-toggle" aria-label="Workspace foundation">
+                    <span className="example-projects-count">
+                      {example.profile ? `${example.profile} profile` : 'Workspace foundation'}
+                    </span>
+                  </div>
+                )}
                 {isExpanded && (
                   <div className="example-projects-list">
                     {example.projects.map((project, idx) => (
@@ -316,7 +355,11 @@ export function ExampleWorkspaces({
           Showing {visibleExamples.length} of {filteredExamples.length} matching templates.
         </span>
         {hiddenCount > 0 || showAll ? (
-          <button type="button" className="ws-btn ws-btn--ghost" onClick={() => setShowAll((value) => !value)}>
+          <button
+            type="button"
+            className="ws-btn ws-btn--ghost"
+            onClick={() => setShowAll((value) => !value)}
+          >
             {showAll ? 'Show less' : `Show ${hiddenCount} more`}
           </button>
         ) : null}

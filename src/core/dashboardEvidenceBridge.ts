@@ -111,14 +111,16 @@ function attachDashboardIncidentSummary(card: DashboardEvidenceCard): DashboardE
   if (!card.incidentStudioTarget) {
     return card;
   }
+  const incidentStatus: DashboardEvidenceStatus =
+    card.blocking === true ? 'fail' : card.status === 'fail' ? 'warn' : card.status;
   return {
     ...card,
     incidentSummary: buildStudioIncidentSummary({
       cardId: card.id,
       cardLabel: card.label,
-      cardStatus: card.status,
+      cardStatus: incidentStatus,
       verifyCommand:
-        card.status === 'pass'
+        incidentStatus === 'pass'
           ? undefined
           : requireStudioCardRepairCapability(card.id).verifyCommand,
       auditStatus: 'not-started',
@@ -316,17 +318,24 @@ function resolveExplainEvidenceStatus(
   workspaceProjectCount: number
 ): DashboardEvidenceStatus {
   const blockers = explainReport.blockingReasons ?? [];
+  const inferredBlockingReasons = blockers.filter((blocker) => !isStaleEvidenceBlocker(blocker));
+  const explicitlyBlocked =
+    explainReport.blocking === true ||
+    explainReport.releaseVerdict === 'blocked' ||
+    (explainReport.blocking === undefined && inferredBlockingReasons.length > 0);
   const risk = explainReport.releaseRisk?.toLowerCase() ?? '';
   return softenEmptyWorkspaceExplainStatus({
     workspaceProjectCount,
-    status:
-      blockers.length > 0
+    status: explicitlyBlocked
+      ? 'fail'
+      : explainReport.releaseVerdict === 'needs-attention' ||
+          explainReport.evidenceFreshness === 'stale' ||
+          risk === 'critical' ||
+          risk === 'high' ||
+          risk === 'medium' ||
+          risk === 'moderate'
         ? 'warn'
-        : risk === 'critical' || risk === 'high'
-          ? 'fail'
-          : risk === 'medium' || risk === 'moderate'
-            ? 'warn'
-            : 'pass',
+        : 'pass',
     blockers,
   });
 }
@@ -367,6 +376,10 @@ function buildExplainDerivedEvidenceCard(
       ...staleEvidenceMetric(blockers),
     },
     blockers: blockers.slice(0, 8),
+    blocking:
+      explainReport.blocking ??
+      (explainReport.releaseVerdict === 'blocked' ||
+        blockers.some((blocker) => !isStaleEvidenceBlocker(blocker))),
     detailSections: [...derivedSections, ...explainReport.sections].slice(0, 12),
     incidentStudioTarget: id === 'workspaceTrace' ? 'impact' : 'release',
   };
@@ -1842,6 +1855,7 @@ async function buildWorkspaceIntelligenceCards(
         changedProjects: Number(summary.changedProjects ?? 0),
       },
       blockers,
+      blocking: false,
       incidentStudioTarget: 'impact',
     });
   } else {
@@ -1913,6 +1927,7 @@ async function buildWorkspaceIntelligenceCards(
         recommendedCommands: Number(summary.recommendedCommands ?? 0),
       },
       blockers,
+      blocking: false,
       incidentStudioTarget: 'impact',
     });
   } else {

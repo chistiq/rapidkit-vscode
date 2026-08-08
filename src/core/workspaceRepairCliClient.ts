@@ -69,6 +69,21 @@ export type WorkspaceRepairDecision =
   | 'rollback'
   | 'cancel';
 
+export type WorkspaceRepairDecisionCause = {
+  kind:
+    | 'missing-executable'
+    | 'unsupported-adapter'
+    | 'failed-precondition'
+    | 'risk-approval'
+    | 'policy-exception'
+    | 'source-repair-required';
+  id: string;
+  message: string;
+  projectPath?: string;
+  adapterId?: string;
+  executable?: string;
+};
+
 export type WorkspaceRepairCliTransaction = {
   schemaVersion: typeof REPAIR_TRANSACTION_SCHEMA;
   transactionId: string;
@@ -121,6 +136,7 @@ export type WorkspaceRepairCliTransaction = {
   decision?: {
     reason: string;
     options: WorkspaceRepairDecision[];
+    causes?: WorkspaceRepairDecisionCause[];
   };
 };
 
@@ -599,6 +615,7 @@ async function runtimeVerifyCandidate(input: {
     invariants?.targetClosure !== 'selected-causal-action-set' ||
     invariants?.changeReceipt !== 'checkpoint-hash-delta' ||
     invariants?.consumerTimeline !== 'durable-transaction-events' ||
+    invariants?.typedDecisionCauses !== true ||
     contracts?.operationResult !== CLI_OPERATION_SCHEMA ||
     contracts?.proposal !== REPAIR_PROPOSAL_SCHEMA ||
     contracts?.transaction !== REPAIR_TRANSACTION_SCHEMA ||
@@ -891,6 +908,7 @@ async function repairExecutionResult(input: {
 function isRepairTransaction(value: unknown): value is WorkspaceRepairCliTransaction {
   const candidate = value as Partial<WorkspaceRepairCliTransaction> | undefined;
   const decisionOptions = candidate?.decision?.options;
+  const decisionCauses = candidate?.decision?.causes;
   return (
     candidate?.schemaVersion === REPAIR_TRANSACTION_SCHEMA &&
     typeof candidate.transactionId === 'string' &&
@@ -913,7 +931,24 @@ function isRepairTransaction(value: unknown): value is WorkspaceRepairCliTransac
       (typeof candidate.decision.reason === 'string' &&
         Array.isArray(decisionOptions) &&
         decisionOptions.length > 0 &&
-        decisionOptions.every((decision) => REPAIR_DECISIONS.has(decision)))) &&
+        decisionOptions.every((decision) => REPAIR_DECISIONS.has(decision)) &&
+        (decisionCauses === undefined ||
+          (Array.isArray(decisionCauses) &&
+            decisionCauses.length > 0 &&
+            decisionCauses.every(
+              (cause) =>
+                Boolean(cause) &&
+                typeof cause.id === 'string' &&
+                typeof cause.message === 'string' &&
+                [
+                  'missing-executable',
+                  'unsupported-adapter',
+                  'failed-precondition',
+                  'risk-approval',
+                  'policy-exception',
+                  'source-repair-required',
+                ].includes(cause.kind)
+            ))))) &&
     (!candidate.verification ||
       (['passed', 'failed', 'not-run'].includes(candidate.verification.status) &&
         (candidate.verification.targetStatus === undefined ||

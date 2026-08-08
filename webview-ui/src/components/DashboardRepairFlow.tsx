@@ -1,7 +1,8 @@
-import { ClipboardCheck, ShieldCheck } from 'lucide-react';
+import { ClipboardCheck } from 'lucide-react';
 import { type KeyboardEvent, useEffect, useMemo, useState } from 'react';
 import { EvidenceCardActions } from '@/components/EvidenceCardActions';
 import { EvidenceCardLogDrawer } from '@/components/EvidenceCardLogDrawer';
+import { EvidencePostureIcon } from '@/components/EvidencePostureIcon';
 import { WorkspaiEmptyState } from '@/components/WorkspaiEmptyState';
 import { buildDashboardEvidenceActionContract } from '@/lib/dashboardActionContract';
 import type {
@@ -198,16 +199,20 @@ function statusLabel(card: DashboardEvidenceCard, workspaceProjectCount: number 
   return evidenceCardStatusLabelForWorkspace(card, workspaceProjectCount);
 }
 
+function postureForTone(tone: string): 'blocked' | 'attention' | 'healthy' {
+  return tone === 'danger' ? 'blocked' : tone === 'good' ? 'healthy' : 'attention';
+}
+
 function activeRepairKicker(
   card: DashboardEvidenceCard,
   workspaceProjectCount: number | null
 ): string {
+  if (card.status === 'missing') {
+    return 'Active evidence gap';
+  }
   const tone = statusTone(card, workspaceProjectCount);
   if (tone === 'warn') {
     return 'Active warning';
-  }
-  if (tone === 'missing') {
-    return 'Active evidence gap';
   }
   return 'Active blocker';
 }
@@ -360,6 +365,7 @@ function RepairStackCard({
       className={`repair-flow__card repair-flow__card--${tone}${selected ? ' is-selected' : ''}`}
     >
       <div className="repair-flow__card-head">
+        <EvidencePostureIcon posture={postureForTone(tone)} size={20} />
         <button
           type="button"
           className="repair-flow__card-select"
@@ -535,7 +541,10 @@ function RepairActiveCard({
       onKeyDown={handleKeyDown}
     >
       <div className="repair-flow__active-head">
-        <span className="ws-kicker">{activeRepairKicker(card, workspaceProjectCount)}</span>
+        <span className="repair-flow__active-identity">
+          <EvidencePostureIcon posture={postureForTone(tone)} size={22} />
+          <span className="ws-kicker">{activeRepairKicker(card, workspaceProjectCount)}</span>
+        </span>
         <span className={`repair-flow__status repair-flow__status--${tone}`}>
           {refreshPending
             ? 'Refreshing'
@@ -752,7 +761,7 @@ export function DashboardRepairFlow({
           <div className="repair-flow__active-head">
             <span className="ws-kicker">Active blocker</span>
           </div>
-          <ShieldCheck size={18} aria-hidden="true" />
+          <EvidencePostureIcon posture="healthy" size={24} />
           <h3>No active blocker.</h3>
           <p>
             Evidence is clear enough for the current path. Continue with verify or release checks.

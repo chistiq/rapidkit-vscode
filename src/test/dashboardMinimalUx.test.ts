@@ -113,9 +113,13 @@ describe('dashboard minimal UX guard', () => {
     expect(repairFlow).toContain('buildDashboardIncidentCopy');
     expect(attentionInbox).toContain('buildDashboardRepairCardCopy');
     expect(attentionInbox).not.toContain('evidence-attention-inbox__trail');
-    expect(activityPanel).toContain('buildDashboardIncidentCopy');
+    expect(activityPanel).toContain('EvidencePostureIcon');
+    expect(repairFlow).toContain('EvidencePostureIcon');
+    expect(read('webview-ui/src/components/EvidenceGuidedPath.tsx')).toContain(
+      '<EvidencePostureIcon posture={posture}'
+    );
     expect(detailPreview).toContain('buildDashboardIncidentCopy');
-    expect(activityPanel).toContain('incident.compactLabel');
+    expect(activityPanel).not.toContain('command-activity-panel__card-contract');
     expect(activityPanel).toContain('ARCHIVE_CARD_PAGE_SIZE = 12');
     expect(activityPanel).toContain('expandedVisibleCardCount');
     expect(activityPanel).toContain('hiddenArchiveCardCount');
@@ -195,7 +199,9 @@ describe('dashboard minimal UX guard', () => {
     const dashboardEvidence = read('webview-ui/src/lib/dashboardEvidence.ts');
 
     expect(sections).toContain("label: 'Home'");
-    expect(sections).toContain('Workspace status, create/import handoffs, and next action summary');
+    expect(sections).toContain(
+      'Workspace status, recent workspaces, create/import handoffs, and next actions'
+    );
     expect(sections).toContain(
       'Generate and refresh workspace evidence: health, intelligence, and release gates'
     );
@@ -375,9 +381,9 @@ describe('dashboard minimal UX guard', () => {
     expect(guided).toContain('primaryContract?.commandLabel');
     expect(guided).toContain('evidence-guided-path__contract');
     expect(activity).toContain('buildDashboardEvidenceActionContract');
-    expect(activity).toContain('command-activity-panel__card-contract');
-    expect(activity).toContain('buildDashboardIncidentCopy');
-    expect(activity).toContain('incident.compactLabel');
+    expect(activity).toContain('resolveEvidenceCardPosture');
+    expect(activity).toContain('EvidencePostureIcon');
+    expect(activity).not.toContain('command-activity-panel__card-contract');
     expect(repair).toContain('buildDashboardEvidenceActionContract');
     expect(repair).toContain('buildDashboardRepairCardCopy');
     expect(repair).toContain('actionContract.commandAction');
@@ -415,7 +421,10 @@ describe('dashboard minimal UX guard', () => {
     expect(project).toContain('buildDashboardCommandActionContract');
     expect(project).toContain('actionContract={commandContract(dashboardCommand');
     expect(project).toContain('onDoctorFix');
-    expect(project).toContain("doctorTone === 'fail'");
+    expect(project).toContain('resolveEvidenceCardPosture(card)');
+    expect(project).toContain('EvidencePostureIcon');
+    expect(tile).toContain('evidenceCard?: DashboardEvidenceCard');
+    expect(tile).toContain('resolveEvidenceCardPosture(evidenceCard)');
     expect(tile).toContain('actionContract?: DashboardCommandActionContract');
     expect(tile).toContain('workspai-action-tile__contract');
     expect(styles).toContain('.workspai-action-tile__contract');
@@ -530,7 +539,7 @@ describe('dashboard minimal UX guard', () => {
     const styles = read('webview-ui/src/styles-tailwind.css');
 
     expect(source).toContain('command-activity-panel--${viewMode}');
-    expect(source).toContain('Artifact archive');
+    expect(source).toContain('Generated evidence and its current posture');
     expect(source).toContain('command-activity-panel__card-main--static');
     expect(source).not.toContain('disabled={!clickable}');
     expect(styles).toContain('.command-activity-panel__card-main--static');
@@ -774,7 +783,7 @@ describe('dashboard minimal UX guard', () => {
     const drawer = read('webview-ui/src/components/EvidenceCardLogDrawer.tsx');
 
     expect(drawer).toContain('defaultExpanded = false');
-    expect(panel).toContain("defaultExpanded={viewMode === 'expanded'}");
+    expect(panel).toContain('defaultExpanded={false}');
     expect(panel).toContain("viewMode === 'balanced'");
   });
 
@@ -822,12 +831,12 @@ describe('dashboard minimal UX guard', () => {
     expect(flow.indexOf('label="Governance Gate"')).toBeLessThan(flow.indexOf('label="Doctor"'));
   });
 
-  it('shows health and impact trends only outside guided evidence mode', () => {
+  it('shows health and impact trends only in expanded evidence mode', () => {
     const section = read('webview-ui/src/components/DashboardEvidenceSection.tsx');
     const trend = read('webview-ui/src/components/DashboardTrendChart.tsx');
     const evidenceTypes = read('webview-ui/src/lib/dashboardEvidence.ts');
 
-    expect(section).toContain("evidenceViewMode !== 'guided' ? <DashboardTrendChart");
+    expect(section).toContain("evidenceViewMode === 'expanded' ? <DashboardTrendChart");
     expect(trend).toContain('Health and impact trend');
     expect(trend).toContain('Governance Gate or Workspace Verify');
     expect(evidenceTypes).toContain('policyViolations: number');
@@ -881,7 +890,9 @@ describe('dashboard minimal UX guard', () => {
     expect(panel).toContain('explainabilitySource');
     expect(panel).toContain('resolveEvidenceFreshness');
     expect(styles).toContain('.workspace-explainability-stack');
-    expect(styles).toContain('.workspace-explainability-stack__item--fail');
+    expect(styles).toContain('.workspace-explainability-stack__item--blocked');
+    expect(styles).toContain('.workspace-explainability-stack__item--attention');
+    expect(styles).toContain('.workspace-explainability-stack__item--healthy');
   });
 
   it('keeps agent sync under collapsed advanced intelligence commands', () => {
@@ -946,7 +957,7 @@ describe('dashboard minimal UX guard', () => {
     const artifacts = read('webview-ui/src/components/EvidenceAttentionInbox.tsx');
     const studio = read('webview-ui/src/sidebar/StudioBlockerChrome.tsx');
 
-    expect(actions).toContain('const primaryType = resolvedPrimaryAction?.type');
+    expect(actions).toContain('const primaryType = visiblePrimaryAction?.type');
     expect(actions).toContain('resolveVisiblePrimaryEvidenceAction');
     expect(actions).toContain('const hasRunSecondary = canRun && onRun && primaryType !==');
     expect(actions).toContain(
@@ -1053,6 +1064,7 @@ describe('dashboard minimal UX guard', () => {
     );
 
     expect(app).toContain('DashboardModuleCatalogSurface');
+    expect(app.match(/<DashboardModuleCatalogSurface/g)).toHaveLength(1);
     expect(app).toContain('DashboardCatalogLoadingShell');
     expect(app).toContain('dashboardModuleCatalogSurfaceProps');
     expect(app).toContain('onInstall: (module: ModuleData) => handleOpenInstallModal(module)');
@@ -1067,6 +1079,21 @@ describe('dashboard minimal UX guard', () => {
     );
     expect(moduleCatalogSurface).toContain('includeProjectActions={false}');
     expect(moduleCatalogSurface).toContain("variant: 'templates' | 'modules'");
+  });
+
+  it('keeps Library focused on workspace templates without duplicating project modules', () => {
+    const app = read('webview-ui/src/App.tsx');
+    const sections = read('webview-ui/src/lib/dashboardSections.ts');
+    const subNav = read('webview-ui/src/components/DashboardSubNav.tsx');
+
+    expect(app).not.toContain('Library load delayed');
+    expect(app).not.toContain('Module catalog did not confirm within 12 seconds');
+    expect(app).toContain('Browse reusable workspace examples and profile foundations.');
+    expect(app.match(/<DashboardModuleCatalogSurface/g)).toHaveLength(1);
+    expect(sections).toContain('Reusable workspace examples and profile foundations');
+    expect(subNav).toContain('templateCount');
+    expect(subNav).toContain('workspace templates');
+    expect(subNav).not.toContain('recentWorkspaceCount');
   });
 
   it('keeps Home overview rendering extracted from the dashboard app shell', () => {

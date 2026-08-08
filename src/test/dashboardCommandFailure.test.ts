@@ -44,6 +44,7 @@ describe('dashboardCommandFailure', () => {
     const analyze = next?.cards.find((card) => card.id === 'analyze');
 
     expect(analyze?.status).toBe('fail');
+    expect(analyze?.blocking).toBe(false);
     expect(analyze?.summary).toContain('Last run failed');
     expect(analyze?.blockers?.[0]).toContain('Analyze failed');
     expect(analyze?.metrics).toMatchObject({
@@ -53,6 +54,24 @@ describe('dashboardCommandFailure', () => {
       failedRun: 1,
     });
     expect(analyze?.detailSections?.[0]?.body).toContain('exitCode: 1');
+  });
+
+  it('preserves an already-proven blocker when its refresh command fails', () => {
+    const next = applyDashboardCommandFailures(
+      {
+        ...payload,
+        cards: [{ ...payload.cards[0], status: 'fail', blocking: true }],
+      },
+      {
+        analyze: {
+          command: 'workspaceAnalyze',
+          reason: 'Refresh failed.',
+          cardIds: ['analyze'],
+        },
+      }
+    );
+
+    expect(next?.cards[0]?.blocking).toBe(true);
   });
 
   it('only clears failed-run overlays after a non-failing artifact-bearing card arrives', () => {

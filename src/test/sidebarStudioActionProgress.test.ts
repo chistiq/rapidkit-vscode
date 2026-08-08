@@ -8,6 +8,19 @@ import {
 import { parseStudioActionFailure } from '../../webview-ui/src/lib/studioVerifyFailure';
 
 describe('sidebarStudioActionProgress', () => {
+  it('preserves policy rejections and combined occurrence counts for compact transcripts', () => {
+    expect(
+      parseSidebarStudioActionProgress({
+        action: 'run-workspace-command',
+        status: 'failed',
+        title: 'Verification remains controller-owned',
+        summary: 'Duplicate evidence command blocked.',
+        policyRejected: true,
+        occurrences: 4,
+      })
+    ).toMatchObject({ policyRejected: true, occurrences: 4 });
+  });
+
   it('uses concise Copilot-style labels for native Agent tool activity', () => {
     expect(studioAgentToolProgressCopy('recover-active-blocker', 'running')).toEqual({
       title: 'Resolving the active blocker',

@@ -44,7 +44,7 @@ describe('dashboardScaffoldEvidence', () => {
     expect(cardCountsAsReleaseBlocker(warnCard, 0)).toBe(false);
     expect(evidenceCardVisualTone(warnCard, 0)).toBe('warn');
     expect(evidenceCardStatusLabelForWorkspace(warnCard, 0)).toBe('Expected before first project');
-    expect(evidenceCardStatusLabelForWorkspace(warnCard, 2)).toBe('Attention');
+    expect(evidenceCardStatusLabelForWorkspace(warnCard, 2)).toBe('Needs attention');
   });
 
   it('keeps stale-only evidence separate from release blockers for populated workspaces', () => {
@@ -108,7 +108,7 @@ describe('dashboardScaffoldEvidence', () => {
 
     expect(cardCountsAsReleaseBlocker(advisoryCard, 2)).toBe(false);
     expect(evidenceCardVisualTone(advisoryCard, 2)).toBe('warn');
-    expect(evidenceCardStatusLabelForWorkspace(advisoryCard, 2)).toBe('Attention');
+    expect(evidenceCardStatusLabelForWorkspace(advisoryCard, 2)).toBe('Needs attention');
   });
 
   it('does not treat scaffold-only fail cards as release blockers for empty workspaces', () => {

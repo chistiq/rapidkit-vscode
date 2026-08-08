@@ -153,4 +153,59 @@ describe('service timeout config', () => {
       expect.objectContaining({ timeout: 1000 })
     );
   });
+
+  it('publishes runnable examples and raw profile foundations through one catalog', async () => {
+    mockAxiosGet.mockResolvedValue({
+      data: {
+        version: '1.1.0',
+        lastUpdated: '2026-08-08T00:00:00.000Z',
+        repository: 'https://github.com/chistiq/rapidkit-examples',
+        workspaces: [
+          {
+            id: 'quickstart',
+            name: 'quickstart-workspace',
+            title: 'Quickstart Workspace',
+            description: 'Runnable example',
+            path: 'quickstart-workspace',
+            projects: [],
+          },
+        ],
+        profileWorkspaces: [
+          {
+            id: 'go-only',
+            name: 'go-only-workspace',
+            profile: 'go-only',
+            path: 'go-only-workspace',
+            kind: 'raw-profile-fixture',
+            projects: [],
+            lifecycleStatus: 'published',
+          },
+          {
+            id: 'draft',
+            name: 'draft-workspace',
+            profile: 'minimal',
+            path: 'draft-workspace',
+            kind: 'raw-profile-fixture',
+            projects: [],
+            lifecycleStatus: 'draft',
+          },
+        ],
+      },
+    });
+
+    const service = ExamplesService.initialize(context);
+    const catalog = await service.getExamples();
+
+    expect(catalog).toHaveLength(2);
+    expect(catalog[0]).toMatchObject({
+      id: 'quickstart',
+      catalogKind: 'runnable-example',
+    });
+    expect(catalog[1]).toMatchObject({
+      id: 'go-only',
+      profile: 'go-only',
+      catalogKind: 'profile-foundation',
+      title: 'Go Workspace Foundation',
+    });
+  });
 });

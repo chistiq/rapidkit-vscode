@@ -1,5 +1,6 @@
-import { ArrowRight, ClipboardCheck, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { ArrowRight, ClipboardCheck, RefreshCw } from 'lucide-react';
 import { CommandActivityPanel } from '@/components/CommandActivityPanel';
+import { EvidencePostureIcon } from '@/components/EvidencePostureIcon';
 import { EvidenceAttentionInbox } from '@/components/EvidenceAttentionInbox';
 import { EvidenceViewModeToggle } from '@/components/EvidenceViewModeToggle';
 import { ReleaseHub } from '@/components/ReleaseHub';
@@ -67,8 +68,9 @@ function EvidenceBrief({
   onEvidenceViewModeChange: (mode: EvidenceViewMode) => void;
   isRefreshing?: boolean;
 }) {
-  const Icon = brief.posture === 'healthy' ? ShieldCheck : ShieldAlert;
   const canShowDetails = evidenceViewMode === 'guided';
+  const posture =
+    brief.posture === 'blocked' ? 'blocked' : brief.posture === 'healthy' ? 'healthy' : 'attention';
 
   return (
     <section
@@ -77,7 +79,7 @@ function EvidenceBrief({
     >
       <div className="evidence-brief__main">
         <span className="evidence-brief__icon" aria-hidden="true">
-          <Icon size={17} />
+          <EvidencePostureIcon posture={posture} size={20} />
         </span>
         <div className="evidence-brief__copy">
           <span className="ws-kicker">Artifacts brief</span>
@@ -300,7 +302,7 @@ export function DashboardEvidenceSection({
         isRefreshing={isRefreshingEvidence}
       />
 
-      {evidenceViewMode !== 'guided' ? <DashboardTrendChart trend={evidence?.trend} /> : null}
+      {evidenceViewMode === 'expanded' ? <DashboardTrendChart trend={evidence?.trend} /> : null}
 
       <div className="ws-dashboard-evidence-toolbar">
         <div>

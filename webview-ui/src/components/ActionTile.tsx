@@ -1,9 +1,10 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
-import type { DashboardEvidenceStatus } from '@/lib/dashboardEvidence';
-import { evidenceStatusLabel } from '@/lib/dashboardEvidence';
+import type { DashboardEvidenceCard, DashboardEvidenceStatus } from '@/lib/dashboardEvidence';
+import { resolveEvidenceCardPosture } from '@/lib/dashboardEvidence';
 import type { DashboardCommandActionContract } from '@/lib/dashboardCommandActionContract';
 import { CommandExecutionBadge } from '@/components/CommandExecutionBadge';
+import { EvidencePostureIcon } from '@/components/EvidencePostureIcon';
 
 export type ActionTileVariant = 'default' | 'primary' | 'danger' | 'warn' | 'builder';
 
@@ -14,6 +15,7 @@ export interface ActionTileProps extends ButtonHTMLAttributes<HTMLButtonElement>
   variant?: ActionTileVariant;
   fullWidth?: boolean;
   evidenceStatus?: DashboardEvidenceStatus;
+  evidenceCard?: DashboardEvidenceCard;
   pending?: boolean;
   stateLabel?: string;
   actionContract?: DashboardCommandActionContract;
@@ -26,10 +28,10 @@ function variantClass(variant: ActionTileVariant): string {
   return ` ws-action-tile--${variant} workspai-action-tile--${variant}`;
 }
 
-const evidenceChipClass: Record<Exclude<DashboardEvidenceStatus, 'missing'>, string> = {
-  pass: 'ws-chip ws-chip--success',
-  warn: 'ws-chip ws-chip--warn',
-  fail: 'ws-chip ws-chip--error',
+const evidenceChipClass = {
+  healthy: 'ws-chip ws-chip--success',
+  attention: 'ws-chip ws-chip--warn',
+  blocked: 'ws-chip ws-chip--error',
 };
 
 export function ActionTile({
@@ -39,6 +41,7 @@ export function ActionTile({
   variant = 'default',
   fullWidth = false,
   evidenceStatus,
+  evidenceCard,
   pending = false,
   stateLabel,
   actionContract,
@@ -49,6 +52,21 @@ export function ActionTile({
 }: ActionTileProps) {
   const effectiveDisabled = Boolean(disabled || pending);
   const visibleStateLabel = pending ? stateLabel || 'Running' : stateLabel;
+  const evidencePosture = evidenceCard
+    ? resolveEvidenceCardPosture(evidenceCard)
+    : evidenceStatus
+      ? evidenceStatus === 'pass'
+        ? 'healthy'
+        : evidenceStatus === 'fail'
+          ? 'blocked'
+          : 'attention'
+      : undefined;
+  const evidenceLabel =
+    evidencePosture === 'healthy'
+      ? 'Healthy'
+      : evidencePosture === 'blocked'
+        ? 'Blocked'
+        : 'Needs attention';
   const stateClass = pending
     ? 'workspai-action-tile__state workspai-action-tile__state--pending'
     : 'workspai-action-tile__state';
@@ -79,12 +97,13 @@ export function ActionTile({
         <span className={stateClass} aria-label={pending ? 'Command running' : undefined}>
           {visibleStateLabel}
         </span>
-      ) : evidenceStatus && evidenceStatus !== 'missing' ? (
+      ) : evidencePosture ? (
         <span
-          className={`${evidenceChipClass[evidenceStatus]} workspai-action-tile__evidence workspai-action-tile__evidence--${evidenceStatus}`}
-          aria-label={`Evidence: ${evidenceStatusLabel(evidenceStatus)}`}
+          className={`${evidenceChipClass[evidencePosture]} workspai-action-tile__evidence workspai-action-tile__evidence--${evidencePosture}`}
+          aria-label={`Evidence: ${evidenceLabel}`}
         >
-          {evidenceStatusLabel(evidenceStatus)}
+          <EvidencePostureIcon posture={evidencePosture} size={15} />
+          {evidenceLabel}
         </span>
       ) : null}
       {actionContract ? (

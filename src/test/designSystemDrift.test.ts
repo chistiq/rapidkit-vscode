@@ -287,7 +287,8 @@ describe('Workspai design system drift', () => {
     expect(evidenceSource).not.toContain('workspai-empty-state__action');
 
     expect(outcomeSource).toContain('ws-btn ws-btn--primary');
-    expect(outcomeSource).toContain('ws-chip ws-chip--');
+    expect(outcomeSource).toContain("className={`ws-chip ${posture === 'blocked'");
+    expect(outcomeSource).toContain('EvidencePostureIcon posture={posture}');
     expect(outcomeSource).not.toContain('evidence-outcome-panel__action--primary');
     expect(outcomeSource).not.toMatch(/className="evidence-outcome-panel__action"/);
 

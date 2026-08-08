@@ -2932,6 +2932,99 @@ describe('Studio Agent session runtime', () => {
     expect(correlatedEvents.every((event) => event.toolCallId === 'provider-call-17')).toBe(true);
   });
 
+  it('stops a repeated controller-owned evidence command during general source repair', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'recover-active-blocker',
+      title: 'Resolve active blocker',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ok: false,
+          changed: false,
+          output: {
+            recoveryPath: 'general-source-repair',
+            nextAction: 'general-source-repair',
+            sourceCandidates: ['atlas-api/atlas-api.sln'],
+          },
+          error: 'Source repair is required.',
+        };
+      },
+    });
+    registry.register({
+      name: 'inspect-source',
+      title: 'Inspect source',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, output: [{ path: 'atlas-api/atlas-api.sln', content: '' }] };
+      },
+    });
+    registry.register({
+      name: 'run-workspace-command',
+      title: 'Run workspace command',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        throw new Error('The phase policy must reject this command before execution.');
+      },
+    });
+    let modelTurns = 0;
+    const session = new StudioAgentSession(
+      {
+        id: 'source-repair-evidence-loop-session',
+        workspacePath: '/workspace',
+        cardId: 'doctor',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      {
+        async next() {
+          modelTurns += 1;
+          return {
+            type: 'tool',
+            toolName: 'run-workspace-command',
+            input: {
+              executable: 'npx',
+              args: ['--no-install', 'workspai', 'doctor', 'workspace', '--json'],
+              cwd: modelTurns === 1 ? '.' : 'atlas-api',
+              purpose: 'inspect',
+            },
+            reason: 'Refresh Doctor evidence.',
+          };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Repair the Doctor blocker');
+
+    expect(result.status).toBe('failed');
+    expect(modelTurns).toBe(2);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'tool.failed',
+        data: expect.objectContaining({
+          policyRejected: true,
+          repeatedPolicyRejection: true,
+          terminalReason: 'source-repair-policy-loop',
+        }),
+      })
+    );
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'session.failed',
+        data: expect.objectContaining({
+          requiresUserDecision: true,
+          terminalReason: 'source-repair-policy-loop',
+        }),
+      })
+    );
+  });
+
   it('streams command-produced unified diffs without persisting source bodies', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({

@@ -19,7 +19,7 @@ export const DASHBOARD_SECTIONS: ReadonlyArray<DashboardSectionDefinition> = [
     id: 'overview',
     label: 'Home',
     scope: 'status',
-    description: 'Workspace status, create/import handoffs, and next action summary',
+    description: 'Workspace status, recent workspaces, create/import handoffs, and next actions',
   },
   {
     id: 'operate',
@@ -56,7 +56,7 @@ export const DASHBOARD_SECTIONS: ReadonlyArray<DashboardSectionDefinition> = [
     id: 'catalog',
     label: 'Library',
     scope: 'library',
-    description: 'Your workspaces, example templates, and module catalog browse',
+    description: 'Reusable workspace examples and profile foundations',
   },
 ] as const;
 

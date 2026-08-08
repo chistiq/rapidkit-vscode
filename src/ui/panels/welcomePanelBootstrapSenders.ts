@@ -31,9 +31,10 @@ export async function sendWelcomePanelRecentWorkspaces(
 }
 
 export async function sendWelcomePanelExampleWorkspaces(
-  bootstrapHost: BootstrapPayloadHost
+  bootstrapHost: BootstrapPayloadHost,
+  options?: { forceRefresh?: boolean }
 ): Promise<void> {
-  await sendExampleWorkspaces(bootstrapHost);
+  await sendExampleWorkspaces(bootstrapHost, options);
 }
 
 export async function sendWelcomePanelAvailableKits(

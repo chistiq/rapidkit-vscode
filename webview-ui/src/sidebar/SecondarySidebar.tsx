@@ -1072,17 +1072,21 @@ export function SecondarySidebar() {
           const changedFiles =
             eventType === 'tool.completed' && changedPaths.length > 0 && Boolean(transactionId);
           const transactionClosed = transaction?.state === 'closed';
+          const policyRejected = eventData.policyRejected === true;
           startStudioActionProgress({
             action: toolName,
-            status: eventType === 'tool.completed' ? 'done' : 'failed',
+            status: policyRejected ? 'done' : eventType === 'tool.completed' ? 'done' : 'failed',
             phase: copy.phase,
-            title: changedFiles
-              ? `Changed ${changedPaths.length} file${changedPaths.length === 1 ? '' : 's'}`
-              : replay && eventType === 'tool.failed'
-                ? `Observed: ${copy.title}`
-                : copy.title,
-            summary:
-              typeof eventData.error === 'string'
+            title: policyRejected
+              ? 'Verification remains controller-owned'
+              : changedFiles
+                ? `Changed ${changedPaths.length} file${changedPaths.length === 1 ? '' : 's'}`
+                : replay && eventType === 'tool.failed'
+                  ? `Observed: ${copy.title}`
+                  : copy.title,
+            summary: policyRejected
+              ? 'A duplicate evidence command was blocked. Studio returned the agent to the required source-repair or decision path.'
+              : typeof eventData.error === 'string'
                 ? eventData.error
                 : changedFiles
                   ? transactionClosed
@@ -1099,6 +1103,10 @@ export function SecondarySidebar() {
             ...(transactionId ? { transactionId } : {}),
             canUndo: changedFiles && Boolean(transactionId),
             validationStages,
+            policyRejected,
+            ...(policyRejected && typeof eventData.error === 'string'
+              ? { technicalDetail: eventData.error }
+              : {}),
           });
         } else if (eventType === 'verify.completed') {
           const resolved = eventData.ok === true && eventData.cardBlocking === false;

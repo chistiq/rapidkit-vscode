@@ -57,7 +57,10 @@ export async function buildStudioBlockerHandoff(
   const verifyArtifact = repairCapability.verifyArtifact;
 
   let resolutionHints = buildResolutionHintsForBlockingReasons({
-    blockingReasons: blockers.length > 0 ? blockers : [`${input.card.id}: blocked`],
+    blockingReasons:
+      blockers.length > 0
+        ? blockers
+        : [`${input.card.id}: ${input.card.blocking === true ? 'blocked' : 'needs attention'}`],
     sourceCommand,
     sourceArtifact: input.card.artifactPath,
     verifyCommand,
@@ -145,6 +148,13 @@ export async function buildStudioBlockerHandoff(
     handoff,
     onDiskHints: resolutionHints,
   });
+  if (
+    handoff.blocking === false &&
+    handoff.cardStatus !== 'missing' &&
+    handoff.cardStatus !== 'pass'
+  ) {
+    handoff.studioMode = 'EXPLAIN';
+  }
   handoff.incidentSummary = buildStudioIncidentSummary({
     cardId: handoff.cardId,
     cardLabel: handoff.cardLabel,

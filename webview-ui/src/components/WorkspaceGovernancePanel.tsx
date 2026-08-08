@@ -106,6 +106,7 @@ export function WorkspaceGovernancePanel({
           label="Bootstrap"
           detail={governanceDetail(evidence, 'bootstrap', 'Profile compliance')}
           evidenceStatus={bootstrapCard?.status}
+          evidenceCard={bootstrapCard}
           stateLabel={isBootstrapPendingCard(bootstrapCard) ? 'Pending' : undefined}
           pending={isPending('bootstrap')}
           onClick={onBootstrap}
@@ -121,6 +122,7 @@ export function WorkspaceGovernancePanel({
           label="Workspace Sync"
           detail={governanceDetail(evidence, 'workspaceSync', 'Refresh workspace state')}
           evidenceStatus={workspaceSyncCard?.status}
+          evidenceCard={workspaceSyncCard}
           pending={isPending('workspaceSync')}
           stateLabel={isPending('workspaceSync') ? 'Syncing' : undefined}
           onClick={onWorkspaceSync}
@@ -136,6 +138,7 @@ export function WorkspaceGovernancePanel({
           label="Contract"
           detail={governanceDetail(evidence, 'contract', 'Inspect workspace contract')}
           evidenceStatus={contractCard?.status}
+          evidenceCard={contractCard}
           pending={isPending('contract')}
           stateLabel={isPending('contract') ? 'Inspecting' : undefined}
           onClick={onContractInspect}
@@ -151,6 +154,7 @@ export function WorkspaceGovernancePanel({
           label="Readiness"
           detail={governanceDetail(evidence, 'readiness', 'Release evidence')}
           evidenceStatus={readinessCard?.status}
+          evidenceCard={readinessCard}
           pending={isPending('readiness')}
           onClick={onReadiness}
           disabled={!hasWorkspace}
@@ -165,6 +169,7 @@ export function WorkspaceGovernancePanel({
           label="Autopilot Release"
           detail={governanceDetail(evidence, 'autopilot', 'Release gate evidence')}
           evidenceStatus={autopilotCard?.status}
+          evidenceCard={autopilotCard}
           pending={isPending('autopilot')}
           onClick={onAutopilotRelease}
           disabled={!hasWorkspace}
@@ -190,6 +195,7 @@ export function WorkspaceGovernancePanel({
               label="Setup"
               detail={governanceDetail(evidence, 'setup', 'Pin Node/Python runtimes')}
               evidenceStatus={setupCard?.status}
+              evidenceCard={setupCard}
               pending={isPending('setup')}
               onClick={onSetup}
               disabled={!hasWorkspace}
@@ -204,6 +210,7 @@ export function WorkspaceGovernancePanel({
               label="Foundation"
               detail={governanceDetail(evidence, 'foundation', 'Ensure marker, policy, toolchain')}
               evidenceStatus={foundationCard?.status}
+              evidenceCard={foundationCard}
               pending={isPending('foundation')}
               stateLabel={isPending('foundation') ? 'Ensuring' : undefined}
               onClick={onFoundationEnsure}
@@ -219,6 +226,7 @@ export function WorkspaceGovernancePanel({
               label="Verify Contract"
               detail="Strict contract validation"
               evidenceStatus={contractCard?.status}
+              evidenceCard={contractCard}
               pending={isPending('contract')}
               stateLabel={isPending('contract') ? 'Verifying' : undefined}
               onClick={onContractVerify}
@@ -234,6 +242,7 @@ export function WorkspaceGovernancePanel({
               label="Mirror Operations"
               detail={governanceDetail(evidence, 'mirror', 'Status · sync · verify · rotate')}
               evidenceStatus={mirrorCard?.status}
+              evidenceCard={mirrorCard}
               pending={isPending('mirror')}
               onClick={onMirrorOps}
               disabled={!hasWorkspace}
@@ -248,6 +257,7 @@ export function WorkspaceGovernancePanel({
               label="Cache"
               detail={governanceDetail(evidence, 'cache', 'Package cache')}
               evidenceStatus={cacheCard?.status}
+              evidenceCard={cacheCard}
               pending={isPending('cache')}
               onClick={onCacheStatus}
               disabled={!hasWorkspace}
@@ -262,6 +272,7 @@ export function WorkspaceGovernancePanel({
               label="Policy"
               detail={governanceDetail(evidence, 'policy', 'Governance rules')}
               evidenceStatus={policyCard?.status}
+              evidenceCard={policyCard}
               pending={isPending('policy')}
               onClick={onPolicy}
               disabled={!hasWorkspace}
@@ -276,6 +287,7 @@ export function WorkspaceGovernancePanel({
               label="Infra"
               detail={governanceDetail(evidence, 'infra', 'Sidecar compose')}
               evidenceStatus={infraCard?.status}
+              evidenceCard={infraCard}
               pending={isPending('infra')}
               onClick={onInfra}
               disabled={!hasWorkspace}

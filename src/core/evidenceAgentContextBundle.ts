@@ -50,7 +50,15 @@ export type EvidenceAgentContextBundle = {
   projectName?: string;
   card?: Pick<
     DashboardEvidenceCard,
-    'id' | 'label' | 'status' | 'summary' | 'scope' | 'artifactPath' | 'blockers' | 'metrics'
+    | 'id'
+    | 'label'
+    | 'status'
+    | 'summary'
+    | 'scope'
+    | 'artifactPath'
+    | 'blockers'
+    | 'blocking'
+    | 'metrics'
   >;
   attachments: EvidenceAgentAttachment[];
   missingRequired: string[];

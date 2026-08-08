@@ -27,6 +27,9 @@ export type WorkspaceExplainReport = {
   target: WorkspaceExplainTarget;
   summary: string;
   sections: Array<{ id: string; title: string; body: string }>;
+  releaseVerdict?: 'ready' | 'needs-attention' | 'blocked';
+  evidenceFreshness?: 'fresh' | 'stale' | 'unknown';
+  blocking?: boolean;
   blockingReasons?: string[];
   releaseRisk?: string;
 };

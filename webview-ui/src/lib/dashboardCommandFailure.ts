@@ -35,6 +35,10 @@ export function applyDashboardCommandFailureToCard(
   return {
     ...card,
     status: 'fail',
+    // A command invocation failure is an operational warning. Preserve an
+    // already-proven gate blocker, but never manufacture a release blocker
+    // solely because a refresh/run command exited non-zero.
+    blocking: card.blocking ?? false,
     summary: failureSummary(failure),
     blockers,
     metrics: {

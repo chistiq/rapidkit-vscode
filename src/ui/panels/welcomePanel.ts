@@ -134,7 +134,10 @@ import {
   getSelectedWorkspaceInfoFromExplorer,
   type WelcomePanelDashboardHostFactoryBindings,
 } from './welcomePanelDashboardHostFactories';
-import { registerWelcomePanelDoctorEvidenceWatcher } from './welcomePanelDoctorEvidenceWatcher';
+import {
+  registerWelcomePanelDoctorEvidenceWatcher,
+  type WelcomePanelEvidenceWatcher,
+} from './welcomePanelDoctorEvidenceWatcher';
 import {
   postWelcomePanelAIStreamDoneOnce,
   postWelcomePanelChatBrainWebviewMessage,
@@ -1076,7 +1079,7 @@ export class WelcomePanel {
       sendWorkspaceToolStatus: () => this._sendWorkspaceToolStatus(),
       resolveTelemetryWorkspacePath: () => this._resolveTelemetryWorkspacePath(),
       refreshWorkspaceStatus: () => WelcomePanel.refreshWorkspaceStatus(),
-      refreshExampleWorkspaces: () => this._sendExampleWorkspaces(),
+      refreshExampleWorkspaces: () => this._sendExampleWorkspaces({ forceRefresh: true }),
       showAiModal: (context, aiContext) => WelcomePanel.showAIModal(context, aiContext),
     };
   }
@@ -1295,6 +1298,7 @@ export class WelcomePanel {
   /** Per-workspace system graph watchers for incremental refresh on file change. */
   private _systemGraphWatcherByPath = new Map<string, ProjectSystemGraphWatcherHandle>();
   private _dashboardEvidenceSendGeneration = 0;
+  private _dashboardEvidenceWatcher?: WelcomePanelEvidenceWatcher;
   private readonly _workspaceGraphProjectionCoalescer = new WorkspaceGraphProjectionCoalescer<{
     event: WorkspaceGraphStreamEnvelope;
     state: WorkspaceGraphStreamState;
@@ -1359,9 +1363,12 @@ export class WelcomePanel {
     this._panel = panel;
     this._context = context;
 
-    registerWelcomePanelDoctorEvidenceWatcher(this._disposables, (filePath) => {
-      this._doctorTelemetryRefreshController.schedule(filePath);
-    });
+    this._dashboardEvidenceWatcher = registerWelcomePanelDoctorEvidenceWatcher(
+      this._disposables,
+      (filePath) => {
+        this._doctorTelemetryRefreshController.schedule(filePath);
+      }
+    );
 
     // Set webview content
     this._panel.webview.html = buildWelcomePanelHtmlContent(context, this._panel.webview);
@@ -1760,6 +1767,15 @@ export class WelcomePanel {
   }
 
   private async _sendDashboardEvidence(context?: DashboardEvidenceRefreshContext | string) {
+    const normalizedContext = typeof context === 'string' ? { workspacePath: context } : context;
+    const selectedWorkspace = this._getSelectedWorkspaceInfo();
+    const selectedProject = WelcomePanel._selectedProject;
+    const watchedWorkspacePath =
+      normalizedContext?.workspacePath ||
+      selectedWorkspace?.path ||
+      selectedProject?.workspacePath ||
+      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    this._dashboardEvidenceWatcher?.watchWorkspace(watchedWorkspacePath);
     await sendDashboardEvidence(this._dashboardEvidenceHost(), context);
   }
 
@@ -1958,8 +1974,8 @@ export class WelcomePanel {
     await sendWelcomePanelRecentWorkspaces(this._bootstrapPayloadHost());
   }
 
-  private async _sendExampleWorkspaces() {
-    await sendWelcomePanelExampleWorkspaces(this._bootstrapPayloadHost());
+  private async _sendExampleWorkspaces(options?: { forceRefresh?: boolean }) {
+    await sendWelcomePanelExampleWorkspaces(this._bootstrapPayloadHost(), options);
   }
 
   private async _sendAvailableKits() {

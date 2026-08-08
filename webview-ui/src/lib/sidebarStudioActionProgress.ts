@@ -38,6 +38,8 @@ export type SidebarStudioActionProgressView = {
   canUndo?: boolean;
   terminalReason?: string;
   technicalDetail?: string;
+  policyRejected?: boolean;
+  occurrences?: number;
   validationStages?: Array<{
     id: string;
     kind: string;
@@ -450,6 +452,13 @@ export function parseSidebarStudioActionProgress(
     canUndo: record.canUndo === true,
     terminalReason: optionalTrimmedString(record.terminalReason),
     technicalDetail: optionalTrimmedString(record.technicalDetail),
+    policyRejected: record.policyRejected === true,
+    occurrences:
+      typeof record.occurrences === 'number' &&
+      Number.isInteger(record.occurrences) &&
+      record.occurrences > 1
+        ? record.occurrences
+        : undefined,
     validationStages,
   };
 }

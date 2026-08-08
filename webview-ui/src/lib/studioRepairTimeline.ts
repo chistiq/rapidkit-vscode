@@ -26,6 +26,13 @@ function progressIdentity(progress: SidebarStudioActionProgressView): string {
   if (activityKind(progress.phase ?? progress.action) === 'inspect') {
     return 'activity:inspect';
   }
+  if (progress.policyRejected) {
+    return [
+      'policy-rejected',
+      progress.action,
+      progress.commandText?.trim().replace(/\s+/g, ' ') ?? progress.phase ?? '',
+    ].join(':');
+  }
   return progress.invocationId
     ? `invocation:${progress.invocationId}`
     : [activityKind(progress.phase ?? progress.action), progress.action].join(':');
@@ -41,7 +48,19 @@ export function appendStudioRepairTimelineEntry(
 ): SidebarStudioActionProgressView[] {
   const previous = timeline[timeline.length - 1];
   if (previous && progressIdentity(previous) === progressIdentity(progress)) {
-    return [...timeline.slice(0, -1), progress];
+    const repeatedInvocation =
+      previous.policyRejected === true &&
+      progress.policyRejected === true &&
+      previous.invocationId !== progress.invocationId;
+    return [
+      ...timeline.slice(0, -1),
+      {
+        ...progress,
+        occurrences: repeatedInvocation
+          ? (previous.occurrences ?? 1) + 1
+          : (progress.occurrences ?? previous.occurrences),
+      },
+    ];
   }
   return [...timeline, progress].slice(-STUDIO_REPAIR_TIMELINE_LIMIT);
 }

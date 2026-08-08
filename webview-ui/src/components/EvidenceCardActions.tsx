@@ -115,7 +115,11 @@ export function EvidenceCardActions({
     showAgentActions,
     runLabel,
   });
-  const primaryType = resolvedPrimaryAction?.type;
+  // Compact evidence cards already carry a posture chip. Repeating a disabled
+  // "Done" control on every healthy artifact adds noise without an action.
+  const visiblePrimaryAction =
+    compact && resolvedPrimaryAction?.type === 'done' ? undefined : resolvedPrimaryAction;
+  const primaryType = visiblePrimaryAction?.type;
   const hasRunSecondary = canRun && onRun && primaryType !== 'run';
   const hasStudioSecondary = showAgentActions && onAskStudio && primaryType !== 'studio';
   const hasRefreshSecondary = canRefresh && Boolean(onRefresh);
@@ -180,23 +184,23 @@ export function EvidenceCardActions({
       className={`evidence-card-actions${compact ? ' evidence-card-actions--compact' : ''}`}
       onClick={(event) => event.stopPropagation()}
     >
-      {resolvedPrimaryAction?.type === 'run' && canRun && onRun ? (
+      {visiblePrimaryAction?.type === 'run' && canRun && onRun ? (
         <button
           type="button"
           className="ws-btn ws-btn--primary evidence-card-actions__run"
           onClick={onRun}
           disabled={isBusy}
           aria-busy={pending || undefined}
-          title={pending ? 'Running…' : resolvedPrimaryAction.label}
+          title={pending ? 'Running…' : visiblePrimaryAction.label}
         >
           <Play size={12} aria-hidden="true" />
           <span className="evidence-card-actions__run-label">
-            {pending ? 'Running…' : resolvedPrimaryAction.label}
+            {pending ? 'Running…' : visiblePrimaryAction.label}
           </span>
           <CommandExecutionBadge channel={executionChannel} compact />
         </button>
       ) : null}
-      {resolvedPrimaryAction?.type === 'studio' && onAskStudio ? (
+      {visiblePrimaryAction?.type === 'studio' && onAskStudio ? (
         <button
           type="button"
           className="ws-btn ws-btn--primary"
@@ -205,10 +209,10 @@ export function EvidenceCardActions({
           title="Open Workspai Studio with this evidence context"
         >
           <Bot size={12} aria-hidden="true" />
-          {resolvedPrimaryAction.label}
+          {visiblePrimaryAction.label}
         </button>
       ) : null}
-      {resolvedPrimaryAction?.type === 'done' ? (
+      {visiblePrimaryAction?.type === 'done' ? (
         <button
           type="button"
           className="ws-btn ws-btn--primary evidence-card-actions__done"
@@ -216,7 +220,7 @@ export function EvidenceCardActions({
           title="This evidence card is passing"
         >
           <Check size={12} aria-hidden="true" />
-          {resolvedPrimaryAction.label}
+          {visiblePrimaryAction.label}
         </button>
       ) : null}
       {hasOverflow ? (

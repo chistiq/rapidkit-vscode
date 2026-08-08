@@ -1,4 +1,5 @@
 import type { DashboardEvidenceCard } from './dashboardEvidence';
+import { resolveEvidenceCardPosture } from './dashboardEvidence';
 import type { DashboardEvidenceActionContract } from './dashboardActionContract';
 import type { StudioBlockerHandoffView } from './studioBlockerHandoff';
 import {
@@ -42,10 +43,10 @@ function fallbackPhase(card: DashboardEvidenceCard): DashboardIncidentPhase {
   if (card.status === 'missing') {
     return 'detect';
   }
-  if (card.status === 'fail') {
+  if (resolveEvidenceCardPosture(card) === 'blocked') {
     return 'fix';
   }
-  if (card.status === 'warn') {
+  if (resolveEvidenceCardPosture(card) === 'attention') {
     return 'diagnose';
   }
   return 'audit';
@@ -58,7 +59,10 @@ function fallbackAction(
   if (contract?.primaryAction.label) {
     return contract.primaryAction.label;
   }
-  return fallbackDashboardIncidentPrimaryAction({ status: card.status });
+  return fallbackDashboardIncidentPrimaryAction({
+    status: card.status,
+    phase: fallbackPhase(card),
+  });
 }
 
 function firstReason(card: DashboardEvidenceCard): string {
@@ -70,17 +74,17 @@ export function buildDashboardIncidentCopy(input: {
   contract?: DashboardEvidenceActionContract;
 }): DashboardIncidentCopy {
   const { card, contract } = input;
+  const posture = resolveEvidenceCardPosture(card);
   const summary = card.incidentSummary;
   const phase = normalizePhase(summary?.phase) ?? fallbackPhase(card);
   const primaryAction =
     normalizeDashboardIncidentPrimaryAction(summary?.primaryAction, phase) ||
     fallbackAction(card, contract);
   const verifyRequired =
-    summary?.verifyRequired ??
-    (card.status === 'fail' || contract?.primaryAction.type === 'studio');
+    summary?.verifyRequired ?? (posture === 'blocked' || contract?.primaryAction.type === 'studio');
   const auditLabel = summary?.auditStatus
     ? summary.auditStatus.replace(/-/g, ' ')
-    : card.status === 'pass'
+    : posture === 'healthy'
       ? 'saved'
       : 'pending';
 

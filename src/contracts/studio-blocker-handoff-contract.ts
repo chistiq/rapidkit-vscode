@@ -236,6 +236,15 @@ export function buildStudioIncidentSummary(input: {
       auditStatus: input.auditStatus ?? 'not-started',
     };
   }
+  if (input.cardStatus === 'warn') {
+    return {
+      title,
+      phase: 'diagnose',
+      primaryAction: 'Explain blockers',
+      verifyRequired,
+      auditStatus: input.auditStatus ?? 'not-started',
+    };
+  }
   return {
     title,
     phase: 'fix',

@@ -1,5 +1,5 @@
 import type { DashboardEvidenceCard, DashboardEvidencePayload } from '@/lib/dashboardEvidence';
-import { resolveEvidenceFreshness } from '@/lib/dashboardEvidence';
+import { resolveEvidenceCardPosture, resolveEvidenceFreshness } from '@/lib/dashboardEvidence';
 import {
   cardCountsAsReleaseBlocker,
   resolveWorkspaceProjectCountFromEvidence,
@@ -163,17 +163,21 @@ export function buildEvidenceCardStudioQuery(
   const projectPath = card.scope === 'project' ? evidence?.projectPath : undefined;
   const projectName = card.scope === 'project' ? evidence?.projectName : undefined;
   const blockers = card.blockers ?? [];
+  const posture = resolveEvidenceCardPosture(card);
+  const findingLabel = posture === 'blocked' ? 'Blocker' : 'Finding';
   const stderrTail =
     typeof card.metrics?.stderrTail === 'string' ? card.metrics.stderrTail.trim() : '';
 
   const lines = [
-    `Diagnose and fix the ${card.status} evidence issue "${card.label}" in workspace ${workspaceName}.`,
+    posture === 'blocked'
+      ? `Diagnose and safely resolve the blocking evidence issue "${card.label}" in workspace ${workspaceName}.`
+      : `Diagnose the evidence finding "${card.label}" in workspace ${workspaceName} and resolve it when a safe source change is available.`,
     `Summary: ${card.summary}`,
     card.artifactPath ? `Artifact: ${card.artifactPath}` : undefined,
     projectPath
       ? `Project scope: ${projectName || projectPath}`
       : `Workspace path: ${workspacePath}`,
-    ...blockers.slice(0, 10).map((blocker) => `Blocker: ${blocker}`),
+    ...blockers.slice(0, 10).map((blocker) => `${findingLabel}: ${blocker}`),
     stderrTail ? `Recent stderr:\n${stderrTail.slice(0, 800)}` : undefined,
     'Use workspace intelligence already synced in Studio. Recommend the smallest safe fix and one immediate next command.',
   ].filter((line): line is string => Boolean(line));

@@ -1,16 +1,17 @@
 import { MapPin, Play } from 'lucide-react';
 import { EvidenceCardActions } from '@/components/EvidenceCardActions';
 import { EvidenceCardLogDrawer } from '@/components/EvidenceCardLogDrawer';
+import { EvidencePostureIcon } from '@/components/EvidencePostureIcon';
 import { cardNeedsAgentAttention } from '@/lib/evidenceAgentContext';
 import type {
   DashboardEvidenceCard,
   DashboardEvidenceCardId,
   DashboardEvidencePayload,
-  DashboardEvidenceStatus,
 } from '@/lib/dashboardEvidence';
 import {
   evidenceCardStatusLabel,
   outcomeCards,
+  resolveEvidenceCardPosture,
   resolveEvidenceFreshness,
 } from '@/lib/dashboardEvidence';
 import { buildDashboardEvidenceActionContract } from '@/lib/dashboardActionContract';
@@ -34,13 +35,6 @@ interface EvidenceOutcomePanelProps {
   onRevealArtifact?: (artifactPath: string) => void;
   onOpenRunZone?: (zone: DashboardOperateZone) => void;
 }
-
-const statusChipClass: Record<DashboardEvidenceStatus, string> = {
-  pass: 'ws-chip ws-chip--success',
-  warn: 'ws-chip ws-chip--warn',
-  fail: 'ws-chip ws-chip--error',
-  missing: 'ws-chip ws-chip--muted',
-};
 
 export function EvidenceOutcomePanel({
   evidence,
@@ -87,14 +81,20 @@ export function EvidenceOutcomePanel({
           const isPending = pendingCardIds.includes(card.id);
           const freshness = resolveEvidenceFreshness(card);
           const needsAgentAttention = cardNeedsAgentAttention(card);
+          const posture = resolveEvidenceCardPosture(card);
           return (
             <article
               key={`${card.scope}-${card.id}`}
-              className={`evidence-outcome-panel__item evidence-outcome-panel__item--${card.status}`}
+              className={`evidence-outcome-panel__item evidence-outcome-panel__item--${posture}`}
             >
               <div className="evidence-outcome-panel__item-head">
-                <strong>{card.label}</strong>
-                <span className={statusChipClass[card.status]}>
+                <span className="evidence-outcome-panel__identity">
+                  <EvidencePostureIcon posture={posture} size={20} />
+                  <strong>{card.label}</strong>
+                </span>
+                <span
+                  className={`ws-chip ${posture === 'blocked' ? 'ws-chip--error' : posture === 'healthy' ? 'ws-chip--success' : 'ws-chip--warn'}`}
+                >
                   {isPending ? 'Refreshing' : evidenceCardStatusLabel(card)}
                 </span>
               </div>

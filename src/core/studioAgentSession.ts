@@ -221,9 +221,14 @@ function reviewDecisionMetadata(result: StudioAgentToolResult): {
   };
 }
 
+type GeneralSourceRepairCommandViolation = {
+  commandIdentity: string;
+  message: string;
+};
+
 function generalSourceRepairCommandViolation(
   action: Extract<StudioAgentModelAction, { type: 'tool' }>
-): string | undefined {
+): GeneralSourceRepairCommandViolation | undefined {
   if (action.toolName !== 'run-workspace-command') {
     return undefined;
   }
@@ -259,10 +264,13 @@ function generalSourceRepairCommandViolation(
     (first === 'workspace' &&
       ['verify', 'remediation-plan', 'intelligence', 'readiness'].includes(second ?? ''))
   ) {
-    return (
-      `The ${command.slice(0, 2).join(' ')} evidence producer is locked during general source repair. ` +
-      'Make a real source change or return a review-required result; the controller owns evidence refresh and verification.'
-    );
+    const commandIdentity = command.slice(0, 2).join(' ');
+    return {
+      commandIdentity,
+      message:
+        `The ${commandIdentity} evidence producer is locked during general source repair. ` +
+        'Make a real source change or return a review-required result; the controller owns evidence refresh and verification.',
+    };
   }
   return undefined;
 }
@@ -1103,10 +1111,37 @@ export class StudioAgentSession {
       ? generalSourceRepairCommandViolation(action)
       : undefined;
     if (phaseViolation) {
-      const result = { ok: false, error: phaseViolation };
+      const rejectionKey = `${this.causalEpoch}:source-repair-policy:${phaseViolation.commandIdentity}`;
+      const priorRejections = this.toolAttemptsByEpoch.get(rejectionKey) ?? 0;
+      this.toolAttemptsByEpoch.set(rejectionKey, priorRejections + 1);
+      const repeated = priorRejections >= 1;
+      const result: StudioAgentToolResult = repeated
+        ? {
+            ok: false,
+            error: `${phaseViolation.message} The same forbidden evidence producer was requested again without a causal source change.`,
+            requiresUserDecision: true,
+            terminalReason: 'source-repair-policy-loop',
+            output: {
+              nextAction: 'review-required',
+              requiresUserDecision: true,
+              terminalReason: 'source-repair-policy-loop',
+              decision: {
+                reason:
+                  'The selected model repeated a controller-owned evidence producer instead of applying a causal source repair.',
+                options: ['manual-repair', 'cancel'],
+              },
+            },
+          }
+        : { ok: false, error: phaseViolation.message };
       await this.emit(
         'tool.failed',
-        { toolName: tool.name, input: durableInput, policyRejected: true, ...result },
+        {
+          toolName: tool.name,
+          input: durableInput,
+          policyRejected: true,
+          repeatedPolicyRejection: repeated,
+          ...result,
+        },
         requestId,
         toolCallId
       );

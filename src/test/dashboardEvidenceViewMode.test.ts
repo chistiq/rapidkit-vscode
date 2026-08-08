@@ -162,4 +162,22 @@ describe('dashboardEvidenceViewMode', () => {
     const primary = pickGuidedStepPrimaryCard('health', cards);
     expect(primary?.id).toBe('workspaceSync');
   });
+
+  it('keeps a non-blocking failed Doctor card in the attention state', () => {
+    const steps = buildEvidenceGuidedSteps({
+      evidence: {
+        cards: [
+          { ...card('doctor', 'fail'), blocking: false, blockers: ['Diagnostic command failed'] },
+          card('bootstrap', 'pass'),
+          card('setup', 'pass'),
+          card('workspaceModel', 'pass', { projectCount: 1 }),
+        ],
+        activity: [],
+        onboarding: { isFreshInstall: false, recentWorkspaceCount: 1, hasActiveWorkspace: true },
+      },
+      hasProject: true,
+    });
+
+    expect(steps[0]).toMatchObject({ id: 'health', state: 'attention' });
+  });
 });

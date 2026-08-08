@@ -1,5 +1,46 @@
 # Release Notes
 
+## v0.38.0 (August 8, 2026)
+
+### Truthful evidence, typed repair decisions, and a calmer Dashboard
+
+This release aligns Workspai for VS Code with CLI 0.55.1. Dashboard posture is
+now taken from explicit CLI evidence, Studio routes non-closed repairs through
+typed decision causes, and selected-workspace artifacts refresh while they
+change—even when the workspace lives outside the open VS Code folder.
+
+Highlights:
+
+- Evidence cards resolve to **Healthy**, **Needs attention**, or **Blocked**
+  without turning advisory or stale evidence into a false release blocker.
+- Workspace Explain consumes canonical verdict, freshness, and blocking fields
+  from CLI 0.55.1 instead of inferring release posture from risk prose.
+- Studio consumes typed repair-decision causes for missing executables,
+  unsupported adapters, failed preconditions, policy decisions, and source
+  repair requirements.
+- Repeated controller-owned evidence commands are bounded and consolidated
+  instead of filling the repair timeline with identical failed attempts.
+- Changed files have a dedicated review surface with bounded previews and an
+  exact VS Code before/after diff when a transaction checkpoint is available.
+- Dashboard evidence watches both the open editor folders and the explicitly
+  selected managed workspace, so cards update from their canonical artifacts.
+- The Library publishes the complete example catalog, including runnable
+  examples and released workspace-profile foundations across supported
+  runtimes, while Recent Workspaces stays on Home.
+- Dashboard and Studio use a quieter enterprise-minimal hierarchy, compact
+  state icons, and clearer action/result separation.
+
+Compatibility:
+
+- VS Code 1.106.0+
+- Workspai CLI 0.55.1+
+- RapidKit Core 0.6.0 only for Python-backed kits/modules
+
+Full detail:
+[releases/RELEASE_NOTES_v0.38.0.md](releases/RELEASE_NOTES_v0.38.0.md)
+
+Release posture: `truthful-evidence-and-typed-repair-decisions`
+
 ## v0.37.0 (August 7, 2026)
 
 ### Governed, target-aware repair with live change review

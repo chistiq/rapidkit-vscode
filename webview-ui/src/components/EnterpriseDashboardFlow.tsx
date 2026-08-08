@@ -211,145 +211,149 @@ export function EnterpriseDashboardFlow({
             id="dashboard-operate-quick"
             className="enterprise-flow-column enterprise-flow-column--operate dashboard-operate-zone"
           >
-          <ColumnHeader title="Start here" subtitle="Verify, inspect, fix" scope="workspace" />
-          <ActionTileGrid layout="operate">
-            <ActionTile
-              variant="primary"
-              fullWidth
-              icon={<Workflow size={15} />}
-              label="Governance Gate"
-              detail="Sync → doctor → analyze → readiness → autopilot"
-              pending={isPending('pipeline')}
-              onClick={() => runWorkspaceAction('workspacePipeline')}
-              actionContract={commandContract(
-                'workspacePipeline',
-                !hasWorkspace ? 'Select a workspace' : undefined
-              )}
-              title="npx workspai pipeline --json --strict"
-            />
-            <ActionTile
-              icon={<HeartPulse size={15} />}
-              label="Doctor"
-              detail="Readiness scan"
-              pending={isPending('doctor')}
-              onClick={() => runWorkspaceAction('checkWorkspaceHealth')}
-              actionContract={commandContract(
-                'checkWorkspaceHealth',
-                !hasWorkspace ? 'Select a workspace' : undefined
-              )}
-            />
-            <ActionTile
-              icon={<Layers size={15} />}
-              label="Analyze"
-              detail="Evidence scan — outcomes in Artifacts"
-              pending={isPending('analyze')}
-              onClick={() => runWorkspaceAction('workspaceAnalyze')}
-              actionContract={commandContract(
-                'workspaceAnalyze',
-                !hasWorkspace ? 'Select a workspace' : undefined
-              )}
-            />
-            <ActionTile
-              icon={<GitBranch size={15} />}
-              label="Graph"
-              detail="Services and ports"
-              onClick={() => runWorkspaceAction('workspaceContractGraph')}
-              actionContract={commandContract(
-                'workspaceContractGraph',
-                !hasWorkspace ? 'Select a workspace' : undefined
-              )}
-            />
-          </ActionTileGrid>
-          <details
-            className="enterprise-flow-accordion enterprise-flow-secondary"
-            data-default-collapsed="true"
-          >
-            <summary className="enterprise-flow-accordion__summary enterprise-flow-secondary__summary">
-              <span>More run commands</span>
-              <small>Init, test, build, start, terminal</small>
-            </summary>
-            <div className="enterprise-flow-accordion__body">
-              {fleetProjectNames.length > 0 ? (
-                <label className="enterprise-flow-fleet-scope">
-                  <span>Fleet scope</span>
-                  <select
-                    value={fleetScope}
-                    onChange={(event) => setFleetScope(event.target.value)}
-                    aria-label="Fleet run project scope"
-                  >
-                    <option value="all">All projects</option>
-                    {fleetProjectNames.map((projectName) => (
-                      <option key={projectName} value={projectName}>
-                        project:{projectName}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              <ActionTileGrid layout="operate">
-                <ActionTile
-                  icon={<Package size={15} />}
-                  label="Init"
-                  detail={workspaceRunStageDetail(evidence, 'init', 'Install deps · safe init')}
-                  evidenceStatus={workspaceRunCard?.status}
-                  pending={isPending('workspaceRun')}
-                  onClick={() => runWorkspaceAction('workspaceRunInit')}
-                  actionContract={commandContract(
-                    'workspaceRunInit',
-                    !hasWorkspace ? 'Select a workspace' : undefined
-                  )}
-                  title="workspai workspace run init"
-                />
-                <ActionTile
-                  icon={<Play size={15} />}
-                  label="Test"
-                  detail={workspaceRunStageDetail(evidence, 'test', 'Safe run')}
-                  evidenceStatus={workspaceRunCard?.status}
-                  pending={isPending('workspaceRun')}
-                  onClick={() => runWorkspaceAction('workspaceRunTest')}
-                  actionContract={commandContract(
-                    'workspaceRunTest',
-                    !hasWorkspace ? 'Select a workspace' : undefined
-                  )}
-                />
-                <ActionTile
-                  icon={<CheckCircle2 size={15} />}
-                  label="Build"
-                  detail={workspaceRunStageDetail(evidence, 'build', 'Affected projects')}
-                  evidenceStatus={workspaceRunCard?.status}
-                  pending={isPending('workspaceRun')}
-                  onClick={() => runWorkspaceAction('workspaceRunBuild')}
-                  actionContract={commandContract(
-                    'workspaceRunBuild',
-                    !hasWorkspace ? 'Select a workspace' : undefined
-                  )}
-                />
-                <ActionTile
-                  icon={<Play size={15} />}
-                  label="Start"
-                  detail={workspaceRunStageDetail(evidence, 'start', 'Start affected services')}
-                  evidenceStatus={workspaceRunCard?.status}
-                  pending={isPending('workspaceRun')}
-                  onClick={() => runWorkspaceAction('workspaceRunStart')}
-                  actionContract={commandContract(
-                    'workspaceRunStart',
-                    !hasWorkspace ? 'Select a workspace' : undefined
-                  )}
-                  title="workspai workspace run start"
-                />
-                <ActionTile
-                  icon={<Terminal size={15} />}
-                  label="Terminal"
-                  detail="Workspace root"
-                  onClick={() => runWorkspaceAction('workspaceTerminal')}
-                  actionContract={commandContract(
-                    'workspaceTerminal',
-                    !hasWorkspace ? 'Select a workspace' : undefined
-                  )}
-                />
-              </ActionTileGrid>
-            </div>
-          </details>
+            <ColumnHeader title="Start here" subtitle="Verify, inspect, fix" scope="workspace" />
+            <ActionTileGrid layout="operate">
+              <ActionTile
+                variant="primary"
+                fullWidth
+                icon={<Workflow size={15} />}
+                label="Governance Gate"
+                detail="Sync → doctor → analyze → readiness → autopilot"
+                pending={isPending('pipeline')}
+                onClick={() => runWorkspaceAction('workspacePipeline')}
+                actionContract={commandContract(
+                  'workspacePipeline',
+                  !hasWorkspace ? 'Select a workspace' : undefined
+                )}
+                title="npx workspai pipeline --json --strict"
+              />
+              <ActionTile
+                icon={<HeartPulse size={15} />}
+                label="Doctor"
+                detail="Readiness scan"
+                pending={isPending('doctor')}
+                onClick={() => runWorkspaceAction('checkWorkspaceHealth')}
+                actionContract={commandContract(
+                  'checkWorkspaceHealth',
+                  !hasWorkspace ? 'Select a workspace' : undefined
+                )}
+              />
+              <ActionTile
+                icon={<Layers size={15} />}
+                label="Analyze"
+                detail="Evidence scan — outcomes in Artifacts"
+                pending={isPending('analyze')}
+                onClick={() => runWorkspaceAction('workspaceAnalyze')}
+                actionContract={commandContract(
+                  'workspaceAnalyze',
+                  !hasWorkspace ? 'Select a workspace' : undefined
+                )}
+              />
+              <ActionTile
+                icon={<GitBranch size={15} />}
+                label="Graph"
+                detail="Services and ports"
+                onClick={() => runWorkspaceAction('workspaceContractGraph')}
+                actionContract={commandContract(
+                  'workspaceContractGraph',
+                  !hasWorkspace ? 'Select a workspace' : undefined
+                )}
+              />
+            </ActionTileGrid>
+            <details
+              className="enterprise-flow-accordion enterprise-flow-secondary"
+              data-default-collapsed="true"
+            >
+              <summary className="enterprise-flow-accordion__summary enterprise-flow-secondary__summary">
+                <span>More run commands</span>
+                <small>Init, test, build, start, terminal</small>
+              </summary>
+              <div className="enterprise-flow-accordion__body">
+                {fleetProjectNames.length > 0 ? (
+                  <label className="enterprise-flow-fleet-scope">
+                    <span>Fleet scope</span>
+                    <select
+                      value={fleetScope}
+                      onChange={(event) => setFleetScope(event.target.value)}
+                      aria-label="Fleet run project scope"
+                    >
+                      <option value="all">All projects</option>
+                      {fleetProjectNames.map((projectName) => (
+                        <option key={projectName} value={projectName}>
+                          project:{projectName}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                <ActionTileGrid layout="operate">
+                  <ActionTile
+                    icon={<Package size={15} />}
+                    label="Init"
+                    detail={workspaceRunStageDetail(evidence, 'init', 'Install deps · safe init')}
+                    evidenceStatus={workspaceRunCard?.status}
+                    evidenceCard={workspaceRunCard}
+                    pending={isPending('workspaceRun')}
+                    onClick={() => runWorkspaceAction('workspaceRunInit')}
+                    actionContract={commandContract(
+                      'workspaceRunInit',
+                      !hasWorkspace ? 'Select a workspace' : undefined
+                    )}
+                    title="workspai workspace run init"
+                  />
+                  <ActionTile
+                    icon={<Play size={15} />}
+                    label="Test"
+                    detail={workspaceRunStageDetail(evidence, 'test', 'Safe run')}
+                    evidenceStatus={workspaceRunCard?.status}
+                    evidenceCard={workspaceRunCard}
+                    pending={isPending('workspaceRun')}
+                    onClick={() => runWorkspaceAction('workspaceRunTest')}
+                    actionContract={commandContract(
+                      'workspaceRunTest',
+                      !hasWorkspace ? 'Select a workspace' : undefined
+                    )}
+                  />
+                  <ActionTile
+                    icon={<CheckCircle2 size={15} />}
+                    label="Build"
+                    detail={workspaceRunStageDetail(evidence, 'build', 'Affected projects')}
+                    evidenceStatus={workspaceRunCard?.status}
+                    evidenceCard={workspaceRunCard}
+                    pending={isPending('workspaceRun')}
+                    onClick={() => runWorkspaceAction('workspaceRunBuild')}
+                    actionContract={commandContract(
+                      'workspaceRunBuild',
+                      !hasWorkspace ? 'Select a workspace' : undefined
+                    )}
+                  />
+                  <ActionTile
+                    icon={<Play size={15} />}
+                    label="Start"
+                    detail={workspaceRunStageDetail(evidence, 'start', 'Start affected services')}
+                    evidenceStatus={workspaceRunCard?.status}
+                    evidenceCard={workspaceRunCard}
+                    pending={isPending('workspaceRun')}
+                    onClick={() => runWorkspaceAction('workspaceRunStart')}
+                    actionContract={commandContract(
+                      'workspaceRunStart',
+                      !hasWorkspace ? 'Select a workspace' : undefined
+                    )}
+                    title="workspai workspace run start"
+                  />
+                  <ActionTile
+                    icon={<Terminal size={15} />}
+                    label="Terminal"
+                    detail="Workspace root"
+                    onClick={() => runWorkspaceAction('workspaceTerminal')}
+                    actionContract={commandContract(
+                      'workspaceTerminal',
+                      !hasWorkspace ? 'Select a workspace' : undefined
+                    )}
+                  />
+                </ActionTileGrid>
+              </div>
+            </details>
           </div>
         ) : null}
 
@@ -365,82 +369,84 @@ export function EnterpriseDashboardFlow({
               scope="workspace"
             />
             <div className="enterprise-flow-accordion__body">
-            <ActionTile
-              variant="builder"
-              fullWidth
-              icon={<Sparkles size={15} />}
-              label="AI Project Builder"
-              detail="Plan and scaffold a project inside this workspace"
-              onClick={() => {
-                if (!hasWorkspace) {
-                  requestWorkspaceSwitch();
-                  return;
-                }
-                onOpenProjectBuilder(selectedFramework);
-              }}
-              title={hasWorkspace ? 'Open AI Project Builder' : 'Select a workspace first'}
-            />
+              <ActionTile
+                variant="builder"
+                fullWidth
+                icon={<Sparkles size={15} />}
+                label="AI Project Builder"
+                detail="Plan and scaffold a project inside this workspace"
+                onClick={() => {
+                  if (!hasWorkspace) {
+                    requestWorkspaceSwitch();
+                    return;
+                  }
+                  onOpenProjectBuilder(selectedFramework);
+                }}
+                title={hasWorkspace ? 'Open AI Project Builder' : 'Select a workspace first'}
+              />
 
-            <div className="enterprise-framework-grid" aria-label="Project starters">
-              {frameworks.map((item) => (
-                <button
-                  key={item.framework}
-                  type="button"
-                  className={selectedFramework === item.framework ? 'is-active' : ''}
-                  onClick={() => {
-                    if (!hasWorkspace) {
-                      requestWorkspaceSwitch();
-                      return;
+              <div className="enterprise-framework-grid" aria-label="Project starters">
+                {frameworks.map((item) => (
+                  <button
+                    key={item.framework}
+                    type="button"
+                    className={selectedFramework === item.framework ? 'is-active' : ''}
+                    onClick={() => {
+                      if (!hasWorkspace) {
+                        requestWorkspaceSwitch();
+                        return;
+                      }
+                      onSelectFramework(item.framework);
+                      onOpenManualProject(item.framework);
+                    }}
+                    title={
+                      hasWorkspace ? `Create ${item.title} project` : 'Select a workspace first'
                     }
-                    onSelectFramework(item.framework);
-                    onOpenManualProject(item.framework);
-                  }}
-                  title={hasWorkspace ? `Create ${item.title} project` : 'Select a workspace first'}
+                  >
+                    <FrameworkIcon framework={item.framework} size={16} />
+                    <span>
+                      <strong>{item.title}</strong>
+                      <small>{item.detail}</small>
+                    </span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="enterprise-framework-grid-wide"
+                  onClick={() => openOnboardingModal('import')}
+                  title={hasWorkspace ? 'Import Project' : 'Select a workspace first'}
                 >
-                  <FrameworkIcon framework={item.framework} size={16} />
+                  <FolderOpen size={15} />
                   <span>
-                    <strong>{item.title}</strong>
-                    <small>{item.detail}</small>
+                    <strong>Import Project</strong>
+                    <small>Add an existing service into this workspace</small>
                   </span>
                 </button>
-              ))}
-              <button
-                type="button"
-                className="enterprise-framework-grid-wide"
-                onClick={() => openOnboardingModal('import')}
-                title={hasWorkspace ? 'Import Project' : 'Select a workspace first'}
-              >
-                <FolderOpen size={15} />
-                <span>
-                  <strong>Import Project</strong>
-                  <small>Add an existing service into this workspace</small>
-                </span>
-              </button>
-              <button
-                type="button"
-                className="enterprise-framework-grid-wide"
-                onClick={() => openOnboardingModal('adopt')}
-                title={hasWorkspace ? 'Adopt Project' : 'Select a workspace first'}
-              >
-                <Package size={15} />
-                <span>
-                  <strong>Adopt Project</strong>
-                  <small>Register an on-disk folder with Workspai workspace metadata</small>
-                </span>
-              </button>
-              <button
-                type="button"
-                className="enterprise-framework-grid-wide"
-                onClick={() => runWorkspaceAction('refreshModules')}
-                title={hasWorkspace ? 'Refresh Modules' : 'Select a workspace first'}
-              >
-                <Package size={15} />
-                <span>
-                  <strong>Refresh Modules</strong>
-                  <small>Update the module catalog for this workspace</small>
-                </span>
-              </button>
-            </div>
+                <button
+                  type="button"
+                  className="enterprise-framework-grid-wide"
+                  onClick={() => openOnboardingModal('adopt')}
+                  title={hasWorkspace ? 'Adopt Project' : 'Select a workspace first'}
+                >
+                  <Package size={15} />
+                  <span>
+                    <strong>Adopt Project</strong>
+                    <small>Register an on-disk folder with Workspai workspace metadata</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="enterprise-framework-grid-wide"
+                  onClick={() => runWorkspaceAction('refreshModules')}
+                  title={hasWorkspace ? 'Refresh Modules' : 'Select a workspace first'}
+                >
+                  <Package size={15} />
+                  <span>
+                    <strong>Refresh Modules</strong>
+                    <small>Update the module catalog for this workspace</small>
+                  </span>
+                </button>
+              </div>
             </div>
           </section>
         ) : null}
@@ -457,100 +463,103 @@ export function EnterpriseDashboardFlow({
               scope="workspace"
             />
             <div className="enterprise-flow-accordion__body">
-            <ActionTileGrid layout="2col">
-              <ActionTile
-                icon={<Upload size={15} />}
-                label="Export for Ship Handoff"
-                detail={
-                  archiveCard?.status === 'missing'
-                    ? 'Create .workspai-archive.zip and refresh ship manifest'
-                    : archiveCard?.summary || 'Portable workspace archive'
-                }
-                evidenceStatus={archiveCard?.status}
-                pending={isPending('archive')}
-                onClick={() =>
-                  runWorkspaceAction('exportWorkspace', { path: workspaceStatus.workspacePath })
-                }
-                actionContract={commandContract(
-                  'exportWorkspace',
-                  !hasWorkspace ? 'Select a workspace' : undefined
-                )}
-                title={hasWorkspace ? 'Export workspace for ship handoff' : 'Select a workspace first'}
-              />
-              <ActionTile
-                icon={<Archive size={15} />}
-                label="Archive Tools"
-                detail="Export · inspect · verify · doctor"
-                pending={isPending('archive')}
-                onClick={() => runWorkspaceAction('workspaceArchive')}
-                actionContract={commandContract(
-                  'workspaceArchive',
-                  !hasWorkspace ? 'Select a workspace' : undefined
-                )}
-              />
-              <ActionTile
-                icon={<Upload size={15} />}
-                label="Share Bundle"
-                detail="Source-safe metadata"
-                pending={isPending('share')}
-                onClick={() => runWorkspaceAction('workspaceShare')}
-                actionContract={commandContract(
-                  'workspaceShare',
-                  !hasWorkspace ? 'Select a workspace' : undefined
-                )}
-              />
-              <ActionTile
-                icon={<BrainCircuit size={15} />}
-                label={WORKSPAI_INCIDENT_STUDIO_LABEL}
-                detail={WORKSPAI_INCIDENT_STUDIO_WORKSPACE_TILE_DETAIL}
-                onClick={() => runWorkspaceCallback(onOpenIncidentStudio)}
-              />
-              <ActionTile
-                icon={<Bug size={15} />}
-                label="Fix Preview"
-                detail="Patch preview"
-                onClick={() => runWorkspaceCallback(onRunFixPreview)}
-              />
-              <ActionTile
-                icon={<Terminal size={15} />}
-                label="Terminal Bridge"
-                detail="Terminal context"
-                onClick={() => runWorkspaceCallback(onRunTerminalBridge)}
-              />
-              <ActionTile
-                icon={<CheckCircle2 size={15} />}
-                label="Verify Archive"
-                detail="Archive integrity"
-                pending={isPending('archive')}
-                onClick={() => runWorkspaceAction('workspaceArchiveVerify')}
-                actionContract={commandContract(
-                  'workspaceArchiveVerify',
-                  !hasWorkspace ? 'Select a workspace' : undefined
-                )}
-              />
-              <ActionTile
-                icon={<HeartPulse size={15} />}
-                label="Doctor Archive"
-                detail="Import readiness"
-                pending={isPending('archive')}
-                onClick={() => runWorkspaceAction('workspaceArchiveDoctor')}
-                actionContract={commandContract(
-                  'workspaceArchiveDoctor',
-                  !hasWorkspace ? 'Select a workspace' : undefined
-                )}
-              />
-              <ActionTile
-                icon={<Archive size={15} />}
-                label="Recovery Snapshot"
-                detail="Point-in-time recovery"
-                pending={isPending('snapshot')}
-                onClick={() => runWorkspaceAction('workspaceSnapshotCreate')}
-                actionContract={commandContract(
-                  'workspaceSnapshotCreate',
-                  !hasWorkspace ? 'Select a workspace' : undefined
-                )}
-              />
-            </ActionTileGrid>
+              <ActionTileGrid layout="2col">
+                <ActionTile
+                  icon={<Upload size={15} />}
+                  label="Export for Ship Handoff"
+                  detail={
+                    archiveCard?.status === 'missing'
+                      ? 'Create .workspai-archive.zip and refresh ship manifest'
+                      : archiveCard?.summary || 'Portable workspace archive'
+                  }
+                  evidenceStatus={archiveCard?.status}
+                  evidenceCard={archiveCard}
+                  pending={isPending('archive')}
+                  onClick={() =>
+                    runWorkspaceAction('exportWorkspace', { path: workspaceStatus.workspacePath })
+                  }
+                  actionContract={commandContract(
+                    'exportWorkspace',
+                    !hasWorkspace ? 'Select a workspace' : undefined
+                  )}
+                  title={
+                    hasWorkspace ? 'Export workspace for ship handoff' : 'Select a workspace first'
+                  }
+                />
+                <ActionTile
+                  icon={<Archive size={15} />}
+                  label="Archive Tools"
+                  detail="Export · inspect · verify · doctor"
+                  pending={isPending('archive')}
+                  onClick={() => runWorkspaceAction('workspaceArchive')}
+                  actionContract={commandContract(
+                    'workspaceArchive',
+                    !hasWorkspace ? 'Select a workspace' : undefined
+                  )}
+                />
+                <ActionTile
+                  icon={<Upload size={15} />}
+                  label="Share Bundle"
+                  detail="Source-safe metadata"
+                  pending={isPending('share')}
+                  onClick={() => runWorkspaceAction('workspaceShare')}
+                  actionContract={commandContract(
+                    'workspaceShare',
+                    !hasWorkspace ? 'Select a workspace' : undefined
+                  )}
+                />
+                <ActionTile
+                  icon={<BrainCircuit size={15} />}
+                  label={WORKSPAI_INCIDENT_STUDIO_LABEL}
+                  detail={WORKSPAI_INCIDENT_STUDIO_WORKSPACE_TILE_DETAIL}
+                  onClick={() => runWorkspaceCallback(onOpenIncidentStudio)}
+                />
+                <ActionTile
+                  icon={<Bug size={15} />}
+                  label="Fix Preview"
+                  detail="Patch preview"
+                  onClick={() => runWorkspaceCallback(onRunFixPreview)}
+                />
+                <ActionTile
+                  icon={<Terminal size={15} />}
+                  label="Terminal Bridge"
+                  detail="Terminal context"
+                  onClick={() => runWorkspaceCallback(onRunTerminalBridge)}
+                />
+                <ActionTile
+                  icon={<CheckCircle2 size={15} />}
+                  label="Verify Archive"
+                  detail="Archive integrity"
+                  pending={isPending('archive')}
+                  onClick={() => runWorkspaceAction('workspaceArchiveVerify')}
+                  actionContract={commandContract(
+                    'workspaceArchiveVerify',
+                    !hasWorkspace ? 'Select a workspace' : undefined
+                  )}
+                />
+                <ActionTile
+                  icon={<HeartPulse size={15} />}
+                  label="Doctor Archive"
+                  detail="Import readiness"
+                  pending={isPending('archive')}
+                  onClick={() => runWorkspaceAction('workspaceArchiveDoctor')}
+                  actionContract={commandContract(
+                    'workspaceArchiveDoctor',
+                    !hasWorkspace ? 'Select a workspace' : undefined
+                  )}
+                />
+                <ActionTile
+                  icon={<Archive size={15} />}
+                  label="Recovery Snapshot"
+                  detail="Point-in-time recovery"
+                  pending={isPending('snapshot')}
+                  onClick={() => runWorkspaceAction('workspaceSnapshotCreate')}
+                  actionContract={commandContract(
+                    'workspaceSnapshotCreate',
+                    !hasWorkspace ? 'Select a workspace' : undefined
+                  )}
+                />
+              </ActionTileGrid>
             </div>
           </section>
         ) : null}

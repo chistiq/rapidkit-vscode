@@ -434,6 +434,10 @@ describe('dashboardCommandRegistry', () => {
 
     expect(recentWorkspacesSource).toContain("dispatchDashboardCommand('checkWorkspaceHealth'");
     expect(recentWorkspacesSource).toContain('name: workspace.name');
+    expect(recentWorkspacesStart).toBeLessThan(appSource.indexOf("{dashboardSection === 'repair'"));
+    const catalogPanelStart = appSource.indexOf('id="dashboard-panel-catalog"');
+    expect(catalogPanelStart).toBeGreaterThan(recentWorkspacesStart);
+    expect(appSource.slice(catalogPanelStart)).not.toContain('<RecentWorkspaces');
   });
 
   it('surfaces pending dashboard command state across operate and release cards', () => {
@@ -574,6 +578,84 @@ describe('dashboardCommandRegistry', () => {
       commandLabel: DASHBOARD_COMMAND_REGISTRY.workspaceAnalyze.label,
       commandScope: DASHBOARD_COMMAND_REGISTRY.workspaceAnalyze.scope,
       commandTrackActivity: DASHBOARD_COMMAND_REGISTRY.workspaceAnalyze.trackActivity,
+    });
+  });
+
+  it('uses contract-backed blocking posture for next-step priority', () => {
+    const baseInput = {
+      workspaceStatus: {
+        hasWorkspace: true,
+        workspacePath: '/repo',
+        hasProjectSelected: true,
+        projectType: 'fastapi',
+        installedModules: [],
+        isRunning: false,
+      } as never,
+      activeWorkspace: { name: 'repo', path: '/repo' } as never,
+      installStatusChecked: true,
+      coreInstalled: true,
+    };
+    const modelCard = {
+      id: 'workspaceModel' as const,
+      label: 'Workspace Model',
+      status: 'pass' as const,
+      summary: '1 project',
+      scope: 'workspace' as const,
+      metrics: { projectCount: 1 },
+    };
+    const onboarding = {
+      isFreshInstall: false,
+      recentWorkspaceCount: 1,
+      hasActiveWorkspace: true,
+    };
+
+    const advisory = buildDashboardNextSteps({
+      ...baseInput,
+      evidence: {
+        workspacePath: '/repo',
+        cards: [
+          modelCard,
+          {
+            id: 'analyze',
+            label: 'Analyze',
+            status: 'fail',
+            blocking: false,
+            summary: 'Analysis needs review.',
+            scope: 'workspace',
+            blockers: [],
+          },
+        ],
+        activity: [],
+        onboarding,
+      },
+    });
+    expect(advisory.find((step) => step.id === 'review-analyze')).toMatchObject({
+      priority: 'recommended',
+    });
+    expect(advisory.some((step) => step.id === 'analyze-blockers')).toBe(false);
+
+    const blocked = buildDashboardNextSteps({
+      ...baseInput,
+      evidence: {
+        workspacePath: '/repo',
+        cards: [
+          modelCard,
+          {
+            id: 'analyze',
+            label: 'Analyze',
+            status: 'fail',
+            blocking: true,
+            summary: 'Analysis blocks release.',
+            scope: 'workspace',
+            blockers: ['policy gate failed'],
+          },
+        ],
+        activity: [],
+        onboarding,
+      },
+    });
+    expect(blocked.find((step) => step.id === 'analyze-blockers')).toMatchObject({
+      priority: 'critical',
     });
   });
 
