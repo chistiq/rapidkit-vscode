@@ -48,6 +48,19 @@ jobs:
           WORKSPAI_CLI_REPO_PATH: ${{ github.workspace }}/workspai-cli-canonical/packages/cli
         run: npm run gate:contract-parity
 
+      - name: Install canonical Workspai CLI dependencies
+        working-directory: workspai-cli-canonical
+        run: corepack npm ci
+
+      - name: Build canonical Workspai CLI executable
+        working-directory: workspai-cli-canonical
+        run: corepack npm run build
+
+      - name: Runtime-verify Extension to CLI repair protocol
+        env:
+          WORKSPAI_CLI_PACKAGE_PATH: ${{ github.workspace }}/workspai-cli-canonical/packages/cli
+        run: npx vitest run src/test/workspaceRepairCliIntegration.test.ts
+
       - name: Validate enterprise baseline against canonical CLI
         env:
           WORKSPAI_CLI_REPO_PATH: ${{ github.workspace }}/workspai-cli-canonical/packages/cli

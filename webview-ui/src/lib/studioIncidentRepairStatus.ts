@@ -1,6 +1,6 @@
 import type { ChatSessionIncidentRepairStatus } from '@/sidebar/sidebarSessions';
 
-type StudioProgressStatus = 'running' | 'review' | 'done';
+type StudioProgressStatus = 'running' | 'review' | 'done' | 'failed';
 
 export function resolveStudioIncidentRepairStatus(input: {
   progressStatus: StudioProgressStatus;
@@ -9,6 +9,9 @@ export function resolveStudioIncidentRepairStatus(input: {
 }): ChatSessionIncidentRepairStatus {
   if (input.cardStatus === 'pass') {
     return 'done';
+  }
+  if (input.progressStatus === 'failed') {
+    return 'blocked';
   }
   if (input.progressStatus !== 'done') {
     return input.progressStatus;

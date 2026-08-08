@@ -8,6 +8,7 @@ type StudioActionProgressProps = {
   historical?: boolean;
   onNextAction?: (action: NonNullable<SidebarStudioActionProgressView['nextAction']>) => void;
   onOpenFile?: (relativePath: string) => void;
+  onOpenDiff?: (relativePath: string, transactionId: string) => void;
   onUndo?: (transactionId: string) => void;
 };
 
@@ -16,16 +17,20 @@ const STATUS_COPY: Record<
   { label: string; detail: string }
 > = {
   running: {
-    label: 'Live repair',
+    label: 'Working',
     detail: 'I am applying the repair path and watching the result.',
   },
   review: {
-    label: 'Needs approval',
+    label: 'Approval needed',
     detail: 'I found a guarded change. Approve it and I will continue.',
   },
   done: {
-    label: 'Verified step',
-    detail: 'I checked the result and refreshed the card evidence.',
+    label: 'Completed',
+    detail: 'This action completed. The incident closes only after canonical verification.',
+  },
+  failed: {
+    label: 'Failed',
+    detail: 'This action failed. Studio preserved the transaction and its evidence.',
   },
 };
 
@@ -33,7 +38,7 @@ function statusIcon(status: SidebarStudioActionProgressView['status']) {
   if (status === 'done') {
     return <CheckCircle2 size={14} strokeWidth={1.8} />;
   }
-  if (status === 'review') {
+  if (status === 'review' || status === 'failed') {
     return <AlertTriangle size={14} strokeWidth={1.8} />;
   }
   return <Loader2 size={14} strokeWidth={1.8} />;
@@ -58,12 +63,20 @@ function completedActivityLabel(progress: SidebarStudioActionProgressView): stri
   return 'Inspected';
 }
 
+function validationStageLabel(stage: { id: string; kind: string }): string {
+  if (stage.id === 'target-precondition') return 'Target recheck';
+  if (stage.id === 'target-producer-verify') return 'Card evidence';
+  if (stage.id === 'canonical-verify') return 'Workspace verify';
+  return stage.kind.charAt(0).toUpperCase() + stage.kind.slice(1);
+}
+
 export function StudioActionProgress({
   progress,
   repairBubble = false,
   historical = false,
   onNextAction,
   onOpenFile,
+  onOpenDiff,
   onUndo,
 }: StudioActionProgressProps) {
   const automaticContinuation = Boolean(
@@ -73,7 +86,9 @@ export function StudioActionProgress({
     !progress.requiresApproval
   );
   const copy = historical
-    ? { label: completedActivityLabel(progress), detail: progress.summary }
+    ? progress.status === 'failed'
+      ? STATUS_COPY.failed
+      : { label: completedActivityLabel(progress), detail: progress.summary }
     : automaticContinuation
       ? { label: 'Continuing automatically', detail: 'The next safe repair phase is starting.' }
       : STATUS_COPY[progress.status];
@@ -90,19 +105,29 @@ export function StudioActionProgress({
     <div
       className={`${repairBubble ? 'ws-sidebar__repair-bubble ' : ''}${historical ? 'ws-sidebar__studio-action-progress--historical ' : ''}ws-sidebar__studio-action-progress`}
       data-status={progress.status}
+      data-terminal={progress.terminalReason ? 'true' : 'false'}
       role={progress.status === 'running' || automaticContinuation ? 'status' : 'note'}
       aria-live="polite"
     >
       <span className="ws-sidebar__studio-action-progress-icon" aria-hidden="true">
-        {historical ? <CheckCircle2 size={14} strokeWidth={1.8} /> : statusIcon(progress.status)}
+        {historical && progress.status === 'done' ? (
+          <CheckCircle2 size={14} strokeWidth={1.8} />
+        ) : (
+          statusIcon(progress.status)
+        )}
       </span>
       <div className="ws-sidebar__studio-action-progress-copy">
-        <strong>{historical ? copy.label : progress.title}</strong>
-        {!historical && progress.status === 'running' ? <span>{summary}</span> : null}
-        {!historical && progress.status !== 'running' && summary ? (
+        <div className="ws-sidebar__studio-action-progress-head">
+          <strong>{progress.title}</strong>
+          <small data-status={progress.status}>{copy.label}</small>
+        </div>
+        {summary ? <p className="ws-sidebar__studio-action-summary">{summary}</p> : null}
+        {progress.technicalDetail ? (
           <details className="ws-sidebar__studio-action-details">
-            <summary>{copy.label}</summary>
-            <span>{summary}</span>
+            <summary>Technical details</summary>
+            <pre className="ws-sidebar__studio-patch-diff">
+              <span data-type="unchanged">{progress.technicalDetail}</span>
+            </pre>
           </details>
         ) : null}
         {progress.commandText ? (
@@ -129,6 +154,30 @@ export function StudioActionProgress({
             </pre>
           </details>
         ) : null}
+        {progress.validationStages?.length ? (
+          <details className="ws-sidebar__studio-validation" open={progress.status !== 'done'}>
+            <summary>Validation</summary>
+            <ol>
+              {progress.validationStages.map((stage) => (
+                <li key={stage.id} data-status={stage.status}>
+                  <span aria-hidden="true">
+                    {stage.status === 'passed'
+                      ? '✓'
+                      : stage.status === 'failed' || stage.status === 'blocked'
+                        ? '!'
+                        : stage.status === 'running'
+                          ? '•'
+                          : '–'}
+                  </span>
+                  <div>
+                    <strong>{validationStageLabel(stage)}</strong>
+                    <small>{stage.summary}</small>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </details>
+        ) : null}
         {progress.changedPaths?.length ? (
           <ul className="ws-sidebar__studio-changed-files" aria-label="Changed files">
             {progress.changedPaths.map((changedPath) => (
@@ -144,7 +193,7 @@ export function StudioActionProgress({
             ))}
           </ul>
         ) : null}
-        {progress.fileChanges?.some((file) => file.diffLines?.length) ? (
+        {progress.fileChanges?.length ? (
           <details className="ws-sidebar__studio-patch-details">
             <summary>Review live diff</summary>
             <ul className="ws-sidebar__studio-patch-list">
@@ -152,38 +201,58 @@ export function StudioActionProgress({
                 const added = file.diffLines?.filter((line) => line.type === 'added').length ?? 0;
                 const removed =
                   file.diffLines?.filter((line) => line.type === 'removed').length ?? 0;
+                const exactDiffAvailable =
+                  Boolean(progress.transactionId && onOpenDiff) &&
+                  file.stale !== true &&
+                  file.binary !== true &&
+                  !file.failReason;
                 return (
                   <li key={file.relativePath} data-status={file.status}>
                     <div className="ws-sidebar__studio-patch-summary">
-                      <button type="button" onClick={() => onOpenFile?.(file.relativePath)}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          exactDiffAvailable
+                            ? onOpenDiff!(file.relativePath, progress.transactionId!)
+                            : onOpenFile?.(file.relativePath)
+                        }
+                        title={
+                          exactDiffAvailable
+                            ? `Open transaction diff for ${file.relativePath}`
+                            : file.failReason || file.relativePath
+                        }
+                      >
                         <code>{compactStudioPathText(file.relativePath)}</code>
                       </button>
                       <span>
                         +{added} −{removed}
                       </span>
                     </div>
-                    <pre
-                      className="ws-sidebar__studio-patch-diff"
-                      aria-label={`Diff for ${file.relativePath}`}
-                    >
-                      {file.diffLines?.map((line, index) => (
-                        <span key={`${line.type}-${index}`} data-type={line.type}>
-                          {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
-                          {line.content}
-                        </span>
-                      ))}
-                    </pre>
+                    {file.failReason ? <small>{file.failReason}</small> : null}
+                    {file.stale !== true && file.diffLines?.length ? (
+                      <pre
+                        className="ws-sidebar__studio-patch-diff"
+                        aria-label={`Diff for ${file.relativePath}`}
+                      >
+                        {file.diffLines.map((line, index) => (
+                          <span key={`${line.type}-${index}`} data-type={line.type}>
+                            {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
+                            {line.content}
+                          </span>
+                        ))}
+                      </pre>
+                    ) : null}
                   </li>
                 );
               })}
             </ul>
           </details>
         ) : null}
-        {progress.canUndo && progress.invocationId && onUndo ? (
+        {progress.canUndo && progress.transactionId && onUndo ? (
           <button
             type="button"
             className="ws-sidebar__inline"
-            onClick={() => onUndo(progress.invocationId!)}
+            onClick={() => onUndo(progress.transactionId!)}
           >
             Undo
           </button>

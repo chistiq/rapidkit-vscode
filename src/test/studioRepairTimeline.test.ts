@@ -63,4 +63,37 @@ describe('Studio repair timeline', () => {
     expect(timeline).toHaveLength(1);
     expect(timeline[0]?.summary).toBe('Generation 2');
   });
+
+  it('coalesces consecutive internal reads while preserving repair actions', () => {
+    const readSource = {
+      action: 'inspect-source',
+      status: 'done' as const,
+      phase: 'inspect-source',
+      title: 'Read source',
+      summary: 'Read package.json.',
+      invocationId: 'read-1',
+    };
+    const readDiagnostics = {
+      action: 'inspect-workspace-diagnostics',
+      status: 'done' as const,
+      phase: 'inspect-workspace-diagnostics',
+      title: 'Read diagnostics',
+      summary: 'Read project diagnostics.',
+      invocationId: 'read-2',
+    };
+    const repair = {
+      action: 'apply-workspace-patch',
+      status: 'done' as const,
+      phase: 'apply-workspace-patch',
+      title: 'Changed 1 file',
+      summary: 'CLI verified the repair.',
+      invocationId: 'repair-1',
+    };
+
+    let timeline = appendStudioRepairTimelineEntry([], readSource);
+    timeline = appendStudioRepairTimelineEntry(timeline, readDiagnostics);
+    timeline = appendStudioRepairTimelineEntry(timeline, repair);
+
+    expect(timeline).toEqual([readDiagnostics, repair]);
+  });
 });

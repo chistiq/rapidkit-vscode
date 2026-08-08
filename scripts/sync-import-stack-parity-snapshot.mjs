@@ -6,6 +6,7 @@ const SRC_CONTRACT_MIRROR_FILES = [
   'create-planner-capabilities.v1.json',
   'release-readiness.v1.json',
   'workspace-registry.v1.json',
+  'workspace-repair-capabilities.v1.json',
 ];
 
 const args = new Set(process.argv.slice(2));

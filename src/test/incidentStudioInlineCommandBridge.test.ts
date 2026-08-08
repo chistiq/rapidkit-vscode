@@ -7,11 +7,29 @@ vi.mock('vscode', () => ({
 }));
 
 import {
+  isExpectedDiagnosticFindingExit,
   isMutatingRapidkitCliCommand,
   parseIncidentInlineCommandPayload,
 } from '../ui/panels/incidentStudioInlineCommandBridge';
 
 describe('incidentStudioInlineCommandBridge', () => {
+  it('treats audit finding exit codes as successful diagnostic observations', () => {
+    expect(
+      isExpectedDiagnosticFindingExit({
+        command: 'npm audit --json',
+        exitCode: 1,
+        stdout: '{"metadata":{"vulnerabilities":{"high":3}}}',
+      })
+    ).toBe(true);
+    expect(
+      isExpectedDiagnosticFindingExit({
+        command: 'npm audit fix --force',
+        exitCode: 1,
+        stderr: 'failed',
+      })
+    ).toBe(false);
+  });
+
   it('parses inline command payloads with cliActionId', () => {
     expect(
       parseIncidentInlineCommandPayload({

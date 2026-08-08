@@ -5,6 +5,8 @@ export type SidebarPatchReviewItem = {
   relativePath: string;
   status: string;
   isNewFile?: boolean;
+  binary?: boolean;
+  stale?: boolean;
   failReason?: string;
   diffLines?: Array<{ type: 'added' | 'removed' | 'unchanged'; content: string }>;
 };
@@ -30,9 +32,7 @@ export function StudioPatchReview({
     () => patches.filter((patch) => patch.status !== 'applied').map((patch) => patch.relativePath),
     [patches]
   );
-  const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(selectablePaths)
-  );
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(selectablePaths));
 
   const togglePath = (relativePath: string) => {
     setSelected((prev) => {
@@ -105,11 +105,16 @@ export function StudioPatchReview({
                       onChange={() => togglePath(patch.relativePath)}
                     />
                     <code title={displayPath}>{displayPath}</code>
-                    {patch.isNewFile ? <span className="ws-sidebar__studio-patch-tag">new</span> : null}
+                    {patch.isNewFile ? (
+                      <span className="ws-sidebar__studio-patch-tag">new</span>
+                    ) : null}
                     {patch.failReason ? <span>{displayFailReason}</span> : null}
                   </label>
                   {patch.diffLines?.length ? (
-                    <pre className="ws-sidebar__studio-patch-diff" aria-label={`Diff for ${displayPath}`}>
+                    <pre
+                      className="ws-sidebar__studio-patch-diff"
+                      aria-label={`Diff for ${displayPath}`}
+                    >
                       {patch.diffLines.map((line, index) => (
                         <span key={`${line.type}-${index}`} data-type={line.type}>
                           {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}

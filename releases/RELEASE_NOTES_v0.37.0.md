@@ -34,7 +34,7 @@ Released August 7, 2026.
 
 ## Governed, target-aware repair with live change review
 
-Workspai 0.37.0 aligns the extension with Workspai CLI 0.54.0 and gives the
+Workspai 0.37.0 aligns the extension with Workspai CLI 0.55.0 and gives the
 canonical Repair Engine ownership of blocker mutation, reconciliation,
 verification, rollback, and closure.
 
@@ -60,6 +60,9 @@ plan → preconditions → approval → checkpoint → execute
   audit, declared tests, declared build, and canonical verification agree.
 - Missing installed dependency trees use the same transaction without requiring
   an artificial manifest or lockfile edit before reconciliation can begin.
+- A single project named by blocker evidence remains the canonical repair
+  target even when it is linked from outside the workspace or its registry
+  alias differs from its directory basename.
 - Target status and workspace status remain separate: closing the selected
   blocker does not hide other findings, and unrelated blockers do not undo the
   completed repair.
@@ -120,7 +123,7 @@ installations without requiring a registry-backed version probe.
 ## Compatibility
 
 - VS Code 1.106.0 or newer
-- Workspai CLI 0.54.0 or newer
+- Workspai CLI 0.55.0 or newer
 - RapidKit Core 0.6.0 only when a Python-backed kit or module requires it
 
 There are no intentional breaking changes to existing workspaces, Create
@@ -140,9 +143,11 @@ CLI needs verification.
 ## Validation
 
 - Host and Webview type checking, formatting, and linting passed.
-- 368 test files passed; 2,657 tests passed and 2 remained explicitly skipped.
+- 370 test files passed; 2,683 tests passed and 4 remained explicitly skipped.
 - Exact CLI/extension contract parity and all 22 enterprise validation scenarios
   passed against the local Workspai CLI source.
-- Real local CLI integration passed all three repair-boundary scenarios.
+- Real local CLI integration passed both repair-boundary scenarios: executable
+  protocol verification and a complete checkpointed repair through canonical
+  closure.
 - Production VSIX packaging and artifact-content smoke passed.
 - Dependency audit reported zero known vulnerabilities.

@@ -19,6 +19,13 @@ function progressIdentity(progress: SidebarStudioActionProgressView): string {
   if (progress.action === 'live-evidence' || progress.phase === 'observing-evidence') {
     return 'live-evidence:observing-evidence';
   }
+  // Reads are supporting activity, not separate repair outcomes. Coalesce
+  // consecutive source/evidence/search/diagnostic observations into the latest
+  // visible read, like a modern agent transcript, while retaining actual
+  // mutations, validation, decisions, and failures as distinct entries.
+  if (activityKind(progress.phase ?? progress.action) === 'inspect') {
+    return 'activity:inspect';
+  }
   return progress.invocationId
     ? `invocation:${progress.invocationId}`
     : [activityKind(progress.phase ?? progress.action), progress.action].join(':');

@@ -240,7 +240,8 @@ describe('incidentStudioPromptPolicy', () => {
     );
 
     expect(bridgeSource).toContain('actionId: inlineActionId');
-    expect(bridgeSource).toContain('verifyReady: success');
+    expect(bridgeSource).toContain('verifyReady: verificationPassed');
+    expect(bridgeSource).toContain("? 'diagnostic_findings'");
     expect(bridgeSource).toContain('verifyReady: false');
   });
 

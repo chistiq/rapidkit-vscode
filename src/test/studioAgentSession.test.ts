@@ -68,6 +68,38 @@ function verifiedDependencyGoal(): NonNullable<StudioAgentPersistedSession['goal
   };
 }
 
+function closedCliRepairResult(input?: {
+  transactionId?: string;
+  changedPaths?: string[];
+  workspaceStatus?: 'passed' | 'blocked';
+  remainingActionIds?: string[];
+  evidenceGeneration?: string;
+  blockerSignature?: string;
+}) {
+  const changedPaths = input?.changedPaths ?? ['api/package.json'];
+  return {
+    ok: true,
+    changed: changedPaths.length > 0,
+    ...(input?.evidenceGeneration ? { evidenceGeneration: input.evidenceGeneration } : {}),
+    ...(input?.blockerSignature ? { blockerSignature: input.blockerSignature } : {}),
+    output: {
+      changedPaths,
+      transaction: {
+        schemaVersion: 'workspai.workspace-repair-transaction.v1',
+        transactionId: input?.transactionId ?? 'repair-test-transaction',
+        state: 'closed',
+        verification: {
+          status: 'passed',
+          targetStatus: 'passed',
+          workspaceStatus: input?.workspaceStatus ?? 'passed',
+          remainingActionIds: input?.remainingActionIds ?? [],
+          summary: 'The selected repair target passed canonical verification.',
+        },
+      },
+    },
+  };
+}
+
 describe('Studio Agent session runtime', () => {
   it('persists tool progress so canonical stage movement survives a webview reload', async () => {
     const registry = new StudioAgentToolRegistry();
@@ -124,7 +156,7 @@ describe('Studio Agent session runtime', () => {
       activity: 'change',
       risk: 'guarded-write',
       async execute() {
-        return { ok: true, changed: true, evidenceGeneration: 'source-v2' };
+        return closedCliRepairResult({ evidenceGeneration: 'source-v2' });
       },
     });
     registry.register({
@@ -184,7 +216,7 @@ describe('Studio Agent session runtime', () => {
     );
   });
 
-  it('closes a dependency transaction reported by multi-project blocker recovery before verify', async () => {
+  it('accepts one closed CLI repair receipt without running a second closure plane', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
       name: 'recover-active-blocker',
@@ -196,10 +228,108 @@ describe('Studio Agent session runtime', () => {
           ok: true,
           changed: true,
           output: {
-            projectNames: ['api', 'web'],
-            changedPaths: ['api/package-lock.json', 'web/package-lock.json'],
-            nextAction: 'workspaceIntelligenceChain',
+            changedPaths: ['api/package.json', 'api/package-lock.json'],
+            transaction: {
+              schemaVersion: 'workspai.workspace-repair-transaction.v1',
+              transactionId: 'repair-closed-1',
+              state: 'closed',
+              verification: {
+                status: 'passed',
+                targetStatus: 'passed',
+                workspaceStatus: 'blocked',
+                remainingActionIds: [],
+                summary: 'Selected repair target passed; unrelated workspace findings remain.',
+              },
+            },
           },
+        };
+      },
+    });
+    registry.register({
+      name: 'complete-dependency-transaction',
+      title: 'Legacy dependency closure',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        throw new Error('A closed CLI transaction must never enter a second transaction.');
+      },
+    });
+    registry.register({
+      name: 'run-governed-command',
+      title: 'Legacy chain closure',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        throw new Error('A closed CLI transaction must never rerun the intelligence chain.');
+      },
+    });
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Legacy card verify',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        throw new Error('A closed CLI transaction must never be verified twice.');
+      },
+    });
+    let modelTurns = 0;
+    const session = new StudioAgentSession(
+      {
+        id: 'canonical-cli-closure',
+        workspacePath: '/workspace',
+        cardId: 'doctor',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      {
+        async next() {
+          modelTurns += 1;
+          return { type: 'complete', summary: 'should not be called' };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Repair the selected Doctor blocker');
+
+    expect(result.status).toBe('completed');
+    expect(modelTurns).toBe(0);
+    expect(
+      result.events
+        .filter((event) => event.type === 'tool.requested')
+        .map((event) => (event.data as { toolName?: string }).toolName)
+    ).toEqual(['recover-active-blocker']);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'verify.completed',
+        data: expect.objectContaining({
+          ok: true,
+          cardBlocking: false,
+          output: expect.objectContaining({
+            closureAuthority: 'cli-repair-engine',
+            cardVerification: expect.objectContaining({ resolved: true }),
+            workspaceVerification: expect.objectContaining({ resolved: false }),
+          }),
+        }),
+      })
+    );
+  });
+
+  it('closes a dependency transaction reported by multi-project blocker recovery before verify', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'recover-active-blocker',
+      title: 'Resolve active blocker',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ...closedCliRepairResult({
+            transactionId: 'repair-multi-project',
+            changedPaths: ['api/package-lock.json', 'web/package-lock.json'],
+          }),
         };
       },
     });
@@ -262,12 +392,7 @@ describe('Studio Agent session runtime', () => {
       result.events
         .filter((event) => event.type === 'tool.requested')
         .map((event) => (event.data as { toolName?: string }).toolName)
-    ).toEqual([
-      'recover-active-blocker',
-      'complete-dependency-transaction',
-      'run-governed-command',
-      'verify-blocker',
-    ]);
+    ).toEqual(['recover-active-blocker']);
   });
 
   it('verifies a blocker cleared during deterministic recovery without spending a model decision', async () => {
@@ -455,7 +580,60 @@ describe('Studio Agent session runtime', () => {
     );
   });
 
-  it('closes a single audit-authorized dependency upgrade without another model decision', async () => {
+  it('stops immediately when the installed CLI fails the repair protocol handshake', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply source proposal',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        throw new Error(
+          'Workspai CLI repair protocol handshake failed. No installed executable is safe to use.'
+        );
+      },
+    });
+    let modelTurns = 0;
+    const session = new StudioAgentSession(
+      {
+        id: 'cli-contract-mismatch-session',
+        workspacePath: '/workspace',
+        cardId: 'doctor',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      {
+        async next() {
+          modelTurns += 1;
+          return {
+            type: 'tool',
+            toolName: 'apply-workspace-patch',
+            input: { patches: [] },
+            reason: 'Apply inspected source repair.',
+          };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Repair the blocker');
+
+    expect(modelTurns).toBe(1);
+    expect(result.status).toBe('failed');
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'session.failed',
+        data: expect.objectContaining({
+          terminalReason: 'cli-repair-contract-mismatch',
+          requiresUserDecision: false,
+        }),
+      })
+    );
+  });
+
+  it('lets the deterministic CLI prelude close dependency repair before model diagnosis', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
       name: 'inspect-dependency-security',
@@ -474,47 +652,12 @@ describe('Studio Agent session runtime', () => {
       },
     });
     registry.register({
-      name: 'repair-dependency-security',
-      title: 'Bounded dependency repair',
+      name: 'recover-active-blocker',
+      title: 'CLI repair transaction',
       activity: 'change',
       risk: 'guarded-write',
       async execute() {
-        return {
-          ok: false,
-          output: {
-            target: { projectName: 'atlas-web' },
-            nextAction: 'upgrade-dependency-security',
-            upgradeCandidates: [{ packageName: 'next', currentRange: '16.2.10', target: 'latest' }],
-          },
-          error: 'Non-force repair requires a direct upgrade.',
-        };
-      },
-    });
-    registry.register({
-      name: 'upgrade-dependency-security',
-      title: 'Upgrade dependency',
-      activity: 'change',
-      risk: 'guarded-write',
-      async execute(input) {
-        return { ok: true, changed: true, output: input };
-      },
-    });
-    registry.register({
-      name: 'run-governed-command',
-      title: 'Run chain',
-      activity: 'change',
-      risk: 'guarded-write',
-      async execute() {
-        return { ok: true, changed: true };
-      },
-    });
-    registry.register({
-      name: 'verify-blocker',
-      title: 'Verify blocker',
-      activity: 'verify',
-      risk: 'read',
-      async execute() {
-        return { ok: true, cardBlocking: false, blockerSignature: 'resolved-v2' };
+        return closedCliRepairResult({ transactionId: 'repair-audit-authorized' });
       },
     });
     let modelTurns = 0;
@@ -530,12 +673,19 @@ describe('Studio Agent session runtime', () => {
       {
         async next() {
           modelTurns += 1;
-          return {
-            type: 'tool',
-            toolName: 'inspect-dependency-security',
-            input: { projectName: 'atlas-web' },
-            reason: 'Inspect the dependency blocker',
-          };
+          return modelTurns === 1
+            ? {
+                type: 'tool',
+                toolName: 'inspect-dependency-security',
+                input: { projectName: 'atlas-web' },
+                reason: 'Inspect the dependency blocker',
+              }
+            : {
+                type: 'tool',
+                toolName: 'recover-active-blocker',
+                input: {},
+                reason: 'Delegate the mutation and closure to the CLI Repair Engine.',
+              };
         },
       },
       registry,
@@ -545,31 +695,27 @@ describe('Studio Agent session runtime', () => {
     const result = await session.run('Clear readiness');
 
     expect(result.status).toBe('completed');
-    expect(modelTurns).toBe(1);
+    expect(modelTurns).toBe(0);
     expect(result.events).toContainEqual(
       expect.objectContaining({
         type: 'tool.requested',
         data: expect.objectContaining({
-          toolName: 'upgrade-dependency-security',
-          input: { projectName: 'atlas-web', packageName: 'next' },
+          toolName: 'recover-active-blocker',
         }),
       })
     );
-    expect(result.events).toContainEqual(
-      expect.objectContaining({
-        type: 'model.checkpoint',
-        data: expect.objectContaining({ recovery: 'dependency-upgrade-transaction' }),
-      })
-    );
-    expect(result.events).toContainEqual(
-      expect.objectContaining({
-        type: 'model.checkpoint',
-        data: expect.objectContaining({ recovery: 'dependency-bounded-repair' }),
-      })
-    );
+    expect(
+      result.events.some(
+        (event) =>
+          event.type === 'tool.requested' &&
+          ['repair-dependency-security', 'upgrade-dependency-security'].includes(
+            String((event.data as { toolName?: string }).toolName)
+          )
+      )
+    ).toBe(false);
   });
 
-  it('attempts bounded repair for transitive audit findings without direct upgrade candidates', async () => {
+  it('routes transitive audit findings through the canonical CLI repair transaction', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
       name: 'inspect-dependency-security',
@@ -587,30 +733,12 @@ describe('Studio Agent session runtime', () => {
       },
     });
     registry.register({
-      name: 'repair-dependency-security',
-      title: 'Bounded dependency repair',
+      name: 'recover-active-blocker',
+      title: 'CLI repair transaction',
       activity: 'change',
       risk: 'guarded-write',
       async execute() {
-        return { ok: true, changed: true };
-      },
-    });
-    registry.register({
-      name: 'run-governed-command',
-      title: 'Run chain',
-      activity: 'change',
-      risk: 'guarded-write',
-      async execute() {
-        return { ok: true, changed: false };
-      },
-    });
-    registry.register({
-      name: 'verify-blocker',
-      title: 'Verify blocker',
-      activity: 'verify',
-      risk: 'read',
-      async execute() {
-        return { ok: true, cardBlocking: false };
+        return closedCliRepairResult({ transactionId: 'repair-transitive' });
       },
     });
     const session = new StudioAgentSession(
@@ -629,6 +757,12 @@ describe('Studio Agent session runtime', () => {
           input: { projectName: 'atlas-web' },
           reason: 'Inspect transitive dependency findings',
         },
+        {
+          type: 'tool',
+          toolName: 'recover-active-blocker',
+          input: {},
+          reason: 'Execute the canonical runtime-native repair transaction',
+        },
       ]),
       registry,
       new MemoryStore()
@@ -640,12 +774,12 @@ describe('Studio Agent session runtime', () => {
     expect(result.events).toContainEqual(
       expect.objectContaining({
         type: 'tool.requested',
-        data: expect.objectContaining({ toolName: 'repair-dependency-security' }),
+        data: expect.objectContaining({ toolName: 'recover-active-blocker' }),
       })
     );
   });
 
-  it('runs the governed chain and verify without another model turn after a source mutation', async () => {
+  it('accepts a model-proposed source repair only after the CLI closes verification', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
       name: 'apply-workspace-patch',
@@ -653,7 +787,7 @@ describe('Studio Agent session runtime', () => {
       activity: 'change',
       risk: 'safe-write',
       async execute() {
-        return { ok: true, changed: true };
+        return closedCliRepairResult({ transactionId: 'repair-source-patch' });
       },
     });
     registry.register({
@@ -710,16 +844,16 @@ describe('Studio Agent session runtime', () => {
           event.type === 'tool.started' &&
           (event.data as { toolName?: string }).toolName === 'run-governed-command'
       )
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     expect(result.events).toContainEqual(
       expect.objectContaining({
         type: 'session.completed',
-        data: expect.objectContaining({ summary: expect.stringContaining('Post-mutation') }),
+        data: expect.objectContaining({ transactionId: 'repair-source-patch' }),
       })
     );
   });
 
-  it('routes post-mutation closure through the durable goal verifier', async () => {
+  it('uses the CLI transaction receipt as durable goal repair closure', async () => {
     const registry = new StudioAgentToolRegistry();
     const verifyBlocker = vi.fn(async () => ({
       ok: false,
@@ -737,7 +871,7 @@ describe('Studio Agent session runtime', () => {
       activity: 'change',
       risk: 'safe-write',
       async execute() {
-        return { ok: true, changed: true };
+        return closedCliRepairResult({ transactionId: 'repair-goal' });
       },
     });
     registry.register({
@@ -793,12 +927,12 @@ describe('Studio Agent session runtime', () => {
     const result = await session.run('Resolve dependency vulnerabilities without breaking changes');
 
     expect(result.status).toBe('completed');
-    expect(verifyGoal).toHaveBeenCalledTimes(1);
+    expect(verifyGoal).not.toHaveBeenCalled();
     expect(verifyBlocker).not.toHaveBeenCalled();
     expect(result.goal?.baseline.value).toBe(12);
   });
 
-  it('withholds the governed chain while a dependency transaction is incomplete', async () => {
+  it('rejects a mutation receipt that is not closed by the CLI repair engine', async () => {
     const registry = new StudioAgentToolRegistry();
     const chain = vi.fn(async () => ({ ok: true, changed: false }));
     registry.register({
@@ -880,13 +1014,16 @@ describe('Studio Agent session runtime', () => {
     expect(chain).not.toHaveBeenCalled();
     expect(result.events).toContainEqual(
       expect.objectContaining({
-        type: 'model.checkpoint',
-        data: expect.objectContaining({ recovery: 'dependency-transaction' }),
+        type: 'tool.failed',
+        data: expect.objectContaining({
+          toolName: 'apply-workspace-patch',
+          terminalReason: 'cli-repair-closure-missing',
+        }),
       })
     );
   });
 
-  it('runs the governed chain only after dependency transaction closure', async () => {
+  it('does not start a second closure plane after a dependency patch transaction closes', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
       name: 'apply-workspace-patch',
@@ -894,7 +1031,7 @@ describe('Studio Agent session runtime', () => {
       activity: 'change',
       risk: 'guarded-write',
       async execute() {
-        return { ok: true, changed: true };
+        return closedCliRepairResult({ transactionId: 'repair-dependency-patch' });
       },
     });
     registry.register({
@@ -958,15 +1095,10 @@ describe('Studio Agent session runtime', () => {
     const requestedTools = result.events
       .filter((event) => event.type === 'tool.requested')
       .map((event) => (event.data as { toolName?: string }).toolName);
-    expect(requestedTools).toEqual([
-      'apply-workspace-patch',
-      'complete-dependency-transaction',
-      'run-governed-command',
-      'verify-blocker',
-    ]);
+    expect(requestedTools).toEqual(['apply-workspace-patch']);
   });
 
-  it('closes the governed loop after a controller-owned dependency transaction even when install is idempotent', async () => {
+  it('closes from a CLI receipt even when the runtime reconciliation is idempotent', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
       name: 'apply-workspace-patch',
@@ -974,7 +1106,10 @@ describe('Studio Agent session runtime', () => {
       activity: 'change',
       risk: 'guarded-write',
       async execute() {
-        return { ok: true, changed: true };
+        return closedCliRepairResult({
+          transactionId: 'repair-idempotent-install',
+          changedPaths: ['api/package-lock.json'],
+        });
       },
     });
     registry.register({
@@ -1039,15 +1174,10 @@ describe('Studio Agent session runtime', () => {
       result.events
         .filter((event) => event.type === 'tool.requested')
         .map((event) => (event.data as { toolName?: string }).toolName)
-    ).toEqual([
-      'apply-workspace-patch',
-      'complete-dependency-transaction',
-      'run-governed-command',
-      'verify-blocker',
-    ]);
+    ).toEqual(['apply-workspace-patch']);
   });
 
-  it('delegates a model-declared dependency transaction to the CLI without requiring source mutation', async () => {
+  it('accepts a compatibility transaction alias only when it returns a closed CLI receipt', async () => {
     const registry = new StudioAgentToolRegistry();
     let transactionRuns = 0;
     registry.register({
@@ -1057,7 +1187,10 @@ describe('Studio Agent session runtime', () => {
       risk: 'guarded-write',
       async execute() {
         transactionRuns += 1;
-        return { ok: true, changed: false, output: { closureReady: true } };
+        return closedCliRepairResult({
+          transactionId: 'repair-compatibility-alias',
+          changedPaths: [],
+        });
       },
     });
     const session = new StudioAgentSession(
@@ -1084,7 +1217,7 @@ describe('Studio Agent session runtime', () => {
 
     const result = await session.run('Repair dependency blocker');
 
-    expect(result.status).toBe('failed');
+    expect(result.status).toBe('completed');
     expect(transactionRuns).toBe(1);
     expect(result.events).toContainEqual(
       expect.objectContaining({
@@ -1094,7 +1227,7 @@ describe('Studio Agent session runtime', () => {
     );
   });
 
-  it('refuses completion when the canonical chain failed after the latest source mutation', async () => {
+  it('refuses completion when a mutation lacks canonical CLI closure', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
       name: 'apply-workspace-patch',
@@ -1153,7 +1286,10 @@ describe('Studio Agent session runtime', () => {
     expect(result.events).toContainEqual(
       expect.objectContaining({
         type: 'session.failed',
-        data: expect.objectContaining({ error: expect.stringContaining('turn budget') }),
+        data: expect.objectContaining({
+          terminalReason: 'cli-repair-closure-missing',
+          error: expect.stringContaining('closed CLI Repair Engine transaction'),
+        }),
       })
     );
   });
@@ -1366,7 +1502,10 @@ describe('Studio Agent session runtime', () => {
       activity: 'change',
       risk: 'guarded-write',
       async execute() {
-        return { ok: true, changed: true, evidenceGeneration: 'source-generation-2' };
+        return closedCliRepairResult({
+          transactionId: 'repair-after-noop',
+          evidenceGeneration: 'source-generation-2',
+        });
       },
     });
     registry.register({
@@ -1375,7 +1514,7 @@ describe('Studio Agent session runtime', () => {
       activity: 'change',
       risk: 'guarded-write',
       async execute() {
-        return { ok: true, changed: true };
+        return closedCliRepairResult({ transactionId: 'repair-exhausted-accelerator' });
       },
     });
     registry.register({
@@ -1454,7 +1593,7 @@ describe('Studio Agent session runtime', () => {
       activity: 'change',
       risk: 'guarded-write',
       async execute() {
-        return { ok: true, changed: true };
+        return closedCliRepairResult({ transactionId: 'repair-exhausted-accelerator' });
       },
     });
     registry.register({
@@ -1555,7 +1694,10 @@ describe('Studio Agent session runtime', () => {
       activity: 'change',
       risk: 'guarded-write',
       async execute() {
-        return { ok: true, changed: true, evidenceGeneration: 'source-generation-2' };
+        return closedCliRepairResult({
+          transactionId: 'repair-general-source',
+          evidenceGeneration: 'source-generation-2',
+        });
       },
     });
     registry.register({
@@ -1674,7 +1816,7 @@ describe('Studio Agent session runtime', () => {
       activity: 'change',
       risk: 'guarded-write',
       async execute() {
-        return { ok: true, changed: true };
+        return closedCliRepairResult({ transactionId: 'repair-bounded-source' });
       },
     });
     registry.register({
@@ -1830,7 +1972,7 @@ describe('Studio Agent session runtime', () => {
     expect(JSON.stringify(durableInspect)).not.toContain('"example":"1.0.0"');
   });
 
-  it('hands a newly exposed dependent blocker back to deterministic recovery', async () => {
+  it('closes the selected card without absorbing a different dependent blocker', async () => {
     const registry = new StudioAgentToolRegistry();
     let recoveryCalls = 0;
     registry.register({
@@ -1850,7 +1992,10 @@ describe('Studio Agent session runtime', () => {
             error: 'Repair the source.',
           };
         }
-        return { ok: true, changed: true, blockerSignature: 'dependent-fixed' };
+        return closedCliRepairResult({
+          transactionId: 'repair-dependent-blocker',
+          blockerSignature: 'dependent-fixed',
+        });
       },
     });
     registry.register({
@@ -1859,7 +2004,11 @@ describe('Studio Agent session runtime', () => {
       activity: 'change',
       risk: 'guarded-write',
       async execute() {
-        return { ok: true, changed: true };
+        return closedCliRepairResult({
+          transactionId: 'repair-selected-card',
+          workspaceStatus: 'blocked',
+          remainingActionIds: ['workspaceVerify'],
+        });
       },
     });
     registry.register({
@@ -1925,15 +2074,11 @@ describe('Studio Agent session runtime', () => {
 
     expect(result.status).toBe('completed');
     expect(modelTurns).toBe(1);
-    expect(recoveryCalls).toBe(2);
-    expect(result.events).toContainEqual(
+    expect(recoveryCalls).toBe(1);
+    expect(result.events).not.toContainEqual(
       expect.objectContaining({
         type: 'model.checkpoint',
-        data: expect.objectContaining({
-          recovery: 'dependent-blocker-handoff',
-          previousCardId: 'readiness',
-          activeCardId: 'workspaceVerify',
-        }),
+        data: expect.objectContaining({ recovery: 'dependent-blocker-handoff' }),
       })
     );
   });
@@ -2001,7 +2146,10 @@ describe('Studio Agent session runtime', () => {
       activity: 'change',
       risk: 'guarded-write',
       async execute() {
-        return { ok: true, changed: true };
+        return closedCliRepairResult({
+          transactionId: 'repair-restored-session',
+          blockerSignature: 'dependency-generation-2',
+        });
       },
     });
     registry.register({
@@ -2536,7 +2684,10 @@ describe('Studio Agent session runtime', () => {
       risk: 'guarded-write',
       async execute() {
         sourcePatched = true;
-        return { ok: true, changed: true, evidenceGeneration: 'generation-2' };
+        return closedCliRepairResult({
+          transactionId: 'repair-after-causal-churn',
+          evidenceGeneration: 'generation-2',
+        });
       },
     });
     registry.register({
@@ -2650,7 +2801,7 @@ describe('Studio Agent session runtime', () => {
   it('streams bounded file diffs to the live UI without persisting source bodies', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
-      name: 'apply-workspace-patch',
+      name: 'apply-test-patch',
       title: 'Apply patch',
       activity: 'change',
       risk: 'guarded-write',
@@ -2693,7 +2844,7 @@ describe('Studio Agent session runtime', () => {
       sequenceModel([
         {
           type: 'tool',
-          toolName: 'apply-workspace-patch',
+          toolName: 'apply-test-patch',
           input: { patches: [] },
           reason: 'Apply the inspected edit.',
         },

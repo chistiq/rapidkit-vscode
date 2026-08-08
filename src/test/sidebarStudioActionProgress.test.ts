@@ -63,14 +63,18 @@ describe('sidebarStudioActionProgress', () => {
     });
   });
 
-  it('does not turn failures into progress and keeps the failure title specific', () => {
+  it('keeps failures visible in the causal progress timeline and failure surface', () => {
     const failed = {
       action: 'apply-remediation-step',
       status: 'failed',
       summary: 'Verify failed.',
     };
 
-    expect(parseSidebarStudioActionProgress(failed)).toBeNull();
+    expect(parseSidebarStudioActionProgress(failed)).toMatchObject({
+      action: 'apply-remediation-step',
+      status: 'failed',
+      summary: 'Verify failed.',
+    });
     expect(parseStudioActionFailure(failed)).toMatchObject({
       title: 'Apply and verify failed',
       action: 'apply-remediation-step',
@@ -229,6 +233,30 @@ describe('sidebarStudioActionProgress', () => {
     });
   });
 
+  it('projects validation stages from the canonical CLI transaction', () => {
+    expect(
+      parseSidebarStudioActionProgress({
+        action: 'apply-workspace-patch',
+        status: 'done',
+        transaction: {
+          transactionId: 'repair-123',
+          stages: [
+            { id: 'repair', kind: 'repair', status: 'passed', summary: 'Source changed.' },
+            { id: 'build', kind: 'build', status: 'passed', summary: 'Build passed.' },
+            { id: 'verify', kind: 'verify', status: 'passed', summary: 'Target passed.' },
+          ],
+        },
+      })
+    ).toMatchObject({
+      transactionId: 'repair-123',
+      validationStages: [
+        { id: 'repair', kind: 'repair', status: 'passed', summary: 'Source changed.' },
+        { id: 'build', kind: 'build', status: 'passed', summary: 'Build passed.' },
+        { id: 'verify', kind: 'verify', status: 'passed', summary: 'Target passed.' },
+      ],
+    });
+  });
+
   it('maps handoff verify progress before the host responds', () => {
     expect(
       parseSidebarStudioActionProgress({
@@ -318,7 +346,7 @@ describe('sidebarStudioActionProgress', () => {
     });
   });
 
-  it('preserves opaque Agent transaction identity for a live Undo action', () => {
+  it('preserves the canonical CLI transaction identity for a live Undo action', () => {
     expect(
       parseSidebarStudioActionProgress({
         action: 'apply-workspace-patch',
@@ -327,12 +355,48 @@ describe('sidebarStudioActionProgress', () => {
         summary: 'Edit transaction applied.',
         changedPaths: ['package.json', 'src/index.ts'],
         invocationId: 'tool-call-123',
+        transactionId: 'repair-transaction-123',
         canUndo: true,
       })
     ).toMatchObject({
       changedPaths: ['package.json', 'src/index.ts'],
       invocationId: 'tool-call-123',
+      transactionId: 'repair-transaction-123',
       canUndo: true,
+    });
+  });
+
+  it('preserves the CLI transaction receipt used by inline and native diff review', () => {
+    expect(
+      parseSidebarStudioActionProgress({
+        action: 'apply-workspace-patch',
+        status: 'done',
+        transactionId: 'receipt-transaction-0001',
+        fileChanges: [
+          {
+            relativePath: 'src/app.ts',
+            status: 'modified',
+            beforeHash: 'before',
+            afterHash: 'after',
+            binary: false,
+            stale: false,
+            diffLines: [
+              { type: 'removed', content: 'old' },
+              { type: 'added', content: 'new' },
+            ],
+          },
+        ],
+      })
+    ).toMatchObject({
+      transactionId: 'receipt-transaction-0001',
+      changedPaths: ['src/app.ts'],
+      fileChanges: [
+        expect.objectContaining({
+          relativePath: 'src/app.ts',
+          status: 'modified',
+          stale: false,
+        }),
+      ],
     });
   });
 });

@@ -56,6 +56,7 @@ export interface ChatSessionIncident {
   lastActionTitle?: string;
   lastActionSummary?: string;
   lastActionAt?: string;
+  terminalReason?: string;
   firstSeenAt: string;
   lastSeenAt: string;
 }

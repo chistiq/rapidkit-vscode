@@ -2826,7 +2826,25 @@ body {
   border-radius: 50%;
   background: var(--vscode-textLink-foreground);
   box-shadow: 0 0 0 0 color-mix(in srgb, var(--vscode-textLink-foreground) 35%, transparent);
+  opacity: 0.72;
+}
+
+.ws-sidebar__repair-live[data-running='true'] {
+  opacity: 1;
   animation: ws-repair-live-pulse 1.4s ease-out infinite;
+}
+
+.ws-sidebar__repair-bubble--intro[data-state='connection'] .ws-sidebar__repair-live,
+.ws-sidebar__repair-bubble--intro[data-state='review'] .ws-sidebar__repair-live {
+  background: var(--vscode-editorWarning-foreground, #cca700);
+  box-shadow: none;
+}
+
+.ws-sidebar__repair-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .ws-sidebar__repair-copy p {
@@ -3400,7 +3418,7 @@ body {
 .ws-sidebar__studio-repair-timeline {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 6px;
   overflow: visible;
 }
 
@@ -3408,18 +3426,8 @@ body {
   position: relative;
 }
 
-.ws-sidebar__studio-repair-timeline .ws-sidebar__studio-action-progress:not(:last-child)::after {
-  content: '';
-  position: absolute;
-  top: 28px;
-  bottom: -4px;
-  left: 14px;
-  width: 1px;
-  background: color-mix(in srgb, var(--vscode-foreground) 16%, transparent);
-}
-
 .ws-sidebar__studio-action-progress--historical {
-  opacity: 0.62;
+  opacity: 0.72;
 }
 
 .ws-sidebar__studio-action-progress[data-status='running'] {
@@ -3430,6 +3438,10 @@ body {
   border-left: 2px solid
     var(--vscode-inputValidation-warningBorder, var(--vscode-editorWarning-foreground));
   padding-left: 8px;
+}
+
+.ws-sidebar__studio-action-progress[data-status='failed'] {
+  border-left: 2px solid var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
 }
 
 .ws-sidebar__studio-action-progress[data-status='done'] {
@@ -3448,11 +3460,71 @@ body {
   color: var(--vscode-textLink-foreground);
 }
 
+.ws-sidebar__studio-action-progress {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
+  border-radius: 6px;
+  background: color-mix(
+    in srgb,
+    var(--vscode-editorWidget-background, var(--vscode-editor-background)) 72%,
+    transparent
+  );
+}
+
+.ws-sidebar__studio-action-progress--historical {
+  padding: 5px 3px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
 .ws-sidebar__studio-action-progress-copy {
   display: flex;
   flex-direction: column;
   gap: 3px;
   min-width: 0;
+}
+
+.ws-sidebar__studio-action-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ws-sidebar__studio-action-progress-head strong {
+  min-width: 0;
+  color: var(--vscode-foreground);
+  font-size: var(--ws-sidebar-text-sm);
+  font-weight: 650;
+  line-height: var(--ws-sidebar-leading-tight);
+  overflow-wrap: anywhere;
+}
+
+.ws-sidebar__studio-action-progress-head small {
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--ws-sidebar-text-xxs);
+}
+
+.ws-sidebar__studio-action-progress-head small[data-status='failed'] {
+  color: var(--vscode-errorForeground);
+}
+
+.ws-sidebar__studio-action-progress-head small[data-status='review'] {
+  color: var(--vscode-editorWarning-foreground, var(--vscode-descriptionForeground));
+}
+
+.ws-sidebar__studio-action-summary {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--ws-sidebar-text-xs);
+  line-height: var(--ws-sidebar-leading-normal);
+  overflow-wrap: anywhere;
 }
 
 .ws-sidebar__studio-action-details {
@@ -3468,6 +3540,75 @@ body {
 .ws-sidebar__studio-action-details > span {
   display: block;
   padding-top: 4px;
+}
+
+.ws-sidebar__studio-action-details > pre {
+  max-height: 140px;
+  margin-top: 6px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.ws-sidebar__studio-validation {
+  margin-top: 3px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.ws-sidebar__studio-validation > summary {
+  cursor: pointer;
+  font-size: var(--ws-sidebar-text-xs);
+  font-weight: 600;
+  user-select: none;
+}
+
+.ws-sidebar__studio-validation ol {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-sidebar__studio-validation li {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+}
+
+.ws-sidebar__studio-validation li > span {
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family);
+  text-align: center;
+}
+
+.ws-sidebar__studio-validation li[data-status='passed'] > span {
+  color: var(--vscode-testing-iconPassed, #73c991);
+}
+
+.ws-sidebar__studio-validation li[data-status='failed'] > span,
+.ws-sidebar__studio-validation li[data-status='blocked'] > span {
+  color: var(--vscode-errorForeground);
+}
+
+.ws-sidebar__studio-validation li > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ws-sidebar__studio-validation strong {
+  color: var(--vscode-foreground);
+  font-size: var(--ws-sidebar-text-xs);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.ws-sidebar__studio-validation small {
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--ws-sidebar-text-xxs);
+  line-height: var(--ws-sidebar-leading-normal);
 }
 
 .ws-sidebar__studio-action-progress-copy span,
@@ -3632,7 +3773,10 @@ body {
 }
 
 .ws-sidebar__studio-activity-history[open] {
-  max-height: 190px;
+  max-height: 220px;
+  padding: 2px 4px 4px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 60%, transparent);
+  border-radius: 6px;
   overflow-y: auto;
   scrollbar-width: thin;
 }

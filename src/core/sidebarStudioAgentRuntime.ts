@@ -141,7 +141,8 @@ export type StudioAgentAction =
 export type StudioAgentFileObservation = {
   path: string;
   kind: 'source' | 'evidence';
-  sha256: string;
+  exists: boolean;
+  sha256: string | null;
   content: string;
   truncated: boolean;
 };
@@ -265,7 +266,29 @@ export async function inspectStudioAgentFiles(input: {
     if (!isInside(input.workspacePath, lexicalPath)) {
       throw new Error(`Studio agent path escapes the workspace: ${normalized}`);
     }
-    const realPath = await fs.realpath(lexicalPath);
+    let realPath: string;
+    try {
+      realPath = await fs.realpath(lexicalPath);
+    } catch (error) {
+      if (
+        input.kind === 'source' &&
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        (error as NodeJS.ErrnoException).code === 'ENOENT'
+      ) {
+        observations.push({
+          path: normalized,
+          kind: input.kind,
+          exists: false,
+          sha256: null,
+          content: '',
+          truncated: false,
+        });
+        continue;
+      }
+      throw error;
+    }
     if (!isInside(workspaceReal, realPath)) {
       throw new Error(`Studio agent path resolves outside the workspace: ${normalized}`);
     }
@@ -281,6 +304,7 @@ export async function inspectStudioAgentFiles(input: {
     observations.push({
       path: normalized,
       kind: input.kind,
+      exists: true,
       sha256: crypto.createHash('sha256').update(full).digest('hex'),
       content: bounded.toString('utf8'),
       truncated: full.length > bounded.length,

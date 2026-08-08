@@ -32,6 +32,7 @@ export type RunIncidentInlineCommandResult = {
   exitCode?: number | null;
   stderrTail?: string;
   capturedStdout?: string;
+  diagnosticOutcome?: 'clean' | 'findings';
   executionTranscript?: IncidentStudioExecutionTranscript;
 };
 
@@ -105,6 +106,27 @@ export function summarizeIncidentInlineFailure(input: {
     error: `${prefix}: ${body}`,
     ...(stderrTail ? { stderrTail } : {}),
   };
+}
+
+export function isExpectedDiagnosticFindingExit(input: {
+  command: string;
+  exitCode?: number | null;
+  stdout?: string;
+  stderr?: string;
+}): boolean {
+  const normalized = input.command.replace(/\s+/g, ' ').trim().toLowerCase();
+  const isAudit =
+    /(?:^|\s)(?:npm|pnpm|yarn|bun) audit(?:\s|$)/.test(normalized) ||
+    /(?:^|\s)(?:pip-audit|cargo audit|bundle audit)(?:\s|$)/.test(normalized);
+  const isFix = /(?:^|\s)(?:fix|--fix)(?:\s|$)/.test(normalized);
+  const exitCode = input.exitCode ?? -1;
+  return (
+    isAudit &&
+    !isFix &&
+    exitCode > 0 &&
+    exitCode <= 31 &&
+    Boolean(input.stdout?.trim() || input.stderr?.trim())
+  );
 }
 
 export type DispatchIncidentStudioInlineCommandInput = {
@@ -319,7 +341,14 @@ export async function runIncidentInlineCommand(
     const combinedOutput = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
     const output = combinedOutput || 'Command completed with no output.';
     const truncatedOutput = output.split('\n').slice(0, 30).join('\n');
-    const success = result.exitCode === 0;
+    const diagnosticFindings = isExpectedDiagnosticFindingExit({
+      command: inlineCommand,
+      exitCode: result.exitCode,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    });
+    const success = result.exitCode === 0 || diagnosticFindings;
+    const verificationPassed = result.exitCode === 0;
     const failureSummary = success
       ? undefined
       : summarizeIncidentInlineFailure({
@@ -346,15 +375,19 @@ export async function runIncidentInlineCommand(
     });
 
     await tracker.trackCommandEvent(
-      success ? 'workspai.studio.verify_passed' : 'workspai.studio.verify_failed',
+      verificationPassed ? 'workspai.studio.verify_passed' : 'workspai.studio.verify_failed',
       workspacePath,
       {
         ...telemetryBase,
         exitCode: result.exitCode,
-        verifyReady: success,
+        verifyReady: verificationPassed,
         verifyRequired: true,
-        verifyPathPresent: success,
-        verifyPathReason: success ? 'command_success' : 'command_failed',
+        verifyPathPresent: verificationPassed,
+        verifyPathReason: diagnosticFindings
+          ? 'diagnostic_findings'
+          : verificationPassed
+            ? 'command_success'
+            : 'command_failed',
         ...inlineScopeProps,
       }
     );
@@ -364,6 +397,7 @@ export async function runIncidentInlineCommand(
       success,
       output: success ? truncatedOutput : undefined,
       ...(options.captureStdout ? { capturedStdout: result.stdout.slice(0, 256 * 1024) } : {}),
+      ...(success ? { diagnosticOutcome: diagnosticFindings ? 'findings' : 'clean' } : {}),
       error: failureSummary?.error,
       exitCode: result.exitCode,
       stderrTail: failureSummary?.stderrTail,

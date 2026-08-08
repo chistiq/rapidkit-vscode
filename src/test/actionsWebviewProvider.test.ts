@@ -188,7 +188,8 @@ describe('actionsWebviewProvider — sidebar protocol handlers', () => {
     ]) {
       expect(source, label).toContain(`actionLabel: '${label}'`);
     }
-    expect(source).toContain("actionLabel: 'Studio Agent workspace patch'");
+    expect(source).toContain("actionLabel: 'Studio Agent CLI-owned source repair'");
+    expect(source).toContain("actionLabel: 'Studio Agent CLI-owned source deletion'");
     expect(source).toContain('resolveGovernedStudioRepairMutationBlockReason({');
     expect(source).toContain('contractAuthorized: true');
     expect(source).toContain('reversible: true');
@@ -198,11 +199,16 @@ describe('actionsWebviewProvider — sidebar protocol handlers', () => {
   it('grants dynamic patch authority only after exact source inspection and SHA capture', () => {
     expect(source).toContain('const inspectedSource = new Map<string, string | null>();');
     expect(source).toContain('inspectedSource.set(observation.path, observation.sha256);');
+    expect(source).toContain('authorizeStudioWorkspacePatchTargets({');
     expect(source).toContain(
+      'repairEvidence.expectedBaseSha256[observation.path] = observation.sha256;'
+    );
+    expect(source).toContain(
+      'inspectedSource.get(patch.relativePath) ??\n              repairEvidence.expectedBaseSha256[patch.relativePath]'
+    );
+    expect(source).not.toContain(
       'const staticTargets = new Set(repairEvidence.autonomousTargetPaths);'
     );
-    expect(source).toContain('authorizeStudioWorkspacePatchTargets({');
-    expect(source).toContain('repairEvidence.expectedBaseSha256[entry] = hash;');
     expect(source).not.toContain('repairEvidence.autonomousTargetPaths.push(observation.path)');
   });
 

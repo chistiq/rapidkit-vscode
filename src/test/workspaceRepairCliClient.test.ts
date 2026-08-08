@@ -1,15 +1,21 @@
 import fs from 'fs-extra';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildWorkspaiCliRuntimeEnv,
   decideCliOwnedRepair,
   executeCliOwnedCanonicalRepair,
   executeCliOwnedPatchRepair,
+  readCliOwnedRepairFileComparison,
   resolveInstalledWorkspaiCli,
+  resolveWorkspaiNodeExecutables,
+  verifyInstalledWorkspaiRepairCli,
   type WorkspaceRepairCliTransaction,
 } from '../core/workspaceRepairCliClient.js';
+import { MIN_RAPIDKIT_CLI_VERSION } from '../core/cliVersionPolicy.js';
 
 function transaction(
   id: string,
@@ -35,7 +41,7 @@ function operation(artifact: WorkspaceRepairCliTransaction): string {
   });
 }
 
-async function installedPackage(root: string, version = '0.54.0') {
+async function installedPackage(root: string, version = MIN_RAPIDKIT_CLI_VERSION) {
   const packageRoot = path.join(root, 'node_modules', 'workspai');
   const manifestPath = path.join(packageRoot, 'package.json');
   await fs.outputFile(path.join(packageRoot, 'dist', 'index.js'), '#!/usr/bin/env node\n');
@@ -47,7 +53,190 @@ async function installedPackage(root: string, version = '0.54.0') {
   return { name: 'workspai', version, manifestPath, source: 'workspace' as const };
 }
 
+function repairProtocolRunner(
+  handler: (input: {
+    entrypoint: { version: string; entrypoint: string };
+    args: string[];
+  }) => Promise<{ exitCode: number; stdout: string; stderr: string }>,
+  runtimeVersion?: (manifestVersion: string, entrypoint: string) => string,
+  workflowOverride?: string[]
+) {
+  return async (input: {
+    entrypoint: { version: string; entrypoint: string };
+    workspacePath: string;
+    args: string[];
+    timeoutMs: number;
+  }) => {
+    if (input.args[0] === '--version') {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          schemaVersion: 'rapidkit-version-v1',
+          cli: 'workspai',
+          version:
+            runtimeVersion?.(input.entrypoint.version, input.entrypoint.entrypoint) ??
+            input.entrypoint.version,
+        }),
+        stderr: '',
+      };
+    }
+    if (
+      input.args[0] === 'workspace' &&
+      input.args[1] === 'repair' &&
+      input.args[2] === 'capabilities'
+    ) {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          schemaVersion: 'workspai.workspace-repair-capabilities.v1',
+          workflow: workflowOverride ?? [
+            'plan',
+            'preconditions',
+            'approval',
+            'target-precondition',
+            'checkpoint',
+            'execute',
+            'reconcile',
+            'audit',
+            'test',
+            'build',
+            'target-producer-verify',
+            'canonical-verify',
+            'close-or-rollback-or-decision',
+          ],
+          invariants: {
+            consumerHandshakeRequired: true,
+            ephemeralProposalsAreEvidence: false,
+            mutationAuthority: 'cli-only',
+            targetClosure: 'selected-causal-action-set',
+            changeReceipt: 'checkpoint-hash-delta',
+            consumerTimeline: 'durable-transaction-events',
+          },
+          consumerProtocol: {
+            protocolVersion: 'workspai.workspace-repair-consumer-protocol.v1',
+            invocation: {
+              workspaceResolution: ['process-cwd', '--workspace'],
+              actions: [
+                'capabilities',
+                'plan',
+                'propose',
+                'approve',
+                'decide',
+                'execute',
+                'resume',
+              ],
+            },
+            contracts: {
+              operationResult: 'workspai-cli-operation-result-v1',
+              proposal: 'workspai.workspace-repair-proposal.v1',
+              transaction: 'workspai.workspace-repair-transaction.v1',
+            },
+          },
+        }),
+        stderr: '',
+      };
+    }
+    expect(input.args).not.toContain('--workspace');
+    return handler(input);
+  };
+}
+
 describe('CLI-owned Workspace Repair client', () => {
+  it('resolves Node from the npm installation that owns Workspai instead of the VS Code executable', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-node-'));
+    const nodeRoot = path.join(root, 'versions', 'node', 'v20.20.2');
+    const nodeExecutable = path.join(nodeRoot, 'bin', 'node');
+    const manifestPath = path.join(nodeRoot, 'lib', 'node_modules', 'workspai', 'package.json');
+    const codeExecutable = path.join(root, 'code-insiders');
+    await fs.outputFile(nodeExecutable, '#!/bin/sh\nexit 0\n');
+    await fs.chmod(nodeExecutable, 0o755);
+    await fs.outputFile(codeExecutable, '#!/bin/sh\nexit 0\n');
+    await fs.chmod(codeExecutable, 0o755);
+    await fs.outputJson(manifestPath, {
+      name: 'workspai',
+      version: MIN_RAPIDKIT_CLI_VERSION,
+    });
+
+    expect(
+      resolveWorkspaiNodeExecutables({
+        manifestPath,
+        platform: 'linux',
+        env: { PATH: '' },
+        homeDir: path.join(root, 'home'),
+        processExecutable: codeExecutable,
+      })
+    ).toEqual([nodeExecutable]);
+  });
+
+  it('deduplicates linked package discoveries before the runtime handshake', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-client-'));
+    const metadata = await installedPackage(workspacePath);
+    let versionProbes = 0;
+
+    await expect(
+      verifyInstalledWorkspaiRepairCli({
+        workspacePath,
+        installedPackages: [metadata, { ...metadata }],
+        runner: repairProtocolRunner(
+          async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+          () => {
+            versionProbes += 1;
+            return '0.51.0';
+          }
+        ),
+      })
+    ).rejects.toThrow(
+      `manifest declares ${MIN_RAPIDKIT_CLI_VERSION}, but the selected executable reports 0.51.0`
+    );
+    expect(versionProbes).toBe(1);
+  });
+
+  it('rejects a CLI whose repair workflow omits exact target preflight', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-workflow-'));
+    const metadata = await installedPackage(workspacePath);
+
+    await expect(
+      verifyInstalledWorkspaiRepairCli({
+        workspacePath,
+        installedPackages: [metadata],
+        runner: repairProtocolRunner(
+          async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+          undefined,
+          [
+            'plan',
+            'preconditions',
+            'approval',
+            'checkpoint',
+            'execute',
+            'reconcile',
+            'audit',
+            'test',
+            'build',
+            'canonical-verify',
+            'close-or-rollback-or-decision',
+          ]
+        ),
+      })
+    ).rejects.toThrow('repair capabilities do not satisfy');
+  });
+
+  it('restores user tool bins for CLI repair subprocesses with a stale Extension Host PATH', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-env-'));
+    const nodeBin = path.join(root, 'node', 'bin');
+    const userBin = path.join(root, 'home', '.local', 'bin');
+    await fs.ensureDir(nodeBin);
+    await fs.ensureDir(userBin);
+
+    const env = buildWorkspaiCliRuntimeEnv({
+      nodeExecutable: path.join(nodeBin, 'node'),
+      platform: 'linux',
+      homeDir: path.join(root, 'home'),
+      baseEnv: { PATH: '/usr/bin' },
+    });
+
+    expect(env.PATH?.split(':')).toEqual([nodeBin, '/usr/bin', userBin]);
+  });
+
   it('resolves a compatible installed entrypoint without using npx or the registry', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-client-'));
     const metadata = await installedPackage(root);
@@ -73,6 +262,8 @@ describe('CLI-owned Workspace Repair client', () => {
     const result = await executeCliOwnedPatchRepair({
       workspacePath,
       cardId: 'doctor',
+      blockerSignature: 'doctor:fixture:blocker-v1',
+      targetActionIds: ['doctor.fixture.environment.file-create'],
       patches: [
         {
           relativePath: 'src/app.ts',
@@ -83,7 +274,7 @@ describe('CLI-owned Workspace Repair client', () => {
       approvedBy: 'vscode:test',
       installedPackages: [metadata],
       reportProgress: async (entry) => progress.push(entry.phase),
-      runner: async ({ args }) => {
+      runner: repairProtocolRunner(async ({ args }) => {
         const action = args[2];
         actions.push(action);
         if (action === 'propose') {
@@ -93,6 +284,10 @@ describe('CLI-owned Workspace Repair client', () => {
             path: 'src/app.ts',
             expectedBeforeHash: null,
             operation: 'write',
+          });
+          expect(proposal).toMatchObject({
+            blockerSignature: 'doctor:fixture:blocker-v1',
+            targetActionIds: ['doctor.fixture.environment.file-create'],
           });
           return {
             exitCode: 0,
@@ -104,19 +299,41 @@ describe('CLI-owned Workspace Repair client', () => {
           expect(args).toContain('vscode:test');
           return { exitCode: 0, stdout: operation(transaction('tx-1', 'approved')), stderr: '' };
         }
+        const patchedContent = 'export const ready = true;\n';
+        await fs.outputFile(path.join(workspacePath, 'src', 'app.ts'), patchedContent);
         const closed = transaction('tx-1', 'closed');
         closed.checkpoint = {
           status: 'captured',
-          files: [{ path: 'src/app.ts', existed: false, beforeHash: null, afterHash: 'abc' }],
+          files: [
+            {
+              path: 'src/app.ts',
+              existed: false,
+              beforeHash: null,
+              afterHash: crypto.createHash('sha256').update(patchedContent).digest('hex'),
+            },
+          ],
         };
         return { exitCode: 0, stdout: operation(closed), stderr: '' };
-      },
+      }),
     });
 
     expect(actions).toEqual(['propose', 'approve', 'execute']);
     expect(progress).toEqual(['plan', 'approval', 'execute', 'complete']);
     expect(result.transaction.state).toBe('closed');
     expect(result.changedPaths).toEqual(['src/app.ts']);
+    expect(result.fileChanges).toEqual([
+      expect.objectContaining({
+        relativePath: 'src/app.ts',
+        status: 'added',
+        isNewFile: true,
+        binary: false,
+        stale: false,
+      }),
+    ]);
+    expect(result.fileChanges[0]?.diffLines).toContainEqual({
+      type: 'added',
+      content: 'export const ready = true;',
+    });
     expect(await fs.readdir(path.join(workspacePath, '.workspai', 'repair', 'inbox'))).toEqual([]);
   });
 
@@ -148,14 +365,16 @@ describe('CLI-owned Workspace Repair client', () => {
       cardId: 'doctor',
       approvedBy: 'vscode:test',
       installedPackages: [metadata],
-      runner: async ({ args }) => {
+      runner: repairProtocolRunner(async ({ args }) => {
         actions.push(args[2]);
         return { exitCode: 2, stdout: operation(decision), stderr: '' };
-      },
+      }),
     });
 
     expect(actions).toEqual(['plan']);
     expect(result.transaction).toEqual(decision);
+    expect(result.changedPaths).toEqual([]);
+    expect(result.fileChanges).toEqual([]);
     expect(result.transaction.adapterEvaluations?.[0]).toMatchObject({
       adapterId: 'python',
       status: 'partial',
@@ -186,7 +405,7 @@ describe('CLI-owned Workspace Repair client', () => {
       approvedBy: 'vscode:test',
       installedPackages: [metadata],
       reportProgress: async (entry) => progress.push(entry.message),
-      runner: async ({ args }) => {
+      runner: repairProtocolRunner(async ({ args }) => {
         actions.push(args[2]);
         const closed = transaction('tx-active', 'closed');
         closed.verification = {
@@ -199,7 +418,7 @@ describe('CLI-owned Workspace Repair client', () => {
           summary: 'Selected repair passed; other findings remain.',
         };
         return { exitCode: 2, stdout: operation(closed), stderr: '' };
-      },
+      }),
     });
 
     expect(actions).toEqual(['resume']);
@@ -218,7 +437,7 @@ describe('CLI-owned Workspace Repair client', () => {
       decision: 'allow-breaking',
       approvedBy: 'vscode:explicit-user-decision',
       installedPackages: [metadata],
-      runner: async ({ args }) => {
+      runner: repairProtocolRunner(async ({ args }) => {
         const action = args[2];
         actions.push(action);
         if (action === 'decide') {
@@ -238,7 +457,7 @@ describe('CLI-owned Workspace Repair client', () => {
           };
         }
         return { exitCode: 0, stdout: operation(transaction('tx-fresh', 'closed')), stderr: '' };
-      },
+      }),
     });
 
     expect(actions).toEqual(['decide', 'approve', 'execute']);
@@ -264,7 +483,7 @@ describe('CLI-owned Workspace Repair client', () => {
       cardId: 'doctor',
       approvedBy: 'vscode:test',
       installedPackages: [metadata],
-      runner: async ({ args }) => {
+      runner: repairProtocolRunner(async ({ args }) => {
         const action = args[2];
         actions.push(action);
         if (action === 'plan') {
@@ -286,7 +505,7 @@ describe('CLI-owned Workspace Repair client', () => {
           stdout: operation(transaction('tx-fresh', 'closed')),
           stderr: '',
         };
-      },
+      }),
     });
 
     expect(actions).toEqual(['plan', 'approve', 'execute']);
@@ -306,5 +525,104 @@ describe('CLI-owned Workspace Repair client', () => {
         installedPackages: [metadata],
       })
     ).rejects.toThrow('has no inspected base hash');
+  });
+
+  it('renders an exact checkpoint-backed comparison and rejects a stale native diff', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-client-'));
+    const transactionId = 'receipt-transaction-0001';
+    const relativePath = 'src/service.ts';
+    const before = 'export const mode = "before";\n';
+    const after = 'export const mode = "after";\n';
+    const backupRef = 'checkpoint/0000.bin';
+    const artifact = transaction(transactionId, 'closed');
+    artifact.checkpoint = {
+      status: 'captured',
+      files: [
+        {
+          path: relativePath,
+          existed: true,
+          beforeHash: crypto.createHash('sha256').update(before).digest('hex'),
+          afterHash: crypto.createHash('sha256').update(after).digest('hex'),
+          backupRef,
+        },
+      ],
+    };
+    await fs.outputFile(
+      path.join(workspacePath, '.workspai', 'repair', 'transactions', transactionId, backupRef),
+      before
+    );
+    await fs.outputFile(path.join(workspacePath, relativePath), after);
+
+    const comparison = await readCliOwnedRepairFileComparison({
+      workspacePath,
+      transaction: artifact,
+      relativePath,
+    });
+    expect(comparison).toMatchObject({
+      relativePath,
+      status: 'modified',
+      binary: false,
+      stale: false,
+      originalContent: before,
+      patchedContent: after,
+    });
+    expect(comparison.diffLines).toEqual(
+      expect.arrayContaining([
+        { type: 'removed', content: 'export const mode = "before";' },
+        { type: 'added', content: 'export const mode = "after";' },
+      ])
+    );
+
+    await fs.writeFile(path.join(workspacePath, relativePath), 'export const mode = "later";\n');
+    const stale = await readCliOwnedRepairFileComparison({
+      workspacePath,
+      transaction: artifact,
+      relativePath,
+    });
+    expect(stale).toMatchObject({
+      stale: true,
+      failReason: 'The file changed again after this repair transaction.',
+    });
+  });
+
+  it('rejects stale linked output when manifest and runtime versions differ', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-client-'));
+    const metadata = await installedPackage(workspacePath);
+
+    await expect(
+      verifyInstalledWorkspaiRepairCli({
+        workspacePath,
+        installedPackages: [metadata],
+        runner: repairProtocolRunner(
+          async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+          () => '0.51.0'
+        ),
+      })
+    ).rejects.toThrow(
+      `manifest declares ${MIN_RAPIDKIT_CLI_VERSION}, but the selected executable reports 0.51.0`
+    );
+  });
+
+  it('falls back to the next verified executable when a preferred link is stale', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-client-'));
+    const preferredRoot = path.join(workspacePath, 'preferred');
+    const fallbackRoot = path.join(workspacePath, 'fallback');
+    const preferred = await installedPackage(preferredRoot, '0.56.0');
+    const fallback = {
+      ...(await installedPackage(fallbackRoot)),
+      source: 'global' as const,
+    };
+
+    const resolved = await verifyInstalledWorkspaiRepairCli({
+      workspacePath,
+      installedPackages: [preferred, fallback],
+      runner: repairProtocolRunner(
+        async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+        (manifestVersion) => (manifestVersion === '0.56.0' ? '0.51.0' : manifestVersion)
+      ),
+    });
+
+    expect(resolved.version).toBe(MIN_RAPIDKIT_CLI_VERSION);
+    expect(resolved.protocolVersion).toBe('workspai.workspace-repair-consumer-protocol.v1');
   });
 });

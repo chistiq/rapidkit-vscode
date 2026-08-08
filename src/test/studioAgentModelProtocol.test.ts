@@ -668,7 +668,8 @@ describe('Studio Agent model protocol', () => {
     expect(prompt).toContain('readiness is blocked');
     expect(prompt).toContain('api/package.json');
     expect(prompt).toContain('\\"example\\":\\"1.0.0\\"');
-    expect(prompt).toContain('complete incident graph');
+    expect(prompt).toContain('selected card and its causal action set');
+    expect(prompt).toContain('Do not absorb unrelated blocking cards');
   });
 
   it('does not duplicate the latest source inspection in recent causal observations', async () => {
@@ -717,6 +718,48 @@ describe('Studio Agent model protocol', () => {
     await adapter.next(context);
 
     expect(prompt.match(/LATEST-SOURCE-CONTENT/g)).toHaveLength(1);
+  });
+
+  it('preserves a typed missing-file observation for model reasoning', async () => {
+    let prompt = '';
+    const adapter = new ContractStudioAgentModelAdapter(
+      'Inspect package manager state',
+      async (value) => {
+        prompt = value;
+        return { toolName: STUDIO_AGENT_COMPLETE_TOOL_NAME, input: { summary: 'Done' } };
+      }
+    );
+    await adapter.next({
+      session: {
+        schemaVersion: 'workspai.studio-agent-session.v1',
+        id: 'missing-file-observation-session',
+        workspacePath: '/workspace',
+        cardId: 'doctor',
+        assistantMode: 'agent',
+        status: 'running',
+        createdAt: '2026-08-07T00:00:00.000Z',
+        updatedAt: '2026-08-07T00:00:00.000Z',
+        sequence: 0,
+        events: [],
+      },
+      tools: [],
+      latestObservation: {
+        ok: true,
+        output: [
+          {
+            path: 'pnpm-lock.yaml',
+            exists: false,
+            sha256: null,
+            content: '',
+            truncated: false,
+          },
+        ],
+      },
+      steering: [],
+    });
+
+    expect(prompt).toContain('pnpm-lock.yaml');
+    expect(prompt).toContain('"exists":false');
   });
 
   it('retries a provider context overflow once with a compact causal prompt', async () => {

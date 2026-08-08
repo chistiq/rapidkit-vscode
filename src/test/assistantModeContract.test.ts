@@ -56,8 +56,9 @@ describe('Workspai assistant mode contract', () => {
     expect(toolsFor('agent')).toContain('inspect-remediation-plan');
     expect(toolsFor('agent')).toContain('execute-remediation-step');
     expect(toolsFor('agent')).toContain('inspect-dependency-security');
-    expect(toolsFor('agent')).toContain('repair-dependency-security');
-    expect(toolsFor('agent')).toContain('upgrade-dependency-security');
+    expect(toolsFor('agent')).not.toContain('repair-dependency-security');
+    expect(toolsFor('agent')).not.toContain('upgrade-dependency-security');
+    expect(toolsFor('agent')).not.toContain('complete-dependency-transaction');
     expect(toolsFor('ask')).toEqual([
       'discover-workspace-files',
       'inspect-source',

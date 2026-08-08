@@ -1,6 +1,6 @@
 # Getting started with Workspai for VS Code
 
-> Extension 0.37.0 · compatible with Workspai CLI 0.54.0+
+> Extension 0.37.0 · compatible with Workspai CLI 0.55.0+
 
 Workspai helps people and AI tools understand and change the same workspace
 using a shared model, graph, health evidence, and verification loop.
@@ -8,7 +8,7 @@ using a shared model, graph, health evidence, and verification loop.
 ## What you need
 
 - VS Code 1.106.0 or newer
-- Workspai CLI 0.54.0 or newer
+- Workspai CLI 0.55.0 or newer
 - Node.js supported by the installed Workspai CLI
 - Git when you want change, impact, or `--since` evidence
 

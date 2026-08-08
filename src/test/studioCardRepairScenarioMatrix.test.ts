@@ -16,6 +16,8 @@ describe('Studio card repair end-to-end matrix', () => {
     'accepts completion for %s only after its exact Stop Gate passes',
     async (cardId) => {
       const capability = requireStudioCardRepairCapability(cardId);
+      expect(capability.targetClosure).toBe('exact-producer-and-causal-action-set');
+      expect(capability.workspacePosture).toBe('reported-separately');
       const handoff = await buildStudioBlockerHandoff({
         workspacePath: '/tmp/workspai-card-stop-gate',
         card: {

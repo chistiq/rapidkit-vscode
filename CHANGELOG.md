@@ -17,7 +17,7 @@ No unreleased changes yet.
   approval, checkpoint, execution, reconciliation, verification, rollback, and
   decision-required states.
 - Synchronized card-repair, repair-capabilities, proposal, transaction,
-  runtime-command, and artifact contracts from Workspai CLI 0.54.0.
+  runtime-command, and artifact contracts from Workspai CLI 0.55.0.
 - Target-aware CLI transaction receipts that distinguish the selected repair
   result from unrelated blockers elsewhere in the workspace.
 - Typed dependency-materialization recovery for declared projects whose local
@@ -41,6 +41,8 @@ No unreleased changes yet.
   competing repair executor.
 - Made canonical repairs preserve exact project scope and avoid guessing the
   first affected project in multi-project incidents.
+- Made registered evidence names authoritative over directory basenames so
+  linked projects and registry aliases reach the exact CLI repair target.
 - Made bounded model history retain only coherent tool-call/result pairs so a
   restored or truncated session remains valid for OpenAI-compatible providers.
 - Made Setup require only Workspai CLI; Python and RapidKit Core remain optional
@@ -54,7 +56,7 @@ No unreleased changes yet.
   retaining workspace, project, terminal, lifecycle, import, and export actions
   in grouped menus.
 - Updated Getting Started and UI surface documentation for extension 0.37.0 and
-  Workspai CLI 0.54.0.
+  Workspai CLI 0.55.0.
 
 ### Fixed
 
@@ -81,14 +83,14 @@ No unreleased changes yet.
 ### Compatibility
 
 - VS Code 1.106.0+
-- Workspai CLI 0.54.0+
+- Workspai CLI 0.55.0+
 - RapidKit Core 0.6.0 only for Python-backed kits and modules
 
 ### Verification
 
-- 368 test files passed; 2,657 tests passed and 2 were explicitly skipped.
+- 370 test files passed; 2,683 tests passed and 4 were explicitly skipped.
 - Host/Webview type checking, formatting, linting, production build, exact
-  CLI-contract parity, 22 enterprise scenarios, 3 local CLI integration
+  CLI-contract parity, 22 enterprise scenarios, 2 local CLI integration
   scenarios, VSIX packaging, artifact smoke, and dependency audit passed.
 
 See [`releases/RELEASE_NOTES_v0.37.0.md`](releases/RELEASE_NOTES_v0.37.0.md).

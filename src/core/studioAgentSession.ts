@@ -72,11 +72,19 @@ const GENERAL_SOURCE_REPAIR_TOOL_NAMES = new Set([
   'apply-workspace-patch',
   'delete-workspace-files',
   'inspect-workspace-changes',
-  'complete-dependency-transaction',
 ]);
 
-const DEPENDENCY_SOURCE_FILE_PATTERN =
-  /(?:^|\/)(?:package\.json|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.ya?ml|yarn\.lock|bun\.lockb?|deno\.jsonc?|jsr\.json|pyproject\.toml|poetry\.lock|uv\.lock|pdm\.lock|pipfile(?:\.lock)?|requirements(?:[-_.][^/]+)?\.txt|setup\.py|setup\.cfg|go\.mod|go\.sum|cargo\.toml|cargo\.lock|composer\.json|composer\.lock|gemfile|gemfile\.lock|pubspec\.ya?ml|pubspec\.lock|packages\.lock\.json|directory\.packages\.props|[^/]+\.(?:csproj|fsproj|vbproj)|pom\.xml|build\.gradle(?:\.kts)?|settings\.gradle(?:\.kts)?|gradle\.lockfile)$/i;
+const CLI_REPAIR_MUTATION_TOOL_NAMES = new Set([
+  'recover-active-blocker',
+  'apply-workspace-patch',
+  'delete-workspace-files',
+  'execute-remediation-step',
+  // These aliases stay readable for older durable sessions, but successful
+  // execution must still return the canonical CLI transaction receipt.
+  'repair-dependency-security',
+  'upgrade-dependency-security',
+  'complete-dependency-transaction',
+]);
 
 class StudioAgentReviewRequiredError extends Error {
   readonly terminalReason: string;
@@ -97,69 +105,27 @@ class StudioAgentReviewRequiredError extends Error {
   }
 }
 
+class StudioAgentTerminalError extends Error {
+  readonly terminalReason: string;
+  readonly requiresUserDecision = false;
+
+  constructor(message: string, terminalReason: string) {
+    super(message);
+    this.name = 'StudioAgentTerminalError';
+    this.terminalReason = terminalReason;
+  }
+}
+
+function isRepairProtocolFailure(error: string): boolean {
+  return /repair protocol handshake failed|unknown option ['"]--workspace['"]|incompatible result for workspace repair/i.test(
+    error
+  );
+}
+
 function stringValues(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
     : [];
-}
-
-function dependencyMutationScope(input: {
-  action: Extract<StudioAgentModelAction, { type: 'tool' }>;
-  result: StudioAgentToolResult;
-  workspacePath: string;
-}): { projectNames?: string[]; changedPaths?: string[] } | undefined {
-  if (input.result.changed !== true) {
-    return undefined;
-  }
-  const output = toolOutputRecord(input.result);
-  const target =
-    output?.target && typeof output.target === 'object' && !Array.isArray(output.target)
-      ? (output.target as Record<string, unknown>)
-      : undefined;
-  const projectNames = new Set<string>();
-  if (typeof target?.projectName === 'string' && target.projectName.trim()) {
-    projectNames.add(target.projectName.trim());
-  }
-  for (const projectName of stringValues(output?.projectNames)) {
-    projectNames.add(projectName.trim());
-  }
-  const changedPaths = new Set<string>([
-    ...stringValues(output?.changedPaths),
-    ...stringValues(output?.changedFiles),
-  ]);
-  const actionInput =
-    input.action.input &&
-    typeof input.action.input === 'object' &&
-    !Array.isArray(input.action.input)
-      ? (input.action.input as Record<string, unknown>)
-      : undefined;
-  if (input.action.toolName === 'apply-workspace-patch' && Array.isArray(actionInput?.patches)) {
-    for (const patch of actionInput.patches) {
-      if (
-        patch &&
-        typeof patch === 'object' &&
-        !Array.isArray(patch) &&
-        typeof (patch as Record<string, unknown>).relativePath === 'string'
-      ) {
-        changedPaths.add(String((patch as Record<string, unknown>).relativePath));
-      }
-    }
-  }
-  const dependencyPaths = [...changedPaths]
-    .map((value) => value.replace(/\\/g, '/'))
-    .filter((value) => DEPENDENCY_SOURCE_FILE_PATTERN.test(value));
-  const dependencyTool = [
-    'repair-dependency-security',
-    'upgrade-dependency-security',
-    'complete-dependency-transaction',
-  ].includes(input.action.toolName);
-  if (!dependencyTool && dependencyPaths.length === 0) {
-    return undefined;
-  }
-  return {
-    ...(projectNames.size > 0 ? { projectNames: [...projectNames] } : {}),
-    ...(dependencyPaths.length > 0 ? { changedPaths: dependencyPaths } : {}),
-  };
 }
 
 function toolOutputRecord(result: StudioAgentToolResult): Record<string, unknown> | undefined {
@@ -180,6 +146,54 @@ function requestsGeneralSourceRepair(result: StudioAgentToolResult): boolean {
 function requestsReviewDecision(result: StudioAgentToolResult): boolean {
   const output = toolOutputRecord(result);
   return output?.nextAction === 'review-required' && output?.requiresUserDecision === true;
+}
+
+type VerifiedCliRepairClosure = {
+  transactionId: string;
+  summary: string;
+  workspaceResolved: boolean;
+  remainingActionIds: string[];
+};
+
+/**
+ * A closed CLI Repair Engine transaction is already the product's canonical
+ * mutation + verification receipt. The extension must consume that verdict;
+ * it must never start a second dependency transaction, intelligence chain, or
+ * card verification pass that can contradict the CLI source of truth.
+ */
+function verifiedCliRepairClosure(
+  result: StudioAgentToolResult
+): VerifiedCliRepairClosure | undefined {
+  const output = toolOutputRecord(result);
+  const transaction =
+    output?.transaction &&
+    typeof output.transaction === 'object' &&
+    !Array.isArray(output.transaction)
+      ? (output.transaction as Record<string, unknown>)
+      : undefined;
+  const verification =
+    transaction?.verification &&
+    typeof transaction.verification === 'object' &&
+    !Array.isArray(transaction.verification)
+      ? (transaction.verification as Record<string, unknown>)
+      : undefined;
+  if (
+    transaction?.state !== 'closed' ||
+    verification?.status !== 'passed' ||
+    verification?.targetStatus !== 'passed' ||
+    typeof transaction.transactionId !== 'string'
+  ) {
+    return undefined;
+  }
+  return {
+    transactionId: transaction.transactionId,
+    summary:
+      typeof verification.summary === 'string' && verification.summary.trim()
+        ? verification.summary.trim()
+        : 'The CLI Repair Engine closed the selected repair after canonical verification.',
+    workspaceResolved: verification.workspaceStatus === 'passed',
+    remainingActionIds: stringValues(verification.remainingActionIds),
+  };
 }
 
 function reviewDecisionMetadata(result: StudioAgentToolResult): {
@@ -798,8 +812,47 @@ export class StudioAgentSession {
           const causalEpochBeforeTool = this.causalEpoch;
           const blockerSignatureBeforeAction = this.latestBlockerSignature;
           const activeCardBeforeAction = this.latestActiveCardId;
-          let effectiveAction = action;
+          const effectiveAction = action;
           latestObservation = await this.executeTool(effectiveAction, requestId);
+          const cliClosure = verifiedCliRepairClosure(latestObservation);
+          if (cliClosure) {
+            const output = toolOutputRecord(latestObservation) ?? {};
+            await this.emit(
+              'verify.completed',
+              {
+                ...latestObservation,
+                ok: true,
+                cardBlocking: false,
+                output: {
+                  ...output,
+                  closureAuthority: 'cli-repair-engine',
+                  cardVerification: {
+                    cardId: this.latestActiveCardId,
+                    resolved: true,
+                    blocking: false,
+                  },
+                  workspaceVerification: {
+                    resolved: cliClosure.workspaceResolved,
+                    blocking: !cliClosure.workspaceResolved,
+                    remainingActionIds: cliClosure.remainingActionIds,
+                  },
+                },
+              },
+              requestId
+            );
+            await this.emit(
+              'session.completed',
+              {
+                summary: cliClosure.summary,
+                transactionId: cliClosure.transactionId,
+                workspaceResolved: cliClosure.workspaceResolved,
+                remainingActionIds: cliClosure.remainingActionIds,
+              },
+              requestId
+            );
+            await this.setStatus('completed');
+            return this.snapshot();
+          }
           const initialProgressFingerprint = semanticProgressFingerprint(
             effectiveAction,
             latestObservation
@@ -820,97 +873,14 @@ export class StudioAgentSession {
               decisionMetadata
             );
           }
-          const dependencyPlan = (observation: StudioAgentToolResult) => {
-            const output =
-              observation.output &&
-              typeof observation.output === 'object' &&
-              !Array.isArray(observation.output)
-                ? (observation.output as Record<string, unknown>)
-                : undefined;
-            const candidates = Array.isArray(output?.upgradeCandidates)
-              ? output.upgradeCandidates.filter(
-                  (entry): entry is Record<string, unknown> =>
-                    Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)
-                )
-              : [];
-            return { output, candidates };
-          };
-          let { output: observationOutput, candidates: upgradeCandidates } =
-            dependencyPlan(latestObservation);
-          const inspectedProjectName =
-            typeof observationOutput?.target === 'object' &&
-            observationOutput.target !== null &&
-            !Array.isArray(observationOutput.target) &&
-            typeof (observationOutput.target as Record<string, unknown>).projectName === 'string'
-              ? String((observationOutput.target as Record<string, unknown>).projectName)
-              : undefined;
-          if (
-            this.state.assistantMode === 'agent' &&
-            effectiveAction.toolName === 'inspect-dependency-security' &&
-            latestObservation.ok === true &&
-            inspectedProjectName &&
-            observationOutput?.nextAction !== 'general-source-repair' &&
-            observationOutput?.nextAction !== 'review-required' &&
-            this.registry.get('repair-dependency-security')
-          ) {
-            await this.emit(
-              'model.checkpoint',
-              {
-                summary:
-                  'Fresh audit evidence identified a vulnerable project. Studio is attempting its bounded package-manager repair before considering direct upgrades.',
-                recovery: 'dependency-bounded-repair',
-              },
-              requestId
+          if (latestObservation.terminalReason && latestObservation.requiresUserDecision !== true) {
+            throw new StudioAgentTerminalError(
+              latestObservation.error ??
+                'Studio stopped because its CLI repair protocol is unavailable.',
+              latestObservation.terminalReason
             );
-            effectiveAction = {
-              type: 'tool',
-              toolName: 'repair-dependency-security',
-              input: { projectName: inspectedProjectName },
-              reason: 'Attempt the bounded package-manager repair once.',
-            };
-            latestObservation = await this.executeTool(effectiveAction, requestId);
-            ({ output: observationOutput, candidates: upgradeCandidates } =
-              dependencyPlan(latestObservation));
           }
-          const deterministicUpgrade = upgradeCandidates.length === 1 ? upgradeCandidates[0] : null;
-          if (
-            this.state.assistantMode === 'agent' &&
-            effectiveAction.toolName === 'repair-dependency-security' &&
-            latestObservation.ok === false &&
-            observationOutput?.nextAction === 'upgrade-dependency-security' &&
-            deterministicUpgrade &&
-            typeof deterministicUpgrade.packageName === 'string' &&
-            this.registry.get('upgrade-dependency-security')
-          ) {
-            await this.emit(
-              'model.checkpoint',
-              {
-                summary:
-                  'The bounded repair exposed one audit-authorized direct upgrade. Studio is executing that governed transaction without another model call.',
-                recovery: 'dependency-upgrade-transaction',
-              },
-              requestId
-            );
-            effectiveAction = {
-              type: 'tool',
-              toolName: 'upgrade-dependency-security',
-              input: {
-                ...(typeof observationOutput.target === 'object' &&
-                observationOutput.target !== null &&
-                !Array.isArray(observationOutput.target) &&
-                typeof (observationOutput.target as Record<string, unknown>).projectName ===
-                  'string'
-                  ? {
-                      projectName: (observationOutput.target as Record<string, unknown>)
-                        .projectName,
-                    }
-                  : {}),
-                packageName: deterministicUpgrade.packageName,
-              },
-              reason: 'Execute the single fresh audit-authorized dependency upgrade candidate.',
-            };
-            latestObservation = await this.executeTool(effectiveAction, requestId);
-          }
+          const observationOutput = toolOutputRecord(latestObservation);
           if (
             latestObservation.changed === true &&
             effectiveAction.toolName !== 'run-governed-command' &&
@@ -986,103 +956,6 @@ export class StudioAgentSession {
           }
           if (this.causalEpoch > causalEpochBeforeTool) {
             causalRecoveryAttempts = 0;
-          }
-          const sourceMutationObserved = latestObservation.changed === true;
-          const dependencyScope = dependencyMutationScope({
-            action: effectiveAction,
-            result: latestObservation,
-            workspacePath: this.options.workspacePath,
-          });
-          let dependencyClosureReady = true;
-          if (
-            this.state.assistantMode === 'agent' &&
-            dependencyScope &&
-            effectiveAction.toolName !== 'complete-dependency-transaction' &&
-            this.registry.get('complete-dependency-transaction')
-          ) {
-            await this.emit(
-              'model.checkpoint',
-              {
-                summary:
-                  'Dependency source changed. Studio is reconciling the manifest and lockfile, then running focused audit, test, and build validation before the Workspace Intelligence chain.',
-                recovery: 'dependency-transaction',
-                ...dependencyScope,
-              },
-              requestId
-            );
-            latestObservation = await this.executeTool(
-              {
-                type: 'tool',
-                toolName: 'complete-dependency-transaction',
-                input: dependencyScope,
-                reason: 'Close the dependency transaction before canonical evidence regeneration.',
-              },
-              requestId
-            );
-            dependencyClosureReady =
-              toolOutputRecord(latestObservation)?.closureReady === true &&
-              latestObservation.ok === true;
-          } else if (effectiveAction.toolName === 'complete-dependency-transaction') {
-            dependencyClosureReady =
-              toolOutputRecord(latestObservation)?.closureReady === true &&
-              latestObservation.ok === true;
-          }
-          const dependencyTransactionClosed =
-            effectiveAction.toolName === 'complete-dependency-transaction' &&
-            dependencyClosureReady;
-          const shouldRunPostMutationClosure =
-            this.state.assistantMode === 'agent' &&
-            (sourceMutationObserved || dependencyTransactionClosed) &&
-            dependencyClosureReady &&
-            effectiveAction.toolName !== 'run-governed-command' &&
-            effectiveAction.toolName !== 'verify-blocker' &&
-            effectiveAction.toolName !== 'verify-goal' &&
-            Boolean(this.registry.get('run-governed-command')) &&
-            Boolean(this.verificationToolName());
-          if (shouldRunPostMutationClosure) {
-            await this.emit(
-              'model.checkpoint',
-              {
-                summary:
-                  'Source changed. Studio is closing the governed intelligence loop before asking the model for another decision.',
-                recovery: 'post-mutation-chain',
-              },
-              requestId
-            );
-            const chainObservation = await this.executeTool(
-              {
-                type: 'tool',
-                toolName: 'run-governed-command',
-                input: { commandId: 'workspaceIntelligenceChain' },
-                reason: 'Refresh the canonical intelligence chain after a source mutation.',
-              },
-              requestId
-            );
-            latestObservation = await this.executeTool(
-              {
-                type: 'tool',
-                toolName: this.verificationToolName()!,
-                input: {},
-                reason: 'Verify the card immediately after post-mutation evidence refresh.',
-              },
-              requestId
-            );
-            consecutiveCausalRejections = 0;
-            causalRecoveryAttempts = 0;
-            if (
-              chainObservation.ok === true &&
-              latestObservation.ok === true &&
-              latestObservation.cardBlocking === false &&
-              this.hasCanonicalChainClosure(requestId)
-            ) {
-              await this.emit(
-                'session.completed',
-                { summary: 'Post-mutation verification confirmed that the blocker is resolved.' },
-                requestId
-              );
-              await this.setStatus('completed');
-              return this.snapshot();
-            }
           }
           const activeBlockerAdvanced =
             latestObservation.cardBlocking === true &&
@@ -1186,12 +1059,16 @@ export class StudioAgentSession {
         'session.failed',
         {
           error: message,
-          ...(error instanceof StudioAgentReviewRequiredError
+          ...(error instanceof StudioAgentReviewRequiredError ||
+          error instanceof StudioAgentTerminalError
             ? {
                 terminalReason: error.terminalReason,
                 requiresUserDecision: error.requiresUserDecision,
-                ...(error.transactionId ? { transactionId: error.transactionId } : {}),
-                ...(error.decisionOptions.length > 0
+                ...(error instanceof StudioAgentReviewRequiredError && error.transactionId
+                  ? { transactionId: error.transactionId }
+                  : {}),
+                ...(error instanceof StudioAgentReviewRequiredError &&
+                error.decisionOptions.length > 0
                   ? { decisionOptions: error.decisionOptions }
                   : {}),
               }
@@ -1324,9 +1201,28 @@ export class StudioAgentSession {
     try {
       result = await tool.execute(action.input, context);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      result = isRepairProtocolFailure(message)
+        ? {
+            ok: false,
+            error: message,
+            terminalReason: 'cli-repair-contract-mismatch',
+            requiresUserDecision: false,
+          }
+        : { ok: false, error: message };
+    }
+    if (
+      result.changed === true &&
+      CLI_REPAIR_MUTATION_TOOL_NAMES.has(tool.name) &&
+      !verifiedCliRepairClosure(result)
+    ) {
       result = {
+        ...result,
         ok: false,
-        error: error instanceof Error ? error.message : String(error),
+        error:
+          'A Studio mutation returned without a closed CLI Repair Engine transaction. The result was rejected before Studio could report a successful change.',
+        terminalReason: 'cli-repair-closure-missing',
+        requiresUserDecision: false,
       };
     }
     const evidenceAdvanced =

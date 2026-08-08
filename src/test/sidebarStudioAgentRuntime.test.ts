@@ -150,8 +150,30 @@ describe('sidebar Studio agent runtime contract', () => {
         paths: ['src/a.ts'],
         kind: 'source',
       });
-      expect(source[0]).toMatchObject({ path: 'src/a.ts', kind: 'source', truncated: false });
+      expect(source[0]).toMatchObject({
+        path: 'src/a.ts',
+        kind: 'source',
+        exists: true,
+        truncated: false,
+      });
       expect(source[0].sha256).toMatch(/^[a-f0-9]{64}$/);
+
+      await expect(
+        inspectStudioAgentFiles({
+          workspacePath: workspace,
+          paths: ['pnpm-lock.yaml'],
+          kind: 'source',
+        })
+      ).resolves.toEqual([
+        {
+          path: 'pnpm-lock.yaml',
+          kind: 'source',
+          exists: false,
+          sha256: null,
+          content: '',
+          truncated: false,
+        },
+      ]);
 
       await expect(
         inspectStudioAgentFiles({ workspacePath: workspace, paths: ['.env'], kind: 'source' })

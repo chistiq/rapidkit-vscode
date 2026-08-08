@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  describeStudioTerminalFailure,
   isStudioRepairActivelyOwned,
   settleStudioTimeline,
   terminalizeStudioProgress,
+  terminalizeStudioTimeline,
 } from '../../webview-ui/src/lib/studioSessionLifecycle';
 
 const runningProgress = {
@@ -42,11 +44,41 @@ describe('Studio session lifecycle', () => {
       })
     ).toEqual(
       expect.objectContaining({
-        status: 'done',
+        status: 'failed',
         phase: 'repair-stopped',
         title: 'Repair stopped',
       })
     );
+  });
+
+  it('turns a CLI handshake failure into one honest non-resumable terminal event', () => {
+    const presentation = describeStudioTerminalFailure({
+      error:
+        "Workspai CLI repair protocol handshake failed. No installed executable is safe to use: error: unknown option '--json'",
+      terminalReason: 'cli-repair-contract-mismatch',
+    });
+
+    expect(presentation).toMatchObject({
+      title: 'CLI connection failed',
+      connectionFailure: true,
+      terminalReason: 'cli-repair-contract-mismatch',
+    });
+    expect(presentation.summary).toContain('No workspace files were changed');
+    expect(
+      terminalizeStudioTimeline(
+        [
+          { ...runningProgress, action: 'recover-active-blocker', title: 'Action failed' },
+          { ...runningProgress, action: 'recover-active-blocker', title: 'Action failed' },
+        ],
+        presentation
+      )
+    ).toEqual([
+      expect.objectContaining({
+        status: 'failed',
+        title: 'CLI connection failed',
+        technicalDetail: expect.stringContaining('unknown option'),
+      }),
+    ]);
   });
 
   it('settles persisted live evidence before hydration renders history', () => {

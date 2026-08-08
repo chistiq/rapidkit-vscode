@@ -3,7 +3,7 @@ import type { StudioIntelligencePhaseId } from './studioIntelligencePhaseRail';
 
 export type SidebarStudioActionProgressView = {
   action: string;
-  status: 'running' | 'review' | 'done';
+  status: 'running' | 'review' | 'done' | 'failed';
   phase?: string;
   intelligencePhase?: StudioIntelligencePhaseId;
   title: string;
@@ -25,11 +25,25 @@ export type SidebarStudioActionProgressView = {
     relativePath: string;
     status: string;
     isNewFile?: boolean;
+    binary?: boolean;
+    stale?: boolean;
     failReason?: string;
     diffLines?: Array<{ type: 'added' | 'removed' | 'unchanged'; content: string }>;
   }>;
   invocationId?: string;
+  transactionId?: string;
+  eventSequence?: number;
+  eventType?: string;
+  requestId?: string;
   canUndo?: boolean;
+  terminalReason?: string;
+  technicalDetail?: string;
+  validationStages?: Array<{
+    id: string;
+    kind: string;
+    status: 'pending' | 'running' | 'passed' | 'failed' | 'blocked' | 'skipped' | 'cancelled';
+    summary: string;
+  }>;
 };
 
 const STUDIO_AGENT_TOOL_LABELS: Record<
@@ -149,6 +163,90 @@ function optionalTrimmedString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+function stringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const entries = value.filter(
+    (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
+  );
+  return entries.length > 0 ? entries : undefined;
+}
+
+function fileChangeList(value: unknown): SidebarStudioActionProgressView['fileChanges'] {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const entries = value
+    .filter(
+      (entry): entry is Record<string, unknown> =>
+        Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)
+    )
+    .filter((entry) => typeof entry.relativePath === 'string')
+    .map((entry) => ({
+      relativePath: String(entry.relativePath),
+      status: typeof entry.status === 'string' ? entry.status : 'modified',
+      ...(entry.isNewFile === true ? { isNewFile: true } : {}),
+      ...(typeof entry.binary === 'boolean' ? { binary: entry.binary } : {}),
+      ...(typeof entry.stale === 'boolean' ? { stale: entry.stale } : {}),
+      ...(typeof entry.failReason === 'string' ? { failReason: entry.failReason } : {}),
+      diffLines: Array.isArray(entry.diffLines)
+        ? entry.diffLines
+            .filter(
+              (line): line is Record<string, unknown> =>
+                Boolean(line) && typeof line === 'object' && !Array.isArray(line)
+            )
+            .filter(
+              (line) =>
+                ['added', 'removed', 'unchanged'].includes(String(line.type)) &&
+                typeof line.content === 'string'
+            )
+            .map((line) => ({
+              type: line.type as 'added' | 'removed' | 'unchanged',
+              content: String(line.content),
+            }))
+        : [],
+    }));
+  return entries.length > 0 ? entries : undefined;
+}
+
+function validationStageList(value: unknown): SidebarStudioActionProgressView['validationStages'] {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const statuses = new Set([
+    'pending',
+    'running',
+    'passed',
+    'failed',
+    'blocked',
+    'skipped',
+    'cancelled',
+  ]);
+  const entries = value
+    .filter(
+      (entry): entry is Record<string, unknown> =>
+        Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)
+    )
+    .filter(
+      (entry) =>
+        typeof entry.id === 'string' &&
+        typeof entry.kind === 'string' &&
+        typeof entry.status === 'string' &&
+        statuses.has(entry.status) &&
+        typeof entry.summary === 'string'
+    )
+    .map((entry) => ({
+      id: String(entry.id),
+      kind: String(entry.kind),
+      status: entry.status as NonNullable<
+        SidebarStudioActionProgressView['validationStages']
+      >[number]['status'],
+      summary: String(entry.summary),
+    }));
+  return entries.length > 0 ? entries : undefined;
+}
+
 function actionLabel(action: string): string {
   const labels: Record<string, string> = {
     'auto-fix': 'Auto-fix',
@@ -172,6 +270,9 @@ function actionPhaseTitle(
   status: SidebarStudioActionProgressView['status'],
   phase?: string
 ): string {
+  if (status === 'failed') {
+    return `${actionLabel(action)} failed`;
+  }
   if (action === 'apply-remediation-step') {
     if (phase === 'applying-remediation-step') {
       return 'Applying approved fix';
@@ -264,7 +365,10 @@ export function parseSidebarStudioActionProgress(
   }
   const record = value as Record<string, unknown>;
   const status =
-    record.status === 'running' || record.status === 'review' || record.status === 'done'
+    record.status === 'running' ||
+    record.status === 'review' ||
+    record.status === 'done' ||
+    record.status === 'failed'
       ? record.status
       : null;
   const action = optionalTrimmedString(record.action);
@@ -281,8 +385,19 @@ export function parseSidebarStudioActionProgress(
       ? 'Studio is working on this card.'
       : status === 'review'
         ? 'Review is required before Studio can continue.'
-        : 'Studio completed this action.');
+        : status === 'failed'
+          ? 'Studio could not complete this action.'
+          : 'Studio completed this action.');
 
+  const transaction =
+    record.transaction &&
+    typeof record.transaction === 'object' &&
+    !Array.isArray(record.transaction)
+      ? (record.transaction as Record<string, unknown>)
+      : undefined;
+
+  const fileChanges = fileChangeList(record.fileChanges);
+  const validationStages = validationStageList(record.validationStages ?? transaction?.stages);
   return {
     action,
     status,
@@ -316,13 +431,26 @@ export function parseSidebarStudioActionProgress(
         ? record.nextAction
         : undefined,
     nextActionLabel: optionalTrimmedString(record.nextActionLabel),
-    changedPaths: Array.isArray(record.changedPaths)
-      ? record.changedPaths.filter(
-          (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
-        )
-      : undefined,
+    changedPaths:
+      stringList(record.changedPaths) ??
+      (fileChanges?.length ? fileChanges.map((change) => change.relativePath) : undefined),
+    activityPaths: stringList(record.activityPaths),
+    outputText: optionalTrimmedString(record.outputText),
+    fileChanges,
     invocationId: optionalTrimmedString(record.invocationId),
+    transactionId:
+      optionalTrimmedString(record.transactionId) ??
+      optionalTrimmedString(transaction?.transactionId),
+    eventSequence:
+      typeof record.eventSequence === 'number' && Number.isFinite(record.eventSequence)
+        ? record.eventSequence
+        : undefined,
+    eventType: optionalTrimmedString(record.eventType),
+    requestId: optionalTrimmedString(record.requestId),
     canUndo: record.canUndo === true,
+    terminalReason: optionalTrimmedString(record.terminalReason),
+    technicalDetail: optionalTrimmedString(record.technicalDetail),
+    validationStages,
   };
 }
 

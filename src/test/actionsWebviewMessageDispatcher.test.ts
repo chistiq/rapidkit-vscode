@@ -19,6 +19,7 @@ function host(): ActionsWebviewMessageDispatchHost {
     focusPrimarySidebarView: vi.fn(async () => undefined),
     openDashboardSection: vi.fn(async () => undefined),
     openWorkspaceFile: vi.fn(async () => undefined),
+    openWorkspaceDiff: vi.fn(async () => undefined),
     undoAgentPatch: vi.fn(async () => undefined),
     sendInlineScope: vi.fn(async () => undefined),
     sendInlineModels: vi.fn(async () => undefined),
@@ -40,5 +41,22 @@ describe('actions webview message dispatcher', () => {
     expect(target.undoAgentPatch).toHaveBeenCalledWith({ transactionId: 'tool-call-123' });
     expect(target.runSidebarStudioAction).not.toHaveBeenCalled();
     expect(listActionsWebviewMessageCommands()).toContain('sidebarStudioUndoPatch');
+  });
+
+  it('routes an exact repair receipt to the native transaction diff lane', async () => {
+    const target = host();
+    const receipt = {
+      transactionId: 'receipt-transaction-0001',
+      relativePath: 'src/app.ts',
+    };
+
+    await dispatchActionsWebviewMessage(target, {
+      command: 'sidebarOpenWorkspaceDiff',
+      data: receipt,
+    });
+
+    expect(target.openWorkspaceDiff).toHaveBeenCalledWith(receipt);
+    expect(target.openWorkspaceFile).not.toHaveBeenCalled();
+    expect(listActionsWebviewMessageCommands()).toContain('sidebarOpenWorkspaceDiff');
   });
 });

@@ -53,6 +53,53 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     );
   });
 
+  it('keeps mutation, receipts, timeline truth, and native diff on the CLI transaction plane', () => {
+    const cliClient = read('src/core/workspaceRepairCliClient.ts');
+    const actionProgress = read('webview-ui/src/sidebar/StudioActionProgress.tsx');
+    expect(provider).toContain('repairDependencySecurity: (request) =>');
+    expect(provider).toContain('upgradeDependencySecurity: (request) =>');
+    expect(provider).toContain('executeCliOwnedCanonicalRepair');
+    expect(provider).toContain('executeCliOwnedPatchRepair');
+    expect(provider).toContain('Studio cannot execute mutating workspace commands directly.');
+    expect(provider).not.toContain('STUDIO_MUTATION_AUTHORITY');
+    expect(provider).not.toContain('host.repairDependencySecurity =');
+    expect(provider).not.toContain('host.upgradeDependencySecurity =');
+    expect(provider).not.toContain('host.applyPatches =');
+    expect(provider).not.toContain('host.deleteFiles =');
+    expect(provider).not.toContain('applySidebarPendingPatches');
+    expect(provider).not.toContain('deleteInspectedStudioWorkspaceFiles');
+    expect(provider).not.toContain('buildStudioDependencyUpgradeCommand');
+    expect(provider).not.toContain('dependencyRepairAttemptsForGeneration');
+    expect(provider).not.toContain('rollbackAppliedPatches');
+    expect(provider).toContain("decision: 'rollback'");
+    expect(provider).toContain("approvedBy: 'vscode:explicit-user-undo'");
+    expect(provider).toContain('readCliOwnedRepairFileComparison');
+    expect(provider).toContain('await vscode.commands.executeCommand(');
+    expect(provider).toContain("'vscode.diff'");
+    expect(provider).toContain('buildStudioVerifiedRepairReceipt');
+    expect(cliClient).toContain(
+      'file.afterHash !== undefined && file.afterHash !== file.beforeHash'
+    );
+    expect(cliClient).toContain('Repair checkpoint integrity failed');
+    expect(secondary).toContain("case 'sidebarStudioAgentEvent'");
+    expect(provider).toContain("event.type !== 'session.created'");
+    expect(provider).toContain("event.type !== 'session.status'");
+    expect(provider).toContain('.slice(-120)');
+    expect(secondary).toContain("eventType === 'model.message'");
+    expect(secondary).toContain("eventType === 'model.checkpoint'");
+    expect(secondary).toContain('canUndo: changedFiles && Boolean(transactionId)');
+    expect(secondary).toContain('progress.transactionId === transactionId');
+    expect(actionProgress).toContain('progress.canUndo && progress.transactionId && onUndo');
+    expect(actionProgress).toContain('onUndo(progress.transactionId!)');
+    expect(secondary).toContain("eventType === 'tool.completed' || eventType === 'tool.failed'");
+    expect(secondary).toContain("action: 'cli-repair-engine'");
+    expect(secondary).toContain('Repair transaction verified');
+    expect(secondary).toContain("status: eventType === 'tool.completed' ? 'done' : 'failed'");
+    expect(secondary).toContain("'sidebarOpenWorkspaceDiff'");
+    expect(actionProgress).toContain('exactDiffAvailable');
+    expect(actionProgress).toContain('file.failReason');
+  });
+
   it('handles every studio inbound command the host emits', () => {
     for (const command of [
       'sidebarStudioScope',
@@ -194,6 +241,8 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(provider).toContain("'.workspai/**/*'");
     expect(provider).toContain('evidenceGeneration: repairEvidence.evidenceFingerprint');
     expect(provider).toContain('_ensureStudioEvidenceWatcher(handoff, sessionId)');
+    expect(provider).toContain('^\\.workspai\\/repair\\/inbox');
+    expect(provider).toContain('^\\.workspai\\/repair\\/engine\\.lock');
     expect(provider).not.toContain('projectPath: step.projectPath || scope.projectPath');
     expect(provider).not.toContain('private async _runStudioVerifyContinuation');
     expect(provider).not.toContain('applyDoctorRemediationStep');
@@ -310,10 +359,14 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(secondary).toContain('eventData.requiresUserDecision === true');
     expect(provider).toContain("event.type === 'session.failed'");
     expect(provider).toContain('failureData?.requiresUserDecision === true');
-    expect(provider).toContain('? failureData.terminalReason');
+    expect(provider).toContain("typeof failureData?.terminalReason === 'string'");
     expect(provider).toContain('terminalFailureData?.requiresUserDecision === true');
+    expect(provider).toContain("typeof terminalFailureData?.terminalReason === 'string'");
     expect(secondary).toContain("case 'sidebarStudioSessionState':");
     expect(secondary).toContain('data.requiresUserDecision === true');
+    expect(secondary).toContain('describeStudioTerminalFailure');
+    expect(secondary).toContain('terminalizeStudioTimeline');
+    expect(secondary).toContain("action: 'open-setup'");
     expect(secondary).not.toContain('Studio exhausted the bounded repair strategies');
     const progressParser = read('webview-ui/src/lib/sidebarStudioActionProgress.ts');
     expect(progressParser).toContain("record.nextAction === 'continue-remediation'");

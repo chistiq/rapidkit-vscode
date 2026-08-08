@@ -21,6 +21,8 @@ export type StudioAgentToolResult<T = unknown> = {
   evidenceGeneration?: string;
   blockerSignature?: string;
   cardBlocking?: boolean;
+  terminalReason?: string;
+  requiresUserDecision?: boolean;
 };
 
 export type StudioAgentToolDefinition<TInput = unknown, TOutput = unknown> = {

@@ -57,9 +57,6 @@ describe('Studio Agent Workspai tool registry', () => {
       'inspect-remediation-plan',
       'execute-remediation-step',
       'inspect-dependency-security',
-      'repair-dependency-security',
-      'upgrade-dependency-security',
-      'complete-dependency-transaction',
       'verify-blocker',
     ]);
     const commandTool = registry.get('run-governed-command');
@@ -163,13 +160,6 @@ describe('Studio Agent Workspai tool registry', () => {
     await registry.get('inspect-remediation-plan')?.execute({}, context);
     await registry.get('execute-remediation-step')?.execute({ stepId: 'dependency-sync' }, context);
     await registry.get('inspect-dependency-security')?.execute({ projectName: 'web' }, context);
-    await registry.get('repair-dependency-security')?.execute({ projectName: 'web' }, context);
-    await registry
-      .get('upgrade-dependency-security')
-      ?.execute({ projectName: 'web', packageName: 'next' }, context);
-    await registry
-      .get('complete-dependency-transaction')
-      ?.execute({ projectNames: ['web'], changedPaths: ['web/package.json'] }, context);
     await registry.get('verify-blocker')?.execute({}, context);
 
     expect(host.discover).toHaveBeenCalledWith({
@@ -242,27 +232,12 @@ describe('Studio Agent Workspai tool registry', () => {
       workspacePath: '/workspace',
       projectPath: '/workspace/web',
     });
-    expect(host.completeDependencyTransaction).toHaveBeenCalledWith({
-      projectNames: ['web'],
-      changedPaths: ['web/package.json'],
-      workspacePath: '/workspace',
-      projectPath: '/workspace/web',
-      reportProgress: context.reportProgress,
-    });
-    expect(host.repairDependencySecurity).toHaveBeenCalledWith({
-      projectName: 'web',
-      workspacePath: '/workspace',
-      projectPath: '/workspace/web',
-      reportProgress: context.reportProgress,
-    });
-    expect(host.upgradeDependencySecurity).toHaveBeenCalledWith({
-      projectName: 'web',
-      packageName: 'next',
-      transactionId: 'tool-1',
-      workspacePath: '/workspace',
-      projectPath: '/workspace/web',
-      reportProgress: context.reportProgress,
-    });
+    expect(registry.get('repair-dependency-security')).toBeUndefined();
+    expect(registry.get('upgrade-dependency-security')).toBeUndefined();
+    expect(registry.get('complete-dependency-transaction')).toBeUndefined();
+    expect(host.repairDependencySecurity).not.toHaveBeenCalled();
+    expect(host.upgradeDependencySecurity).not.toHaveBeenCalled();
+    expect(host.completeDependencyTransaction).not.toHaveBeenCalled();
     expect(host.verify).toHaveBeenCalledWith(
       expect.objectContaining({
         cardId: 'readiness',
