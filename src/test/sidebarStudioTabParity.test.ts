@@ -316,7 +316,7 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(repairPrelude).toContain('Resume repair');
     expect(repairPrelude).toContain('Stop session');
     expect(repairPrelude).toContain('Review options');
-    expect(repairPrelude).toContain('without your decision');
+    expect(repairPrelude).toContain('explicit engineering decision');
     expect(repairPrelude).toContain('verification required');
     expect(repairPrelude).not.toContain('ws-sidebar__repair-avatar');
     expect(repairPrelude).not.toContain('Refresh evidence');

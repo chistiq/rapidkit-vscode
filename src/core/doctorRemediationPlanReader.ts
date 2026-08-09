@@ -24,11 +24,15 @@ export type DoctorRemediationStrategyStage = {
 
 export type DoctorRemediationPlanStepView = {
   id: string;
+  /** Canonical immutable action id accepted by the CLI Repair Engine. */
+  actionId?: string;
   dependsOn: string[];
   phase: string;
   order: number;
   projectName: string;
   projectPath: string;
+  issueId?: string;
+  findingStatus?: 'blocking' | 'advisory' | 'informational' | 'unknown';
   originalCommand: string;
   kind: string;
   risk: 'safe' | 'guarded' | 'invasive';
@@ -50,7 +54,7 @@ export type DoctorRemediationPlanStepView = {
   canApply: boolean;
   transaction?: {
     schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1';
-    kind: 'dependency-security';
+    kind: 'dependency-security' | 'dependency-materialization';
     state: 'planned';
     projectPath: string;
     ecosystem: string;
@@ -138,6 +142,9 @@ type ArtifactRemediationAction = {
   scope: 'workspace' | 'project';
   projectName?: string;
   projectPath?: string;
+  findingId: string;
+  findingStatus: 'blocking' | 'advisory' | 'informational' | 'unknown';
+  causalKey: string;
   sourceStepId?: string;
   dependsOn?: string[];
   status: 'ready' | 'review-required' | 'blocked' | 'guidance-only';
@@ -224,7 +231,7 @@ function normalizeDependencyTransaction(
   const record = isRecord(value) ? value : undefined;
   if (
     record?.schemaVersion !== 'workspai.doctor-dependency-repair-transaction.v1' ||
-    record.kind !== 'dependency-security' ||
+    (record.kind !== 'dependency-security' && record.kind !== 'dependency-materialization') ||
     record.state !== 'planned' ||
     typeof record.projectPath !== 'string' ||
     typeof record.ecosystem !== 'string' ||
@@ -234,7 +241,7 @@ function normalizeDependencyTransaction(
   }
   return {
     schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
-    kind: 'dependency-security',
+    kind: record.kind,
     state: 'planned',
     projectPath: record.projectPath,
     ecosystem: record.ecosystem,
@@ -377,7 +384,7 @@ function normalizeRepairOperation(value: unknown): DoctorRemediationOperation | 
         isRecord(entry) &&
         typeof entry.name === 'string' &&
         typeof entry.value === 'string' &&
-        (entry.comment == null || typeof entry.comment === 'string')
+        (entry.comment === null || entry.comment === undefined || typeof entry.comment === 'string')
     );
     if (keys.length === value.keys.length) {
       return {
@@ -578,13 +585,26 @@ function mapStep(step: Record<string, unknown>): DoctorRemediationPlanStepView {
   const operation = normalizeRepairOperation(step.operation);
   const risk = normalizeRisk(step.risk);
   const studioState = normalizeStudioState(studioStatus.state);
+  const rawId = readString(step.id, 'unknown');
+  const canonicalId = rawId.startsWith('doctor.') ? rawId : `doctor.${rawId}`;
+  const issueId = readString(step.issueId);
+  const findingStatus =
+    step.findingStatus === 'blocking' ||
+    step.findingStatus === 'advisory' ||
+    step.findingStatus === 'informational' ||
+    step.findingStatus === 'unknown'
+      ? step.findingStatus
+      : undefined;
   return {
-    id: readString(step.id, 'unknown'),
+    id: rawId,
+    actionId: canonicalId,
     dependsOn: readStringArray(step.dependsOn),
     phase: readString(step.phase, 'manual-review'),
     order: readNumber(step.order, 0),
     projectName: readString(step.projectName, 'workspace'),
     projectPath: readString(step.projectPath),
+    ...(issueId ? { issueId } : {}),
+    ...(findingStatus ? { findingStatus } : {}),
     originalCommand: readString(step.originalCommand),
     kind: readString(step.kind, 'manual-url'),
     risk,
@@ -669,6 +689,13 @@ function normalizeArtifactAction(value: unknown): ArtifactRemediationAction | nu
       : null;
   const risk = normalizeRisk(value.risk);
   const transaction = normalizeDependencyTransaction(value.transaction);
+  const findingStatus =
+    value.findingStatus === 'blocking' ||
+    value.findingStatus === 'advisory' ||
+    value.findingStatus === 'informational' ||
+    value.findingStatus === 'unknown'
+      ? value.findingStatus
+      : 'unknown';
   if (!scope || !status || !mode) {
     return null;
   }
@@ -682,6 +709,9 @@ function normalizeArtifactAction(value: unknown): ArtifactRemediationAction | nu
     scope,
     projectName: readString(value.projectName) || undefined,
     projectPath: readString(value.projectPath) || undefined,
+    findingId: readString(value.findingId, readString(value.sourceStepId, readString(value.id))),
+    findingStatus,
+    causalKey: readString(value.causalKey, readString(value.id, 'unknown')),
     sourceStepId: readString(value.sourceStepId) || undefined,
     dependsOn: readStringArray(value.dependsOn),
     status,
@@ -794,11 +824,14 @@ function mapArtifactActionToStep(input: {
   );
   return {
     id: action.id,
+    actionId: action.id,
     dependsOn: action.dependsOn ?? [],
     phase: action.phase,
     order: action.order,
     projectName,
     projectPath,
+    issueId: action.findingId,
+    findingStatus: action.findingStatus,
     originalCommand: action.command ?? action.verifyCommand,
     kind: action.mode,
     risk: action.risk,
@@ -831,17 +864,22 @@ function filterStepsForHandoff(
   steps: DoctorRemediationPlanStepView[],
   handoff: StudioBlockerHandoff
 ): DoctorRemediationPlanStepView[] {
+  const doctorHandoff = isDoctorRemediationHandoff(handoff);
   if (isAggregateUpstreamDoctorHandoff(handoff)) {
     return steps;
   }
-  if (handoff.scope !== 'project') {
+  if (handoff.scope !== 'project' && !doctorHandoff) {
     return steps.filter(
       (step) => !step.projectPath && (!step.projectName || step.projectName === 'workspace')
     );
   }
   const projectPath = handoff.projectPath?.trim();
   const projectName = projectPath ? path.basename(projectPath) : '';
-  return steps.filter((step) => {
+  const affectedProjects = new Set(handoff.affectedProjectNames ?? []);
+  const scoped = steps.filter((step) => {
+    if (handoff.scope === 'workspace' && doctorHandoff) {
+      return affectedProjects.size === 0 || affectedProjects.has(step.projectName);
+    }
     if (
       projectPath &&
       step.projectPath &&
@@ -851,6 +889,35 @@ function filterStepsForHandoff(
     }
     return Boolean(projectName && step.projectName === projectName);
   });
+  const focused = scoped.filter((step) => {
+    if (step.findingStatus === 'advisory' || step.findingStatus === 'informational') {
+      return false;
+    }
+    const actionText = [
+      step.issueId,
+      step.previewTitle,
+      step.previewSummary,
+      step.diffSummary,
+      step.primaryAction,
+      step.projectName,
+      ...step.files,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return handoff.blockers.some((blocker) => {
+      const terms = blocker
+        .toLowerCase()
+        .split(/[^a-z0-9._-]+/)
+        .filter(
+          (term) =>
+            term.length >= 4 &&
+            !['found', 'missing', 'reported', 'project', 'workspace'].includes(term)
+        );
+      return terms.length > 0 && terms.filter((term) => actionText.includes(term)).length >= 1;
+    });
+  });
+  return focused.length > 0 ? focused : scoped.filter((step) => step.findingStatus === 'blocking');
 }
 
 async function readArtifactRemediationPlanForStudio(input: {

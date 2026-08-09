@@ -437,6 +437,42 @@ describe('CLI-owned Workspace Repair client', () => {
     expect(progress.at(-1)).toContain('Other governed workspace findings remain');
   });
 
+  it('replans when the active transaction does not own the requested causal action', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-client-'));
+    const metadata = await installedPackage(workspacePath);
+    const active = transaction('tx-unrelated', 'approved');
+    active.target.actionIds = ['doctor.api:security-guidance'];
+    await fs.outputJson(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-repair-last-run.json'),
+      active
+    );
+    const actions: string[] = [];
+
+    const result = await executeCliOwnedCanonicalRepair({
+      workspacePath,
+      cardId: 'doctor',
+      actionId: 'doctor.api:env-copy',
+      approvedBy: 'vscode:test',
+      installedPackages: [metadata],
+      runner: repairProtocolRunner(async ({ args }) => {
+        const action = args[2];
+        actions.push(action);
+        const state =
+          action === 'plan' ? 'awaiting-approval' : action === 'approve' ? 'approved' : 'closed';
+        const next = transaction('tx-causal', state);
+        next.target.actionIds = ['doctor.api:env-copy'];
+        return { exitCode: 0, stdout: operation(next), stderr: '' };
+      }),
+    });
+
+    expect(actions).toEqual(['plan', 'approve', 'execute']);
+    expect(result.transaction).toMatchObject({
+      transactionId: 'tx-causal',
+      state: 'closed',
+      target: { actionIds: ['doctor.api:env-copy'] },
+    });
+  });
+
   it('submits only an explicit CLI decision and binds a fresh plan to fresh approval', async () => {
     const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-client-'));
     const metadata = await installedPackage(workspacePath);

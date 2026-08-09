@@ -3812,13 +3812,50 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           reportProgress: request.reportProgress,
         }),
       recoverActiveBlocker: async (request: { workspacePath: string; projectPath?: string }) => {
-        // One mutation control plane: the recovery prelude enters the CLI
-        // Repair Engine directly. Blocker-specific extension heuristics may
-        // inspect evidence, but they must not orchestrate a second repair
-        // transaction around the CLI transaction.
+        // The prelude must bind the CLI transaction to one exact causal action.
+        // A card id is presentation scope, not a repair target: sending only
+        // `doctor` can mix unrelated findings into one all-or-nothing plan.
+        clearDoctorRemediationPlanCache();
+        const plan = await readDoctorRemediationPlanForStudio({
+          workspacePath: request.workspacePath,
+          handoff: {
+            ...activeHandoff,
+            ...(request.projectPath ? { projectPath: request.projectPath } : {}),
+          },
+          maxSteps: 8,
+        });
+        const step = plan?.visibleSteps.find(
+          (candidate) =>
+            candidate.risk !== 'invasive' &&
+            (candidate.studioState === 'ready' || candidate.studioState === 'review-required') &&
+            (candidate.canApply || candidate.executable)
+        );
+        if (!step) {
+          return {
+            ok: false,
+            changed: false,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            output: {
+              recoveryPath: 'general-source-repair',
+              nextAction: 'general-source-repair',
+              sourceCandidates: repairEvidence.autonomousTargetPaths,
+              recommendedTools: [
+                'inspect-source',
+                'search-workspace',
+                'inspect-workspace-diagnostics',
+                'run-workspace-command',
+                'apply-workspace-patch',
+              ],
+            },
+            error:
+              'No exact executable action matches the active blocker. Continue with inspected source repair; do not create a card-wide transaction.',
+          };
+        }
         return executeCanonicalRepair({
           workspacePath: request.workspacePath,
-          projectPath: request.projectPath,
+          projectPath: request.projectPath || step.projectPath,
+          projectName: step.projectName,
+          actionId: step.actionId ?? step.id,
         });
       },
       verify: async (request: { workspacePath: string; projectPath?: string }) => {
@@ -4629,7 +4666,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             affectedProjectNames: handoff.affectedProjectNames,
             projectPath: stepProjectPath,
           }),
-          actionId: step.id,
+          actionId: step.actionId ?? step.id,
           approvedBy: autonomous ? 'vscode:studio-agent' : 'vscode:explicit-remediation-review',
         });
         await publishCliOwnedRepairOutcome({
@@ -4706,7 +4743,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             affectedProjectNames: handoff.affectedProjectNames,
             projectPath: stepProjectPath,
           }),
-          actionId: step.id,
+          actionId: step.actionId ?? step.id,
           approvedBy: 'vscode:explicit-remediation-command-review',
         });
         await publishCliOwnedRepairOutcome({

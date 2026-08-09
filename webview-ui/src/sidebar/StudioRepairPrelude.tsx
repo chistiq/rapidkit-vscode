@@ -7,6 +7,7 @@ type StudioRepairPreludeProps = {
   resumable?: boolean;
   reviewRequired?: boolean;
   terminalReason?: string;
+  reviewMessage?: string;
   onReview?: () => void;
   onStart: () => void;
   onOpenSetup?: () => void;
@@ -20,6 +21,7 @@ export function StudioRepairPrelude({
   resumable = false,
   reviewRequired = false,
   terminalReason,
+  reviewMessage,
   onReview,
   onStart,
   onOpenSetup,
@@ -73,10 +75,7 @@ export function StudioRepairPrelude({
           </span>
           {reviewRequired ? (
             <>
-              <p>
-                Only a breaking, forced, or downgrade remediation remains. Studio will not continue
-                without your decision.
-              </p>
+              <p>{reviewMessage || 'Studio needs an explicit engineering decision to continue.'}</p>
               {onReview ? (
                 <div
                   className="ws-sidebar__repair-controls"

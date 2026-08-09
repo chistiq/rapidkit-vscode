@@ -1256,9 +1256,12 @@ export async function executeCliOwnedCanonicalRepair(input: {
   const activeRequiresExplicitRiskDecision = active?.decision?.options.some((option) =>
     ['approve-guarded', 'approve-invasive', 'allow-breaking', 'allow-force'].includes(option)
   );
+  const activeMatchesRequestedAction =
+    !input.actionId || active?.target.actionIds.includes(input.actionId) === true;
   if (
     active &&
     active.target.cardId === input.cardId &&
+    activeMatchesRequestedAction &&
     (!input.projectName || active.target.projectName === input.projectName) &&
     (active.state !== 'decision-required' || activeRequiresExplicitRiskDecision) &&
     !['closed', 'rolled-back', 'cancelled', 'failed'].includes(active.state)

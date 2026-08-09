@@ -2579,6 +2579,13 @@ export function SecondarySidebar() {
   );
   const activeStudioTerminalReason =
     activeStudioActionProgress?.terminalReason ?? activeStudio?.incident?.terminalReason;
+  const activeStudioReviewMessage =
+    activeStudioRepairHold ??
+    (activeStudioActionProgress?.status === 'review'
+      ? activeStudioActionProgress.summary
+      : activeStudio?.incident?.repairStatus === 'review'
+        ? activeStudio?.incident?.lastActionSummary
+        : undefined);
   const activeStudioRepairRunning = isStudioRepairActivelyOwned({
     sessionStatus: activeStudio?.status,
     autoFixBusy: studioAutoFixBusy,
@@ -3311,6 +3318,7 @@ export function SecondarySidebar() {
                     activeStudio?.incident?.repairStatus === 'blocked')
                 }
                 terminalReason={activeStudioTerminalReason}
+                reviewMessage={activeStudioReviewMessage}
                 reviewRequired={activeStudioReviewRequired}
                 onReview={reviewStudioRepairOptions}
                 onStart={

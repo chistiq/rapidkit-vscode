@@ -77,6 +77,14 @@ async function writeWorkspacePlan(
             scriptName: 'test',
             scriptValue: 'vitest run',
           },
+          transaction: {
+            schemaVersion: 'workspai.doctor-dependency-repair-transaction.v1',
+            kind: 'dependency-materialization',
+            state: 'planned',
+            projectPath: '/external/products/web',
+            ecosystem: 'npm',
+            requiredStages: ['reconcile', 'test', 'build'],
+          },
           strategy: [
             {
               id: 'verify-project',
@@ -142,11 +150,16 @@ describe('doctorRemediationPlanReader', () => {
     expect(plan?.visibleSteps).toHaveLength(1);
     expect(plan?.visibleSteps[0]).toMatchObject({
       id: 'web:test-script',
+      actionId: 'doctor.web:test-script',
       projectName: 'web',
       studioState: 'ready',
       primaryAction: 'Add test script',
       verifyCommand: 'npx rapidkit doctor project --json',
       canApply: true,
+      transaction: expect.objectContaining({
+        kind: 'dependency-materialization',
+        requiredStages: ['reconcile', 'test', 'build'],
+      }),
       strategy: [
         expect.objectContaining({
           id: 'verify-project',
@@ -360,6 +373,9 @@ describe('doctorRemediationPlanReader', () => {
           scope: 'project',
           projectName: 'api',
           projectPath: 'api',
+          findingId: 'surface-security-hygiene',
+          findingStatus: 'blocking',
+          causalKey: 'doctor|api|surface-security-hygiene',
           sourceStepId: 'api-security',
           dependsOn: [],
           status: 'ready',
@@ -411,6 +427,9 @@ describe('doctorRemediationPlanReader', () => {
     expect(plan?.visibleSteps).toEqual([
       expect.objectContaining({
         id: 'doctor.api-security',
+        actionId: 'doctor.api-security',
+        issueId: 'surface-security-hygiene',
+        findingStatus: 'blocking',
         projectName: 'api',
         projectPath,
         transaction: expect.objectContaining({
