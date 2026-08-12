@@ -236,16 +236,7 @@ export function WorkspaceGraphWebgl({
     };
     draw(performance.now());
     return () => cancelAnimationFrame(animationFrame);
-  }, [
-    camera,
-    entities,
-    layoutRevision,
-    layoutSize,
-    presentation,
-    relations,
-    selectedId,
-    size,
-  ]);
+  }, [camera, entities, layoutRevision, layoutSize, presentation, relations, selectedId, size]);
 
   return (
     <div ref={containerRef} className="workspace-graph-webgl">
@@ -419,12 +410,7 @@ function renderWorkspaceGraph3d(
     if (!point) {
       continue;
     }
-    const value = projectWorkspaceGraphPoint3d(
-      point,
-      input.layoutSize,
-      input.size,
-      input.camera
-    );
+    const value = projectWorkspaceGraphPoint3d(point, input.layoutSize, input.size, input.camera);
     projected.set(entity.id, value);
     input.projected.push({ id: entity.id, x: value.screen[0], y: value.screen[1] });
   }
@@ -465,7 +451,10 @@ function renderWorkspaceGraph3d(
   const corePositions: number[] = [];
   const coreColors: number[] = [];
   for (const entity of input.entities) {
-    if (!['workspace', 'project', 'service'].includes(entity.kind) || entity.id === input.selectedId) {
+    if (
+      !['workspace', 'project', 'service'].includes(entity.kind) ||
+      entity.id === input.selectedId
+    ) {
       continue;
     }
     const point = projected.get(entity.id);
@@ -514,14 +503,22 @@ function uploadAndDraw(
 
 function entityColor3d(kind: string): [number, number, number, number] {
   if (['workspace', 'project', 'service'].includes(kind)) return [0.13, 0.83, 0.93, 0.98];
+  if (['language', 'runtime-unit', 'module', 'package'].includes(kind))
+    return [0.48, 0.64, 0.97, 0.95];
   if (['api', 'endpoint'].includes(kind)) return [0.31, 0.79, 0.69, 0.95];
+  if (['schema', 'protocol'].includes(kind)) return [1, 0.62, 0.39, 0.95];
   if (['database', 'queue'].includes(kind)) return [0.77, 0.53, 0.75, 0.95];
-  if (['pipeline', 'deployment', 'container'].includes(kind)) return [0.86, 0.86, 0.67, 0.95];
+  if (['pipeline', 'deployment', 'container', 'lifecycle-stage'].includes(kind))
+    return [0.86, 0.86, 0.67, 0.95];
+  if (['test-suite', 'owner', 'decision', 'document'].includes(kind))
+    return [0.73, 0.6, 0.97, 0.95];
   return [0.66, 0.71, 0.8, 0.82];
 }
 
 function relationColor3d(kind: string): [number, number, number, number] {
   if (/depend|call|import/i.test(kind)) return [0.13, 0.83, 0.93, 0.24];
+  if (/implement|expose|route|protocol/i.test(kind)) return [0.31, 0.79, 0.69, 0.28];
+  if (/read|write|publish|consume/i.test(kind)) return [0.77, 0.53, 0.75, 0.28];
   if (/deploy|run|host/i.test(kind)) return [0.96, 0.62, 0.04, 0.3];
   if (/document|evidence|proof/i.test(kind)) return [0.65, 0.55, 0.98, 0.28];
   return [0.58, 0.64, 0.73, 0.18];
@@ -547,7 +544,9 @@ function renderWorkspaceGraphLabels(
   context.clearRect(0, 0, size.width, size.height);
   context.font = '600 10px system-ui';
   for (const entity of entities) {
-    const important = ['workspace', 'project', 'service'].includes(entity.kind);
+    const important = ['workspace', 'project', 'service', 'language', 'runtime-unit'].includes(
+      entity.kind
+    );
     if (!important && entity.id !== selectedId) {
       continue;
     }

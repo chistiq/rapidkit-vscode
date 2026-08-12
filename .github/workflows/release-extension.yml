@@ -14,7 +14,7 @@ on:
       workspai_cli_version:
         description: 'Published Workspai CLI version required by this extension release'
         required: true
-        default: '0.52.3'
+        default: '0.56.0'
         type: string
       publish_target:
         description: 'Use dry-run to verify gates without publishing'

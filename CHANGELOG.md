@@ -9,6 +9,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 No unreleased changes yet.
 
+## [0.39.0] - 2026-08-11
+
+### Added
+
+- Native `@workspai /repair` support in VS Code Chat, including canonical
+  blocker selection, streamed CLI Repair Engine progress, portable changed-file
+  receipts, and transaction-bound decision buttons.
+- Native source-repair continuation backed by the shared durable
+  `StudioAgentSession`, selected-model tool calling, inspected-source
+  authorization, CLI-owned patch transactions, cancellation, and tool activity.
+- Canonical Doctor evidence projection for diagnosis, summary, receipt,
+  validation, capability, freshness, applicability, and repair disposition.
+- One CLI-authored Workspace Intelligence artifact catalog shared by
+  Assistant, Dashboard, Studio, and blocker handoff.
+- Explicit Assistant evidence objectives that disclose freshness and bound
+  Ask, Plan, and Agent behavior to available governed artifacts.
+- Graph coverage panels for languages, runtime units, providers, source scopes,
+  semantic binding coverage, conflicts, unknowns, and diagnostics.
+- Rich graph detail for entity attributes, relation derivation/trust/confidence,
+  proof pointer, column, observation time, and provider metadata.
+- Privacy-bounded graph artifact navigation and focused regression coverage for
+  portable proof paths.
+
+### Changed
+
+- Removed the analytics consent notification and public opt-in settings;
+  retention analytics are hard-disabled, including for legacy stored opt-ins,
+  while local Dashboard and Incident Studio operational evidence remains.
+- Added a terminal action directly beside every primary-sidebar workspace name;
+  it opens an integrated terminal with that workspace as its working directory.
+- Made Studio distinguish rolled-back repairs from genuine decision gates,
+  preserve the CLI transaction receipt through the agent recovery loop, and
+  present valid repair decisions inline against the exact transaction.
+- Reworked Incident Studio into a conversation-first repair surface with a
+  compact workspace header, inline CLI activity, collapsed history, and less
+  duplicated dashboard chrome around the composer.
+- Aligned mirrored contracts, command inventory, compatibility metadata, and
+  enterprise validation with Workspai CLI 0.56.0.
+- Balanced bounded graph projections across projects and architecture entity
+  kinds instead of allowing one large language/runtime bucket to dominate.
+- Reconciled persisted and streamed graph metadata so live rendering retains
+  canonical workspace and source-scope context.
+- Made Studio handoff and repair prompts consume stable canonical finding,
+  causal, capability, scope, and verification identifiers.
+- Made module lifecycle actions use the CLI project-scoped capability lane.
+- Expanded graph Canvas and WebGL presentations for the broader polyglot entity
+  and relation vocabulary.
+
+### Fixed
+
+- Made verified repair receipts override stale `Awaiting verify` phase chrome,
+  made completed intelligence rails close at `11/11`, and stopped restored
+  rollback checkpoints from appearing as live file changes.
+- Prevented internal source-repair policy loops or malformed persisted review
+  state from creating a `Decision required` action without a CLI transaction
+  and explicit decision options.
+- Prevented absolute local filesystem paths and traversal-based proof paths
+  from crossing the Extension Host/Webview trust boundary.
+- Prevented advisory, non-applicable, unknown, or project-scoped Doctor findings
+  from being promoted into incorrect workspace blockers.
+- Prevented Assistant and Studio artifact inventories from drifting when the
+  live report index is absent, stale, or malformed.
+- Prevented architecture-significant entities from disappearing behind the
+  fixed graph projection budget in large polyglot workspaces.
+- Prevented supported project module commands from being blocked because they
+  were not advertised as top-level CLI commands.
+
+### Compatibility
+
+- VS Code 1.106.0+
+- Workspai CLI 0.56.0+
+- RapidKit Core 0.6.0 only for Python-backed kits and modules
+
+### Verification
+
+- Host/Webview type checking and formatting passed; lint completed with zero
+  errors and 46 pre-existing warnings.
+- 377 test files passed; 2,723 tests passed and 4 were explicitly skipped.
+- Exact CLI contract parity, all 172 palette commands, all 22 enterprise
+  scenarios, and 162 release Stop Gate tests passed.
+- Production build and VSIX inspection passed for a 164-file, 6.0 MB
+  `rapidkit-vscode-0.39.0.vsix` package.
+- Dependency audit reported zero vulnerabilities across 845 dependencies.
+
+See [`releases/RELEASE_NOTES_v0.39.0.md`](releases/RELEASE_NOTES_v0.39.0.md).
+
 ## [0.38.0] - 2026-08-08
 
 ### Added
@@ -158,6 +244,7 @@ See [`releases/RELEASE_NOTES_v0.37.0.md`](releases/RELEASE_NOTES_v0.37.0.md).
 ## [0.36.0] - 2026-08-03
 
 ### Added
+
 - Durable Create-session recovery that turns orphaned planning/running records
   into explicit, removable stopped sessions after a Webview reload.
 - First-install-safe managed workspace creation, including parent-directory
@@ -168,6 +255,7 @@ See [`releases/RELEASE_NOTES_v0.37.0.md`](releases/RELEASE_NOTES_v0.37.0.md).
   fix.
 
 ### Changed
+
 - Studio now distinguishes a persisted repair record from a live provider-owned
   process and returns control to the user when no active process owns the session.
 - The Create history locks only the operation currently owned by the live

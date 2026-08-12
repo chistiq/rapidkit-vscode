@@ -230,7 +230,9 @@ export function WorkspaceGraphCanvas({
       const selected = entity.id === selectedId;
       const highlighted = highlightedSet.has(entity.id);
       const degree = degreeById.get(entity.id) ?? 0;
-      const core = ['workspace', 'project', 'service'].includes(entity.kind);
+      const core = ['workspace', 'project', 'service', 'language', 'runtime-unit'].includes(
+        entity.kind
+      );
       const radius = NODE_RADIUS + Math.min(5, Math.sqrt(degree)) + (core ? 2 : 0);
       const pulse =
         highlighted && animationTime < 2600
@@ -257,7 +259,10 @@ export function WorkspaceGraphCanvas({
         context.lineWidth = 1.5 / viewport.scale;
         context.stroke();
       }
-      if ((selected || highlighted || core || (presentation && degree >= 4)) && viewport.scale > 0.36) {
+      if (
+        (selected || highlighted || core || (presentation && degree >= 4)) &&
+        viewport.scale > 0.36
+      ) {
         context.font = `${selected ? 600 : 500} ${Math.max(9, 11 / viewport.scale)}px system-ui`;
         context.fillStyle = foreground;
         context.globalAlpha = selected || highlighted ? 1 : 0.72;
@@ -358,14 +363,19 @@ export function WorkspaceGraphCanvas({
 
 function colorForKind(kind: string, fallback: string, accent: string): string {
   if (['workspace', 'project', 'service'].includes(kind)) return accent;
+  if (['language', 'runtime-unit', 'module', 'package'].includes(kind)) return '#7aa2f7';
   if (['api', 'endpoint'].includes(kind)) return '#4ec9b0';
+  if (['schema', 'protocol'].includes(kind)) return '#ff9e64';
   if (['database', 'queue'].includes(kind)) return '#c586c0';
-  if (['pipeline', 'deployment', 'container'].includes(kind)) return '#dcdcaa';
+  if (['pipeline', 'deployment', 'container', 'lifecycle-stage'].includes(kind)) return '#dcdcaa';
+  if (['test-suite', 'owner', 'decision', 'document'].includes(kind)) return '#bb9af7';
   return fallback;
 }
 
 function relationColor(kind: string, fallback: string): string {
   if (/depend|call|import/i.test(kind)) return '#22d3ee';
+  if (/implement|expose|route|protocol/i.test(kind)) return '#4ec9b0';
+  if (/read|write|publish|consume/i.test(kind)) return '#c586c0';
   if (/deploy|run|host/i.test(kind)) return '#f59e0b';
   if (/document|evidence|proof/i.test(kind)) return '#a78bfa';
   return fallback;

@@ -20,6 +20,11 @@ import {
   resolveWorkspaceArtifactPath,
   resolveWorkspaceReportsDir,
 } from '../../core/workspaceIntelligencePaths';
+import {
+  projectDoctorEvidence,
+  type DoctorFindingTarget,
+  type DoctorVerdict,
+} from '../../core/doctorEvidenceProjection.js';
 
 const EVIDENCE_RELOAD_DEBOUNCE_MS = 200;
 
@@ -58,6 +63,8 @@ export interface ProjectEvidence {
   issues: string[];
   fixCommands?: string[];
   probes?: DoctorProbe[];
+  verdict?: DoctorVerdict;
+  diagnosis?: DoctorFindingTarget[];
 }
 
 interface HealthScore {
@@ -131,6 +138,7 @@ function attachDoctorIssueHandoff(
     issue: string;
     kind: DoctorIssueHandoffPayload['kind'];
     probe?: DoctorProbe;
+    finding?: DoctorFindingTarget;
   }
 ): DoctorEvidenceItem {
   const handoff = buildDoctorIssueHandoffPayload({
@@ -139,6 +147,7 @@ function attachDoctorIssueHandoff(
     evidence: item.evidenceData,
     project: item.projectData,
     probe: input.probe,
+    finding: input.finding,
   });
   if (handoff) {
     item.issueHandoff = handoff;
@@ -192,6 +201,14 @@ export function normalizeProjectEvidence(raw: unknown): ProjectEvidence | null {
     return null;
   }
   const vulnerabilitiesRaw = Number(record.vulnerabilities);
+  const projection = projectDoctorEvidence(
+    { project: record },
+    {
+      scope: 'project',
+      projectPath,
+      projectName: typeof record.name === 'string' ? record.name : undefined,
+    }
+  );
   return {
     name: typeof record.name === 'string' ? record.name : path.basename(projectPath),
     path: projectPath,
@@ -210,6 +227,8 @@ export function normalizeProjectEvidence(raw: unknown): ProjectEvidence | null {
       ? record.fixCommands.filter((cmd): cmd is string => typeof cmd === 'string')
       : undefined,
     probes: parseProbes(record.probes),
+    verdict: projection.verdict,
+    diagnosis: projection.canonical ? projection.findings : undefined,
   };
 }
 
@@ -224,6 +243,9 @@ function mergeProjectEvidence(base: ProjectEvidence, rich: ProjectEvidence): Pro
 }
 
 function projectHasAttention(project: ProjectEvidence): boolean {
+  if (project.verdict) {
+    return project.verdict !== 'passed';
+  }
   return (
     project.issues.length > 0 ||
     (project.probes?.some((probe) => probe.status === 'warn' || probe.status === 'fail') ??
@@ -552,7 +574,8 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
   private buildIssueItem(
     issue: string,
     evidence: DoctorEvidence | undefined,
-    project?: ProjectEvidence
+    project?: ProjectEvidence,
+    finding?: DoctorFindingTarget
   ): DoctorEvidenceItem {
     const item = new DoctorEvidenceItem(
       issue,
@@ -563,7 +586,7 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
     );
     item.iconPath = new vscode.ThemeIcon('circle-filled');
     item.tooltip = issue;
-    return attachDoctorIssueHandoff(item, { issue, kind: 'issue' });
+    return attachDoctorIssueHandoff(item, { issue, kind: 'issue', finding });
   }
 
   private buildSignalRows(project: ProjectEvidence): DoctorEvidenceItem[] {
@@ -765,7 +788,7 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
         const needsAttention = projectHasAttention(project);
         const isFocused =
           ev.focusProjectPath && path.resolve(project.path) === path.resolve(ev.focusProjectPath);
-        const icon = needsAttention ? '⚠️' : '✅';
+        const icon = project.verdict === 'blocked' ? '❌' : needsAttention ? '⚠️' : '✅';
         const item = new DoctorEvidenceItem(
           `${icon}  ${project.name}${isFocused ? ' (selected)' : ''}`,
           'project',
@@ -789,7 +812,9 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
         item.tooltip = needsAttention
           ? `${project.issues.length} issue(s), ${probeWarnings.length} probe warning(s)`
           : `Healthy · ${project.framework ?? ''}`;
-        item.iconPath = new vscode.ThemeIcon(needsAttention ? 'warning' : 'pass');
+        item.iconPath = new vscode.ThemeIcon(
+          project.verdict === 'blocked' ? 'error' : needsAttention ? 'warning' : 'pass'
+        );
         return item;
       });
     }
@@ -800,6 +825,15 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
       const items: DoctorEvidenceItem[] = [];
 
       items.push(...this.buildSignalRows(project));
+
+      if (project.diagnosis?.length) {
+        for (const finding of project.diagnosis.filter(
+          (entry) => entry.status === 'blocking' || entry.status === 'advisory'
+        )) {
+          items.push(this.buildIssueItem(finding.symptom, evidence, project, finding));
+        }
+        return items;
+      }
 
       if ((project.vulnerabilities ?? 0) > 0) {
         const count = project.vulnerabilities ?? 0;

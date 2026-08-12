@@ -81,6 +81,23 @@ describe('Studio session lifecycle', () => {
     ]);
   });
 
+  it('presents a repeated controller-owned producer as a stopped repair, not a decision', () => {
+    expect(
+      describeStudioTerminalFailure({
+        error: 'The same forbidden evidence producer was requested again.',
+        terminalReason: 'source-repair-policy-loop',
+        requiresUserDecision: false,
+      })
+    ).toMatchObject({
+      title: 'Source repair stopped',
+      summary:
+        'Studio blocked a repeated evidence command because no causal source edit was made. The workspace source was left unchanged.',
+      terminalReason: 'source-repair-policy-loop',
+      connectionFailure: false,
+      technicalDetail: 'The same forbidden evidence producer was requested again.',
+    });
+  });
+
   it('settles persisted live evidence before hydration renders history', () => {
     expect(
       settleStudioTimeline([

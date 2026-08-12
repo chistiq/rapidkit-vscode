@@ -254,7 +254,7 @@ export async function executeDashboardContractCommand(
       }
     });
     host.postDashboardCommandFailed(command, capability.reason, {
-      suggestedNextAction: 'Run npx workspai commands --json and update/link Workspai if needed.',
+      suggestedNextAction: 'Run workspai commands --json and update or link Workspai if needed.',
     });
     return false;
   }

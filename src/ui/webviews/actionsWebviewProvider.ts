@@ -68,6 +68,7 @@ import {
 } from '../../contracts/studio-blocker-handoff-contract.js';
 import { buildStudioBlockerHandoff } from '../../core/studioBlockerHandoffBuilder.js';
 import { recordStudioBlockerCommandRun } from '../../core/studioBlockerCommandLedger.js';
+import { resolveStudioRunOnceProducerCommands } from '../../core/studioBlockerResolution.js';
 import { runRapidkitStreaming } from '../../core/streamingRapidkitRunner.js';
 import { gateIncidentStudioRapidkitCommand } from '../../core/rapidkitEnterpriseCliGate.js';
 import { normalizeBootstrapComplianceCommand } from '../../core/bootstrapComplianceRemediation.js';
@@ -88,6 +89,8 @@ import {
   type StudioSidebarDashboardRefreshResult,
 } from '../../core/studioSidebarDashboardRefresh.js';
 import { buildDashboardEvidenceBundle } from '../../core/dashboardEvidenceBridge.js';
+import { buildEvidenceAgentContextBundle } from '../../core/evidenceAgentContextBundle.js';
+import { buildAssistantEvidenceObjective } from '../../core/assistantEvidenceObjective.js';
 import { buildStudioIncidentGraph } from '../../core/studioIncidentGraph.js';
 import {
   STUDIO_CANONICAL_INTELLIGENCE_ARGS,
@@ -130,6 +133,7 @@ import {
 import { recordRetentionMilestone } from '../../core/retentionMilestones.js';
 import { WelcomePanel } from '../panels/welcomePanel.js';
 import { resolveWorkspaceArtifactPath } from '../../core/workspaceIntelligencePaths.js';
+import { resolveWorkspaceEvidenceFreshness } from '../../core/workspaceEvidenceFreshness.js';
 import {
   isWorkspaiAssistantMode,
   resolveWorkspaiAssistantModeContract,
@@ -152,7 +156,11 @@ import {
   runStudioWorkspaceCommand,
   type StudioWorkspaceCommandRequest,
 } from '../../core/studioWorkspaceCommand.js';
-import { buildStudioUntrackedFileDiffs } from '../../core/studioWorkspaceChangeReview.js';
+import {
+  discoverStudioWorkspaceFiles,
+  inspectStudioWorkspaceChanges,
+  inspectStudioWorkspaceDiagnostics,
+} from '../../core/studioWorkspaceInspection.js';
 import {
   decideCliOwnedRepair,
   executeCliOwnedCanonicalRepair,
@@ -179,151 +187,6 @@ function preserveAllAgentConsumersForStudioRefresh(cliArgs: readonly string[]): 
     args[targetIndex + 1] = 'all';
   }
   return args;
-}
-
-const STUDIO_WORKSPACE_FILE_EXCLUDE =
-  '{**/.git/**,**/node_modules/**,**/vendor/**,**/dist/**,**/build/**,**/target/**,**/.venv/**,**/.workspai/cache/**,**/.workspai/snapshots/**,**/*.tmp}';
-
-async function discoverStudioWorkspaceFiles(input: {
-  workspacePath: string;
-  glob?: string;
-  limit?: number;
-}): Promise<Array<{ path: string; size: number }>> {
-  const limit = Math.min(Math.max(Math.trunc(input.limit ?? 200), 1), 500);
-  const requestedGlob = input.glob?.trim() || '**/*';
-  if (
-    path.isAbsolute(requestedGlob) ||
-    /(?:^|[\\/])\.\.(?:[\\/]|$)/.test(requestedGlob) ||
-    /[\0\r\n]/.test(requestedGlob)
-  ) {
-    throw new Error('Studio workspace discovery glob must stay inside the selected workspace.');
-  }
-  const uris = await vscode.workspace.findFiles(
-    new vscode.RelativePattern(input.workspacePath, requestedGlob),
-    STUDIO_WORKSPACE_FILE_EXCLUDE,
-    limit
-  );
-  const files: Array<{ path: string; size: number }> = [];
-  for (const uri of uris) {
-    try {
-      const stat = await vscode.workspace.fs.stat(uri);
-      if ((stat.type & vscode.FileType.File) !== 0) {
-        files.push({
-          path: path.relative(input.workspacePath, uri.fsPath).replace(/\\/g, '/'),
-          size: stat.size,
-        });
-      }
-    } catch {
-      // Transient files are omitted from the discovery snapshot.
-    }
-  }
-  return files.sort((left, right) => left.path.localeCompare(right.path));
-}
-
-function studioDiagnosticSeverityName(
-  severity: vscode.DiagnosticSeverity
-): 'error' | 'warning' | 'information' | 'hint' {
-  if (severity === vscode.DiagnosticSeverity.Error) {
-    return 'error';
-  }
-  if (severity === vscode.DiagnosticSeverity.Warning) {
-    return 'warning';
-  }
-  if (severity === vscode.DiagnosticSeverity.Information) {
-    return 'information';
-  }
-  return 'hint';
-}
-
-function inspectStudioWorkspaceDiagnostics(input: {
-  workspacePath: string;
-  paths?: string[];
-  severities?: Array<'error' | 'warning' | 'information' | 'hint'>;
-}): Array<Record<string, unknown>> {
-  const allowedPaths = input.paths?.length
-    ? new Set(input.paths.map((entry) => entry.replace(/\\/g, '/')))
-    : undefined;
-  const allowedSeverities = new Set(input.severities ?? ['error', 'warning']);
-  const diagnostics: Array<Record<string, unknown>> = [];
-  for (const [uri, entries] of vscode.languages.getDiagnostics()) {
-    const relativePath = path.relative(input.workspacePath, uri.fsPath).replace(/\\/g, '/');
-    if (
-      relativePath.startsWith('../') ||
-      path.isAbsolute(relativePath) ||
-      (allowedPaths && !allowedPaths.has(relativePath))
-    ) {
-      continue;
-    }
-    for (const diagnostic of entries) {
-      const severity = studioDiagnosticSeverityName(diagnostic.severity);
-      if (!allowedSeverities.has(severity)) {
-        continue;
-      }
-      diagnostics.push({
-        path: relativePath,
-        severity,
-        message: diagnostic.message,
-        source: diagnostic.source,
-        code:
-          typeof diagnostic.code === 'object' && diagnostic.code
-            ? diagnostic.code.value
-            : diagnostic.code,
-        range: {
-          start: {
-            line: diagnostic.range.start.line + 1,
-            column: diagnostic.range.start.character + 1,
-          },
-          end: {
-            line: diagnostic.range.end.line + 1,
-            column: diagnostic.range.end.character + 1,
-          },
-        },
-      });
-      if (diagnostics.length >= 250) {
-        return diagnostics;
-      }
-    }
-  }
-  return diagnostics;
-}
-
-async function inspectStudioWorkspaceChanges(input: {
-  workspacePath: string;
-  paths?: string[];
-}): Promise<Record<string, unknown>> {
-  const pathArgs = input.paths?.length ? ['--', ...input.paths] : [];
-  const statusPlan = resolveStudioWorkspaceCommandPlan({
-    workspacePath: input.workspacePath,
-    request: {
-      executable: 'git',
-      args: ['status', '--short', '--untracked-files=all', '-z', ...pathArgs],
-      purpose: 'inspect',
-    },
-  });
-  const diffPlan = resolveStudioWorkspaceCommandPlan({
-    workspacePath: input.workspacePath,
-    request: {
-      executable: 'git',
-      args: ['diff', '--no-ext-diff', '--unified=3', ...pathArgs],
-      purpose: 'inspect',
-    },
-  });
-  const [status, diff] = await Promise.all([
-    runStudioWorkspaceCommand(statusPlan),
-    runStudioWorkspaceCommand(diffPlan),
-  ]);
-  const untrackedDiff = await buildStudioUntrackedFileDiffs({
-    workspacePath: input.workspacePath,
-    statusPorcelainZ: status.stdout,
-    includedPaths: input.paths,
-  });
-  const combinedDiff = [diff.stdout.trim(), untrackedDiff.trim()].filter(Boolean).join('\n');
-  return {
-    status: status.stdout.split('\0').filter(Boolean).join('\n'),
-    diff: combinedDiff,
-    statusExitCode: status.exitCode,
-    diffExitCode: diff.exitCode,
-  };
 }
 
 type SidebarStudioActionFailurePayload = {
@@ -2404,6 +2267,40 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     const authorizedEvidencePaths = evidenceUris.map((uri) =>
       path.relative(input.workspacePath, uri.fsPath).replace(/\\/g, '/')
     );
+    const [assistantEvidence, evidenceFreshness] = await Promise.all([
+      buildEvidenceAgentContextBundle({
+        workspacePath: input.workspacePath,
+        workspaceName: path.basename(input.workspacePath),
+        projectPath: input.projectPath,
+        projectName: input.projectName,
+        ...(input.handoff
+          ? {
+              card: {
+                id: input.handoff.cardId,
+                label: input.handoff.cardLabel ?? input.handoff.cardId,
+                status: input.handoff.cardStatus,
+                summary: input.handoff.blockers[0] ?? 'Assistant handoff requested.',
+                scope: input.handoff.scope,
+                artifactPath: input.handoff.artifactPath,
+                blockers: input.handoff.blockers,
+              },
+              blockerHandoff: input.handoff,
+            }
+          : {}),
+      }),
+      resolveWorkspaceEvidenceFreshness(input.workspacePath),
+    ]);
+    for (const attachment of assistantEvidence.attachments) {
+      if (attachment.exists && !authorizedEvidencePaths.includes(attachment.relativePath)) {
+        authorizedEvidencePaths.push(attachment.relativePath);
+      }
+    }
+    const assistantObjective = buildAssistantEvidenceObjective({
+      task: input.task,
+      assistantMode: input.assistantMode,
+      evidence: assistantEvidence,
+      freshness: evidenceFreshness,
+    });
     const host: StudioAgentWorkspaiToolHost = {
       discover: async (request: { workspacePath: string; glob?: string; limit?: number }) => ({
         ok: true,
@@ -2910,18 +2807,21 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       ...(verifiedGoal ? { goal: verifiedGoal } : {}),
       ...(persisted ? { restoredSession: persisted } : {}),
     };
-    const model = new ContractStudioAgentModelAdapter(input.task, async (prompt, request) => {
-      const response = await askConfiguredAIProviderForToolAction(
-        this._context!,
-        [{ role: 'user', content: prompt }],
-        request.tools,
-        undefined,
-        input.requestedModelId
-      );
-      return response.type === 'tool'
-        ? { toolName: response.toolName, input: response.input }
-        : response.text;
-    });
+    const model = new ContractStudioAgentModelAdapter(
+      assistantObjective,
+      async (prompt, request) => {
+        const response = await askConfiguredAIProviderForToolAction(
+          this._context!,
+          [{ role: 'user', content: prompt }],
+          request.tools,
+          undefined,
+          input.requestedModelId
+        );
+        return response.type === 'tool'
+          ? { toolName: response.toolName, input: response.input }
+          : response.text;
+      }
+    );
     const session = new StudioAgentSession(options, model, registry, store);
     session.onEvent((event) => this._postInlineCreate('sidebarStudioAgentEvent', { event }));
     this._activeStudioAgentSessions.set(session.id, session);
@@ -3078,7 +2978,11 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       `Verify command: ${input.handoff.verifyCommand ?? 'resolve from governed evidence'}`,
       'Use Studio inspect tools to load file bodies only when needed. Generated reports must be refreshed through their governed producers, never patched.',
       `Evidence generation: ${repairEvidence.evidenceFingerprint}`,
-      `Authorized evidence paths: ${JSON.stringify(repairEvidence.authorizedEvidencePaths.slice(0, 20))}`,
+      // The list is contract-bounded by the CLI runtime artifact catalog. Do
+      // not truncate it: hidden evidence is effectively unavailable to a
+      // tool-calling model because generated reports are excluded from source
+      // discovery by design.
+      `Authorized evidence paths: ${JSON.stringify(repairEvidence.authorizedEvidencePaths)}`,
       `Initial source candidates (not exclusive; inspect-source dynamically authorizes any workspace source): ${JSON.stringify(repairEvidence.autonomousTargetPaths.slice(0, 20))}`,
       `Missing required evidence: ${JSON.stringify(repairEvidence.missingRequired.slice(0, 20))}`,
     ].join('\n\n');
@@ -3648,7 +3552,21 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           projectPath: request.projectPath,
           handoff: activeHandoff,
         });
-        const closed = result.transaction.state === 'closed';
+        const sourceCandidates = result.transaction.checkpoint.files
+          .filter((file) => file.existed)
+          .map((file) => file.path)
+          .filter(
+            (file) =>
+              !/(?:^|\/)(?:\.workspai(?:\/|$)|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.ya?ml|yarn\.lock|bun\.lockb?)$/i.test(
+                file
+              )
+          )
+          .slice(0, 12);
+        const disposition = resolveStudioCliRepairDisposition({
+          transaction: result.transaction,
+          sourceCandidates,
+        });
+        const { closed, generalSourceRepair, requiresUserDecision, terminalReason } = disposition;
         return {
           ok: closed,
           changed: result.changedPaths.length > 0,
@@ -3658,9 +3576,23 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             transaction: result.transaction,
             changedPaths: result.changedPaths,
             fileChanges: result.fileChanges,
-            nextAction: closed ? 'closed' : 'review-required',
-            requiresUserDecision: !closed,
-            terminalReason: !closed ? 'cli-repair-decision-required' : undefined,
+            nextAction: closed
+              ? 'closed'
+              : generalSourceRepair
+                ? 'general-source-repair'
+                : requiresUserDecision
+                  ? 'review-required'
+                  : 'repair-stopped',
+            requiresUserDecision,
+            terminalReason,
+            decision: result.transaction.decision,
+            ...(generalSourceRepair
+              ? {
+                  recoveryPath: 'general-source-repair',
+                  fallbackCapability: 'general-source-repair',
+                  sourceCandidates,
+                }
+              : {}),
           },
           ...(closed
             ? {}
@@ -3811,7 +3743,72 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           projectName: request.projectName,
           reportProgress: request.reportProgress,
         }),
-      recoverActiveBlocker: async (request: { workspacePath: string; projectPath?: string }) => {
+      recoverActiveBlocker: async (request: {
+        workspacePath: string;
+        projectPath?: string;
+        reportProgress?: (data: Record<string, unknown>) => Promise<void>;
+      }) => {
+        const runOnceCommands = resolveStudioRunOnceProducerCommands(activeHandoff);
+        if (runOnceCommands.length > 0) {
+          const executions: Array<{
+            command: string;
+            exitCode?: number | null;
+            success: boolean;
+            error?: string;
+          }> = [];
+          for (const [index, command] of runOnceCommands.entries()) {
+            await request.reportProgress?.({
+              intelligencePhase: 'verify',
+              message: `Generating missing evidence (${index + 1}/${runOnceCommands.length})`,
+              command,
+            });
+            await this._assertSidebarStudioMutationAllowed({
+              workspacePath: request.workspacePath,
+              projectPath: request.projectPath,
+              actionLabel: 'Studio missing-evidence producer',
+              commandText: command,
+            });
+            const execution = await runIncidentInlineCommand({
+              command,
+              workspacePath: request.workspacePath,
+              projectPath: request.projectPath,
+              actionId: `studio-run-once-${activeHandoff.cardId}-${index + 1}`,
+            });
+            executions.push({
+              command,
+              exitCode: execution.exitCode,
+              success: execution.success,
+              ...(execution.error ? { error: execution.error } : {}),
+            });
+          }
+          repairEvidence = await collectSidebarStudioRepairEvidence({
+            workspacePath: request.workspacePath,
+            projectPath: request.projectPath,
+            handoff: activeHandoff,
+          });
+          const commandBridgeFailed = executions.some(
+            (execution) => execution.exitCode === null || execution.exitCode === undefined
+          );
+          return {
+            ok: !commandBridgeFailed,
+            changed: false,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
+            blockerSignature: activeBlockerSignature,
+            output: {
+              recoveryPath: 'artifact-producer',
+              commands: executions,
+              nextAction: commandBridgeFailed ? 'general-source-repair' : 'verify-blocker',
+            },
+            ...(commandBridgeFailed
+              ? {
+                  error:
+                    executions.find(
+                      (execution) => execution.exitCode === null || execution.exitCode === undefined
+                    )?.error ?? 'The governed missing-evidence producer could not be launched.',
+                }
+              : {}),
+          };
+        }
         // The prelude must bind the CLI transaction to one exact causal action.
         // A card id is presentation scope, not a repair target: sending only
         // `doctor` can mix unrelated findings into one all-or-nothing plan.
@@ -4252,6 +4249,26 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           !Array.isArray(terminalFailure.data)
             ? (terminalFailure.data as Record<string, unknown>)
             : undefined;
+        const persistedTransactionId =
+          typeof terminalFailureData?.transactionId === 'string'
+            ? terminalFailureData.transactionId.trim()
+            : '';
+        const persistedWorkspacePath =
+          handoff?.workspacePath ?? durableSession?.workspacePath ?? undefined;
+        const persistedTransaction =
+          terminalFailureData?.requiresUserDecision === true &&
+          persistedTransactionId &&
+          persistedWorkspacePath
+            ? await readCliOwnedRepairById({
+                workspacePath: persistedWorkspacePath,
+                transactionId: persistedTransactionId,
+              }).catch(() => undefined)
+            : undefined;
+        const persistedDecisionStillRequired =
+          terminalFailureData?.requiresUserDecision === true &&
+          (!persistedTransaction ||
+            (persistedTransaction.state === 'decision-required' &&
+              Boolean(persistedTransaction.decision)));
         studioHost.postInlineCreate('sidebarStudioSessionState', {
           sessionId,
           cardId: handoff?.cardId,
@@ -4263,7 +4280,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           ...(typeof terminalFailureData?.error === 'string'
             ? { error: terminalFailureData.error }
             : {}),
-          ...(terminalFailureData?.requiresUserDecision === true
+          ...(persistedDecisionStillRequired
             ? {
                 requiresUserDecision: true,
                 ...(typeof terminalFailureData.terminalReason !== 'string'
@@ -4279,7 +4296,14 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
                   ? { error: 'Studio requires an engineering decision to continue.' }
                   : {}),
               }
-            : {}),
+            : persistedTransaction
+              ? {
+                  requiresUserDecision: false,
+                  transactionId: persistedTransaction.transactionId,
+                  terminalReason: `repair-${persistedTransaction.state}`,
+                  error: `The persisted CLI repair transaction is ${persistedTransaction.state}; no user decision is pending. Studio can continue from fresh evidence.`,
+                }
+              : {}),
         });
         return;
       }
@@ -4336,9 +4360,20 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         if (!workspacePath) {
           throw new Error('No workspace is active for this repair decision.');
         }
-        const transaction = await readLatestCliOwnedRepair({ workspacePath });
+        const requestedTransactionId =
+          typeof payloadRecord.transactionId === 'string' ? payloadRecord.transactionId.trim() : '';
+        const transaction = requestedTransactionId
+          ? await readCliOwnedRepairById({
+              workspacePath,
+              transactionId: requestedTransactionId,
+            })
+          : await readLatestCliOwnedRepair({ workspacePath });
         if (transaction?.state !== 'decision-required' || !transaction.decision) {
-          throw new Error('The CLI Repair Engine is not waiting for a user decision.');
+          throw new Error(
+            requestedTransactionId
+              ? `Repair transaction ${requestedTransactionId} is no longer waiting for a user decision.`
+              : 'The CLI Repair Engine is not waiting for a user decision.'
+          );
         }
         const labels: Record<WorkspaceRepairDecision, { label: string; detail: string }> = {
           'approve-guarded': {
@@ -4370,19 +4405,37 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             detail: 'Cancel the transaction before any further mutation.',
           },
         };
-        const selection = await vscode.window.showQuickPick(
-          transaction.decision.options.map((decision) => ({
-            decision,
-            label: labels[decision].label,
-            description: decision,
-            detail: labels[decision].detail,
-          })),
-          {
-            title: 'Workspai Repair Engine decision',
-            placeHolder: transaction.decision.reason,
-            ignoreFocusOut: true,
-          }
-        );
+        const requestedDecision =
+          typeof payloadRecord.decision === 'string'
+            ? (payloadRecord.decision.trim() as WorkspaceRepairDecision)
+            : undefined;
+        const selection = requestedDecision
+          ? transaction.decision.options.includes(requestedDecision)
+            ? {
+                decision: requestedDecision,
+                label: labels[requestedDecision].label,
+                description: requestedDecision,
+                detail: labels[requestedDecision].detail,
+              }
+            : undefined
+          : await vscode.window.showQuickPick(
+              transaction.decision.options.map((decision) => ({
+                decision,
+                label: labels[decision].label,
+                description: decision,
+                detail: labels[decision].detail,
+              })),
+              {
+                title: 'Workspai Repair Engine decision',
+                placeHolder: transaction.decision.reason,
+                ignoreFocusOut: true,
+              }
+            );
+        if (requestedDecision && !selection) {
+          throw new Error(
+            `Decision ${requestedDecision} is not valid for repair transaction ${transaction.transactionId}.`
+          );
+        }
         if (!selection) {
           return;
         }

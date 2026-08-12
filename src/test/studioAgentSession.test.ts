@@ -1023,6 +1023,77 @@ describe('Studio Agent session runtime', () => {
     );
   });
 
+  it('returns a canonical rolled-back receipt to the model without inventing a decision gate', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply source patch',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ok: false,
+          changed: true,
+          error: 'Canonical verification failed and the checkpoint was restored.',
+          output: {
+            nextAction: 'repair-stopped',
+            requiresUserDecision: false,
+            transaction: {
+              transactionId: 'repair-rolled-back-1',
+              state: 'rolled-back',
+            },
+          },
+        };
+      },
+    });
+    let modelTurns = 0;
+    const session = new StudioAgentSession(
+      {
+        id: 'rolled-back-recovery-session',
+        workspacePath: '/workspace',
+        cardId: 'workspaceVerify',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        maxTurns: 2,
+      },
+      {
+        async next() {
+          modelTurns += 1;
+          return modelTurns === 1
+            ? {
+                type: 'tool' as const,
+                toolName: 'apply-workspace-patch',
+                input: { patches: [] },
+                reason: 'Try the bounded repair',
+              }
+            : { type: 'complete' as const, summary: 'Inspect another causal path.' };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Repair the verification blocker');
+    const patchFailure = result.events.find(
+      (event) =>
+        event.type === 'tool.failed' &&
+        (event.data as { toolName?: string } | undefined)?.toolName === 'apply-workspace-patch'
+    );
+
+    expect(modelTurns).toBe(2);
+    expect(patchFailure?.data).toMatchObject({
+      changed: false,
+      output: {
+        transaction: { transactionId: 'repair-rolled-back-1', state: 'rolled-back' },
+      },
+    });
+    expect(patchFailure?.data).not.toMatchObject({
+      terminalReason: 'cli-repair-closure-missing',
+      requiresUserDecision: true,
+    });
+  });
+
   it('does not start a second closure plane after a dependency patch transaction closes', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
@@ -3018,7 +3089,7 @@ describe('Studio Agent session runtime', () => {
       expect.objectContaining({
         type: 'session.failed',
         data: expect.objectContaining({
-          requiresUserDecision: true,
+          requiresUserDecision: false,
           terminalReason: 'source-repair-policy-loop',
         }),
       })

@@ -164,4 +164,40 @@ describe('sidebarStudioFixPrompt', () => {
     expect(prompt).toContain('Only recommend: workspace verify --json');
     expect(prompt).not.toContain('Only recommend: workspace verify --from-impact');
   });
+
+  it('grounds RUN_ONCE in every distinct contract-authored missing-evidence producer', () => {
+    const prompt = buildSidebarStudioPrompt({
+      task: 'fix the missing evidence',
+      handoff: {
+        ...handoff,
+        studioMode: 'RUN_ONCE',
+        resolutionClass: 'artifact-missing',
+        commandRunCount: 0,
+        resolutionHints: [
+          {
+            schemaVersion: 'rapidkit-blocker-resolution-v1',
+            blockerId: 'init',
+            resolutionClass: 'artifact-missing',
+            blockerSignature: 'init-signature',
+            sourceCommand: 'npx workspai workspace run init --scope project:web --json',
+            fixHints: [],
+          },
+          {
+            schemaVersion: 'rapidkit-blocker-resolution-v1',
+            blockerId: 'test',
+            resolutionClass: 'artifact-missing',
+            blockerSignature: 'test-signature',
+            sourceCommand: 'npx workspai workspace run test --scope project:web --json',
+            fixHints: [],
+          },
+        ],
+      },
+      remediationPlan: null,
+    });
+
+    expect(prompt).toContain('Contract-authored causal producers');
+    expect(prompt).toContain('workspace run init --scope project:web');
+    expect(prompt).toContain('workspace run test --scope project:web');
+    expect(prompt).toContain('Do not propose a source edit');
+  });
 });

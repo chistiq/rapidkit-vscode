@@ -889,6 +889,17 @@ function filterStepsForHandoff(
     }
     return Boolean(projectName && step.projectName === projectName);
   });
+  const canonicalFindingIds = new Set(
+    (handoff.doctorFindings ?? [])
+      .filter((finding) => finding.status === 'blocking')
+      .map((finding) => finding.id)
+  );
+  if (canonicalFindingIds.size > 0) {
+    const exact = scoped.filter((step) => step.issueId && canonicalFindingIds.has(step.issueId));
+    if (exact.length > 0) {
+      return exact;
+    }
+  }
   const focused = scoped.filter((step) => {
     if (step.findingStatus === 'advisory' || step.findingStatus === 'informational') {
       return false;

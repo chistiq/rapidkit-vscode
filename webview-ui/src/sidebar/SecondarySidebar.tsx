@@ -63,6 +63,7 @@ import {
 } from '@/lib/sidebarStudioReturnState';
 import {
   enrichSidebarStudioActionProgressWithHandoff,
+  isCanonicalStudioRepairDecision,
   parseSidebarStudioActionProgress,
   studioAgentToolProgressCopy,
   type SidebarStudioActionProgressView,
@@ -532,6 +533,7 @@ export function SecondarySidebar() {
         scope: handoff.scope,
         blockers: handoff.blockers,
         affectedProjectNames: handoff.affectedProjectNames,
+        doctorFindings: handoff.doctorFindings,
         blockerSignature: handoff.blockerSignature,
         commandRunCount: handoff.commandRunCount,
         resolutionClass: handoff.resolutionClass,
@@ -605,6 +607,7 @@ export function SecondarySidebar() {
       cardStatus: incident.cardStatus ?? 'fail',
       blockers: incident.blockers ?? [],
       affectedProjectNames: incident.affectedProjectNames,
+      doctorFindings: incident.doctorFindings,
       artifactPath: incident.artifactPath ?? '',
       sourceCommand: incident.sourceCommand ?? '',
       scope: incident.scope ?? 'workspace',
@@ -1029,6 +1032,9 @@ export function SecondarySidebar() {
               : typeof transaction?.transactionId === 'string'
                 ? transaction.transactionId
                 : undefined;
+          const transactionState =
+            typeof transaction?.state === 'string' ? transaction.state : undefined;
+          const transactionRestored = transactionState === 'rolled-back';
           const validationStages = Array.isArray(transaction?.stages)
             ? transaction.stages
             : undefined;
@@ -1070,7 +1076,10 @@ export function SecondarySidebar() {
             .join('\n')
             .slice(0, 4_000);
           const changedFiles =
-            eventType === 'tool.completed' && changedPaths.length > 0 && Boolean(transactionId);
+            !transactionRestored &&
+            eventType === 'tool.completed' &&
+            changedPaths.length > 0 &&
+            Boolean(transactionId);
           const transactionClosed = transaction?.state === 'closed';
           const policyRejected = eventData.policyRejected === true;
           startStudioActionProgress({
@@ -1079,20 +1088,24 @@ export function SecondarySidebar() {
             phase: copy.phase,
             title: policyRejected
               ? 'Verification remains controller-owned'
-              : changedFiles
-                ? `Changed ${changedPaths.length} file${changedPaths.length === 1 ? '' : 's'}`
-                : replay && eventType === 'tool.failed'
-                  ? `Observed: ${copy.title}`
-                  : copy.title,
-            summary: policyRejected
-              ? 'A duplicate evidence command was blocked. Studio returned the agent to the required source-repair or decision path.'
-              : typeof eventData.error === 'string'
-                ? eventData.error
+              : transactionRestored
+                ? 'Repair attempt restored'
                 : changedFiles
-                  ? transactionClosed
-                    ? 'The CLI verified and closed this source transaction.'
-                    : 'The edit transaction was applied with rollback metadata. Studio is verifying the result.'
-                  : 'The result was returned to the model; Studio is choosing the next step.',
+                  ? `Changed ${changedPaths.length} file${changedPaths.length === 1 ? '' : 's'}`
+                  : replay && eventType === 'tool.failed'
+                    ? `Observed: ${copy.title}`
+                    : copy.title,
+            summary: policyRejected
+              ? 'A duplicate evidence command was blocked. Studio returned the agent to the required causal source-repair path.'
+              : transactionRestored
+                ? 'The CLI could not clear the selected target and restored the source checkpoint. No attempted source edit remains applied.'
+                : typeof eventData.error === 'string'
+                  ? eventData.error
+                  : changedFiles
+                    ? transactionClosed
+                      ? 'The CLI verified and closed this source transaction.'
+                      : 'The edit transaction was applied with rollback metadata. Studio is verifying the result.'
+                    : 'The result was returned to the model; Studio is choosing the next step.',
             changedPaths,
             fileChanges,
             activityPaths,
@@ -1101,6 +1114,7 @@ export function SecondarySidebar() {
             intelligencePhase,
             ...eventMeta,
             ...(transactionId ? { transactionId } : {}),
+            ...(transactionState ? { transactionState } : {}),
             canUndo: changedFiles && Boolean(transactionId),
             validationStages,
             policyRejected,
@@ -1174,19 +1188,26 @@ export function SecondarySidebar() {
               ? workspaceVerification.remainingActionIds.length
               : 0;
           const targetResolved = resolved || localResolved;
+          const cliRepairVerified = verifyOutput?.closureAuthority === 'cli-repair-engine';
           startStudioActionProgress({
             action: 'verify-blocker',
             status: targetResolved ? 'done' : 'review',
             phase: targetResolved ? 'verified' : 'verify-observation',
             title: targetResolved
-              ? workspaceResolved
-                ? 'Repair verified'
-                : 'Repair verified · other findings remain'
+              ? cliRepairVerified
+                ? workspaceResolved
+                  ? 'Repair verified'
+                  : 'Repair verified · other findings remain'
+                : workspaceResolved
+                  ? 'Finding verified'
+                  : 'Finding verified · other findings remain'
               : 'Verify found remaining work',
             summary: targetResolved
               ? workspaceResolved
-                ? 'Fresh evidence confirms that the selected repair and workspace verification passed.'
-                : `The selected repair passed. ${remainingCards || 'Other'} unrelated workspace finding${remainingCards === 1 ? '' : 's'} remain available as separate work.`
+                ? cliRepairVerified
+                  ? 'Fresh evidence confirms that the selected repair and workspace verification passed.'
+                  : 'Fresh evidence confirms that the selected finding and workspace verification passed.'
+                : `The selected ${cliRepairVerified ? 'repair' : 'finding'} passed. ${remainingCards || 'Other'} unrelated workspace finding${remainingCards === 1 ? '' : 's'} remain available as separate work.`
               : String(
                   eventData.error ??
                     'The blocker remains active. Studio Agent is continuing from this evidence.'
@@ -1209,8 +1230,21 @@ export function SecondarySidebar() {
         } else if (eventType === 'session.failed' || eventType === 'session.cancelled') {
           setStudioAutoFixBusy(false);
           setStudioPatchApplyBusy(false);
-          const eventRequiresDecision =
-            eventType === 'session.failed' && eventData.requiresUserDecision === true;
+          const decisionTransactionId =
+            typeof eventData.transactionId === 'string' && eventData.transactionId.trim()
+              ? eventData.transactionId.trim()
+              : undefined;
+          const decisionOptions = Array.isArray(eventData.decisionOptions)
+            ? eventData.decisionOptions.filter(
+                (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
+              )
+            : [];
+          const eventRequiresDecision = Boolean(
+            eventType === 'session.failed' &&
+            eventData.requiresUserDecision === true &&
+            decisionTransactionId &&
+            decisionOptions.length > 0
+          );
           const rawFailureMessage = String(
             eventData.error ??
               eventData.reason ??
@@ -1243,12 +1277,13 @@ export function SecondarySidebar() {
             terminalReason: terminalPresentation.terminalReason,
             technicalDetail: terminalPresentation.technicalDetail,
             requiresApproval: eventRequiresDecision,
+            transactionId: decisionTransactionId,
+            decisionOptions: decisionOptions.length > 0 ? decisionOptions : undefined,
             ...eventMeta,
           });
           if (eventSessionId) {
             const failedIncidentKey = resolveStudioIncidentKeyForSession(eventSessionId);
-            const requiresUserDecision =
-              eventType === 'session.failed' && eventData.requiresUserDecision === true;
+            const requiresUserDecision = eventRequiresDecision;
             const failureMessage = terminalPresentation.summary;
             studio.failSession(eventSessionId, failureMessage);
             if (failedIncidentKey) {
@@ -1312,7 +1347,20 @@ export function SecondarySidebar() {
         }
         setStudioAutoFixBusy(false);
         setStudioPatchApplyBusy(false);
-        if (data.requiresUserDecision === true) {
+        const hydratedDecisionTransactionId =
+          typeof data.transactionId === 'string' && data.transactionId.trim()
+            ? data.transactionId.trim()
+            : undefined;
+        const hydratedDecisionOptions = Array.isArray(data.decisionOptions)
+          ? data.decisionOptions.filter(
+              (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
+            )
+          : [];
+        if (
+          data.requiresUserDecision === true &&
+          hydratedDecisionTransactionId &&
+          hydratedDecisionOptions.length > 0
+        ) {
           const reviewIncidentKey = resolveStudioIncidentKeyForSession(statusSessionId);
           const reviewMessage = humanizeStudioError(
             typeof data.error === 'string'
@@ -1331,6 +1379,15 @@ export function SecondarySidebar() {
               lastActionAt: new Date().toISOString(),
             });
           }
+          startStudioActionProgress({
+            action: 'repair-decision',
+            status: 'review',
+            phase: 'decision-required',
+            title: 'Decision required',
+            summary: reviewMessage,
+            transactionId: hydratedDecisionTransactionId,
+            decisionOptions: hydratedDecisionOptions,
+          });
           break;
         }
         const hydratedSession = studio.sessions.find(
@@ -1338,6 +1395,11 @@ export function SecondarySidebar() {
         );
         const hydratedIncidentKey = hydratedSession?.incident?.key;
         if (hydratedIncidentKey) {
+          setStudioIncidentRepairHolds((previous) => {
+            const next = { ...previous };
+            delete next[hydratedIncidentKey];
+            return next;
+          });
           const persistedTerminalReason =
             typeof data.terminalReason === 'string' ? data.terminalReason : undefined;
           const terminalPresentation = describeStudioTerminalFailure({
@@ -1672,7 +1734,17 @@ export function SecondarySidebar() {
         const rawFailureMessage = (data.error as string) || 'Unknown error';
         const terminalReason =
           typeof data.terminalReason === 'string' ? data.terminalReason : undefined;
-        const requiresUserDecision = data.requiresUserDecision === true;
+        const errorDecisionOptions = Array.isArray(data.decisionOptions)
+          ? data.decisionOptions.filter(
+              (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
+            )
+          : [];
+        const requiresUserDecision = Boolean(
+          data.requiresUserDecision === true &&
+          typeof data.transactionId === 'string' &&
+          data.transactionId.trim() &&
+          errorDecisionOptions.length > 0
+        );
         const terminalPresentation = describeStudioTerminalFailure({
           error: humanizeStudioError(rawFailureMessage),
           terminalReason,
@@ -1683,11 +1755,17 @@ export function SecondarySidebar() {
         studio.failSession(failedSessionId, failureMessage);
         if (failedIncidentKey) {
           const terminalTitle = terminalPresentation.title;
-          if (data.requiresUserDecision === true) {
+          if (requiresUserDecision) {
             setStudioIncidentRepairHolds((previous) => ({
               ...previous,
               [failedIncidentKey]: failureMessage,
             }));
+          } else {
+            setStudioIncidentRepairHolds((previous) => {
+              const next = { ...previous };
+              delete next[failedIncidentKey];
+              return next;
+            });
           }
           setStudioIncidentProgress((previous) => {
             const terminal = terminalizeStudioProgress(previous[failedIncidentKey], {
@@ -2571,21 +2649,20 @@ export function SecondarySidebar() {
   const activeStudioPatchReview = visibleStudioIncidentKey
     ? (studioIncidentPatchReviews[visibleStudioIncidentKey] ?? null)
     : studioPatchReview;
-  const activeStudioRepairHold = visibleStudioIncidentKey
-    ? (studioIncidentRepairHolds[visibleStudioIncidentKey] ?? null)
-    : null;
-  const activeStudioReviewRequired = Boolean(
-    activeStudioRepairHold || activeStudio?.incident?.repairStatus === 'review'
+  const activeStudioCompleted = Boolean(
+    activeStudio?.incident?.repairStatus === 'done' ||
+    activeStudioReturnState?.status === 'verified-refreshed' ||
+    (activeStudioActionProgress?.status === 'done' &&
+      ['verified', 'goal-verified'].includes(activeStudioActionProgress.phase ?? ''))
   );
+  const activeStudioReviewRequired =
+    !activeStudioCompleted && isCanonicalStudioRepairDecision(activeStudioActionProgress);
   const activeStudioTerminalReason =
     activeStudioActionProgress?.terminalReason ?? activeStudio?.incident?.terminalReason;
   const activeStudioReviewMessage =
-    activeStudioRepairHold ??
-    (activeStudioActionProgress?.status === 'review'
+    activeStudioReviewRequired && activeStudioActionProgress?.status === 'review'
       ? activeStudioActionProgress.summary
-      : activeStudio?.incident?.repairStatus === 'review'
-        ? activeStudio?.incident?.lastActionSummary
-        : undefined);
+      : undefined;
   const activeStudioRepairRunning = isStudioRepairActivelyOwned({
     sessionStatus: activeStudio?.status,
     autoFixBusy: studioAutoFixBusy,
@@ -2608,6 +2685,7 @@ export function SecondarySidebar() {
     handoff: activeBlockerHandoff,
     fixApplied: studioFixApplied,
     autoFixRunning: studioAutoFixBusy || studioPatchApplyBusy,
+    completed: activeStudioCompleted,
   });
   const runStudioCommand = (command: string) => {
     vscode.postMessage(
@@ -2779,7 +2857,7 @@ export function SecondarySidebar() {
       META
     );
   };
-  const reviewStudioRepairOptions = () => {
+  const reviewStudioRepairOptions = (decision?: string, transactionId?: string) => {
     if (!activeBlockerHandoff) {
       return;
     }
@@ -2791,6 +2869,8 @@ export function SecondarySidebar() {
         scope: scopePayloadForSession(activeStudio, scope),
         scopeMode: sessionScopeMode(activeStudio),
         blockerHandoff: activeBlockerHandoff,
+        transactionId: transactionId ?? activeStudioActionProgress?.transactionId,
+        ...(decision ? { decision } : {}),
       },
       META
     );
@@ -3308,10 +3388,7 @@ export function SecondarySidebar() {
               <StudioRepairPrelude
                 handoff={activeBlockerHandoff}
                 busy={activeStudioRepairRunning}
-                completed={
-                  activeStudio?.incident?.repairStatus === 'done' ||
-                  activeStudioReturnState?.status === 'verified-refreshed'
-                }
+                completed={activeStudioCompleted}
                 resumable={
                   !activeStudioReviewRequired &&
                   (activeStudio?.status === 'error' ||
@@ -3320,7 +3397,10 @@ export function SecondarySidebar() {
                 terminalReason={activeStudioTerminalReason}
                 reviewMessage={activeStudioReviewMessage}
                 reviewRequired={activeStudioReviewRequired}
+                transactionId={activeStudioActionProgress?.transactionId}
+                decisionOptions={activeStudioActionProgress?.decisionOptions}
                 onReview={reviewStudioRepairOptions}
+                onDecision={reviewStudioRepairOptions}
                 onStart={
                   activeBlockerHandoff.studioMode === 'VERIFY_ONLY'
                     ? studioVerifyHandoff
@@ -3342,7 +3422,10 @@ export function SecondarySidebar() {
                 >
                   {activeStudioRepairTimeline.length > 1 ? (
                     <details className="ws-sidebar__studio-activity-history">
-                      <summary>Recent activity</summary>
+                      <summary>
+                        Worked on {Math.min(activeStudioRepairTimeline.length - 1, 6)} step
+                        {Math.min(activeStudioRepairTimeline.length - 1, 6) === 1 ? '' : 's'}
+                      </summary>
                       {activeStudioRepairTimeline.slice(-7, -1).map((progress, index) => (
                         <StudioActionProgress
                           key={`${progress.action}:${progress.phase ?? 'phase'}:${progress.status}:${index}`}
@@ -3381,7 +3464,7 @@ export function SecondarySidebar() {
               <StudioRepairResult
                 returnState={visibleStudioReturnStateForResult}
                 verifyFailure={visibleStudioVerifyFailureForResult}
-                repairHold={activeStudioReviewRequired ? null : activeStudioRepairHold}
+                repairHold={null}
                 rollbackCommand={visibleStudioRollbackCommandForResult}
                 onCopyRollback={studioCopyRollback}
                 onBackToDashboard={openDashboardRepairFlow}
@@ -3412,6 +3495,7 @@ export function SecondarySidebar() {
                 <StudioIntelligencePhaseRail
                   activePhase={activeStudioIntelligencePhase}
                   running={activeStudioRepairRunning}
+                  completed={activeStudioCompleted}
                 />
               }
             />

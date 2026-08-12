@@ -27,6 +27,12 @@ describe('Workspace Graph dashboard UX', () => {
     expect(source).toContain('findWorkspaceGraphProjection');
     expect(source).toContain("type GraphMode = 'explore' | 'architecture'");
     expect(source).toContain('Proof paths');
+    expect(source).toContain('proofPathLabel');
+    expect(source).toContain('location hidden');
+    expect(source).toContain('Language coverage');
+    expect(source).toContain('Provider health');
+    expect(source).toContain('Semantic bindings');
+    expect(source).toContain('Diagnostics');
     expect(source).toContain('Bounded view');
     expect(source).toContain("onExport('jsonld')");
     expect(source).toContain('WorkspaceGraphCanvas');

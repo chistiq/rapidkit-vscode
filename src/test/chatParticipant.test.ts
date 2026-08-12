@@ -7,6 +7,7 @@ const {
   resolvePreferredAIModalContextMock,
   streamAIResponseMock,
   trackCommandEventMock,
+  runNativeChatRepairMock,
 } = vi.hoisted(() => ({
   createChatParticipantMock: vi.fn(),
   collectDebugPrefillQuestionMock: vi.fn(),
@@ -14,6 +15,7 @@ const {
   resolvePreferredAIModalContextMock: vi.fn(),
   streamAIResponseMock: vi.fn(),
   trackCommandEventMock: vi.fn(),
+  runNativeChatRepairMock: vi.fn(),
 }));
 
 vi.mock('vscode', () => {
@@ -59,6 +61,7 @@ vi.mock('vscode', () => {
       }),
     },
     workspace: {
+      isTrusted: true,
       workspaceFolders: [{ name: 'demo-workspace', uri: { fsPath: '/tmp/demo-workspace' } }],
     },
     ThemeIcon,
@@ -89,6 +92,10 @@ vi.mock('../utils/workspaceUsageTracker', () => ({
   },
 }));
 
+vi.mock('../core/nativeChatRepair', () => ({
+  runNativeChatRepair: runNativeChatRepairMock,
+}));
+
 import { registerWorkspaiChatParticipant } from '../commands/chatParticipant';
 
 describe('chatParticipant', () => {
@@ -99,6 +106,7 @@ describe('chatParticipant', () => {
       handler,
       iconPath: undefined,
       followupProvider: undefined,
+      commands: [],
       dispose: vi.fn(),
     }));
 
@@ -146,6 +154,11 @@ describe('chatParticipant', () => {
         onChunk({ text: 'AI answer' });
       }
     );
+    runNativeChatRepairMock.mockResolvedValue({
+      cardId: 'workspaceVerify',
+      transactionId: 'repair_native1',
+      state: 'closed',
+    });
   });
 
   it('registers participant with expected id and icon', () => {
@@ -185,6 +198,37 @@ describe('chatParticipant', () => {
     expect(markdown).toHaveBeenCalledWith(
       'Ask me anything about your Workspai project — architecture, modules, configuration, best practices.'
     );
+    expect(prepareAIConversationMock).not.toHaveBeenCalled();
+  });
+
+  it('routes repair requests through the native governed repair surface', async () => {
+    const context = { subscriptions: [] as { dispose: () => void }[] };
+    registerWorkspaiChatParticipant(context as any);
+    const participant = context.subscriptions[0] as unknown as {
+      handler: Function;
+      commands: Array<{ name: string }>;
+    };
+    const stream = { markdown: vi.fn(), progress: vi.fn(), button: vi.fn() };
+
+    const result = await participant.handler(
+      { prompt: 'Workspace Verify', command: 'repair' },
+      { history: [] },
+      stream,
+      { isCancellationRequested: false }
+    );
+
+    expect(runNativeChatRepairMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: 'Workspace Verify',
+        context: expect.objectContaining({ workspaceRootPath: '/tmp/demo-workspace' }),
+        stream,
+      })
+    );
+    expect(result.metadata).toMatchObject({
+      command: 'repair',
+      repair: { transactionId: 'repair_native1', state: 'closed' },
+    });
+    expect(participant.commands).toContainEqual(expect.objectContaining({ name: 'repair' }));
     expect(prepareAIConversationMock).not.toHaveBeenCalled();
   });
 

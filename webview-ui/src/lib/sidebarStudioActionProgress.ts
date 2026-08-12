@@ -32,6 +32,8 @@ export type SidebarStudioActionProgressView = {
   }>;
   invocationId?: string;
   transactionId?: string;
+  transactionState?: string;
+  decisionOptions?: string[];
   eventSequence?: number;
   eventType?: string;
   requestId?: string;
@@ -443,6 +445,17 @@ export function parseSidebarStudioActionProgress(
     transactionId:
       optionalTrimmedString(record.transactionId) ??
       optionalTrimmedString(transaction?.transactionId),
+    transactionState:
+      optionalTrimmedString(record.transactionState) ?? optionalTrimmedString(transaction?.state),
+    decisionOptions:
+      stringList(record.decisionOptions) ??
+      stringList(
+        transaction?.decision &&
+          typeof transaction.decision === 'object' &&
+          !Array.isArray(transaction.decision)
+          ? (transaction.decision as Record<string, unknown>).options
+          : undefined
+      ),
     eventSequence:
       typeof record.eventSequence === 'number' && Number.isFinite(record.eventSequence)
         ? record.eventSequence
@@ -461,6 +474,21 @@ export function parseSidebarStudioActionProgress(
         : undefined,
     validationStages,
   };
+}
+
+/**
+ * A review surface is actionable only when it is backed by an immutable CLI
+ * transaction and an explicit set of choices. Agent policy failures and stale
+ * persisted `repairStatus: review` values must never manufacture approvals.
+ */
+export function isCanonicalStudioRepairDecision(
+  progress?: SidebarStudioActionProgressView | null
+): boolean {
+  return Boolean(
+    progress?.status === 'review' &&
+    progress.transactionId?.trim() &&
+    progress.decisionOptions?.some((option) => option.trim().length > 0)
+  );
 }
 
 export function enrichSidebarStudioActionProgressWithHandoff(

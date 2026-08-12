@@ -4,6 +4,7 @@ import { parseWorkspaceGraphProjection } from '../contracts/workspaceGraphProjec
 import {
   buildWorkspaceGraphProjection,
   encodeWorkspaceGraphProjection,
+  sanitizeWorkspaceGraphPath,
 } from '../core/workspaceGraphProjection.js';
 
 describe('workspace graph explorer projection', () => {
@@ -127,5 +128,105 @@ describe('workspace graph explorer projection', () => {
 
     expect(projection.entities[0].id).toBe('entity:509');
     expect(projection.entities).toHaveLength(500);
+  });
+
+  it('redacts local machine paths before the projection crosses into the Webview', () => {
+    expect(
+      sanitizeWorkspaceGraphPath('/home/alice/Documents/company/api/src/auth.ts', ['api'])
+    ).toBe('external/api/src/auth.ts');
+    expect(
+      sanitizeWorkspaceGraphPath('C:\\Users\\alice\\company\\api\\src\\auth.ts', ['api'])
+    ).toBe('external/api/src/auth.ts');
+    expect(sanitizeWorkspaceGraphPath('/Users/alice/secrets.txt')).toBe('redacted/secrets.txt');
+
+    const projection = buildWorkspaceGraphProjection({
+      schemaVersion: 'workspace-knowledge-graph.v1',
+      projectTopology: { nodes: [{ id: 'api' }] },
+      entities: [
+        {
+          id: 'file:auth',
+          kind: 'file',
+          label: 'auth.ts',
+          projectId: 'api',
+          identity: { scope: 'project' },
+          attributes: { path: '/home/alice/Documents/company/api/src/auth.ts' },
+          proofIds: ['proof:auth'],
+        },
+      ],
+      relations: [],
+      proofs: [
+        {
+          id: 'proof:auth',
+          artifact: '/home/alice/Documents/company/api/src/auth.ts',
+        },
+      ],
+      providers: [],
+      quality: {},
+      diagnostics: [],
+    });
+
+    expect(projection.entities[0].path).toBe('external/api/src/auth.ts');
+    expect(projection.proofs[0].artifact).toBe('external/api/src/auth.ts');
+    expect(JSON.stringify(projection)).not.toContain('/home/alice');
+  });
+
+  it('uses deterministic project-and-kind sampling for large polyglot graphs', () => {
+    const structuralEntities = ['typescript', 'rust', 'python', 'go'].flatMap(
+      (language, projectIndex) => [
+        {
+          id: `project:${language}`,
+          kind: 'project',
+          label: language,
+          projectId: language,
+          attributes: {},
+          proofIds: [],
+        },
+        {
+          id: `language:${language}`,
+          kind: 'language',
+          label: language,
+          projectId: language,
+          attributes: { projectIndex },
+          proofIds: [],
+        },
+        {
+          id: `runtime:${language}`,
+          kind: 'runtime-unit',
+          label: `${language} runtime`,
+          projectId: language,
+          attributes: {},
+          proofIds: [],
+        },
+      ]
+    );
+    const symbols = Array.from({ length: 800 }, (_, index) => ({
+      id: `symbol:${index}`,
+      kind: 'symbol',
+      label: `Symbol ${index}`,
+      projectId: ['typescript', 'rust', 'python', 'go'][index % 4],
+      attributes: {},
+      proofIds: [],
+    }));
+    const raw = {
+      schemaVersion: 'workspace-knowledge-graph.v1',
+      entities: [...symbols, ...structuralEntities],
+      relations: [],
+      proofs: [],
+      providers: [],
+      quality: {},
+      diagnostics: [],
+    };
+
+    const first = buildWorkspaceGraphProjection(raw);
+    const second = buildWorkspaceGraphProjection(raw);
+    expect(first.entities).toHaveLength(500);
+    expect(first.entities.map((entity) => entity.id)).toEqual(
+      second.entities.map((entity) => entity.id)
+    );
+    for (const language of ['typescript', 'rust', 'python', 'go']) {
+      expect(first.entities.some((entity) => entity.id === `project:${language}`)).toBe(true);
+      expect(first.entities.some((entity) => entity.id === `language:${language}`)).toBe(true);
+      expect(first.entities.some((entity) => entity.id === `runtime:${language}`)).toBe(true);
+    }
   });
 });

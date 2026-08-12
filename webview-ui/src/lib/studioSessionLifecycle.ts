@@ -36,6 +36,16 @@ export function describeStudioTerminalFailure(input: {
       connectionFailure: false,
     };
   }
+  if (terminalReason === 'source-repair-policy-loop') {
+    return {
+      title: 'Source repair stopped',
+      summary:
+        'Studio blocked a repeated evidence command because no causal source edit was made. The workspace source was left unchanged.',
+      ...(error ? { technicalDetail: error } : {}),
+      terminalReason,
+      connectionFailure: false,
+    };
+  }
   return {
     title: 'Repair stopped',
     summary: error || 'Studio stopped before canonical verification could close the repair.',

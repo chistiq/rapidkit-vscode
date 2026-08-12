@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 
 import { getWebviewMessageDataRecord, readStringField } from '../../contracts/webviewProtocol';
+import { resolveWorkspaceGraphArtifact } from '../../core/workspaceGraphArtifactNavigation';
 import { openWorkspacePath } from '../../utils/workspacePathNavigation';
 import {
   analyzeReportExists,
@@ -84,10 +85,13 @@ export async function tryDispatchAnalyzeReportWebviewMessage(
       }
 
       try {
+        const graphArtifact = await resolveWorkspaceGraphArtifact(workspacePath, evidencePath);
         await openWorkspacePath({
           workspacePath,
-          path: evidencePath,
-          allowedRootPaths: projectPath.trim() ? [projectPath] : undefined,
+          path: graphArtifact?.path ?? evidencePath,
+          allowedRootPaths: [projectPath, graphArtifact?.projectRoot ?? ''].filter(
+            (candidate) => candidate.trim().length > 0
+          ),
         });
       } catch (error) {
         vscode.window.showErrorMessage(

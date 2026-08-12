@@ -74,12 +74,17 @@ export function resolveStudioCliRepairDisposition(input: {
       ])
     ).values(),
   ];
-  const sourceRepairDecision =
+  const decisionRequired =
     input.transaction.state === 'decision-required' &&
+    Boolean(input.transaction.decision) &&
+    Array.isArray(input.transaction.decision?.options) &&
+    input.transaction.decision.options.length > 0;
+  const sourceRepairDecision =
+    decisionRequired &&
     decisionCauses.length > 0 &&
     decisionCauses.every((cause) => cause.kind === 'source-repair-required');
   const generalSourceRepair = !closed && sourceRepairDecision && input.sourceCandidates.length > 0;
-  const requiresUserDecision = !closed && !generalSourceRepair;
+  const requiresUserDecision = decisionRequired && !generalSourceRepair;
   return {
     closed,
     generalSourceRepair,

@@ -21,6 +21,7 @@ import {
 import { resolvePreferredAIModalContext } from '../core/aiContextResolver';
 import { collectDebugPrefillQuestion } from './aiDebugger';
 import { WorkspaceUsageTracker } from '../utils/workspaceUsageTracker';
+import { runNativeChatRepair } from '../core/nativeChatRepair.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -36,6 +37,8 @@ const EMPTY_PROMPT_MSG = {
     'Which recipe would you like to run? Try: /recipe ship-readiness, /recipe auth-hardening, /recipe test-gaps, or leave blank to pick from the full list.',
   memory:
     'Describe what you want to record in workspace memory (conventions, decisions, or project overview), or leave blank to open the memory wizard.',
+  repair:
+    'Run `/repair` to resolve the highest-priority canonical blocker, or add a card name such as `/repair Workspace Verify`.',
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -94,7 +97,8 @@ async function handleWorkspaiRequest(
   request: vscode.ChatRequest,
   chatContext: vscode.ChatContext,
   stream: vscode.ChatResponseStream,
-  token: vscode.CancellationToken
+  token: vscode.CancellationToken,
+  extensionContext?: vscode.ExtensionContext
 ): Promise<vscode.ChatResult> {
   // Determine mode from slash command; default to 'ask'
   const rawCommand = request.command?.toLowerCase();
@@ -132,6 +136,33 @@ async function handleWorkspaiRequest(
     }
     stream.button({ command: 'workspai.aiWorkspaceMemoryWizard', title: '$(brain) Edit Memory' });
     return {};
+  }
+
+  if (rawCommand === 'repair') {
+    if (!vscode.workspace.isTrusted) {
+      stream.markdown(
+        '**Workspace Trust is required.** Native repair can inspect evidence in an untrusted workspace, but it cannot start a mutation-capable CLI transaction.'
+      );
+      return { metadata: { command: 'repair', trusted: false } };
+    }
+    const ctx = await resolvePreferredAIModalContext();
+    try {
+      const repair = await runNativeChatRepair({
+        prompt: request.prompt,
+        context: ctx,
+        stream,
+        token,
+        extensionContext,
+        requestedModelId: request.model?.id,
+      });
+      return { metadata: { command: 'repair', repair } };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      stream.markdown(
+        `### Repair stopped safely\n\n${message}\n\nNo success is reported without a closed CLI repair transaction.`
+      );
+      return { metadata: { command: 'repair', error: message } };
+    }
   }
 
   // Build question
@@ -297,7 +328,10 @@ async function handleWorkspaiRequest(
 // ────────────────────────────────────────────────────────────────────────────
 
 export function registerWorkspaiChatParticipant(context: vscode.ExtensionContext): void {
-  const participant = vscode.chat.createChatParticipant(PARTICIPANT_ID, handleWorkspaiRequest);
+  const participant = vscode.chat.createChatParticipant(
+    PARTICIPANT_ID,
+    (request, chat, stream, token) => handleWorkspaiRequest(request, chat, stream, token, context)
+  );
 
   participant.iconPath = new vscode.ThemeIcon('sparkle');
 
@@ -306,6 +340,7 @@ export function registerWorkspaiChatParticipant(context: vscode.ExtensionContext
     (participant as unknown as { commands: { name: string; description: string }[] }).commands = [
       { name: 'ask', description: 'Ask anything about your Workspai project' },
       { name: 'debug', description: 'Debug: root cause + fix + prevention for an error' },
+      { name: 'repair', description: 'Repair a canonical blocker through the CLI Repair Engine' },
       { name: 'recipe', description: 'Run an AI recipe pack (ship-readiness, auth-hardening, …)' },
       { name: 'memory', description: 'Open the workspace memory wizard' },
     ];

@@ -19,9 +19,9 @@ import {
  * workspace/project names, no command arguments, no free text. The pure builder
  * (`buildRetentionCohortSummary`) is separated from IO so the redaction
  * guarantees are testable, and the "sink" is a no-op scaffold — there is no real
- * network endpoint. Nothing leaves the machine unless the user has explicitly
- * opted in (double-gated via `resolveAnalyticsOptIn`), and even then this build
- * only persists a local snapshot for inspection.
+ * network endpoint. Collection is currently hard-disabled by
+ * `resolveAnalyticsOptIn`, including for installations that retain a legacy
+ * opt-in setting. The pure builders remain available for local product tests.
  */
 
 export const ANALYTICS_LOCAL_SNAPSHOT_KEY = 'workspai.analytics.lastLocalSnapshot';
@@ -445,10 +445,8 @@ export function buildRetentionAnalyticsPayload(
 }
 
 /**
- * No-op / deferred sink. There is intentionally NO network endpoint. When the
- * user has opted in (double-gated), we persist the latest anonymous snapshot to
- * globalState for local inspection and log a debug line. A real transport can be
- * wired here later behind the same consent gate.
+ * Disabled/deferred sink. There is intentionally NO network endpoint and the
+ * central analytics gate currently prevents local snapshot persistence too.
  */
 export async function sendRetentionAnalyticsPayload(
   context: vscode.ExtensionContext,

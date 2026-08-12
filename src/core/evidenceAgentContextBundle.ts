@@ -16,23 +16,14 @@ import {
 } from './evidenceCardAgentPrompt.js';
 import {
   AGENT_GROUNDING_DOC_PATH,
-  AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
   AGENT_REPORTS_INDEX_PATH,
   AGENTS_MD_PATH,
-  RAPIDKIT_MCP_DESIGN_REPORT_PATH,
   WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
-  WORKSPACE_CONTRACT_VERIFY_REPORT_PATH,
-  WORKSPACE_EXPLAIN_REPORT_PATH,
-  WORKSPACE_HISTORY_PATH,
-  WORKSPACE_IMPACT_REPORT_PATH,
-  WORKSPACE_MODEL_REPORT_PATH,
-  WORKSPACE_MODEL_DIFF_REPORT_PATH,
-  WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH,
-  WORKSPACE_TRACE_REPORT_PATH,
-  WORKSPACE_VERIFY_REPORT_PATH,
-  WORKSPACE_WHY_REPORT_PATH,
-  WORKSPACE_SKILLS_INDEX_PATH,
 } from './workspaceIntelligencePaths.js';
+import {
+  WORKSPAI_RUNTIME_REPORT_ARTIFACTS,
+  workspaceArtifactLabel,
+} from './workspaceIntelligenceArtifactCatalog.js';
 
 export type EvidenceAgentAttachment = {
   relativePath: string;
@@ -70,101 +61,11 @@ export type EvidenceAgentContextBundle = {
 
 const INTELLIGENCE_ATTACHMENTS: Array<{ relativePath: string; label: string; required: boolean }> =
   [
-    {
-      relativePath: '.workspai/reports/doctor-remediation-plan-last-run.json',
-      label: 'Doctor remediation plan',
-      required: false,
-    },
-    {
-      relativePath: '.workspai/reports/artifact-remediation-plan-last-run.json',
-      label: 'Artifact remediation plan',
-      required: false,
-    },
-    {
-      relativePath: '.workspai/reports/doctor-fix-result-last-run.json',
-      label: 'Doctor fix result',
-      required: false,
-    },
-    {
-      relativePath: '.workspai/reports/analyze-last-run.json',
-      label: 'Analyze evidence',
-      required: false,
-    },
-    {
-      relativePath: AGENT_REPORTS_INDEX_PATH,
-      label: 'Agent reports index',
-      required: false,
-    },
-    {
-      relativePath: WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
-      label: 'Agent context pack',
-      required: true,
-    },
-    {
-      relativePath: AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
-      label: 'Agent customization pack',
-      required: false,
-    },
-    {
-      relativePath: WORKSPACE_MODEL_REPORT_PATH,
-      label: 'Workspace model graph',
-      required: false,
-    },
-    {
-      relativePath: WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH,
-      label: 'Workspace model snapshot',
-      required: false,
-    },
-    {
-      relativePath: WORKSPACE_MODEL_DIFF_REPORT_PATH,
-      label: 'Workspace model diff',
-      required: false,
-    },
-    {
-      relativePath: WORKSPACE_IMPACT_REPORT_PATH,
-      label: 'Workspace impact analysis',
-      required: false,
-    },
-    {
-      relativePath: WORKSPACE_VERIFY_REPORT_PATH,
-      label: 'Workspace verify report',
-      required: false,
-    },
-    {
-      relativePath: WORKSPACE_EXPLAIN_REPORT_PATH,
-      label: 'Workspace explain report',
-      required: false,
-    },
-    {
-      relativePath: WORKSPACE_WHY_REPORT_PATH,
-      label: 'Workspace why report',
-      required: false,
-    },
-    {
-      relativePath: WORKSPACE_TRACE_REPORT_PATH,
-      label: 'Workspace trace report',
-      required: false,
-    },
-    {
-      relativePath: WORKSPACE_CONTRACT_VERIFY_REPORT_PATH,
-      label: 'Workspace contract verify report',
-      required: false,
-    },
-    {
-      relativePath: WORKSPACE_HISTORY_PATH,
-      label: 'Workspace intelligence history',
-      required: false,
-    },
-    {
-      relativePath: WORKSPACE_SKILLS_INDEX_PATH,
-      label: 'Operational skills index',
-      required: false,
-    },
-    {
-      relativePath: RAPIDKIT_MCP_DESIGN_REPORT_PATH,
-      label: 'MCP tool design',
-      required: false,
-    },
+    ...WORKSPAI_RUNTIME_REPORT_ARTIFACTS.map((artifact) => ({
+      relativePath: artifact.artifactPath,
+      label: workspaceArtifactLabel(artifact.artifactPath),
+      required: artifact.artifactPath === WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
+    })),
     {
       relativePath: AGENT_GROUNDING_DOC_PATH,
       label: 'Agent grounding guide',
@@ -249,7 +150,14 @@ export async function buildEvidenceAgentContextBundle(
         continue;
       }
       const exists = await fs.pathExists(absolutePath);
-      const required = report.required === true;
+      const existingIndex = attachments.findIndex(
+        (attachment) => attachment.relativePath === relativePath
+      );
+      // A live INDEX may strengthen the bundled baseline, but it cannot
+      // downgrade a report the extension requires for grounded AI actions.
+      const required =
+        report.required === true ||
+        (existingIndex >= 0 && attachments[existingIndex]?.required === true);
       const validity =
         report.validity === 'valid' ||
         report.validity === 'invalid' ||
@@ -275,9 +183,6 @@ export async function buildEvidenceAgentContextBundle(
           ? { validationError: report.validationError.trim() }
           : {}),
       };
-      const existingIndex = attachments.findIndex(
-        (attachment) => attachment.relativePath === relativePath
-      );
       if (existingIndex >= 0) {
         attachments[existingIndex] = descriptor;
       } else {
@@ -302,7 +207,10 @@ export async function buildEvidenceAgentContextBundle(
   }
 
   const cardArtifactRelative = relativeArtifactPath(input.workspacePath, input.card?.artifactPath);
-  if (cardArtifactRelative) {
+  if (
+    cardArtifactRelative &&
+    !attachments.some((attachment) => attachment.relativePath === cardArtifactRelative)
+  ) {
     const exists = await fs.pathExists(path.join(input.workspacePath, cardArtifactRelative));
     attachments.push({
       relativePath: cardArtifactRelative,

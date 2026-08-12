@@ -12,6 +12,21 @@ export type StudioIncidentSummaryView = {
   auditStatus: StudioIncidentAuditStatus;
 };
 
+export type StudioDoctorFindingView = {
+  id: string;
+  causalKey?: string;
+  projectName?: string;
+  projectPath?: string;
+  probeId?: string;
+  issueClass?: string;
+  symptom: string;
+  status: 'blocking' | 'advisory' | 'informational' | 'unknown';
+  repairDisposition?: string;
+  capabilityId?: string;
+  verifyCommand?: string;
+  requiresFreshEvidence?: boolean;
+};
+
 export type StudioBlockerHandoffView = {
   schemaVersion: string;
   cardId: string;
@@ -20,6 +35,7 @@ export type StudioBlockerHandoffView = {
   blocking?: boolean;
   blockers: string[];
   affectedProjectNames?: string[];
+  doctorFindings?: StudioDoctorFindingView[];
   artifactPath: string;
   sourceCommand: string;
   dashboardCommandId?: string;
@@ -42,7 +58,13 @@ export type StudioBlockerHandoffView = {
   projectPath?: string;
 };
 
-export type StudioFixPhase = 'idle' | 'diagnosing' | 'fixing' | 'fix-applied' | 'awaiting-verify';
+export type StudioFixPhase =
+  | 'idle'
+  | 'diagnosing'
+  | 'fixing'
+  | 'fix-applied'
+  | 'awaiting-verify'
+  | 'verified';
 
 export type StudioFixAppliedPayloadView = {
   cardStatus?: StudioBlockerHandoffView['cardStatus'];
@@ -55,9 +77,13 @@ export function resolveStudioFixPhase(input: {
   handoff?: StudioBlockerHandoffView | null;
   fixApplied?: boolean;
   autoFixRunning?: boolean;
+  completed?: boolean;
 }): StudioFixPhase {
   if (!input.handoff) {
     return 'idle';
+  }
+  if (input.completed) {
+    return 'verified';
   }
   if (input.autoFixRunning) {
     return input.handoff.studioMode === 'RUN_ONCE' ? 'diagnosing' : 'fixing';

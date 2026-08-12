@@ -1,5 +1,65 @@
 # Release Notes
 
+## v0.39.0 (August 11, 2026)
+
+### Canonical Doctor, polyglot graph intelligence, and grounded repair
+
+This release validates Workspai for VS Code against CLI 0.56.0 and expands the
+IDE from a compact graph renderer into a privacy-bounded consumer of the full
+Workspace Intelligence contract. Doctor, Dashboard, Assistant, Studio, and the
+Graph Explorer now share canonical artifacts, freshness, scope, and repair
+identifiers instead of maintaining separate UI interpretations.
+
+Highlights:
+
+- `@workspai /repair` now runs the governed CLI Repair Engine inside VS Code's
+  native Chat surface and renders progress, verified receipts, and explicit
+  transaction decisions without opening a second repair dashboard.
+- When deterministic repair identifies a typed source-repair boundary, native
+  Chat continues through the same durable Studio model/tool loop used by the
+  extension, streams tool activity, and accepts source changes only through a
+  closed CLI patch transaction.
+- Doctor cards consume canonical diagnosis, summary, capability, validation,
+  receipt, freshness, applicability, and repair-disposition fields.
+- The Graph Explorer exposes language coverage, runtime topology, providers,
+  semantic bindings, source scopes, diagnostics, and detailed proof metadata.
+- Architecture-balanced graph sampling preserves services, APIs, schemas,
+  runtimes, packages, pipelines, tests, deployments, and owners in bounded
+  Webview payloads.
+- Proof paths are converted to portable workspace-relative identities before
+  crossing the Extension Host/Webview boundary; local user paths stay hidden.
+- Ask, Plan, Agent, Dashboard, and Studio use one CLI-authored artifact catalog
+  and explicit evidence freshness objective.
+- Studio blocker handoff uses stable finding, causal, capability, scope, and
+  verification identifiers, with canonical CLI actions for repair.
+- Project-scoped module capabilities are no longer rejected as missing
+  top-level commands.
+- The analytics permission prompt and settings have been removed. Retention
+  analytics remain hard-disabled; local Dashboard and Incident Studio evidence
+  continues to operate without an outbound analytics transport.
+- Every Workspace row in the primary sidebar now exposes a terminal icon that
+  opens an integrated terminal rooted at that exact Workspace.
+- Studio no longer presents rolled-back repairs as actionable decisions. Real
+  CLI decision gates now remain bound to their transaction and render inline in
+  the repair conversation instead of becoming a disconnected control.
+- A verified selected repair now closes the Studio phase rail at `11/11` even
+  when unrelated workspace findings remain. Restored checkpoints are labeled
+  as restored, and internal policy stops cannot manufacture review buttons.
+- Incident Studio now follows a conversation-first hierarchy: workspace and
+  blocker context stay compact, completed activity collapses into a worked-step
+  summary, and the current CLI action remains beside the conversation.
+
+Compatibility:
+
+- VS Code 1.106.0+
+- Workspai CLI 0.56.0+
+- RapidKit Core 0.6.0 only for Python-backed kits/modules
+
+Full detail:
+[releases/RELEASE_NOTES_v0.39.0.md](releases/RELEASE_NOTES_v0.39.0.md)
+
+Release posture: `canonical-intelligence-consumer-and-private-graph-evidence`
+
 ## v0.38.0 (August 8, 2026)
 
 ### Truthful evidence, typed repair decisions, and a calmer Dashboard

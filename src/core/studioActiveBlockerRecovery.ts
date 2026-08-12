@@ -321,6 +321,7 @@ export async function runStudioActiveBlockerRecovery(input: {
       ...scopedProject(input.projectPath),
     });
     observations.push({ capability: 'execute-remediation-step', result: execution });
+    const executionOutput = outputRecord(execution);
     if (execution.ok && !execution.changed) {
       const refreshedPlan = await input.host.runGovernedCommand({
         commandId: 'workspaceRemediationPlan',
@@ -334,13 +335,17 @@ export async function runStudioActiveBlockerRecovery(input: {
     return {
       ...execution,
       output: {
+        ...executionOutput,
         recoveryPath: 'contract-remediation-plan',
         observations,
-        nextAction: execution.ok
-          ? execution.changed
-            ? 'workspaceIntelligenceChain'
-            : 'inspect-remediation-plan'
-          : 'general-source-repair',
+        nextAction:
+          typeof executionOutput?.nextAction === 'string'
+            ? executionOutput.nextAction
+            : execution.ok
+              ? execution.changed
+                ? 'workspaceIntelligenceChain'
+                : 'inspect-remediation-plan'
+              : 'general-source-repair',
       },
     };
   }

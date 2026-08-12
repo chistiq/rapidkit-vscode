@@ -1,7 +1,7 @@
 import type { StudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
 
 const CANONICAL_INTELLIGENCE_REPORT =
-  /(?:^|\/)\.workspai\/reports\/(?:workspace-model(?:-snapshot|-diff-last-run)?|workspace-impact-last-run|doctor-last-run|workspace-contract-verify-last-run|analyze-last-run|release-readiness-last-run|workspace-verify-last-run|workspace-intelligence-history|workspace-context-agent|agent-customization-pack|workspace-skills-index|workspace-explain-last-run)\.json$/i;
+  /(?:^|\/)\.workspai\/reports\/(?:workspace-model(?:-snapshot|-diff-last-run)?|workspace-impact-last-run|doctor-(?:last-run|project-last-run|capabilities|validation-last-run|receipt-last-run|workspace-cache)|workspace-contract-verify-last-run|analyze-last-run|release-readiness-last-run|workspace-verify-last-run|workspace-intelligence-history|workspace-context-agent|agent-customization-pack|workspace-skills-index|workspace-explain-last-run)\.json$/i;
 
 export const STUDIO_CANONICAL_INTELLIGENCE_ARGS = [
   'workspace',

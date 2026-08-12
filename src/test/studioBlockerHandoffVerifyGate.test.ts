@@ -61,6 +61,16 @@ describe('Studio blocker verify gate', () => {
     ).toBe('awaiting-verify');
   });
 
+  it('lets canonical completion override stale awaiting-verify state', () => {
+    expect(
+      resolveStudioFixPhase({
+        handoff: handoff({ cardStatus: 'pass', studioMode: 'VERIFY_ONLY' }),
+        fixApplied: true,
+        completed: true,
+      })
+    ).toBe('verified');
+  });
+
   it('hydrates a verify command returned by a doctor-fix result into the active handoff', () => {
     const merged = mergeStudioFixAppliedIntoHandoff(handoff({ verifyCommand: undefined }), {
       verifyCommand: 'npx rapidkit doctor workspace --json',

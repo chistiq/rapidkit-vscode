@@ -283,7 +283,7 @@ describe('sendRetentionAnalyticsPayload + captureRetentionAnalytics', () => {
     expect(await captureRetentionAnalytics(context, { now: NOW })).toBeNull();
   });
 
-  it('persists a local snapshot only when opted in', async () => {
+  it('stays disabled when a legacy installation has opt-in enabled', async () => {
     mockGet.mockImplementation((key: string, fallback?: unknown) =>
       key === ANALYTICS_OPT_IN_KEY ? true : fallback
     );
@@ -296,8 +296,9 @@ describe('sendRetentionAnalyticsPayload + captureRetentionAnalytics', () => {
     });
 
     const sent = await sendRetentionAnalyticsPayload(context, payload);
-    expect(sent).toBe(true);
-    expect(store.has(ANALYTICS_LOCAL_SNAPSHOT_KEY)).toBe(true);
+    expect(sent).toBe(false);
+    expect(store.has(ANALYTICS_LOCAL_SNAPSHOT_KEY)).toBe(false);
+    expect(await captureRetentionAnalytics(context, { now: NOW })).toBeNull();
   });
 
   it('does not persist invalid opted-in payloads', async () => {

@@ -221,6 +221,17 @@ function reviewDecisionMetadata(result: StudioAgentToolResult): {
   };
 }
 
+function cliRepairTransactionState(result: StudioAgentToolResult): string | undefined {
+  const output = toolOutputRecord(result);
+  const transaction =
+    output?.transaction &&
+    typeof output.transaction === 'object' &&
+    !Array.isArray(output.transaction)
+      ? (output.transaction as Record<string, unknown>)
+      : undefined;
+  return typeof transaction?.state === 'string' ? transaction.state : undefined;
+}
+
 type GeneralSourceRepairCommandViolation = {
   commandIdentity: string;
   message: string;
@@ -1119,17 +1130,13 @@ export class StudioAgentSession {
         ? {
             ok: false,
             error: `${phaseViolation.message} The same forbidden evidence producer was requested again without a causal source change.`,
-            requiresUserDecision: true,
+            requiresUserDecision: false,
             terminalReason: 'source-repair-policy-loop',
             output: {
-              nextAction: 'review-required',
-              requiresUserDecision: true,
+              nextAction: 'source-repair-stopped',
+              requiresUserDecision: false,
               terminalReason: 'source-repair-policy-loop',
-              decision: {
-                reason:
-                  'The selected model repeated a controller-owned evidence producer instead of applying a causal source repair.',
-                options: ['manual-repair', 'cancel'],
-              },
+              recoveryPath: 'causal-source-change-required',
             },
           }
         : { ok: false, error: phaseViolation.message };
@@ -1251,14 +1258,23 @@ export class StudioAgentSession {
       CLI_REPAIR_MUTATION_TOOL_NAMES.has(tool.name) &&
       !verifiedCliRepairClosure(result)
     ) {
-      result = {
-        ...result,
-        ok: false,
-        error:
-          'A Studio mutation returned without a closed CLI Repair Engine transaction. The result was rejected before Studio could report a successful change.',
-        terminalReason: 'cli-repair-closure-missing',
-        requiresUserDecision: false,
-      };
+      const transactionState = cliRepairTransactionState(result);
+      if (transactionState) {
+        result = {
+          ...result,
+          ok: false,
+          ...(transactionState === 'rolled-back' ? { changed: false } : {}),
+        };
+      } else {
+        result = {
+          ...result,
+          ok: false,
+          error:
+            'A Studio mutation returned without a closed CLI Repair Engine transaction. The result was rejected before Studio could report a successful change.',
+          terminalReason: 'cli-repair-closure-missing',
+          requiresUserDecision: false,
+        };
+      }
     }
     const evidenceAdvanced =
       Boolean(result.changed) ||

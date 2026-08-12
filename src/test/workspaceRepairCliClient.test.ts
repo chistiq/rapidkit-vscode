@@ -654,7 +654,7 @@ describe('CLI-owned Workspace Repair client', () => {
     const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-client-'));
     const preferredRoot = path.join(workspacePath, 'preferred');
     const fallbackRoot = path.join(workspacePath, 'fallback');
-    const preferred = await installedPackage(preferredRoot, '0.56.0');
+    const preferred = await installedPackage(preferredRoot, '0.56.1');
     const fallback = {
       ...(await installedPackage(fallbackRoot)),
       source: 'global' as const,
@@ -665,7 +665,7 @@ describe('CLI-owned Workspace Repair client', () => {
       installedPackages: [preferred, fallback],
       runner: repairProtocolRunner(
         async () => ({ exitCode: 0, stdout: '', stderr: '' }),
-        (manifestVersion) => (manifestVersion === '0.56.0' ? '0.51.0' : manifestVersion)
+        (manifestVersion) => (manifestVersion === '0.56.1' ? '0.51.0' : manifestVersion)
       ),
     });
 

@@ -5,6 +5,7 @@ import {
   type BlockerResolution,
   type BlockerResolutionClass,
 } from './blocker-resolution-contract.js';
+import type { DoctorFindingTarget } from '../core/doctorEvidenceProjection.js';
 
 export const STUDIO_BLOCKER_HANDOFF_SCHEMA_VERSION = 'rapidkit-studio-blocker-handoff-v1' as const;
 
@@ -47,6 +48,8 @@ export type StudioBlockerHandoff = {
   blocking?: boolean;
   blockers: string[];
   affectedProjectNames?: string[];
+  /** Exact causal findings emitted by the canonical Doctor diagnosis engine. */
+  doctorFindings?: DoctorFindingTarget[];
   artifactPath: string;
   sourceCommand: string;
   dashboardCommandId?: string;
@@ -113,31 +116,46 @@ export function isStudioBlockerHandoff(value: unknown): value is StudioBlockerHa
     return false;
   }
   if (
-    record.executionChannel != null &&
+    record.executionChannel !== null &&
+    record.executionChannel !== undefined &&
     record.executionChannel !== 'terminal' &&
     record.executionChannel !== 'background'
   ) {
     return false;
   }
-  if (record.dashboardCommandId != null && typeof record.dashboardCommandId !== 'string') {
-    return false;
-  }
-  if (record.capabilityGate != null && typeof record.capabilityGate !== 'string') {
+  if (
+    record.dashboardCommandId !== null &&
+    record.dashboardCommandId !== undefined &&
+    typeof record.dashboardCommandId !== 'string'
+  ) {
     return false;
   }
   if (
-    record.safetyRisk != null &&
+    record.capabilityGate !== null &&
+    record.capabilityGate !== undefined &&
+    typeof record.capabilityGate !== 'string'
+  ) {
+    return false;
+  }
+  if (
+    record.safetyRisk !== null &&
+    record.safetyRisk !== undefined &&
     record.safetyRisk !== 'read' &&
     record.safetyRisk !== 'write' &&
     record.safetyRisk !== 'destructive'
   ) {
     return false;
   }
-  if (record.safetyConfirmation != null && typeof record.safetyConfirmation !== 'string') {
+  if (
+    record.safetyConfirmation !== null &&
+    record.safetyConfirmation !== undefined &&
+    typeof record.safetyConfirmation !== 'string'
+  ) {
     return false;
   }
   if (
-    record.safetyRefreshCommands != null &&
+    record.safetyRefreshCommands !== null &&
+    record.safetyRefreshCommands !== undefined &&
     (!Array.isArray(record.safetyRefreshCommands) ||
       !record.safetyRefreshCommands.every((entry) => typeof entry === 'string'))
   ) {
@@ -150,9 +168,25 @@ export function isStudioBlockerHandoff(value: unknown): value is StudioBlockerHa
     return false;
   }
   if (
-    record.affectedProjectNames != null &&
+    record.affectedProjectNames !== null &&
+    record.affectedProjectNames !== undefined &&
     (!Array.isArray(record.affectedProjectNames) ||
       !record.affectedProjectNames.every((entry) => typeof entry === 'string'))
+  ) {
+    return false;
+  }
+  if (
+    record.doctorFindings !== null &&
+    record.doctorFindings !== undefined &&
+    (!Array.isArray(record.doctorFindings) ||
+      !record.doctorFindings.every(
+        (entry) =>
+          entry &&
+          typeof entry === 'object' &&
+          !Array.isArray(entry) &&
+          typeof (entry as Record<string, unknown>).id === 'string' &&
+          typeof (entry as Record<string, unknown>).symptom === 'string'
+      ))
   ) {
     return false;
   }
@@ -163,13 +197,18 @@ export function isStudioBlockerHandoff(value: unknown): value is StudioBlockerHa
     return false;
   }
   if (
-    record.resolutionHints != null &&
+    record.resolutionHints !== null &&
+    record.resolutionHints !== undefined &&
     (!Array.isArray(record.resolutionHints) ||
       !record.resolutionHints.every((entry) => isBlockerResolution(entry)))
   ) {
     return false;
   }
-  if (record.incidentSummary != null && !isStudioIncidentSummary(record.incidentSummary)) {
+  if (
+    record.incidentSummary !== null &&
+    record.incidentSummary !== undefined &&
+    !isStudioIncidentSummary(record.incidentSummary)
+  ) {
     return false;
   }
   return true;

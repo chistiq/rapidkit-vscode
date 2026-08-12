@@ -167,6 +167,41 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
       'Reads workspace Doctor evidence for primary blockers, runtime-native audit provenance, structured resolution candidates, and next safe actions.',
   },
   {
+    contractPath: 'workspace-intelligence/doctor-diagnosis.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Doctor cards, causal Studio handoff, and repair-plan filtering',
+    usage:
+      'Consumes stable finding ids, causal keys, applicability, diagnosis state, proofs, and repair capability identity for project/workspace repair.',
+  },
+  {
+    contractPath: 'workspace-intelligence/doctor-capabilities.v1.json',
+    mode: 'schema-guarded',
+    extensionSurface: 'Doctor runtime coverage and repair capability boundary',
+    usage:
+      'Guards the universal runtime adapter inventory and supported diagnostic domains exposed by the CLI.',
+  },
+  {
+    contractPath: 'workspace-intelligence/doctor-validation.v1.json',
+    mode: 'schema-guarded',
+    extensionSurface: 'Doctor contract and runtime validation gate',
+    usage:
+      'Guards validation receipts proving runtime adapters, contracts, fixtures, and Doctor outputs remain aligned.',
+  },
+  {
+    contractPath: 'workspace-intelligence/doctor-receipt.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Doctor dashboard posture and operator next action',
+    usage:
+      'Consumes exact affected projects, blocker identity, repair disposition, freshness, counts, and receipt artifact paths.',
+  },
+  {
+    contractPath: 'workspace-intelligence/doctor-summary.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Compact workspace/project Doctor status projection',
+    usage:
+      'Consumes truthful passed, attention, and blocked posture without promoting advisory findings into release blockers.',
+  },
+  {
     contractPath: 'infra-stack.v1.json',
     mode: 'evidence-consumed',
     extensionSurface: 'Dashboard evidence and Studio operations',

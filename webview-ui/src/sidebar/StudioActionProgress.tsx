@@ -45,6 +45,7 @@ function statusIcon(status: SidebarStudioActionProgressView['status']) {
 }
 
 function completedActivityLabel(progress: SidebarStudioActionProgressView): string {
+  if (progress.transactionState === 'rolled-back') return 'Restored';
   const phase = progress.phase ?? progress.action;
   if (
     progress.action === 'run-governed-command' ||
@@ -100,6 +101,7 @@ export function StudioActionProgress({
   const showAutomaticNextAction = Boolean(
     hasNextAction && repairBubble && !progress.requiresApproval && !historical
   );
+  const transactionRestored = progress.transactionState === 'rolled-back';
 
   return (
     <div
@@ -159,7 +161,10 @@ export function StudioActionProgress({
           </details>
         ) : null}
         {progress.validationStages?.length ? (
-          <details className="ws-sidebar__studio-validation" open={progress.status !== 'done'}>
+          <details
+            className="ws-sidebar__studio-validation"
+            open={!historical && progress.status !== 'done'}
+          >
             <summary>Validation</summary>
             <ol>
               {progress.validationStages.map((stage) => (
@@ -183,7 +188,10 @@ export function StudioActionProgress({
           </details>
         ) : null}
         {progress.changedPaths?.length && !progress.fileChanges?.length ? (
-          <ul className="ws-sidebar__studio-changed-files" aria-label="Changed files">
+          <ul
+            className="ws-sidebar__studio-changed-files"
+            aria-label={transactionRestored ? 'Restored files' : 'Changed files'}
+          >
             {progress.changedPaths.map((changedPath) => (
               <li key={changedPath}>
                 {onOpenFile ? (
@@ -198,9 +206,12 @@ export function StudioActionProgress({
           </ul>
         ) : null}
         {progress.fileChanges?.length ? (
-          <section className="ws-sidebar__studio-file-changes" aria-label="Files changed">
+          <section
+            className="ws-sidebar__studio-file-changes"
+            aria-label={transactionRestored ? 'Files restored' : 'Files changed'}
+          >
             <header>
-              <strong>Files changed</strong>
+              <strong>{transactionRestored ? 'Files restored' : 'Files changed'}</strong>
               <small>{progress.fileChanges.length}</small>
             </header>
             <ul className="ws-sidebar__studio-patch-list">
@@ -223,9 +234,11 @@ export function StudioActionProgress({
                       >
                         <code>{compactStudioPathText(file.relativePath)}</code>
                       </button>
-                      <span>
-                        +{added} −{removed}
-                      </span>
+                      {!transactionRestored ? (
+                        <span>
+                          +{added} −{removed}
+                        </span>
+                      ) : null}
                       {exactDiffAvailable ? (
                         <button
                           type="button"

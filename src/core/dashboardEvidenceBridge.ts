@@ -68,6 +68,7 @@ import {
 } from '../contracts/studio-blocker-handoff-contract.js';
 import { requireStudioCardRepairCapability } from '../contracts/studioCardRepairCapabilities.js';
 import { resolveWorkspaceArchiveManifestPath } from '../utils/workspaceArchive.js';
+import { projectDoctorEvidence, type DoctorFindingTarget } from './doctorEvidenceProjection.js';
 
 export type { DashboardEvidenceCardId };
 
@@ -95,6 +96,8 @@ export type DashboardEvidenceCard = {
   affectedProjectNames?: string[];
   /** True only when this card currently prevents a governed release or repair transition. */
   blocking?: boolean;
+  /** Canonical Doctor causal targets carried unchanged into Studio repair. */
+  doctorFindings?: DoctorFindingTarget[];
   detailSections?: Array<{ id: string; title: string; body: string }>;
   incidentSummary?: StudioIncidentSummary;
   incidentStudioTarget?:
@@ -951,43 +954,61 @@ function buildDoctorCard(
   const errors = Number(healthScore.errors ?? 0);
   const total = Number(healthScore.total ?? passed + warnings + errors);
   const percent = total > 0 ? Math.round((passed / total) * 100) : 0;
-  const blockers = extractBlockersFromReport('doctor-last-run', raw, options);
-  const affectedProjectNames = (Array.isArray(raw.projects) ? raw.projects : [])
-    .flatMap((entry) => {
-      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-        return [];
-      }
-      const project = entry as Record<string, unknown>;
-      const projectName = typeof project.name === 'string' ? project.name.trim() : '';
-      const probes = Array.isArray(project.probes) ? project.probes : [];
-      const blocked =
-        (projectName.length > 0 &&
-          blockers.some((blocker) => blocker.trim().startsWith(`${projectName}:`))) ||
-        Number(project.vulnerabilities ?? 0) > 0 ||
-        Number(project.errors ?? 0) > 0 ||
-        probes.some(
-          (probe) =>
-            probe &&
-            typeof probe === 'object' &&
-            !Array.isArray(probe) &&
-            (probe as Record<string, unknown>).status === 'fail'
-        );
-      return blocked && projectName ? [projectName] : [];
-    })
-    .filter((name, index, names) => names.indexOf(name) === index);
-  const status: DashboardEvidenceStatus = errors > 0 ? 'fail' : warnings > 0 ? 'warn' : 'pass';
+  const projection = projectDoctorEvidence(raw, {
+    scope,
+    projectPath: options?.projectPath,
+    projectName: options?.projectName,
+  });
+  // The existing card payload calls all visible finding details `blockers`.
+  // Keep advisory detail available to the yellow card while the explicit
+  // `blocking` posture below remains the release authority.
+  const blockers = projection.verdict === 'blocked' ? projection.blockers : projection.advisories;
+  const affectedProjectNames = projection.affectedProjectNames;
+  const status: DashboardEvidenceStatus =
+    projection.verdict === 'blocked'
+      ? 'fail'
+      : projection.verdict === 'attention'
+        ? 'warn'
+        : 'pass';
+  const summary = projection.canonical
+    ? `${projection.counts.blockingCauses} blocking · ${projection.counts.advisoryFindings} advisory · ${projection.counts.unknownFindings} unknown${projection.freshness ? ` · ${projection.freshness}` : ''}`
+    : `${percent}% health · ${errors} errors · ${warnings} warnings`;
 
   return {
     id,
     label,
     status,
-    summary: `${percent}% health · ${errors} errors · ${warnings} warnings`,
+    summary,
     scope,
     generatedAt: reportGeneratedAt(raw),
     artifactPath,
-    metrics: mergeReportMetrics({ percent, errors, warnings, passed, total }, raw),
+    metrics: mergeReportMetrics(
+      {
+        percent,
+        errors,
+        warnings,
+        passed,
+        total,
+        ...projection.counts,
+        ...(projection.freshness ? { freshness: projection.freshness } : {}),
+      },
+      raw
+    ),
     blockers,
     ...(affectedProjectNames.length > 0 ? { affectedProjectNames } : {}),
+    ...(projection.findings.length > 0 ? { doctorFindings: projection.findings } : {}),
+    blocking: projection.verdict === 'blocked',
+    ...(projection.advisories.length > 0
+      ? {
+          detailSections: [
+            {
+              id: 'doctor-advisories',
+              title: 'Advisory findings',
+              body: projection.advisories.slice(0, 8).join('\n'),
+            },
+          ],
+        }
+      : {}),
     incidentStudioTarget: 'doctor',
   };
 }
@@ -1672,7 +1693,16 @@ async function buildWorkspaceIntelligenceCards(
         ? (graph.quality as Record<string, unknown>)
         : {};
     const diagnostics = Array.isArray(graph.diagnostics)
-      ? graph.diagnostics.filter((item): item is string => typeof item === 'string')
+      ? graph.diagnostics.flatMap((item) => {
+          if (typeof item === 'string' && item.trim()) {
+            return [item.trim()];
+          }
+          if (!item || typeof item !== 'object' || Array.isArray(item)) {
+            return [];
+          }
+          const message = (item as Record<string, unknown>).message;
+          return typeof message === 'string' && message.trim() ? [message.trim()] : [];
+        })
       : [];
     const entityCount = Number(quality.entityCount ?? 0);
     const relationCount = Number(quality.relationCount ?? 0);
@@ -2670,6 +2700,11 @@ export function resolveCardForReportKind(
       return findEvidenceCardById(bundle, 'doctor');
     case 'doctor-project-last-run':
       return findEvidenceCardById(bundle, 'projectDoctor');
+    case 'doctor-capabilities':
+    case 'doctor-validation':
+    case 'doctor-receipt':
+    case 'doctor-workspace-cache':
+      return findEvidenceCardById(bundle, 'doctor');
     case 'analyze-last-run':
       return findEvidenceCardById(bundle, 'analyze');
     case 'pipeline-last-run':

@@ -240,6 +240,14 @@ describe('resolveDashboardCommandExecutionChannel', () => {
       resolveDashboardCommandCapabilityRequirement(resolveDashboardCommandContract('projectTest'))
     ).toMatchObject({ kind: 'project-runtime', command: 'test' });
     expect(
+      resolveDashboardCommandCapabilityRequirement(resolveDashboardCommandContract('moduleDiff'))
+    ).toMatchObject({ kind: 'project-runtime', command: 'diff' });
+    expect(
+      resolveDashboardCommandCapabilityRequirement(
+        resolveDashboardCommandContract('moduleCheckpoint')
+      )
+    ).toMatchObject({ kind: 'project-runtime', command: 'checkpoint' });
+    expect(
       resolveDashboardCommandCapabilityRequirement(resolveDashboardCommandContract('importProject'))
     ).toMatchObject({ kind: 'top-level', command: 'import' });
     expect(

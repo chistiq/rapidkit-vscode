@@ -34,7 +34,7 @@ describe('Studio Workspace Intelligence phase rail', () => {
     expect(railOffset).toBeGreaterThan(source.lastIndexOf('streamChrome={', railOffset));
     expect(railOffset).toBeGreaterThan(source.lastIndexOf('headerChrome={', railOffset));
     expect(source.match(/<StudioIntelligencePhaseRail/g)).toHaveLength(1);
-    expect(source).toContain('<summary>Recent activity</summary>');
+    expect(source).toContain('Worked on {Math.min(activeStudioRepairTimeline.length - 1, 6)} step');
     expect(source).not.toContain('Activity · {activeStudioRepairTimeline.length');
     expect(source).toContain("eventType === 'tool.progress'");
     expect(source).toContain("eventData.intelligenceMilestoneStatus === 'started'");

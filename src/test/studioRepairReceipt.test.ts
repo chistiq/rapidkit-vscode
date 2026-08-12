@@ -65,6 +65,23 @@ describe('Studio verified repair receipt', () => {
     });
   });
 
+  it('does not invent a user decision for a rolled-back transaction', () => {
+    expect(
+      resolveStudioCliRepairDisposition({
+        transaction: {
+          state: 'rolled-back',
+          adapterEvaluations: [],
+        },
+        sourceCandidates: ['web/package.json'],
+      })
+    ).toEqual({
+      closed: false,
+      generalSourceRepair: false,
+      requiresUserDecision: false,
+      missingExecutables: [],
+    });
+  });
+
   it('derives changed files, transaction identity, and full closure from durable events', () => {
     const receipt = buildStudioVerifiedRepairReceipt({
       events: [

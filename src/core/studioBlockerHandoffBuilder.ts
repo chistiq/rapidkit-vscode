@@ -31,6 +31,7 @@ export type BuildStudioBlockerHandoffInput = {
     | 'artifactPath'
     | 'blockers'
     | 'affectedProjectNames'
+    | 'doctorFindings'
   >;
   workspacePath: string;
   projectPath?: string;
@@ -47,6 +48,9 @@ export async function buildStudioBlockerHandoff(
       (input.card.affectedProjectNames ?? []).map((entry) => entry.trim()).filter(Boolean)
     ),
   ];
+  const doctorFindings = (input.card.doctorFindings ?? []).filter(
+    (finding) => finding.status === 'blocking' && finding.applicability !== 'not-applicable'
+  );
   const dashboardCommandId = resolveDashboardCommandForEvidenceCard(input.card.id);
   const executionPlan = dashboardCommandId
     ? resolveDashboardCommandExecutionPlan(dashboardCommandId)
@@ -66,6 +70,31 @@ export async function buildStudioBlockerHandoff(
     verifyCommand,
     verifyArtifact,
   });
+
+  if (doctorFindings.length > 0) {
+    resolutionHints = doctorFindings.slice(0, 12).map((finding) => {
+      const [hint] = buildResolutionHintsForBlockingReasons({
+        blockingReasons: [finding.symptom],
+        sourceCommand,
+        sourceArtifact: input.card.artifactPath,
+        verifyCommand: finding.verifyCommand ?? verifyCommand,
+        verifyArtifact,
+      });
+      return {
+        ...hint,
+        blockerId: finding.id,
+        fixHints: [
+          {
+            actionKind: 'edit-file' as const,
+            detail: finding.capabilityId
+              ? `Execute canonical Doctor capability ${finding.capabilityId} through the CLI Repair Engine (${finding.repairDisposition ?? 'approval policy applies'}).`
+              : `Repair the confirmed ${finding.issueClass ?? 'Doctor'} cause through the CLI Repair Engine.`,
+            studioActionId: 'doctor-fix' as const,
+          },
+        ],
+      };
+    });
+  }
 
   if (input.card.id === 'workspaceVerify') {
     const verifyReport = await readWorkspaceVerifyReport(input.workspacePath);
@@ -88,7 +117,7 @@ export async function buildStudioBlockerHandoff(
     exitCode: null,
   });
   const commandRunCount =
-    input.extensionContext != null
+    input.extensionContext !== null && input.extensionContext !== undefined
       ? readStudioBlockerCommandRunCount(input.extensionContext, {
           cardId: input.card.id,
           sourceCommand,
@@ -131,6 +160,7 @@ export async function buildStudioBlockerHandoff(
       : {}),
     scope: input.card.scope,
     ...(affectedProjectNames.length ? { affectedProjectNames } : {}),
+    ...(doctorFindings.length ? { doctorFindings } : {}),
     blockerSignature,
     commandRunCount,
     resolutionHints,

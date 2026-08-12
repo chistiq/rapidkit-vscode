@@ -34,6 +34,7 @@ vi.mock('../utils/logger', () => ({
 import {
   ANALYTICS_CONSENT_SHOWN_KEY,
   ANALYTICS_OPT_IN_KEY,
+  RETENTION_ANALYTICS_ENABLED,
   resolveAnalyticsOptIn,
   shouldShowAnalyticsConsentPrompt,
   showAnalyticsConsentPrompt,
@@ -51,9 +52,10 @@ describe('resolveAnalyticsOptIn', () => {
     envState.isTelemetryEnabled = true;
   });
 
-  it('is true only when opted in AND VS Code telemetry is enabled', () => {
+  it('stays false when a legacy installation has opt-in enabled', () => {
     configValue({ [ANALYTICS_OPT_IN_KEY]: true });
-    expect(resolveAnalyticsOptIn()).toBe(true);
+    expect(resolveAnalyticsOptIn()).toBe(false);
+    expect(RETENTION_ANALYTICS_ENABLED).toBe(false);
   });
 
   it('is false when VS Code telemetry is disabled even if opted in', () => {
@@ -74,9 +76,9 @@ describe('shouldShowAnalyticsConsentPrompt', () => {
     envState.isTelemetryEnabled = true;
   });
 
-  it('is true when not shown, telemetry enabled, not opted in', () => {
+  it('is false when the legacy prompt has not been shown', () => {
     configValue({ [ANALYTICS_CONSENT_SHOWN_KEY]: false, [ANALYTICS_OPT_IN_KEY]: false });
-    expect(shouldShowAnalyticsConsentPrompt()).toBe(true);
+    expect(shouldShowAnalyticsConsentPrompt()).toBe(false);
   });
 
   it('is false once the prompt was already shown', () => {
@@ -100,24 +102,23 @@ describe('showAnalyticsConsentPrompt', () => {
     envState.isTelemetryEnabled = true;
   });
 
-  it('enables opt-in and marks shown when the user clicks Enable', async () => {
+  it('does not show UI or mutate settings for a legacy eligible state', async () => {
     configValue({ [ANALYTICS_CONSENT_SHOWN_KEY]: false, [ANALYTICS_OPT_IN_KEY]: false });
     mockShowInfo.mockResolvedValue('Enable anonymous analytics');
 
-    await showAnalyticsConsentPrompt();
+    expect(await showAnalyticsConsentPrompt()).toBe(false);
 
-    expect(mockUpdate).toHaveBeenCalledWith(ANALYTICS_CONSENT_SHOWN_KEY, true, 1);
-    expect(mockUpdate).toHaveBeenCalledWith(ANALYTICS_OPT_IN_KEY, true, 1);
+    expect(mockShowInfo).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
-  it('marks shown but does not opt in when dismissed', async () => {
+  it('does not mark consent as shown when called', async () => {
     configValue({ [ANALYTICS_CONSENT_SHOWN_KEY]: false, [ANALYTICS_OPT_IN_KEY]: false });
     mockShowInfo.mockResolvedValue(undefined);
 
-    await showAnalyticsConsentPrompt();
+    expect(await showAnalyticsConsentPrompt()).toBe(false);
 
-    expect(mockUpdate).toHaveBeenCalledWith(ANALYTICS_CONSENT_SHOWN_KEY, true, 1);
-    expect(mockUpdate).not.toHaveBeenCalledWith(ANALYTICS_OPT_IN_KEY, true, 1);
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   it('does not prompt again when already shown', async () => {

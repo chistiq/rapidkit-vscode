@@ -27,7 +27,7 @@ export async function gateDashboardCommandCapability(input: {
 
   const surface = await fetchRuntimeCommandSurface({ cwd: input.cwd });
   if (!surface) {
-    const reason = `${contract?.label ?? input.commandId} is blocked because the extension could not read Workspai CLI capabilities. Run \`npx workspai commands --json\`, update/link workspai, then reload the window.`;
+    const reason = `${contract?.label ?? input.commandId} is blocked because the extension could not read Workspai CLI capabilities. Run \`workspai commands --json\`, update or link Workspai, then reload the window.`;
     return { ok: false, reason };
   }
 
@@ -35,6 +35,6 @@ export async function gateDashboardCommandCapability(input: {
     return { ok: true };
   }
 
-  const reason = `${contract?.label ?? input.commandId} is blocked because rapidkit ${surface.version || ''} does not advertise \`${requirement.label}\` in \`commands --json\`. Update/link rapidkit, then reload the window.`;
+  const reason = `${contract?.label ?? input.commandId} is blocked because Workspai CLI ${surface.version || '(unknown version)'} does not advertise \`${requirement.label}\` in \`commands --json\`. Update or link Workspai, then reload the window.`;
   return { ok: false, reason };
 }

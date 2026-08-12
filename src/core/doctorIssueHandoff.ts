@@ -3,6 +3,7 @@ import type {
   DoctorProbe,
   ProjectEvidence,
 } from '../ui/treeviews/doctorEvidenceProvider.js';
+import type { DoctorFindingTarget } from './doctorEvidenceProjection.js';
 
 export type DoctorIssueKind = 'issue' | 'probe' | 'policy-violation';
 
@@ -10,6 +11,7 @@ export interface DoctorIssueHandoffPayload {
   issue: string;
   kind: DoctorIssueKind;
   probe?: Pick<DoctorProbe, 'id' | 'label' | 'status' | 'reason' | 'recommendation'>;
+  finding?: DoctorFindingTarget;
   workspacePath: string;
   workspaceName?: string;
   generatedAt?: string;
@@ -33,6 +35,7 @@ export function buildDoctorIssueHandoffPayload(input: {
   };
   project?: ProjectEvidence;
   probe?: DoctorProbe;
+  finding?: DoctorFindingTarget;
 }): DoctorIssueHandoffPayload | null {
   const workspacePath = input.evidence?.workspacePath?.trim();
   if (!workspacePath || !input.issue.trim()) {
@@ -54,6 +57,7 @@ export function buildDoctorIssueHandoffPayload(input: {
           },
         }
       : {}),
+    ...(input.finding ? { finding: input.finding } : {}),
     workspacePath,
     workspaceName: input.evidence?.workspaceName,
     generatedAt: input.evidence?.generatedAt,
@@ -89,6 +93,7 @@ function structuredDoctorContext(payload: DoctorIssueHandoffPayload): Record<str
     issue: payload.issue,
     kind: payload.kind,
     probe: payload.probe,
+    finding: payload.finding,
     project: payload.project,
     workspace: {
       name: payload.workspaceName,
@@ -140,6 +145,16 @@ export function buildDoctorIssueAdvisorQuestion(payload: DoctorIssueHandoffPaylo
   if (payload.probe?.recommendation?.trim()) {
     lines.push(`Recommendation: ${payload.probe.recommendation.trim()}`);
   }
+  if (payload.finding) {
+    lines.push(
+      `Canonical finding: ${payload.finding.id}`,
+      ...(payload.finding.causalKey ? [`Causal key: ${payload.finding.causalKey}`] : []),
+      ...(payload.finding.capabilityId
+        ? [`Repair capability: ${payload.finding.capabilityId}`]
+        : []),
+      `Repair disposition: ${payload.finding.repairDisposition ?? 'unknown'}`
+    );
+  }
   if (payload.project?.fixCommands?.length) {
     lines.push(
       `Suggested fix commands:\n${payload.project.fixCommands.map((command) => `  ${command}`).join('\n')}`
@@ -175,6 +190,16 @@ export function buildDoctorIssueStudioPrompt(payload: DoctorIssueHandoffPayload)
   }
   if (payload.probe?.reason?.trim()) {
     lines.push(`- Reason: ${payload.probe.reason.trim()}`);
+  }
+  if (payload.finding) {
+    lines.push(`- Canonical finding: ${payload.finding.id}`);
+    if (payload.finding.causalKey) {
+      lines.push(`- Causal key: ${payload.finding.causalKey}`);
+    }
+    if (payload.finding.capabilityId) {
+      lines.push(`- Repair capability: ${payload.finding.capabilityId}`);
+    }
+    lines.push(`- Repair disposition: ${payload.finding.repairDisposition ?? 'unknown'}`);
   }
   if (payload.healthScore) {
     lines.push(

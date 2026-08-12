@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   enrichSidebarStudioActionProgressWithHandoff,
+  isCanonicalStudioRepairDecision,
   parseSidebarStudioActionProgress,
   studioAgentToolProgressCopy,
 } from '../../webview-ui/src/lib/sidebarStudioActionProgress';
@@ -268,6 +269,44 @@ describe('sidebarStudioActionProgress', () => {
         { id: 'verify', kind: 'verify', status: 'passed', summary: 'Target passed.' },
       ],
     });
+  });
+
+  it('preserves rolled-back transaction state so attempted edits are presented as restored', () => {
+    expect(
+      parseSidebarStudioActionProgress({
+        action: 'apply-workspace-patch',
+        status: 'failed',
+        transaction: {
+          transactionId: 'repair-restored',
+          state: 'rolled-back',
+        },
+      })
+    ).toMatchObject({
+      transactionId: 'repair-restored',
+      transactionState: 'rolled-back',
+    });
+  });
+
+  it('only exposes decisions backed by a CLI transaction and explicit options', () => {
+    expect(
+      isCanonicalStudioRepairDecision({
+        action: 'repair-session',
+        status: 'review',
+        title: 'Decision required',
+        summary: 'Choose a safe path.',
+        transactionId: 'repair-123',
+        decisionOptions: ['approve', 'cancel'],
+      })
+    ).toBe(true);
+    expect(
+      isCanonicalStudioRepairDecision({
+        action: 'repair-session',
+        status: 'review',
+        title: 'Decision required',
+        summary: 'Internal policy loop.',
+        terminalReason: 'source-repair-policy-loop',
+      })
+    ).toBe(false);
   });
 
   it('maps handoff verify progress before the host responds', () => {

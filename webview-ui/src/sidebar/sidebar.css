@@ -2406,15 +2406,15 @@ body {
 .ws-sidebar__studio-chrome {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px 10px;
+  gap: 6px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
   background: var(--vscode-sideBar-background, var(--vscode-editor-background));
 }
 
 .ws-sidebar__tabpanel--repair .ws-sidebar__studio-chrome {
-  gap: 10px;
-  padding: 12px 14px 10px;
+  gap: 6px;
+  padding: 8px 12px;
   background: var(--vscode-sideBar-background, var(--vscode-editor-background));
 }
 
@@ -2422,45 +2422,30 @@ body {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 10px;
+  gap: 5px;
 }
 
 .ws-sidebar__studio-context-path {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 7px;
-  min-width: 0;
-}
-
-.ws-sidebar__studio-context-path > small {
-  color: var(--vscode-descriptionForeground);
-  font-size: var(--ws-sidebar-text-xxs);
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.ws-sidebar__studio-context-path > div {
-  display: flex;
-  min-width: 120px;
-  flex: 1 1 160px;
-  align-items: baseline;
   gap: 5px;
+  min-width: 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--ws-sidebar-text-xs);
+  line-height: var(--ws-sidebar-leading-tight);
   overflow: hidden;
 }
 
-.ws-sidebar__studio-context-path strong {
+.ws-sidebar__studio-context-path > span {
+  flex: 0 0 auto;
   overflow: hidden;
-  font-size: var(--ws-sidebar-text-sm);
-  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ws-sidebar__studio-context-path > div span {
-  flex-shrink: 0;
-  color: var(--vscode-descriptionForeground);
+.ws-sidebar__studio-context-path > .ws-sidebar__studio-blocker-summary {
+  flex: 1 1 auto;
 }
 
 .ws-sidebar__studio-scope-badge,
@@ -2480,31 +2465,23 @@ body {
 .ws-sidebar__studio-incident-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
+  align-items: center;
   gap: 8px;
   min-width: 0;
-  padding-top: 9px;
-  border-top: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
+  padding: 0;
+  border: 0;
 }
 
 .ws-sidebar__studio-incident-copy {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
-}
-
-.ws-sidebar__studio-incident-copy small {
-  color: var(--vscode-descriptionForeground);
-  font-size: var(--ws-sidebar-text-xxs);
-  font-weight: 650;
-  letter-spacing: 0.055em;
-  text-transform: uppercase;
+  gap: 3px;
 }
 
 .ws-sidebar__studio-incident-copy strong {
   overflow: hidden;
-  font-size: var(--ws-sidebar-text-md);
+  font-size: var(--ws-sidebar-text-sm);
   font-weight: 650;
   line-height: var(--ws-sidebar-leading-tight);
   text-overflow: ellipsis;
@@ -2512,13 +2489,7 @@ body {
 }
 
 .ws-sidebar__studio-incident-copy span {
-  display: -webkit-box;
-  overflow: hidden;
   color: var(--vscode-descriptionForeground);
-  font-size: var(--ws-sidebar-text-xs);
-  line-height: var(--ws-sidebar-leading-normal);
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .ws-sidebar__studio-state-badge[data-phase='fixing'],
@@ -2845,6 +2816,23 @@ body {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+}
+
+.ws-sidebar__repair-decision-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 5%, transparent);
+}
+
+.ws-sidebar__repair-decision-options .ws-sidebar__inline {
+  width: 100%;
+  min-height: 28px;
+  text-align: left;
 }
 
 .ws-sidebar__repair-copy p {
@@ -3286,7 +3274,7 @@ body {
 .ws-sidebar__intelligence-rail {
   position: relative;
   width: 100%;
-  min-height: 32px;
+  min-height: 16px;
   overflow: hidden;
   background: transparent;
 }
@@ -3294,25 +3282,23 @@ body {
 .ws-sidebar__intelligence-rail-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 8px;
+  justify-content: flex-start;
+  gap: 6px;
+  margin: 0 0 5px 26px;
   color: var(--vscode-descriptionForeground);
   font-size: var(--ws-sidebar-text-xxs);
 }
 
-.ws-sidebar__intelligence-rail-head > span {
-  overflow: hidden;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.ws-sidebar__intelligence-pulse {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--vscode-textLink-foreground);
 }
 
-.ws-sidebar__intelligence-rail-head > div {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: baseline;
-  gap: 6px;
+.ws-sidebar__intelligence-rail[data-running='true'] .ws-sidebar__intelligence-pulse {
+  animation: ws-repair-live-pulse 1.4s ease-out infinite;
 }
 
 .ws-sidebar__intelligence-rail-head strong {
@@ -3322,6 +3308,7 @@ body {
 }
 
 .ws-sidebar__intelligence-rail-head small {
+  margin-left: auto;
   color: var(--vscode-descriptionForeground);
   font-variant-numeric: tabular-nums;
 }
@@ -3330,7 +3317,7 @@ body {
   display: grid;
   grid-template-columns: repeat(var(--ws-phase-count, 11), minmax(4px, 1fr));
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   min-width: 100%;
   min-height: 5px;
   animation: ws-sidebar-phase-settle 180ms cubic-bezier(0.2, 0, 0, 1);
@@ -3358,7 +3345,7 @@ body {
 .ws-sidebar__intelligence-phase-segment {
   display: block;
   width: 100%;
-  height: 3px;
+  height: 2px;
   border-radius: 1px;
   background: color-mix(in srgb, var(--vscode-foreground) 15%, transparent);
 }
@@ -3368,8 +3355,8 @@ body {
 }
 
 .ws-sidebar__intelligence-phase[data-state='active'] .ws-sidebar__intelligence-phase-segment {
-  height: 5px;
-  margin-block: -1px;
+  height: 2px;
+  margin-block: 0;
   background: var(--vscode-focusBorder);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder) 18%, transparent);
 }
@@ -3463,15 +3450,11 @@ body {
 .ws-sidebar__studio-action-progress {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
-  gap: 8px;
-  padding: 8px 9px;
-  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
-  border-radius: 6px;
-  background: color-mix(
-    in srgb,
-    var(--vscode-editorWidget-background, var(--vscode-editor-background)) 72%,
-    transparent
-  );
+  gap: 7px;
+  padding: 6px 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .ws-sidebar__studio-action-progress--historical {
@@ -3769,14 +3752,15 @@ body {
   cursor: pointer;
   color: var(--vscode-descriptionForeground);
   font-size: var(--ws-sidebar-text-xs);
-  padding: 3px 0;
+  padding: 4px 0;
+  font-weight: 600;
 }
 
 .ws-sidebar__studio-activity-history[open] {
   max-height: 220px;
-  padding: 2px 4px 4px;
-  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 60%, transparent);
-  border-radius: 6px;
+  padding: 2px 0 4px;
+  border: 0;
+  border-radius: 0;
   overflow-y: auto;
   scrollbar-width: thin;
 }

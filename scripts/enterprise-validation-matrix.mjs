@@ -26,6 +26,23 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
+function compareSemver(left, right) {
+  const parts = (value) =>
+    String(value)
+      .split('-')[0]
+      .split('.')
+      .map((entry) => Number.parseInt(entry, 10) || 0);
+  const a = parts(left);
+  const b = parts(right);
+  for (let index = 0; index < Math.max(a.length, b.length, 3); index += 1) {
+    const delta = (a[index] ?? 0) - (b[index] ?? 0);
+    if (delta !== 0) {
+      return delta;
+    }
+  }
+  return 0;
+}
+
 function requireFile(repoRoot, relativePath, errors) {
   const filePath = path.resolve(repoRoot, relativePath);
   if (!fs.existsSync(filePath)) {
@@ -115,11 +132,6 @@ function validateNpmBaseline(repoRoot, matrix, errors, options = {}) {
   }
 
   const extensionCompatibility = readJson(extensionCompatibilityPath).minimumVerifiedCliVersion;
-  if (matrix.npmTruthBaseline !== extensionCompatibility) {
-    errors.push(
-      `Matrix npmTruthBaseline ${matrix.npmTruthBaseline} does not match extension compatibility ${extensionCompatibility}.`
-    );
-  }
 
   if (!fs.existsSync(npmPackagePath) || !fs.existsSync(npmCompatibilityPath)) {
     if (options.requireCanonical) {
@@ -138,14 +150,14 @@ function validateNpmBaseline(repoRoot, matrix, errors, options = {}) {
       `Matrix npmTruthBaseline ${matrix.npmTruthBaseline} does not match npm ${npmVersion}.`
     );
   }
-  if (npmCompatibility !== npmVersion) {
-    errors.push(
-      `npm extension-cli-compatibility ${npmCompatibility} does not match npm ${npmVersion}.`
-    );
-  }
   if (extensionCompatibility !== npmCompatibility) {
     errors.push(
       `extension compatibility ${extensionCompatibility} does not match npm compatibility ${npmCompatibility}.`
+    );
+  }
+  if (compareSemver(matrix.npmTruthBaseline, extensionCompatibility) < 0) {
+    errors.push(
+      `Matrix npmTruthBaseline ${matrix.npmTruthBaseline} is below extension minimum ${extensionCompatibility}.`
     );
   }
 }

@@ -1,6 +1,9 @@
 import type { StudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
 import type { DoctorRemediationPlanView } from './doctorRemediationPlanReader.js';
-import { shouldForbidSourceCommandRerun } from './studioBlockerResolution.js';
+import {
+  resolveStudioRunOnceProducerCommands,
+  shouldForbidSourceCommandRerun,
+} from './studioBlockerResolution.js';
 const DEFAULT_WORKSPACE_VERIFY_COMMAND = 'workspace verify --json';
 
 export function buildSidebarStudioPrompt(input: {
@@ -13,7 +16,8 @@ export function buildSidebarStudioPrompt(input: {
   const remediationPlan = input.remediationPlan;
   const executionMode = handoff?.studioMode;
   const forbidRerun =
-    handoff != null &&
+    handoff !== null &&
+    handoff !== undefined &&
     shouldForbidSourceCommandRerun({
       mode: executionMode ?? 'FIX',
       commandRunCount: handoff.commandRunCount ?? 0,
@@ -57,9 +61,11 @@ export function buildSidebarStudioPrompt(input: {
       ...(handoff.workspacePath ? [`- Workspace path: ${handoff.workspacePath}`] : []),
       ...(handoff.projectPath ? [`- Project path: ${handoff.projectPath}`] : []),
       ...(handoff.artifactPath ? [`- Evidence artifact: ${handoff.artifactPath}`] : []),
-      ...(handoff.exitCode != null ? [`- Last exit code: ${handoff.exitCode}`] : []),
+      ...(handoff.exitCode !== null && handoff.exitCode !== undefined
+        ? [`- Last exit code: ${handoff.exitCode}`]
+        : []),
       ...(handoff.stderrTail ? [`- Last stderr tail: ${handoff.stderrTail.slice(0, 800)}`] : []),
-      ...(handoff.commandRunCount != null
+      ...(handoff.commandRunCount !== null && handoff.commandRunCount !== undefined
         ? [`- Prior command runs for this signature: ${handoff.commandRunCount}`]
         : []),
       ...(handoff.incidentSummary
@@ -73,8 +79,27 @@ export function buildSidebarStudioPrompt(input: {
       ...(handoff.blockers.length > 0
         ? [`- Blockers: ${handoff.blockers.slice(0, 4).join('; ')}`]
         : []),
+      ...(handoff.doctorFindings?.length
+        ? [
+            '- Canonical Doctor targets:',
+            ...handoff.doctorFindings
+              .slice(0, 6)
+              .map(
+                (finding) =>
+                  `  - ${finding.id}${finding.causalKey ? ` · causal ${finding.causalKey}` : ''}${finding.projectName ? ` · project ${finding.projectName}` : ''}${finding.capabilityId ? ` · capability ${finding.capabilityId}` : ''} · ${finding.repairDisposition ?? 'unknown repair disposition'} · ${finding.symptom}`
+              ),
+          ]
+        : []),
       ...(handoff.verifyCommand ? [`- Verify after fix: ${handoff.verifyCommand}`] : [])
     );
+
+    const resolutionCommands = resolveStudioRunOnceProducerCommands(handoff);
+    if (resolutionCommands.length > 0) {
+      lines.push(
+        '- Contract-authored causal producers:',
+        ...resolutionCommands.map((command) => `  - ${command}`)
+      );
+    }
 
     lines.push(
       '',
@@ -83,6 +108,7 @@ export function buildSidebarStudioPrompt(input: {
       '- Do not ask the user to restate the blocker; use the active blocker handoff, project path, remediation plan, artifact, and verify command first.',
       '- If the user asks a casual or clarifying question, answer briefly, then return to the current card fix path and next safe action.',
       '- Prefer the project path from the handoff over the globally active workspace/project when they differ.',
+      '- For Doctor cards, bind every action to the supplied canonical finding id, causal key, project path, and capability id; never substitute an advisory finding for the selected blocking cause.',
       '- If a deterministic approval-free Studio apply step exists, continue it automatically instead of asking the user to run commands.',
       '- Pause once for approval only when the contract marks a step guarded, review-required, invasive, destructive, external, or ambiguous.',
       '- If deterministic steps are exhausted or blocked, continue with the smallest AI-assisted source/config edit grounded in the blocker and current evidence.'
@@ -146,7 +172,8 @@ export function buildSidebarStudioPrompt(input: {
     lines.push(
       '',
       'RUN_ONCE contract:',
-      '- Missing artifact: run the source command once via Studio bridge, then prompt verify.',
+      '- Missing artifact: run every distinct contract-authored causal producer once through the governed Studio bridge, then verify.',
+      '- Do not propose a source edit while the declared evidence producer has not been observed.',
       '- Put the single runnable command in a bash fence if needed.'
     );
   } else if (executionMode !== 'VERIFY_ONLY') {

@@ -1,3 +1,5 @@
+import { projectDoctorEvidence } from './doctorEvidenceProjection.js';
+
 function collectStringItems(value: unknown, limit = 8): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -11,6 +13,16 @@ export function collectDoctorProjectRecordBlockers(
   record: Record<string, unknown>,
   limit = 8
 ): string[] {
+  if (record.diagnosis && typeof record.diagnosis === 'object') {
+    return projectDoctorEvidence(
+      { project: record },
+      {
+        scope: 'project',
+        projectPath: typeof record.path === 'string' ? record.path : undefined,
+        projectName: typeof record.name === 'string' ? record.name : undefined,
+      }
+    ).blockers.slice(0, limit);
+  }
   const blockers = collectStringItems(record.issues, limit);
 
   const vulnerabilities = Number(record.vulnerabilities);

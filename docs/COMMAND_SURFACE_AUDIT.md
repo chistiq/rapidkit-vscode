@@ -67,6 +67,34 @@ these messages:
 - User-facing sidebar copy should show workspace/project names, not full local
   paths, unless the user explicitly opens or copies a path.
 
+## CLI artifact and Assistant alignment
+
+- `contracts/runtime-command-surface.v1.json` is the offline artifact baseline.
+  `workspaceIntelligenceArtifactCatalog.ts` projects every safe
+  `.workspai/reports/*` contract from that surface; handwritten report lists are
+  not an authority.
+- `.workspai/reports/INDEX.json` is the live consumer manifest. It may add
+  reports, validation state, labels, ordering, and stronger requirements, but
+  it cannot downgrade the required agent-context baseline.
+- Dashboard artifact routing maps Doctor evidence, project evidence, capability,
+  validation, receipt, and cache artifacts back to the canonical Doctor card.
+  An artifact viewer never invents a second health verdict.
+- Assistant Ask, Plan, and Agent receive the same existing-artifact inventory
+  plus aggregate freshness. They inspect the smallest relevant artifact set
+  through `inspect-evidence`; generated reports remain excluded from ordinary
+  source discovery.
+- Ask and Plan are read-only and must disclose stale or missing evidence. Agent
+  may refresh an advertised governed producer, but source mutation still crosses
+  the CLI Repair Engine proposal/approval/transaction boundary.
+- Blocker Studio receives the complete contract-bounded evidence-path set. The
+  host never truncates the allowlist in model context, and a model-selected path
+  is still checked against the host allowlist before it can be read.
+- Capability classification is scope-aware: module maintenance commands are
+  checked against `commands.projectScoped`, workspace operations against
+  `workspace.subcommands`, and root producers against top-level/core-backed
+  commands. A command name shared by two scopes is never classified by name
+  alone.
+
 ## Release Audit
 
 Before publishing the extension:

@@ -93,3 +93,20 @@ export function shouldForbidSourceCommandRerun(input: {
   }
   return input.mode === 'FIX' || input.mode === 'EXPLAIN' || input.mode === 'VERIFY_ONLY';
 }
+
+/** Exact governed producers for a first-pass missing-artifact recovery. */
+export function resolveStudioRunOnceProducerCommands(
+  handoff: Pick<StudioBlockerHandoff, 'studioMode' | 'resolutionHints'>
+): string[] {
+  if (handoff.studioMode !== 'RUN_ONCE') {
+    return [];
+  }
+  return [
+    ...new Set(
+      (handoff.resolutionHints ?? [])
+        .filter((hint) => hint.resolutionClass === 'artifact-missing')
+        .map((hint) => hint.sourceCommand?.trim())
+        .filter((command): command is string => Boolean(command))
+    ),
+  ].slice(0, 8);
+}

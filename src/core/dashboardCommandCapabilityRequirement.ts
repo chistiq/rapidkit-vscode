@@ -18,7 +18,7 @@ const PROJECT_RUNTIME_COMMANDS = new Set([
 ]);
 
 export function resolveDashboardCommandCapabilityRequirement(
-  contract: Pick<DashboardCommandContract, 'cliArgs'> | undefined
+  contract: Pick<DashboardCommandContract, 'cliArgs' | 'scope'> | undefined
 ): DashboardCommandCapabilityRequirement | undefined {
   const cliArgs = contract?.cliArgs ?? [];
   const command = cliArgs[0];
@@ -37,7 +37,7 @@ export function resolveDashboardCommandCapabilityRequirement(
       : undefined;
   }
 
-  if (PROJECT_RUNTIME_COMMANDS.has(command)) {
+  if (PROJECT_RUNTIME_COMMANDS.has(command) || contract?.scope === 'module') {
     return {
       kind: 'project-runtime',
       command,

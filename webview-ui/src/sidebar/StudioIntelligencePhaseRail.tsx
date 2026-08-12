@@ -10,11 +10,13 @@ import {
 type StudioIntelligencePhaseRailProps = {
   activePhase: StudioIntelligencePhaseId;
   running: boolean;
+  completed?: boolean;
 };
 
 export function StudioIntelligencePhaseRail({
   activePhase,
   running,
+  completed = false,
 }: StudioIntelligencePhaseRailProps) {
   const previousIndex = useRef(studioIntelligencePhaseIndex(activePhase));
   const [direction, setDirection] = useState<'forward' | 'backward' | 'idle'>('idle');
@@ -34,28 +36,40 @@ export function StudioIntelligencePhaseRail({
       aria-label="Workspace Intelligence repair loop"
       aria-valuemax={phaseCount}
       aria-valuemin={1}
-      aria-valuenow={activeIndex + 1}
-      aria-valuetext={`${activeLabel}, step ${activeIndex + 1} of ${phaseCount}`}
+      aria-valuenow={completed ? phaseCount : activeIndex + 1}
+      aria-valuetext={
+        completed
+          ? `Verified, ${phaseCount} of ${phaseCount}`
+          : `${activeLabel}, step ${activeIndex + 1} of ${phaseCount}`
+      }
       data-direction={direction}
       data-running={running ? 'true' : 'false'}
       style={{ '--ws-phase-count': phaseCount } as CSSProperties}
     >
       <div className="ws-sidebar__intelligence-rail-head">
-        <span>Intelligence loop</span>
-        <div>
-          <strong>{activeLabel}</strong>
-          <small>
-            {activeIndex + 1} of {phaseCount}
-          </small>
-        </div>
+        <span className="ws-sidebar__intelligence-pulse" aria-hidden="true" />
+        <strong>{completed ? 'Verified' : activeLabel}</strong>
+        <small>
+          {completed
+            ? `Complete · ${phaseCount}/${phaseCount}`
+            : `${running ? 'Working' : 'Paused'} · ${activeIndex + 1}/${phaseCount}`}
+        </small>
       </div>
       <div className="ws-sidebar__intelligence-rail-track" key={activePhase}>
         {STUDIO_INTELLIGENCE_PHASES.map((phase, index) => (
           <div
             key={phase.id}
             className="ws-sidebar__intelligence-phase"
-            data-state={index < activeIndex ? 'past' : index === activeIndex ? 'active' : 'future'}
-            aria-current={index === activeIndex ? 'step' : undefined}
+            data-state={
+              completed
+                ? 'past'
+                : index < activeIndex
+                  ? 'past'
+                  : index === activeIndex
+                    ? 'active'
+                    : 'future'
+            }
+            aria-current={!completed && index === activeIndex ? 'step' : undefined}
             aria-label={`${index + 1}. ${phase.label}`}
             title={`${index + 1}. ${phase.label}`}
           >

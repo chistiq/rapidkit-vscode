@@ -136,6 +136,58 @@ describe('Studio active blocker recovery', () => {
     });
   });
 
+  it('preserves the canonical transaction and decision across the recovery wrapper', async () => {
+    const inspectRemediationPlan = vi.fn(async () => ({
+      ok: true,
+      output: {
+        steps: [
+          {
+            id: 'doctor.web.policy-exception',
+            order: 1,
+            risk: 'guarded',
+            studioState: 'review-required',
+            executable: true,
+          },
+        ],
+      },
+    }));
+    const executeRemediationStep = vi.fn(async () => ({
+      ok: false,
+      changed: true,
+      output: {
+        transaction: {
+          transactionId: 'repair-decision-1',
+          state: 'decision-required',
+          decision: { options: ['approve-guarded', 'cancel'] },
+        },
+        nextAction: 'review-required',
+        requiresUserDecision: true,
+      },
+    }));
+
+    const result = await runStudioActiveBlockerRecovery({
+      blockers: ['Policy approval is required.'],
+      dependencyProjectNames: [],
+      evidenceGeneration: 'policy-v1',
+      workspacePath: '/workspace',
+      host: host({ inspectRemediationPlan, executeRemediationStep }),
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      changed: true,
+      output: {
+        recoveryPath: 'contract-remediation-plan',
+        nextAction: 'review-required',
+        requiresUserDecision: true,
+        transaction: {
+          transactionId: 'repair-decision-1',
+          state: 'decision-required',
+        },
+      },
+    });
+  });
+
   it('repairs every vulnerable project before returning to canonical verification', async () => {
     const inspectDependencySecurity = vi.fn(async (input: { projectName?: string }) => ({
       ok: true,

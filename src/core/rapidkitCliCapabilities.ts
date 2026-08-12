@@ -202,7 +202,7 @@ async function showCliCapabilityGate(
   }
 
   const choice = await vscode.window.showErrorMessage(
-    `${featureLabel} is blocked because your linked Workspai CLI does not advertise required capabilities: ${missingFeatures.join(', ')}. Verify with \`npx workspai commands --json\`, link or install the latest workspai package, then reload the window.`,
+    `${featureLabel} is blocked because your linked Workspai CLI does not advertise required capabilities: ${missingFeatures.join(', ')}. Verify with \`workspai commands --json\`, link or install the latest Workspai package, then reload the window.`,
     'Open Setup'
   );
 

@@ -22,6 +22,7 @@ const PHASE_LABEL: Record<StudioFixPhase, string> = {
   fixing: 'Fixing',
   'fix-applied': 'Awaiting verify',
   'awaiting-verify': 'Awaiting verify',
+  verified: 'Verified',
 };
 
 export function StudioBlockerChrome({
@@ -43,11 +44,6 @@ export function StudioBlockerChrome({
     'Workspace';
   const resolvedProjectName =
     projectName?.trim() || handoff.projectPath?.split(/[\\/]/).filter(Boolean).at(-1);
-  const affectedProjectCount = handoff.affectedProjectNames?.length ?? 0;
-  const scopeLabel =
-    handoff.scope === 'workspace'
-      ? `Workspace repair${affectedProjectCount > 0 ? ` · ${affectedProjectCount} project${affectedProjectCount === 1 ? '' : 's'}` : ''}`
-      : 'Project repair';
   const blocker = handoff.blockers[0];
   return (
     <div className="ws-sidebar__studio-chrome" data-phase={phase}>
@@ -57,23 +53,9 @@ export function StudioBlockerChrome({
         aria-live="polite"
         aria-label={`${resolvedWorkspaceName}${resolvedProjectName ? `, ${resolvedProjectName}` : ''}, ${subject}, ${PHASE_LABEL[phase]}`}
       >
-        <div className="ws-sidebar__studio-context-path">
-          <small>Workspace</small>
-          <div>
-            <strong title={handoff.workspacePath}>{resolvedWorkspaceName}</strong>
-            {resolvedProjectName ? (
-              <>
-                <span aria-hidden="true">/</span>
-                <strong title={handoff.projectPath}>{resolvedProjectName}</strong>
-              </>
-            ) : null}
-          </div>
-          <span className="ws-sidebar__studio-scope-badge">{scopeLabel}</span>
-        </div>
-
         <div className="ws-sidebar__studio-incident-row">
           <span className="ws-sidebar__studio-posture-icon" aria-hidden="true">
-            {phase === 'awaiting-verify' || phase === 'fix-applied' ? (
+            {phase === 'awaiting-verify' || phase === 'fix-applied' || phase === 'verified' ? (
               <CheckCircle2 size={14} strokeWidth={1.75} />
             ) : handoff.studioMode === 'EXPLAIN' ? (
               <AlertTriangle size={14} strokeWidth={1.75} />
@@ -82,9 +64,24 @@ export function StudioBlockerChrome({
             )}
           </span>
           <div className="ws-sidebar__studio-incident-copy">
-            <small>Incident</small>
             <strong>{subject}</strong>
-            {blocker ? <span title={blocker}>{blocker}</span> : null}
+            <span className="ws-sidebar__studio-context-path">
+              <span title={handoff.workspacePath}>{resolvedWorkspaceName}</span>
+              {resolvedProjectName ? (
+                <>
+                  <span aria-hidden="true">/</span>
+                  <span title={handoff.projectPath}>{resolvedProjectName}</span>
+                </>
+              ) : null}
+              {blocker ? (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="ws-sidebar__studio-blocker-summary" title={blocker}>
+                    {blocker}
+                  </span>
+                </>
+              ) : null}
+            </span>
           </div>
           <span className="ws-sidebar__studio-state-badge" data-phase={phase}>
             {PHASE_LABEL[phase]}
@@ -168,6 +165,51 @@ export function parseStudioBlockerHandoffView(value: unknown): StudioBlockerHand
       ? record.affectedProjectNames.filter(
           (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
         )
+      : undefined,
+    doctorFindings: Array.isArray(record.doctorFindings)
+      ? record.doctorFindings.flatMap((entry) => {
+          if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+            return [];
+          }
+          const finding = entry as Record<string, unknown>;
+          const status = finding.status;
+          if (
+            typeof finding.id !== 'string' ||
+            typeof finding.symptom !== 'string' ||
+            (status !== 'blocking' &&
+              status !== 'advisory' &&
+              status !== 'informational' &&
+              status !== 'unknown')
+          ) {
+            return [];
+          }
+          return [
+            {
+              id: finding.id,
+              symptom: finding.symptom,
+              status,
+              causalKey: typeof finding.causalKey === 'string' ? finding.causalKey : undefined,
+              projectName:
+                typeof finding.projectName === 'string' ? finding.projectName : undefined,
+              projectPath:
+                typeof finding.projectPath === 'string' ? finding.projectPath : undefined,
+              probeId: typeof finding.probeId === 'string' ? finding.probeId : undefined,
+              issueClass: typeof finding.issueClass === 'string' ? finding.issueClass : undefined,
+              repairDisposition:
+                typeof finding.repairDisposition === 'string'
+                  ? finding.repairDisposition
+                  : undefined,
+              capabilityId:
+                typeof finding.capabilityId === 'string' ? finding.capabilityId : undefined,
+              verifyCommand:
+                typeof finding.verifyCommand === 'string' ? finding.verifyCommand : undefined,
+              requiresFreshEvidence:
+                typeof finding.requiresFreshEvidence === 'boolean'
+                  ? finding.requiresFreshEvidence
+                  : undefined,
+            },
+          ];
+        })
       : undefined,
     artifactPath: typeof record.artifactPath === 'string' ? record.artifactPath : '',
     sourceCommand: record.sourceCommand,

@@ -1,6 +1,6 @@
 import path from 'path';
 
-import { collectDoctorProjectRecordBlockers } from './doctorEvidenceBlockers.js';
+import { projectDoctorEvidence } from './doctorEvidenceProjection.js';
 import type { DashboardEvidenceStatus } from './dashboardEvidenceBridge';
 import { resolveWorkspaceRunCardReport } from './workspaceRunEvidence.js';
 import { summarizePolicyViolations } from './workspacePolicyViolations.js';
@@ -8,6 +8,10 @@ import { summarizePolicyViolations } from './workspacePolicyViolations.js';
 export type DashboardReportKind =
   | 'doctor-last-run'
   | 'doctor-project-last-run'
+  | 'doctor-capabilities'
+  | 'doctor-validation'
+  | 'doctor-receipt'
+  | 'doctor-workspace-cache'
   | 'pipeline-last-run'
   | 'analyze-last-run'
   | 'release-readiness-last-run'
@@ -68,6 +72,42 @@ const REPORT_BINDINGS: Array<{
       command: 'projectDoctor',
       cardId: 'projectDoctor',
       scope: 'project',
+    },
+  },
+  {
+    match: (name) => name === 'doctor-capabilities.json',
+    binding: {
+      kind: 'doctor-capabilities',
+      command: 'checkWorkspaceHealth',
+      cardId: 'doctor',
+      scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'doctor-validation-last-run.json',
+    binding: {
+      kind: 'doctor-validation',
+      command: 'checkWorkspaceHealth',
+      cardId: 'doctor',
+      scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'doctor-receipt-last-run.json',
+    binding: {
+      kind: 'doctor-receipt',
+      command: 'checkWorkspaceHealth',
+      cardId: 'doctor',
+      scope: 'workspace',
+    },
+  },
+  {
+    match: (name) => name === 'doctor-workspace-cache.json',
+    binding: {
+      kind: 'doctor-workspace-cache',
+      command: 'checkWorkspaceHealth',
+      cardId: 'doctor',
+      scope: 'workspace',
     },
   },
   {
@@ -606,6 +646,17 @@ export function extractBlockersFromReport(
     }
     case 'doctor-last-run':
     case 'doctor-project-last-run': {
+      const projection = projectDoctorEvidence(raw, {
+        scope:
+          kind === 'doctor-project-last-run' || options?.projectPath || options?.projectName
+            ? 'project'
+            : 'workspace',
+        projectPath: options?.projectPath,
+        projectName: options?.projectName,
+      });
+      if (projection.canonical) {
+        return projection.blockers;
+      }
       const projects = Array.isArray(raw.projects) ? raw.projects : [];
       const projectPath = options?.projectPath;
       const projectName = options?.projectName;
@@ -635,7 +686,16 @@ export function extractBlockersFromReport(
       }
       const blockers: string[] = [];
       for (const entry of scopedProjects) {
-        blockers.push(...collectDoctorProjectRecordBlockers(entry as Record<string, unknown>, 8));
+        blockers.push(
+          ...projectDoctorEvidence(
+            { project: entry },
+            {
+              scope: 'project',
+              projectPath,
+              projectName,
+            }
+          ).blockers
+        );
       }
       if (blockers.length > 0) {
         return blockers.slice(0, 8);

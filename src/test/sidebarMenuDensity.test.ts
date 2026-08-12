@@ -50,6 +50,11 @@ describe('primary sidebar menu density', () => {
     );
 
     expect(workspaceInline).toHaveLength(3);
+    expect(workspaceInline.map((entry) => entry.command)).toEqual([
+      'workspai.openIncidentStudio',
+      'workspai.workspaceTerminal',
+      'workspai.checkWorkspaceHealth',
+    ]);
     expect(new Set(projectInline.map((entry) => entry.group))).toEqual(
       new Set(['inline@0', 'inline@2', 'inline@3'])
     );

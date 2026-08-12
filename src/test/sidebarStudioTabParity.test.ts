@@ -311,11 +311,13 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     const sidebarCss = read('webview-ui/src/sidebar/sidebar.css');
     expect(sidebarCss).not.toContain('.ws-sidebar__studio-action-timeline');
     const repairPrelude = read('webview-ui/src/sidebar/StudioRepairPrelude.tsx');
-    expect(repairPrelude).toContain('Studio is running');
+    expect(repairPrelude).toContain('Working on the repair');
     expect(repairPrelude).toContain('Start repair');
     expect(repairPrelude).toContain('Resume repair');
     expect(repairPrelude).toContain('Stop session');
-    expect(repairPrelude).toContain('Review options');
+    expect(repairPrelude).toContain('Choose how to continue');
+    expect(repairPrelude).toContain('ws-sidebar__repair-decision-options');
+    expect(repairPrelude).toContain('onDecision(decision, transactionId)');
     expect(repairPrelude).toContain('explicit engineering decision');
     expect(repairPrelude).toContain('verification required');
     expect(repairPrelude).not.toContain('ws-sidebar__repair-avatar');

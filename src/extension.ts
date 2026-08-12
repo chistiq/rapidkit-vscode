@@ -13,11 +13,6 @@ import { setWorkspaceEvidenceRefreshHandler } from './core/workspaceIntelligence
 import { presentCliVersionGate, resolveLinkedCliVersion } from './core/cliVersionGate';
 import { syncWalkthroughEvidenceContext } from './core/walkthroughEvidenceContext';
 import { ensureInstalledAt } from './core/ttfvBridge';
-import {
-  registerTelemetryEnablementListener,
-  showAnalyticsConsentPrompt,
-} from './core/analyticsConsent';
-import { captureRetentionAnalytics } from './core/retentionAnalytics';
 import { registerModuleExplorerReload } from './core/moduleExplorerRuntime';
 import { ActionsWebviewProvider } from './ui/webviews/actionsWebviewProvider';
 import { WorkspaceExplorerProvider } from './ui/treeviews/workspaceExplorer';
@@ -607,9 +602,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Record first-ever activation timestamp for Time-to-First-Value (roadmap 2.9).
   void ensureInstalledAt(context);
-
-  // Re-evaluate effective analytics opt-in when VS Code telemetry toggles (roadmap 2.10).
-  registerTelemetryEnablementListener(context);
 
   const { warmRapidkitNpmPackageResolution } = await import('./utils/platformCapabilities.js');
   void warmRapidkitNpmPackageResolution();
@@ -1391,16 +1383,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
         // Non-blocking: onboarding toast should not delay activation completion.
         void showAIFeatureOnboarding(context);
-
-        // Optional, opt-in retention analytics (roadmap 2.10). One-time consent
-        // prompt (privacy-first, default off); capture a local anonymous cohort
-        // snapshot only when explicitly opted in.
-        void runOptionalActivationLane(logger, 'retention-analytics', async () => {
-          await showAnalyticsConsentPrompt();
-          await captureRetentionAnalytics(context, {
-            extensionVersion: context.extension.packageJSON.version,
-          });
-        });
 
         registerProjectRefreshWatchers(context, config, () => {
           projectExplorer.refresh();

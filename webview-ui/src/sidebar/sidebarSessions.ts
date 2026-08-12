@@ -36,6 +36,7 @@ export interface ChatSessionIncident {
   scope?: 'workspace' | 'project';
   blockers?: string[];
   affectedProjectNames?: string[];
+  doctorFindings?: import('@/lib/studioBlockerHandoff').StudioDoctorFindingView[];
   blockerSignature?: string;
   commandRunCount?: number;
   resolutionClass?: string;

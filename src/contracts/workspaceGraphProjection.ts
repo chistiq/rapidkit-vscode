@@ -28,9 +28,60 @@ export type WorkspaceGraphProofProjection = {
   artifact?: string;
   pointer?: string;
   line?: number;
+  column?: number;
+  observedAt?: string;
+  derivation?: string;
   trust?: string;
   confidence?: string;
   freshness?: string;
+  detail?: string;
+};
+
+export type WorkspaceGraphProviderProjection = {
+  id: string;
+  version?: string;
+  status?: string;
+  permission?: string;
+  discoveredEntities?: number;
+  discoveredRelations?: number;
+  proofCount?: number;
+  diagnostics: string[];
+};
+
+export type WorkspaceGraphInputScopeProjection = {
+  kind: string;
+  id: string;
+  strategy?: string;
+  fileCount?: number;
+  fileLimit?: number;
+  truncated?: boolean;
+};
+
+export type WorkspaceGraphBindingCoverageProjection = {
+  eligibleCount: number;
+  boundCount: number;
+  unknownCount: number;
+  coverageRatio: number | null;
+};
+
+export type WorkspaceGraphQualityProjection = {
+  [key: string]:
+    | number
+    | string
+    | boolean
+    | Record<string, WorkspaceGraphBindingCoverageProjection>
+    | undefined;
+  entityCount?: number;
+  relationCount?: number;
+  proofCount?: number;
+  entityProofCoverageRatio?: number;
+  relationProofCoverageRatio?: number;
+  providerSuccessRatio?: number;
+  conflictCount?: number;
+  unknownCount?: number;
+  portable?: boolean;
+  secretValuesEmitted?: boolean;
+  bindingCoverage?: Record<string, WorkspaceGraphBindingCoverageProjection>;
 };
 
 export type WorkspaceGraphProjection = {
@@ -43,9 +94,23 @@ export type WorkspaceGraphProjection = {
   entities: WorkspaceGraphEntityProjection[];
   relations: WorkspaceGraphRelationProjection[];
   proofs: WorkspaceGraphProofProjection[];
-  providers: Array<{ id: string; status?: string; proofCount?: number }>;
-  quality: Record<string, number | string | boolean>;
-  diagnostics: Array<{ code: string; severity: string; message: string; recommendation?: string }>;
+  workspace?: { name?: string; profile?: string };
+  source?: {
+    artifact?: string;
+    strategy?: string;
+    inputHash?: string;
+    scopes: WorkspaceGraphInputScopeProjection[];
+  };
+  providers: WorkspaceGraphProviderProjection[];
+  quality: WorkspaceGraphQualityProjection;
+  diagnostics: Array<{
+    code: string;
+    severity: string;
+    message: string;
+    recommendation?: string;
+    entityIds?: string[];
+    relationIds?: string[];
+  }>;
   highlightedEntityIds?: string[];
 };
 

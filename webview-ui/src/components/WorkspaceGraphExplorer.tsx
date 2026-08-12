@@ -47,12 +47,21 @@ const ARCHITECTURE_KINDS = new Set([
   'service',
   'api',
   'endpoint',
+  'schema',
+  'protocol',
+  'language',
+  'package',
+  'runtime-unit',
+  'lifecycle-stage',
   'database',
   'queue',
   'container',
   'deployment',
   'pipeline',
   'environment',
+  'decision',
+  'test-suite',
+  'owner',
 ]);
 
 function graphFromEvidence(
@@ -86,6 +95,35 @@ function formatRecordingElapsed(milliseconds: number): string {
     2,
     '0'
   )}`;
+}
+
+function proofPathLabel(artifact: string): string {
+  const normalized = artifact.replace(/\\/g, '/');
+  if (normalized.startsWith('external/')) {
+    const [, projectId, ...rest] = normalized.split('/');
+    return [projectId, ...rest].filter(Boolean).join(' › ');
+  }
+  if (normalized.startsWith('redacted/')) {
+    return `${normalized.slice('redacted/'.length)} · location hidden`;
+  }
+  return normalized;
+}
+
+function readableMetricName(value: string): string {
+  return value
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[-_]/g, ' ')
+    .replace(/^./, (character) => character.toUpperCase());
+}
+
+function attributeValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.join(', ');
+  }
+  if (value === null || value === undefined || value === '') {
+    return '—';
+  }
+  return String(value);
 }
 
 export function WorkspaceGraphExplorer({
@@ -128,7 +166,17 @@ export function WorkspaceGraphExplorer({
   onStopRecording: (input: WorkspaceGraphRecordingStopInput) => void;
   onOpenRecording: () => void;
 }) {
-  const graph = useMemo(() => liveGraph ?? graphFromEvidence(evidence), [evidence, liveGraph]);
+  const graph = useMemo(() => {
+    const persistedGraph = graphFromEvidence(evidence);
+    if (!liveGraph) {
+      return persistedGraph;
+    }
+    return {
+      ...liveGraph,
+      workspace: liveGraph.workspace ?? persistedGraph?.workspace,
+      source: liveGraph.source ?? persistedGraph?.source,
+    };
+  }, [evidence, liveGraph]);
   const [mode, setMode] = useState<GraphMode>('explore');
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState('all');
@@ -208,8 +256,43 @@ export function WorkspaceGraphExplorer({
         (relation) => relation.from === selected.id || relation.to === selected.id
       ) ?? [])
     : [];
+  const selectedProofIds = new Set([
+    ...(selected?.proofIds ?? []),
+    ...selectedRelations.flatMap((relation) => relation.proofIds),
+  ]);
   const selectedProofs = selected
-    ? (graph?.proofs.filter((proof) => selected.proofIds.includes(proof.id)) ?? [])
+    ? (graph?.proofs.filter((proof) => selectedProofIds.has(proof.id)) ?? [])
+    : [];
+  const entityById = useMemo(
+    () => new Map((graph?.entities ?? []).map((entity) => [entity.id, entity])),
+    [graph]
+  );
+  const languages = useMemo(
+    () =>
+      [
+        ...new Set(
+          (graph?.entities ?? [])
+            .filter((entity) => entity.kind === 'language')
+            .map((entity) => entity.label)
+        ),
+      ].sort(),
+    [graph]
+  );
+  const runtimeUnits = useMemo(
+    () => (graph?.entities ?? []).filter((entity) => entity.kind === 'runtime-unit').length,
+    [graph]
+  );
+  const providerStatus = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const provider of graph?.providers ?? []) {
+      const status = provider.status ?? 'unknown';
+      counts.set(status, (counts.get(status) ?? 0) + 1);
+    }
+    return counts;
+  }, [graph]);
+  const bindingCoverage = Object.entries(graph?.quality.bindingCoverage ?? {});
+  const selectedAttributes = selected
+    ? Object.entries(selected.attributes).filter(([, value]) => value !== null && value !== '')
     : [];
   const isRecording = recordingState?.status === 'recording';
   const isRecordingBusy =
@@ -604,6 +687,8 @@ export function WorkspaceGraphExplorer({
         <span>Relation proof {qualityPercent(graph.quality.relationProofCoverageRatio)}</span>
         <span>Provider success {qualityPercent(graph.quality.providerSuccessRatio)}</span>
         <span>{graph.diagnostics.length} diagnostic(s)</span>
+        <span>{graph.quality.conflictCount ?? 0} conflict(s)</span>
+        <span>{graph.quality.unknownCount ?? 0} unknown(s)</span>
         {memorySample ? (
           <span
             className={memorySample.exceeded ? 'is-danger' : ''}
@@ -614,6 +699,117 @@ export function WorkspaceGraphExplorer({
           </span>
         ) : null}
       </div>
+
+      <div className="workspace-graph-explorer__coverage" aria-label="Graph coverage summary">
+        <article>
+          <span>Language coverage</span>
+          <strong>{languages.length || '—'}</strong>
+          <small>
+            {languages.length ? languages.join(' · ') : 'No language entities reported'}
+          </small>
+        </article>
+        <article>
+          <span>Runtime topology</span>
+          <strong>{runtimeUnits}</strong>
+          <small>
+            {projects.length} project cluster(s) · {graph.source?.scopes.length ?? 0} indexed
+            scope(s)
+          </small>
+        </article>
+        <article>
+          <span>Provider health</span>
+          <strong>{graph.providers.length}</strong>
+          <small>
+            {providerStatus.get('passed') ?? 0} passed · {providerStatus.get('partial') ?? 0}{' '}
+            partial · {providerStatus.get('skipped') ?? 0} skipped ·{' '}
+            {providerStatus.get('failed') ?? 0} failed
+          </small>
+        </article>
+        <article>
+          <span>Input fingerprint</span>
+          <strong>{graph.source?.strategy ?? 'not reported'}</strong>
+          <small>
+            {!graph.source?.scopes.length
+              ? 'No source scope metadata reported'
+              : graph.source.scopes.some((scope) => scope.truncated)
+                ? 'One or more source scopes are bounded'
+                : 'All reported source scopes are complete'}
+          </small>
+        </article>
+      </div>
+
+      {graph.providers.length > 0 || bindingCoverage.length > 0 || graph.diagnostics.length > 0 ? (
+        <details className="workspace-graph-explorer__intelligence">
+          <summary>Provider, binding, and diagnostic intelligence</summary>
+          <div className="workspace-graph-explorer__intelligence-grid">
+            {graph.providers.length > 0 ? (
+              <section>
+                <h3>Providers</h3>
+                {graph.providers.map((provider) => (
+                  <div key={provider.id} className={`is-${provider.status ?? 'unknown'}`}>
+                    <strong>{provider.id}</strong>
+                    <span>{provider.status ?? 'unknown'}</span>
+                    <small>
+                      {provider.discoveredEntities ?? 0} entities ·{' '}
+                      {provider.discoveredRelations ?? 0} relations · {provider.proofCount ?? 0}{' '}
+                      proofs
+                    </small>
+                    {provider.diagnostics.map((diagnostic) => (
+                      <small key={diagnostic}>{diagnostic}</small>
+                    ))}
+                  </div>
+                ))}
+              </section>
+            ) : null}
+            {bindingCoverage.length > 0 ? (
+              <section>
+                <h3>Semantic bindings</h3>
+                {bindingCoverage.map(([name, coverage]) => (
+                  <div key={name}>
+                    <strong>{readableMetricName(name)}</strong>
+                    <span>{qualityPercent(coverage.coverageRatio)}</span>
+                    <small>
+                      {coverage.boundCount}/{coverage.eligibleCount} bound · {coverage.unknownCount}{' '}
+                      unknown
+                    </small>
+                  </div>
+                ))}
+              </section>
+            ) : null}
+            {graph.source?.scopes.length ? (
+              <section>
+                <h3>Source scopes</h3>
+                {graph.source.scopes.map((scope) => (
+                  <div
+                    key={`${scope.kind}:${scope.id}`}
+                    className={scope.truncated ? 'is-warning' : ''}
+                  >
+                    <strong>{scope.id}</strong>
+                    <span>{scope.kind}</span>
+                    <small>
+                      {scope.strategy ?? 'unknown strategy'} · {scope.fileCount ?? 0}/
+                      {scope.fileLimit ?? '—'} files {scope.truncated ? '· bounded' : '· complete'}
+                    </small>
+                  </div>
+                ))}
+              </section>
+            ) : null}
+            {graph.diagnostics.length > 0 ? (
+              <section>
+                <h3>Diagnostics</h3>
+                {graph.diagnostics.map((diagnostic, index) => (
+                  <div key={`${diagnostic.code}:${index}`} className={`is-${diagnostic.severity}`}>
+                    <strong>{diagnostic.code}</strong>
+                    <span>{diagnostic.severity}</span>
+                    <small>{diagnostic.message}</small>
+                    {diagnostic.recommendation ? <small>{diagnostic.recommendation}</small> : null}
+                  </div>
+                ))}
+              </section>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
 
       <div
         className={`workspace-graph-explorer__body ${presentation ? 'is-presentation' : ''}`}
@@ -707,6 +903,12 @@ export function WorkspaceGraphExplorer({
                   <dt>Proofs</dt>
                   <dd>{selectedProofs.length}</dd>
                 </div>
+                {selected.projectId ? (
+                  <div>
+                    <dt>Project</dt>
+                    <dd>{selected.projectId}</dd>
+                  </div>
+                ) : null}
               </dl>
               <button
                 type="button"
@@ -729,7 +931,23 @@ export function WorkspaceGraphExplorer({
                   {selectedRelations.slice(0, 12).map((relation) => (
                     <span key={relation.id}>
                       {relation.from === selected.id ? '→' : '←'} {relation.kind} ·{' '}
-                      {relation.from === selected.id ? relation.to : relation.from}
+                      {entityById.get(relation.from === selected.id ? relation.to : relation.from)
+                        ?.label ?? (relation.from === selected.id ? relation.to : relation.from)}
+                      <small>
+                        {[relation.derivation, relation.trust, relation.confidence]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </small>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {selectedAttributes.length > 0 ? (
+                <div className="workspace-graph-explorer__drawer-section">
+                  <strong>Attributes</strong>
+                  {selectedAttributes.slice(0, 16).map(([name, value]) => (
+                    <span key={name}>
+                      {readableMetricName(name)} · {attributeValue(value)}
                     </span>
                   ))}
                 </div>
@@ -742,13 +960,24 @@ export function WorkspaceGraphExplorer({
                       key={proof.id}
                       type="button"
                       onClick={() => proof.artifact && onRevealArtifact(proof.artifact)}
-                      disabled={!proof.artifact}
+                      disabled={!proof.artifact || proof.artifact.startsWith('redacted/')}
                     >
-                      {proof.artifact ?? proof.id}
-                      {proof.line ? `:${proof.line}` : ''}
+                      {proof.artifact ? proofPathLabel(proof.artifact) : proof.id}
+                      {proof.line ? `:${proof.line}${proof.column ? `:${proof.column}` : ''}` : ''}
                       <small>
-                        {[proof.provider, proof.trust, proof.freshness].filter(Boolean).join(' · ')}
+                        {[
+                          proof.provider,
+                          proof.derivation,
+                          proof.trust,
+                          proof.confidence,
+                          proof.freshness,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
                       </small>
+                      {proof.pointer ? <small>Pointer · {proof.pointer}</small> : null}
+                      {proof.observedAt ? <small>Observed · {proof.observedAt}</small> : null}
+                      {proof.detail ? <small>{proof.detail}</small> : null}
                     </button>
                   ))}
                 </div>

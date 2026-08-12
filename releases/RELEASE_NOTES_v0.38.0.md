@@ -34,7 +34,7 @@ Released August 8, 2026.
 
 ## Truthful Evidence and Typed Repair Decisions
 
-Workspai 0.38.0 aligns the extension with Workspai CLI 0.55.1 and tightens the
+Workspai 0.38.0 is validated against Workspai CLI 0.56.0 and tightens the
 consumer boundary between canonical Workspace Intelligence evidence and its IDE
 presentation. The CLI remains the source of truth for release posture and
 repair decisions; the extension presents that truth, runs the selected flow,
@@ -51,11 +51,30 @@ posture:
 - **Blocked** is reserved for an explicit active governance blocker.
 
 Workspace Explain consumes `releaseVerdict`, `evidenceFreshness`, and
-`blocking` from CLI 0.55.1. A `needs-attention` report with high risk and zero
+`blocking` from the CLI. A `needs-attention` report with high risk and zero
 blocking reasons no longer becomes a false red blocker.
 
 The same posture mapping now drives Dashboard card labels, metrics, guided
 steps, next actions, incident handoff, and compact state icons.
+
+Doctor cards now consume the canonical 0.56.0 diagnosis, summary, receipt,
+freshness, applicability, validation, and capability contracts. Workspace and
+project cards preserve their exact scope, advisories no longer masquerade as
+release blockers, and Studio receives stable finding, causal, and repair
+capability identifiers instead of depending on display text.
+
+Assistant and Studio now derive their offline artifact inventory directly from
+the CLI runtime command-surface contract, then reconcile it with the live
+`INDEX.json` manifest. Ask, Plan, Agent, Dashboard artifacts, and blocker repair
+therefore share one evidence vocabulary even when the live index is missing or
+malformed. Freshness is included explicitly in every general Assistant session;
+read-only modes disclose stale evidence, while Agent refreshes the governed
+producer before relying on it.
+
+Module actions in Dashboard, Library, and the primary project surface now use
+the CLI's project-scoped capability lane. `diff`, `rollback`, `uninstall`,
+`upgrade`, and `checkpoint` are no longer mistaken for missing top-level
+commands when the installed CLI correctly advertises them for project scope.
 
 ## Studio follows structured repair decisions
 
@@ -115,7 +134,7 @@ scope.
 ## Compatibility
 
 - VS Code 1.106.0 or newer
-- Workspai CLI 0.55.1 or newer
+- Workspai CLI 0.56.0 or newer
 - RapidKit Core 0.6.0 only when a Python-backed kit or module requires it
 
 There are no intentional breaking changes to existing workspaces, evidence
@@ -136,8 +155,8 @@ CLI needs verification.
 
 - Host and Webview type checking, source formatting, and linting passed with
   zero errors.
-- 372 test files passed; 2,705 tests passed and 4 remained explicitly skipped.
-- Exact CLI/extension contract parity passed against Workspai CLI 0.55.1; all
+- 373 test files passed; 2,709 tests passed and 4 remained explicitly skipped.
+- Exact CLI/extension contract parity passed against Workspai CLI 0.56.0; all
   172 palette commands remained synchronized.
 - All 22 enterprise validation scenarios and the Discord release-document gate
   passed.

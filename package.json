@@ -2,7 +2,7 @@
   "name": "rapidkit-vscode",
   "displayName": "Workspai – Workspace Intelligence",
   "description": "Workspace Intelligence for VS Code. Adopt, import, scaffold, diagnose, verify, and govern polyglot workspaces with shared evidence for developers, CI, and AI agents.",
-  "version": "0.38.0",
+  "version": "0.39.0",
   "packageManager": "npm@10.8.2",
   "publisher": "rapidkit",
   "icon": "media/icons/icon.png",
@@ -175,6 +175,10 @@
           {
             "name": "debug",
             "description": "Debug errors and diagnostics with full project context and get a structured fix."
+          },
+          {
+            "name": "repair",
+            "description": "Repair a canonical blocker through the governed Workspai CLI Repair Engine."
           }
         ]
       }
@@ -2212,7 +2216,7 @@
           "group": "inline@1"
         },
         {
-          "command": "workspai.openWorkspace",
+          "command": "workspai.workspaceTerminal",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
           "group": "inline@2"
         },
@@ -2934,17 +2938,7 @@
         "workspai.showOnboardingTips": {
           "type": "boolean",
           "default": true,
-          "description": "Show in-product onboarding tips for new Workspai AI and telemetry features"
-        },
-        "workspai.analytics.optIn": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "Share **anonymous, aggregated** retention and cohort metrics with Workspai (time-to-first-value, command run counts — never code, file paths, or names). Off by default. This is additionally gated by VS Code's global `telemetry.telemetryLevel` setting: if you have telemetry disabled, nothing is sent regardless of this option. Local usage telemetry for your own dashboard is unaffected."
-        },
-        "workspai.analytics.consentPromptShown": {
-          "type": "boolean",
-          "default": false,
-          "description": "Internal: whether the one-time analytics consent prompt has been shown."
+          "description": "Show in-product onboarding tips for Workspai AI and operational workflows"
         },
         "workspai.templatePreview": {
           "type": "boolean",

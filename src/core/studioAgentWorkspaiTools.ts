@@ -18,6 +18,7 @@ export interface StudioAgentWorkspaiToolHost {
   recoverActiveBlocker?(input: {
     workspacePath: string;
     projectPath?: string;
+    reportProgress?: (data: Record<string, unknown>) => Promise<void>;
   }): Promise<StudioAgentToolResult>;
   discover(input: {
     glob?: string;
@@ -168,6 +169,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
         return input.host.recoverActiveBlocker!({
           workspacePath: context.workspacePath,
           ...optionalScope(context),
+          reportProgress: context.reportProgress,
         });
       },
     });

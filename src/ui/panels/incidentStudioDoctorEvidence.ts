@@ -5,8 +5,16 @@ import {
   resolveWorkspaceArtifactPath,
   resolveWorkspaceReportsDir,
 } from '../../core/workspaceIntelligencePaths';
+import {
+  projectDoctorEvidence,
+  type DoctorFindingTarget,
+  type DoctorVerdict,
+} from '../../core/doctorEvidenceProjection.js';
 
 export type DoctorEvidenceSnapshot = {
+  verdict?: DoctorVerdict;
+  freshness?: 'fresh' | 'stale' | 'unknown';
+  canonicalFindings?: DoctorFindingTarget[];
   contract?: {
     version?: string;
     scoringPolicyVersion?: string;
@@ -63,6 +71,10 @@ export type DoctorEvidenceSnapshot = {
     kit?: string;
     projectKind?: string;
     issues: number;
+    verdict?: DoctorVerdict;
+    blockingFindings?: number;
+    advisoryFindings?: number;
+    diagnosis?: DoctorFindingTarget[];
     modulesCount?: number;
     modulesHealthy?: boolean;
     hasTests?: boolean;
@@ -94,6 +106,10 @@ type ParsedDoctorProject = {
   kit?: string;
   projectKind?: string;
   issues: number;
+  verdict?: DoctorVerdict;
+  blockingFindings?: number;
+  advisoryFindings?: number;
+  diagnosis?: DoctorFindingTarget[];
   modulesCount?: number;
   modulesHealthy?: boolean;
   hasTests?: boolean;
@@ -145,7 +161,21 @@ async function readJsonIfExists(filePath: string): Promise<Record<string, unknow
 async function parseDoctorProjectRecord(
   project: Record<string, unknown>
 ): Promise<ParsedDoctorProject> {
-  const issues = Array.isArray(project?.issues) ? project.issues.length : 0;
+  const projection = projectDoctorEvidence(
+    { project },
+    {
+      scope: 'project',
+      projectPath: typeof project.path === 'string' ? project.path : undefined,
+      projectName: typeof project.name === 'string' ? project.name : undefined,
+    }
+  );
+  const issues = projection.canonical
+    ? projection.counts.blockingCauses +
+      projection.counts.advisoryFindings +
+      projection.counts.unknownFindings
+    : Array.isArray(project?.issues)
+      ? project.issues.length
+      : 0;
   const projectPath = typeof project?.path === 'string' ? project.path : undefined;
   const installedModules = projectPath ? await readInstalledModules(projectPath) : [];
   const projectStats =
@@ -184,6 +214,10 @@ async function parseDoctorProjectRecord(
     kit: typeof project?.kit === 'string' ? project.kit : undefined,
     projectKind: typeof project?.projectKind === 'string' ? project.projectKind : undefined,
     issues,
+    verdict: projection.verdict,
+    blockingFindings: projection.counts.blockingCauses,
+    advisoryFindings: projection.counts.advisoryFindings,
+    diagnosis: projection.findings,
     modulesCount,
     modulesHealthy:
       typeof project?.modulesHealthy === 'boolean' ? project.modulesHealthy : undefined,
@@ -255,7 +289,9 @@ export async function readDoctorEvidenceSnapshot(
     ? await loadScopedProjectDoctorRaw(workspacePath, scopedProjectPath)
     : undefined;
 
-  const raw = workspaceRaw ?? scopedProjectRaw;
+  // A project-scoped Studio repair must never inherit unrelated projects from
+  // workspace evidence merely because the aggregate report also exists.
+  const raw = scopedProjectRaw ?? workspaceRaw;
   if (!raw) {
     return undefined;
   }
@@ -273,7 +309,7 @@ export async function readDoctorEvidenceSnapshot(
     const errors = Number(healthScoreSource?.errors ?? 0);
     const percent = total > 0 ? Math.round((passed / total) * 100) : 0;
 
-    const projectsRaw = Array.isArray(raw?.projects) ? raw.projects : [];
+    const projectsRaw = scopedProjectRaw ? [] : Array.isArray(raw?.projects) ? raw.projects : [];
     const projects: ParsedDoctorProject[] = (
       await Promise.all(
         projectsRaw.map(async (project: Record<string, unknown>) =>
@@ -319,6 +355,10 @@ export async function readDoctorEvidenceSnapshot(
     const projectsWithIssues = projects.filter(
       (project: ParsedDoctorProject) => project.issues > 0
     ).length;
+    const projection = projectDoctorEvidence(raw, {
+      scope: scopedProjectRaw ? 'project' : 'workspace',
+      projectPath: scopedProjectPath,
+    });
 
     const contractRaw =
       scopedProjectRaw?.contract && typeof scopedProjectRaw.contract === 'object'
@@ -345,6 +385,9 @@ export async function readDoctorEvidenceSnapshot(
         : undefined;
 
     return {
+      verdict: projection.verdict,
+      freshness: projection.freshness,
+      canonicalFindings: projection.findings,
       contract: contractRaw
         ? {
             version: typeof contractRaw.version === 'string' ? contractRaw.version : undefined,
@@ -467,6 +510,10 @@ export async function readDoctorEvidenceSnapshot(
           kit,
           projectKind,
           issues,
+          verdict,
+          blockingFindings,
+          advisoryFindings,
+          diagnosis,
           modulesCount,
           modulesHealthy,
           hasTests,
@@ -482,6 +529,10 @@ export async function readDoctorEvidenceSnapshot(
           kit,
           projectKind,
           issues,
+          verdict,
+          blockingFindings,
+          advisoryFindings,
+          diagnosis,
           modulesCount,
           modulesHealthy,
           hasTests,

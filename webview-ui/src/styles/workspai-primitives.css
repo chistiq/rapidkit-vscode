@@ -2340,6 +2340,8 @@
 .workspace-graph-explorer__header,
 .workspace-graph-explorer__toolbar,
 .workspace-graph-explorer__quality,
+.workspace-graph-explorer__coverage,
+.workspace-graph-explorer__intelligence,
 .workspace-graph-explorer__body {
   border: 1px solid var(--vscode-panel-border);
   background: color-mix(in srgb, var(--vscode-editor-background) 94%, transparent);
@@ -2590,6 +2592,111 @@
 .workspace-graph-explorer__quality span.is-danger {
   background: color-mix(in srgb, var(--vscode-testing-iconFailed) 18%, transparent);
   color: var(--vscode-testing-iconFailed);
+}
+
+.workspace-graph-explorer__coverage {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.workspace-graph-explorer__coverage article {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 11px 12px;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 74%, transparent);
+}
+
+.workspace-graph-explorer__coverage article > span,
+.workspace-graph-explorer__coverage article > small {
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-graph-explorer__coverage article > strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-graph-explorer__intelligence {
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.workspace-graph-explorer__intelligence > summary {
+  padding: 9px 11px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.workspace-graph-explorer__intelligence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+  padding: 0 10px 10px;
+}
+
+.workspace-graph-explorer__intelligence-grid > section {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.workspace-graph-explorer__intelligence-grid h3 {
+  margin: 2px 0 3px;
+  font-size: 11px;
+}
+
+.workspace-graph-explorer__intelligence-grid section > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  padding: 7px 8px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  font-size: 10px;
+}
+
+.workspace-graph-explorer__intelligence-grid section > div > strong,
+.workspace-graph-explorer__intelligence-grid section > div > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-graph-explorer__intelligence-grid section > div > small {
+  grid-column: 1 / -1;
+  color: var(--vscode-descriptionForeground);
+  overflow-wrap: anywhere;
+}
+
+.workspace-graph-explorer__intelligence-grid .is-error,
+.workspace-graph-explorer__intelligence-grid .is-failed {
+  border-color: color-mix(
+    in srgb,
+    var(--vscode-testing-iconFailed) 52%,
+    var(--vscode-panel-border)
+  );
+}
+
+.workspace-graph-explorer__intelligence-grid .is-warning,
+.workspace-graph-explorer__intelligence-grid .is-partial {
+  border-color: color-mix(
+    in srgb,
+    var(--vscode-testing-iconQueued) 52%,
+    var(--vscode-panel-border)
+  );
 }
 
 .workspace-graph-explorer__body {
@@ -2954,6 +3061,10 @@
 
   .workspace-graph-explorer__body {
     grid-template-columns: 1fr;
+  }
+
+  .workspace-graph-explorer__coverage {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .workspace-graph-explorer__drawer {
