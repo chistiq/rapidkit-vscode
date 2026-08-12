@@ -59,6 +59,9 @@ No unreleased changes yet.
 
 ### Fixed
 
+- Hardened the release open-issues gate against transient GitHub transport and
+  retryable API failures with bounded retries, per-attempt timeouts, actionable
+  transport diagnostics, explicit read permissions, and fail-closed behavior.
 - Made verified repair receipts override stale `Awaiting verify` phase chrome,
   made completed intelligence rails close at `11/11`, and stopped restored
   rollback checkpoints from appearing as live file changes.

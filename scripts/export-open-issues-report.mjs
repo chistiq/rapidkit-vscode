@@ -2,6 +2,11 @@
 
 import fs from 'fs';
 import path from 'path';
+import { pathToFileURL } from 'url';
+
+const DEFAULT_FETCH_ATTEMPTS = 4;
+const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
+const RETRYABLE_HTTP_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 function parseArgs(argv) {
   const options = {
@@ -26,7 +31,9 @@ function parseArgs(argv) {
     }
 
     if (arg === '--state') {
-      const value = String(argv[i + 1] || '').trim().toLowerCase();
+      const value = String(argv[i + 1] || '')
+        .trim()
+        .toLowerCase();
       options.state = value || options.state;
       i += 1;
     }
@@ -59,7 +66,84 @@ function normalizeIssue(issue) {
   };
 }
 
-async function fetchIssues({ repo, token, state }) {
+function errorDetail(error) {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+  const cause = error.cause;
+  const causeDetail =
+    cause && typeof cause === 'object'
+      ? [cause.code, cause.message].filter(Boolean).join(': ')
+      : cause
+        ? String(cause)
+        : '';
+  return causeDetail ? `${error.message} (${causeDetail})` : error.message;
+}
+
+function retryAfterMs(response, attempt) {
+  const retryAfter = response?.headers?.get?.('retry-after');
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(10_000, Math.round(seconds * 1_000));
+  }
+  return Math.min(4_000, 500 * 2 ** (attempt - 1));
+}
+
+async function requestIssuesPage({ url, headers, fetchImpl, sleep, attempts, timeoutMs }) {
+  let lastFailure = 'unknown transport failure';
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetchImpl(url, {
+        headers,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (response.ok) {
+        return response;
+      }
+
+      const details = await response.text();
+      lastFailure = `GitHub API request failed (${response.status} ${response.statusText}): ${details}`;
+      if (!RETRYABLE_HTTP_STATUSES.has(response.status) || attempt === attempts) {
+        throw new Error(lastFailure);
+      }
+      const delayMs = retryAfterMs(response, attempt);
+      console.warn(
+        `[open-issues-report] GitHub API returned ${response.status}; retrying in ${delayMs}ms (${attempt}/${attempts}).`
+      );
+      await sleep(delayMs);
+    } catch (error) {
+      const detail = errorDetail(error);
+      if (error instanceof Error && error.message.startsWith('GitHub API request failed')) {
+        throw error;
+      }
+      lastFailure = detail;
+      if (attempt === attempts) {
+        break;
+      }
+      const delayMs = Math.min(4_000, 500 * 2 ** (attempt - 1));
+      console.warn(
+        `[open-issues-report] GitHub transport failed: ${detail}; retrying in ${delayMs}ms (${attempt}/${attempts}).`
+      );
+      await sleep(delayMs);
+    }
+  }
+
+  throw new Error(`GitHub API transport failed after ${attempts} attempt(s): ${lastFailure}`);
+}
+
+async function fetchIssues({
+  repo,
+  token,
+  state,
+  fetchImpl = globalThis.fetch,
+  sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  attempts = DEFAULT_FETCH_ATTEMPTS,
+  timeoutMs = DEFAULT_FETCH_TIMEOUT_MS,
+}) {
+  if (typeof fetchImpl !== 'function') {
+    throw new Error('This Node.js runtime does not provide fetch().');
+  }
   const allIssues = [];
   let page = 1;
 
@@ -78,13 +162,14 @@ async function fetchIssues({ repo, token, state }) {
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const response = await fetch(url, { headers });
-    if (!response.ok) {
-      const details = await response.text();
-      throw new Error(
-        `GitHub API request failed (${response.status} ${response.statusText}): ${details}`
-      );
-    }
+    const response = await requestIssuesPage({
+      url,
+      headers,
+      fetchImpl,
+      sleep,
+      attempts,
+      timeoutMs,
+    });
 
     const payload = await response.json();
     if (!Array.isArray(payload) || payload.length === 0) {
@@ -128,7 +213,11 @@ async function main() {
   );
 }
 
-main().catch((error) => {
-  console.error(`[open-issues-report] ${error.message}`);
-  process.exit(1);
-});
+export { fetchIssues, normalizeIssue, requestIssuesPage, retryAfterMs };
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(`[open-issues-report] ${errorDetail(error)}`);
+    process.exit(1);
+  });
+}

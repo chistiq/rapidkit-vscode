@@ -18,6 +18,10 @@ on:
         default: false
         type: boolean
 
+permissions:
+  contents: read
+  issues: read
+
 jobs:
   contract-parity-gate:
     name: Contract parity gate (cross-repo)

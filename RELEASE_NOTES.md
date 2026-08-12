@@ -45,6 +45,9 @@ Highlights:
 - A verified selected repair now closes the Studio phase rail at `11/11` even
   when unrelated workspace findings remain. Restored checkpoints are labeled
   as restored, and internal policy stops cannot manufacture review buttons.
+- The cross-platform release stop gate now tolerates bounded transient GitHub
+  transport failures while still failing closed for permission errors or an
+  exhausted retry budget.
 - Incident Studio now follows a conversation-first hierarchy: workspace and
   blocker context stay compact, completed activity collapses into a worked-step
   summary, and the current CLI action remains beside the conversation.

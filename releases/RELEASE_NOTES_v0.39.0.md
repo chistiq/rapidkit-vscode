@@ -71,6 +71,12 @@ than an applied file change. Review controls are fail-closed and appear only
 when the CLI supplies both an immutable transaction id and explicit options, so
 an internal model-policy stop cannot be mistaken for a user decision.
 
+The open-issue severity gate used by the cross-platform smoke matrix now has
+explicit issue-read permission, per-attempt timeouts, bounded exponential
+retries for transient transport and retryable GitHub responses, and useful
+final-cause diagnostics. Permission failures and exhausted retry budgets remain
+release-blocking.
+
 ## Doctor preserves canonical diagnosis and scope
 
 Doctor cards now understand the CLI's diagnosis, summary, capability,
