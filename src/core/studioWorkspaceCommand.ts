@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 import {
@@ -348,6 +350,12 @@ function boundedOutput(value: string, maxChars = 24_000): string {
   return `${head}\n…[command output truncated]…\n${tail}`;
 }
 
+const STUDIO_COMMAND_CAPTURE_LIMIT_BYTES = 2 * 1024 * 1024;
+
+async function readCapturedOutput(filePath: string): Promise<string> {
+  return fs.promises.readFile(filePath, 'utf8').catch(() => '');
+}
+
 export async function runStudioWorkspaceCommand(
   plan: StudioWorkspaceCommandPlan
 ): Promise<StudioWorkspaceCommandExecution> {
@@ -361,20 +369,73 @@ export async function runStudioWorkspaceCommand(
   for (const invocation of discoverPackageRunnerInvocations('npm')) {
     protectedEnvironment = buildPackageRunnerInvocationEnv(invocation, protectedEnvironment);
   }
-  const result = await execa(plan.executable, plan.args, {
-    cwd: plan.cwd,
-    shell: false,
-    reject: false,
-    timeout: plan.timeoutMs,
-    stdin: 'ignore',
-    extendEnv: false,
-    env: { ...protectedEnvironment, NO_COLOR: '1', CI: process.env.CI ?? '1' },
-  });
-  return {
-    ...plan,
-    exitCode: result.exitCode ?? null,
-    stdout: boundedOutput(result.stdout ?? ''),
-    stderr: boundedOutput(result.stderr ?? ''),
-    timedOut: Boolean(result.timedOut),
+  const captureDirectory = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'workspai-studio-command-')
+  );
+  const stdoutPath = path.join(captureDirectory, 'stdout.log');
+  const stderrPath = path.join(captureDirectory, 'stderr.log');
+  const stdoutFd = fs.openSync(stdoutPath, 'w');
+  const stderrFd = fs.openSync(stderrPath, 'w');
+  let descriptorsClosed = false;
+  const closeDescriptors = () => {
+    if (descriptorsClosed) {
+      return;
+    }
+    descriptorsClosed = true;
+    fs.closeSync(stdoutFd);
+    fs.closeSync(stderrFd);
   };
+
+  try {
+    const subprocess = execa(plan.executable, plan.args, {
+      cwd: plan.cwd,
+      shell: false,
+      reject: false,
+      timeout: plan.timeoutMs,
+      stdin: 'ignore',
+      // Execa's public type narrows extra descriptors to 3..9 even though
+      // Node accepts any valid descriptor for stdout/stderr at runtime.
+      stdout: stdoutFd as 3,
+      stderr: stderrFd as 4,
+      extendEnv: false,
+      env: { ...protectedEnvironment, NO_COLOR: '1', CI: process.env.CI ?? '1' },
+    });
+    let outputLimitExceeded = false;
+    const captureMonitor = setInterval(() => {
+      try {
+        const capturedBytes = fs.fstatSync(stdoutFd).size + fs.fstatSync(stderrFd).size;
+        if (capturedBytes > STUDIO_COMMAND_CAPTURE_LIMIT_BYTES) {
+          outputLimitExceeded = true;
+          subprocess.kill('SIGTERM');
+        }
+      } catch {
+        // The final read below owns error reporting after descriptors close.
+      }
+    }, 100);
+    captureMonitor.unref();
+
+    try {
+      const result = await subprocess;
+      closeDescriptors();
+      const [stdout, stderr] = await Promise.all([
+        readCapturedOutput(stdoutPath),
+        readCapturedOutput(stderrPath),
+      ]);
+      const captureError = outputLimitExceeded
+        ? `Studio stopped the command after captured output exceeded ${STUDIO_COMMAND_CAPTURE_LIMIT_BYTES} bytes.`
+        : '';
+      return {
+        ...plan,
+        exitCode: result.exitCode ?? null,
+        stdout: boundedOutput(stdout),
+        stderr: boundedOutput([stderr, captureError].filter(Boolean).join('\n')),
+        timedOut: Boolean(result.timedOut),
+      };
+    } finally {
+      clearInterval(captureMonitor);
+    }
+  } finally {
+    closeDescriptors();
+    await fs.promises.rm(captureDirectory, { recursive: true, force: true });
+  }
 }

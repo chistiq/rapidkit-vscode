@@ -59,6 +59,11 @@ No unreleased changes yet.
 
 ### Fixed
 
+- Removed the legacy inline-command branch from `RUN_ONCE` blocker recovery so
+  missing-evidence producers remain inside the CLI Repair Engine transaction.
+- Made governed Agent command output capture reliable for direct Node.js tools
+  without enabling a shell, with bounded temporary output, timeout enforcement,
+  secret-stripped environments, and guaranteed cleanup.
 - Hardened the release open-issues gate against transient GitHub transport and
   retryable API failures with bounded retries, per-attempt timeouts, actionable
   transport diagnostics, explicit read permissions, and fail-closed behavior.

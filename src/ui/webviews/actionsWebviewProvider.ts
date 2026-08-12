@@ -68,7 +68,6 @@ import {
 } from '../../contracts/studio-blocker-handoff-contract.js';
 import { buildStudioBlockerHandoff } from '../../core/studioBlockerHandoffBuilder.js';
 import { recordStudioBlockerCommandRun } from '../../core/studioBlockerCommandLedger.js';
-import { resolveStudioRunOnceProducerCommands } from '../../core/studioBlockerResolution.js';
 import { runRapidkitStreaming } from '../../core/streamingRapidkitRunner.js';
 import { gateIncidentStudioRapidkitCommand } from '../../core/rapidkitEnterpriseCliGate.js';
 import { normalizeBootstrapComplianceCommand } from '../../core/bootstrapComplianceRemediation.js';
@@ -3748,67 +3747,6 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         projectPath?: string;
         reportProgress?: (data: Record<string, unknown>) => Promise<void>;
       }) => {
-        const runOnceCommands = resolveStudioRunOnceProducerCommands(activeHandoff);
-        if (runOnceCommands.length > 0) {
-          const executions: Array<{
-            command: string;
-            exitCode?: number | null;
-            success: boolean;
-            error?: string;
-          }> = [];
-          for (const [index, command] of runOnceCommands.entries()) {
-            await request.reportProgress?.({
-              intelligencePhase: 'verify',
-              message: `Generating missing evidence (${index + 1}/${runOnceCommands.length})`,
-              command,
-            });
-            await this._assertSidebarStudioMutationAllowed({
-              workspacePath: request.workspacePath,
-              projectPath: request.projectPath,
-              actionLabel: 'Studio missing-evidence producer',
-              commandText: command,
-            });
-            const execution = await runIncidentInlineCommand({
-              command,
-              workspacePath: request.workspacePath,
-              projectPath: request.projectPath,
-              actionId: `studio-run-once-${activeHandoff.cardId}-${index + 1}`,
-            });
-            executions.push({
-              command,
-              exitCode: execution.exitCode,
-              success: execution.success,
-              ...(execution.error ? { error: execution.error } : {}),
-            });
-          }
-          repairEvidence = await collectSidebarStudioRepairEvidence({
-            workspacePath: request.workspacePath,
-            projectPath: request.projectPath,
-            handoff: activeHandoff,
-          });
-          const commandBridgeFailed = executions.some(
-            (execution) => execution.exitCode === null || execution.exitCode === undefined
-          );
-          return {
-            ok: !commandBridgeFailed,
-            changed: false,
-            evidenceGeneration: repairEvidence.evidenceFingerprint,
-            blockerSignature: activeBlockerSignature,
-            output: {
-              recoveryPath: 'artifact-producer',
-              commands: executions,
-              nextAction: commandBridgeFailed ? 'general-source-repair' : 'verify-blocker',
-            },
-            ...(commandBridgeFailed
-              ? {
-                  error:
-                    executions.find(
-                      (execution) => execution.exitCode === null || execution.exitCode === undefined
-                    )?.error ?? 'The governed missing-evidence producer could not be launched.',
-                }
-              : {}),
-          };
-        }
         // The prelude must bind the CLI transaction to one exact causal action.
         // A card id is presentation scope, not a repair target: sending only
         // `doctor` can mix unrelated findings into one all-or-nothing plan.

@@ -77,6 +77,13 @@ retries for transient transport and retryable GitHub responses, and useful
 final-cause diagnostics. Permission failures and exhausted retry budgets remain
 release-blocking.
 
+The final repair-ownership audit also removes the legacy inline-command path
+from `RUN_ONCE` missing-evidence recovery. Those producers now enter the same
+CLI-owned transaction as every other Studio repair. Governed no-shell commands
+capture bounded stdout and stderr through isolated temporary descriptors, which
+avoids empty Node.js tool output while preserving environment redaction,
+timeouts, output limits, and cleanup.
+
 ## Doctor preserves canonical diagnosis and scope
 
 Doctor cards now understand the CLI's diagnosis, summary, capability,

@@ -48,6 +48,9 @@ Highlights:
 - The cross-platform release stop gate now tolerates bounded transient GitHub
   transport failures while still failing closed for permission errors or an
   exhausted retry budget.
+- `RUN_ONCE` missing-evidence recovery now enters the CLI Repair Engine instead
+  of a legacy inline-command lane, and no-shell Agent commands retain bounded
+  stdout/stderr reliably when invoking Node.js tools.
 - Incident Studio now follows a conversation-first hierarchy: workspace and
   blocker context stay compact, completed activity collapses into a worked-step
   summary, and the current CLI action remains beside the conversation.
