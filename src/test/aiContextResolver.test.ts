@@ -83,6 +83,29 @@ describe('aiContextResolver', () => {
     expect(ctx.workspaceRootPath).toBeUndefined();
   });
 
+  it('uses the canonical workspace binding for an adopted project outside the workspace tree', async () => {
+    mockExecuteCommand.mockImplementation(async (command: string) => {
+      if (command === 'workspai.getSelectedProject') {
+        return {
+          name: 'grpc',
+          path: '/tmp/reference/grpc',
+          type: 'cpp',
+          workspacePath: '/tmp/workspai/workspaces/workspai',
+        };
+      }
+      if (command === 'workspai.getSelectedWorkspace') {
+        return { name: 'workspai', path: '/tmp/workspai/workspaces/workspai' };
+      }
+      return null;
+    });
+
+    const ctx = await resolvePreferredAIModalContext(undefined);
+
+    expect(ctx.type).toBe('project');
+    expect(normalizePath(ctx.projectRootPath)).toBe('/tmp/reference/grpc');
+    expect(normalizePath(ctx.workspaceRootPath)).toBe('/tmp/workspai/workspaces/workspai');
+  });
+
   it('returns selected workspace context when project is not selected', async () => {
     mockExecuteCommand.mockImplementation(async (command: string) => {
       if (command === 'workspai.getSelectedProject') {
@@ -152,8 +175,9 @@ describe('aiContextResolver', () => {
       framework: 'springboot',
     });
 
-    expect(section).toContain('Active workspace root: /tmp/wsp');
-    expect(section).toContain('Selected project root: /tmp/wsp/billing-api');
+    expect(section).toContain('Active workspace root: $WORKSPACE (runtime-private)');
+    expect(section).toContain('Selected project root: $PROJECT (runtime-private)');
+    expect(section).not.toContain('/tmp/wsp');
     expect(section).toContain('npx workspai readiness');
     expect(section).toContain('prefer project-scoped commands there');
   });

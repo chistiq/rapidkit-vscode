@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import * as path from 'node:path';
+import fs from 'fs-extra';
 import * as vscode from 'vscode';
 
 import {
@@ -9,9 +11,13 @@ import { buildStudioUntrackedFileDiffs } from './studioWorkspaceChangeReview.js'
 
 const STUDIO_WORKSPACE_FILE_EXCLUDE =
   '{**/.git/**,**/node_modules/**,**/vendor/**,**/dist/**,**/build/**,**/target/**,**/.venv/**,**/.workspai/cache/**,**/.workspai/snapshots/**,**/*.tmp}';
+const MAX_FINGERPRINT_FILES = 2_000;
+const MAX_FINGERPRINT_FILE_BYTES = 16 * 1024 * 1024;
+const MAX_FINGERPRINT_TOTAL_BYTES = 128 * 1024 * 1024;
 
 export async function discoverStudioWorkspaceFiles(input: {
   workspacePath: string;
+  projectPath?: string;
   glob?: string;
   limit?: number;
 }): Promise<Array<{ path: string; size: number }>> {
@@ -24,8 +30,9 @@ export async function discoverStudioWorkspaceFiles(input: {
   ) {
     throw new Error('Studio workspace discovery glob must stay inside the selected workspace.');
   }
+  const sourceRoot = input.projectPath?.trim() || input.workspacePath;
   const uris = await vscode.workspace.findFiles(
-    new vscode.RelativePattern(input.workspacePath, requestedGlob),
+    new vscode.RelativePattern(sourceRoot, requestedGlob),
     STUDIO_WORKSPACE_FILE_EXCLUDE,
     limit
   );
@@ -35,7 +42,7 @@ export async function discoverStudioWorkspaceFiles(input: {
       const stat = await vscode.workspace.fs.stat(uri);
       if ((stat.type & vscode.FileType.File) !== 0) {
         files.push({
-          path: path.relative(input.workspacePath, uri.fsPath).replace(/\\/g, '/'),
+          path: path.relative(sourceRoot, uri.fsPath).replace(/\\/g, '/'),
           size: stat.size,
         });
       }
@@ -63,6 +70,7 @@ function studioDiagnosticSeverityName(
 
 export function inspectStudioWorkspaceDiagnostics(input: {
   workspacePath: string;
+  projectPath?: string;
   paths?: string[];
   severities?: Array<'error' | 'warning' | 'information' | 'hint'>;
 }): Array<Record<string, unknown>> {
@@ -71,8 +79,9 @@ export function inspectStudioWorkspaceDiagnostics(input: {
     : undefined;
   const allowedSeverities = new Set(input.severities ?? ['error', 'warning']);
   const diagnostics: Array<Record<string, unknown>> = [];
+  const sourceRoot = input.projectPath?.trim() || input.workspacePath;
   for (const [uri, entries] of vscode.languages.getDiagnostics()) {
-    const relativePath = path.relative(input.workspacePath, uri.fsPath).replace(/\\/g, '/');
+    const relativePath = path.relative(sourceRoot, uri.fsPath).replace(/\\/g, '/');
     if (
       relativePath.startsWith('../') ||
       path.isAbsolute(relativePath) ||
@@ -115,11 +124,13 @@ export function inspectStudioWorkspaceDiagnostics(input: {
 
 export async function inspectStudioWorkspaceChanges(input: {
   workspacePath: string;
+  projectPath?: string;
   paths?: string[];
 }): Promise<Record<string, unknown>> {
   const pathArgs = input.paths?.length ? ['--', ...input.paths] : [];
+  const sourceRoot = input.projectPath?.trim() || input.workspacePath;
   const statusPlan = resolveStudioWorkspaceCommandPlan({
-    workspacePath: input.workspacePath,
+    workspacePath: sourceRoot,
     request: {
       executable: 'git',
       args: ['status', '--short', '--untracked-files=all', '-z', ...pathArgs],
@@ -127,7 +138,7 @@ export async function inspectStudioWorkspaceChanges(input: {
     },
   });
   const diffPlan = resolveStudioWorkspaceCommandPlan({
-    workspacePath: input.workspacePath,
+    workspacePath: sourceRoot,
     request: {
       executable: 'git',
       args: ['diff', '--no-ext-diff', '--unified=3', ...pathArgs],
@@ -139,7 +150,7 @@ export async function inspectStudioWorkspaceChanges(input: {
     runStudioWorkspaceCommand(diffPlan),
   ]);
   const untrackedDiff = await buildStudioUntrackedFileDiffs({
-    workspacePath: input.workspacePath,
+    workspacePath: sourceRoot,
     statusPorcelainZ: status.stdout,
     includedPaths: input.paths,
   });
@@ -149,5 +160,104 @@ export async function inspectStudioWorkspaceChanges(input: {
     diff: combinedDiff,
     statusExitCode: status.exitCode,
     diffExitCode: diff.exitCode,
+  };
+}
+
+export async function fingerprintStudioWorkspaceSourceState(input: {
+  workspacePath: string;
+  projectPath?: string;
+}): Promise<{ fingerprint: string; status: string; diff: string } | null> {
+  const snapshot = await inspectStudioWorkspaceChanges(input);
+  if (snapshot.statusExitCode !== 0 || snapshot.diffExitCode !== 0) {
+    return null;
+  }
+  const sourceRoot = input.projectPath?.trim() || input.workspacePath;
+  const changedPathCommands = [
+    ['diff', '--name-only', '-z'],
+    ['diff', '--cached', '--name-only', '-z'],
+    ['ls-files', '--others', '--exclude-standard', '-z'],
+  ];
+  const changedPathResults = await Promise.all(
+    changedPathCommands.map((args) =>
+      runStudioWorkspaceCommand(
+        resolveStudioWorkspaceCommandPlan({
+          workspacePath: sourceRoot,
+          request: { executable: 'git', args, purpose: 'inspect' },
+        })
+      )
+    )
+  );
+  if (changedPathResults.some((result) => result.exitCode !== 0)) {
+    return null;
+  }
+  const changedPaths = [
+    ...new Set(
+      changedPathResults.flatMap((result) => result.stdout.split('\0').filter(Boolean)).sort()
+    ),
+  ];
+  if (changedPaths.length > MAX_FINGERPRINT_FILES) {
+    return null;
+  }
+
+  const contentFingerprint = createHash('sha256');
+  let totalBytes = 0;
+  for (const changedPath of changedPaths) {
+    if (
+      path.isAbsolute(changedPath) ||
+      /(?:^|[\\/])\.\.(?:[\\/]|$)/.test(changedPath) ||
+      /[\0\r\n]/.test(changedPath)
+    ) {
+      return null;
+    }
+    const absolutePath = path.resolve(sourceRoot, changedPath);
+    const relativePath = path.relative(sourceRoot, absolutePath);
+    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+      return null;
+    }
+    const stat = await fs.lstat(absolutePath).catch(() => undefined);
+    contentFingerprint.update(changedPath).update('\0');
+    if (!stat) {
+      contentFingerprint.update('missing').update('\0');
+      continue;
+    }
+    if (stat.isSymbolicLink()) {
+      const link = await fs.readlink(absolutePath).catch(() => undefined);
+      if (link === undefined) {
+        return null;
+      }
+      contentFingerprint.update('symlink').update('\0').update(link).update('\0');
+      continue;
+    }
+    if (!stat.isFile() || stat.size > MAX_FINGERPRINT_FILE_BYTES) {
+      return null;
+    }
+    totalBytes += stat.size;
+    if (totalBytes > MAX_FINGERPRINT_TOTAL_BYTES) {
+      return null;
+    }
+    const content = await fs.readFile(absolutePath).catch(() => undefined);
+    if (!content || content.byteLength !== stat.size) {
+      return null;
+    }
+    contentFingerprint
+      .update('file')
+      .update('\0')
+      .update(String(stat.mode))
+      .update('\0')
+      .update(content)
+      .update('\0');
+  }
+  const status = typeof snapshot.status === 'string' ? snapshot.status : '';
+  const diff = typeof snapshot.diff === 'string' ? snapshot.diff : '';
+  return {
+    fingerprint: createHash('sha256')
+      .update(status)
+      .update('\0')
+      .update(diff)
+      .update('\0')
+      .update(contentFingerprint.digest())
+      .digest('hex'),
+    status,
+    diff,
   };
 }

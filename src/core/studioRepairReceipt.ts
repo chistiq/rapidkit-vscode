@@ -13,7 +13,9 @@ export type StudioVerifiedRepairReceipt = {
 export type StudioCliRepairDisposition = {
   closed: boolean;
   generalSourceRepair: boolean;
+  rolledBackForAnotherSourceAttempt: boolean;
   requiresUserDecision: boolean;
+  nextAction: 'closed' | 'general-source-repair' | 'review-required' | 'repair-stopped';
   terminalReason?: 'cli-repair-decision-required' | 'repair-toolchain-unavailable';
   missingExecutables: Array<{ projectPath: string; executable: string }>;
 };
@@ -30,6 +32,30 @@ type StudioRepairDecisionCause = {
   executable?: string;
 };
 
+const NON_SOURCE_REPAIR_PATH =
+  /(?:^|\/)(?:(?:\.workspai|\.rapidkit)(?:\/|$)|(?:package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.ya?ml|yarn\.lock|bun\.lockb?)$)/i;
+
+/**
+ * Keep the model's source capability plane outside canonical Workspai state.
+ *
+ * CLI receipts can originate on every supported platform, so candidate paths
+ * are normalized before policy matching and durable replay.
+ */
+export function selectStudioSourceRepairCandidates(paths: readonly string[], limit = 20): string[] {
+  const candidates = new Set<string>();
+  for (const candidate of paths) {
+    const normalized = candidate.trim().replace(/\\/g, '/');
+    if (!normalized || NON_SOURCE_REPAIR_PATH.test(normalized)) {
+      continue;
+    }
+    candidates.add(normalized);
+    if (candidates.size >= Math.max(1, limit)) {
+      break;
+    }
+  }
+  return [...candidates];
+}
+
 /**
  * Classify a non-closed CLI transaction without guessing from its prose.
  *
@@ -41,6 +67,11 @@ export function resolveStudioCliRepairDisposition(input: {
   transaction: {
     state: string;
     decision?: { options?: string[]; causes?: StudioRepairDecisionCause[] };
+    verification?: {
+      status?: string;
+      targetStatus?: string;
+      summary?: string;
+    };
     adapterEvaluations?: Array<{
       projectPath: string;
       missingExecutables?: string[];
@@ -83,12 +114,28 @@ export function resolveStudioCliRepairDisposition(input: {
     decisionRequired &&
     decisionCauses.length > 0 &&
     decisionCauses.every((cause) => cause.kind === 'source-repair-required');
-  const generalSourceRepair = !closed && sourceRepairDecision && input.sourceCandidates.length > 0;
+  const rolledBackForAnotherSourceAttempt =
+    input.transaction.state === 'rolled-back' &&
+    (input.transaction.verification?.status === 'failed' ||
+      input.transaction.verification?.targetStatus === 'failed');
+  const generalSourceRepair =
+    !closed &&
+    input.sourceCandidates.length > 0 &&
+    (sourceRepairDecision || rolledBackForAnotherSourceAttempt);
   const requiresUserDecision = decisionRequired && !generalSourceRepair;
+  const nextAction = closed
+    ? 'closed'
+    : generalSourceRepair
+      ? 'general-source-repair'
+      : requiresUserDecision
+        ? 'review-required'
+        : 'repair-stopped';
   return {
     closed,
     generalSourceRepair,
+    rolledBackForAnotherSourceAttempt,
     requiresUserDecision,
+    nextAction,
     ...(requiresUserDecision
       ? {
           terminalReason:

@@ -573,6 +573,20 @@
       ],
       "refreshEvidence": true
     },
+    "workspaceGoalCreate": {
+      "id": "workspaceGoalCreate",
+      "label": "Create Governed Goal",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true
+    },
+    "workspaceGoalShow": {
+      "id": "workspaceGoalShow",
+      "label": "Review Governed Goals",
+      "scope": "workspace",
+      "handler": "extension-host",
+      "trackActivity": true
+    },
     "workspaceAutopilotRelease": {
       "id": "workspaceAutopilotRelease",
       "label": "Autopilot Release",

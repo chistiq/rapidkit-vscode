@@ -12,6 +12,7 @@ export interface ChatTurn {
 }
 
 export type ChatSessionStatus = 'idle' | 'streaming' | 'done' | 'error';
+export type ChatAssistantMode = 'agent' | 'ask' | 'plan' | 'goal';
 export type ChatSessionKind = 'global' | 'scope' | 'artifact' | 'editor-issue';
 export type ChatSessionIncidentRepairStatus = 'ready' | 'running' | 'review' | 'done' | 'blocked';
 
@@ -85,6 +86,8 @@ export interface ChatSession {
   error?: string;
   /** Studio-only: the active mode for the session. */
   mode?: string;
+  /** Immutable Assistant capability boundary for this conversation. */
+  assistantMode?: ChatAssistantMode;
   /** Advisor/Studio: active workspace/project snapshot for ordinary scoped chats. */
   scope?: ChatSessionScopeSnapshot;
   /** Studio-only: card/artifact identity for dashboard-origin repair sessions. */

@@ -36,6 +36,24 @@ export function describeStudioTerminalFailure(input: {
       connectionFailure: false,
     };
   }
+  if (terminalReason === 'repair-cancelled') {
+    return {
+      title: 'Automatic repair ended',
+      summary:
+        error ||
+        'Source ownership was released without an unverified success. No automatic repair remains pending.',
+      terminalReason,
+      connectionFailure: false,
+    };
+  }
+  if (terminalReason === 'repair-rolled-back') {
+    return {
+      title: 'Source changes rolled back',
+      summary: error || 'The CLI restored its checkpoint after verification remained blocked.',
+      terminalReason,
+      connectionFailure: false,
+    };
+  }
   if (terminalReason === 'source-repair-policy-loop') {
     return {
       title: 'Source repair stopped',

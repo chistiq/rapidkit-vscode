@@ -8,7 +8,8 @@ describe('welcomePanelStructuredPromptBlocks', () => {
     const block = buildWorkspaceArchitectureBlock(undefined, '/tmp/ws');
 
     expect(block).toContain('WORKSPACE ARCHITECTURE (from doctor evidence):');
-    expect(block).toContain('/tmp/ws');
+    expect(block).toContain('$WORKSPACE');
+    expect(block).not.toContain('/tmp/ws');
     expect(block).toContain('doctor-last-run.json');
   });
 

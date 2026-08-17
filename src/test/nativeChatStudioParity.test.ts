@@ -35,6 +35,17 @@ describe('native Chat and Incident Studio orchestration parity', () => {
     expect(renderer).toContain("event.type === 'tool.completed'");
   });
 
+  it('continues typed source-repair receipts in the source-only plane', () => {
+    const nativeRepair = read('src/core/nativeChatRepair.ts');
+    const nativeAgent = read('src/core/nativeChatStudioAgent.ts');
+    expect(nativeRepair).toContain('initialSourceRepairDirective: {');
+    expect(nativeAgent).toContain('resolveStudioCliRepairDisposition({');
+    expect(nativeAgent).toContain('repairPolicy: cardRepairCapability.repairPolicy');
+    expect(nativeAgent).toContain(
+      'initialSourceRepairDirective: input.initialSourceRepairDirective'
+    );
+  });
+
   it('shares workspace inspection primitives with the webview Studio host', () => {
     const provider = read('src/ui/webviews/actionsWebviewProvider.ts');
     const inspection = read('src/core/studioWorkspaceInspection.ts');

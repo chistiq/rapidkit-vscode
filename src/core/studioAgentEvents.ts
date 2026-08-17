@@ -45,9 +45,37 @@ export type StudioAgentPersistedSession = {
   workspacePath: string;
   projectPath?: string;
   cardId: string;
-  assistantMode: 'agent' | 'ask' | 'plan';
+  assistantMode: 'agent' | 'ask' | 'plan' | 'goal';
   selectedModelId?: string;
   blockerSignature?: string;
+  governedGoal?: {
+    schemaVersion: 'workspai.studio-governed-goal.v1';
+    id: string;
+    fingerprint: string;
+    objective: string;
+    category:
+      | 'release-readiness'
+      | 'dependency-security'
+      | 'test-coverage'
+      | 'defect-repair'
+      | 'feature-change'
+      | 'refactor'
+      | 'performance'
+      | 'documentation'
+      | 'system-understanding';
+    scope: {
+      kind: 'workspace' | 'project';
+      projects: string[];
+      selectionSource: 'workspace' | 'invocation-project' | 'explicit';
+    };
+    /**
+     * Deterministic goals have an exact CLI success producer. Every other
+     * engineering goal closes only after CLI safety verification plus a
+     * model review of the requested outcome; it is never mislabeled as a
+     * machine-verified semantic result.
+     */
+    completionMode: 'deterministic-verification' | 'evidence-review';
+  };
   goal?: {
     schemaVersion: 'workspai.verified-goal.v1';
     id: string;

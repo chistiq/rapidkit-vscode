@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bot, Check, ChevronUp, ListChecks, MessageCircle } from 'lucide-react';
+import { Bot, Check, ChevronUp, ListChecks, MessageCircle, Target } from 'lucide-react';
 
-export type AssistantMode = 'agent' | 'ask' | 'plan';
+export type AssistantMode = 'agent' | 'ask' | 'plan' | 'goal';
 
 const MODES = [
   {
@@ -21,6 +21,12 @@ const MODES = [
     label: 'Plan',
     description: 'Prepare a rollback-aware plan without applying it',
     icon: ListChecks,
+  },
+  {
+    id: 'goal' as const,
+    label: 'Goal',
+    description: 'Pursue any bounded outcome with governed evidence and verification',
+    icon: Target,
   },
 ] as const;
 

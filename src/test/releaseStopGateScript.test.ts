@@ -218,7 +218,13 @@ describe('extension package build contract', () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
     const scripts = packageJson.scripts ?? {};
 
-    expect(scripts['vscode:prepublish']).toBe('corepack npm run build');
+    expect(scripts['vscode:prepublish']).toBe(
+      'corepack npm run check:english-text && corepack npm run check:local-paths && corepack npm run build'
+    );
+    expect(scripts['check:english-text']).toBe('node scripts/english-text-guard.mjs --all');
+    expect(scripts['check:english-text:staged']).toBe(
+      'node scripts/english-text-guard.mjs --staged'
+    );
     expect(scripts.prepackage).toBe('corepack npm run build');
     expect(scripts.build).toContain('corepack npm run esbuild-base -- --production');
     expect(scripts.build).toContain('corepack npm run webview:build:production');

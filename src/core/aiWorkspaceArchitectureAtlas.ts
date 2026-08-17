@@ -454,7 +454,7 @@ export function buildWorkspaceArchitectureAtlasBlock(
     atlas.canonicalSource === 'workspace-model.v1'
       ? 'WORKSPACE ARCHITECTURE ATLAS (canonical source: workspace-model.v1):'
       : 'WORKSPACE ARCHITECTURE ATLAS (dynamic — authoritative project inventory):',
-    `- Workspace: ${atlas.workspacePath}`,
+    '- Workspace: $WORKSPACE (runtime-private)',
     `- Projects discovered: ${atlas.projectCount}${atlas.isPolyglot ? ' (polyglot workspace)' : ''}`,
   ];
 
@@ -486,7 +486,7 @@ export function buildWorkspaceArchitectureAtlasBlock(
     lines.push(
       `    • ${project.name}${isActive ? ' ← ACTIVE' : ''} | kit=${project.kit} | runtime=${project.runtime} | modules=${modules} | entry=${entry} | ${flags}`
     );
-    lines.push(`      path=${project.path}`);
+    lines.push(`      identity=project:${project.name}`);
   }
 
   if (atlas.crossProjectModules.length > 0) {

@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockGet, mockRequestAIModelToolAction } = vi.hoisted(() => ({
-  mockGet: vi.fn(),
-  mockRequestAIModelToolAction: vi.fn(),
-}));
+const { mockGet, mockRedactAIMessageRuntimePaths, mockRequestAIModelToolAction } = vi.hoisted(
+  () => ({
+    mockGet: vi.fn(),
+    mockRedactAIMessageRuntimePaths: vi.fn((messages: unknown[]) => messages),
+    mockRequestAIModelToolAction: vi.fn(),
+  })
+);
 
 vi.mock('vscode', () => ({
   workspace: {
@@ -31,6 +34,7 @@ vi.mock('vscode', () => ({
 
 vi.mock('../core/aiService.js', () => ({
   askAI: vi.fn(async () => 'vscode-lm-response'),
+  redactAIMessageRuntimePaths: mockRedactAIMessageRuntimePaths,
   requestAIModelToolAction: mockRequestAIModelToolAction,
 }));
 
@@ -61,6 +65,7 @@ function createMockContext() {
 describe('aiProviderService', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockRedactAIMessageRuntimePaths.mockImplementation((messages: unknown[]) => messages);
     mockGet.mockImplementation((key: string, defaultValue: unknown) => {
       if (key === 'aiProvider') {
         return 'openai-compatible';

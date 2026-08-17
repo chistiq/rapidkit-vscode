@@ -2131,6 +2131,8 @@ export function App() {
                   onWorkspaceImpactLens={() => handleDashboardCommand('workspaceImpactLens')}
                   onRunImpactLensCli={() => handleDashboardCommand('workspaceImpactLensCli')}
                   onIntelligenceChain={() => handleDashboardCommand('workspaceIntelligenceChain')}
+                  onWorkspaceGoalCreate={() => handleDashboardCommand('workspaceGoalCreate')}
+                  onWorkspaceGoalShow={() => handleDashboardCommand('workspaceGoalShow')}
                   onSendWorkspaceToCopilot={() =>
                     vscode.postMessage('sendWorkspaceToCopilot', {
                       workspacePath: workspaceStatus.workspacePath,

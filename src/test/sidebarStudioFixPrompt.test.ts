@@ -88,11 +88,10 @@ describe('sidebarStudioFixPrompt', () => {
 
     expect(prompt).toContain('## Active blocker handoff');
     expect(prompt).toContain('## Active remediation plan');
-    expect(prompt).toContain('- Workspace path: /workspace');
-    expect(prompt).toContain('- Project path: /workspace/fastapi-service');
-    expect(prompt).toContain(
-      '- Evidence artifact: /workspace/.rapidkit/reports/doctor-last-run.json'
-    );
+    expect(prompt).toContain('- Workspace path: $WORKSPACE');
+    expect(prompt).toContain('- Project path: $PROJECT');
+    expect(prompt).toContain('- Evidence artifact: $LOCAL_PATH');
+    expect(prompt).not.toContain('/workspace');
     expect(prompt).toContain('- Last exit code: 1');
     expect(prompt).toContain('- Prior command runs for this signature: 2');
     expect(prompt).toContain('- Incident phase: fix');

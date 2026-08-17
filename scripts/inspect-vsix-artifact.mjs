@@ -3,6 +3,7 @@
 import fs from 'fs';
 import path from 'path';
 import AdmZip from 'adm-zip';
+import { findLocalPathViolations, looksBinary } from './local-path-guard.mjs';
 
 const REQUIRED_FILES = [
   'extension/package.json',
@@ -14,6 +15,7 @@ const REQUIRED_FILES = [
   'extension/dist/sidebar.css',
   'extension/contracts/runtime-command-surface.v1.json',
   'extension/contracts/extension-cli-compatibility.v1.json',
+  'extension/contracts/extension-cli-release-policy.v1.json',
   'extension/contracts/workspace-intelligence/workspace-model.v1.json',
   'extension/contracts/workspace-intelligence/workspace-graph-recording.v1.json',
   'extension/contracts/workspace-intelligence/workspace-verify.v1.json',
@@ -36,7 +38,8 @@ const DENIED_PATTERNS = [
   /\.spec\.(js|ts|tsx)$/,
 ];
 
-const ALLOWED_NODE_MODULE_METADATA = /^extension\/node_modules\/[^/]+\/(?:package\.json|README\.md)$/;
+const ALLOWED_NODE_MODULE_METADATA =
+  /^extension\/node_modules\/[^/]+\/(?:package\.json|README\.md)$/;
 
 function parseArgs(argv) {
   const options = {
@@ -124,6 +127,27 @@ function inspectVsix(options) {
     });
   if (denied.length > 0) {
     throw new Error(`VSIX contains denied development files: ${denied.slice(0, 20).join(', ')}`);
+  }
+
+  const localPathViolations = entries.flatMap((entry) => {
+    if (entry.entryName.startsWith('extension/node_modules/')) {
+      return [];
+    }
+    const data = entry.getData();
+    return looksBinary(data)
+      ? []
+      : findLocalPathViolations(data.toString('utf8'), entry.entryName, {
+          repositoryRoot: process.cwd(),
+          homeDirectory: process.env.HOME || process.env.USERPROFILE || '',
+        });
+  });
+  if (localPathViolations.length > 0) {
+    throw new Error(
+      `VSIX contains machine-local paths: ${localPathViolations
+        .slice(0, 20)
+        .map((entry) => `${entry.file}:${entry.line} [${entry.kind}]`)
+        .join(', ')}`
+    );
   }
 
   const packageJson = readPackageJson(zip);

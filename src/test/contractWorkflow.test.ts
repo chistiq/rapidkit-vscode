@@ -123,11 +123,25 @@ describe('shared contracts workflow (Wave A + B)', () => {
 
   it('keeps runtime-consumed src contract copies aligned with Workspai CLI', () => {
     const srcMirroredContracts = [
+      'cli-operation-result.v1.json',
+      'command-capabilities.v1.json',
+      'version.v1.json',
+      'published-contract-catalog.v1.json',
       'agent-customization-pack.v1.json',
       'create-planner-capabilities.v1.json',
       'release-readiness.v1.json',
       'studio-card-repair-capabilities.v1.json',
       'workspace-registry.v1.json',
+      'workspace-archive-capabilities.v1.json',
+      'workspace-archive-manifest.v1.json',
+      'workspace-archive-operation-result.v1.json',
+      'ingestion-plan.v1.json',
+      'ingestion-result.v1.json',
+      'workspace-repair-capabilities.v1.json',
+      'workspace-intelligence/workspace-repair-proposal.v1.json',
+      'workspace-intelligence/workspace-repair-transaction.v1.json',
+      'workspace-intelligence/project-agent-entry.v1.json',
+      'workspace-intelligence/agent-bootstrap-receipt.v1.json',
     ];
 
     for (const contractFile of srcMirroredContracts) {
@@ -160,9 +174,13 @@ describe('shared contracts workflow (Wave A + B)', () => {
     const extensionOwned = extensionContracts.filter((contract) => !npmContracts.has(contract));
 
     expect(extensionOwned).toEqual([
+      'extension-cli-release-policy.v1.json',
       'workspace-intelligence/workspace-graph-recording.v1.json',
       'workspai-ai-narrative.v1.json',
     ]);
+    expect(read('src/core/cliVersionCompatibilityContract.ts')).toContain(
+      '../../contracts/extension-cli-release-policy.v1.json'
+    );
     expect(read('src/core/workspaceGraphRecordingManager.ts')).toContain(
       'WORKSPACE_GRAPH_RECORDING_SCHEMA_VERSION'
     );

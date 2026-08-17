@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { StudioAgentPersistedSession } from '../core/studioAgentEvents.js';
 import {
   StudioAgentSession,
+  studioAgentSessionScopeMatches,
   type StudioAgentModelAction,
   type StudioAgentModelAdapter,
   type StudioAgentSessionStore,
@@ -15,6 +16,10 @@ class MemoryStore implements StudioAgentSessionStore {
 
   async save(session: StudioAgentPersistedSession): Promise<void> {
     this.saved.push(structuredClone(session));
+  }
+
+  async load(sessionId: string): Promise<StudioAgentPersistedSession | undefined> {
+    return structuredClone([...this.saved].reverse().find((entry) => entry.id === sessionId));
   }
 }
 
@@ -104,7 +109,7 @@ describe('Studio Agent session runtime', () => {
   it('persists tool progress so canonical stage movement survives a webview reload', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
-      name: 'run-chain',
+      name: 'inspect-evidence',
       title: 'Run chain',
       activity: 'inspect',
       risk: 'read',
@@ -127,7 +132,7 @@ describe('Studio Agent session runtime', () => {
         workspaceTrusted: true,
       },
       sequenceModel([
-        { type: 'tool', toolName: 'run-chain', input: {}, reason: 'Refresh the chain.' },
+        { type: 'tool', toolName: 'inspect-evidence', input: {}, reason: 'Inspect the chain.' },
         { type: 'complete', summary: 'Observed the current stage.' },
       ]),
       registry,
@@ -140,7 +145,7 @@ describe('Studio Agent session runtime', () => {
       expect.objectContaining({
         type: 'tool.progress',
         data: expect.objectContaining({
-          toolName: 'run-chain',
+          toolName: 'inspect-evidence',
           intelligencePhase: 'impact',
           intelligenceMilestoneStatus: 'started',
         }),
@@ -214,6 +219,194 @@ describe('Studio Agent session runtime', () => {
         data: expect.objectContaining({ toolName: 'recover-active-blocker' }),
       })
     );
+  });
+
+  it('refreshes producer-owned cards through their exact producer without a model decision', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Refresh exact producer',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        return { ok: true, cardBlocking: false, evidenceGeneration: 'producer-v2' };
+      },
+    });
+    let modelTurns = 0;
+    const session = new StudioAgentSession(
+      {
+        workspacePath: '/workspace',
+        cardId: 'workspace.run',
+        assistantMode: 'agent',
+        repairPolicy: 'refresh-producer',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      {
+        async next() {
+          modelTurns += 1;
+          throw new Error('Producer refresh must not call the model.');
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Refresh Workspace Run');
+
+    expect(result.status).toBe('completed');
+    expect(modelTurns).toBe(0);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'model.checkpoint',
+        data: expect.objectContaining({ recovery: 'exact-producer-refresh' }),
+      })
+    );
+  });
+
+  it('keeps producer-owned failures open without falling through to source mutation', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Refresh exact producer',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        return { ok: false, cardBlocking: true, error: 'Producer remains blocked.' };
+      },
+    });
+    let modelTurns = 0;
+    const session = new StudioAgentSession(
+      {
+        workspacePath: '/workspace',
+        cardId: 'workspace.run',
+        assistantMode: 'agent',
+        repairPolicy: 'refresh-producer',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      {
+        async next() {
+          modelTurns += 1;
+          throw new Error('Producer refresh must not call the model.');
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Refresh Workspace Run');
+
+    expect(result.status).toBe('failed');
+    expect(modelTurns).toBe(0);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'session.failed',
+        data: expect.objectContaining({ terminalReason: 'producer-refresh-unresolved' }),
+      })
+    );
+  });
+
+  it('starts a native continuation inside the source-repair capability plane', async () => {
+    const registry = new StudioAgentToolRegistry();
+    for (const tool of [
+      { name: 'recover-active-blocker', activity: 'change' as const },
+      { name: 'run-governed-command', activity: 'change' as const },
+      { name: 'verify-blocker', activity: 'verify' as const },
+    ]) {
+      registry.register({
+        name: tool.name,
+        title: tool.name,
+        activity: tool.activity,
+        risk: tool.activity === 'verify' ? 'read' : 'guarded-write',
+        async execute() {
+          throw new Error(`${tool.name} is withheld during source repair.`);
+        },
+      });
+    }
+    registry.register({
+      name: 'inspect-source',
+      title: 'Inspect source',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, output: [{ path: 'src/app.ts', content: 'before', sha256: 'abc' }] };
+      },
+    });
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply source repair',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return closedCliRepairResult({ transactionId: 'repair-native-source' });
+      },
+    });
+    let turn = 0;
+    const session = new StudioAgentSession(
+      {
+        workspacePath: '/workspace',
+        projectPath: '/source/api',
+        cardId: 'doctor',
+        assistantMode: 'agent',
+        repairPolicy: 'diagnose-and-repair',
+        initialSourceRepairDirective: {
+          nextAction: 'general-source-repair',
+          sourceCandidates: ['src/app.ts'],
+        },
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      {
+        async next(context) {
+          turn += 1;
+          expect(context.sourceRepairDirective).toMatchObject({
+            nextAction: 'general-source-repair',
+          });
+          expect(context.tools.map((tool) => tool.name)).not.toEqual(
+            expect.arrayContaining([
+              'recover-active-blocker',
+              'run-governed-command',
+              'verify-blocker',
+            ])
+          );
+          return turn === 1
+            ? {
+                type: 'tool',
+                toolName: 'inspect-source',
+                input: { paths: ['src/app.ts'] },
+                reason: 'Inspect the exact causal source.',
+              }
+            : {
+                type: 'tool',
+                toolName: 'apply-workspace-patch',
+                input: {},
+                reason: 'Submit the inspected repair to the CLI.',
+              };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Continue source repair');
+    expect(result.status).toBe('completed');
+    expect(turn).toBe(2);
+  });
+
+  it('binds durable session identity to both workspace and linked project scope', () => {
+    expect(
+      studioAgentSessionScopeMatches(
+        { workspacePath: '/workspace', projectPath: '/source/api' },
+        { workspacePath: '/workspace', projectPath: '/source/web' }
+      )
+    ).toBe(false);
+    expect(
+      studioAgentSessionScopeMatches(
+        { workspacePath: '/workspace', projectPath: '/source/api' },
+        { workspacePath: '/workspace/.', projectPath: '/source/api/.' }
+      )
+    ).toBe(true);
   });
 
   it('accepts one closed CLI repair receipt without running a second closure plane', async () => {
@@ -853,7 +1046,7 @@ describe('Studio Agent session runtime', () => {
     );
   });
 
-  it('uses the CLI transaction receipt as durable goal repair closure', async () => {
+  it('requires exact Goal verification after a closed CLI repair transaction', async () => {
     const registry = new StudioAgentToolRegistry();
     const verifyBlocker = vi.fn(async () => ({
       ok: false,
@@ -927,9 +1120,288 @@ describe('Studio Agent session runtime', () => {
     const result = await session.run('Resolve dependency vulnerabilities without breaking changes');
 
     expect(result.status).toBe('completed');
-    expect(verifyGoal).not.toHaveBeenCalled();
+    expect(verifyGoal).toHaveBeenCalledTimes(1);
     expect(verifyBlocker).not.toHaveBeenCalled();
     expect(result.goal?.baseline.value).toBe(12);
+  });
+
+  it('runs arbitrary Goals through evidence review without claiming semantic machine verification', async () => {
+    const registry = new StudioAgentToolRegistry();
+    const verifyGoalEvidence = vi.fn(async () => ({
+      ok: true,
+      cardBlocking: false,
+      output: {
+        status: {
+          state: 'evidence-review-ready',
+          semanticVerification: 'not-machine-verifiable',
+          workspaceVerification: 'passed',
+        },
+      },
+    }));
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply patch',
+      activity: 'change',
+      risk: 'safe-write',
+      async execute() {
+        return closedCliRepairResult({
+          transactionId: 'repair-general-goal',
+          changedPaths: ['api/src/retry.ts'],
+        });
+      },
+    });
+    registry.register({
+      name: 'inspect-workspace-changes',
+      title: 'Inspect changes',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, output: { files: ['api/src/retry.ts'] } };
+      },
+    });
+    registry.register({
+      name: 'verify-goal',
+      title: 'Verify Goal evidence',
+      activity: 'verify',
+      risk: 'read',
+      execute: verifyGoalEvidence,
+    });
+    const governedGoal: NonNullable<StudioAgentPersistedSession['governedGoal']> = {
+      schemaVersion: 'workspai.studio-governed-goal.v1',
+      id: 'goal-feature-change-12345678',
+      fingerprint: 'c'.repeat(64),
+      objective: 'Implement retry with exponential backoff for transient requests',
+      category: 'feature-change',
+      scope: { kind: 'project', projects: ['api'], selectionSource: 'explicit' },
+      completionMode: 'evidence-review',
+    };
+    const session = new StudioAgentSession(
+      {
+        id: 'general-goal-closure-session',
+        workspacePath: '/workspace',
+        projectPath: '/workspace/api',
+        cardId: governedGoal.id,
+        assistantMode: 'goal',
+        governedGoal,
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: true,
+      },
+      sequenceModel([
+        {
+          type: 'tool',
+          toolName: 'apply-workspace-patch',
+          input: { patches: [] },
+          reason: 'Apply the bounded retry implementation.',
+        },
+        {
+          type: 'tool',
+          toolName: 'inspect-workspace-changes',
+          input: {},
+          reason: 'Review the final worktree against the full Goal.',
+        },
+        {
+          type: 'complete',
+          summary: 'Implemented bounded retry behavior and reviewed the final source change.',
+        },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run(governedGoal.objective);
+
+    expect(result.status).toBe('completed');
+    expect(verifyGoalEvidence).toHaveBeenCalledTimes(1);
+    expect(result.governedGoal).toEqual(governedGoal);
+    expect(result.goal).toBeUndefined();
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'session.completed',
+        data: expect.objectContaining({
+          goalId: governedGoal.id,
+          goalCompletionMode: 'evidence-review',
+          acceptanceReview: 'agent-reviewed-outcome-and-final-worktree',
+        }),
+      })
+    );
+    expect(JSON.stringify(result.events)).not.toContain('Goal verified by the CLI');
+  });
+
+  it('honors the CLI Goal attempt count before allowing another verification', async () => {
+    const registry = new StudioAgentToolRegistry();
+    const verifyGoal = vi.fn(async () => ({ ok: true, cardBlocking: false }));
+    registry.register({
+      name: 'verify-goal',
+      title: 'Verify goal',
+      activity: 'verify',
+      risk: 'read',
+      execute: verifyGoal,
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'goal-budget-session',
+        workspacePath: '/workspace',
+        cardId: 'goal-dependency-security-12345678',
+        assistantMode: 'goal',
+        goal: verifiedDependencyGoal(),
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        goalMaxAttempts: 2,
+        goalAttemptsUsed: 2,
+      },
+      sequenceModel([
+        {
+          type: 'tool',
+          toolName: 'verify-goal',
+          input: {},
+          reason: 'Measure the exact goal.',
+        },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Resolve dependency vulnerabilities');
+
+    expect(result.status).toBe('failed');
+    expect(verifyGoal).not.toHaveBeenCalled();
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'session.failed',
+        data: expect.objectContaining({
+          terminalReason: 'goal-attempt-budget-exhausted',
+          requiresUserDecision: true,
+        }),
+      })
+    );
+  });
+
+  it('verifies an already-satisfied Goal before spending a model decision or mutating source', async () => {
+    const registry = new StudioAgentToolRegistry();
+    const verifyGoal = vi.fn(async () => ({
+      ok: true,
+      cardBlocking: false,
+      output: { status: { state: 'verified' } },
+    }));
+    registry.register({
+      name: 'verify-goal',
+      title: 'Verify goal',
+      activity: 'verify',
+      risk: 'read',
+      execute: verifyGoal,
+    });
+    const goal = verifiedDependencyGoal();
+    goal.baseline = {
+      ...goal.baseline,
+      value: 0,
+      status: 'satisfied',
+      message: 'No blocking vulnerabilities remain.',
+    };
+    const model = { next: vi.fn(async () => ({ type: 'complete', summary: 'unused' }) as const) };
+    const session = new StudioAgentSession(
+      {
+        id: 'goal-satisfied-preflight-session',
+        workspacePath: '/workspace',
+        cardId: goal.id,
+        assistantMode: 'goal',
+        goal,
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        goalMaxAttempts: 3,
+      },
+      model,
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Resolve dependency vulnerabilities');
+
+    expect(result.status).toBe('completed');
+    expect(verifyGoal).toHaveBeenCalledTimes(1);
+    expect(model.next).not.toHaveBeenCalled();
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'session.completed',
+        data: expect.objectContaining({
+          summary: 'Goal verified by the CLI; no source change was required.',
+          verificationAuthority: 'workspai-cli',
+        }),
+      })
+    );
+  });
+
+  it('requires a final diff review and CLI verification for a general Agent task', async () => {
+    const registry = new StudioAgentToolRegistry();
+    const verify = vi.fn(async () => ({ ok: true, cardBlocking: false }));
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply patch',
+      activity: 'change',
+      risk: 'safe-write',
+      async execute() {
+        return closedCliRepairResult({ transactionId: 'repair-general-task' });
+      },
+    });
+    registry.register({
+      name: 'inspect-workspace-changes',
+      title: 'Inspect changes',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, output: { status: 'M api/package.json' } };
+      },
+    });
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Verify workspace',
+      activity: 'verify',
+      risk: 'read',
+      execute: verify,
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'general-agent-acceptance-session',
+        workspacePath: '/workspace',
+        cardId: 'assistant:agent',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: true,
+      },
+      sequenceModel([
+        {
+          type: 'tool',
+          toolName: 'apply-workspace-patch',
+          input: { patches: [] },
+          reason: 'Apply the requested change.',
+        },
+        { type: 'complete', summary: 'Implemented and tested.' },
+        {
+          type: 'tool',
+          toolName: 'inspect-workspace-changes',
+          input: {},
+          reason: 'Review the final diff.',
+        },
+        { type: 'complete', summary: 'Implemented, reviewed, and verified.' },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Implement the requested endpoint');
+
+    expect(result.status).toBe('completed');
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'session.completed',
+        data: expect.objectContaining({
+          verificationAuthority: 'workspai-cli',
+          acceptanceReview: 'final-worktree-inspected',
+        }),
+      })
+    );
   });
 
   it('rejects a mutation receipt that is not closed by the CLI repair engine', async () => {
@@ -2361,8 +2833,22 @@ describe('Studio Agent session runtime', () => {
     expect(result.events.some((event) => event.type === 'session.completed')).toBe(false);
   });
 
-  it('allows read-only Ask and Plan sessions to complete without blocker verification', async () => {
+  it('requires grounded evidence and a structured contract before Ask and Plan completion', async () => {
     for (const assistantMode of ['ask', 'plan'] as const) {
+      const registry = new StudioAgentToolRegistry();
+      registry.register({
+        name: 'inspect-evidence',
+        title: 'Inspect evidence',
+        activity: 'inspect',
+        risk: 'read',
+        async execute() {
+          return { ok: true, output: { status: 'current' } };
+        },
+      });
+      const summary =
+        assistantMode === 'plan'
+          ? '## Scope\nWorkspace\n## Evidence\nCurrent\n## Steps\n1. Change\n## Verification\nRun tests\n## Rollback\nRevert\n## Assumptions\nNone'
+          : 'Evidence-backed answer';
       const session = new StudioAgentSession(
         {
           id: `${assistantMode}-session`,
@@ -2373,8 +2859,16 @@ describe('Studio Agent session runtime', () => {
           workspaceTrusted: true,
           requiresVerifiedCompletion: false,
         },
-        sequenceModel([{ type: 'complete', summary: `${assistantMode} result` }]),
-        new StudioAgentToolRegistry(),
+        sequenceModel([
+          {
+            type: 'tool',
+            toolName: 'inspect-evidence',
+            input: {},
+            reason: 'Ground the response.',
+          },
+          { type: 'complete', summary },
+        ]),
+        registry,
         new MemoryStore()
       );
 
@@ -2383,7 +2877,7 @@ describe('Studio Agent session runtime', () => {
       expect(result.events).toContainEqual(
         expect.objectContaining({
           type: 'session.completed',
-          data: { summary: `${assistantMode} result` },
+          data: expect.objectContaining({ summary }),
         })
       );
       expect(result.events.some((event) => event.type === 'verify.completed')).toBe(false);
@@ -2556,6 +3050,55 @@ describe('Studio Agent session runtime', () => {
         }),
       })
     );
+  });
+
+  it('redacts host paths from both durable events and live consumer events', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'inspect-evidence',
+      title: 'Inspect evidence',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return {
+          ok: true,
+          output: {
+            cwd: '/home/alice/project',
+            message: 'Read C:\\Users\\test-user\\project\\report.json',
+          },
+        };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'path-redaction-session',
+        workspacePath: '/workspace',
+        cardId: 'assistant:ask',
+        assistantMode: 'ask',
+        permissionLevel: 'default',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: false,
+      },
+      sequenceModel([
+        {
+          type: 'tool',
+          toolName: 'inspect-evidence',
+          input: {},
+          reason: 'Inspect evidence.',
+        },
+        { type: 'complete', summary: 'Evidence inspected.' },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+    const live: StudioAgentPersistedSession['events'] = [];
+    session.onEvent((event) => live.push(event));
+
+    const result = await session.run('Inspect evidence');
+    const serialized = JSON.stringify({ durable: result.events, live });
+
+    expect(serialized).not.toContain('private-user');
+    expect(serialized).toContain('$LOCAL_PATH');
   });
 
   it('returns tool failures to the model and requires the latest verify to clear the card', async () => {

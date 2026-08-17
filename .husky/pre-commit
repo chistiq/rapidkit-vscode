@@ -1,5 +1,18 @@
 #!/usr/bin/env sh
 
+echo "Checking staged files for English-only authored text..."
+npm run check:english-text:staged || {
+	echo "Staged content contains non-English authored text."
+	exit 1
+}
+
+echo "🔐 Checking staged files for machine-local paths..."
+npm run check:local-paths:staged || {
+	echo "❌ Staged content contains a machine-local path."
+	echo "   Replace it with \$WORKSPACE, \$PROJECT, \$HOME, or neutral fixture data."
+	exit 1
+}
+
 # Shared contracts (canonical: workspai/packages/cli/contracts/)
 echo "📋 Validating shared contracts..."
 npm run validate:contracts || {

@@ -64,6 +64,8 @@ export interface DashboardOperateSectionProps {
   onWorkspaceImpactLens?: () => void;
   onRunImpactLensCli?: () => void;
   onIntelligenceChain: () => void;
+  onWorkspaceGoalCreate?: () => void;
+  onWorkspaceGoalShow?: () => void;
   onSendWorkspaceToCopilot?: () => void;
   onCopyText?: (text: string) => void;
   requestedOperateZone?: DashboardOperateZone | null;
@@ -115,6 +117,8 @@ export function DashboardOperateSection({
   onWorkspaceImpactLens,
   onRunImpactLensCli,
   onIntelligenceChain,
+  onWorkspaceGoalCreate,
+  onWorkspaceGoalShow,
   onSendWorkspaceToCopilot,
   onCopyText,
   requestedOperateZone = null,
@@ -238,6 +242,8 @@ export function DashboardOperateSection({
               onWorkspaceImpactLens={onWorkspaceImpactLens}
               onRunImpactLensCli={onRunImpactLensCli}
               onRunFullChain={onIntelligenceChain}
+              onWorkspaceGoalCreate={onWorkspaceGoalCreate}
+              onWorkspaceGoalShow={onWorkspaceGoalShow}
               onSendWorkspaceToCopilot={onSendWorkspaceToCopilot}
             />
           ) : null}

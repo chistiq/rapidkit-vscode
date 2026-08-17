@@ -34,6 +34,7 @@ describe('Studio card repair end-to-end matrix', () => {
       });
       const registry = new StudioAgentToolRegistry();
       let verifyCalls = 0;
+      let modelCalls = 0;
       registry.register({
         name: 'verify-blocker',
         title: 'Verify exact card producer',
@@ -64,12 +65,14 @@ describe('Studio card repair end-to-end matrix', () => {
             : {}),
           cardId,
           assistantMode: 'agent',
+          repairPolicy: capability.repairPolicy,
           permissionLevel: 'autopilot',
           workspaceTrusted: true,
           requiresVerifiedCompletion: true,
         },
         {
           async next() {
+            modelCalls += 1;
             return { type: 'complete', summary: `${cardId} repaired` };
           },
         },
@@ -81,10 +84,16 @@ describe('Studio card repair end-to-end matrix', () => {
 
       expect(result.status).toBe('completed');
       expect(verifyCalls).toBe(1);
+      expect(modelCalls).toBe(capability.repairPolicy === 'refresh-producer' ? 0 : 1);
       expect(result.events).toContainEqual(
         expect.objectContaining({
           type: 'model.checkpoint',
-          data: expect.objectContaining({ recovery: 'completion-stop-gate' }),
+          data: expect.objectContaining({
+            recovery:
+              capability.repairPolicy === 'refresh-producer'
+                ? 'exact-producer-refresh'
+                : 'completion-stop-gate',
+          }),
         })
       );
       expect(result.events).toContainEqual(

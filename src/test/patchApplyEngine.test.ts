@@ -151,6 +151,16 @@ describe('normalizePatchesForWorkspaceScope', () => {
     expect(patches[0].relativePath).toBe('fastapi-service/Makefile');
   });
 
+  it('normalizes linked-project source without widening to an arbitrary sibling', () => {
+    const patches = normalizePatchesForWorkspaceScope({
+      workspacePath: '/managed/workspace',
+      projectPath: '/sources/grpc',
+      patches: [patch('cmake/cares.cmake')],
+    });
+
+    expect(patches[0].relativePath).toBe('../../sources/grpc/cmake/cares.cmake');
+  });
+
   it('deduplicates patches that normalize to the same workspace path by last occurrence', () => {
     const first = patch('.gitignore');
     first.patchedContent = 'first';

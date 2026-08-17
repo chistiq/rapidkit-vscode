@@ -12,6 +12,9 @@ contracts, artifacts, and Workspace Intelligence semantics.
 - Discuss broad product or contract changes before implementation.
 - Never include secrets, private workspace evidence, or local absolute paths in
   fixtures, screenshots, logs, or pull requests.
+- Use ASCII English for all authored source strings, tests, fixtures,
+  documentation, release notes, and filenames. Language-neutral Unicode symbols
+  and emoji are allowed; language text and accented letters are not.
 
 ## Set up the repository
 
@@ -76,6 +79,8 @@ change affects shared contracts or user-facing behavior:
 
 ```bash
 corepack npm run validate:contracts
+corepack npm run check:english-text
+corepack npm run check:local-paths
 corepack npm run typecheck
 corepack npm test
 corepack npm run lint
@@ -85,6 +90,17 @@ corepack npm run build
 Use `corepack npm run sync:shared-contracts` or
 `corepack npm run sync:palette-surface` only when the canonical source changed;
 review the generated diff before committing it.
+
+The local-path guard scans staged content in `pre-commit`, the complete
+repository in CI, and the packaged VSIX before publication. Use logical tokens
+such as `$WORKSPACE`, `$PROJECT`, and `$HOME`; use `/opt/fixtures/...` only for
+synthetic test paths. Do not add allowlist exceptions for developer-specific
+directories.
+
+The English-text guard follows the same boundary: pre-commit checks the exact
+staged content, while lint, CI, VSIX packaging, and prepublication scan the
+complete authored repository. Do not add exceptions for tests or historical
+documents.
 
 ## Pull requests
 

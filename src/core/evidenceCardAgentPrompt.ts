@@ -15,10 +15,7 @@ import {
   type WorkspaceImpactReport,
 } from './workspaceImpactReader.js';
 import { AGENT_CUSTOMIZATION_PACK_REPORT_PATH } from './workspaceIntelligencePaths.js';
-
-function toPosixPath(absolutePath: string): string {
-  return absolutePath.replace(/\\/g, '/');
-}
+import { redactLocalPathsForConsumer } from './consumerPathRedaction.js';
 
 function buildCardSpecificStudioGuidance(
   card: NonNullable<EvidenceCardAgentContextInput['card']>
@@ -115,12 +112,12 @@ function buildStudioIncidentPromptSection(
 }
 
 export function buildEvidenceCardStudioPrompt(input: EvidenceCardAgentContextInput): string {
-  const { card, workspacePath, workspaceName, projectPath, projectName } = input;
+  const { card, workspaceName, projectPath, projectName } = input;
   if (!card) {
     return [
       'You are Workspai Incident Studio. Use the loaded workspace intelligence to help the operator.',
       '',
-      `- Workspace: ${workspaceName || workspacePath} (${workspacePath})`,
+      `- Workspace: ${workspaceName || 'selected workspace'} ($WORKSPACE)`,
       input.userQuestion?.trim()
         ? `\n## Operator question\n${input.userQuestion.trim()}`
         : '\nSummarize blockers and propose the safest next actions.',
@@ -142,11 +139,11 @@ export function buildEvidenceCardStudioPrompt(input: EvidenceCardAgentContextInp
     `- Status: ${card.status}`,
     `- Scope: ${card.scope}`,
     `- Summary: ${card.summary.trim() || 'No summary'}`,
-    `- Workspace: ${workspaceName || workspacePath} (${workspacePath})`,
+    `- Workspace: ${workspaceName || 'selected workspace'} ($WORKSPACE)`,
   ];
 
   if (projectPath) {
-    lines.push(`- Project: ${projectName || projectPath} (${projectPath})`);
+    lines.push(`- Project: ${projectName || 'selected project'} ($PROJECT)`);
   }
   if (commandId) {
     lines.push(`- Source command: ${commandId}`);
@@ -205,7 +202,7 @@ export function buildEvidenceCardStudioPrompt(input: EvidenceCardAgentContextInp
 
   lines.push(...buildCardSpecificStudioGuidance(card));
 
-  return lines.join('\n');
+  return lines.map(redactLocalPathsForConsumer).join('\n');
 }
 
 function buildAgentPackStudioSection(packLines: string[], packFileRef: string | undefined): string {
@@ -228,7 +225,7 @@ export async function buildEvidenceCardStudioPromptEnriched(
   const agentPackSummary = agentPack ? summarizeAgentCustomizationPack(agentPack) : null;
   const packSection = buildAgentPackStudioSection(
     buildAgentPackHandoffSummaryLines(agentPack, agentPackSummary),
-    `#file:${input.workspacePath.replace(/\\/g, '/')}/${AGENT_CUSTOMIZATION_PACK_REPORT_PATH}`
+    `#file:${AGENT_CUSTOMIZATION_PACK_REPORT_PATH}`
   );
 
   if (input.card?.id !== 'workspaceImpact') {
@@ -254,9 +251,9 @@ export function buildEvidenceCardCopilotQuestion(input: EvidenceCardAgentContext
         : input.card.status;
   return [
     `Fix the ${statusLabel} Workspai evidence issue for "${input.card.label}".`,
-    `Work ONLY inside the Workspai workspace at \`${toPosixPath(input.workspacePath)}\`.`,
-    input.projectPath ? `Target project path: \`${toPosixPath(input.projectPath)}\`.` : undefined,
-    'Use the attached workspace intelligence pack and evidence artifacts (absolute #file paths).',
+    'Work ONLY inside the selected Workspai workspace at `$WORKSPACE`.',
+    input.projectPath ? 'Target the selected project at `$PROJECT`.' : undefined,
+    'Use the attached workspace intelligence pack and portable evidence artifact references.',
     'Do not re-explore the whole VS Code workspace or sibling repos — start from the blockers and artifact paths below.',
     input.card.blockers?.[0]
       ? `Primary blocker: ${input.card.blockers[0]}`

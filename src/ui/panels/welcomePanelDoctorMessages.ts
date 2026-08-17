@@ -251,12 +251,33 @@ export async function handleViewProjectDoctorReportMessage(
     const passed = Number(score?.passed ?? 0);
     const warnings = Number(score?.warnings ?? 0);
     const errors = Number(score?.errors ?? 0);
-    const percent = total > 0 ? Math.round((passed / total) * 100) : 0;
+    const presentation =
+      score?.presentation && typeof score.presentation === 'object'
+        ? (score.presentation as Record<string, unknown>)
+        : undefined;
+    const percent =
+      typeof presentation?.diagnosticPassRatePercent === 'number'
+        ? presentation.diagnosticPassRatePercent
+        : total > 0
+          ? Math.round((passed / total) * 100)
+          : 0;
 
     const scopeLabel = reportData.summary?.scopeProvenance?.dominantScope || 'project-scoped';
     output.appendLine(`Generated: ${reportData.generatedAt || 'unknown'}`);
     output.appendLine(`Scope: ${scopeLabel}`);
-    output.appendLine(`Health: ${percent}% (✅ ${passed} | ⚠️ ${warnings} | ❌ ${errors})`);
+    if (presentation?.policy === 'doctor-multi-axis-v1') {
+      output.appendLine(
+        `Verdict: ${String(score?.verdict ?? reportData.summary?.verdict ?? 'unknown')}`
+      );
+      output.appendLine(
+        `Findings: ${Number(presentation.blockingFindings ?? errors)} blocking | ${Number(presentation.advisoryFindings ?? warnings)} advisory | ${Number(presentation.unknownFindings ?? 0)} unknown | ${Number(presentation.notApplicableChecks ?? 0)} not applicable`
+      );
+      output.appendLine(`Diagnostic pass rate: ${percent}% (accounting only)`);
+    } else {
+      output.appendLine(
+        `Diagnostic pass rate: ${percent}% (✅ ${passed} | ⚠️ ${warnings} | ❌ ${errors})`
+      );
+    }
 
     const project = reportData.project;
     if (project && typeof project === 'object') {
@@ -265,6 +286,7 @@ export async function handleViewProjectDoctorReportMessage(
       output.appendLine(`Name: ${project.name || projectName || 'unknown'}`);
       output.appendLine(`Path: ${toLinkSafePath(project.path || projectPath)}`);
       output.appendLine(`Framework: ${project.framework || 'unknown'}`);
+      output.appendLine(`Archetype: ${project.projectArchetype || 'unknown'}`);
 
       const issues = Array.isArray(project.issues)
         ? project.issues.filter((item: unknown) => typeof item === 'string')

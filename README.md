@@ -31,18 +31,31 @@ contracts, dependencies, and operational evidence that make up a software system
   <strong>Ask → inspect → change → test → verify</strong>
 </p>
 
-## One assistant, three ways to work
+## One assistant, four ways to work
 
 | Mode      | Use it when you want Workspai to…                                       |
 | --------- | ----------------------------------------------------------------------- |
 | **Ask**   | Explain the workspace using source, diagnostics, changes, and evidence. |
 | **Plan**  | Investigate a task and prepare a grounded implementation plan.          |
 | **Agent** | Edit code, run scoped checks, review the diff, and verify the result.   |
+| **Goal**  | Pursue any bounded engineering outcome through evidence and safe edits. |
 
-Agent works for ordinary engineering tasks as well as dashboard blockers. It
-does not need an incident card to inspect and improve code. Existing files must
-be read before they are changed, writes are transaction-backed, and completion
-requires verification.
+Agent handles ordinary tasks without an incident card. It reads before changing, writes through transactions, and verifies the result.
+For adopted projects, it validates the portable Workspai entry receipt and resolves
+canonical evidence privately before broad source discovery or mutation.
+
+## Set one governed goal
+
+Describe the outcome once. Workspai binds it to the Model, proof-backed Graph,
+bounded agent handoff, and CLI-owned repair, verification, and rollback.
+
+Try retry, refactoring, performance, documentation, or coverage outcomes from
+**Goal**, Dashboard → Run → Intelligence, or `@workspai /goal`.
+
+Coverage, dependency-security, and release-readiness Goals use exact CLI
+verifiers. Other Goals keep the same scope, evidence, transaction, rollback,
+and attempt controls, but finish with outcome review plus CLI workspace safety
+checks—not a false machine-proof claim. Requires Workspai CLI 0.59.0+.
 
 ## Why Workspai
 
@@ -88,12 +101,11 @@ preferences are stored separately for each provider.
    ```
 
 3. Open **Workspai: Open Dashboard**, select or adopt a workspace, then open the
-   Assistant and choose **Ask**, **Plan**, or **Agent**.
+   Assistant and choose **Ask**, **Plan**, **Agent**, or **Goal**.
 
-Workspai supports FastAPI, NestJS, Next.js, Vite, Angular, Go, Spring Boot,
-.NET, adopted repositories, and other mixed-stack workspaces. Deep module
-generation remains available for FastAPI and NestJS; Workspace Intelligence
-works across the complete workspace.
+Workspai supports FastAPI, NestJS, Next.js, Vite, Angular, Go, Spring Boot, .NET,
+adopted repositories, and mixed-stack workspaces. Deep module generation remains
+available for FastAPI and NestJS; Workspace Intelligence covers the workspace.
 
 ## Learn more
 

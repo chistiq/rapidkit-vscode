@@ -246,6 +246,78 @@ describe('Studio Agent Workspai tool registry', () => {
     );
   });
 
+  it('routes bounded graph retrieval, ranged reads, and exact edits when supported', async () => {
+    const graphSearch = vi.fn(async () => ({ ok: true, output: { matches: [] } }));
+    const inspect = vi.fn(async () => ({ ok: true }));
+    const applyTextEdits = vi.fn(async () => ({ ok: true, changed: true }));
+    const host = {
+      graphSearch,
+      inspect,
+      applyTextEdits,
+    } as unknown as StudioAgentWorkspaiToolHost;
+    const registry = createStudioAgentWorkspaiToolRegistry({
+      host,
+      cardId: 'assistant:agent',
+      assistantMode: 'agent',
+    });
+    const context = {
+      sessionId: 'session-1',
+      requestId: 'request-1',
+      toolCallId: 'tool-1',
+      workspacePath: '/workspace',
+      projectPath: '/workspace/api',
+      signal: new AbortController().signal,
+      reportProgress: vi.fn(async () => undefined),
+    };
+
+    await registry
+      .get('query-workspace-graph')
+      ?.execute({ query: 'authentication ownership', limit: 8 }, context);
+    await registry
+      .get('inspect-source')
+      ?.execute({ paths: ['src/large.ts'], lineStart: 120, lineEnd: 180 }, context);
+    await registry.get('apply-workspace-edits')?.execute(
+      {
+        edits: [
+          {
+            relativePath: 'src/large.ts',
+            oldText: 'const before = true;',
+            newText: 'const before = false;',
+          },
+        ],
+      },
+      context
+    );
+
+    expect(graphSearch).toHaveBeenCalledWith({
+      query: 'authentication ownership',
+      limit: 8,
+      workspacePath: '/workspace',
+      projectPath: '/workspace/api',
+    });
+    expect(inspect).toHaveBeenCalledWith({
+      paths: ['src/large.ts'],
+      kind: 'source',
+      lineStart: 120,
+      lineEnd: 180,
+      workspacePath: '/workspace',
+      projectPath: '/workspace/api',
+    });
+    expect(applyTextEdits).toHaveBeenCalledWith({
+      edits: [
+        {
+          relativePath: 'src/large.ts',
+          oldText: 'const before = true;',
+          newText: 'const before = false;',
+        },
+      ],
+      transactionId: 'tool-1',
+      workspacePath: '/workspace',
+      projectPath: '/workspace/api',
+      reportProgress: context.reportProgress,
+    });
+  });
+
   it('rejects missing remediation step identity before reaching the host', async () => {
     const host = {} as StudioAgentWorkspaiToolHost;
     const registry = createStudioAgentWorkspaiToolRegistry({

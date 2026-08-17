@@ -156,6 +156,7 @@ export async function adoptProjectCommand(input: AdoptProjectInput): Promise<boo
 
     const detectedType = adoptedProject.framework ?? adoptedProject.stack ?? 'unknown';
     const runtime = adoptedProject.runtime ?? 'unknown';
+    const runtimeCandidates = adoptedProject.runtimeCandidates ?? [runtime];
     const supportTier = adoptedProject.supportTier ?? 'unknown';
 
     await WorkspaceUsageTracker.getInstance().trackCommandEvent(
@@ -166,6 +167,7 @@ export async function adoptProjectCommand(input: AdoptProjectInput): Promise<boo
         projectName,
         detectedType,
         runtime,
+        runtimeCandidates,
         supportTier,
         adoptionEngine: 'workspai',
         intent: 'npm-adopt-handoff',
@@ -186,6 +188,7 @@ export async function adoptProjectCommand(input: AdoptProjectInput): Promise<boo
       workspacePath,
       detectedType,
       runtime,
+      runtimeCandidates,
       supportTier,
       workspaceResolution: adoptionOutcome.workspaceResolution,
     });

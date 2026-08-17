@@ -86,7 +86,7 @@ export async function buildProjectExecutionBlock(
   const lines: string[] = ['PROJECT EXECUTION STATE:'];
 
   lines.push(`- Selected project: ${options.projectName || path.basename(projectPath)}`);
-  lines.push(`- Project path: ${projectPath}`);
+  lines.push('- Project path: $PROJECT');
   lines.push(`- Framework: ${framework || 'unknown'}`);
 
   if (framework === 'springboot') {

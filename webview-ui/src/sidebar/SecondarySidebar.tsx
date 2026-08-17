@@ -102,7 +102,18 @@ function frameworkLabel(key: string): string {
 }
 
 function humanizeStudioError(error: string): string {
-  const text = error.trim();
+  const seen = new Set<string>();
+  const text = error
+    .trim()
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.trim())
+    .filter((part) => {
+      const key = part.replace(/\s+/g, ' ').toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join(' ');
   if (!text) {
     return 'Studio could not complete this request. The repair workflow is still available from the card actions.';
   }
@@ -139,7 +150,7 @@ const TABS: {
     id: 'studio',
     label: 'Assistant',
     shortLabel: 'Assistant',
-    title: 'Workspai Assistant — Agent, Ask, and Plan with workspace evidence',
+    title: 'Workspai Assistant — Agent, Ask, Plan, and governed Goal workflows',
     icon: ScanSearch,
   },
 ];
@@ -346,7 +357,7 @@ function loadStudioRepairPersistedState(): StudioRepairPersistedState {
 function loadAssistantMode(): AssistantMode {
   const mode = (vscode.getState() as SecondarySidebarPersistedState | undefined)
     ?.workspaiAssistantMode;
-  return mode === 'ask' || mode === 'plan' ? mode : 'agent';
+  return mode === 'ask' || mode === 'plan' || mode === 'goal' ? mode : 'agent';
 }
 
 function loadAssistantModels(): Partial<Record<AssistantMode, string | null>> {
@@ -365,7 +376,7 @@ function persistStudioRepairState(state: StudioRepairPersistedState): void {
 
 /**
  * React secondary-sidebar. Creation remains a dedicated lifecycle while Ask,
- * Agent, and Plan share one Assistant surface and composer-level mode selector.
+ * Agent, Plan, and Goal share one Assistant surface and composer-level mode selector.
  * Legacy Advisor/Studio session stores remain intact for lossless migration.
  */
 export function SecondarySidebar() {
@@ -440,6 +451,12 @@ export function SecondarySidebar() {
   const [studioReturnState, setStudioReturnState] = useState<SidebarStudioReturnState | null>(null);
   const [studioActionProgress, setStudioActionProgress] =
     useState<SidebarStudioActionProgressView | null>(null);
+  const [studioSessionProgress, setStudioSessionProgress] = useState<
+    Record<string, SidebarStudioActionProgressView>
+  >({});
+  const [studioSessionTimeline, setStudioSessionTimeline] = useState<
+    Record<string, SidebarStudioActionProgressView[]>
+  >({});
   const [advisorActionFailure, setAdvisorActionFailure] = useState<{
     title: string;
     summary: string;
@@ -792,6 +809,7 @@ export function SecondarySidebar() {
         const eventSessionId = typeof event?.sessionId === 'string' ? event.sessionId : undefined;
         const invocationId = typeof event?.toolCallId === 'string' ? event.toolCallId : undefined;
         const eventMeta = {
+          ...(eventSessionId ? { sessionId: eventSessionId } : {}),
           eventType,
           ...(typeof event?.sequence === 'number' ? { eventSequence: event.sequence } : {}),
           ...(typeof event?.requestId === 'string' ? { requestId: event.requestId } : {}),
@@ -907,9 +925,9 @@ export function SecondarySidebar() {
           const rolledBack = state === 'rolled-back';
           const status = decisionRequired
             ? 'review'
-            : failed
+            : failed || rolledBack
               ? 'failed'
-              : phase === 'complete' && (closed || rolledBack)
+              : phase === 'complete' && closed
                 ? 'done'
                 : 'running';
           const phaseTitle =
@@ -933,7 +951,7 @@ export function SecondarySidebar() {
             title: phaseTitle,
             summary:
               typeof repair.message === 'string'
-                ? repair.message
+                ? humanizeStudioError(repair.message)
                 : 'The Workspai CLI is advancing the durable repair transaction.',
             transactionId:
               typeof repair.transactionId === 'string' ? repair.transactionId : undefined,
@@ -2214,6 +2232,24 @@ export function SecondarySidebar() {
           if (!progressIncidentKey || progressIncidentKey === visibleStudioIncidentKey) {
             setStudioVerifyFailure(nextFailure);
             setStudioActionProgress(nextProgress);
+            const progressSessionId =
+              typeof data.sessionId === 'string' && data.sessionId.trim()
+                ? data.sessionId.trim()
+                : studio.activeId;
+            if (!progressIncidentKey && progressSessionId && nextProgress) {
+              const scopedProgress = { ...nextProgress, sessionId: progressSessionId };
+              setStudioSessionProgress((previous) => ({
+                ...previous,
+                [progressSessionId]: scopedProgress,
+              }));
+              setStudioSessionTimeline((previous) => ({
+                ...previous,
+                [progressSessionId]: appendStudioRepairTimelineEntry(
+                  previous[progressSessionId] ?? [],
+                  scopedProgress
+                ),
+              }));
+            }
             if (nextFailure?.rollbackCommand) {
               setStudioRollbackCommand(nextFailure.rollbackCommand);
             }
@@ -2489,21 +2525,24 @@ export function SecondarySidebar() {
   ]);
 
   const handleSubmitImpact = (question: string, options?: { forceNew?: boolean }) => {
-    const activeImpactSession =
-      impact.sessions.find((session) => session.sessionId === impact.activeId) ?? null;
-    const { sessionId, history } = impact.startQuery(question, undefined, {
+    const activeAskSession =
+      studio.sessions.find((session) => session.sessionId === studio.activeId) ?? null;
+    const { sessionId, history } = studio.startQuery(question, 'investigate', {
       ...options,
-      scope: activeImpactSession?.editorIssue ? null : sessionScopeSnapshot,
+      assistantMode: 'ask',
+      scope: activeAskSession?.editorIssue ? null : sessionScopeSnapshot,
     });
     const sessionForPayload =
-      activeImpactSession ??
-      impact.sessions.find((session) => session.sessionId === sessionId) ??
+      activeAskSession ??
+      studio.sessions.find((session) => session.sessionId === sessionId) ??
       null;
     vscode.postMessage(
-      'sidebarImpactQuery',
+      'sidebarStudioQuery',
       {
-        question,
+        task: question,
         sessionId,
+        assistantMode: 'ask',
+        mode: 'investigate',
         modelId: selectedModelId ?? undefined,
         history,
         scope: scopePayloadForSession(sessionForPayload, scope),
@@ -2514,7 +2553,10 @@ export function SecondarySidebar() {
     );
   };
 
-  const activeImpact = impact.sessions.find((s) => s.sessionId === impact.activeId) ?? null;
+  const activeImpact =
+    assistantMode === 'ask'
+      ? (studio.sessions.find((s) => s.sessionId === studio.activeId) ?? null)
+      : (impact.sessions.find((s) => s.sessionId === impact.activeId) ?? null);
 
   const advisorAction = (action: 'studio' | 'verify' | 'copy') => {
     if (action === 'studio') {
@@ -2564,7 +2606,7 @@ export function SecondarySidebar() {
       'sidebarAdvisorAction',
       {
         action,
-        sessionId: impact.activeId ?? undefined,
+        sessionId: activeImpact?.sessionId,
         scope: scopePayloadForSession(activeImpact, scope),
         scopeMode: sessionScopeMode(activeImpact),
         sessionKind: activeImpact ? chatSessionKind(activeImpact) : 'global',
@@ -2584,6 +2626,7 @@ export function SecondarySidebar() {
       studio.sessions.find((session) => session.sessionId === studio.activeId) ?? null;
     const { sessionId, history } = studio.startQuery(task, studioMode, {
       ...options,
+      assistantMode,
       scope: activeStudioSession?.editorIssue ? null : sessionScopeSnapshot,
     });
     const sessionForPayload =
@@ -2631,12 +2674,17 @@ export function SecondarySidebar() {
     : null;
   const activeStudioActionProgress = visibleStudioIncidentKey
     ? (studioIncidentProgress[visibleStudioIncidentKey] ?? null)
-    : studioActionProgress;
+    : studio.activeId
+      ? (studioSessionProgress[studio.activeId] ?? null)
+      : studioActionProgress;
   const activeStudioRepairTimeline = visibleStudioIncidentKey
     ? (studioIncidentTimeline[visibleStudioIncidentKey] ?? [])
-    : activeStudioActionProgress
-      ? [activeStudioActionProgress]
-      : [];
+    : studio.activeId
+      ? (studioSessionTimeline[studio.activeId] ??
+        (activeStudioActionProgress ? [activeStudioActionProgress] : []))
+      : activeStudioActionProgress
+        ? [activeStudioActionProgress]
+        : [];
   const activeStudioVerifyFailure = visibleStudioIncidentKey
     ? (studioIncidentVerifyFailures[visibleStudioIncidentKey] ?? null)
     : studioVerifyFailure;
@@ -2727,6 +2775,20 @@ export function SecondarySidebar() {
       progressHandoff
     );
     setStudioActionProgress(normalizedProgress);
+    const progressSessionId = normalizedProgress.sessionId ?? studio.activeId;
+    if (progressSessionId) {
+      setStudioSessionProgress((previous) => ({
+        ...previous,
+        [progressSessionId]: normalizedProgress,
+      }));
+      setStudioSessionTimeline((previous) => ({
+        ...previous,
+        [progressSessionId]: appendStudioRepairTimelineEntry(
+          previous[progressSessionId] ?? [],
+          normalizedProgress
+        ),
+      }));
+    }
     if (!incidentKey) {
       return;
     }
@@ -3099,6 +3161,16 @@ export function SecondarySidebar() {
   };
 
   const selectAssistantMode = (mode: AssistantMode) => {
+    const selectedSession = studio.sessions.find(
+      (session) => session.sessionId === studio.activeId
+    );
+    if (
+      selectedSession?.assistantMode &&
+      selectedSession.assistantMode !== mode &&
+      selectedSession.messages.some((message) => message.content.trim().length > 0)
+    ) {
+      studio.newSession();
+    }
     assistantModelsRef.current = {
       ...assistantModelsRef.current,
       [assistantMode]: selectedModelId,
@@ -3108,7 +3180,7 @@ export function SecondarySidebar() {
     setActiveTab('studio');
     if (mode === 'plan') {
       setStudioMode('prepare');
-    } else if (mode === 'agent' && studioMode === 'prepare') {
+    } else if ((mode === 'agent' || mode === 'goal') && studioMode === 'prepare') {
       setStudioMode('investigate');
     }
   };
@@ -3117,7 +3189,13 @@ export function SecondarySidebar() {
     <AssistantModeSelector
       value={assistantMode}
       onChange={selectAssistantMode}
-      disabled={studioAutoFixBusy || studioPatchApplyBusy}
+      disabled={
+        studioAutoFixBusy ||
+        studioPatchApplyBusy ||
+        studio.sessions.some(
+          (session) => session.sessionId === studio.activeId && session.status === 'streaming'
+        )
+      }
     />
   );
 
@@ -3196,11 +3274,15 @@ export function SecondarySidebar() {
         contextLabel="Workspai Ask"
         placeholder="Ask with workspace context"
         scope={scope}
-        sessions={impact.sessions}
-        activeSessionId={impact.activeId}
-        onNewSession={impact.newSession}
-        onSelectSession={impact.selectSession}
-        onDeleteSession={impact.deleteSession}
+        sessions={studio.sessions}
+        activeSessionId={studio.activeId}
+        onNewSession={studio.newSession}
+        onSelectSession={(id) => {
+          studio.selectSession(id);
+          const selected = studio.sessions.find((session) => session.sessionId === id);
+          setAssistantMode(selected?.assistantMode ?? 'ask');
+        }}
+        onDeleteSession={studio.deleteSession}
         suggestions={advisorSuggestions(scope)}
         onSubmit={handleSubmitImpact}
         models={models}
@@ -3261,13 +3343,21 @@ export function SecondarySidebar() {
 
       <ChatTab
         active={activeTab === 'studio' && assistantMode !== 'ask'}
-        contextLabel={assistantMode === 'plan' ? 'Workspai Plan' : 'Workspai Agent'}
+        contextLabel={
+          assistantMode === 'plan'
+            ? 'Workspai Plan'
+            : assistantMode === 'goal'
+              ? 'Workspai Goal'
+              : 'Workspai Agent'
+        }
         placeholder={
           activeBlockerHandoff?.studioMode === 'FIX'
             ? 'Studio is repairing. Add context if needed.'
             : activeBlockerHandoff
               ? 'Studio is checking this blocker. Add context if needed.'
-              : 'Describe the issue or task'
+              : assistantMode === 'goal'
+                ? 'Define a measurable outcome, e.g. Raise test coverage to 75%'
+                : 'Describe the issue or task'
         }
         scope={scope}
         sessions={studio.sessions}
@@ -3276,6 +3366,9 @@ export function SecondarySidebar() {
         onSelectSession={(id) => {
           studio.selectSession(id);
           const selected = studio.sessions.find((session) => session.sessionId === id);
+          if (selected?.assistantMode) {
+            setAssistantMode(selected.assistantMode);
+          }
           const mode = selected?.mode;
           if (mode === 'verify' || mode === 'prepare' || mode === 'investigate') {
             setStudioMode(mode);
@@ -3297,7 +3390,7 @@ export function SecondarySidebar() {
           } else {
             setBlockerHandoff(null);
             setStudioRemediationPlan(null);
-            setStudioActionProgress(null);
+            setStudioActionProgress(studioSessionProgress[id] ?? null);
             setStudioVerifyFailure(null);
             setStudioReturnState(null);
             setStudioRollbackCommand(null);
@@ -3308,6 +3401,16 @@ export function SecondarySidebar() {
           const incidentKey = studio.sessions.find((session) => session.sessionId === id)?.incident
             ?.key;
           studio.deleteSession(id);
+          setStudioSessionProgress((previous) => {
+            const next = { ...previous };
+            delete next[id];
+            return next;
+          });
+          setStudioSessionTimeline((previous) => {
+            const next = { ...previous };
+            delete next[id];
+            return next;
+          });
           if (incidentKey) {
             setStudioIncidentHandoffs((prev) => {
               const next = { ...prev };
@@ -3351,7 +3454,15 @@ export function SecondarySidebar() {
             });
           }
         }}
-        suggestions={studioSuggestions(studioMode, scope)}
+        suggestions={
+          assistantMode === 'goal'
+            ? [
+                'Raise test coverage to 75%.',
+                'Resolve blocking dependency vulnerabilities without breaking changes.',
+                'Make this workspace release-ready.',
+              ]
+            : studioSuggestions(studioMode, scope)
+        }
         onSubmit={handleSubmitStudio}
         onSteer={(message) => {
           const sessionId = studio.activeId;
@@ -3481,6 +3592,39 @@ export function SecondarySidebar() {
                 />
               ) : null}
             </>
+          ) : activeStudioRepairTimeline.length > 0 ? (
+            <div
+              className="ws-sidebar__studio-repair-timeline"
+              aria-label="Live Assistant activity"
+            >
+              {activeStudioRepairTimeline.length > 1 ? (
+                <details className="ws-sidebar__studio-activity-history">
+                  <summary>
+                    Worked on {Math.min(activeStudioRepairTimeline.length - 1, 6)} step
+                    {Math.min(activeStudioRepairTimeline.length - 1, 6) === 1 ? '' : 's'}
+                  </summary>
+                  {activeStudioRepairTimeline.slice(-7, -1).map((progress, index) => (
+                    <StudioActionProgress
+                      key={`${progress.action}:${progress.phase ?? 'phase'}:${progress.status}:${index}`}
+                      progress={progress}
+                      repairBubble={true}
+                      historical={true}
+                      onOpenFile={openStudioChangedFile}
+                      onOpenDiff={openStudioChangedFileDiff}
+                      onUndo={undoStudioAgentPatch}
+                    />
+                  ))}
+                </details>
+              ) : null}
+              <StudioActionProgress
+                progress={activeStudioRepairTimeline[activeStudioRepairTimeline.length - 1]}
+                repairBubble={true}
+                historical={false}
+                onOpenFile={openStudioChangedFile}
+                onOpenDiff={openStudioChangedFileDiff}
+                onUndo={undoStudioAgentPatch}
+              />
+            </div>
           ) : null
         }
         headerChrome={

@@ -3,7 +3,7 @@ import type {
   StudioAgentSessionOptions,
   StudioAgentSessionStore,
 } from './studioAgentSession.js';
-import { StudioAgentSession } from './studioAgentSession.js';
+import { StudioAgentSession, studioAgentSessionScopeMatches } from './studioAgentSession.js';
 import type { StudioAgentToolRegistry } from './studioAgentToolRegistry.js';
 
 export class StudioAgentSessionService {
@@ -41,7 +41,7 @@ export class StudioAgentSessionService {
       return undefined;
     }
     if (
-      restored.workspacePath !== options.workspacePath ||
+      !studioAgentSessionScopeMatches(restored, options) ||
       restored.cardId !== options.cardId ||
       restored.assistantMode !== options.assistantMode ||
       restored.status === 'completed' ||

@@ -143,7 +143,7 @@ export function deriveIncidentVerifyCommandPack(input: {
   if (input.projectPath) {
     addCommand({
       label: 'Project scope + diff proof',
-      command: `git -C "${input.projectPath}" status --short`,
+      command: 'git status --short',
       scope: 'project',
       required: true,
     });

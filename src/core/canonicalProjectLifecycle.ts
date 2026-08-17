@@ -36,6 +36,7 @@ export type CanonicalAdoptJson = {
     relationship?: 'imported' | 'adopted';
     stack?: string;
     runtime?: string;
+    runtimeCandidates?: string[];
     framework?: string;
     frameworkDisplayName?: string;
     supportTier?: string;

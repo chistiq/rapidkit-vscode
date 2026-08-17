@@ -10,6 +10,7 @@ import {
   type InstalledNpmPackageMetadata,
 } from '../utils/platformCapabilities.js';
 import { compareSemver, MIN_RAPIDKIT_CLI_VERSION } from './cliVersionPolicy.js';
+import { redactLocalPathsForConsumer } from './consumerPathRedaction.js';
 
 const CLI_OPERATION_SCHEMA = 'workspai-cli-operation-result-v1';
 const REPAIR_PROPOSAL_SCHEMA = 'workspai.workspace-repair-proposal.v1';
@@ -132,11 +133,23 @@ export type WorkspaceRepairCliTransaction = {
     artifact: '.workspai/reports/workspace-intelligence-run-last-run.json';
     exitCode: number | null;
     summary: string;
+    sourceBinding?: {
+      modelHash: string;
+      modelHashSemantics: 'workspace-model-structural-v1';
+      graphHash: string;
+      graphHashSemantics: 'canonical-json-v1';
+      graphInputHash: string;
+    };
   };
   decision?: {
     reason: string;
     options: WorkspaceRepairDecision[];
     causes?: WorkspaceRepairDecisionCause[];
+  };
+  integrity?: {
+    planHash: string;
+    sourceEvidenceHash: string;
+    closureHash?: string;
   };
 };
 
@@ -152,11 +165,143 @@ export type WorkspaceRepairCliFileChange = {
   diffLines: Array<{ type: 'added' | 'removed' | 'unchanged'; content: string }>;
 };
 
+function transactionProjectRoot(
+  workspacePath: string,
+  transaction: Pick<WorkspaceRepairCliTransaction, 'target'>
+): string | undefined {
+  const projectPath = transaction.target.projectPath?.trim();
+  if (!projectPath || path.isAbsolute(projectPath)) {
+    return undefined;
+  }
+  return path.resolve(workspacePath, projectPath);
+}
+
+function presentRepairPath(
+  workspacePath: string,
+  transaction: Pick<WorkspaceRepairCliTransaction, 'target'>,
+  candidate: string
+): string {
+  const workspaceRoot = path.resolve(workspacePath);
+  const absolutePath = path.isAbsolute(candidate)
+    ? path.resolve(candidate)
+    : path.resolve(workspaceRoot, candidate);
+  const projectRoot = transactionProjectRoot(workspaceRoot, transaction);
+  if (projectRoot && isInside(projectRoot, absolutePath)) {
+    const relative = path.relative(projectRoot, absolutePath);
+    return relative && relative !== '.' ? relative.split(path.sep).join('/') : '$PROJECT';
+  }
+  if (isInside(workspaceRoot, absolutePath)) {
+    const relative = path.relative(workspaceRoot, absolutePath);
+    return relative && relative !== '.' ? relative.split(path.sep).join('/') : '$WORKSPACE';
+  }
+  return path.basename(absolutePath) || 'source';
+}
+
+function resolveTransactionChangedFile(input: {
+  workspacePath: string;
+  transaction: WorkspaceRepairCliTransaction;
+  requestedPath: string;
+}): {
+  checkpoint: WorkspaceRepairCliTransaction['checkpoint']['files'][number];
+  absolutePath: string;
+} {
+  const workspaceRoot = path.resolve(input.workspacePath);
+  const requested = input.requestedPath.replace(/\\/g, '/');
+  const checkpoint = input.transaction.checkpoint.files.find((entry) => {
+    const raw = entry.path.replace(/\\/g, '/');
+    return (
+      raw === requested || presentRepairPath(workspaceRoot, input.transaction, raw) === requested
+    );
+  });
+  if (!checkpoint) {
+    throw new Error(`${requested} is not a changed file in this repair transaction.`);
+  }
+  const absolutePath = path.isAbsolute(checkpoint.path)
+    ? path.resolve(checkpoint.path)
+    : path.resolve(workspaceRoot, checkpoint.path);
+  const projectRoot = transactionProjectRoot(workspaceRoot, input.transaction);
+  if (
+    !isInside(workspaceRoot, absolutePath) &&
+    (!projectRoot || !isInside(projectRoot, absolutePath))
+  ) {
+    throw new Error('Repair comparison path is outside the authorized transaction boundary.');
+  }
+  return { checkpoint, absolutePath };
+}
+
+export function resolveCliOwnedRepairFilePath(input: {
+  workspacePath: string;
+  transaction: WorkspaceRepairCliTransaction;
+  relativePath: string;
+}): string {
+  if (!input.relativePath.trim() || path.isAbsolute(input.relativePath)) {
+    throw new Error('A portable repair file path is required.');
+  }
+  return resolveTransactionChangedFile({
+    workspacePath: input.workspacePath,
+    transaction: input.transaction,
+    requestedPath: input.relativePath,
+  }).absolutePath;
+}
+
 export type WorkspaceRepairCliExecutionResult = {
   transaction: WorkspaceRepairCliTransaction;
   changedPaths: string[];
   fileChanges: WorkspaceRepairCliFileChange[];
 };
+
+/**
+ * Minimum repair state safe for IDE cards and model tool transcripts.
+ * Checkpoints, adapter manifests, and filesystem roots remain extension-host
+ * and CLI-only data.
+ */
+export function projectWorkspaceRepairTransactionForConsumer(
+  transaction: WorkspaceRepairCliTransaction
+): Record<string, unknown> {
+  return {
+    schemaVersion: transaction.schemaVersion,
+    transactionId: transaction.transactionId,
+    state: transaction.state,
+    target: {
+      cardId: transaction.target.cardId,
+      scope: transaction.target.scope,
+      ...(transaction.target.projectName ? { projectName: transaction.target.projectName } : {}),
+      actionIds: [...transaction.target.actionIds],
+    },
+    stages: transaction.stages.map((stage) => ({
+      id: stage.id,
+      kind: stage.kind,
+      status: stage.status,
+      summary: redactLocalPathsForConsumer(stage.summary),
+    })),
+    ...(transaction.verification
+      ? {
+          verification: {
+            ...transaction.verification,
+            summary: redactLocalPathsForConsumer(transaction.verification.summary),
+          },
+        }
+      : {}),
+    ...(transaction.decision
+      ? {
+          decision: {
+            reason: redactLocalPathsForConsumer(transaction.decision.reason),
+            options: [...transaction.decision.options],
+            ...(transaction.decision.causes
+              ? {
+                  causes: transaction.decision.causes.map(
+                    ({ projectPath: _projectPath, message, ...cause }) => ({
+                      ...cause,
+                      message: redactLocalPathsForConsumer(message),
+                    })
+                  ),
+                }
+              : {}),
+          },
+        }
+      : {}),
+  };
+}
 
 type WorkspaceRepairFileComparison = WorkspaceRepairCliFileChange & {
   originalContent?: string;
@@ -204,6 +349,13 @@ type WorkspaiCliEntrypoint = {
   nodeExecutables: string[];
   nodeExecutable?: string;
   protocolVersion?: typeof REPAIR_CONSUMER_PROTOCOL;
+  features?: {
+    registeredLinkedProjectMutationBoundary: boolean;
+    projectBoundHashPinnedSourceProposal: boolean;
+    cliVerificationReceiptCompletion: boolean;
+    goalClosedSourceTransition: boolean;
+    goalDurableAttemptBudget: boolean;
+  };
 };
 
 type CliRunner = (input: {
@@ -628,7 +780,20 @@ async function runtimeVerifyCandidate(input: {
         `repair capabilities do not satisfy ${REPAIR_CONSUMER_PROTOCOL}`
     );
   }
-  return { ...input.candidate, protocolVersion: REPAIR_CONSUMER_PROTOCOL };
+  return {
+    ...input.candidate,
+    protocolVersion: REPAIR_CONSUMER_PROTOCOL,
+    features: {
+      registeredLinkedProjectMutationBoundary:
+        invariants?.registeredLinkedProjectMutationBoundary === true,
+      projectBoundHashPinnedSourceProposal:
+        invariants?.sourceProposalIntegrity === 'project-bound-hash-pinned',
+      cliVerificationReceiptCompletion:
+        invariants?.completionAuthority === 'cli-verification-receipt',
+      goalClosedSourceTransition: invariants?.goalSourceTransition === 'closed-integrity-bound-v1',
+      goalDurableAttemptBudget: invariants?.goalAttemptBudget === 'durable-serialized-v1',
+    },
+  };
 }
 
 export async function verifyInstalledWorkspaiRepairCli(input: {
@@ -784,6 +949,24 @@ async function readRegularFile(candidate: string): Promise<Buffer | undefined> {
   return fs.readFile(candidate);
 }
 
+async function assertRepairComparisonRealpathBoundary(input: {
+  boundary: string;
+  candidate: string;
+}): Promise<void> {
+  const boundaryStat = await fs.lstat(input.boundary).catch(() => undefined);
+  if (!boundaryStat?.isDirectory() || boundaryStat.isSymbolicLink()) {
+    throw new Error('Repair comparison boundary is not a real directory.');
+  }
+  const resolvedBoundary = await fs.realpath(input.boundary);
+  const candidateStat = await fs.lstat(input.candidate).catch(() => undefined);
+  const resolvedCandidate = candidateStat
+    ? await fs.realpath(input.candidate)
+    : path.join(await fs.realpath(path.dirname(input.candidate)), path.basename(input.candidate));
+  if (!isInside(resolvedBoundary, resolvedCandidate)) {
+    throw new Error('Repair comparison path resolves outside the authorized transaction boundary.');
+  }
+}
+
 export async function readCliOwnedRepairFileComparison(input: {
   workspacePath: string;
   transaction: WorkspaceRepairCliTransaction;
@@ -791,18 +974,22 @@ export async function readCliOwnedRepairFileComparison(input: {
 }): Promise<WorkspaceRepairFileComparison> {
   const workspacePath = path.resolve(input.workspacePath);
   const relativePath = input.relativePath.replace(/\\/g, '/');
-  const absolutePath = path.resolve(workspacePath, relativePath);
-  if (!isInside(workspacePath, absolutePath) || relativePath === '.') {
-    throw new Error('Repair comparison path escapes the workspace.');
+  if (!relativePath || relativePath === '.' || path.isAbsolute(relativePath)) {
+    throw new Error('A portable repair file path is required.');
   }
-  const checkpoint = input.transaction.checkpoint.files.find(
-    (entry) => entry.path.replace(/\\/g, '/') === relativePath
-  );
-  if (
-    !checkpoint ||
-    checkpoint.afterHash === undefined ||
-    checkpoint.afterHash === checkpoint.beforeHash
-  ) {
+  const { checkpoint, absolutePath } = resolveTransactionChangedFile({
+    workspacePath,
+    transaction: input.transaction,
+    requestedPath: relativePath,
+  });
+  const projectRoot = transactionProjectRoot(workspacePath, input.transaction);
+  const comparisonBoundary =
+    projectRoot && isInside(projectRoot, absolutePath) ? projectRoot : workspacePath;
+  await assertRepairComparisonRealpathBoundary({
+    boundary: comparisonBoundary,
+    candidate: absolutePath,
+  });
+  if (checkpoint.afterHash === undefined || checkpoint.afterHash === checkpoint.beforeHash) {
     throw new Error(`${relativePath} is not a changed file in this repair transaction.`);
   }
   let beforeBytes: Buffer | undefined;
@@ -835,7 +1022,7 @@ export async function readCliOwnedRepairFileComparison(input: {
       ? 'deleted'
       : 'modified';
   return {
-    relativePath,
+    relativePath: presentRepairPath(workspacePath, input.transaction, checkpoint.path),
     status,
     ...(status === 'added' ? { isNewFile: true } : {}),
     beforeHash: checkpoint.beforeHash,
@@ -857,11 +1044,19 @@ async function repairExecutionResult(input: {
   workspacePath: string;
   transaction: WorkspaceRepairCliTransaction;
 }): Promise<WorkspaceRepairCliExecutionResult> {
-  const paths = changedPaths(input.transaction);
+  const transactionPaths = changedPaths(input.transaction);
+  const paths = transactionPaths.map((candidate) =>
+    presentRepairPath(input.workspacePath, input.transaction, candidate)
+  );
   const fileChanges = await Promise.all(
-    paths.map(async (relativePath) => {
+    transactionPaths.map(async (transactionPath) => {
+      const relativePath = presentRepairPath(
+        input.workspacePath,
+        input.transaction,
+        transactionPath
+      );
       const checkpoint = input.transaction.checkpoint.files.find(
-        (entry) => entry.path.replace(/\\/g, '/') === relativePath
+        (entry) => entry.path.replace(/\\/g, '/') === transactionPath
       );
       try {
         const comparison = await readCliOwnedRepairFileComparison({
@@ -909,6 +1104,10 @@ function isRepairTransaction(value: unknown): value is WorkspaceRepairCliTransac
   const candidate = value as Partial<WorkspaceRepairCliTransaction> | undefined;
   const decisionOptions = candidate?.decision?.options;
   const decisionCauses = candidate?.decision?.causes;
+  const sourceBinding = candidate?.verification?.sourceBinding;
+  const integrity = candidate?.integrity;
+  const validHash = (hash: unknown): hash is string =>
+    typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash);
   return (
     candidate?.schemaVersion === REPAIR_TRANSACTION_SCHEMA &&
     typeof candidate.transactionId === 'string' &&
@@ -956,7 +1155,17 @@ function isRepairTransaction(value: unknown): value is WorkspaceRepairCliTransac
         (candidate.verification.workspaceStatus === undefined ||
           ['passed', 'blocked', 'failed'].includes(candidate.verification.workspaceStatus)) &&
         (candidate.verification.remainingActionIds === undefined ||
-          Array.isArray(candidate.verification.remainingActionIds))))
+          Array.isArray(candidate.verification.remainingActionIds)) &&
+        (!sourceBinding ||
+          (validHash(sourceBinding.modelHash) &&
+            sourceBinding.modelHashSemantics === 'workspace-model-structural-v1' &&
+            validHash(sourceBinding.graphHash) &&
+            sourceBinding.graphHashSemantics === 'canonical-json-v1' &&
+            validHash(sourceBinding.graphInputHash))))) &&
+    (!integrity ||
+      (validHash(integrity.planHash) &&
+        validHash(integrity.sourceEvidenceHash) &&
+        (integrity.closureHash === undefined || validHash(integrity.closureHash))))
   );
 }
 
@@ -1145,6 +1354,7 @@ export async function executeCliOwnedPatchRepair(input: {
   projectPath?: string;
   projectName?: string;
   cardId: string;
+  goalId?: string;
   blockerSignature?: string;
   targetActionIds?: string[];
   patches: WorkspaceRepairPatch[];
@@ -1156,6 +1366,11 @@ export async function executeCliOwnedPatchRepair(input: {
   if (input.patches.length === 0) {
     throw new Error('At least one inspected source change is required.');
   }
+  if (input.goalId && !/^goal-[A-Za-z0-9._-]{3,90}$/.test(input.goalId)) {
+    throw new Error('Repair proposal Goal Pack id is invalid.');
+  }
+  const workspaceRoot = path.resolve(input.workspacePath);
+  const projectRoot = input.projectPath?.trim() ? path.resolve(input.projectPath) : undefined;
   const changes = input.patches.map((patch, index) => {
     if (patch.baseSha256 === undefined) {
       throw new Error(`Repair target ${patch.relativePath} has no inspected base hash.`);
@@ -1164,19 +1379,41 @@ export async function executeCliOwnedPatchRepair(input: {
     if (operation === 'write' && typeof patch.patchedContent !== 'string') {
       throw new Error(`Repair target ${patch.relativePath} has no replacement content.`);
     }
+    const rawPath = patch.relativePath.trim();
+    if (!rawPath || rawPath === '.') {
+      throw new Error('Repair target must identify one project source file.');
+    }
+    const workspaceCandidate = path.isAbsolute(rawPath)
+      ? path.resolve(rawPath)
+      : path.resolve(workspaceRoot, rawPath);
+    const target =
+      projectRoot && !isInside(projectRoot, workspaceCandidate) && !path.isAbsolute(rawPath)
+        ? path.resolve(projectRoot, rawPath)
+        : workspaceCandidate;
+    const sourceBoundary = projectRoot ?? workspaceRoot;
+    if (!isInside(sourceBoundary, target)) {
+      throw new Error(
+        `Repair target ${patch.relativePath} escapes the selected ${
+          projectRoot ? 'project' : 'workspace'
+        } source boundary.`
+      );
+    }
+    const proposalPath = path.relative(workspaceRoot, target).replace(/\\/g, '/');
+    const displayPath = path.relative(sourceBoundary, target).replace(/\\/g, '/');
     return {
       id: `model-change-${index + 1}`,
-      path: patch.relativePath.replace(/\\/g, '/'),
+      path: proposalPath,
       operation,
       expectedBeforeHash: patch.baseSha256,
       ...(operation === 'write' ? { content: patch.patchedContent } : {}),
       risk: 'guarded',
-      summary: `${operation === 'write' ? 'Update' : 'Delete'} inspected source ${patch.relativePath}`,
+      summary: `${operation === 'write' ? 'Update' : 'Delete'} inspected source ${displayPath}`,
     };
   });
   const proposal = {
     schemaVersion: REPAIR_PROPOSAL_SCHEMA,
     cardId: input.cardId,
+    ...(input.goalId ? { goalId: input.goalId } : {}),
     ...(input.blockerSignature ? { blockerSignature: input.blockerSignature } : {}),
     ...(input.targetActionIds?.length
       ? { targetActionIds: [...new Set(input.targetActionIds)].sort() }
@@ -1203,6 +1440,29 @@ export async function executeCliOwnedPatchRepair(input: {
     installedPackages: input.installedPackages,
     runner: input.runner,
   });
+  const sourceProjectPath = input.projectPath?.trim();
+  const targetsRegisteredLinkedProject =
+    Boolean(sourceProjectPath) &&
+    !isInside(path.resolve(input.workspacePath), path.resolve(sourceProjectPath!));
+  if (
+    targetsRegisteredLinkedProject &&
+    (!entrypoint.features?.registeredLinkedProjectMutationBoundary ||
+      !entrypoint.features.projectBoundHashPinnedSourceProposal ||
+      !entrypoint.features.cliVerificationReceiptCompletion)
+  ) {
+    throw new Error(
+      'Workspai CLI repair protocol handshake failed: this linked project requires the registered-project mutation boundary, project-bound hash-pinned proposals, and CLI verification-receipt completion. Upgrade the installed Workspai CLI before retrying; Studio will not widen the source boundary or mutate through a legacy fallback.'
+    );
+  }
+  if (
+    input.goalId &&
+    (!entrypoint.features?.goalClosedSourceTransition ||
+      !entrypoint.features.goalDurableAttemptBudget)
+  ) {
+    throw new Error(
+      'Workspai CLI repair protocol handshake failed: Goal mutation requires closed integrity-bound source transitions and a durable serialized attempt budget. Upgrade Workspai CLI before retrying; Studio will not execute a Goal through a legacy repair contract.'
+    );
+  }
   const inbox = path.join(input.workspacePath, '.workspai', 'repair', 'inbox');
   const proposalPath = path.join(inbox, `${crypto.randomUUID()}.json`);
   await fs.ensureDir(inbox);

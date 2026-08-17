@@ -19,6 +19,9 @@ export interface ProjectCommandCapabilitiesSnapshot {
   scope: 'project';
   projectRoot: string | null;
   runtime: string;
+  runtimeCandidates?: string[];
+  compositeRuntime?: boolean;
+  lifecycleCoverage?: 'complete' | 'primary-runtime-only';
   framework: string;
   frameworkDisplayName: string;
   moduleSupport: boolean;

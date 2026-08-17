@@ -2,6 +2,7 @@ import type { StudioBlockerHandoffView } from './studioBlockerHandoff';
 import type { StudioIntelligencePhaseId } from './studioIntelligencePhaseRail';
 
 export type SidebarStudioActionProgressView = {
+  sessionId?: string;
   action: string;
   status: 'running' | 'review' | 'done' | 'failed';
   phase?: string;
@@ -403,6 +404,7 @@ export function parseSidebarStudioActionProgress(
   const fileChanges = fileChangeList(record.fileChanges);
   const validationStages = validationStageList(record.validationStages ?? transaction?.stages);
   return {
+    sessionId: optionalTrimmedString(record.sessionId),
     action,
     status,
     phase,

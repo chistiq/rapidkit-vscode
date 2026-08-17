@@ -128,6 +128,45 @@ describe('Studio Agent model protocol', () => {
     ]);
   });
 
+  it('keeps host filesystem identity out of provider control context', async () => {
+    let prompt = '';
+    const localRoot = '/home/alice/Documents/private-workspace';
+    const adapter = new ContractStudioAgentModelAdapter(
+      `Repair the blocker reported under ${localRoot}/api`,
+      async (value) => {
+        prompt = value;
+        return { toolName: STUDIO_AGENT_COMPLETE_TOOL_NAME, input: { summary: 'Done' } };
+      }
+    );
+
+    await adapter.next({
+      session: {
+        schemaVersion: 'workspai.studio-agent-session.v1',
+        id: 'private-path-session',
+        workspacePath: localRoot,
+        projectPath: `${localRoot}/api`,
+        cardId: 'workspaceRun',
+        assistantMode: 'agent',
+        status: 'running',
+        createdAt: '2026-08-16T00:00:00.000Z',
+        updatedAt: '2026-08-16T00:00:00.000Z',
+        sequence: 0,
+        events: [],
+      },
+      tools: [],
+      latestObservation: {
+        ok: false,
+        error: `Build failed at ${localRoot}/api/src/index.ts`,
+      },
+      steering: [`Inspect ${localRoot}/api/package.json`],
+    });
+
+    expect(prompt).not.toContain('/home/alice');
+    expect(prompt).toContain('Workspace control boundary: $WORKSPACE');
+    expect(prompt).toContain('Project source boundary: $PROJECT');
+    expect(prompt).toContain('$LOCAL_PATH');
+  });
+
   it('keeps prior model decisions in the next provider conversation', async () => {
     const requests: StudioAgentConversationMessage[][] = [];
     const adapter = new ContractStudioAgentModelAdapter(
@@ -208,6 +247,48 @@ describe('Studio Agent model protocol', () => {
     const correlatedToolResult = requests[1]?.find((message) => message.role === 'tool');
     expect(JSON.stringify(correlatedToolResult)).not.toContain('later-automatic-observation');
     expect(requests[1]?.at(-1)?.role).toBe('user');
+  });
+
+  it('carries bounded UI conversation history into a resumed Assistant request', async () => {
+    let messages: StudioAgentConversationMessage[] = [];
+    const adapter = new ContractStudioAgentModelAdapter(
+      'Continue the investigation',
+      async (_prompt, request) => {
+        messages = request.messages;
+        return { toolName: STUDIO_AGENT_COMPLETE_TOOL_NAME, input: { summary: 'Explained' } };
+      },
+      undefined,
+      [
+        { role: 'user', content: 'Which service owns authentication?' },
+        { role: 'assistant', content: 'I found the API boundary; I will inspect its proof next.' },
+      ]
+    );
+
+    await adapter.next({
+      session: {
+        schemaVersion: 'workspai.studio-agent-session.v1',
+        id: 'history-session',
+        workspacePath: '/workspace',
+        cardId: 'assistant:ask',
+        assistantMode: 'ask',
+        status: 'running',
+        createdAt: '2026-08-16T00:00:00.000Z',
+        updatedAt: '2026-08-16T00:00:00.000Z',
+        sequence: 0,
+        events: [],
+      },
+      tools: [],
+      steering: [],
+    });
+
+    expect(messages.slice(0, 2)).toEqual([
+      { role: 'user', content: 'Which service owns authentication?' },
+      { role: 'assistant', content: 'I found the API boundary; I will inspect its proof next.' },
+    ]);
+    expect(messages.at(-1)).toMatchObject({
+      role: 'user',
+      content: expect.stringContaining('Continue the investigation'),
+    });
   });
 
   it('never emits an orphaned tool result when the provider conversation window is bounded', async () => {

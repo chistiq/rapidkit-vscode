@@ -44,6 +44,7 @@ import { showIncidentStudioNextCommand } from './commands/incidentStudioNext';
 import { registerWorkspaceSelectionCommands } from './commands/workspaceSelection';
 import { registerWorkspaceOperationsCommands } from './commands/workspaceOperations';
 import { registerWorkspaceIntelligenceCommands } from './commands/workspaceIntelligence';
+import { registerWorkspaceGoalCommands } from './commands/workspaceGoals';
 import { registerInfraOperationsCommands } from './commands/infraOperations';
 import { registerModuleMaintenanceCommands } from './commands/moduleMaintenance';
 import { WorkspaiStatusBar } from './ui/statusBar';
@@ -635,6 +636,10 @@ export async function activate(context: vscode.ExtensionContext) {
         context,
       }),
       ...registerWorkspaceIntelligenceCommands({
+        logger,
+        getWorkspaceExplorer: () => workspaceExplorer,
+      }),
+      ...registerWorkspaceGoalCommands({
         logger,
         getWorkspaceExplorer: () => workspaceExplorer,
       }),

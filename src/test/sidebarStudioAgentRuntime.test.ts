@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -139,6 +140,10 @@ describe('sidebar Studio agent runtime contract', () => {
       await fs.writeFile(path.join(workspace, 'src', 'a.ts'), 'export const a = 1;\n');
       await fs.writeFile(path.join(workspace, '.env'), 'TOKEN=secret\n');
       await fs.writeFile(
+        path.join(workspace, '.workspai', 'workspace.contract.json'),
+        '{"projects":[]}\n'
+      );
+      await fs.writeFile(
         path.join(workspace, '.workspai', 'reports', 'verify.json'),
         '{"status":"fail"}\n'
       );
@@ -157,6 +162,27 @@ describe('sidebar Studio agent runtime contract', () => {
         truncated: false,
       });
       expect(source[0].sha256).toMatch(/^[a-f0-9]{64}$/);
+
+      await fs.writeFile(
+        path.join(workspace, 'src', 'ranged.ts'),
+        ['line-1', 'line-2', 'line-3', 'line-4'].join('\n')
+      );
+      const ranged = await inspectStudioAgentFiles({
+        workspacePath: workspace,
+        paths: ['src/ranged.ts'],
+        kind: 'source',
+        lineStart: 2,
+        lineEnd: 3,
+      });
+      expect(ranged[0]).toMatchObject({
+        content: 'line-2\nline-3',
+        lineStart: 2,
+        lineEnd: 3,
+        truncated: false,
+      });
+      expect(ranged[0].sha256).toBe(
+        crypto.createHash('sha256').update('line-1\nline-2\nline-3\nline-4').digest('hex')
+      );
 
       await expect(
         inspectStudioAgentFiles({
@@ -177,6 +203,13 @@ describe('sidebar Studio agent runtime contract', () => {
 
       await expect(
         inspectStudioAgentFiles({ workspacePath: workspace, paths: ['.env'], kind: 'source' })
+      ).rejects.toThrow('not authorized');
+      await expect(
+        inspectStudioAgentFiles({
+          workspacePath: workspace,
+          paths: ['.workspai/workspace.contract.json'],
+          kind: 'source',
+        })
       ).rejects.toThrow('not authorized');
       await expect(
         inspectStudioAgentFiles({
@@ -204,6 +237,31 @@ describe('sidebar Studio agent runtime contract', () => {
     } finally {
       await fs.rm(workspace, { recursive: true, force: true });
       await fs.rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('inspects linked project source relative to the evidence-owned project root', async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-agent-workspace-'));
+    const project = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-agent-linked-'));
+    try {
+      await fs.mkdir(path.join(project, 'cmake'), { recursive: true });
+      await fs.writeFile(path.join(project, 'cmake', 'cares.cmake'), 'add_subdirectory(cares)\n');
+
+      const result = await inspectStudioAgentFiles({
+        workspacePath: workspace,
+        projectPath: project,
+        paths: ['cmake/cares.cmake'],
+        kind: 'source',
+      });
+
+      expect(result[0]).toMatchObject({
+        path: 'cmake/cares.cmake',
+        exists: true,
+        kind: 'source',
+      });
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true });
+      await fs.rm(project, { recursive: true, force: true });
     }
   });
 });

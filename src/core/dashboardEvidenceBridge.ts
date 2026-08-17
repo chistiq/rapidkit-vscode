@@ -1,4 +1,5 @@
 import fs from 'fs-extra';
+import os from 'os';
 import path from 'path';
 
 import {
@@ -138,6 +139,90 @@ export type DashboardEvidenceBundle = {
   cards: DashboardEvidenceCard[];
   trend?: DashboardTrendSummary | null;
 };
+
+type DashboardPathAlias = { path: string; label: string };
+
+function dashboardPathAliases(input: {
+  workspacePath: string;
+  projectPath?: string;
+  projectName?: string;
+  model?: Record<string, unknown>;
+}): DashboardPathAlias[] {
+  const aliases = new Map<string, string>();
+  const add = (candidate: unknown, label: string) => {
+    if (typeof candidate !== 'string' || !candidate.trim()) {
+      return;
+    }
+    aliases.set(candidate.trim(), label);
+    aliases.set(candidate.trim().replace(/\\/g, '/'), label);
+  };
+
+  add(input.workspacePath, '$WORKSPACE');
+  add(os.homedir(), '$HOME');
+  if (input.projectPath) {
+    add(input.projectPath, input.projectName?.trim() || '$PROJECT');
+  }
+  for (const entry of Array.isArray(input.model?.projects) ? input.model.projects : []) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      continue;
+    }
+    const project = entry as Record<string, unknown>;
+    const name =
+      typeof project.name === 'string' && project.name.trim() ? project.name.trim() : '$PROJECT';
+    if (typeof project.path === 'string' && project.path.trim()) {
+      add(project.path, name);
+      add(path.resolve(input.workspacePath, project.path), name);
+    }
+  }
+
+  return [...aliases.entries()]
+    .map(([aliasPath, label]) => ({ path: aliasPath, label }))
+    .sort((left, right) => right.path.length - left.path.length);
+}
+
+/**
+ * Redacts host-specific paths from every user-visible evidence field before it
+ * crosses into the Webview. The artifactPath control field is retained solely
+ * for the governed Open Artifact action and is never rendered as card copy.
+ */
+export function sanitizeDashboardEvidenceText(
+  value: string,
+  aliases: readonly DashboardPathAlias[] = []
+): string {
+  let sanitized = value;
+  for (const alias of aliases) {
+    sanitized = sanitized.split(alias.path).join(alias.label);
+  }
+  return sanitized
+    .replace(/file:\/\/\/?(?:[A-Za-z]:)?[^\s"'<>|]+/gi, '$LOCAL_PATH')
+    .replace(/\b[A-Za-z]:[\\/][^\s,;)"']+/g, '$LOCAL_PATH')
+    .replace(/(^|[\s("'=])\/(?!\/)[^\s,;)"']+/g, '$1$LOCAL_PATH')
+    .replace(/(?:\.\.[\\/]){1,}[^\s,;)"']+/g, '$EXTERNAL_PATH');
+}
+
+function sanitizeDashboardEvidenceCard(
+  card: DashboardEvidenceCard,
+  aliases: readonly DashboardPathAlias[]
+): DashboardEvidenceCard {
+  return {
+    ...card,
+    summary: sanitizeDashboardEvidenceText(card.summary, aliases),
+    blockers: card.blockers?.map((blocker) => sanitizeDashboardEvidenceText(blocker, aliases)),
+    metrics: card.metrics
+      ? Object.fromEntries(
+          Object.entries(card.metrics).map(([key, value]) => [
+            key,
+            typeof value === 'string' ? sanitizeDashboardEvidenceText(value, aliases) : value,
+          ])
+        )
+      : undefined,
+    detailSections: card.detailSections?.map((section) => ({
+      ...section,
+      title: sanitizeDashboardEvidenceText(section.title, aliases),
+      body: sanitizeDashboardEvidenceText(section.body, aliases),
+    })),
+  };
+}
 
 function isStaleEvidenceBlocker(blocker: string): boolean {
   const lower = blocker.toLowerCase();
@@ -661,6 +746,26 @@ async function buildWorkspaceRunCard(reportsDir: string): Promise<DashboardEvide
   }
 
   const uniqueBlockers = [...new Set(blockers)].slice(0, 8);
+  const affectedProjectNames = [
+    ...new Set(
+      (multiStage ? stageEntries.map((entry) => entry.report) : [stageReport]).flatMap((report) =>
+        Array.isArray(report.projects)
+          ? report.projects
+              .filter(
+                (entry): entry is Record<string, unknown> =>
+                  Boolean(entry) &&
+                  typeof entry === 'object' &&
+                  !Array.isArray(entry) &&
+                  (entry.status === 'failed' || Number(entry.exitCode ?? 0) !== 0)
+              )
+              .map((entry) =>
+                typeof entry.projectName === 'string' ? entry.projectName.trim() : ''
+              )
+              .filter(Boolean)
+          : []
+      )
+    ),
+  ];
 
   let status: DashboardEvidenceStatus = 'pass';
   if (totals.failed > 0 || gatesBlocked) {
@@ -698,6 +803,7 @@ async function buildWorkspaceRunCard(reportsDir: string): Promise<DashboardEvide
       stageCount: stageEntries.length,
     },
     blockers: uniqueBlockers,
+    ...(affectedProjectNames.length > 0 ? { affectedProjectNames } : {}),
     incidentStudioTarget: 'doctor',
   };
 }
@@ -739,6 +845,7 @@ async function buildImportReadinessCard(
     generatedAt: typeof raw.generatedAt === 'string' ? raw.generatedAt : undefined,
     artifactPath,
     blockers,
+    ...(projectName ? { affectedProjectNames: [projectName] } : {}),
     metrics: {
       checks: Array.isArray(raw.checks) ? raw.checks.length : 0,
       project: projectName ? 1 : 0,
@@ -954,6 +1061,17 @@ function buildDoctorCard(
   const errors = Number(healthScore.errors ?? 0);
   const total = Number(healthScore.total ?? passed + warnings + errors);
   const percent = total > 0 ? Math.round((passed / total) * 100) : 0;
+  const presentation =
+    healthScore.presentation && typeof healthScore.presentation === 'object'
+      ? (healthScore.presentation as Record<string, unknown>)
+      : undefined;
+  const presentedPassRate = presentation?.diagnosticPassRatePercent;
+  const diagnosticPassRate =
+    typeof presentedPassRate === 'number' && Number.isFinite(presentedPassRate)
+      ? presentedPassRate
+      : presentation?.policy === 'doctor-multi-axis-v1'
+        ? undefined
+        : percent;
   const projection = projectDoctorEvidence(raw, {
     scope,
     projectPath: options?.projectPath,
@@ -972,7 +1090,7 @@ function buildDoctorCard(
         : 'pass';
   const summary = projection.canonical
     ? `${projection.counts.blockingCauses} blocking · ${projection.counts.advisoryFindings} advisory · ${projection.counts.unknownFindings} unknown${projection.freshness ? ` · ${projection.freshness}` : ''}`
-    : `${percent}% health · ${errors} errors · ${warnings} warnings`;
+    : `${diagnosticPassRate === undefined ? 'n/a' : `${diagnosticPassRate}%`} diagnostic pass rate · ${errors} errors · ${warnings} warnings`;
 
   return {
     id,
@@ -984,7 +1102,11 @@ function buildDoctorCard(
     artifactPath,
     metrics: mergeReportMetrics(
       {
-        percent,
+        ...(diagnosticPassRate === undefined
+          ? { diagnosticPassRateApplicable: 0 }
+          : { percent: diagnosticPassRate, diagnosticPassRateApplicable: 1 }),
+        metricPolicy:
+          typeof presentation?.policy === 'string' ? presentation.policy : 'legacy-health-score',
         errors,
         warnings,
         passed,
@@ -2673,12 +2795,20 @@ export async function buildDashboardEvidenceBundle(input?: {
       }),
     };
   });
+  const pathAliases = dashboardPathAliases({
+    workspacePath,
+    projectPath,
+    projectName,
+    model: modelRawForCount,
+  });
 
   return {
     workspacePath,
     projectPath,
     projectName,
-    cards: finalizedCards.map(attachDashboardIncidentSummary),
+    cards: finalizedCards
+      .map((card) => sanitizeDashboardEvidenceCard(card, pathAliases))
+      .map(attachDashboardIncidentSummary),
     trend,
   };
 }

@@ -25,6 +25,7 @@ import {
   type StudioAgentFileObservation,
   type StudioEvidenceRefreshCommandId,
 } from './sidebarStudioAgentRuntime.js';
+import { isStudioModelOwnedSourcePath } from './studioWorkspacePathPolicy.js';
 
 export { STUDIO_EVIDENCE_REFRESH_COMMAND_IDS } from './sidebarStudioAgentRuntime.js';
 export type { StudioEvidenceRefreshCommandId } from './sidebarStudioAgentRuntime.js';
@@ -109,15 +110,14 @@ function resolveRepairTargetRelativePath(input: {
   }
   const workspacePath = path.resolve(input.workspacePath);
   const projectPath = input.projectPath?.trim() ? path.resolve(input.projectPath) : undefined;
+  const sourceRoot = projectPath ?? workspacePath;
   const absoluteTarget = path.isAbsolute(rawTarget)
     ? path.resolve(rawTarget)
-    : input.scope === 'project' && projectPath && isPathInside(workspacePath, projectPath)
-      ? path.resolve(projectPath, rawTarget)
-      : path.resolve(workspacePath, rawTarget);
-  if (!isPathInside(workspacePath, absoluteTarget)) {
+    : path.resolve(sourceRoot, rawTarget);
+  if (!isPathInside(sourceRoot, absoluteTarget)) {
     return null;
   }
-  return normalizeRelativePath(path.relative(workspacePath, absoluteTarget));
+  return normalizeRelativePath(path.relative(sourceRoot, absoluteTarget));
 }
 
 export type SidebarStudioRepairEvidence = {
@@ -228,7 +228,8 @@ async function discoverContractAuthoredRepairTargets(input: {
         if (
           !relativePath ||
           relativePath === attachment.relativePath ||
-          GENERATED_OR_VENDOR_TARGET.test(relativePath)
+          GENERATED_OR_VENDOR_TARGET.test(relativePath) ||
+          !isStudioModelOwnedSourcePath(relativePath)
         ) {
           continue;
         }
@@ -292,12 +293,16 @@ export async function collectSidebarStudioRepairEvidence(input: {
           })
         )
         .filter((targetPath): targetPath is string => Boolean(targetPath))
+        .filter((targetPath) => isStudioModelOwnedSourcePath(targetPath))
     )
   );
-  const contractTargetPaths = await discoverContractAuthoredRepairTargets({
-    workspacePath: input.workspacePath,
-    attachments: bundle.attachments,
-  });
+  const repairProjectPath = input.projectPath ?? input.handoff.projectPath;
+  const contractTargetPaths = repairProjectPath
+    ? []
+    : await discoverContractAuthoredRepairTargets({
+        workspacePath: input.workspacePath,
+        attachments: bundle.attachments,
+      });
   const exactTargetPaths = Array.from(new Set([...hintedTargetPaths, ...contractTargetPaths]));
 
   const expectedBaseSha256: Record<string, string | null> = {};
@@ -319,8 +324,9 @@ export async function collectSidebarStudioRepairEvidence(input: {
   // Exact target source must precede optional artifact excerpts so it can
   // never be clipped by the bounded prompt budget.
   sections.push('', '## Exact repair target sources');
+  const sourceRoot = repairProjectPath ?? input.workspacePath;
   for (const relativePath of exactTargetPaths) {
-    const absolutePath = path.resolve(input.workspacePath, relativePath);
+    const absolutePath = path.resolve(sourceRoot, relativePath);
     let fullContent: string | null = null;
     try {
       fullContent = await fs.readFile(absolutePath, 'utf8');
@@ -394,7 +400,10 @@ export async function collectSidebarStudioRepairEvidence(input: {
       JSON.stringify(
         await Promise.all(
           observedEvidencePaths.map(async (relativePath) => {
-            const absolutePath = path.resolve(input.workspacePath, relativePath);
+            const absolutePath = path.resolve(
+              exactTargetPaths.includes(relativePath) ? sourceRoot : input.workspacePath,
+              relativePath
+            );
             try {
               const stat = await fs.stat(absolutePath);
               const contentHash =
@@ -503,8 +512,8 @@ function buildSidebarCardRepairPatchPrompt(input: {
     `- Card: ${handoff.cardLabel ?? handoff.cardId}`,
     `- Status: ${handoff.cardStatus}`,
     `- Scope: ${handoff.scope}`,
-    `- Workspace: ${handoff.workspacePath ?? 'unknown'}`,
-    ...(handoff.projectPath ? [`- Project: ${handoff.projectPath}`] : []),
+    `- Workspace: ${handoff.workspacePath ? '$WORKSPACE' : 'unknown'}`,
+    ...(handoff.projectPath ? ['- Project: $PROJECT'] : []),
     ...(handoff.artifactPath ? [`- Artifact: ${handoff.artifactPath}`] : []),
     ...(handoff.verifyCommand ? [`- Verify after patch: ${handoff.verifyCommand}`] : []),
     ...(handoff.blockers.length > 0

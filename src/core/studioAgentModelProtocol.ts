@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { AIMessage } from './aiService.js';
 import type { StudioAgentPersistedSession } from './studioAgentEvents.js';
+import { redactLocalPathsForConsumer } from './consumerPathRedaction.js';
 import type {
   StudioAgentModelAction,
   StudioAgentModelAdapter,
@@ -96,7 +97,7 @@ export function restoreStudioAgentNativeConversation(
   const messages: StudioAgentConversationMessage[] = [
     {
       role: 'user',
-      content: boundedText(
+      content: boundedControlText(
         typeof requestData?.request === 'string'
           ? requestData.request
           : `Resume the durable Workspai repair session for ${session.cardId}.`,
@@ -126,7 +127,14 @@ export function restoreStudioAgentNativeConversation(
         ? (requestPayload.input as Record<string, unknown>)
         : {};
     messages.push(
-      { role: 'assistant', toolCall: { callId, name, input: toolInput } },
+      {
+        role: 'assistant',
+        toolCall: {
+          callId,
+          name,
+          input: redactControlValue(toolInput) as Record<string, unknown>,
+        },
+      },
       {
         role: 'tool',
         toolResult: {
@@ -135,7 +143,7 @@ export function restoreStudioAgentNativeConversation(
           content: boundedJson(
             {
               ok: terminal.type === 'tool.completed',
-              ...terminalPayload,
+              ...(redactControlValue(terminalPayload) as Record<string, unknown>),
             },
             12_000
           ),
@@ -191,6 +199,55 @@ function boundedText(value: string, maxChars = 10_000): string {
   return value.length > maxChars ? `${value.slice(0, maxChars)}…[objective truncated]` : value;
 }
 
+function boundedControlText(value: string, maxChars = 10_000): string {
+  return boundedText(redactLocalPathsForConsumer(value), maxChars);
+}
+
+function redactControlValue(value: unknown, depth = 0): unknown {
+  if (depth > 6) {
+    return '[depth-limited]';
+  }
+  if (typeof value === 'string') {
+    return redactLocalPathsForConsumer(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => redactControlValue(entry, depth + 1));
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+      key,
+      redactControlValue(entry, depth + 1),
+    ])
+  );
+}
+
+function redactConversationMessage(
+  message: StudioAgentConversationMessage
+): StudioAgentConversationMessage {
+  if ('content' in message) {
+    return { ...message, content: redactLocalPathsForConsumer(message.content) };
+  }
+  if ('toolCall' in message) {
+    return {
+      ...message,
+      toolCall: {
+        ...message.toolCall,
+        input: redactControlValue(message.toolCall.input) as Record<string, unknown>,
+      },
+    };
+  }
+  return {
+    ...message,
+    toolResult: {
+      ...message.toolResult,
+      content: redactLocalPathsForConsumer(message.toolResult.content),
+    },
+  };
+}
+
 function conciseToolOutput(
   value: unknown,
   options: { sourceEntryLimit?: number; sourceContentLimit?: number } = {}
@@ -208,11 +265,11 @@ function conciseToolOutput(
       .slice(0, options.sourceEntryLimit ?? 4);
     if (sourceEntries.length > 0) {
       return sourceEntries.map((entry) => ({
-        path: entry.path,
+        path: redactLocalPathsForConsumer(String(entry.path)),
         exists: entry.exists !== false,
         sha256: entry.sha256,
         truncated: entry.truncated,
-        content: boundedText(String(entry.content), options.sourceContentLimit ?? 6_000),
+        content: boundedControlText(String(entry.content), options.sourceContentLimit ?? 6_000),
       }));
     }
     return {
@@ -231,58 +288,60 @@ function conciseToolOutput(
     return value;
   }
   const record = value as Record<string, unknown>;
-  return Object.fromEntries(
-    [
-      'recoveryPath',
-      'dependencyBlockerPresent',
-      'nextAction',
-      'closureReady',
-      'transaction',
-      'requiresUserDecision',
-      'terminalReason',
-      'decisionOptions',
-      'auditExitCode',
-      'auditSummary',
-      'command',
-      'target',
-      'appliedCount',
-      'changedPaths',
-      'upgradeCandidates',
-      'resolutionCandidates',
-      'blockedCandidates',
-      'dependencyDiagnostics',
-      'sourceCandidates',
-      'unresolvedProjects',
-      'processedProjects',
-      'projectNames',
-      'clearedProjects',
-      'fallbackCapability',
-      'recommendedTools',
-      'recommendedActions',
-      'exhaustedTools',
-      'observations',
-      'evidenceGeneration',
-      'blockerSignature',
-      'incidentGraph',
-      'activeHandoff',
-      'refresh',
-      'blockingCards',
-      'blockers',
-      'files',
-      'diagnostics',
-      'status',
-      'diff',
-      'exitCode',
-      'stdout',
-      'stderr',
-      'cwd',
-      'purpose',
-      'displayCommand',
-      'mutatesSource',
-      'observedSourceChange',
-    ]
-      .filter((key) => record[key] !== undefined)
-      .map((key) => [key, record[key]])
+  return redactControlValue(
+    Object.fromEntries(
+      [
+        'recoveryPath',
+        'dependencyBlockerPresent',
+        'nextAction',
+        'closureReady',
+        'transaction',
+        'requiresUserDecision',
+        'terminalReason',
+        'decisionOptions',
+        'auditExitCode',
+        'auditSummary',
+        'command',
+        'target',
+        'appliedCount',
+        'changedPaths',
+        'upgradeCandidates',
+        'resolutionCandidates',
+        'blockedCandidates',
+        'dependencyDiagnostics',
+        'sourceCandidates',
+        'unresolvedProjects',
+        'processedProjects',
+        'projectNames',
+        'clearedProjects',
+        'fallbackCapability',
+        'recommendedTools',
+        'recommendedActions',
+        'exhaustedTools',
+        'observations',
+        'evidenceGeneration',
+        'blockerSignature',
+        'incidentGraph',
+        'activeHandoff',
+        'refresh',
+        'blockingCards',
+        'blockers',
+        'files',
+        'diagnostics',
+        'status',
+        'diff',
+        'exitCode',
+        'stdout',
+        'stderr',
+        'cwd',
+        'purpose',
+        'displayCommand',
+        'mutatesSource',
+        'observedSourceChange',
+      ]
+        .filter((key) => record[key] !== undefined)
+        .map((key) => [key, record[key]])
+    )
   );
 }
 
@@ -300,7 +359,7 @@ function conciseLatestObservation(
     cardBlocking: value.cardBlocking,
     evidenceGeneration: value.evidenceGeneration,
     blockerSignature: value.blockerSignature,
-    error: value.error ? boundedText(value.error, 3_000) : undefined,
+    error: value.error ? boundedControlText(value.error, 3_000) : undefined,
     output: conciseToolOutput(
       value.output,
       compact ? { sourceEntryLimit: 4, sourceContentLimit: 3_000 } : {}
@@ -319,12 +378,14 @@ function conciseRecentObservations(
     finalObservation?.result === latestObservation ? observations.slice(0, -1) : observations;
   return withoutDuplicatedLatest.slice(-5).map((observation) => ({
     toolName: observation.toolName,
-    input: observation.input,
+    input: redactControlValue(observation.input),
     ok: observation.result.ok,
     changed: observation.result.changed,
     cardBlocking: observation.result.cardBlocking,
     blockerSignature: observation.result.blockerSignature,
-    error: observation.result.error ? boundedText(observation.result.error, 1_600) : undefined,
+    error: observation.result.error
+      ? boundedControlText(observation.result.error, 1_600)
+      : undefined,
     output: conciseToolOutput(observation.result.output),
   }));
 }
@@ -338,15 +399,15 @@ function conciseCausalEvent(event: StudioAgentModelContext['session']['events'][
     sequence: event.sequence,
     type: event.type,
     toolName: data.toolName,
-    input: data.input,
+    input: redactControlValue(data.input),
     ok: data.ok,
     changed: data.changed,
     intelligencePhase: data.intelligencePhase,
     cardBlocking: data.cardBlocking,
     evidenceGeneration: data.evidenceGeneration,
     blockerSignature: data.blockerSignature,
-    error: typeof data.error === 'string' ? boundedText(data.error, 1_200) : undefined,
-    summary: typeof data.summary === 'string' ? boundedText(data.summary, 600) : undefined,
+    error: typeof data.error === 'string' ? boundedControlText(data.error, 1_200) : undefined,
+    summary: typeof data.summary === 'string' ? boundedControlText(data.summary, 600) : undefined,
     output: conciseToolOutput(data.output),
   };
 }
@@ -422,10 +483,22 @@ function promptForTurn(
   const intelligencePreflights = getWorkspaceIntelligenceExecutionPreflights().map(
     ({ id, label, purpose }) => ({ id, label, purpose })
   );
+  const goalCompletionMode = context.session.governedGoal?.completionMode;
   const modeInstructions =
-    mode === 'agent'
+    mode === 'agent' || mode === 'goal'
       ? [
           'Own the task from evidence inspection through source change and final verification.',
+          ...(mode === 'goal'
+            ? goalCompletionMode === 'evidence-review'
+              ? [
+                  'This session is bound to an active CLI Goal Pack for an arbitrary engineering objective. Its objective, scope, evidence bindings, policy, and attempt budget are authoritative; it intentionally has no fake deterministic semantic verifier.',
+                  'Own the complete objective, not merely one convenient metric. After each closed CLI repair transaction, inspect the final worktree and assess the result against the original objective. The final verify-goal call proves workspace safety and evidence freshness; your evidence-backed review establishes outcome readiness without calling it machine-verified.',
+                ]
+              : [
+                  'This session is bound to an active CLI Goal Pack. Its linked verified-goal contract is the immutable definition of done, and every source proposal must remain inside its declared scope.',
+                  'Do not claim completion from a patch or intermediate metric. Finish only after verify-goal closes the Goal Pack as verified.',
+                ]
+            : []),
           'When the session includes a verified goal, treat its scope, constraints, baseline, and criteria as the authoritative definition of done. Continue until verify-goal returns state=verified; a plausible patch, higher metric, or successful single command is not completion.',
           'Verified goals are resumable transactions. Never weaken their target, disable required build/tests, enable force, or permit breaking changes unless the durable goal contract already authorizes it.',
           'Never delegate a resolvable step to the operator. Never claim completion while governed verification is required and still blocking.',
@@ -437,8 +510,10 @@ function promptForTurn(
           'Use individual governed producers only for a diagnosed source artifact or a targeted recovery, then run the unified chain before completion.',
           'Repair source manifests, configuration, or project files when evidence identifies a source defect; use governed commands only to regenerate evidence and verify the result.',
           'You have a general workspace capability plane. Discover files, inspect exact source, inspect diagnostics and diffs, run structured no-shell project commands, and create, replace, or delete source through SHA-protected rollback transactions. Use these tools for arbitrary project types instead of waiting for a blocker-specific tool.',
-          'A source file becomes patch-authorized after inspect-source returns its sha256. Search results alone are not edit authorization. Review changed files with inspect-workspace-changes when the effect of a command or patch is uncertain.',
-          'Use run-workspace-command for project-native diagnosis, tests, builds, formatting, and dependency operations. Choose the narrowest cwd and purpose; never ask the operator to run a command that this tool can execute.',
+          'A source file becomes patch-authorized after inspect-source returns its sha256. Search results alone are not edit authorization. For a general Agent task or an evidence-reviewed Goal, inspect-workspace-changes after the final closed repair transaction is mandatory before completion.',
+          'Use query-workspace-graph first when architecture, ownership, dependencies, APIs, schemas, or cross-language relationships can bound the search. Use literal source search only for exact text and inspect the proof-carrying source before editing.',
+          'For a large inspected file, read a bounded line range and prefer apply-workspace-edits with one unique oldText block instead of returning the complete file body.',
+          'Use run-workspace-command for non-mutating project-native diagnosis, tests, and builds. Choose the narrowest cwd and purpose; never ask the operator to run a command that this tool can execute.',
           'When a blocker has a CLI-authored remediation plan, inspect the current plan and execute eligible steps by stepId. Never emit an unstructured shell string; use the structured workspace command tool when the plan does not cover the diagnosed source cause.',
           'For a dependency vulnerability blocker, use fresh Doctor evidence to inspect the affected manifests and compatibility constraints. Propose the smallest compatible source change; the CLI adapter owns reconciliation, audit, declared tests/build, and verification for the detected ecosystem.',
           'When a blocker accelerator returns general-source-repair, no-safe-upgrade, a no-op, or a breaking/downgrade-only candidate, that accelerator is exhausted for the current causal generation. Do not call it again. Move to the general capability plane: inspect exact manifests and compatibility constraints, use structured project-native commands to discover admissible versions or alternatives, apply a SHA-protected source transaction, then build, test, audit, run the unified chain, and verify.',
@@ -456,11 +531,11 @@ function promptForTurn(
       : mode === 'plan'
         ? [
             'Produce an evidence-backed implementation plan. Do not modify files or run mutating commands.',
-            'Inspect enough source and governed evidence to make the plan concrete, then complete with the plan as the summary.',
+            'Inspect enough source and governed evidence to make the plan concrete. Complete with six concise sections: Scope, Evidence, Steps, Verification, Rollback, and Assumptions.',
           ]
         : [
             'Answer from inspected source and governed evidence. Do not modify files or run mutating commands.',
-            'Inspect enough evidence to answer accurately, then complete with the final answer as the summary.',
+            'At least one relevant source, graph, diagnostic, change, or governed-evidence inspection is required before completion. Then answer directly and concisely.',
           ];
   return [
     `You are Workspai Assistant operating in ${mode.toUpperCase()} mode inside one trusted workspace.`,
@@ -470,11 +545,19 @@ function promptForTurn(
     `Action schema: ${STUDIO_AGENT_MODEL_ACTION_SCHEMA_VERSION}`,
     'Tool action: {"schemaVersion":"workspai.studio-agent-model-action.v1","action":"tool","toolName":"...","input":{},"reason":"..."}',
     'Completion action: {"schemaVersion":"workspai.studio-agent-model-action.v1","action":"complete","summary":"..."}',
-    `Objective: ${boundedText(objective, 5_000)}`,
-    `Workspace: ${context.session.workspacePath}`,
+    `Objective: ${boundedControlText(objective, 5_000)}`,
+    'Workspace control boundary: $WORKSPACE',
+    ...(context.session.projectPath ? ['Project source boundary: $PROJECT'] : []),
     `Scope: ${context.session.cardId}`,
     `Blocker signature: ${context.session.blockerSignature ?? 'unknown'}`,
-    `Verified engineering goal: ${boundedJson(context.session.goal ?? null, 5_000)}`,
+    `Governed Goal Pack: ${boundedJson(
+      redactControlValue(context.session.governedGoal ?? null),
+      5_000
+    )}`,
+    `Verified engineering goal: ${boundedJson(
+      redactControlValue(context.session.goal ?? null),
+      5_000
+    )}`,
     `Canonical Workspace Intelligence invariant: ${getWorkspaceIntelligenceChainInvariant()}`,
     `Execution prerequisites outside the canonical loop: ${boundedJson(
       intelligencePreflights,
@@ -498,7 +581,7 @@ function promptForTurn(
         ? 'YES. Repeated inspection has exhausted the bounded read budget. Select one available change tool that advances the repair transaction; do not rerun Doctor, Verify, or another inspection.'
         : 'no'
     }`,
-    `Steering: ${boundedJson(context.steering, 2_000)}`,
+    `Steering: ${boundedJson(context.steering.map(redactLocalPathsForConsumer), 2_000)}`,
     `Latest observation: ${boundedJson(
       conciseLatestObservation(context.latestObservation, budget === 'compact'),
       budget === 'compact' ? 10_000 : 12_000
@@ -532,9 +615,16 @@ export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter 
   constructor(
     private readonly objective: string,
     private readonly complete: StudioAgentModelCompletion,
-    restoredSession?: StudioAgentPersistedSession
+    restoredSession?: StudioAgentPersistedSession,
+    initialConversation: StudioAgentConversationMessage[] = []
   ) {
-    this.conversation = restoreStudioAgentNativeConversation(restoredSession);
+    this.conversation = coherentConversationWindow(
+      [
+        ...initialConversation.map(redactConversationMessage),
+        ...restoreStudioAgentNativeConversation(restoredSession).map(redactConversationMessage),
+      ],
+      10
+    );
   }
 
   private conversationWindow(limit: number): StudioAgentConversationMessage[] {

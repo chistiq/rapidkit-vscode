@@ -16,6 +16,7 @@ import {
   readWorkspaceVerifyReport,
 } from './workspaceVerifyReader';
 import { AnalyzeReport } from '../ui/panels/incidentStudioAnalyze';
+import { buildActiveGoalPromptSection, readActiveGoalHandoff } from './workspaceGoals.js';
 
 export interface IncidentStudioEvidenceContext {
   workspace: {
@@ -394,18 +395,20 @@ export async function buildIncidentStudioEvidencePrompt(input: {
   doctorSnapshot?: IncidentStudioDoctorSnapshot | null;
   gitDiffTimeoutMs?: number;
 }): Promise<string> {
-  const [context, architectureGrounding, workspaceModelReport, verifyReport] = await Promise.all([
-    buildIncidentStudioEvidenceContext(input),
-    buildIncidentStudioArchitecturePromptSection({
-      workspacePath: input.workspacePath,
-      workspaceName: input.workspaceName,
-      projectPath: input.projectPath,
-      projectName: input.projectName,
-      projectFramework: input.projectFramework,
-    }),
-    readWorkspaceModelReport(input.workspacePath),
-    readWorkspaceVerifyReport(input.workspacePath),
-  ]);
+  const [context, architectureGrounding, workspaceModelReport, verifyReport, activeGoal] =
+    await Promise.all([
+      buildIncidentStudioEvidenceContext(input),
+      buildIncidentStudioArchitecturePromptSection({
+        workspacePath: input.workspacePath,
+        workspaceName: input.workspaceName,
+        projectPath: input.projectPath,
+        projectName: input.projectName,
+        projectFramework: input.projectFramework,
+      }),
+      readWorkspaceModelReport(input.workspacePath),
+      readWorkspaceVerifyReport(input.workspacePath),
+      readActiveGoalHandoff(input.workspacePath),
+    ]);
 
   const sections = [renderIncidentStudioEvidencePrompt(context)];
   const modelSection = buildWorkspaceModelPromptSection(workspaceModelReport);
@@ -418,6 +421,10 @@ export async function buildIncidentStudioEvidencePrompt(input: {
   const verifySection = buildWorkspaceVerifyPromptSection(verifyReport);
   if (verifySection) {
     sections.push(verifySection);
+  }
+  const goalSection = buildActiveGoalPromptSection(activeGoal);
+  if (goalSection) {
+    sections.push(goalSection);
   }
 
   return sections.join('\n\n');

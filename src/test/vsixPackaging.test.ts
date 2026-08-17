@@ -30,11 +30,16 @@ describe('VSIX packaging exclusions', () => {
       scripts?: Record<string, string>;
     };
 
-    expect(packageJson.scripts?.['vscode:prepublish']).toBe('corepack npm run build');
+    expect(packageJson.scripts?.['vscode:prepublish']).toBe(
+      'corepack npm run check:english-text && corepack npm run check:local-paths && corepack npm run build'
+    );
+    expect(packageJson.scripts?.['check:english-text']).toBe(
+      'node scripts/english-text-guard.mjs --all'
+    );
     expect(packageJson.scripts?.prepackage).toBe('corepack npm run build');
     expect(packageJson.scripts?.build).toContain('--production');
     expect(packageJson.scripts?.['package:ci']).toBe(
-      'corepack npm run build && node scripts/vsce-package-runner.mjs package --no-dependencies --out rapidkit-vscode-${npm_package_version}.vsix'
+      'corepack npm run check:english-text && corepack npm run build && node scripts/vsce-package-runner.mjs package --no-dependencies --out rapidkit-vscode-${npm_package_version}.vsix'
     );
     expect(packageJson.scripts?.['smoke:vsix-artifact']).toBe(
       'node scripts/inspect-vsix-artifact.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix'
@@ -81,6 +86,9 @@ describe('VSIX packaging exclusions', () => {
     const electronSmokeScript = read('scripts/vsix-electron-smoke.mjs');
     const electronSmokeTests = read('scripts/vsix-electron-smoke-tests.cjs');
 
+    expect(script).toContain('findLocalPathViolations');
+    expect(script).toContain('VSIX contains machine-local paths');
+
     for (const required of [
       'extension/dist/extension.js',
       'extension/dist/webview.js',
@@ -90,6 +98,7 @@ describe('VSIX packaging exclusions', () => {
       'extension/dist/sidebar.css',
       'extension/contracts/runtime-command-surface.v1.json',
       'extension/contracts/extension-cli-compatibility.v1.json',
+      'extension/contracts/extension-cli-release-policy.v1.json',
       'extension/contracts/workspace-intelligence/workspace-graph-recording.v1.json',
       'extension/contracts/workspace-intelligence/workspace-verify.v1.json',
       'extension/media/icons/icon.png',

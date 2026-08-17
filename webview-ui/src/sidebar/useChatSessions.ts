@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   type ChatSession,
+  type ChatAssistantMode,
   type ChatSessionEditorIssue,
   type ChatSessionIncident,
   type ChatSessionScopeSnapshot,
@@ -36,6 +37,7 @@ type OpenScopeSessionInput = {
 
 type StartQueryOptions = {
   forceNew?: boolean;
+  assistantMode?: ChatAssistantMode;
   scope?: Omit<ChatSessionScopeSnapshot, 'firstSeenAt' | 'lastSeenAt'> | null;
 };
 
@@ -329,7 +331,13 @@ export function useChatSessions(key: StoreKey, idPrefix: string) {
       const now = new Date().toISOString();
       const existing =
         !options?.forceNew && current.activeId
-          ? current.sessions.find((s) => s.sessionId === current.activeId)
+          ? current.sessions.find(
+              (s) =>
+                s.sessionId === current.activeId &&
+                (!options?.assistantMode ||
+                  !s.assistantMode ||
+                  s.assistantMode === options.assistantMode)
+            )
           : undefined;
       const history = toHistory(existing);
       const sessionId = existing?.sessionId ?? newSessionId(idPrefix);
@@ -344,6 +352,7 @@ export function useChatSessions(key: StoreKey, idPrefix: string) {
                   status: 'streaming',
                   error: undefined,
                   mode: mode ?? s.mode,
+                  assistantMode: options?.assistantMode ?? s.assistantMode,
                   scope:
                     s.incident || s.editorIssue
                       ? s.scope
@@ -369,6 +378,7 @@ export function useChatSessions(key: StoreKey, idPrefix: string) {
           title: sessionTitle(question),
           status: 'streaming',
           mode,
+          assistantMode: options?.assistantMode,
           scope: options?.scope
             ? {
                 ...options.scope,

@@ -9,6 +9,7 @@ import {
   decideCliOwnedRepair,
   executeCliOwnedCanonicalRepair,
   executeCliOwnedPatchRepair,
+  projectWorkspaceRepairTransactionForConsumer,
   readCliOwnedRepairFileComparison,
   resolveInstalledWorkspaiCli,
   resolveWorkspaiNodeExecutables,
@@ -59,7 +60,8 @@ function repairProtocolRunner(
     args: string[];
   }) => Promise<{ exitCode: number; stdout: string; stderr: string }>,
   runtimeVersion?: (manifestVersion: string, entrypoint: string) => string,
-  workflowOverride?: string[]
+  workflowOverride?: string[],
+  invariantOverrides?: Record<string, unknown>
 ) {
   return async (input: {
     entrypoint: { version: string; entrypoint: string };
@@ -112,6 +114,12 @@ function repairProtocolRunner(
             changeReceipt: 'checkpoint-hash-delta',
             consumerTimeline: 'durable-transaction-events',
             typedDecisionCauses: true,
+            registeredLinkedProjectMutationBoundary: true,
+            sourceProposalIntegrity: 'project-bound-hash-pinned',
+            completionAuthority: 'cli-verification-receipt',
+            goalSourceTransition: 'closed-integrity-bound-v1',
+            goalAttemptBudget: 'durable-serialized-v1',
+            ...invariantOverrides,
           },
           consumerProtocol: {
             protocolVersion: 'workspai.workspace-repair-consumer-protocol.v1',
@@ -143,6 +151,49 @@ function repairProtocolRunner(
 }
 
 describe('CLI-owned Workspace Repair client', () => {
+  it('projects repair transactions without filesystem or checkpoint identity', () => {
+    const artifact = transaction('tx-consumer-safe', 'decision-required');
+    artifact.target.projectName = 'grpc';
+    artifact.target.projectPath = '../../private/source/grpc';
+    artifact.checkpoint.files = [
+      { path: '../../private/source/grpc/CMakeLists.txt', existed: true, beforeHash: 'secret' },
+    ];
+    artifact.adapterEvaluations = [
+      {
+        adapterId: 'cmake',
+        ecosystem: 'CMake',
+        projectPath: '../../private/source/grpc',
+        manifests: ['../../private/source/grpc/CMakeLists.txt'],
+        support: 'full',
+        status: 'ready',
+        requiredExecutables: ['cmake'],
+        missingExecutables: [],
+        message: 'ready',
+      },
+    ];
+    artifact.decision = {
+      reason: 'Review /opt/fixtures/source/grpc/CMakeLists.txt before continuing.',
+      options: ['manual-repair', 'cancel'],
+      causes: [
+        {
+          kind: 'source-repair-required',
+          id: 'source',
+          message: 'Change ../../private/source/grpc/CMakeLists.txt.',
+          projectPath: '../../private/source/grpc',
+        },
+      ],
+    };
+
+    const projection = projectWorkspaceRepairTransactionForConsumer(artifact);
+    const serialized = JSON.stringify(projection);
+    expect(projection).not.toHaveProperty('checkpoint');
+    expect(projection).not.toHaveProperty('adapterEvaluations');
+    expect(serialized).not.toContain('/opt/fixtures');
+    expect(serialized).not.toContain('../../private');
+    expect(serialized).toContain('$LOCAL_PATH');
+    expect(serialized).toContain('$EXTERNAL_PATH');
+  });
+
   it('resolves Node from the npm installation that owns Workspai instead of the VS Code executable', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-node-'));
     const nodeRoot = path.join(root, 'versions', 'node', 'v20.20.2');
@@ -263,6 +314,7 @@ describe('CLI-owned Workspace Repair client', () => {
     const result = await executeCliOwnedPatchRepair({
       workspacePath,
       cardId: 'doctor',
+      goalId: 'goal-test-coverage-12345678',
       blockerSignature: 'doctor:fixture:blocker-v1',
       targetActionIds: ['doctor.fixture.environment.file-create'],
       patches: [
@@ -287,6 +339,7 @@ describe('CLI-owned Workspace Repair client', () => {
             operation: 'write',
           });
           expect(proposal).toMatchObject({
+            goalId: 'goal-test-coverage-12345678',
             blockerSignature: 'doctor:fixture:blocker-v1',
             targetActionIds: ['doctor.fixture.environment.file-create'],
           });
@@ -336,6 +389,199 @@ describe('CLI-owned Workspace Repair client', () => {
       content: 'export const ready = true;',
     });
     expect(await fs.readdir(path.join(workspacePath, '.workspai', 'repair', 'inbox'))).toEqual([]);
+  });
+
+  it('rejects Goal mutation when the runtime lacks the post-0.58 Goal repair contract', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-client-'));
+    await fs.outputFile(path.join(workspacePath, '.workspai-workspace'), 'name=test\n');
+    const metadata = await installedPackage(workspacePath);
+
+    await expect(
+      executeCliOwnedPatchRepair({
+        workspacePath,
+        cardId: 'goal-test-coverage-12345678',
+        goalId: 'goal-test-coverage-12345678',
+        patches: [
+          {
+            relativePath: 'tests/app.test.ts',
+            baseSha256: null,
+            patchedContent: 'export const covered = true;\n',
+          },
+        ],
+        approvedBy: 'vscode:test',
+        installedPackages: [metadata],
+        runner: repairProtocolRunner(
+          async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+          undefined,
+          undefined,
+          {
+            goalSourceTransition: 'legacy-goal-binding',
+            goalAttemptBudget: 'consumer-local',
+          }
+        ),
+      })
+    ).rejects.toThrow('Goal mutation requires closed integrity-bound source transitions');
+  });
+
+  it('refuses linked-project mutation when the installed CLI cannot prove the external boundary', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-workspace-'));
+    const projectPath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-linked-project-'));
+    const metadata = await installedPackage(workspacePath);
+
+    await expect(
+      executeCliOwnedPatchRepair({
+        workspacePath,
+        projectPath,
+        projectName: 'api',
+        cardId: 'doctor',
+        patches: [
+          {
+            relativePath: 'src/app.ts',
+            baseSha256: null,
+            patchedContent: 'export const ready = true;\n',
+          },
+        ],
+        approvedBy: 'vscode:test',
+        installedPackages: [metadata],
+        runner: repairProtocolRunner(
+          async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+          undefined,
+          undefined,
+          {
+            registeredLinkedProjectMutationBoundary: false,
+            sourceProposalIntegrity: 'legacy-workspace-relative',
+            completionAuthority: 'consumer-inferred',
+          }
+        ),
+      })
+    ).rejects.toThrow('this linked project requires the registered-project mutation boundary');
+  });
+
+  it('accepts linked-project proposals only after the runtime proves project-bound closure', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-workspace-'));
+    const projectPath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-linked-project-'));
+    const metadata = await installedPackage(workspacePath);
+    const actions: string[] = [];
+
+    const result = await executeCliOwnedPatchRepair({
+      workspacePath,
+      projectPath,
+      projectName: 'api',
+      cardId: 'doctor',
+      patches: [
+        {
+          relativePath: 'src/app.ts',
+          baseSha256: null,
+          patchedContent: 'export const ready = true;\n',
+        },
+      ],
+      approvedBy: 'vscode:test',
+      installedPackages: [metadata],
+      runner: repairProtocolRunner(async ({ args }) => {
+        const action = args[2];
+        actions.push(action);
+        if (action === 'propose') {
+          const proposalPath = path.join(workspacePath, args[args.indexOf('--proposal') + 1]);
+          const proposal = await fs.readJson(proposalPath);
+          const portableProjectPath = path.relative(workspacePath, projectPath).replace(/\\/g, '/');
+          expect(proposal).toMatchObject({
+            projectName: 'api',
+            projectPath: portableProjectPath,
+            changes: [
+              expect.objectContaining({
+                path: `${portableProjectPath}/src/app.ts`,
+                expectedBeforeHash: null,
+              }),
+            ],
+          });
+          return {
+            exitCode: 0,
+            stdout: operation(transaction('tx-linked', 'awaiting-approval')),
+            stderr: '',
+          };
+        }
+        if (action === 'approve') {
+          return {
+            exitCode: 0,
+            stdout: operation(transaction('tx-linked', 'approved')),
+            stderr: '',
+          };
+        }
+        const closed = transaction('tx-linked', 'closed');
+        closed.target.projectName = 'api';
+        closed.target.projectPath = path.relative(workspacePath, projectPath).replace(/\\/g, '/');
+        return { exitCode: 0, stdout: operation(closed), stderr: '' };
+      }),
+    });
+
+    expect(actions).toEqual(['propose', 'approve', 'execute']);
+    expect(result.transaction.state).toBe('closed');
+  });
+
+  it('canonicalizes project-relative and workspace-relative patch inputs to one project boundary', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-workspace-'));
+    const projectPath = path.join(workspacePath, 'api');
+    await fs.ensureDir(projectPath);
+    const metadata = await installedPackage(workspacePath);
+
+    await executeCliOwnedPatchRepair({
+      workspacePath,
+      projectPath,
+      projectName: 'api',
+      cardId: 'doctor',
+      patches: [
+        { relativePath: 'src/a.ts', baseSha256: null, patchedContent: 'export {};\n' },
+        { relativePath: 'api/src/b.ts', baseSha256: null, patchedContent: 'export {};\n' },
+      ],
+      approvedBy: 'vscode:test',
+      installedPackages: [metadata],
+      runner: repairProtocolRunner(async ({ args }) => {
+        const action = args[2];
+        if (action === 'propose') {
+          const proposalPath = path.join(workspacePath, args[args.indexOf('--proposal') + 1]);
+          const proposal = await fs.readJson(proposalPath);
+          expect(proposal.changes.map((change: { path: string }) => change.path)).toEqual([
+            'api/src/a.ts',
+            'api/src/b.ts',
+          ]);
+          return {
+            exitCode: 0,
+            stdout: operation(transaction('tx-project-paths', 'awaiting-approval')),
+            stderr: '',
+          };
+        }
+        if (action === 'approve') {
+          return {
+            exitCode: 0,
+            stdout: operation(transaction('tx-project-paths', 'approved')),
+            stderr: '',
+          };
+        }
+        return {
+          exitCode: 0,
+          stdout: operation(transaction('tx-project-paths', 'closed')),
+          stderr: '',
+        };
+      }),
+    });
+
+    await expect(
+      executeCliOwnedPatchRepair({
+        workspacePath,
+        projectPath,
+        projectName: 'api',
+        cardId: 'doctor',
+        patches: [
+          {
+            relativePath: '../sibling/unsafe.ts',
+            baseSha256: null,
+            patchedContent: 'unsafe\n',
+          },
+        ],
+        approvedBy: 'vscode:test',
+        installedPackages: [metadata],
+      })
+    ).rejects.toThrow('escapes the selected project source boundary');
   });
 
   it('returns decision-required without inventing approval or executing mutations', async () => {
@@ -630,6 +876,66 @@ describe('CLI-owned Workspace Repair client', () => {
       stale: true,
       failReason: 'The file changed again after this repair transaction.',
     });
+  });
+
+  it('opens a linked-project receipt through its portable project-relative display path', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-linked-'));
+    const workspacePath = path.join(root, 'workspace');
+    const projectPath = path.join(root, 'sources', 'grpc');
+    const transactionId = 'receipt-transaction-linked-0001';
+    const displayPath = 'cmake/cares.cmake';
+    const transactionPath = path
+      .relative(workspacePath, path.join(projectPath, displayPath))
+      .split(path.sep)
+      .join('/');
+    const before = 'set(CARES_PROVIDER package)\n';
+    const after = 'set(CARES_PROVIDER module)\n';
+    const backupRef = 'checkpoint/0000.bin';
+    const artifact = transaction(transactionId, 'closed');
+    artifact.target.projectName = 'grpc';
+    artifact.target.projectPath = path
+      .relative(workspacePath, projectPath)
+      .split(path.sep)
+      .join('/');
+    artifact.checkpoint = {
+      status: 'captured',
+      files: [
+        {
+          path: transactionPath,
+          existed: true,
+          beforeHash: crypto.createHash('sha256').update(before).digest('hex'),
+          afterHash: crypto.createHash('sha256').update(after).digest('hex'),
+          backupRef,
+        },
+      ],
+    };
+    await fs.outputFile(
+      path.join(workspacePath, '.workspai', 'repair', 'transactions', transactionId, backupRef),
+      before
+    );
+    await fs.outputFile(path.join(projectPath, displayPath), after);
+
+    await expect(
+      readCliOwnedRepairFileComparison({
+        workspacePath,
+        transaction: artifact,
+        relativePath: displayPath,
+      })
+    ).resolves.toMatchObject({
+      relativePath: displayPath,
+      stale: false,
+      originalContent: before,
+      patchedContent: after,
+    });
+
+    artifact.target.projectPath = projectPath;
+    await expect(
+      readCliOwnedRepairFileComparison({
+        workspacePath,
+        transaction: artifact,
+        relativePath: displayPath,
+      })
+    ).rejects.toThrow(/not a changed file|outside the authorized transaction boundary/);
   });
 
   it('rejects stale linked output when manifest and runtime versions differ', async () => {

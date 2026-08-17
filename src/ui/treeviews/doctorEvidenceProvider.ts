@@ -55,6 +55,7 @@ export interface ProjectEvidence {
   framework?: string;
   kit?: string;
   projectKind?: string;
+  projectArchetype?: string;
   depsInstalled?: boolean;
   modulesHealthy?: boolean;
   hasTests?: boolean;
@@ -72,6 +73,17 @@ interface HealthScore {
   passed: number;
   warnings: number;
   errors: number;
+  verdict?: DoctorVerdict;
+  presentation?: {
+    policy?: string;
+    diagnosticPassRatePercent?: number | null;
+    blockingFindings?: number;
+    advisoryFindings?: number;
+    unknownFindings?: number;
+    contradictionFindings?: number;
+    notApplicableChecks?: number;
+    label?: string;
+  };
 }
 
 export interface DoctorEvidence {
@@ -215,6 +227,8 @@ export function normalizeProjectEvidence(raw: unknown): ProjectEvidence | null {
     framework: typeof record.framework === 'string' ? record.framework : undefined,
     kit: typeof record.kit === 'string' ? record.kit : undefined,
     projectKind: typeof record.projectKind === 'string' ? record.projectKind : undefined,
+    projectArchetype:
+      typeof record.projectArchetype === 'string' ? record.projectArchetype : undefined,
     depsInstalled: typeof record.depsInstalled === 'boolean' ? record.depsInstalled : undefined,
     modulesHealthy: typeof record.modulesHealthy === 'boolean' ? record.modulesHealthy : undefined,
     hasTests: typeof record.hasTests === 'boolean' ? record.hasTests : undefined,
@@ -666,30 +680,43 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
       const ev = this.evidence;
       const displayScore = ev.focusHealthScore ?? ev.healthScore;
       const pct =
-        displayScore.total > 0 ? Math.round((displayScore.passed / displayScore.total) * 100) : 0;
+        typeof displayScore.presentation?.diagnosticPassRatePercent === 'number'
+          ? displayScore.presentation.diagnosticPassRatePercent
+          : displayScore.total > 0
+            ? Math.round((displayScore.passed / displayScore.total) * 100)
+            : 0;
       const focusedProject = ev.focusProjectPath
         ? ev.projects.find(
             (project) => path.resolve(project.path) === path.resolve(ev.focusProjectPath!)
           )
         : undefined;
 
+      const verdict =
+        focusedProject?.verdict ??
+        displayScore.verdict ??
+        (displayScore.errors > 0 ? 'blocked' : displayScore.warnings > 0 ? 'attention' : 'passed');
+      const multiAxis = displayScore.presentation?.policy === 'doctor-multi-axis-v1';
       const summaryItem = new DoctorEvidenceItem(
-        `${pct}%  ${this.scoreBar(pct)}`,
+        multiAxis ? verdict.toUpperCase() : `${pct}% diagnostic pass rate  ${this.scoreBar(pct)}`,
         'summary',
         vscode.TreeItemCollapsibleState.None,
         ev
       );
-      summaryItem.description = focusedProject
-        ? `${focusedProject.name} · ✅ ${displayScore.passed}  ⚠️ ${displayScore.warnings}  ❌ ${displayScore.errors}`
+      const accounting = multiAxis
+        ? `❌ ${displayScore.presentation?.blockingFindings ?? displayScore.errors}  ⚠️ ${displayScore.presentation?.advisoryFindings ?? displayScore.warnings}  ? ${displayScore.presentation?.unknownFindings ?? 0}`
         : `✅ ${displayScore.passed}  ⚠️ ${displayScore.warnings}  ❌ ${displayScore.errors}`;
+      summaryItem.description = focusedProject
+        ? `${focusedProject.name} · ${accounting}`
+        : accounting;
       summaryItem.iconPath = new vscode.ThemeIcon('pulse');
       summaryItem.contextValue = 'doctorSummary';
       summaryItem.tooltip = new vscode.MarkdownString(
         (focusedProject
           ? `**Project focus:** ${focusedProject.name}\n\n`
           : `**Workspace:** ${ev.workspaceName}\n\n`) +
-          `Score: **${pct}%** (${displayScore.passed} passed, ` +
-          `${displayScore.warnings} warnings, ${displayScore.errors} errors)\n\n` +
+          (multiAxis
+            ? `Verdict: **${verdict}** · ${displayScore.presentation?.blockingFindings ?? displayScore.errors} blocking · ${displayScore.presentation?.advisoryFindings ?? displayScore.warnings} advisory · ${displayScore.presentation?.unknownFindings ?? 0} unknown · ${displayScore.presentation?.notApplicableChecks ?? 0} not applicable\n\nDiagnostic pass rate: ${pct}% (accounting only)\n\n`
+            : `Diagnostic pass rate: **${pct}%** (${displayScore.passed} passed, ${displayScore.warnings} warnings, ${displayScore.errors} errors)\n\n`) +
           (ev.projectScanCached
             ? '_Using cached project scan_'
             : focusedProject

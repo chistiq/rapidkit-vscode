@@ -49,7 +49,7 @@ describe('Workspai chat session contract', () => {
     expect(sessionHook).toContain('lastSeenAt: now');
     expect(secondary).toContain('const sessionScopeSnapshot = useMemo');
     expect(secondary).toContain(
-      'scope: activeImpactSession?.editorIssue ? null : sessionScopeSnapshot'
+      'scope: activeAskSession?.editorIssue ? null : sessionScopeSnapshot'
     );
     expect(secondary).toContain(
       'scope: activeStudioSession?.editorIssue ? null : sessionScopeSnapshot'

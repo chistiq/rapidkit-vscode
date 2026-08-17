@@ -1,4 +1,7 @@
-import type { WorkspaiAssistantMode } from './assistantModeContract.js';
+import {
+  isAutonomousWorkspaiAssistantMode,
+  type WorkspaiAssistantMode,
+} from './assistantModeContract.js';
 import type { EvidenceAgentContextBundle } from './evidenceAgentContextBundle.js';
 import type { EvidenceFreshnessAssessment } from './workspaceEvidenceFreshness.js';
 
@@ -27,10 +30,10 @@ export function buildAssistantEvidenceObjective(input: {
     input.evidence.missingRequired.length > 0
       ? `Missing required evidence: ${JSON.stringify(input.evidence.missingRequired)}`
       : 'Required agent context is present.',
-    input.assistantMode === 'agent' && input.freshness.verdict !== 'fresh'
+    isAutonomousWorkspaiAssistantMode(input.assistantMode) && input.freshness.verdict !== 'fresh'
       ? 'Refresh the governed producer before relying on stale or missing evidence.'
       : 'Use inspect-evidence for the smallest relevant artifact set; do not infer artifact contents from filenames.',
-    input.assistantMode !== 'agent' && input.freshness.verdict !== 'fresh'
+    !isAutonomousWorkspaiAssistantMode(input.assistantMode) && input.freshness.verdict !== 'fresh'
       ? 'Ask and Plan are read-only: report the freshness limitation instead of presenting stale evidence as current truth.'
       : undefined,
   ]

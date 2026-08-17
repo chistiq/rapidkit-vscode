@@ -1,8 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import * as vscode from 'vscode';
 
-import type { AIMessage } from './aiService';
-import { askAI, requestAIModelToolAction, streamAIResponse } from './aiService';
+import type { AIMessage, AIMessagePathIdentity } from './aiService';
+import {
+  askAI,
+  redactAIMessageRuntimePaths,
+  requestAIModelToolAction,
+  streamAIResponse,
+} from './aiService';
 import {
   getAIProviderDefinition,
   type AIProviderKind,
@@ -610,16 +615,18 @@ export async function askConfiguredAIProviderForToolAction(
   messages: AIMessage[],
   tools: ConfiguredAIProviderTool[],
   token?: vscode.CancellationToken,
-  preferredModelId?: string
+  preferredModelId?: string,
+  pathIdentities: ReadonlyArray<AIMessagePathIdentity> = []
 ): Promise<ConfiguredAIProviderAction> {
+  const safeMessages = redactAIMessageRuntimePaths(messages, pathIdentities);
   const provider = getAIProviderDefinition(readWorkspaiSettings().aiProvider);
   if (provider.protocol === 'openai-compatible') {
-    return askOpenAICompatibleToolAction(context, messages, tools, token);
+    return askOpenAICompatibleToolAction(context, safeMessages, tools, token);
   }
   if (provider.protocol === 'anthropic-messages') {
-    return askAnthropicToolAction(context, messages, tools, token);
+    return askAnthropicToolAction(context, safeMessages, tools, token);
   }
-  const response = await requestAIModelToolAction(messages, tools, token, preferredModelId);
+  const response = await requestAIModelToolAction(safeMessages, tools, token, preferredModelId);
   return response.type === 'tool'
     ? {
         type: 'tool',

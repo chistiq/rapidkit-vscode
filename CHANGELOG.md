@@ -7,7 +7,134 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-No unreleased changes yet.
+## [0.40.0] - 2026-08-17
+
+### Added
+
+- Native governed Goal planning from Dashboard Intelligence, Command Palette,
+  workspace context menus, and `@workspai /goal` in VS Code Chat.
+- CLI-owned Goal lifecycle review for activation, preparation, verification,
+  cancellation, canonical Goal Pack inspection, and bounded agent handoff.
+- Active Goal grounding in Ask, Plan, Agent, and Incident Studio prompts using
+  the validated CLI-authored handoff rather than directory scans or timestamps.
+- Active Goal context in the primary workspace sidebar with selected-workspace
+  file watching for immediate lifecycle refresh.
+- A dedicated **Goal** composer mode alongside Agent, Ask, and Plan. It binds
+  arbitrary bounded engineering outcomes to the CLI Goal Pack lifecycle before
+  exposing mutation tools and links every repair transaction to the active
+  Goal. Deterministic categories close only through exact Goal verification;
+  other categories require an evidence-backed outcome review plus canonical
+  workspace verification and are never mislabeled as machine-verified.
+- Evidence-first graph query, bounded source-range reads, and exact-context
+  edit tools shared by Sidebar and native Chat repair sessions.
+- Canonical-first project bootstrap for Chat, Studio, Agent, and Goal sessions.
+  Adopted projects now resolve and validate the CLI-authored portable entry
+  receipt before broad source discovery, while raw projects remain available.
+
+### Changed
+
+- Enforced ASCII English across authored extension source, webview code, tests,
+  fixtures, documentation, release material, and filenames through pre-commit,
+  lint, CI packaging, and prepublication guards.
+- Promoted the CLI 0.59 Goal Pack, Goal Index, agent handoff, plan result, and
+  lifecycle result contracts from mirrored placeholders to guarded runtime and
+  evidence consumers.
+- Promoted the CLI 0.59 project-entry and agent-bootstrap receipt schemas to
+  runtime consumers and added the same preflight to the local polyglot E2E
+  qualification plan.
+- Added Goal creation and status commands to the Dashboard CLI reference while
+  preserving the CLI as the sole lifecycle, verification, and rollback owner.
+- Routed workspace-scoped blocker cards to their single affected canonical
+  project, including linked projects, while keeping evidence refresh and source
+  mutation ownership separate.
+- Unified Sidebar and native Chat repair continuation around one project-bound
+  durable controller, typed CLI transaction disposition, and card-specific
+  repair policy.
+- Made producer-owned cards refresh their exact producer deterministically
+  without spending a model call or exposing source-mutation tools.
+- Required Agent completion to include a post-transaction changed-file review
+  and final CLI verification, while Ask and Plan remain evidence-backed,
+  bounded, read-only modes.
+- Enforced immutable Goal attempt budgets in both the extension controller and
+  CLI lifecycle, including deterministic closure when the baseline already
+  satisfies the requested target.
+- Restored Goal execution progress from both durable verification attempts and
+  CLI-linked repair history, and accepted post-repair source state only through
+  a current, integrity-bound closed Goal transaction.
+- Replaced exact runtime workspace and project roots with portable `$WORKSPACE`
+  and `$PROJECT` identities across model prompts, conversation history, tool
+  calls, and tool results while preserving useful project-relative evidence.
+- Split compatibility ownership so the CLI remains authoritative for published
+  schemas while each extension release owns its minimum and verified CLI
+  versions. New extension requirements no longer force a redundant CLI release.
+
+### Fixed
+
+- Fixed cancelled and rolled-back CLI repairs being presented as pending user
+  decisions, and deduplicated repeated protected-evidence explanations.
+- Fixed linked-project repair receipts and native diffs so changed files are
+  presented project-relative while the extension host retains the exact
+  transaction boundary.
+- Returned a failed, rolled-back exact-target verification to another bounded
+  source attempt instead of misclassifying it as success, cancellation, or a
+  decision that the CLI did not publish.
+- Prevented durable sessions from restoring or receiving steering in another
+  linked project that happens to share the same workspace and card id.
+- Canonicalized project-relative and workspace-relative source proposals to one
+  selected-project boundary and rejected sibling traversal before CLI handoff.
+- Rejected supposedly diagnostic workspace commands when their before/after Git
+  fingerprints prove a tracked or untracked source mutation.
+- Prevented Goal metric gaming by rejecting deletion in deterministic verified
+  Goals and limiting test-coverage mutations to test-owned source, fixtures,
+  and snapshots. General Goal Packs retain inspected, rollback-protected file
+  deletion when the objective genuinely requires it.
+- Required explicit runtime capabilities for integrity-bound Goal source
+  transitions and durable serialized attempt budgets before Studio may publish
+  a Goal mutation proposal.
+
+### Security
+
+- Pinned PostCSS's transitive Nano ID runtime to 3.3.18, closing the
+  zero-size custom-generator denial-of-service advisory in the development
+  dependency graph.
+- Goal artifacts are accepted only through canonical workspace-relative paths;
+  absolute paths, traversal, incompatible schemas, mismatched fingerprints,
+  and unsafe handoff identities fail closed before reaching UI or model context.
+- Prevented inspected canonical `.workspai` state from becoming model-owned
+  source authority, and removed raw CLI transaction/checkpoint filesystem
+  identity from Webview messages.
+- Replaced absolute workspace/project paths in Studio, evidence-card, and
+  structured incident prompts with `$WORKSPACE`, `$PROJECT`, and portable
+  artifact references before context can reach a model provider.
+- Required linked-project model proposals to prove the CLI's registered-root,
+  hash-pinned proposal, and verification-receipt capabilities before any
+  external source mutation can begin.
+- Fail-closed adopted-project mutation when its portable entry contract is
+  missing, degraded, blocked, schema-incompatible, or contains an absolute
+  machine-local path.
+- Centralized source-candidate filtering across Sidebar, native Chat, and
+  durable replay so `.workspai`, `.rapidkit`, and lockfiles are excluded with
+  both POSIX and Windows path separators.
+
+### Compatibility
+
+- Extension baseline: Workspai CLI 0.59.0+ with the advertised top-level `goal`
+  capability. Older CLIs receive an actionable version/capability gate instead
+  of a parsed terminal fallback.
+
+### Verification
+
+- Canonical contract generation and CLI/extension mirror parity passed against
+  Workspai CLI 0.59.1. The extension remains backward-compatible with the
+  capability-complete 0.59.0 baseline.
+- Host/Webview type checking passed; 389 test files and 2,849 tests passed, with
+  one file and five tests explicitly skipped.
+- All 22 enterprise scenarios passed; production build and VSIX inspection
+  passed for a 173-file, 6.05 MB `rapidkit-vscode-0.40.0.vsix` package.
+- The high-severity dependency audit gate passed with zero high or critical
+  findings.
+
+See [`releases/RELEASE_NOTES_v0.40.0.md`](releases/RELEASE_NOTES_v0.40.0.md).
 
 ## [0.39.0] - 2026-08-11
 

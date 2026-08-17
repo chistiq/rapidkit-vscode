@@ -449,7 +449,7 @@ const FRAMEWORK_META: Partial<Record<ScaffoldFramework, { icon: string; iconUri?
     'vite-svelte': { icon: '🔥', label: 'Vite + Svelte' },
     'vite-solid': { icon: '◼', label: 'Vite + Solid' },
     'vite-vanilla': { icon: 'TS', label: 'Vite Vanilla' },
-    nuxt: { icon: 'ν', label: 'Nuxt' },
+    nuxt: { icon: 'Nu', label: 'Nuxt' },
     angular: { icon: 'A', label: 'Angular' },
     astro: { icon: '✦', label: 'Astro' },
     sveltekit: { icon: 'S', label: 'SvelteKit' },

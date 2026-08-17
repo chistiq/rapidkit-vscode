@@ -32,6 +32,17 @@ export const COMMAND_CHEATSHEET_GROUPS: CommandCheatsheetGroup[] = [
       },
       { label: 'Doctor', command: 'workspai doctor workspace', scope: 'workspace' },
       {
+        label: 'Create governed Goal',
+        command: 'workspai goal "<engineering outcome>" --for-agent generic --json',
+        scope: 'workspace',
+        note: 'Plans and binds evidence; does not edit source or claim success',
+      },
+      {
+        label: 'Review active Goal',
+        command: 'workspai goal --status --json',
+        scope: 'workspace',
+      },
+      {
         label: 'Analyze',
         command: 'workspai analyze --json',
         scope: 'workspace',

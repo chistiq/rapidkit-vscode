@@ -56,6 +56,11 @@ import { buildAIModalUserMessage as buildAIModalUserMessageInternal } from './ai
 import { buildWorkspaiSystemPrompt as buildWorkspaiSystemPromptInternal } from './aiSystemPromptBuilder';
 import { buildModuleListForPrompt, type LiveModuleEntry } from './aiLiveModuleCatalog';
 import { resolveWorkspacePathForGrounding } from './aiArchitectureGrounding';
+import { redactKnownRuntimePathsForConsumer } from './consumerPathRedaction.js';
+import {
+  bootstrapProjectAgent,
+  type ProjectAgentBootstrapResult,
+} from './projectAgentBootstrap.js';
 import {
   buildContextContractFromEvidence,
   validateContextContract,
@@ -87,6 +92,70 @@ export type AIMessage =
       };
     };
 
+export type AIMessagePathIdentity = {
+  path?: string;
+  token: '$WORKSPACE' | '$PROJECT' | '$LOCAL_PATH';
+};
+
+function redactUnknownMessageValue(
+  value: unknown,
+  identities: ReadonlyArray<AIMessagePathIdentity>
+): unknown {
+  if (typeof value === 'string') {
+    return redactKnownRuntimePathsForConsumer(value, identities);
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => redactUnknownMessageValue(entry, identities));
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        redactUnknownMessageValue(entry, identities),
+      ])
+    );
+  }
+  return value;
+}
+
+/**
+ * Remove known host filesystem identities from every model-message shape,
+ * including nested tool inputs and tool results. This is intentionally pure so
+ * persisted Studio events retain their exact extension-host execution data.
+ */
+export function redactAIMessageRuntimePaths(
+  messages: ReadonlyArray<AIMessage>,
+  identities: ReadonlyArray<AIMessagePathIdentity>
+): AIMessage[] {
+  return messages.map((message) => {
+    if ('content' in message) {
+      return {
+        ...message,
+        content: redactKnownRuntimePathsForConsumer(message.content, identities),
+      };
+    }
+    if ('toolResult' in message) {
+      return {
+        ...message,
+        toolResult: {
+          ...message.toolResult,
+          content: redactKnownRuntimePathsForConsumer(message.toolResult.content, identities),
+        },
+      };
+    }
+    return {
+      ...message,
+      toolCall: {
+        ...message.toolCall,
+        input: redactUnknownMessageValue(message.toolCall.input, identities) as Record<
+          string,
+          unknown
+        >,
+      },
+    };
+  });
+}
+
 export interface AIStreamChunk {
   text: string;
   done: boolean;
@@ -101,6 +170,7 @@ export interface AIConversationHistoryEntry {
 
 export interface PreparedAIConversation {
   scanned?: ScannedProjectContext;
+  projectBootstrap: ProjectAgentBootstrapResult;
   contract: AIContextContractV1;
   validation: ContextContractValidationResult;
   messages: AIMessage[];
@@ -158,7 +228,8 @@ export async function requestAIModelToolAction(
   messages: AIMessage[],
   tools: AIModelToolDefinition[],
   token?: vscode.CancellationToken,
-  preferredModelId?: string
+  preferredModelId?: string,
+  pathIdentities: ReadonlyArray<AIMessagePathIdentity> = []
 ): Promise<AIModelToolActionResponse> {
   const all = (await vscode.lm.selectChatModels()).filter(languageModelSupportsExtensionRequests);
   const preferred = preferredModelId?.trim();
@@ -174,7 +245,8 @@ export async function requestAIModelToolAction(
     model = (await selectModelAuto()).model;
   }
 
-  const lmMessages = messages.map((message) => {
+  const safeMessages = redactAIMessageRuntimePaths(messages, pathIdentities);
+  const lmMessages = safeMessages.map((message) => {
     if ('toolCall' in message) {
       return vscode.LanguageModelChatMessage.Assistant([
         new vscode.LanguageModelToolCallPart(
@@ -1309,8 +1381,15 @@ export async function prepareAIConversation(
   history: AIConversationHistoryEntry[] = [],
   doctorSnapshot?: DoctorEvidenceSnapshot
 ): Promise<PreparedAIConversation> {
+  const projectBootstrap = await bootstrapProjectAgent({
+    projectPath: ctx.projectRootPath ?? (ctx.type === 'project' ? ctx.path : undefined),
+    workspacePath: ctx.workspaceRootPath,
+    consumer: 'generic',
+  });
   let scanned: ScannedProjectContext | undefined;
-  if (ctx.path) {
+  const broadSourceScanAllowed =
+    projectBootstrap.status === 'not-applicable' || projectBootstrap.status === 'ready';
+  if (ctx.path && broadSourceScanAllowed) {
     try {
       scanned = await scanProjectContext(ctx.path, ctx.framework);
     } catch (err) {
@@ -1345,24 +1424,47 @@ export async function prepareAIConversation(
     ctx.workspaceRootPath ??
     (ctx.type === 'workspace' ? ctx.path : undefined);
   const liveModules = await getWorkspaceAwareLiveModules(workspacePath);
+  const pathIdentities: AIMessagePathIdentity[] = [
+    { path: ctx.projectRootPath, token: '$PROJECT' },
+    {
+      path: ctx.type === 'project' ? ctx.path : undefined,
+      token: '$PROJECT',
+    },
+    { path: scanned?.projectRoot, token: '$PROJECT' },
+    { path: ctx.workspaceRootPath, token: '$WORKSPACE' },
+    {
+      path: ctx.type === 'workspace' ? ctx.path : undefined,
+      token: '$WORKSPACE',
+    },
+  ];
+  const redactPrompt = (value: string): string =>
+    redactKnownRuntimePathsForConsumer(value, pathIdentities);
+  const systemPrompt = redactPrompt(
+    await buildWorkspaiSystemPromptInternal(ctx, scanned, contract, liveModules)
+  );
+  const userPrompt = redactPrompt(
+    await buildAIModalUserMessageInternal(mode, sanitizedQuestion, ctx, scanned)
+  );
+  const safeHistoryMessages = redactAIMessageRuntimePaths(historyMessages, pathIdentities);
 
   return {
     scanned,
+    projectBootstrap,
     contract,
     validation,
     messages: [
       {
         role: 'user',
-        content: await buildWorkspaiSystemPromptInternal(ctx, scanned, contract, liveModules),
+        content: systemPrompt,
       },
       {
         role: 'assistant',
         content: 'Understood. I will follow Workspai standards and real project context.',
       },
-      ...historyMessages,
+      ...safeHistoryMessages,
       {
         role: 'user',
-        content: await buildAIModalUserMessageInternal(mode, sanitizedQuestion, ctx, scanned),
+        content: userPrompt,
       },
     ],
   };

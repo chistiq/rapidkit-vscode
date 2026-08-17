@@ -2,9 +2,10 @@
  * Workspai CLI version compatibility policy.
  *
  * Workspai bundles versioned contracts (`contracts/*.json`) and consumes the
- * CLI's machine-readable capability and log-event surfaces. The minimum CLI
- * version floor is published in `extension-cli-compatibility.v1.json` (synced
- * from the Workspai CLI package) so the gate stays aligned with bundled contracts.
+ * CLI's machine-readable capability and log-event surfaces. Published schema
+ * identities are synced from the CLI, while the minimum CLI version floor is
+ * owned by `extension-cli-release-policy.v1.json`. This keeps schema parity
+ * strict without coupling the CLI and extension release cycles.
  *
  * This module is the pure foundation (constant + side-effect-free comparison).
  * The runtime banner/gate that surfaces a mismatch to the user lives in the

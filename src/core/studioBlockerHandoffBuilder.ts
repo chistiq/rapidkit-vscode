@@ -17,6 +17,10 @@ import { resolveStudioFixActionForHandoff } from './studioBlockerFixRouting.js';
 import { resolveDashboardCommandExecutionPlan } from './dashboardCommandExecutionPlan.js';
 import { resolveDashboardCommandForEvidenceCard } from './dashboardReportRegistry.js';
 import { buildStudioSourceCommandForCard, CARD_SOURCE_SHELL } from './studioCardSourceShell.js';
+import {
+  readWorkspaceModelReport,
+  resolveWorkspaceModelProjectAbsolutePath,
+} from './workspaceModelReader.js';
 
 export { CARD_SOURCE_SHELL, buildStudioSourceCommandForCard };
 
@@ -57,6 +61,11 @@ export async function buildStudioBlockerHandoff(
     : undefined;
   const sourceCommand = buildStudioSourceCommandForCard(input.card.id);
   const repairCapability = requireStudioCardRepairCapability(input.card.id);
+  if (repairCapability.scope !== input.card.scope) {
+    throw new Error(
+      `Studio card scope drift for ${input.card.id}: evidence is ${input.card.scope}, repair contract is ${repairCapability.scope}.`
+    );
+  }
   const verifyCommand = repairCapability.verifyCommand;
   const verifyArtifact = repairCapability.verifyArtifact;
 
@@ -125,6 +134,17 @@ export async function buildStudioBlockerHandoff(
         })
       : 0;
 
+  const model =
+    affectedProjectNames.length === 1 ? await readWorkspaceModelReport(input.workspacePath) : null;
+  const affectedModelProject = model?.projects?.find(
+    (project) => project.name.trim() === affectedProjectNames[0]
+  );
+  const repairProjectPath = affectedModelProject
+    ? resolveWorkspaceModelProjectAbsolutePath(input.workspacePath, affectedModelProject)
+    : input.card.scope === 'project'
+      ? input.projectPath
+      : undefined;
+
   const handoff: StudioBlockerHandoff = {
     schemaVersion: STUDIO_BLOCKER_HANDOFF_SCHEMA_VERSION,
     cardId: input.card.id,
@@ -169,9 +189,7 @@ export async function buildStudioBlockerHandoff(
     verifyArtifact,
     handoffSource: input.handoffSource ?? 'dashboard',
     workspacePath: input.workspacePath,
-    ...(input.card.scope === 'project' && input.projectPath
-      ? { projectPath: input.projectPath }
-      : {}),
+    ...(repairProjectPath ? { projectPath: repairProjectPath } : {}),
   };
 
   handoff.studioMode = resolveBlockerResolutionClass({

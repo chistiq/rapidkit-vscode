@@ -1,7 +1,7 @@
 import * as path from 'path';
 import type * as vscode from 'vscode';
 
-import type { AIModalContext } from './aiService.js';
+import type { AIConversationHistoryEntry, AIModalContext } from './aiService.js';
 import {
   buildDashboardEvidenceBundle,
   type DashboardEvidenceCard,
@@ -10,12 +10,21 @@ import { buildStudioBlockerHandoff } from './studioBlockerHandoffBuilder.js';
 import {
   decideCliOwnedRepair,
   executeCliOwnedCanonicalRepair,
+  projectWorkspaceRepairTransactionForConsumer,
   type WorkspaceRepairCliExecutionResult,
   type WorkspaceRepairDecision,
 } from './workspaceRepairCliClient.js';
-import { resolveStudioCliRepairDisposition } from './studioRepairReceipt.js';
+import { deduplicateStudioMessage } from './studioRepairPresentation.js';
+import {
+  resolveStudioCliRepairDisposition,
+  selectStudioSourceRepairCandidates,
+} from './studioRepairReceipt.js';
 import { runNativeChatStudioAgent } from './nativeChatStudioAgent.js';
 import { renderNativeRepairDecisionButtons } from './nativeChatRepairDecisionActions.js';
+import {
+  bootstrapProjectAgent,
+  requireReadyProjectAgentBootstrap,
+} from './projectAgentBootstrap.js';
 
 const REPAIR_DECISIONS = new Set<WorkspaceRepairDecision>([
   'approve-guarded',
@@ -133,7 +142,7 @@ function renderRepairResult(
     );
   } else if (transaction.state === 'decision-required' && transaction.decision) {
     stream.markdown(
-      `### Decision required\n\n${transaction.decision.reason}\n\n` +
+      `### Decision required\n\n${deduplicateStudioMessage(transaction.decision.reason) ?? transaction.decision.reason}\n\n` +
         'Choose an option below. The choice is submitted to this exact immutable CLI transaction.'
     );
     renderNativeRepairDecisionButtons(
@@ -163,6 +172,7 @@ export async function runNativeChatRepair(input: {
   token: vscode.CancellationToken;
   extensionContext?: vscode.ExtensionContext;
   requestedModelId?: string;
+  history?: AIConversationHistoryEntry[];
 }): Promise<NativeChatRepairResult> {
   const workspacePath = input.context.workspaceRootPath ?? input.context.path;
   if (!workspacePath) {
@@ -171,6 +181,13 @@ export async function runNativeChatRepair(input: {
     );
     return {};
   }
+
+  const projectBootstrap = await bootstrapProjectAgent({
+    projectPath: input.context.projectRootPath,
+    workspacePath,
+    consumer: 'generic',
+  });
+  requireReadyProjectAgentBootstrap(projectBootstrap);
 
   const requestedDecision = parseRepairDecision(input.prompt);
   if (requestedDecision) {
@@ -228,9 +245,11 @@ export async function runNativeChatRepair(input: {
     approvedBy: 'vscode:native-chat-repair',
     reportProgress: (progress) => input.stream.progress(progress.message),
   });
-  const sourceCandidates = (result.transaction.checkpoint?.files ?? [])
-    .filter((file) => file.existed)
-    .map((file) => file.path);
+  const sourceCandidates = selectStudioSourceRepairCandidates(
+    (result.transaction.checkpoint?.files ?? [])
+      .filter((file) => file.existed)
+      .map((file) => file.path)
+  );
   const disposition = resolveStudioCliRepairDisposition({
     transaction: result.transaction,
     sourceCandidates,
@@ -248,6 +267,13 @@ export async function runNativeChatRepair(input: {
       stream: input.stream,
       token: input.token,
       requestedModelId: input.requestedModelId,
+      initialConversation: input.history,
+      initialSourceRepairDirective: {
+        nextAction: 'general-source-repair',
+        recoveryPath: 'general-source-repair',
+        sourceCandidates,
+        transaction: projectWorkspaceRepairTransactionForConsumer(result.transaction),
+      },
     });
     return {
       cardId: card.id,

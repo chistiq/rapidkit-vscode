@@ -1,6 +1,7 @@
 import type * as vscode from 'vscode';
 
 import type { StudioAgentEvent } from './studioAgentEvents.js';
+import { deduplicateStudioMessage } from './studioRepairPresentation.js';
 
 type NativeAgentStream = Pick<vscode.ChatResponseStream, 'markdown' | 'progress'>;
 
@@ -34,7 +35,7 @@ export function renderNativeStudioAgentEvent(
       (typeof data.message === 'string' && data.message) ||
       (typeof repair.message === 'string' && repair.message);
     if (message) {
-      stream.progress(message);
+      stream.progress(deduplicateStudioMessage(message) ?? message);
     }
     return;
   }

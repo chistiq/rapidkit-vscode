@@ -2,11 +2,25 @@ import fs from 'fs';
 import path from 'path';
 
 const SRC_CONTRACT_MIRROR_FILES = [
+  'cli-operation-result.v1.json',
+  'command-capabilities.v1.json',
+  'version.v1.json',
+  'published-contract-catalog.v1.json',
   'agent-customization-pack.v1.json',
   'create-planner-capabilities.v1.json',
   'release-readiness.v1.json',
   'workspace-registry.v1.json',
+  'workspace-archive-capabilities.v1.json',
+  'workspace-archive-manifest.v1.json',
+  'workspace-archive-operation-result.v1.json',
+  'ingestion-plan.v1.json',
+  'ingestion-result.v1.json',
+  'studio-card-repair-capabilities.v1.json',
   'workspace-repair-capabilities.v1.json',
+  'workspace-intelligence/workspace-repair-proposal.v1.json',
+  'workspace-intelligence/workspace-repair-transaction.v1.json',
+  'workspace-intelligence/project-agent-entry.v1.json',
+  'workspace-intelligence/agent-bootstrap-receipt.v1.json',
 ];
 
 const args = new Set(process.argv.slice(2));
@@ -43,6 +57,10 @@ function writeTarget(targetPath, content) {
   fs.writeFileSync(targetPath, content, 'utf-8');
 }
 
+function normalizeNewlines(value) {
+  return value.replace(/\r\n/g, '\n');
+}
+
 function verifyTarget(targetPath, content) {
   if (!fs.existsSync(targetPath)) {
     console.error(`Extension contract copy is missing: ${targetPath}`);
@@ -50,7 +68,7 @@ function verifyTarget(targetPath, content) {
   }
 
   const targetContent = fs.readFileSync(targetPath, 'utf-8');
-  if (targetContent !== content) {
+  if (normalizeNewlines(targetContent) !== normalizeNewlines(content)) {
     console.error(`Extension contract copy is out of sync: ${targetPath}`);
     console.error('From rapidkit-vscode run: npm run sync:shared-contracts');
     process.exit(1);

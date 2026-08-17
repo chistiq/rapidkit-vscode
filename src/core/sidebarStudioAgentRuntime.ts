@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { studioSourcePathDenialReason } from './studioWorkspacePathPolicy.js';
+
 export const STUDIO_EVIDENCE_REFRESH_COMMAND_IDS = [
   'checkWorkspaceHealth',
   'workspaceSync',
@@ -145,10 +147,9 @@ export type StudioAgentFileObservation = {
   sha256: string | null;
   content: string;
   truncated: boolean;
+  lineStart?: number;
+  lineEnd?: number;
 };
-
-const DENIED_PATH =
-  /(?:^|\/)(?:\.git|node_modules|dist|build|coverage|\.env(?:\.|$)|\.npmrc$|\.pypirc$|[^/]*(?:secret|credential)[^/]*)(?:\/|$)/i;
 
 function exactJsonPayload(text: string): string | null {
   const trimmed = text.trim();
@@ -243,11 +244,18 @@ function isInside(parent: string, candidate: string): boolean {
 
 export async function inspectStudioAgentFiles(input: {
   workspacePath: string;
+  projectPath?: string;
   paths: string[];
   kind: 'source' | 'evidence';
   authorizedEvidencePaths?: readonly string[];
+  lineStart?: number;
+  lineEnd?: number;
 }): Promise<StudioAgentFileObservation[]> {
-  const workspaceReal = await fs.realpath(input.workspacePath);
+  const sourceRoot =
+    input.kind === 'source' && input.projectPath?.trim()
+      ? path.resolve(input.projectPath)
+      : path.resolve(input.workspacePath);
+  const workspaceReal = await fs.realpath(sourceRoot);
   const authorized = new Set(
     (input.authorizedEvidencePaths ?? []).map((entry) => entry.replace(/\\/g, '/'))
   );
@@ -255,16 +263,14 @@ export async function inspectStudioAgentFiles(input: {
   for (const relativePath of input.paths.slice(0, STUDIO_AGENT_MAX_FILES)) {
     const normalized = relativePath.replace(/\\/g, '/');
     if (
-      DENIED_PATH.test(normalized) ||
-      (input.kind === 'source' &&
-        /^\.workspai\/(?:reports|cache|snapshots)(?:\/|$)/.test(normalized)) ||
+      (input.kind === 'source' && Boolean(studioSourcePathDenialReason(normalized))) ||
       (input.kind === 'evidence' && !authorized.has(normalized))
     ) {
       throw new Error(`Studio agent path is not authorized: ${normalized}`);
     }
-    const lexicalPath = path.resolve(input.workspacePath, normalized);
-    if (!isInside(input.workspacePath, lexicalPath)) {
-      throw new Error(`Studio agent path escapes the workspace: ${normalized}`);
+    const lexicalPath = path.resolve(sourceRoot, normalized);
+    if (!isInside(sourceRoot, lexicalPath)) {
+      throw new Error(`Studio agent path escapes the authorized source root: ${normalized}`);
     }
     let realPath: string;
     try {
@@ -300,14 +306,31 @@ export async function inspectStudioAgentFiles(input: {
     if (full.subarray(0, STUDIO_AGENT_MAX_FILE_BYTES).includes(0)) {
       throw new Error(`Studio agent target is not UTF-8 text: ${normalized}`);
     }
-    const bounded = full.subarray(0, STUDIO_AGENT_MAX_FILE_BYTES);
+    const fullText = full.toString('utf8');
+    const selectedText =
+      input.lineStart !== undefined
+        ? fullText
+            .split(/\r?\n/)
+            .slice(input.lineStart - 1, input.lineEnd ?? input.lineStart + 399)
+            .join('\n')
+        : fullText;
+    const bounded = Buffer.from(selectedText, 'utf8').subarray(0, STUDIO_AGENT_MAX_FILE_BYTES);
     observations.push({
       path: normalized,
       kind: input.kind,
       exists: true,
       sha256: crypto.createHash('sha256').update(full).digest('hex'),
       content: bounded.toString('utf8'),
-      truncated: full.length > bounded.length,
+      truncated: Buffer.byteLength(selectedText, 'utf8') > bounded.length,
+      ...(input.lineStart !== undefined
+        ? {
+            lineStart: input.lineStart,
+            lineEnd: Math.min(
+              input.lineEnd ?? input.lineStart + 399,
+              fullText.split(/\r?\n/).length
+            ),
+          }
+        : {}),
     });
   }
   return observations;

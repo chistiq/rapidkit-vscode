@@ -250,10 +250,10 @@ describe('sidebar Studio AI patch autonomy boundary', () => {
 
       expect(evidence.missingRequired).toEqual([]);
       expect(evidence.evidenceFingerprint).toMatch(/^[a-f0-9]{64}$/);
-      expect(evidence.exactTargetPaths).toEqual(['apps/api/config.json']);
-      expect(evidence.promptSection).toContain('<repair-target path="apps/api/config.json"');
+      expect(evidence.exactTargetPaths).toEqual(['config.json']);
+      expect(evidence.promptSection).toContain('<repair-target path="config.json"');
       expect(evidence.promptSection).toContain('{"enabled":false}');
-      expect(evidence.expectedBaseSha256['apps/api/config.json']).toBe(
+      expect(evidence.expectedBaseSha256['config.json']).toBe(
         crypto.createHash('sha256').update('{"enabled":false}\n').digest('hex')
       );
       await fs.writeFile(targetPath, '{"enabled":true,"generation":2}\n');
@@ -325,9 +325,9 @@ describe('sidebar Studio AI patch autonomy boundary', () => {
         workspacePath,
         handoff: { ...handoff(''), scope: 'workspace' },
       });
-      expect(evidence.exactTargetPaths).toContain('.workspai/workspace.contract.json');
-      expect(evidence.autonomousTargetPaths).toContain('.workspai/workspace.contract.json');
-      expect(evidence.promptSection).toContain('{"projects":[]}');
+      expect(evidence.exactTargetPaths).not.toContain('.workspai/workspace.contract.json');
+      expect(evidence.autonomousTargetPaths).not.toContain('.workspai/workspace.contract.json');
+      expect(evidence.promptSection).not.toContain('{"projects":[]}');
     } finally {
       await fs.rm(workspacePath, { recursive: true, force: true });
     }

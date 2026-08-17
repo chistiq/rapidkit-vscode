@@ -330,11 +330,12 @@ describe('actionsWebviewProvider — manifest + command alignment', () => {
       'Understand the workspace. Change it with evidence. Verify the result.'
     );
     expect(readme).toContain('Ask → inspect → change → test → verify');
-    expect(readme).toContain('## One assistant, three ways to work');
+    expect(readme).toContain('## One assistant, four ways to work');
     expect(readme).toContain('| **Ask**');
     expect(readme).toContain('| **Plan**');
     expect(readme).toContain('| **Agent**');
-    expect(readme).toContain('does not need an incident card');
+    expect(readme).toContain('| **Goal**');
+    expect(readme).toContain('incident card. It reads before changing');
     expect(readme).toContain('## Bring your model');
     expect(readme).toContain('`Gemini`');
     expect(readme).toContain('`Kimi`');

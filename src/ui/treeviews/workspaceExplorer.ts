@@ -28,6 +28,7 @@ import {
   WORKSPACE_TREE_WATCH_GLOBS,
 } from '../../utils/workspaceCanonicalPaths';
 import { WelcomePanel } from '../panels/welcomePanel';
+import { readGoalIndex } from '../../core/workspaceGoals.js';
 
 const WATCHER_REFRESH_DEBOUNCE_MS = 250;
 const WORKSPACE_ARCHIVE_RECOVERY_DOCS_URL = 'https://www.workspai.dev/learn/workspace-doctor';
@@ -70,6 +71,7 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
   private versionInfoCache: Map<string, CoreVersionInfo> = new Map();
   private profileCache: Map<string, string | undefined> = new Map();
   private moduleCountCache: Map<string, number> = new Map();
+  private activeGoalCache: Map<string, string | undefined> = new Map();
   private _backgroundLoadInProgress = false;
   private _initialLoadPromise: Promise<void>;
   private _initialSelectionPublished = false;
@@ -150,6 +152,7 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
     this.versionInfoCache.clear();
     this.profileCache.clear();
     this.moduleCountCache.clear();
+    this.activeGoalCache.clear();
     await this.loadWorkspaces();
     this._onDidChangeTreeData.fire();
   }
@@ -189,6 +192,13 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
           }
         }
 
+        const activeGoal = this.activeGoalCache.get(ws.path);
+        if (activeGoal) {
+          descParts.push(
+            `Goal: ${activeGoal.length > 28 ? `${activeGoal.slice(0, 27)}…` : activeGoal}`
+          );
+        }
+
         if (descParts.length > 0) {
           item.description = descParts.join(' • ');
         }
@@ -216,7 +226,8 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
       (ws) =>
         !this.versionInfoCache.has(ws.path) ||
         !this.profileCache.has(ws.path) ||
-        !this.moduleCountCache.has(ws.path)
+        !this.moduleCountCache.has(ws.path) ||
+        !this.activeGoalCache.has(ws.path)
     );
 
     if (pending.length === 0 || this._backgroundLoadInProgress) {
@@ -227,7 +238,7 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
 
     Promise.all(
       pending.map(async (ws) => {
-        const [versionInfo, profile, moduleCount] = await Promise.all([
+        const [versionInfo, profile, moduleCount, activeGoal] = await Promise.all([
           this.versionInfoCache.has(ws.path)
             ? Promise.resolve(this.versionInfoCache.get(ws.path)!)
             : this.versionService.getVersionInfo(ws.path),
@@ -237,10 +248,14 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
           this.moduleCountCache.has(ws.path)
             ? Promise.resolve(this.moduleCountCache.get(ws.path)!)
             : this._countInstalledModules(ws.path),
+          this.activeGoalCache.has(ws.path)
+            ? Promise.resolve(this.activeGoalCache.get(ws.path))
+            : this._readActiveGoal(ws.path),
         ]);
         this.versionInfoCache.set(ws.path, versionInfo);
         this.profileCache.set(ws.path, profile);
         this.moduleCountCache.set(ws.path, moduleCount);
+        this.activeGoalCache.set(ws.path, activeGoal);
       })
     )
       .then(() => {
@@ -251,6 +266,14 @@ export class WorkspaceExplorerProvider implements vscode.TreeDataProvider<Worksp
         this._backgroundLoadInProgress = false;
         // Metadata is cosmetic — description badges missing is acceptable
       });
+  }
+
+  private async _readActiveGoal(workspacePath: string): Promise<string | undefined> {
+    const result = await readGoalIndex(workspacePath);
+    if (result.kind !== 'valid' || !result.value.activeGoalId) {
+      return undefined;
+    }
+    return result.value.goals.find((goal) => goal.id === result.value.activeGoalId)?.objective;
   }
 
   private async _countInstalledModules(workspacePath: string): Promise<number> {

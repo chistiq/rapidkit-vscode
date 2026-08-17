@@ -4,6 +4,7 @@ import {
   inferVerifiedGoalIntent,
   assertVerifiedGoalCommandSafety,
   assertVerifiedGoalPackageManifestSafety,
+  assertVerifiedGoalSourceMutationSafety,
   parseVerifiedGoalVerifyResult,
   verifiedGoalPlanArgs,
   verifiedGoalVerifyArgs,
@@ -156,6 +157,46 @@ suite('verified goal intent', () => {
         relativePath: 'api/package.json',
         originalContent: JSON.stringify({ dependencies: { nest: '^10.0.0' } }),
         patchedContent: JSON.stringify({ dependencies: { nest: '^10.4.2' } }),
+      })
+    );
+  });
+
+  test('keeps coverage goals on the test-owned surface and forbids deletion', () => {
+    const goal = {
+      schemaVersion: 'workspai.verified-goal.v1' as const,
+      id: 'goal-test-coverage-1234abcd',
+      kind: 'test-coverage' as const,
+      summary: 'Raise coverage.',
+      scope: { kind: 'project' as const, projectName: 'api', projectPath: '/workspace/api' },
+      constraints: {
+        allowBreakingChanges: false,
+        allowForce: false,
+        requireBuild: true,
+        requireTests: true,
+      },
+      criteria: {},
+      artifactPaths: { goal: 'goal.json', status: 'status.json', latestReport: 'latest.json' },
+    };
+    assert.doesNotThrow(() =>
+      assertVerifiedGoalSourceMutationSafety({
+        goal,
+        mutations: [
+          { relativePath: 'src/auth/auth.service.spec.ts' },
+          { relativePath: 'test/fixtures/auth.json' },
+          { relativePath: 'tests/snapshots/auth.snap' },
+        ],
+      })
+    );
+    assert.throws(() =>
+      assertVerifiedGoalSourceMutationSafety({
+        goal,
+        mutations: [{ relativePath: 'src/auth/auth.service.ts' }],
+      })
+    );
+    assert.throws(() =>
+      assertVerifiedGoalSourceMutationSafety({
+        goal,
+        mutations: [{ relativePath: 'tests/obsolete.test.ts', operation: 'delete' }],
       })
     );
   });

@@ -19,6 +19,19 @@ VS Code: progress, diff, evidence, and exact user decisions
 
 ## Runtime boundary
 
+- Before broad source discovery, every adopted project session runs
+  `workspai agent bootstrap --for-agent generic --json` from the project root.
+  The extension validates `workspai.agent-bootstrap-receipt.v1`, including
+  project/workspace identity, evidence freshness, active Goal binding, required
+  read order, claim posture, integrity hashes, and path portability. Workspace
+  resolution remains runtime-private; only the portable workspace identity and
+  `workspace:` artifact references enter prompts or receipts.
+- A `ready` receipt permits the bounded source capability plane. A `degraded`
+  receipt may ground read-only answers but disables broad source scanning and
+  mutation. A `blocked`, missing, incompatible, or non-portable receipt stops
+  governed mutation before a model turn is spent. A project with no adoption
+  markers and no canonical workspace relationship remains usable as raw source
+  and is never mislabeled as canonically grounded.
 - Studio resolves an already installed or workspace-linked compatible `workspai`
   package. It never downloads a CLI during a repair.
 - Package metadata is discovery only. Before proposal creation or any mutation,
@@ -86,6 +99,110 @@ VS Code: progress, diff, evidence, and exact user decisions
   be proven closed while unrelated workspace findings remain blocked. Studio
   reports those findings as separate next work and never reopens, renames, or
   absorbs them into the verified card session.
+- A durable session identity is the tuple of workspace, selected linked-project
+  source root, card, and mode. A session from another project cannot be restored
+  or steered merely because its workspace and card names match.
+- Linked-project source mutation additionally requires the runtime capability
+  flags `registeredLinkedProjectMutationBoundary`,
+  `sourceProposalIntegrity=project-bound-hash-pinned`, and
+  `completionAuthority=cli-verification-receipt`. The extension keeps older
+  compatible CLIs usable for in-workspace repairs but refuses to widen an
+  external boundary when these proofs are absent.
+
+## One controller across Sidebar and native Chat
+
+Incident Studio and `@workspai /repair` use the same durable
+`StudioAgentSession`, model protocol, tool registry, source-inspection rules,
+CLI transaction client, Stop Gate, and receipt builder. Native Chat is a second
+presentation surface, not a second repair engine.
+
+Each card declares one repair policy in the mirrored CLI contract:
+
+- `refresh-producer`: run the exact producer deterministically without a model
+  call. A remaining blocker stops with producer evidence; source mutation is
+  unavailable.
+- `diagnose-and-repair`: run the deterministic CLI repair prelude, then expose
+  the inspected source capability plane only when the typed result requests a
+  source repair.
+- `source-repair-then-produce`: permit a bounded source repair, then require the
+  exact card producer and canonical verification before completion.
+
+## Assistant mode closure contracts
+
+Agent, Ask, Plan, and Goal share one model protocol and one bounded tool plane,
+but they do not share completion authority:
+
+- **Ask** is read-only. It must inspect relevant source, diagnostics, evidence,
+  graph results, or current changes before answering. A confident answer with
+  no inspected evidence is rejected.
+- **Plan** is read-only. It must inspect evidence and return explicit `Scope`,
+  `Evidence`, `Steps`, `Verification`, `Rollback`, and `Assumptions` sections.
+  It cannot claim that a proposed change was applied.
+- **Agent** may propose inspected source edits. Every proposal crosses the CLI
+  Repair Engine, and a closed transaction is still insufficient by itself:
+  the model must inspect the resulting workspace changes and the controller
+  must run the final canonical CLI verification before reporting completion.
+- **Goal** accepts every bounded engineering category compiled by the CLI:
+  feature work, defect repair, refactoring, performance, documentation, system
+  understanding, coverage, dependency security, and release readiness. The
+  extension validates the immutable Goal Pack and execution policy and binds
+  every transaction to its fingerprint. Coverage, dependency-security, and
+  release-readiness Goals call their exact CLI verifier after each candidate
+  repair. Other Goals use evidence review: the model must inspect the final
+  worktree against the complete objective and the controller must pass
+  canonical workspace verification. That outcome is reported as reviewed, not
+  machine-verified. In both modes, a post-repair Goal binding is accepted only
+  from a linked, approved, closed transaction whose plan, proposal, checkpoint
+  output, closure hash, and fresh Model/Graph input state remain current.
+
+Goal attempt budgets are durable CLI state. The extension restores the verified
+attempt count from the active Goal status and enforces the immutable
+`maxAttempts` value before spending another model turn; the CLI independently
+enforces the same limit. A Goal whose baseline already satisfies its target is
+verified before model invocation and closes without a source mutation. An
+exhausted, cancelled, superseded, or otherwise terminal Goal cannot be resumed
+as an active mutation session.
+
+Deterministic Goal mutation capability is intentionally narrower than general
+Agent or general Goal repair. Deletion is unavailable to those exact metric
+contracts. A test-coverage Goal can change only test-owned source, fixtures, or
+snapshots, preventing the model from improving the metric by removing
+production source or changing coverage configuration. General Goal Packs may
+create, replace, or delete inspected source only through the same CLI-owned
+checkpoint, validation, verification, and rollback transaction.
+
+Before the first Goal mutation, the extension requires the runtime capability
+invariants `goalSourceTransition=closed-integrity-bound-v1` and
+`goalAttemptBudget=durable-serialized-v1`. A CLI version string cannot replace
+this handshake; a runtime without either invariant receives an actionable
+upgrade error before proposal publication.
+
+General source work exposes graph query, bounded source-range inspection,
+exact-context edits, diagnostics, changed-file inspection, and approved
+non-mutating test/build commands. Commands advertised as diagnostic are
+fingerprinted before and after execution. If they modify tracked or untracked
+source state, Studio rejects the result and requires review rather than treating
+the side effect as a governed edit.
+
+A native source continuation starts inside the source-only capability plane.
+Doctor, Readiness, Workspace Verify, remediation-plan, and Workspace
+Intelligence producers are withheld until a real source transaction advances
+the causal epoch. If exact target verification fails, the CLI rolls the change
+back and the typed receipt returns the model to another bounded source attempt;
+it is not presented as success or as a fabricated user decision. Repeated
+actions against the same evidence generation are circuit-broken.
+
+Provider control context uses `$WORKSPACE` and `$PROJECT` identities. Absolute
+host paths, traversal-based CLI execution identity, checkpoint internals, and
+adapter filesystem metadata do not enter model control prompts, Webview
+messages, repair cards, or exported receipts. Exact inspected source bodies
+remain transient in memory and are not persisted in the durable session.
+Project-relative and workspace-relative patch inputs are canonicalized once
+against the selected project root before the proposal is written; sibling
+traversal and absolute targets outside that root fail before CLI execution.
+Source candidates use one cross-platform policy that excludes canonical
+`.workspai`/`.rapidkit` state and package-manager lockfiles from every model
+continuation and durable replay path.
 
 ## Progress, receipts, and review
 

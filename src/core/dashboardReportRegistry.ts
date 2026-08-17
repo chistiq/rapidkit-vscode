@@ -586,7 +586,12 @@ export function extractBlockersFromReport(
         )
         .map((entry) => {
           const record = entry as Record<string, unknown>;
-          const name = typeof record.relativePath === 'string' ? record.relativePath : 'project';
+          const name =
+            typeof record.projectName === 'string' && record.projectName.trim()
+              ? record.projectName.trim()
+              : typeof record.relativePath === 'string' && record.relativePath.trim()
+                ? record.relativePath.trim()
+                : 'project';
           const reason =
             typeof record.reason === 'string'
               ? record.reason

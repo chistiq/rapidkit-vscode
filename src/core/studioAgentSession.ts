@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import path from 'node:path';
 
 import {
   createStudioAgentEvent,
@@ -13,7 +14,12 @@ import {
   type StudioAgentToolRegistry,
   type StudioAgentToolResult,
 } from './studioAgentToolRegistry.js';
-import type { WorkspaiAssistantMode } from './assistantModeContract.js';
+import {
+  isAutonomousWorkspaiAssistantMode,
+  type WorkspaiAssistantMode,
+} from './assistantModeContract.js';
+import { redactLocalPathsForConsumer } from './consumerPathRedaction.js';
+import { selectStudioSourceRepairCandidates } from './studioRepairReceipt.js';
 
 export type StudioAgentModelAction =
   | { type: 'tool'; callId?: string; toolName: string; input: unknown; reason: string }
@@ -299,17 +305,10 @@ function sourceRepairInspectionCandidates(result: StudioAgentToolResult): string
   if (!Array.isArray(candidates)) {
     return [];
   }
-  const unique = new Set(
-    candidates.filter(
-      (entry): entry is string =>
-        typeof entry === 'string' &&
-        entry.trim().length > 0 &&
-        !/(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.ya?ml|yarn\.lock|bun\.lockb?)$/i.test(
-          entry
-        )
-    )
+  return selectStudioSourceRepairCandidates(
+    candidates.filter((entry): entry is string => typeof entry === 'string'),
+    12
   );
-  return [...unique].slice(0, 12);
 }
 
 function durableEventValue(value: unknown, depth = 0): unknown {
@@ -317,9 +316,10 @@ function durableEventValue(value: unknown, depth = 0): unknown {
     return '[depth-limited]';
   }
   if (typeof value === 'string') {
-    return value.length > DURABLE_EVENT_STRING_LIMIT
-      ? `${value.slice(0, DURABLE_EVENT_STRING_LIMIT)}…`
-      : value;
+    const redacted = redactLocalPathsForConsumer(value);
+    return redacted.length > DURABLE_EVENT_STRING_LIMIT
+      ? `${redacted.slice(0, DURABLE_EVENT_STRING_LIMIT)}…`
+      : redacted;
   }
   if (Array.isArray(value)) {
     return value
@@ -343,6 +343,27 @@ function durableEventValue(value: unknown, depth = 0): unknown {
 
 function durableToolResult(result: StudioAgentToolResult): StudioAgentToolResult {
   return durableEventValue(result) as StudioAgentToolResult;
+}
+
+function redactLiveEventValue(value: unknown, depth = 0): unknown {
+  if (depth > 10) {
+    return '[depth-limited]';
+  }
+  if (typeof value === 'string') {
+    return redactLocalPathsForConsumer(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => redactLiveEventValue(entry, depth + 1));
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+      key,
+      redactLiveEventValue(entry, depth + 1),
+    ])
+  );
 }
 
 type LiveFileChange = {
@@ -456,9 +477,12 @@ function liveToolResult(result: StudioAgentToolResult): StudioAgentToolResult {
   const fileChanges = liveFileChanges(result);
   const output = toolOutputRecord(result);
   if (fileChanges.length === 0 || !output) {
-    return result;
+    return redactLiveEventValue(result) as StudioAgentToolResult;
   }
-  return { ...result, output: { ...output, fileChanges } };
+  return redactLiveEventValue({
+    ...result,
+    output: { ...output, fileChanges },
+  }) as StudioAgentToolResult;
 }
 
 function semanticProgressFingerprint(
@@ -515,6 +539,7 @@ export type StudioAgentSessionOptions = {
   assistantMode: WorkspaiAssistantMode;
   selectedModelId?: string;
   blockerSignature?: string;
+  governedGoal?: NonNullable<StudioAgentPersistedSession['governedGoal']>;
   goal?: NonNullable<StudioAgentPersistedSession['goal']>;
   permissionLevel: StudioAgentPermissionLevel;
   workspaceTrusted: boolean;
@@ -522,8 +547,26 @@ export type StudioAgentSessionOptions = {
   checkpointEvery?: number;
   maxTurns?: number;
   maxModelDecisionsWithoutSourceProgress?: number;
+  /** Maximum exact Goal verification attempts from the immutable Goal Pack policy. */
+  goalMaxAttempts?: number;
+  /** Attempts already recorded by CLI verified-goal status before this session started. */
+  goalAttemptsUsed?: number;
+  repairPolicy?: 'diagnose-and-repair' | 'source-repair-then-produce' | 'refresh-producer';
+  initialSourceRepairDirective?: Record<string, unknown>;
   restoredSession?: StudioAgentPersistedSession;
 };
+
+export function studioAgentSessionScopeMatches(
+  session: Pick<StudioAgentPersistedSession, 'workspacePath' | 'projectPath'>,
+  options: Pick<StudioAgentSessionOptions, 'workspacePath' | 'projectPath'>
+): boolean {
+  const normalize = (value: string | undefined): string | undefined =>
+    value?.trim() ? path.resolve(value) : undefined;
+  return (
+    normalize(session.workspacePath) === normalize(options.workspacePath) &&
+    normalize(session.projectPath) === normalize(options.projectPath)
+  );
+}
 
 export class StudioAgentSession {
   private static readonly MAX_IN_MEMORY_EVENTS = 500;
@@ -540,6 +583,7 @@ export class StudioAgentSession {
   private latestActiveCardId: string;
   private latestEvidenceGeneration: string | undefined;
   private latestBlockerSignature: string | undefined;
+  private goalVerificationAttempts = 0;
   private running: Promise<StudioAgentPersistedSession> | undefined;
   private state: StudioAgentPersistedSession;
 
@@ -562,6 +606,7 @@ export class StudioAgentSession {
           assistantMode: options.assistantMode,
           ...(options.selectedModelId ? { selectedModelId: options.selectedModelId } : {}),
           ...(options.blockerSignature ? { blockerSignature: options.blockerSignature } : {}),
+          ...(options.governedGoal ? { governedGoal: structuredClone(options.governedGoal) } : {}),
           ...(options.goal ? { goal: structuredClone(options.goal) } : {}),
           status: 'idle',
           createdAt,
@@ -575,12 +620,19 @@ export class StudioAgentSession {
     if (options.goal) {
       this.state.goal = structuredClone(options.goal);
     }
+    if (options.governedGoal) {
+      this.state.governedGoal = structuredClone(options.governedGoal);
+    }
     if (options.restoredSession && options.selectedModelId) {
       this.state.selectedModelId = options.selectedModelId;
     }
     this.latestBlockerSignature =
       options.blockerSignature ?? options.restoredSession?.blockerSignature;
     this.latestActiveCardId = options.cardId;
+    if (options.initialSourceRepairDirective) {
+      this.generalSourceRepairActive = true;
+      this.sourceRepairDirective = structuredClone(options.initialSourceRepairDirective);
+    }
     for (const event of this.state.events) {
       const data =
         event.data && typeof event.data === 'object' && !Array.isArray(event.data)
@@ -599,7 +651,14 @@ export class StudioAgentSession {
         this.generalSourceRepairActive = false;
         this.sourceRepairDirective = undefined;
       }
+      if (event.type === 'tool.started' && data?.toolName === 'verify-goal') {
+        this.goalVerificationAttempts += 1;
+      }
     }
+    this.goalVerificationAttempts = Math.max(
+      this.goalVerificationAttempts,
+      Math.max(0, Math.trunc(options.goalAttemptsUsed ?? 0))
+    );
   }
 
   get id(): string {
@@ -648,6 +707,7 @@ export class StudioAgentSession {
         request,
         assistantMode: this.state.assistantMode,
         selectedModelId: this.state.selectedModelId,
+        ...(this.state.governedGoal ? { governedGoal: this.state.governedGoal } : {}),
         ...(this.state.goal ? { goal: this.state.goal } : {}),
       },
       requestId
@@ -661,35 +721,57 @@ export class StudioAgentSession {
     let consecutiveModelDecisionsWithoutSemanticProgress = 0;
     const semanticProgress = new Set<string>();
     const resumedFailedAgentSession =
-      this.state.assistantMode === 'agent' && this.options.restoredSession?.status === 'failed';
+      isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
+      this.options.restoredSession?.status === 'failed';
     let deterministicRecoveryPending =
-      this.state.assistantMode === 'agent' &&
+      isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
+      this.options.repairPolicy !== 'refresh-producer' &&
       Boolean(this.registry.get('recover-active-blocker')) &&
       (resumedFailedAgentSession ||
-        !this.state.events.some((event) => {
-          if (event.type !== 'tool.completed' && event.type !== 'tool.failed') {
-            return false;
-          }
-          const data =
-            event.data && typeof event.data === 'object' && !Array.isArray(event.data)
-              ? (event.data as Record<string, unknown>)
-              : undefined;
-          return data?.toolName === 'recover-active-blocker';
-        }));
+        (!this.generalSourceRepairActive &&
+          !this.state.events.some((event) => {
+            if (event.type !== 'tool.completed' && event.type !== 'tool.failed') {
+              return false;
+            }
+            const data =
+              event.data && typeof event.data === 'object' && !Array.isArray(event.data)
+                ? (event.data as Record<string, unknown>)
+                : undefined;
+            return data?.toolName === 'recover-active-blocker';
+          })));
+    const producerRefreshToolName = this.verificationToolName();
+    let deterministicSatisfiedGoalVerificationPending =
+      this.state.goal?.baseline.status === 'satisfied' && Boolean(this.registry.get('verify-goal'));
+    let deterministicProducerRefreshPending =
+      isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
+      this.options.repairPolicy === 'refresh-producer';
     try {
+      if (deterministicProducerRefreshPending && !producerRefreshToolName) {
+        throw new StudioAgentTerminalError(
+          'This card is producer-owned, but no exact producer refresh tool is registered.',
+          'producer-refresh-unavailable'
+        );
+      }
       while (!this.abortController.signal.aborted) {
         totalTurns += 1;
-        // maxTurns is an explicit test/host safety boundary. Production Agent
-        // sessions are durable and checkpointed; an arbitrary per-request turn
-        // count must never hand an unresolved blocker back to the operator.
-        if (this.options.maxTurns !== undefined && totalTurns > this.options.maxTurns) {
+        const readOnlyTurnBudget =
+          this.state.assistantMode === 'ask' || this.state.assistantMode === 'plan'
+            ? 12
+            : undefined;
+        const maxTurns = this.options.maxTurns ?? readOnlyTurnBudget;
+        // Read-only modes have a finite provider-credit boundary. Mutation
+        // modes are durable and checkpointed, so only an explicit host/test
+        // maxTurns boundary may hand an unresolved session back safely.
+        if (maxTurns !== undefined && totalTurns > maxTurns) {
           throw new Error(
-            'Assistant turn budget exhausted. The durable session can resume safely.'
+            this.state.assistantMode === 'ask' || this.state.assistantMode === 'plan'
+              ? `${this.state.assistantMode === 'ask' ? 'Ask' : 'Plan'} stopped after ${maxTurns} bounded model decisions without a contract-compliant answer. Refine the request or inspect the durable session evidence.`
+              : 'Assistant turn budget exhausted. The durable session can resume safely.'
           );
         }
         const modelDecisionLimit = this.options.maxModelDecisionsWithoutSourceProgress ?? 12;
         if (
-          this.state.assistantMode === 'agent' &&
+          isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
           consecutiveModelDecisionsWithoutSemanticProgress >= modelDecisionLimit
         ) {
           const verificationToolName = this.verificationToolName();
@@ -729,23 +811,63 @@ export class StudioAgentSession {
               'The blocker remains verified as unresolved; no additional model credit was spent.'
           );
         }
-        const action: StudioAgentModelAction = deterministicRecoveryPending
+        const action: StudioAgentModelAction = deterministicSatisfiedGoalVerificationPending
           ? {
               type: 'tool',
-              toolName: 'recover-active-blocker',
+              toolName: 'verify-goal',
               input: {},
               reason:
-                'Run the contract-first blocker recovery prelude before spending a model decision.',
+                'Confirm the already-satisfied Goal baseline before authorizing any source mutation.',
             }
-          : await this.model.next(
-              this.modelContext(
-                latestObservation,
-                this.generalSourceRepairActive &&
-                  consecutiveModelDecisionsWithoutSemanticProgress >=
-                    Math.min(4, Math.max(1, modelDecisionLimit - 1))
-              )
-            );
-        if (deterministicRecoveryPending) {
+          : deterministicProducerRefreshPending
+            ? {
+                type: 'tool',
+                toolName: producerRefreshToolName!,
+                input: {},
+                reason: 'Refresh the exact producer-owned card before spending a model decision.',
+              }
+            : deterministicRecoveryPending
+              ? {
+                  type: 'tool',
+                  toolName: 'recover-active-blocker',
+                  input: {},
+                  reason:
+                    'Run the contract-first blocker recovery prelude before spending a model decision.',
+                }
+              : await this.model.next(
+                  this.modelContext(
+                    latestObservation,
+                    this.generalSourceRepairActive &&
+                      consecutiveModelDecisionsWithoutSemanticProgress >=
+                        Math.min(4, Math.max(1, modelDecisionLimit - 1))
+                  )
+                );
+        const satisfiedGoalVerificationWasDeterministic =
+          deterministicSatisfiedGoalVerificationPending;
+        const producerRefreshWasDeterministic = deterministicProducerRefreshPending;
+        if (deterministicSatisfiedGoalVerificationPending) {
+          deterministicSatisfiedGoalVerificationPending = false;
+          await this.emit(
+            'model.checkpoint',
+            {
+              summary:
+                'The Goal baseline is already satisfied. Studio is confirming it with the exact CLI verifier before involving the model.',
+              recovery: 'goal-satisfied-preflight',
+            },
+            requestId
+          );
+        } else if (deterministicProducerRefreshPending) {
+          deterministicProducerRefreshPending = false;
+          await this.emit(
+            'model.checkpoint',
+            {
+              summary:
+                'This card is producer-owned. Studio is refreshing its exact CLI producer before involving the model.',
+              recovery: 'exact-producer-refresh',
+            },
+            requestId
+          );
+        } else if (deterministicRecoveryPending) {
           deterministicRecoveryPending = false;
           await this.emit(
             'model.checkpoint',
@@ -775,11 +897,44 @@ export class StudioAgentSession {
           };
         } else if (action.type === 'complete') {
           consecutiveProtocolMisses = 0;
+          const completionPolicyViolation = this.completionPolicyViolation(
+            requestId,
+            action.summary
+          );
+          if (completionPolicyViolation) {
+            latestObservation = { ok: false, error: completionPolicyViolation };
+            await this.emit(
+              'model.checkpoint',
+              { summary: completionPolicyViolation, recovery: 'completion-contract' },
+              requestId
+            );
+            continue;
+          }
           if (
             this.options.requiresVerifiedCompletion === false ||
-            this.hasVerifiedCompletion(requestId)
+            (this.hasVerifiedCompletion(requestId) &&
+              this.hasGeneralTaskAcceptanceReview(requestId))
           ) {
-            await this.emit('session.completed', { summary: action.summary }, requestId);
+            await this.emit(
+              'session.completed',
+              {
+                summary: action.summary,
+                verificationAuthority: 'workspai-cli',
+                acceptanceReview:
+                  this.state.assistantMode === 'goal' && this.usesEvidenceReviewCompletion()
+                    ? 'agent-reviewed-outcome-and-final-worktree'
+                    : this.state.cardId.startsWith('assistant:')
+                      ? 'final-worktree-inspected'
+                      : 'exact-card-contract',
+                ...(this.state.governedGoal
+                  ? {
+                      goalId: this.state.governedGoal.id,
+                      goalCompletionMode: this.state.governedGoal.completionMode,
+                    }
+                  : {}),
+              },
+              requestId
+            );
             await this.setStatus('completed');
             return this.snapshot();
           }
@@ -795,7 +950,9 @@ export class StudioAgentSession {
               'model.checkpoint',
               {
                 summary:
-                  'The model requested completion. Studio is running the exact card verification contract before accepting it.',
+                  this.state.assistantMode === 'goal' && this.usesEvidenceReviewCompletion()
+                    ? 'The model requested completion. Studio is running canonical workspace verification before accepting the evidence-reviewed outcome.'
+                    : 'The model requested completion. Studio is running the exact card verification contract before accepting it.',
                 recovery: 'completion-stop-gate',
               },
               requestId
@@ -812,9 +969,29 @@ export class StudioAgentSession {
             if (
               latestObservation.ok === true &&
               latestObservation.cardBlocking === false &&
-              this.hasCanonicalChainClosure(requestId)
+              this.hasCanonicalChainClosure(requestId) &&
+              this.hasGeneralTaskAcceptanceReview(requestId)
             ) {
-              await this.emit('session.completed', { summary: action.summary }, requestId);
+              await this.emit(
+                'session.completed',
+                {
+                  summary: action.summary,
+                  verificationAuthority: 'workspai-cli',
+                  acceptanceReview:
+                    this.state.assistantMode === 'goal' && this.usesEvidenceReviewCompletion()
+                      ? 'agent-reviewed-outcome-and-final-worktree'
+                      : this.state.cardId.startsWith('assistant:')
+                        ? 'final-worktree-inspected'
+                        : 'exact-card-contract',
+                  ...(this.state.governedGoal
+                    ? {
+                        goalId: this.state.governedGoal.id,
+                        goalCompletionMode: this.state.governedGoal.completionMode,
+                      }
+                    : {}),
+                },
+                requestId
+              );
               await this.setStatus('completed');
               return this.snapshot();
             }
@@ -823,7 +1000,10 @@ export class StudioAgentSession {
               ok: false,
               error:
                 latestObservation.error ??
-                'Completion rejected: exact card verification still reports a blocker.',
+                (this.usesEvidenceReviewCompletion() &&
+                !this.hasGeneralTaskAcceptanceReview(requestId)
+                  ? 'Completion rejected: inspect the final workspace changes after the closed repair transaction before claiming the user request is complete.'
+                  : 'Completion rejected: exact card verification still reports a blocker.'),
             };
           }
         } else {
@@ -833,44 +1013,181 @@ export class StudioAgentSession {
           const activeCardBeforeAction = this.latestActiveCardId;
           const effectiveAction = action;
           latestObservation = await this.executeTool(effectiveAction, requestId);
-          const cliClosure = verifiedCliRepairClosure(latestObservation);
-          if (cliClosure) {
-            const output = toolOutputRecord(latestObservation) ?? {};
-            await this.emit(
-              'verify.completed',
-              {
-                ...latestObservation,
-                ok: true,
-                cardBlocking: false,
-                output: {
-                  ...output,
-                  closureAuthority: 'cli-repair-engine',
-                  cardVerification: {
-                    cardId: this.latestActiveCardId,
-                    resolved: true,
-                    blocking: false,
-                  },
-                  workspaceVerification: {
-                    resolved: cliClosure.workspaceResolved,
-                    blocking: !cliClosure.workspaceResolved,
-                    remainingActionIds: cliClosure.remainingActionIds,
-                  },
-                },
-              },
-              requestId
-            );
+          if (
+            satisfiedGoalVerificationWasDeterministic &&
+            latestObservation.ok === true &&
+            latestObservation.cardBlocking === false
+          ) {
             await this.emit(
               'session.completed',
               {
-                summary: cliClosure.summary,
-                transactionId: cliClosure.transactionId,
-                workspaceResolved: cliClosure.workspaceResolved,
-                remainingActionIds: cliClosure.remainingActionIds,
+                summary: 'Goal verified by the CLI; no source change was required.',
+                goalId: this.state.goal?.id,
+                goalStatus: toolOutputRecord(latestObservation)?.status,
+                verificationAuthority: 'workspai-cli',
               },
               requestId
             );
             await this.setStatus('completed');
             return this.snapshot();
+          }
+          if (producerRefreshWasDeterministic) {
+            if (latestObservation.ok === true && latestObservation.cardBlocking === false) {
+              await this.emit(
+                'session.completed',
+                {
+                  summary:
+                    'The exact CLI producer refreshed successfully and the producer-owned card is no longer blocking.',
+                },
+                requestId
+              );
+              await this.setStatus('completed');
+              return this.snapshot();
+            }
+            throw new StudioAgentTerminalError(
+              latestObservation.error ??
+                'The exact CLI producer completed but the producer-owned card remains blocked.',
+              'producer-refresh-unresolved'
+            );
+          }
+          const cliClosure = verifiedCliRepairClosure(latestObservation);
+          if (cliClosure) {
+            if (this.state.goal) {
+              const verificationToolName = this.verificationToolName();
+              if (verificationToolName !== 'verify-goal') {
+                throw new StudioAgentTerminalError(
+                  'The CLI repair transaction closed, but the Goal verifier is unavailable.',
+                  'goal-verification-unavailable'
+                );
+              }
+              await this.emit(
+                'model.checkpoint',
+                {
+                  summary:
+                    'The source repair closed safely. Studio is now measuring the exact Goal criteria before accepting completion.',
+                  recovery: 'goal-post-repair-verification',
+                  transactionId: cliClosure.transactionId,
+                },
+                requestId
+              );
+              latestObservation = await this.executeTool(
+                {
+                  type: 'tool',
+                  toolName: 'verify-goal',
+                  input: {},
+                  reason:
+                    'Measure the immutable Goal criteria after the closed source repair transaction.',
+                },
+                requestId
+              );
+              if (
+                latestObservation.ok === true &&
+                latestObservation.cardBlocking === false &&
+                this.hasCanonicalChainClosure(requestId)
+              ) {
+                const status = toolOutputRecord(latestObservation)?.status as
+                  | Record<string, unknown>
+                  | undefined;
+                const progress =
+                  status?.progress &&
+                  typeof status.progress === 'object' &&
+                  !Array.isArray(status.progress)
+                    ? (status.progress as Record<string, unknown>)
+                    : undefined;
+                const current = progress?.value;
+                const target = progress?.target ?? this.state.goal.baseline.target;
+                const measurement =
+                  typeof current === 'number'
+                    ? ` Current: ${current}${progress?.unit === 'percent' ? '%' : ''}${typeof target === 'number' ? `; target: ${target}${progress?.unit === 'percent' ? '%' : ''}.` : '.'}`
+                    : '';
+                await this.emit(
+                  'session.completed',
+                  {
+                    summary: `Goal verified by the CLI.${measurement}`,
+                    transactionId: cliClosure.transactionId,
+                    goalId: this.state.goal.id,
+                    goalStatus: status,
+                    workspaceResolved: cliClosure.workspaceResolved,
+                    remainingActionIds: cliClosure.remainingActionIds,
+                  },
+                  requestId
+                );
+                await this.setStatus('completed');
+                return this.snapshot();
+              }
+              latestObservation = {
+                ...latestObservation,
+                ok: false,
+                error:
+                  latestObservation.error ??
+                  'The source repair closed, but the immutable Goal criteria remain unsatisfied.',
+              };
+            } else if (this.usesEvidenceReviewCompletion()) {
+              latestObservation = {
+                ...latestObservation,
+                output: {
+                  ...(toolOutputRecord(latestObservation) ?? {}),
+                  mutationReceipt: {
+                    transactionId: cliClosure.transactionId,
+                    sourceRepairClosed: true,
+                    workspaceResolved: cliClosure.workspaceResolved,
+                    remainingActionIds: cliClosure.remainingActionIds,
+                  },
+                },
+              };
+              await this.emit(
+                'model.checkpoint',
+                {
+                  summary:
+                    this.state.assistantMode === 'goal'
+                      ? 'The source repair is safely closed. Review it against the complete Goal objective and inspect the final change, then request completion so Studio can verify workspace safety without claiming that an arbitrary semantic outcome was machine-proven.'
+                      : 'The source repair is safely closed. Review the result against the user request, inspect the final change when needed, then request completion so Studio can run the final workspace verifier.',
+                  recovery:
+                    this.state.assistantMode === 'goal'
+                      ? 'general-goal-acceptance'
+                      : 'general-task-acceptance',
+                  transactionId: cliClosure.transactionId,
+                },
+                requestId
+              );
+            } else {
+              const output = toolOutputRecord(latestObservation) ?? {};
+              await this.emit(
+                'verify.completed',
+                {
+                  ...latestObservation,
+                  ok: true,
+                  cardBlocking: false,
+                  output: {
+                    ...output,
+                    closureAuthority: 'cli-repair-engine',
+                    cardVerification: {
+                      cardId: this.latestActiveCardId,
+                      resolved: true,
+                      blocking: false,
+                    },
+                    workspaceVerification: {
+                      resolved: cliClosure.workspaceResolved,
+                      blocking: !cliClosure.workspaceResolved,
+                      remainingActionIds: cliClosure.remainingActionIds,
+                    },
+                  },
+                },
+                requestId
+              );
+              await this.emit(
+                'session.completed',
+                {
+                  summary: cliClosure.summary,
+                  transactionId: cliClosure.transactionId,
+                  workspaceResolved: cliClosure.workspaceResolved,
+                  remainingActionIds: cliClosure.remainingActionIds,
+                },
+                requestId
+              );
+              await this.setStatus('completed');
+              return this.snapshot();
+            }
           }
           const initialProgressFingerprint = semanticProgressFingerprint(
             effectiveAction,
@@ -882,7 +1199,9 @@ export class StudioAgentSession {
           }
           if (requestsReviewDecision(latestObservation)) {
             const terminalReason = String(
-              toolOutputRecord(latestObservation)?.terminalReason ?? 'review-required'
+              latestObservation.terminalReason ??
+                toolOutputRecord(latestObservation)?.terminalReason ??
+                'review-required'
             );
             const decisionMetadata = reviewDecisionMetadata(latestObservation);
             throw new StudioAgentReviewRequiredError(
@@ -909,7 +1228,7 @@ export class StudioAgentSession {
             consecutiveModelDecisionsWithoutSemanticProgress = 0;
           }
           if (
-            this.state.assistantMode === 'agent' &&
+            isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
             effectiveAction.toolName === 'recover-active-blocker' &&
             latestObservation.ok === true &&
             latestObservation.changed !== true &&
@@ -946,7 +1265,7 @@ export class StudioAgentSession {
           }
           const sourceCandidates = sourceRepairInspectionCandidates(latestObservation);
           if (
-            this.state.assistantMode === 'agent' &&
+            isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
             effectiveAction.toolName === 'recover-active-blocker' &&
             requestsGeneralSourceRepair(latestObservation) &&
             sourceCandidates.length > 0 &&
@@ -983,7 +1302,7 @@ export class StudioAgentSession {
               this.latestActiveCardId !== activeCardBeforeAction);
           if (
             activeBlockerAdvanced &&
-            this.state.assistantMode === 'agent' &&
+            isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
             this.registry.get('recover-active-blocker')
           ) {
             this.generalSourceRepairActive = false;
@@ -1104,6 +1423,27 @@ export class StudioAgentSession {
     action: Extract<StudioAgentModelAction, { type: 'tool' }>,
     requestId: string
   ): Promise<StudioAgentToolResult> {
+    if (action.toolName === 'verify-goal') {
+      const maxAttempts = this.options.goalMaxAttempts ?? 5;
+      if (this.goalVerificationAttempts >= maxAttempts) {
+        const result: StudioAgentToolResult = {
+          ok: false,
+          cardBlocking: true,
+          error: `Goal verification reached its immutable attempt budget (${maxAttempts}). Review the latest evidence before starting another governed Goal run.`,
+          requiresUserDecision: true,
+          terminalReason: 'goal-attempt-budget-exhausted',
+          output: {
+            attempts: this.goalVerificationAttempts,
+            maxAttempts,
+            nextAction: 'review-required',
+            requiresUserDecision: true,
+          },
+        };
+        await this.emit('tool.failed', result, requestId, action.callId?.trim());
+        return result;
+      }
+      this.goalVerificationAttempts += 1;
+    }
     const tool = this.registry.get(action.toolName);
     const toolCallId = action.callId?.trim() || crypto.randomUUID();
     const durableInput = durableEventValue(action.input);
@@ -1360,10 +1700,78 @@ export class StudioAgentSession {
   }
 
   private verificationToolName(): 'verify-goal' | 'verify-blocker' | undefined {
-    if (this.state.goal && this.registry.get('verify-goal')) {
+    if ((this.state.governedGoal || this.state.goal) && this.registry.get('verify-goal')) {
       return 'verify-goal';
     }
     return this.registry.get('verify-blocker') ? 'verify-blocker' : undefined;
+  }
+
+  private completionPolicyViolation(requestId: string, summary: string): string | undefined {
+    if (this.state.assistantMode === 'ask' || this.state.assistantMode === 'plan') {
+      const inspected = this.state.events.some((event) => {
+        if (event.requestId !== requestId || event.type !== 'tool.completed') {
+          return false;
+        }
+        const toolName = String((event.data as Record<string, unknown>).toolName ?? '');
+        return [
+          'inspect-source',
+          'inspect-evidence',
+          'query-workspace-graph',
+          'search-workspace',
+          'inspect-workspace-diagnostics',
+          'inspect-workspace-changes',
+        ].includes(toolName);
+      });
+      if (!inspected) {
+        return `${this.state.assistantMode === 'ask' ? 'Ask' : 'Plan'} completion rejected: inspect relevant workspace source or governed evidence before answering.`;
+      }
+    }
+    if (this.state.assistantMode === 'plan') {
+      const missing = [
+        'scope',
+        'evidence',
+        'steps',
+        'verification',
+        'rollback',
+        'assumptions',
+      ].filter((section) => !new RegExp(`(?:^|\\n)#{0,3}\\s*${section}\\b`, 'i').test(summary));
+      if (missing.length > 0) {
+        return `Plan completion rejected: the concise implementation plan is missing ${missing.join(', ')}.`;
+      }
+    }
+    return undefined;
+  }
+
+  private hasGeneralTaskAcceptanceReview(requestId: string): boolean {
+    if (!this.usesEvidenceReviewCompletion()) {
+      return true;
+    }
+    const requestEvents = this.state.events.filter((event) => event.requestId === requestId);
+    const latestMutation = [...requestEvents].reverse().find((event) => {
+      if (event.type !== 'tool.completed') {
+        return false;
+      }
+      const data = event.data as StudioAgentToolResult & { toolName?: string };
+      return data.changed === true && verifiedCliRepairClosure(data) !== undefined;
+    });
+    if (!latestMutation) {
+      return true;
+    }
+    return requestEvents.some((event) => {
+      if (event.sequence <= latestMutation.sequence || event.type !== 'tool.completed') {
+        return false;
+      }
+      const data = event.data as Record<string, unknown>;
+      return data.toolName === 'inspect-workspace-changes' && data.ok === true;
+    });
+  }
+
+  private usesEvidenceReviewCompletion(): boolean {
+    return (
+      (this.state.assistantMode === 'agent' && this.state.cardId.startsWith('assistant:')) ||
+      (this.state.assistantMode === 'goal' &&
+        this.state.governedGoal?.completionMode === 'evidence-review')
+    );
   }
 
   private hasCanonicalChainClosure(requestId: string): boolean {
@@ -1381,6 +1789,10 @@ export class StudioAgentSession {
       );
     });
     if (!latestSourceMutation) {
+      return true;
+    }
+
+    if (verifiedCliRepairClosure(latestSourceMutation.data as StudioAgentToolResult)) {
       return true;
     }
 

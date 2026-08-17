@@ -113,6 +113,7 @@ vi.mock('../core/modulesCatalogService', () => ({
 import {
   parseCreationIntent,
   prepareAIConversation,
+  redactAIMessageRuntimePaths,
   resetAIServiceCaches,
   requestAIModelToolAction,
   selectModelWithPreference,
@@ -253,12 +254,19 @@ describe('aiService', () => {
     expect(prepared.messages[0].content).toContain('rapidkit_cli_version: 0.25.4');
     expect(prepared.messages[0].content).toContain('rapidkit_core_version: 0.3.9');
     expect(prepared.messages[0].content).toContain('RAPIDKIT COMMAND EXECUTION CONTEXT');
-    expect(prepared.messages[0].content).toContain(`Active workspace root: ${tempProjectPath}`);
+    expect(prepared.messages[0].content).toContain(
+      'Active workspace root: $WORKSPACE (runtime-private)'
+    );
     expect(prepared.messages.at(-1)?.content).toContain('python_version: ^3.12');
     expect(prepared.messages.at(-1)?.content).toContain('workspace_health: {"total":8,"passed":7');
     expect(prepared.messages.at(-1)?.content).toContain('rapidkit_cli_version: 0.25.4');
     expect(prepared.messages.at(-1)?.content).toContain('rapidkit_core_version: 0.3.9');
-    expect(prepared.messages.at(-1)?.content).toContain(`workspace_root: ${tempProjectPath}`);
+    expect(prepared.messages.at(-1)?.content).toContain(
+      'workspace_root: $WORKSPACE (runtime-private)'
+    );
+    expect(prepared.messages.map((message) => message.content).join('\n')).not.toContain(
+      tempProjectPath
+    );
     expect(prepared.messages.at(-1)?.content).toContain(
       'context_packet: {"project_type":"fastapi.ddd"'
     );
@@ -303,8 +311,13 @@ describe('aiService', () => {
     expect(prepared.messages[0].content).toContain('WORKSPACE MEMORY');
     expect(prepared.messages[0].content).toContain('Use DTO mapping in application layer');
     expect(prepared.messages[0].content).toContain('Kafka is used for integration events');
-    expect(prepared.messages[0].content).toContain(`Selected project root: ${projectRoot}`);
-    expect(prepared.messages.at(-1)?.content).toContain(`project_root: ${projectRoot}`);
+    expect(prepared.messages[0].content).toContain(
+      'Selected project root: $PROJECT (runtime-private)'
+    );
+    expect(prepared.messages.at(-1)?.content).toContain('project_root: $PROJECT (runtime-private)');
+    expect(prepared.messages.map((message) => message.content).join('\n')).not.toContain(
+      projectRoot
+    );
     expect(prepared.messages.at(-1)?.content).toContain(
       'Every command must include the correct execution directory'
     );
@@ -388,6 +401,42 @@ describe('aiService', () => {
     expect(joined).not.toContain('abc123secret');
     expect(joined).not.toContain('supersecret');
     expect(joined).not.toContain('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9');
+  });
+
+  it('redacts runtime roots from text, tool calls, and tool results before model delivery', () => {
+    const projectRoot = path.join(tempProjectPath, 'services', 'api');
+    const messages = redactAIMessageRuntimePaths(
+      [
+        { role: 'user', content: `Read ${projectRoot}/src/main.ts` },
+        {
+          role: 'assistant',
+          toolCall: {
+            callId: 'call-1',
+            name: 'read-file',
+            input: { path: `${projectRoot}/src/main.ts`, nested: { cwd: tempProjectPath } },
+          },
+        },
+        {
+          role: 'tool',
+          toolResult: {
+            callId: 'call-1',
+            name: 'read-file',
+            content: `source=${projectRoot}/src/main.ts route=/api/health`,
+          },
+        },
+      ],
+      [
+        { path: projectRoot, token: '$PROJECT' },
+        { path: tempProjectPath, token: '$WORKSPACE' },
+      ]
+    );
+
+    const serialized = JSON.stringify(messages);
+    expect(serialized).not.toContain(tempProjectPath);
+    expect(serialized).not.toContain(projectRoot);
+    expect(serialized).toContain('$PROJECT/src/main.ts');
+    expect(serialized).toContain('$WORKSPACE');
+    expect(serialized).toContain('/api/health');
   });
 
   it('parses spring pom runtime deps without plugin/dependencyManagement noise', async () => {
@@ -803,7 +852,9 @@ describe('aiService', () => {
 
     expect(prepared.scanned?.projectRoot).toBe(projectRoot);
     expect(prepared.scanned?.kit).toBe('nestjs.standard');
-    expect(prepared.messages[0].content).toContain(`Root:        ${projectRoot}`);
+    expect(prepared.messages[0].content).toContain('Root:        $PROJECT');
+    expect(prepared.messages[0].content).not.toContain(projectRoot);
+    expect(prepared.messages[0].content).not.toContain(workspaceRoot);
     expect(prepared.messages[0].content).toContain('Engine:      node');
     expect(prepared.messages[0].content).toContain('Detection:   strong');
   });

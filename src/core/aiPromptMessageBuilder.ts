@@ -44,9 +44,9 @@ export async function buildAIModalUserMessage(
   const ctxHeader = [
     `[${ctx.type.toUpperCase()}] ${ctx.name}`,
     kitLabel && `Kit: ${kitLabel}`,
-    ctx.path && `Path: ${ctx.path}`,
-    ctx.workspaceRootPath && `workspace_root: ${ctx.workspaceRootPath}`,
-    ctx.projectRootPath && `project_root: ${ctx.projectRootPath}`,
+    ctx.path && `Scope identity: ${ctx.type}:${ctx.name}`,
+    ctx.workspaceRootPath && 'workspace_root: $WORKSPACE (runtime-private)',
+    ctx.projectRootPath && 'project_root: $PROJECT (runtime-private)',
     scanned?.pythonVersion && `python_version: ${scanned.pythonVersion}`,
     scanned?.rapidkitCliVersion && `rapidkit_cli_version: ${scanned.rapidkitCliVersion}`,
     scanned?.rapidkitCoreVersion && `rapidkit_core_version: ${scanned.rapidkitCoreVersion}`,

@@ -45,6 +45,11 @@ export type DoctorEvidenceSnapshot = {
     warnings: number;
     errors: number;
     percent: number;
+    metricPolicy?: string;
+    blockingFindings?: number;
+    advisoryFindings?: number;
+    unknownFindings?: number;
+    notApplicableChecks?: number;
   };
   scopeProvenance?: {
     scopedCount?: number;
@@ -70,6 +75,7 @@ export type DoctorEvidenceSnapshot = {
     framework?: string;
     kit?: string;
     projectKind?: string;
+    projectArchetype?: string;
     issues: number;
     verdict?: DoctorVerdict;
     blockingFindings?: number;
@@ -105,6 +111,7 @@ type ParsedDoctorProject = {
   framework?: string;
   kit?: string;
   projectKind?: string;
+  projectArchetype?: string;
   issues: number;
   verdict?: DoctorVerdict;
   blockingFindings?: number;
@@ -213,6 +220,8 @@ async function parseDoctorProjectRecord(
     framework: typeof project?.framework === 'string' ? project.framework : undefined,
     kit: typeof project?.kit === 'string' ? project.kit : undefined,
     projectKind: typeof project?.projectKind === 'string' ? project.projectKind : undefined,
+    projectArchetype:
+      typeof project?.projectArchetype === 'string' ? project.projectArchetype : undefined,
     issues,
     verdict: projection.verdict,
     blockingFindings: projection.counts.blockingCauses,
@@ -307,7 +316,15 @@ export async function readDoctorEvidenceSnapshot(
     const passed = Number(healthScoreSource?.passed ?? 0);
     const warnings = Number(healthScoreSource?.warnings ?? 0);
     const errors = Number(healthScoreSource?.errors ?? 0);
-    const percent = total > 0 ? Math.round((passed / total) * 100) : 0;
+    const presentation =
+      healthScoreSource?.presentation && typeof healthScoreSource.presentation === 'object'
+        ? (healthScoreSource.presentation as Record<string, unknown>)
+        : undefined;
+    const legacyPercent = total > 0 ? Math.round((passed / total) * 100) : 0;
+    const percent =
+      typeof presentation?.diagnosticPassRatePercent === 'number'
+        ? presentation.diagnosticPassRatePercent
+        : legacyPercent;
 
     const projectsRaw = scopedProjectRaw ? [] : Array.isArray(raw?.projects) ? raw.projects : [];
     const projects: ParsedDoctorProject[] = (
@@ -458,6 +475,23 @@ export async function readDoctorEvidenceSnapshot(
         warnings,
         errors,
         percent,
+        metricPolicy: typeof presentation?.policy === 'string' ? presentation.policy : undefined,
+        blockingFindings:
+          typeof presentation?.blockingFindings === 'number'
+            ? presentation.blockingFindings
+            : undefined,
+        advisoryFindings:
+          typeof presentation?.advisoryFindings === 'number'
+            ? presentation.advisoryFindings
+            : undefined,
+        unknownFindings:
+          typeof presentation?.unknownFindings === 'number'
+            ? presentation.unknownFindings
+            : undefined,
+        notApplicableChecks:
+          typeof presentation?.notApplicableChecks === 'number'
+            ? presentation.notApplicableChecks
+            : undefined,
       },
       scopeProvenance:
         summaryRaw?.scopeProvenance && typeof summaryRaw.scopeProvenance === 'object'
@@ -558,7 +592,10 @@ export function summarizeDoctorEvidenceSnapshot(snapshot: DoctorEvidenceSnapshot
   errors?: number;
 } {
   return {
-    healthScoreText: `${snapshot.health.percent}% (${snapshot.health.passed} passed, ${snapshot.health.warnings} warnings, ${snapshot.health.errors} errors)`,
+    healthScoreText:
+      snapshot.health.metricPolicy === 'doctor-multi-axis-v1'
+        ? `${snapshot.verdict ?? 'unknown'} · ${snapshot.health.blockingFindings ?? snapshot.health.errors} blocking · ${snapshot.health.advisoryFindings ?? snapshot.health.warnings} advisory · ${snapshot.health.unknownFindings ?? 0} unknown`
+        : `${snapshot.health.percent}% diagnostic pass rate (${snapshot.health.passed} passed, ${snapshot.health.warnings} warnings, ${snapshot.health.errors} errors)`,
     generatedAt: snapshot.generatedAt,
     passed: snapshot.health.passed,
     warnings: snapshot.health.warnings,

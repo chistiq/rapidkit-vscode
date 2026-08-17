@@ -166,8 +166,7 @@ export function normalizePatchesForWorkspaceScope(input: {
 
     if (
       projectPath &&
-      projectIsInsideWorkspace &&
-      !isChildPathOf(projectPath, absoluteFromWorkspace)
+      (!projectIsInsideWorkspace || !isChildPathOf(projectPath, absoluteFromWorkspace))
     ) {
       const absoluteFromProject = path.isAbsolute(rawRelativePath)
         ? absoluteFromWorkspace

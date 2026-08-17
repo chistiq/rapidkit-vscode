@@ -2,7 +2,7 @@
 [release-stop-gate] Claim checklist result:
 {
   "ok": false,
-  "checklistPath": "/home/rapidx/Documents/WOSP/Rapid/Front/Docs/workspai/Final/WORKSPAI_UNIFIED_FINAL_FEATURE_CHECKLIST.md",
+  "checklistPath": "$DOCS/workspai/Final/WORKSPAI_UNIFIED_FINAL_FEATURE_CHECKLIST.md",
   "finalMaturityUnchecked": [
     "Killer features sustain hard-gate KPI thresholds in production windows.",
     "Chat Brain verify-first loop is reliable and release-gated.",
@@ -33,7 +33,7 @@
 [release-stop-gate] Open-issue report freshness result:
 {
   "ok": true,
-  "issueReportPath": "/home/rapidx/Documents/WOSP/Rapid/Front/rapidkit-vscode/artifacts/day5-open-issues-report.offline.json",
+  "issueReportPath": "$REPOSITORY/artifacts/day5-open-issues-report.offline.json",
   "maxAgeHours": 720,
   "generatedAt": "2026-05-13T00:00:00.000Z",
   "ageHours": 20.66,
@@ -42,7 +42,7 @@
 [release-stop-gate] Open-issue severity result:
 {
   "ok": true,
-  "issueReportPath": "/home/rapidx/Documents/WOSP/Rapid/Front/rapidkit-vscode/artifacts/day5-open-issues-report.offline.json",
+  "issueReportPath": "$REPOSITORY/artifacts/day5-open-issues-report.offline.json",
   "blockedSeverities": [
     "p0",
     "p1"
@@ -53,7 +53,7 @@
 }
 [release-stop-gate] KPI gate result:
 {
-  "markerPath": "/home/rapidx/Documents/WOSP/Rapid/Front/rapidkit-vscode/releases/wave3-kpi-marker.json",
+  "markerPath": "$REPOSITORY/releases/wave3-kpi-marker.json",
   "evaluatedAt": "2026-05-13T20:39:51.776Z",
   "thresholds": {
     "verifyPhaseReachMin": 0,

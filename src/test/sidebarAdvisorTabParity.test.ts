@@ -18,11 +18,12 @@ describe('React Advisor tab ↔ host protocol parity (roadmap 2.11e)', () => {
   const provider = read('src/ui/webviews/actionsWebviewProvider.ts');
   const dispatcher = read('src/ui/webviews/actionsWebviewMessageDispatcher.ts');
 
-  it('posts the advisor outbound commands the host handles', () => {
-    for (const command of ['sidebarImpactQuery', 'sidebarAdvisorAction']) {
+  it('routes Ask through the unified Studio agent loop while preserving advisor actions', () => {
+    for (const command of ['sidebarStudioQuery', 'sidebarAdvisorAction']) {
       expect(secondary, `React should post "${command}"`).toContain(`'${command}'`);
       expect(dispatcher, `host should handle "${command}"`).toContain(`command: '${command}'`);
     }
+    expect(secondary).not.toContain("vscode.postMessage('sidebarImpactQuery'");
   });
 
   it('handles every advisor inbound command the host emits', () => {
@@ -68,10 +69,13 @@ describe('React Advisor tab ↔ host protocol parity (roadmap 2.11e)', () => {
     expect(secondary).toContain('advisorActionFailure.nextAction');
   });
 
-  it('persists advisor sessions under the workspaiImpact state key', () => {
+  it('retains legacy advisor sessions for migration but uses unified Studio sessions for Ask', () => {
     expect(secondary).toContain("useChatSessions('workspaiImpact'");
+    expect(secondary).toContain("useChatSessions('workspaiStudio'");
+    expect(secondary).toContain("assistantMode: 'ask'");
     const sessions = read('webview-ui/src/sidebar/sidebarSessions.ts');
     expect(sessions).toContain('workspaiImpact');
+    expect(sessions).toContain('assistantMode?: ChatAssistantMode');
   });
 
   it('exposes professional session switching above the advisor composer', () => {
@@ -88,6 +92,6 @@ describe('React Advisor tab ↔ host protocol parity (roadmap 2.11e)', () => {
     expect(sessionsHook).toContain('forceNew');
     expect(secondary).toContain('forceNew: !editorIssue');
     expect(secondary).toContain('sessionScopeSnapshot');
-    expect(secondary).toContain('impact.newSession()');
+    expect(secondary).toContain('studio.newSession()');
   });
 });

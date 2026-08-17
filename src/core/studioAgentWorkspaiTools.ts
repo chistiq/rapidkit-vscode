@@ -14,6 +14,12 @@ export type StudioAgentSearchMatch = {
   preview: string;
 };
 
+export type StudioAgentTextEdit = {
+  relativePath: string;
+  oldText: string;
+  newText: string;
+};
+
 export interface StudioAgentWorkspaiToolHost {
   recoverActiveBlocker?(input: {
     workspacePath: string;
@@ -29,6 +35,8 @@ export interface StudioAgentWorkspaiToolHost {
   inspect(input: {
     paths: string[];
     kind: 'source' | 'evidence';
+    lineStart?: number;
+    lineEnd?: number;
     workspacePath: string;
     projectPath?: string;
   }): Promise<StudioAgentToolResult>;
@@ -38,6 +46,12 @@ export interface StudioAgentWorkspaiToolHost {
     workspacePath: string;
     projectPath?: string;
   }): Promise<StudioAgentToolResult<StudioAgentSearchMatch[]>>;
+  graphSearch?(input: {
+    query: string;
+    limit?: number;
+    workspacePath: string;
+    projectPath?: string;
+  }): Promise<StudioAgentToolResult>;
   diagnostics(input: {
     paths?: string[];
     severities?: Array<'error' | 'warning' | 'information' | 'hint'>;
@@ -51,6 +65,13 @@ export interface StudioAgentWorkspaiToolHost {
   }): Promise<StudioAgentToolResult>;
   applyPatches(input: {
     patches: FilePatch[];
+    transactionId: string;
+    workspacePath: string;
+    projectPath?: string;
+    reportProgress?: (data: Record<string, unknown>) => Promise<void>;
+  }): Promise<StudioAgentToolResult>;
+  applyTextEdits?(input: {
+    edits: StudioAgentTextEdit[];
     transactionId: string;
     workspacePath: string;
     projectPath?: string;
@@ -147,6 +168,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
   blockerSignature?: string;
   assistantMode: WorkspaiAssistantMode;
   goalId?: string;
+  goalCompletionMode?: 'deterministic-verification' | 'evidence-review';
 }): StudioAgentToolRegistry {
   const registry = new StudioAgentToolRegistry();
   const mode = resolveWorkspaiAssistantModeContract(input.assistantMode);
@@ -207,9 +229,14 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
   if (input.goalId) {
     register({
       name: 'verify-goal',
-      title: 'Verify engineering goal',
+      title:
+        input.goalCompletionMode === 'evidence-review'
+          ? 'Verify Goal workspace evidence'
+          : 'Verify engineering goal',
       description:
-        'Run the durable goal contract checks. Completion is allowed only when the CLI returns an evidence-derived verified state.',
+        input.goalCompletionMode === 'evidence-review'
+          ? 'Run canonical workspace verification for an arbitrary Goal after the model has reviewed the outcome against the full objective. This proves workspace safety and freshness; it does not pretend the semantic outcome is machine-verifiable.'
+          : 'Run the durable goal contract checks. Completion is allowed only when the CLI returns an evidence-derived verified state.',
       inputSchema: { type: 'object', additionalProperties: false },
       activity: 'verify',
       risk: 'read',
@@ -232,15 +259,33 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
     inputSchema: {
       type: 'object',
       required: ['paths'],
-      properties: { paths: { type: 'array', minItems: 1, items: { type: 'string' } } },
+      additionalProperties: false,
+      properties: {
+        paths: { type: 'array', minItems: 1, items: { type: 'string' } },
+        lineStart: { type: 'number', minimum: 1 },
+        lineEnd: { type: 'number', minimum: 1 },
+      },
     },
     activity: 'inspect',
     risk: 'read',
     async execute(raw, context) {
       const value = asRecord(raw);
+      if (
+        (value.lineStart !== undefined &&
+          (!Number.isInteger(value.lineStart) || Number(value.lineStart) < 1)) ||
+        (value.lineEnd !== undefined &&
+          (!Number.isInteger(value.lineEnd) || Number(value.lineEnd) < 1)) ||
+        (typeof value.lineStart === 'number' &&
+          typeof value.lineEnd === 'number' &&
+          value.lineEnd < value.lineStart)
+      ) {
+        throw new Error('Source inspection line range is invalid.');
+      }
       return input.host.inspect({
         paths: stringArray(value.paths, 'paths'),
         kind: 'source',
+        ...(typeof value.lineStart === 'number' ? { lineStart: value.lineStart } : {}),
+        ...(typeof value.lineEnd === 'number' ? { lineEnd: value.lineEnd } : {}),
         workspacePath: context.workspacePath,
         ...optionalScope(context),
       });
@@ -296,6 +341,38 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
       });
     },
   });
+
+  if (input.host.graphSearch) {
+    register({
+      name: 'query-workspace-graph',
+      title: 'Query workspace graph',
+      description:
+        'Retrieve a small ranked, proof-backed result set from the canonical Workspace Knowledge Graph before broad source scanning.',
+      inputSchema: {
+        type: 'object',
+        required: ['query'],
+        additionalProperties: false,
+        properties: {
+          query: { type: 'string', minLength: 2, maxLength: 500 },
+          limit: { type: 'number', minimum: 1, maximum: 50 },
+        },
+      },
+      activity: 'inspect',
+      risk: 'read',
+      async execute(raw, context) {
+        const value = asRecord(raw);
+        if (typeof value.query !== 'string' || value.query.trim().length < 2) {
+          throw new Error('Workspace graph query must contain at least two characters.');
+        }
+        return input.host.graphSearch!({
+          query: value.query.trim(),
+          ...(typeof value.limit === 'number' ? { limit: value.limit } : {}),
+          workspacePath: context.workspacePath,
+          ...optionalScope(context),
+        });
+      },
+    });
+  }
 
   register({
     name: 'inspect-workspace-diagnostics',
@@ -375,7 +452,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
                 type: 'string',
                 minLength: 1,
                 description:
-                  'Workspace-relative path previously returned by inspect-source, or a new non-sensitive source path when baseSha256 is null. Never target generated .workspai reports.',
+                  'Authorized source-root-relative path previously returned by inspect-source, or a new non-sensitive source path when baseSha256 is null. Never target canonical .workspai/.rapidkit state, reports, repair transactions, caches, snapshots, goals, registries, or generated evidence.',
               },
               baseSha256: {
                 type: ['string', 'null'],
@@ -406,6 +483,69 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
       });
     },
   });
+
+  if (input.host.applyTextEdits) {
+    register({
+      name: 'apply-workspace-edits',
+      title: 'Apply exact source edits',
+      description:
+        'Apply small exact oldText→newText edits to inspected files. This is the preferred safe-write tool for large files because the host reconstructs the full file and the CLI owns validation, verification, and rollback.',
+      inputSchema: {
+        type: 'object',
+        required: ['edits'],
+        additionalProperties: false,
+        properties: {
+          edits: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 12,
+            items: {
+              type: 'object',
+              required: ['relativePath', 'oldText', 'newText'],
+              additionalProperties: false,
+              properties: {
+                relativePath: { type: 'string', minLength: 1 },
+                oldText: { type: 'string', minLength: 1, maxLength: 32000 },
+                newText: { type: 'string', maxLength: 64000 },
+              },
+            },
+          },
+        },
+      },
+      activity: 'change',
+      risk: 'safe-write',
+      async execute(raw, context) {
+        const value = asRecord(raw);
+        if (!Array.isArray(value.edits) || value.edits.length < 1 || value.edits.length > 12) {
+          throw new Error('Exact source edits must contain between 1 and 12 entries.');
+        }
+        const edits = value.edits.map((entry) => {
+          const edit = asRecord(entry);
+          if (
+            typeof edit.relativePath !== 'string' ||
+            !edit.relativePath.trim() ||
+            typeof edit.oldText !== 'string' ||
+            !edit.oldText ||
+            typeof edit.newText !== 'string'
+          ) {
+            throw new Error('Each exact source edit requires relativePath, oldText, and newText.');
+          }
+          return {
+            relativePath: edit.relativePath.trim(),
+            oldText: edit.oldText,
+            newText: edit.newText,
+          };
+        });
+        return input.host.applyTextEdits!({
+          edits,
+          transactionId: context.toolCallId,
+          workspacePath: context.workspacePath,
+          ...optionalScope(context),
+          reportProgress: context.reportProgress,
+        });
+      },
+    });
+  }
 
   register({
     name: 'run-governed-command',

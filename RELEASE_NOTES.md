@@ -1,5 +1,39 @@
 # Release Notes
 
+## v0.40.0 (August 17, 2026)
+
+### Governed Goals, canonical agent entry, and verified source repair
+
+Workspai for VS Code 0.40.0 is verified against Workspai CLI 0.59.1 and turns Goal,
+Agent, native Chat, and Incident Studio into consumers of the same canonical
+entry, evidence, repair, and verification contracts.
+
+Highlights:
+
+- Goal is a first-class Assistant mode for arbitrary bounded engineering
+  outcomes, backed by CLI-authored Goal Packs, durable attempt budgets, and
+  evidence-aware completion.
+- Adopted projects must pass the portable project-entry and agent-bootstrap
+  contract before broad discovery or mutation.
+- Sidebar and native Chat share one project-bound repair controller, bounded
+  source tools, CLI-owned patch transactions, rollback, and exact verification.
+- Linked-project scope, changed-file review, and durable replay remain bound to
+  the selected canonical project rather than only the enclosing workspace.
+- Machine-local workspace, project, checkpoint, and proof paths are redacted
+  before they reach models, Webviews, conversation history, or release assets.
+- English-only and local-path guards protect source, tests, documentation,
+  packaging, pre-commit, and CI surfaces.
+
+Compatibility:
+
+- VS Code 1.106.0+
+- Workspai CLI 0.59.0+
+- RapidKit Core 0.6.0 only for Python-backed kits/modules
+
+[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.40.0/releases/RELEASE_NOTES_v0.40.0.md)
+
+Release posture: `governed-goals-and-canonical-agent-entry`
+
 ## v0.39.0 (August 11, 2026)
 
 ### Canonical Doctor, polyglot graph intelligence, and grounded repair
@@ -61,8 +95,7 @@ Compatibility:
 - Workspai CLI 0.56.0+
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-Full detail:
-[releases/RELEASE_NOTES_v0.39.0.md](releases/RELEASE_NOTES_v0.39.0.md)
+[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.39.0/releases/RELEASE_NOTES_v0.39.0.md)
 
 Release posture: `canonical-intelligence-consumer-and-private-graph-evidence`
 
@@ -102,8 +135,7 @@ Compatibility:
 - Workspai CLI 0.55.1+
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-Full detail:
-[releases/RELEASE_NOTES_v0.38.0.md](releases/RELEASE_NOTES_v0.38.0.md)
+[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.38.0/releases/RELEASE_NOTES_v0.38.0.md)
 
 Release posture: `truthful-evidence-and-typed-repair-decisions`
 
@@ -140,8 +172,7 @@ Compatibility:
 - Workspai CLI 0.55.0+
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-Full detail:
-[releases/RELEASE_NOTES_v0.37.0.md](releases/RELEASE_NOTES_v0.37.0.md)
+[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.37.0/releases/RELEASE_NOTES_v0.37.0.md)
 
 Release posture: `cli-owned-repair-and-live-change-review`
 
@@ -173,8 +204,7 @@ Compatibility:
 - Workspai CLI 0.52.3+
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-Full detail:
-[releases/RELEASE_NOTES_v0.36.0.md](releases/RELEASE_NOTES_v0.36.0.md)
+[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.36.0/releases/RELEASE_NOTES_v0.36.0.md)
 
 Release posture: `session-ownership-and-first-install-reliability`
 
@@ -221,8 +251,7 @@ Validation:
 - TypeScript host/webview checks passed
 - Production build passed
 
-Full detail:
-[releases/RELEASE_NOTES_v0.35.0.md](releases/RELEASE_NOTES_v0.35.0.md)
+[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.35.0/releases/RELEASE_NOTES_v0.35.0.md)
 
 Release posture: `workspace-intelligence-and-verified-studio`
 

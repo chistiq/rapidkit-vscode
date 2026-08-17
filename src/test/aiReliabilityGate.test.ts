@@ -323,7 +323,8 @@ describe('AI reliability release gate', () => {
       );
       expect(joinedPrompt).toContain(fixture.expectedPromptSignal);
       expect(joinedPrompt).toContain('RAPIDKIT COMMAND EXECUTION CONTEXT');
-      expect(joinedPrompt).toContain(`Selected project root: ${projectPath}`);
+      expect(joinedPrompt).toContain('Selected project root: $PROJECT (runtime-private)');
+      expect(joinedPrompt).not.toContain(projectPath);
       expect(joinedPrompt).toContain('OUTPUT QUALITY CONTRACT');
       expect(joinedPrompt).toContain('## Next Safe Step');
       expect(joinedPrompt).toContain('## Verification');

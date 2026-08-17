@@ -47,3 +47,7 @@ export function requireStudioCardRepairCapability(cardId: string): StudioCardRep
   }
   return capability;
 }
+
+export function studioCardAllowsModelSourceMutation(cardId: string): boolean {
+  return requireStudioCardRepairCapability(cardId).repairPolicy !== 'refresh-producer';
+}

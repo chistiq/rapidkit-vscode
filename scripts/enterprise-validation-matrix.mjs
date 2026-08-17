@@ -90,10 +90,12 @@ function validatePackageScripts(repoRoot, errors) {
   const scripts = packageJson.scripts ?? {};
   const requiredScripts = {
     typecheck: 'tsc --noEmit && corepack npm run webview:typecheck',
-    lint: 'eslint src --ext ts',
+    'check:english-text': 'node scripts/english-text-guard.mjs --all',
+    'check:english-text:staged': 'node scripts/english-text-guard.mjs --staged',
+    lint: 'corepack npm run check:english-text && eslint src --ext ts',
     test: 'vitest run',
     'package:ci':
-      'corepack npm run build && node scripts/vsce-package-runner.mjs package --no-dependencies --out rapidkit-vscode-${npm_package_version}.vsix',
+      'corepack npm run check:english-text && corepack npm run build && node scripts/vsce-package-runner.mjs package --no-dependencies --out rapidkit-vscode-${npm_package_version}.vsix',
     'smoke:vsix-artifact':
       'node scripts/inspect-vsix-artifact.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix',
     'release:audit-gate': 'node scripts/npm-audit-gate.mjs --level high',
@@ -125,13 +127,25 @@ function validateNpmBaseline(repoRoot, matrix, errors, options = {}) {
     'contracts',
     'extension-cli-compatibility.v1.json'
   );
+  const extensionReleasePolicyPath = path.resolve(
+    repoRoot,
+    'contracts',
+    'extension-cli-release-policy.v1.json'
+  );
 
-  if (!fs.existsSync(extensionCompatibilityPath)) {
-    errors.push('Extension compatibility contract is missing.');
+  if (!fs.existsSync(extensionCompatibilityPath) || !fs.existsSync(extensionReleasePolicyPath)) {
+    errors.push('Extension compatibility contract or release policy is missing.');
     return;
   }
 
-  const extensionCompatibility = readJson(extensionCompatibilityPath).minimumVerifiedCliVersion;
+  const extensionCompatibility = readJson(extensionCompatibilityPath);
+  const extensionReleasePolicy = readJson(extensionReleasePolicyPath);
+  const extensionMinimum = extensionReleasePolicy.minimumCliVersion;
+  if (matrix.npmTruthBaseline !== extensionReleasePolicy.verifiedCliVersion) {
+    errors.push(
+      `Matrix npmTruthBaseline ${matrix.npmTruthBaseline} does not match extension verified CLI ${extensionReleasePolicy.verifiedCliVersion}.`
+    );
+  }
 
   if (!fs.existsSync(npmPackagePath) || !fs.existsSync(npmCompatibilityPath)) {
     if (options.requireCanonical) {
@@ -144,20 +158,21 @@ function validateNpmBaseline(repoRoot, matrix, errors, options = {}) {
   }
 
   const npmVersion = readJson(npmPackagePath).version;
-  const npmCompatibility = readJson(npmCompatibilityPath).minimumVerifiedCliVersion;
-  if (matrix.npmTruthBaseline !== npmVersion) {
+  const npmCompatibility = readJson(npmCompatibilityPath);
+  if (compareSemver(npmVersion, matrix.npmTruthBaseline) < 0) {
     errors.push(
-      `Matrix npmTruthBaseline ${matrix.npmTruthBaseline} does not match npm ${npmVersion}.`
+      `Canonical CLI ${npmVersion} is below extension verified baseline ${matrix.npmTruthBaseline}.`
     );
   }
-  if (extensionCompatibility !== npmCompatibility) {
-    errors.push(
-      `extension compatibility ${extensionCompatibility} does not match npm compatibility ${npmCompatibility}.`
-    );
+  if (
+    JSON.stringify(extensionCompatibility.publishedContractSchemas) !==
+    JSON.stringify(npmCompatibility.publishedContractSchemas)
+  ) {
+    errors.push('Extension published schema inventory does not match the canonical CLI contract.');
   }
-  if (compareSemver(matrix.npmTruthBaseline, extensionCompatibility) < 0) {
+  if (compareSemver(matrix.npmTruthBaseline, extensionMinimum) < 0) {
     errors.push(
-      `Matrix npmTruthBaseline ${matrix.npmTruthBaseline} is below extension minimum ${extensionCompatibility}.`
+      `Matrix npmTruthBaseline ${matrix.npmTruthBaseline} is below extension minimum ${extensionMinimum}.`
     );
   }
 }

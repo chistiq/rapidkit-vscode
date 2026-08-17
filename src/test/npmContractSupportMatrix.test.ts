@@ -11,6 +11,7 @@ import {
 const repoRoot = path.resolve(__dirname, '../..');
 const extensionContractsRoot = path.resolve(repoRoot, 'contracts');
 const extensionOwnedContracts = new Set([
+  'extension-cli-release-policy.v1.json',
   'workspace-intelligence/workspace-graph-recording.v1.json',
   'workspai-ai-narrative.v1.json',
 ]);
@@ -81,6 +82,10 @@ describe('npm contract support matrix', () => {
       'workspace-repair-capabilities.v1.json',
       'workspace-intelligence/workspace-repair-proposal.v1.json',
       'workspace-intelligence/workspace-repair-transaction.v1.json',
+      'workspace-intelligence/goal-lifecycle-result.v1.json',
+      'workspace-intelligence/goal-plan-result.v1.json',
+      'workspace-intelligence/project-agent-entry.v1.json',
+      'workspace-intelligence/agent-bootstrap-receipt.v1.json',
       'workspace-registry.v1.json',
     ]) {
       expect(byPath.get(contractPath)?.mode, contractPath).toBe('runtime-consumed');
@@ -100,6 +105,7 @@ describe('npm contract support matrix', () => {
       'pipeline-last-run.v1.json',
       'analyze-last-run.v1.json',
       'infra-stack.v1.json',
+      'workspace-intelligence/goal-index.v1.json',
     ]) {
       expect(byPath.get(contractPath)?.mode, contractPath).toBe('evidence-consumed');
     }

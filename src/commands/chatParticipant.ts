@@ -22,6 +22,7 @@ import { resolvePreferredAIModalContext } from '../core/aiContextResolver';
 import { collectDebugPrefillQuestion } from './aiDebugger';
 import { WorkspaceUsageTracker } from '../utils/workspaceUsageTracker';
 import { runNativeChatRepair } from '../core/nativeChatRepair.js';
+import { isGoalPlanResult, runGoalCommand, type GoalPlanResult } from '../core/workspaceGoals.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -39,6 +40,7 @@ const EMPTY_PROMPT_MSG = {
     'Describe what you want to record in workspace memory (conventions, decisions, or project overview), or leave blank to open the memory wizard.',
   repair:
     'Run `/repair` to resolve the highest-priority canonical blocker, or add a card name such as `/repair Workspace Verify`.',
+  goal: 'Describe one engineering outcome, for example: `/goal Raise test coverage to 85%`. Leave it blank to review existing Goals.',
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -154,6 +156,7 @@ async function handleWorkspaiRequest(
         token,
         extensionContext,
         requestedModelId: request.model?.id,
+        history: extractHistory(chatContext),
       });
       return { metadata: { command: 'repair', repair } };
     } catch (error) {
@@ -163,6 +166,67 @@ async function handleWorkspaiRequest(
       );
       return { metadata: { command: 'repair', error: message } };
     }
+  }
+
+  if (rawCommand === 'goal') {
+    const intent = request.prompt.trim();
+    if (!intent) {
+      stream.progress('Opening governed Goals…');
+      await vscode.commands.executeCommand('workspai.workspaceGoalShow');
+      stream.markdown(
+        'Opened the canonical Goal list. Lifecycle actions remain owned and verified by the Workspai CLI.'
+      );
+      return { metadata: { command: 'goal', operation: 'list' } };
+    }
+    const selectedProject = await vscode.commands.executeCommand<{ path?: string }>(
+      'workspai.getSelectedProject'
+    );
+    const selectedWorkspace = await vscode.commands.executeCommand<{ path?: string }>(
+      'workspai.getSelectedWorkspace'
+    );
+    const cwd = selectedProject?.path || selectedWorkspace?.path;
+    if (!cwd) {
+      stream.markdown('Select a Workspai project or workspace before planning a governed Goal.');
+      return { metadata: { command: 'goal', error: 'missing-workspace' } };
+    }
+    stream.progress('Binding intent to the canonical Model and proof-backed Graph…');
+    const result = await runGoalCommand({
+      workspacePath: cwd,
+      args: [intent, '--for-agent', 'generic'],
+      label: 'Chat Goal Plan',
+    });
+    if (!result.ok) {
+      stream.markdown(
+        `### Goal planning stopped safely\n\n${result.error}\n\nNo source was changed and no Goal state was inferred by Chat.`
+      );
+      return { metadata: { command: 'goal', error: result.error } };
+    }
+    if (!isGoalPlanResult(result.value)) {
+      stream.markdown(
+        '### Goal planning stopped safely\n\nThe CLI returned a lifecycle result where a planning result was required.'
+      );
+      return { metadata: { command: 'goal', error: 'incompatible-result-operation' } };
+    }
+    const plan: GoalPlanResult = result.value;
+    const posture =
+      plan.result === 'planned'
+        ? 'Ready for governed work'
+        : plan.result === 'needs-confirmation'
+          ? 'A decision is required'
+          : plan.result === 'needs-evidence'
+            ? 'Measurement evidence is required'
+            : 'Blocked by current workspace evidence';
+    stream.markdown(
+      `### Goal Pack created\n\n**${intent}**\n\n- State: **${plan.result}**\n- Posture: ${posture}\n- Scope: ${plan.resolution.invocationScope}\n- Agent handoff: bounded and evidence-backed\n\nThe CLI remains the lifecycle and verification authority.`
+    );
+    stream.button({
+      command: 'workspai.workspaceGoalShow',
+      title: '$(target) Review Goal',
+      arguments: [{ goalId: plan.goalPack.id }],
+    });
+    return {
+      metadata: { command: 'goal', goalId: plan.goalPack.id, result: plan.result },
+    };
   }
 
   // Build question
@@ -223,6 +287,27 @@ async function handleWorkspaiRequest(
   if (token.isCancellationRequested) {
     await trackChatOutcome('cancelled', { stage: 'before-stream' });
     return {};
+  }
+
+  if (prepared.projectBootstrap.status === 'blocked') {
+    await trackChatOutcome('clarification-needed', {
+      missingFields: ['project-agent-entry'],
+    });
+    stream.markdown(
+      `### Project grounding required\n\n${prepared.projectBootstrap.reason ?? 'The canonical project entry receipt is blocked.'}\n\n` +
+        'Refresh adoption and run Workspace Intelligence, then retry. Workspai did not begin broad source analysis.'
+    );
+    stream.button({
+      command: 'workspai.workspaceIntelligenceChain',
+      title: '$(refresh) Refresh Intelligence',
+    });
+    return {
+      metadata: {
+        command: mode,
+        clarificationNeeded: true,
+        groundingStatus: 'blocked',
+      },
+    };
   }
 
   if (prepared.validation.clarificationNeeded) {
@@ -341,6 +426,7 @@ export function registerWorkspaiChatParticipant(context: vscode.ExtensionContext
       { name: 'ask', description: 'Ask anything about your Workspai project' },
       { name: 'debug', description: 'Debug: root cause + fix + prevention for an error' },
       { name: 'repair', description: 'Repair a canonical blocker through the CLI Repair Engine' },
+      { name: 'goal', description: 'Turn one plain-language outcome into a governed Goal Pack' },
       { name: 'recipe', description: 'Run an AI recipe pack (ship-readiness, auth-hardening, …)' },
       { name: 'memory', description: 'Open the workspace memory wizard' },
     ];

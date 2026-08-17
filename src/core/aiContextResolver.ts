@@ -5,6 +5,11 @@ import {
   buildWorkspaceAgentContextPromptSection,
   readWorkspaceAgentContextReport,
 } from './workspaceAgentContextReader';
+import { buildActiveGoalPromptSection, readActiveGoalHandoff } from './workspaceGoals.js';
+import {
+  bootstrapProjectAgent,
+  buildProjectAgentBootstrapPromptSection,
+} from './projectAgentBootstrap.js';
 
 type WorkspaceSelection = {
   name?: string;
@@ -15,6 +20,7 @@ type ProjectSelection = {
   name?: string;
   path?: string;
   type?: string;
+  workspacePath?: string;
 } | null;
 
 async function executeOptionalCommand<T>(command: string): Promise<T | null> {
@@ -55,7 +61,15 @@ export async function resolvePreferredAIModalContext(
 
   const selectedProjectPath = normalizeFsPath(selectedProject?.path);
   const selectedWorkspacePath = normalizeFsPath(selectedWorkspace?.path);
+  const linkedWorkspacePath = normalizeFsPath(selectedProject?.workspacePath);
   const selectedProjectInsideWorkspace = isSubpath(selectedProjectPath, selectedWorkspacePath);
+  const projectWorkspacePath =
+    linkedWorkspacePath && selectedWorkspacePath
+      ? linkedWorkspacePath === selectedWorkspacePath
+        ? selectedWorkspacePath
+        : undefined
+      : (linkedWorkspacePath ??
+        (selectedProjectInsideWorkspace ? selectedWorkspacePath : undefined));
 
   if (selectedProjectPath) {
     return {
@@ -64,7 +78,7 @@ export async function resolvePreferredAIModalContext(
       path: selectedProjectPath,
       framework: selectedProject?.type,
       projectRootPath: selectedProjectPath,
-      workspaceRootPath: selectedProjectInsideWorkspace ? selectedWorkspacePath : undefined,
+      workspaceRootPath: projectWorkspacePath,
     };
   }
 
@@ -106,21 +120,35 @@ export async function buildWorkspaceIntelligenceContextSection(
     return '';
   }
 
-  const report = await readWorkspaceAgentContextReport(workspacePath);
-  return buildWorkspaceAgentContextPromptSection(report);
+  const [report, activeGoal, projectBootstrap] = await Promise.all([
+    readWorkspaceAgentContextReport(workspacePath),
+    readActiveGoalHandoff(workspacePath),
+    bootstrapProjectAgent({
+      projectPath: ctx.projectRootPath,
+      workspacePath,
+      consumer: 'generic',
+    }),
+  ]);
+  return [
+    buildProjectAgentBootstrapPromptSection(projectBootstrap),
+    buildWorkspaceAgentContextPromptSection(report),
+    buildActiveGoalPromptSection(activeGoal),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 export function buildRapidkitCommandScopeSection(ctx: AIModalContext): string {
   const lines = ['RAPIDKIT COMMAND EXECUTION CONTEXT:'];
 
   if (ctx.workspaceRootPath) {
-    lines.push(`- Active workspace root: ${ctx.workspaceRootPath}`);
+    lines.push('- Active workspace root: $WORKSPACE (runtime-private)');
   } else {
     lines.push('- Active workspace root: unknown');
   }
 
   if (ctx.projectRootPath) {
-    lines.push(`- Selected project root: ${ctx.projectRootPath}`);
+    lines.push('- Selected project root: $PROJECT (runtime-private)');
   } else {
     lines.push('- Selected project root: none');
   }
@@ -157,6 +185,9 @@ export function buildRapidkitCommandScopeSection(ctx: AIModalContext): string {
 
   lines.push(
     '- Workspace intelligence belongs at workspace root: `npx workspai workspace model --json --write`, `workspace snapshot`, `workspace diff --from <report>`, `workspace impact --from <report>`, `workspace context --for-agent --json --write`.'
+  );
+  lines.push(
+    '- For an adopted project, `workspai agent bootstrap --for-agent generic --json` must resolve its portable entry contract before broad source discovery. A blocked receipt prohibits complete architecture claims and source mutation.'
   );
   lines.push(
     '- Recovery snapshots (`workspai snapshot create`) are separate from intelligence snapshots (`workspai workspace snapshot`).'

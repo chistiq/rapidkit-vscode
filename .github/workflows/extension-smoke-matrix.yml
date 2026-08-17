@@ -47,6 +47,9 @@ jobs:
       - name: Install dependencies
         run: corepack npm ci
 
+      - name: Reject machine-local paths
+        run: npm run check:local-paths
+
       - name: Enforce cross-repo contract parity (fails build on drift)
         env:
           WORKSPAI_CLI_REPO_PATH: ${{ github.workspace }}/workspai-cli-canonical/packages/cli
@@ -93,6 +96,9 @@ jobs:
 
       - name: Install dependencies
         run: corepack npm ci
+
+      - name: Reject machine-local paths
+        run: npm run check:local-paths
 
       - name: Lint
         run: npm run lint

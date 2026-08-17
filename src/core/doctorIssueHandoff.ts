@@ -19,7 +19,14 @@ export interface DoctorIssueHandoffPayload {
   systemVersions?: DoctorIssueAIContext['systemVersions'];
   project?: Pick<
     ProjectEvidence,
-    'name' | 'path' | 'framework' | 'kit' | 'projectKind' | 'depsInstalled' | 'fixCommands'
+    | 'name'
+    | 'path'
+    | 'framework'
+    | 'kit'
+    | 'projectKind'
+    | 'projectArchetype'
+    | 'depsInstalled'
+    | 'fixCommands'
   >;
 }
 
@@ -77,6 +84,7 @@ export function buildDoctorIssueHandoffPayload(input: {
             framework: input.project.framework,
             kit: input.project.kit,
             projectKind: input.project.projectKind,
+            projectArchetype: input.project.projectArchetype,
             depsInstalled: input.project.depsInstalled,
             fixCommands: input.project.fixCommands,
           },

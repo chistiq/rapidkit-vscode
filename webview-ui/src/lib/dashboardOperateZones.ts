@@ -175,6 +175,8 @@ const COMMAND_OPERATE_ZONES: Partial<Record<DashboardCommand, DashboardOperateZo
   workspaceContextAgent: 'intelligence',
   workspaceAgentSync: 'intelligence',
   workspaceIntelligenceChain: 'intelligence',
+  workspaceGoalCreate: 'intelligence',
+  workspaceGoalShow: 'intelligence',
   workspaceImpactLens: 'intelligence',
   workspaceImpactLensCli: 'intelligence',
   workspaceShare: 'share',

@@ -29,7 +29,7 @@
 > vitest run src/test/incidentStudioPayload.test.ts src/test/incidentStudioPromptPolicy.test.ts src/test/driftGuard.test.ts
 
 
-[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/home/rapidx/Documents/WOSP/Rapid/Front/rapidkit-vscode[39m
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m$REPOSITORY[39m
 
  [32m✓[39m src/test/incidentStudioPromptPolicy.test.ts [2m([22m[2m27 tests[22m[2m)[22m[32m 20[2mms[22m[39m
  [32m✓[39m src/test/driftGuard.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 76[2mms[22m[39m

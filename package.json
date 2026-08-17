@@ -2,7 +2,7 @@
   "name": "rapidkit-vscode",
   "displayName": "Workspai – Workspace Intelligence",
   "description": "Workspace Intelligence for VS Code. Adopt, import, scaffold, diagnose, verify, and govern polyglot workspaces with shared evidence for developers, CI, and AI agents.",
-  "version": "0.39.0",
+  "version": "0.40.0",
   "packageManager": "npm@10.8.2",
   "publisher": "rapidkit",
   "icon": "media/icons/icon.png",
@@ -179,6 +179,10 @@
           {
             "name": "repair",
             "description": "Repair a canonical blocker through the governed Workspai CLI Repair Engine."
+          },
+          {
+            "name": "goal",
+            "description": "Turn one plain-language engineering outcome into a governed, evidence-bound Goal Pack."
           }
         ]
       }
@@ -601,6 +605,18 @@
         "title": "Intelligence Chain",
         "category": "Workspai",
         "icon": "$(sparkle)"
+      },
+      {
+        "command": "workspai.workspaceGoalCreate",
+        "title": "Goals: Create Governed Goal",
+        "category": "Workspai",
+        "icon": "$(target)"
+      },
+      {
+        "command": "workspai.workspaceGoalShow",
+        "title": "Goals: Review and Manage",
+        "category": "Workspai",
+        "icon": "$(checklist)"
       },
       {
         "command": "workspai.workspaceRunInit",
@@ -1980,6 +1996,14 @@
           "when": "false"
         },
         {
+          "command": "workspai.workspaceGoalCreate",
+          "when": "false"
+        },
+        {
+          "command": "workspai.workspaceGoalShow",
+          "when": "false"
+        },
+        {
           "command": "workspai.workspaceGraphExport.gexf",
           "when": "false"
         },
@@ -2221,6 +2245,16 @@
           "group": "inline@2"
         },
         {
+          "command": "workspai.workspaceGoalCreate",
+          "when": "view == rapidkitWorkspaces && viewItem == workspace",
+          "group": "workspace@0"
+        },
+        {
+          "command": "workspai.workspaceGoalShow",
+          "when": "view == rapidkitWorkspaces && viewItem == workspace",
+          "group": "workspace@0.5"
+        },
+        {
           "command": "workspai.checkWorkspaceHealth",
           "when": "view == rapidkitWorkspaces && viewItem == workspace",
           "group": "inline@3"
@@ -2374,6 +2408,16 @@
           "command": "workspai.projectDoctor",
           "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
           "group": "inline@3"
+        },
+        {
+          "command": "workspai.workspaceGoalCreate",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
+          "group": "project@0"
+        },
+        {
+          "command": "workspai.workspaceGoalShow",
+          "when": "view == rapidkitProjects && viewItem =~ /^project(-running)?$/",
+          "group": "project@0.5"
         },
         {
           "command": "workspai.projectBuild",
@@ -3147,7 +3191,7 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "corepack npm run build",
+    "vscode:prepublish": "corepack npm run check:english-text && corepack npm run check:local-paths && corepack npm run build",
     "clean:dist": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "corepack npm run clean:dist && corepack npm run esbuild-base -- --production && corepack npm run webview:build:production",
     "compile": "corepack npm run clean:dist && tsc -p ./ && corepack npm run webview:build",
@@ -3161,11 +3205,15 @@
     "webview:watch": "cd webview-ui && corepack npm run watch",
     "dev": "concurrently \"npm run esbuild-watch\" \"npm run webview:watch\"",
     "pretest": "corepack npm run typecheck && corepack npm run lint",
-    "lint": "eslint src --ext ts",
+    "lint": "corepack npm run check:english-text && eslint src --ext ts",
     "lint:stabilization": "eslint src --ext ts --max-warnings 100",
     "lint:fix": "eslint src --ext ts --fix",
     "test": "vitest run",
     "check:lockfile": "vitest run src/test/packageLockIntegrity.test.ts",
+    "check:english-text": "node scripts/english-text-guard.mjs --all",
+    "check:english-text:staged": "node scripts/english-text-guard.mjs --staged",
+    "check:local-paths": "node scripts/local-path-guard.mjs --all",
+    "check:local-paths:staged": "node scripts/local-path-guard.mjs --staged",
     "test:local-e2e": "WORKSPAI_RUN_CLI_E2E=1 vitest run src/test/workspaceIntelligenceLocalE2E.test.ts",
     "test:watch": "vitest",
     "sync:shared-contracts": "node scripts/sync-import-stack-parity-snapshot.mjs",
@@ -3193,7 +3241,7 @@
     "sync:modules": "node scripts/sync-modules.mjs",
     "prepackage": "corepack npm run build",
     "package": "node scripts/vsce-package-runner.mjs package",
-    "package:ci": "corepack npm run build && node scripts/vsce-package-runner.mjs package --no-dependencies --out rapidkit-vscode-${npm_package_version}.vsix",
+    "package:ci": "corepack npm run check:english-text && corepack npm run build && node scripts/vsce-package-runner.mjs package --no-dependencies --out rapidkit-vscode-${npm_package_version}.vsix",
     "smoke:vsix-artifact": "node scripts/inspect-vsix-artifact.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix",
     "smoke:vsix-electron": "node scripts/vsix-electron-smoke.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix",
     "publish:guard": "node scripts/guard-vsix-publish.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix",
@@ -3203,7 +3251,7 @@
     "format:check": "prettier --check \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit && corepack npm run webview:typecheck",
     "webview:typecheck": "tsc -p webview-ui/tsconfig.json --noEmit",
-    "validate": "corepack npm run typecheck && corepack npm run lint && corepack npm run format:check && corepack npm test",
+    "validate": "corepack npm run check:local-paths && corepack npm run typecheck && corepack npm run lint && corepack npm run format:check && corepack npm test",
     "prepare": "husky"
   },
   "dependencies": {
@@ -3241,6 +3289,9 @@
   },
   "overrides": {
     "diff": "^8.0.3",
+    "postcss": {
+      "nanoid": "3.3.18"
+    },
     "serialize-javascript": "^7.0.5"
   },
   "lint-staged": {

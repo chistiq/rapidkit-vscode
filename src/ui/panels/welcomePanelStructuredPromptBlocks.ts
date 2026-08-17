@@ -12,7 +12,7 @@ export function buildWorkspaceArchitectureBlock(
     lines.push(
       '- No doctor evidence available yet. Do not assume workspace doctor is the immediate next step unless the user asked for a workspace-wide audit.'
     );
-    lines.push(`- Workspace path: ${workspacePath ?? 'unknown'}`);
+    lines.push(`- Workspace path: ${workspacePath ? '$WORKSPACE' : 'unknown'}`);
     lines.push(
       '- Use the selected project path, framework files, dependency state, and launch blockers to guide the next action.'
     );
@@ -25,7 +25,7 @@ export function buildWorkspaceArchitectureBlock(
   const workspaceName =
     snapshot.workspaceName ?? (workspacePath ? path.basename(workspacePath) : 'unknown');
   lines.push(`- Workspace name: ${workspaceName}`);
-  lines.push(`- Workspace path: ${workspacePath ?? 'unknown'}`);
+  lines.push(`- Workspace path: ${workspacePath ? '$WORKSPACE' : 'unknown'}`);
   lines.push(
     `- Health: ${snapshot.health.percent}% (${snapshot.health.passed} passed, ${snapshot.health.warnings} warnings, ${snapshot.health.errors} errors)`
   );

@@ -618,7 +618,8 @@ describe('contract drift guard', () => {
     // Inbound messages are normalized; outbound goes through the shared envelope.
     expect(source).toContain('dispatchActionsWebviewMessage');
     expect(dispatcherSource).toContain('normalizeWebviewMessage(rawMessage)');
-    expect(source).toContain('createExtensionWebviewMessage(command, data');
+    expect(source).toContain('createExtensionWebviewMessage(command, outbound');
+    expect(source).toContain('delete outbound.transaction');
     expect(source).not.toMatch(/\bvscode\.postMessage\(\s*{/);
     expect(source).toContain("source: 'workspai-secondary-sidebar'");
   });

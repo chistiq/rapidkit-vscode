@@ -185,31 +185,13 @@ export function parseVerifiedGoalPlanResult(value: unknown): {
     throw new Error('Workspai CLI did not return a verified goal plan.');
   }
   const record = value as Record<string, unknown>;
-  const goal = record.goal as Record<string, unknown> | undefined;
+  const goal = parseVerifiedGoalContract(record.goal);
   const status = record.status as Record<string, unknown> | undefined;
-  if (
-    !goal ||
-    goal.schemaVersion !== 'workspai.verified-goal.v1' ||
-    typeof goal.id !== 'string' ||
-    typeof goal.fingerprint !== 'string' ||
-    typeof goal.createdAt !== 'string' ||
-    typeof goal.updatedAt !== 'string' ||
-    !goal.workspace ||
-    !VERIFIED_GOAL_KINDS.includes(goal.kind as VerifiedGoalKind) ||
-    typeof goal.summary !== 'string' ||
-    !goal.scope ||
-    !goal.constraints ||
-    !goal.criteria ||
-    !goal.baseline ||
-    !goal.artifactPaths ||
-    !status ||
-    status.goalId !== goal.id ||
-    typeof status.state !== 'string'
-  ) {
+  if (!goal || !status || status.goalId !== goal.id || typeof status.state !== 'string') {
     throw new Error('Workspai CLI returned an incompatible verified goal contract.');
   }
   return {
-    goal: goal as unknown as VerifiedGoalContractPayload,
+    goal,
     status: status as {
       goalId: string;
       state: string;
@@ -220,10 +202,62 @@ export function parseVerifiedGoalPlanResult(value: unknown): {
   };
 }
 
+export function parseVerifiedGoalContract(value: unknown): VerifiedGoalContractPayload | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const goal = value as Record<string, unknown>;
+  const workspace = goal.workspace as Record<string, unknown> | undefined;
+  const scope = goal.scope as Record<string, unknown> | undefined;
+  const constraints = goal.constraints as Record<string, unknown> | undefined;
+  const baseline = goal.baseline as Record<string, unknown> | undefined;
+  const artifactPaths = goal.artifactPaths as Record<string, unknown> | undefined;
+  if (
+    goal.schemaVersion !== 'workspai.verified-goal.v1' ||
+    typeof goal.id !== 'string' ||
+    !/^goal-[a-z0-9._-]+$/i.test(goal.id) ||
+    typeof goal.fingerprint !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(goal.fingerprint) ||
+    typeof goal.createdAt !== 'string' ||
+    Number.isNaN(Date.parse(goal.createdAt)) ||
+    typeof goal.updatedAt !== 'string' ||
+    Number.isNaN(Date.parse(goal.updatedAt)) ||
+    !workspace ||
+    typeof workspace.name !== 'string' ||
+    typeof workspace.path !== 'string' ||
+    !VERIFIED_GOAL_KINDS.includes(goal.kind as VerifiedGoalKind) ||
+    typeof goal.summary !== 'string' ||
+    !scope ||
+    (scope.kind !== 'workspace' && scope.kind !== 'project') ||
+    !constraints ||
+    typeof constraints.allowBreakingChanges !== 'boolean' ||
+    typeof constraints.allowForce !== 'boolean' ||
+    typeof constraints.requireBuild !== 'boolean' ||
+    typeof constraints.requireTests !== 'boolean' ||
+    !goal.criteria ||
+    typeof goal.criteria !== 'object' ||
+    !baseline ||
+    typeof baseline.measuredAt !== 'string' ||
+    !['percent', 'blocking-vulnerabilities', 'gates', 'unknown'].includes(String(baseline.unit)) ||
+    !['satisfied', 'unsatisfied', 'unavailable'].includes(String(baseline.status)) ||
+    !Array.isArray(baseline.evidencePaths) ||
+    !baseline.evidencePaths.every((entry) => typeof entry === 'string') ||
+    typeof baseline.message !== 'string' ||
+    !artifactPaths ||
+    typeof artifactPaths.goal !== 'string' ||
+    typeof artifactPaths.status !== 'string' ||
+    typeof artifactPaths.latestReport !== 'string'
+  ) {
+    return null;
+  }
+  return goal as unknown as VerifiedGoalContractPayload;
+}
+
 export type VerifiedGoalStatusPayload = {
   schemaVersion?: string;
   goalId: string;
   state: string;
+  attempt?: number;
   progress?: { message?: string };
   blockingReasons?: string[];
   checks?: unknown[];
@@ -247,12 +281,10 @@ export function parseVerifiedGoalVerifyResult(value: unknown): {
   }
   const goal =
     record.goal && typeof record.goal === 'object' && !Array.isArray(record.goal)
-      ? (record.goal as Record<string, unknown>)
+      ? parseVerifiedGoalContract(record.goal)
       : undefined;
   return {
-    ...(goal?.schemaVersion === 'workspai.verified-goal.v1'
-      ? { goal: goal as unknown as VerifiedGoalContractPayload }
-      : {}),
+    ...(goal ? { goal } : {}),
     status: status as unknown as VerifiedGoalStatusPayload,
   };
 }
@@ -358,5 +390,51 @@ export function assertVerifiedGoalPackageManifestSafety(input: {
         );
       }
     }
+  }
+}
+
+function isTestOwnedSourcePath(relativePath: string): boolean {
+  const normalized = relativePath.replace(/\\/g, '/').replace(/^\.\//, '');
+  const segments = normalized.toLowerCase().split('/');
+  const fileName = segments.at(-1) ?? '';
+  const testOwnedDirectory = segments
+    .slice(0, -1)
+    .some((segment) =>
+      /^(?:__tests__|__mocks__|test|tests|testing|spec|specs|fixtures?|snapshots?|testdata|test-data|test_data)$/.test(
+        segment
+      )
+    );
+  return (
+    testOwnedDirectory ||
+    /(?:^test[_-].+|[_-]tests?|[.]tests?|[.]spec|[_-]spec)[.][^/]+$/i.test(fileName) ||
+    /(?:Tests?|Spec)[.](?:java|kt|kts|cs|fs|vb|php|scala|groovy)$/i.test(fileName) ||
+    /[.]snap$/i.test(fileName)
+  );
+}
+
+/**
+ * A deterministic Goal must not be satisfied by shrinking or redefining the
+ * measured surface. Coverage Goals therefore operate on test-owned source
+ * only. General Goal Packs use the broader inspected source transaction plane.
+ */
+export function assertVerifiedGoalSourceMutationSafety(input: {
+  goal: VerifiedGoalContractPayload;
+  mutations: ReadonlyArray<{ relativePath: string; operation?: 'write' | 'delete' }>;
+}): void {
+  if (input.mutations.some((mutation) => mutation.operation === 'delete')) {
+    throw new Error(
+      'This deterministic Goal contract does not delete source files. Use a general Goal or Agent task with an independently reviewed, rollback-protected deletion.'
+    );
+  }
+  if (input.goal.kind !== 'test-coverage') {
+    return;
+  }
+  const outsideTestSurface = input.mutations
+    .map((mutation) => mutation.relativePath)
+    .filter((relativePath) => !isTestOwnedSourcePath(relativePath));
+  if (outsideTestSurface.length > 0) {
+    throw new Error(
+      `The test-coverage Goal may change only test-owned source, fixtures, or snapshots. Rejected: ${outsideTestSurface.join(', ')}`
+    );
   }
 }

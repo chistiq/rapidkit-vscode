@@ -7,9 +7,11 @@ const host = {
   discover: async () => ({ ok: true }),
   inspect: async () => ({ ok: true }),
   search: async () => ({ ok: true, output: [] }),
+  graphSearch: async () => ({ ok: true, output: [] }),
   diagnostics: async () => ({ ok: true }),
   inspectChanges: async () => ({ ok: true }),
   applyPatches: async () => ({ ok: true }),
+  applyTextEdits: async () => ({ ok: true }),
   deleteFiles: async () => ({ ok: true }),
   runGovernedCommand: async () => ({ ok: true }),
   runWorkspaceCommand: async () => ({ ok: true }),
@@ -37,19 +39,28 @@ describe('Workspai assistant mode contract', () => {
       intent: 'repair-plan',
       canMutateWorkspace: false,
     });
+    expect(resolveWorkspaiAssistantModeContract('goal')).toMatchObject({
+      intent: 'governed-goal',
+      permissionLevel: 'autopilot',
+      canMutateWorkspace: true,
+      requiresVerifiedCompletion: true,
+    });
   });
 
-  it('exposes mutating tools only to Agent mode', () => {
-    const toolsFor = (assistantMode: 'agent' | 'ask' | 'plan') =>
+  it('exposes mutations to Agent and governed Goal while preserving read-only modes', () => {
+    const toolsFor = (assistantMode: 'agent' | 'ask' | 'plan' | 'goal') =>
       createStudioAgentWorkspaiToolRegistry({
         host,
         cardId: 'readiness',
         assistantMode,
+        ...(assistantMode === 'goal' ? { goalId: 'goal-test-coverage-1234' } : {}),
       })
         .list()
         .map((tool) => tool.name);
 
     expect(toolsFor('agent')).toContain('apply-workspace-patch');
+    expect(toolsFor('agent')).toContain('apply-workspace-edits');
+    expect(toolsFor('agent')).toContain('query-workspace-graph');
     expect(toolsFor('agent')).toContain('delete-workspace-files');
     expect(toolsFor('agent')).toContain('run-workspace-command');
     expect(toolsFor('agent')).toContain('run-governed-command');
@@ -64,6 +75,7 @@ describe('Workspai assistant mode contract', () => {
       'inspect-source',
       'inspect-evidence',
       'search-workspace',
+      'query-workspace-graph',
       'inspect-workspace-diagnostics',
       'inspect-workspace-changes',
     ]);
@@ -74,5 +86,13 @@ describe('Workspai assistant mode contract', () => {
     expect(toolsFor('plan')).not.toContain('upgrade-dependency-security');
     expect(toolsFor('plan')).not.toContain('run-workspace-command');
     expect(toolsFor('plan')).toContain('verify-blocker');
+    expect(toolsFor('goal')).toContain('apply-workspace-patch');
+    expect(toolsFor('goal')).toContain('apply-workspace-edits');
+    expect(toolsFor('goal')).toContain('query-workspace-graph');
+    expect(toolsFor('goal')).toContain('delete-workspace-files');
+    expect(toolsFor('goal')).toContain('run-workspace-command');
+    expect(toolsFor('goal')).toContain('verify-goal');
+    expect(toolsFor('goal')).not.toContain('recover-active-blocker');
+    expect(toolsFor('goal')).not.toContain('verify-blocker');
   });
 });

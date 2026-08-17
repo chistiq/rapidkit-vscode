@@ -74,9 +74,10 @@ describe('RC feature freeze', () => {
     expect(sidebar).not.toContain("label: 'Workspace Advisor'");
     expect(sidebar).toContain("type StudioMode = 'investigate' | 'verify' | 'prepare'");
     expect(sidebar).toContain("setActiveTab(tab === 'impact' ? 'studio'");
-    expect(selector).toContain("export type AssistantMode = 'agent' | 'ask' | 'plan'");
+    expect(selector).toContain("export type AssistantMode = 'agent' | 'ask' | 'plan' | 'goal'");
     expect(selector).toContain("id: 'agent'");
     expect(selector).toContain("id: 'ask'");
     expect(selector).toContain("id: 'plan'");
+    expect(selector).toContain("id: 'goal'");
   });
 });

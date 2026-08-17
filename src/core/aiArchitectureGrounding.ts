@@ -222,7 +222,7 @@ function buildAnalyzeEvidenceBlock(
   const lines: string[] = [
     'ANALYZE EVIDENCE (authoritative — do not contradict):',
     `- Generated: ${analyze.generatedAt || 'unknown'}`,
-    `- Workspace: ${analyze.workspacePath}`,
+    '- Workspace: $WORKSPACE (runtime-private)',
     `- Verdict/score: ${analyze.verdict} / ${analyze.score}`,
     `- Registered projects: ${analyze.projectCount}`,
   ];
@@ -237,7 +237,7 @@ function buildAnalyzeEvidenceBlock(
         project.hasTests ? 'tests' : 'no-tests',
       ].join(', ');
       lines.push(
-        `    • ${project.name} | framework=${project.framework} runtime=${project.runtime} | ${flags} | path=${project.path}`
+        `    • ${project.name} | framework=${project.framework} runtime=${project.runtime} | ${flags} | identity=project:${project.name}`
       );
     }
   }
@@ -319,7 +319,7 @@ function buildEvidenceIntegrityBlock(
     '- Never recommend Dockerfile/uvicorn/K8s smoke tests when analyze shows hasDockerfile=false and no src/main.py or src/main.ts.',
     '- Catalog install ≠ domain feature scaffold — never mix the two in one answer.',
     '- Commands must state execution directory: workspace root vs selected project root.',
-    `- Selected scope: ${ctx.type}${ctx.projectRootPath ? ` | project=${ctx.projectRootPath}` : ''}${ctx.workspaceRootPath ? ` | workspace=${ctx.workspaceRootPath}` : ''}.`,
+    `- Selected scope: ${ctx.type}${ctx.projectRootPath ? ' | project=$PROJECT' : ''}${ctx.workspaceRootPath ? ' | workspace=$WORKSPACE' : ''}.`,
     activeProject?.hasRapidKitMarker === false
       ? '- Active project lacks RapidKit marker — prefer import/create flow before module install or dev commands.'
       : '',

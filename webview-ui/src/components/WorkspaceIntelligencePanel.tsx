@@ -13,6 +13,7 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
+  Target,
   Terminal,
 } from 'lucide-react';
 import {
@@ -61,6 +62,8 @@ interface WorkspaceIntelligencePanelProps {
   onWorkspaceImpactLens?: () => void;
   onRunImpactLensCli?: () => void;
   onRunFullChain: () => void;
+  onWorkspaceGoalCreate?: () => void;
+  onWorkspaceGoalShow?: () => void;
   onSendWorkspaceToCopilot?: () => void;
 }
 
@@ -128,6 +131,8 @@ export function WorkspaceIntelligencePanel({
   onWorkspaceImpactLens,
   onRunImpactLensCli,
   onRunFullChain,
+  onWorkspaceGoalCreate,
+  onWorkspaceGoalShow,
   onSendWorkspaceToCopilot,
 }: WorkspaceIntelligencePanelProps) {
   const hasWorkspace = Boolean(workspaceStatus.hasWorkspace && workspaceStatus.workspacePath);
@@ -166,6 +171,35 @@ export function WorkspaceIntelligencePanel({
         scope="workspace"
       />
       <ActionTileGrid layout="auto">
+        {onWorkspaceGoalCreate ? (
+          <ActionTile
+            variant="primary"
+            icon={<Target size={15} />}
+            label="Create Governed Goal"
+            detail="Plain-language outcome → evidence-bound Goal Pack → agent handoff"
+            onClick={onWorkspaceGoalCreate}
+            disabled={!hasWorkspace}
+            actionContract={commandContract(
+              'workspaceGoalCreate',
+              !hasWorkspace ? 'Select a workspace' : undefined
+            )}
+            title="workspai goal &lt;intent&gt; --for-agent generic --json"
+          />
+        ) : null}
+        {onWorkspaceGoalShow ? (
+          <ActionTile
+            icon={<ListTree size={15} />}
+            label="Review Goals"
+            detail="Active objective, lifecycle, evidence, preparation, and CLI verification"
+            onClick={onWorkspaceGoalShow}
+            disabled={!hasWorkspace}
+            actionContract={commandContract(
+              'workspaceGoalShow',
+              !hasWorkspace ? 'Select a workspace' : undefined
+            )}
+            title="workspai goal --list --json"
+          />
+        ) : null}
         <ActionTile
           variant="primary"
           fullWidth

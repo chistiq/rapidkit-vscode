@@ -13,6 +13,13 @@ export type NpmContractSupportEntry = {
 
 export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
   {
+    contractPath: 'adopt-effects.v1.json',
+    mode: 'mirrored-reserved',
+    extensionSurface: 'Adoption preview compatibility boundary',
+    usage:
+      'Ships the additive CLI adoption-effects schema so a future preview UI can consume canonical planned effects without reverse-engineering terminal text.',
+  },
+  {
     contractPath: 'bootstrap-compliance.v1.json',
     mode: 'evidence-consumed',
     extensionSurface: 'Bootstrap compliance card and workspace repair flow',
@@ -58,6 +65,41 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
     extensionSurface: 'Graph retrieval efficiency compatibility boundary',
     usage:
       'Preserves the benchmark schema for a future visual comparison surface without inventing metrics.',
+  },
+  {
+    contractPath: 'workspace-intelligence/goal-agent-handoff.v1.json',
+    mode: 'schema-guarded',
+    extensionSurface: 'Governed Goal agent handoff review boundary',
+    usage:
+      'Opens the portable consumer projection from its CLI-authored relative path without allowing Chat, Dashboard, or Studio to widen scope or become mutation and verification authority.',
+  },
+  {
+    contractPath: 'workspace-intelligence/goal-index.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Active Goal discovery and lifecycle picker',
+    usage:
+      'Reads and validates the portable active-goal registry so Dashboard and native Chat discover objective state without scanning goal directories or inferring the newest Goal.',
+  },
+  {
+    contractPath: 'workspace-intelligence/goal-lifecycle-result.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Goal lifecycle commands and native Chat feedback',
+    usage:
+      'Consumes one versioned status, list, activation, cancellation, preparation, and verification envelope so native surfaces never infer lifecycle state from terminal prose.',
+  },
+  {
+    contractPath: 'workspace-intelligence/goal-pack.v1.json',
+    mode: 'schema-guarded',
+    extensionSurface: 'Plain-language governed Goal planning and review',
+    usage:
+      'Preserves the CLI-owned source binding, scope, criteria, policy, and orchestration boundary exposed through Goal review actions.',
+  },
+  {
+    contractPath: 'workspace-intelligence/goal-plan-result.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Goal planning command, Dashboard entry point, and native Chat /goal',
+    usage:
+      'Consumes the stable JSON command envelope for planning, decision-required, evidence-required, blocked, preview, and resume results without parsing terminal prose.',
   },
   {
     contractPath: 'workspace-intelligence/workspace-graph-stream.v1.json',
@@ -274,6 +316,20 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
     extensionSurface: 'Agent Customization Pack evidence reader and drift UI',
     usage:
       'Validates agent-customization-pack.json inventory, capability matrix, drift, and chain provenance independently from the capability contract.',
+  },
+  {
+    contractPath: 'workspace-intelligence/project-agent-entry.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Canonical-first project discovery for Chat and Assistant sessions',
+    usage:
+      'Detects adopted project boundaries and requires the portable entry manifest before broad source analysis or any model-driven mutation loop.',
+  },
+  {
+    contractPath: 'workspace-intelligence/agent-bootstrap-receipt.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Per-session project grounding preflight and mutation gate',
+    usage:
+      'Runs the CLI-owned agent bootstrap, validates its portable receipt, grounds read-only prompts, and fail-closes governed source mutation unless canonical evidence is ready.',
   },
   {
     contractPath: 'workspace-intelligence/agent-reports-index.v1.json',

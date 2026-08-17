@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildDashboardEvidenceBundle,
   resolveCardForReportKind,
+  sanitizeDashboardEvidenceText,
 } from '../core/dashboardEvidenceBridge';
 
 describe('dashboardEvidenceBridge', () => {
@@ -13,6 +14,17 @@ describe('dashboardEvidenceBridge', () => {
 
   afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((dir) => fs.remove(dir)));
+  });
+
+  it('redacts unknown POSIX, Windows, file URL, and traversal paths from card text', () => {
+    const source =
+      'Read /home/alice/private/report.json, C:\\Users\\alice\\secret.json, file:///Users/alice/x.json, and ../../../private/repo.';
+    const sanitized = sanitizeDashboardEvidenceText(source);
+
+    expect(sanitized).not.toContain('alice');
+    expect(sanitized).not.toContain('../');
+    expect(sanitized).toContain('$LOCAL_PATH');
+    expect(sanitized).toContain('$EXTERNAL_PATH');
   });
 
   async function createWorkspaceWithReports(
@@ -84,6 +96,38 @@ describe('dashboardEvidenceBridge', () => {
     expect(pipeline?.status).toBe('pass');
     expect(analyze?.status).toBe('pass');
     expect(readiness?.status).toBe('pass');
+  });
+
+  it('preserves a not-applicable Doctor pass rate instead of coercing null to zero', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'doctor-last-run.json': {
+        generatedAt: '2026-08-15T10:00:00.000Z',
+        healthScore: {
+          passed: 0,
+          warnings: 0,
+          errors: 0,
+          total: 0,
+          verdict: 'passed',
+          presentation: {
+            policy: 'doctor-multi-axis-v1',
+            diagnosticPassRatePercent: null,
+            blockingFindings: 0,
+            advisoryFindings: 0,
+            unknownFindings: 0,
+            contradictionFindings: 0,
+            notApplicableChecks: 5,
+            label: 'diagnostic-pass-rate',
+          },
+        },
+      },
+    });
+
+    const bundle = await buildDashboardEvidenceBundle({ workspacePath });
+    const doctor = bundle.cards.find((card) => card.id === 'doctor');
+
+    expect(doctor?.summary).toContain('n/a diagnostic pass rate');
+    expect(doctor?.metrics).not.toHaveProperty('percent');
+    expect(doctor?.metrics).toMatchObject({ diagnosticPassRateApplicable: 0 });
   });
 
   it('carries the exact Doctor-affected projects into workspace repair handoffs', async () => {
@@ -1270,6 +1314,71 @@ describe('dashboardEvidenceBridge', () => {
     const bundle = await buildDashboardEvidenceBundle({ workspacePath });
     expect(findEvidenceCard(bundle, 'workspaceRun')?.status).toBe('warn');
     expect(findEvidenceCard(bundle, 'workspaceRun')?.summary).toContain('build');
+  });
+
+  it('keeps linked-project host paths out of Repair and Artifacts card presentation', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'workspace-model.json': {
+        summary: { projectCount: 1 },
+        projects: [
+          {
+            name: 'grpc',
+            path: '../../external/grpc',
+          },
+        ],
+      },
+      'workspace-run-last.json': {
+        generatedAt: '2026-08-16T17:34:49.400Z',
+        stage: 'init',
+        summary: { passed: 0, failed: 1, skipped: 0, selectedCount: 1, exitCode: 1 },
+        projects: [
+          {
+            path: '/opt/fixtures/external/grpc',
+            relativePath: '../../external/grpc',
+            projectName: 'grpc',
+            status: 'failed',
+            reason:
+              'Stage failed with exit code 1: CMake Error at cmake/cares.cmake:25 (add_subdirectory):',
+          },
+        ],
+        gates: { blocked: false },
+      },
+    });
+
+    const workspaceRun = findEvidenceCard(
+      await buildDashboardEvidenceBundle({ workspacePath }),
+      'workspaceRun'
+    );
+
+    expect(workspaceRun?.blockers).toEqual([
+      'grpc: Stage failed with exit code 1: CMake Error at cmake/cares.cmake:25 (add_subdirectory):',
+    ]);
+    expect(workspaceRun?.affectedProjectNames).toEqual(['grpc']);
+    expect(JSON.stringify(workspaceRun)).not.toContain('/opt/fixtures');
+    expect(JSON.stringify(workspaceRun)).not.toContain('../../external');
+    expect(JSON.stringify(workspaceRun)).toContain('cmake/cares.cmake');
+  });
+
+  it('does not blame projects skipped by a workspace prerequisite gate', async () => {
+    const workspacePath = await createWorkspaceWithReports({
+      'workspace-run-last.json': {
+        generatedAt: '2026-08-16T17:34:49.400Z',
+        stage: 'test',
+        summary: { passed: 0, failed: 0, skipped: 1, selectedCount: 1, exitCode: 0 },
+        projects: [{ projectName: 'api', status: 'skipped', reason: 'blocked by readiness' }],
+        gates: { blocked: true, blockingGate: 'readiness' },
+      },
+      'release-readiness-last-run.json': {
+        overallStatus: 'fail',
+        blockingReasons: ['workspace policy is incomplete'],
+      },
+    });
+
+    const workspaceRun = findEvidenceCard(
+      await buildDashboardEvidenceBundle({ workspacePath }),
+      'workspaceRun'
+    );
+    expect(workspaceRun?.affectedProjectNames).toBeUndefined();
   });
 
   it('carries concrete readiness failures into a gate-blocked workspace run card', async () => {

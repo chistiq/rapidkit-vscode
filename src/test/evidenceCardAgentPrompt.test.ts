@@ -81,6 +81,9 @@ describe('evidenceCardAgentPrompt', () => {
     expect(prompt).toContain('- Workspai CLI: npx workspai workspace verify --json');
     expect(prompt).toContain('- Execution channel: background');
     expect(prompt).toContain('- Capability gate: workspace verify');
+    expect(prompt).toContain('- Workspace: selected workspace ($WORKSPACE)');
+    expect(prompt).toContain('- Artifact: $LOCAL_PATH');
+    expect(prompt).not.toContain('/tmp/ws');
     expect(prompt).toContain(
       'Prefer the mapped source command when refreshing this evidence: `npx workspai workspace verify --json`'
     );
@@ -151,5 +154,7 @@ describe('evidenceCardAgentPrompt', () => {
     expect(prompt).toContain('agent-sync');
     expect(prompt).toContain('## Agent customization pack');
     expect(prompt).toContain('## Standard answer contract');
+    expect(prompt).toContain('#file:.workspai/reports/agent-customization-pack.json');
+    expect(prompt).not.toContain(workspacePath);
   });
 });

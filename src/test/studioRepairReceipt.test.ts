@@ -3,9 +3,23 @@ import { describe, expect, it } from 'vitest';
 import {
   buildStudioVerifiedRepairReceipt,
   resolveStudioCliRepairDisposition,
+  selectStudioSourceRepairCandidates,
 } from '../core/studioRepairReceipt.js';
 
 describe('Studio verified repair receipt', () => {
+  it('keeps canonical state and lockfiles out of source repair on every path separator', () => {
+    expect(
+      selectStudioSourceRepairCandidates([
+        '.workspai/workspace.contract.json',
+        '.rapidkit\\state.json',
+        'project\\package-lock.json',
+        'project/src/index.ts',
+        'project\\src\\index.ts',
+        'project/src/worker.ts',
+      ])
+    ).toEqual(['project/src/index.ts', 'project/src/worker.ts']);
+  });
+
   it('keeps missing SDK/toolchain preconditions out of general source repair', () => {
     expect(
       resolveStudioCliRepairDisposition({
@@ -36,7 +50,9 @@ describe('Studio verified repair receipt', () => {
     ).toEqual({
       closed: false,
       generalSourceRepair: false,
+      rolledBackForAnotherSourceAttempt: false,
       requiresUserDecision: true,
+      nextAction: 'review-required',
       terminalReason: 'repair-toolchain-unavailable',
       missingExecutables: [
         { projectPath: 'atlas-api', executable: 'dotnet' },
@@ -61,7 +77,21 @@ describe('Studio verified repair receipt', () => {
     ).toMatchObject({
       generalSourceRepair: true,
       requiresUserDecision: false,
+      nextAction: 'general-source-repair',
       missingExecutables: [],
+    });
+  });
+
+  it('accepts only a closed CLI transaction as a closed repair action', () => {
+    expect(
+      resolveStudioCliRepairDisposition({
+        transaction: { state: 'closed' },
+        sourceCandidates: [],
+      })
+    ).toMatchObject({
+      closed: true,
+      requiresUserDecision: false,
+      nextAction: 'closed',
     });
   });
 
@@ -77,7 +107,29 @@ describe('Studio verified repair receipt', () => {
     ).toEqual({
       closed: false,
       generalSourceRepair: false,
+      rolledBackForAnotherSourceAttempt: false,
       requiresUserDecision: false,
+      nextAction: 'repair-stopped',
+      missingExecutables: [],
+    });
+  });
+
+  it('returns failed target verification to another bounded source attempt after rollback', () => {
+    expect(
+      resolveStudioCliRepairDisposition({
+        transaction: {
+          state: 'rolled-back',
+          verification: { status: 'failed', targetStatus: 'failed' },
+          adapterEvaluations: [],
+        },
+        sourceCandidates: ['web/package.json'],
+      })
+    ).toEqual({
+      closed: false,
+      generalSourceRepair: true,
+      rolledBackForAnotherSourceAttempt: true,
+      requiresUserDecision: false,
+      nextAction: 'general-source-repair',
       missingExecutables: [],
     });
   });

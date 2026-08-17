@@ -1,7 +1,7 @@
 {
   "schemaVersion": "workspai-enterprise-validation-matrix.v1",
   "generatedFor": "rapidkit-vscode",
-  "npmTruthBaseline": "0.56.0",
+  "npmTruthBaseline": "0.59.1",
   "scenarios": [
     {
       "id": "cli.version.below_minimum",
@@ -16,7 +16,7 @@
       "requiredSnippets": [
         "blocks below-minimum enterprise workflows without a continue option",
         "reports missing and unparseable versions as unknown",
-        "matches the Workspai CLI package version"
+        "accepts a newer compatible CLI without forcing another extension release"
       ]
     },
     {

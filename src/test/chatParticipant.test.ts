@@ -121,6 +121,7 @@ describe('chatParticipant', () => {
     prepareAIConversationMock.mockResolvedValue({
       messages: [{ role: 'user', content: 'test' }],
       scanned: { projectRoot: '/tmp/demo-workspace' },
+      projectBootstrap: { status: 'not-applicable', adopted: false },
       contract: {
         contract_version: 1,
         persona: 'midlevel',
@@ -301,6 +302,7 @@ describe('chatParticipant', () => {
     prepareAIConversationMock.mockResolvedValueOnce({
       messages: [{ role: 'user', content: 'test' }],
       scanned: undefined,
+      projectBootstrap: { status: 'not-applicable', adopted: false },
       contract: {
         contract_version: 1,
         persona: 'amateur',
@@ -361,6 +363,38 @@ describe('chatParticipant', () => {
       'workspai.chat.clarification_gate',
       '/tmp/demo-workspace',
       expect.objectContaining({ source: 'chat-participant', mode: 'ask' })
+    );
+  });
+
+  it('surfaces a blocked canonical entry before model streaming', async () => {
+    const prepared = await prepareAIConversationMock();
+    prepareAIConversationMock.mockResolvedValueOnce({
+      ...prepared,
+      scanned: undefined,
+      projectBootstrap: {
+        status: 'blocked',
+        adopted: true,
+        reason: 'The portable agent entry contract is stale.',
+      },
+    });
+    const context = { subscriptions: [] as { dispose: () => void }[] };
+    registerWorkspaiChatParticipant(context as any);
+    const participant = context.subscriptions[0] as unknown as { handler: Function };
+    const stream = { markdown: vi.fn(), progress: vi.fn(), button: vi.fn() };
+
+    await participant.handler(
+      { prompt: 'Explain the architecture', command: 'ask' },
+      { history: [] },
+      stream,
+      { isCancellationRequested: false }
+    );
+
+    expect(streamAIResponseMock).not.toHaveBeenCalled();
+    expect(stream.markdown).toHaveBeenCalledWith(
+      expect.stringContaining('Project grounding required')
+    );
+    expect(stream.button).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'workspai.workspaceIntelligenceChain' })
     );
   });
 });

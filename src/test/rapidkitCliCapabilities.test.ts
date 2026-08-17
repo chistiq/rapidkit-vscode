@@ -78,6 +78,7 @@ function commandsJson(
   const commandMapIds = overrides.commandMap ?? [
     'create',
     'adopt',
+    'agent',
     'import',
     'workspace',
     'project',
@@ -329,6 +330,13 @@ describe('rapidkitCliCapabilities gates', () => {
         args: ['workspace', 'verify', '--json'],
         cwd: '/tmp/ws',
         featureLabel: 'Workspace Verify',
+      })
+    ).resolves.toEqual({ allowed: true });
+    await expect(
+      gateRapidkitCliArgs({
+        args: ['agent', 'bootstrap', '--for-agent', 'generic', '--json'],
+        cwd: '/tmp/ws',
+        featureLabel: 'Project Agent Bootstrap',
       })
     ).resolves.toEqual({ allowed: true });
     await expect(

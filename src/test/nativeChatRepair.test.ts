@@ -27,6 +27,7 @@ vi.mock('../core/studioBlockerHandoffBuilder', () => ({
 vi.mock('../core/workspaceRepairCliClient', () => ({
   decideCliOwnedRepair: decideCliOwnedRepairMock,
   executeCliOwnedCanonicalRepair: executeCliOwnedCanonicalRepairMock,
+  projectWorkspaceRepairTransactionForConsumer: (transaction: unknown) => transaction,
 }));
 
 vi.mock('../core/nativeChatStudioAgent', () => ({

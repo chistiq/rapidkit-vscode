@@ -4,7 +4,10 @@ import * as vscode from 'vscode';
 
 import { isWorkspacePathAncestor } from '../../core/aiContextResolver';
 import { WorkspaceMemoryService } from '../../core/workspaceMemoryService';
-import { readDoctorEvidenceSnapshot } from './incidentStudioDoctorEvidence';
+import {
+  readDoctorEvidenceSnapshot,
+  summarizeDoctorEvidenceSnapshot,
+} from './incidentStudioDoctorEvidence';
 import {
   buildIncidentMemoryReuseSnapshot,
   detectRepeatedIncident,
@@ -76,8 +79,9 @@ export async function readDoctorEvidenceSummaryForPanel(
     return undefined;
   }
 
+  const summary = summarizeDoctorEvidenceSnapshot(snapshot);
   return {
-    healthScoreText: `${snapshot.health.percent}% (${snapshot.health.passed} passed, ${snapshot.health.warnings} warnings, ${snapshot.health.errors} errors)`,
+    healthScoreText: summary.healthScoreText,
     generatedAt: snapshot.generatedAt,
     passed: snapshot.health.passed,
     warnings: snapshot.health.warnings,

@@ -5,15 +5,22 @@ import { describe, expect, it } from 'vitest';
 
 import {
   EXTENSION_CLI_COMPATIBILITY_SCHEMA_VERSION,
+  EXTENSION_CLI_RELEASE_POLICY_SCHEMA_VERSION,
   MIN_RAPIDKIT_CLI_VERSION,
   PUBLISHED_CLI_CONTRACT_SCHEMAS,
+  VERIFIED_RAPIDKIT_CLI_VERSION,
 } from '../core/cliVersionCompatibilityContract';
+import { compareSemver } from '../core/cliVersionPolicy';
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 
 describe('cliVersionCompatibilityContract', () => {
-  it('loads the minimum CLI version from the bundled npm-synced contract', () => {
+  it('loads the minimum CLI version from the extension-owned release policy', () => {
     expect(MIN_RAPIDKIT_CLI_VERSION).toMatch(/^\d+\.\d+\.\d+/);
+    expect(VERIFIED_RAPIDKIT_CLI_VERSION).toMatch(/^\d+\.\d+\.\d+/);
+    expect(EXTENSION_CLI_RELEASE_POLICY_SCHEMA_VERSION).toBe(
+      'workspai-vscode-cli-release-policy.v1'
+    );
     expect(EXTENSION_CLI_COMPATIBILITY_SCHEMA_VERSION).toBe(
       'rapidkit-extension-cli-compatibility.v1'
     );
@@ -23,7 +30,7 @@ describe('cliVersionCompatibilityContract', () => {
     expect(PUBLISHED_CLI_CONTRACT_SCHEMAS.blockerResolution).toBe('rapidkit-blocker-resolution-v1');
   });
 
-  it('matches the Workspai CLI package version in the sibling monorepo', () => {
+  it('accepts a newer compatible CLI without forcing another extension release', () => {
     const npmPackagePath = path.resolve(
       repoRoot,
       '..',
@@ -38,10 +45,10 @@ describe('cliVersionCompatibilityContract', () => {
 
     const npmVersion = (JSON.parse(fs.readFileSync(npmPackagePath, 'utf8')) as { version: string })
       .version;
-    expect(MIN_RAPIDKIT_CLI_VERSION).toBe(npmVersion);
+    expect(compareSemver(npmVersion, MIN_RAPIDKIT_CLI_VERSION)).toBeGreaterThanOrEqual(0);
   });
 
-  it('matches the canonical npm contracts/extension-cli-compatibility.v1.json mirror', () => {
+  it('matches canonical published schemas without inheriting the CLI-owned version floor', () => {
     const npmContractPath = path.resolve(
       repoRoot,
       '..',
@@ -57,7 +64,11 @@ describe('cliVersionCompatibilityContract', () => {
 
     const contract = JSON.parse(fs.readFileSync(npmContractPath, 'utf8')) as {
       minimumVerifiedCliVersion: string;
+      publishedContractSchemas: Record<string, unknown>;
     };
-    expect(MIN_RAPIDKIT_CLI_VERSION).toBe(contract.minimumVerifiedCliVersion);
+    expect(PUBLISHED_CLI_CONTRACT_SCHEMAS).toEqual(contract.publishedContractSchemas);
+    expect(
+      compareSemver(MIN_RAPIDKIT_CLI_VERSION, contract.minimumVerifiedCliVersion)
+    ).toBeGreaterThanOrEqual(0);
   });
 });

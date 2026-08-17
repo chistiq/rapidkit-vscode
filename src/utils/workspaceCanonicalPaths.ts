@@ -11,7 +11,7 @@ export const WORKSPACE_TREE_WATCH_GLOBS = [
 ] as const;
 
 export const WORKSPACE_SCOPED_WATCH_GLOB =
-  '**/{.workspai-workspace,.rapidkit-workspace,.workspai/workspace.json,.workspai/workspace-registry.v1.json,.workspai/project.json,.workspai/registry.json,.rapidkit/workspace.json,.rapidkit/project.json,.rapidkit/registry.json}';
+  '**/{.workspai-workspace,.rapidkit-workspace,.workspai/workspace.json,.workspai/workspace-registry.v1.json,.workspai/project.json,.workspai/registry.json,.workspai/goals/index.json,.rapidkit/workspace.json,.rapidkit/project.json,.rapidkit/registry.json}';
 
 export const PROJECT_MODULE_REGISTRY_RELATIVE_PATHS = [
   '.workspai/registry.json',

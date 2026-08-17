@@ -1,4 +1,5 @@
 import type { StudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
+import { redactLocalPathsForConsumer } from './consumerPathRedaction.js';
 import type { DoctorRemediationPlanView } from './doctorRemediationPlanReader.js';
 import {
   resolveStudioRunOnceProducerCommands,
@@ -58,8 +59,8 @@ export function buildSidebarStudioPrompt(input: {
       `- Resolution class: ${handoff.resolutionClass ?? 'unknown'}`,
       `- Execution mode: ${executionMode ?? 'FIX'}`,
       `- Source command: ${handoff.sourceCommand}`,
-      ...(handoff.workspacePath ? [`- Workspace path: ${handoff.workspacePath}`] : []),
-      ...(handoff.projectPath ? [`- Project path: ${handoff.projectPath}`] : []),
+      ...(handoff.workspacePath ? ['- Workspace path: $WORKSPACE'] : []),
+      ...(handoff.projectPath ? ['- Project path: $PROJECT'] : []),
       ...(handoff.artifactPath ? [`- Evidence artifact: ${handoff.artifactPath}`] : []),
       ...(handoff.exitCode !== null && handoff.exitCode !== undefined
         ? [`- Last exit code: ${handoff.exitCode}`]
@@ -191,5 +192,5 @@ export function buildSidebarStudioPrompt(input: {
   }
 
   lines.push('', input.task);
-  return lines.join('\n');
+  return lines.map(redactLocalPathsForConsumer).join('\n');
 }

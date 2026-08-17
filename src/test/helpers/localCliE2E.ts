@@ -232,6 +232,15 @@ export function buildWorkspaceIntelligenceE2ESteps(): E2ECliStep[] {
       required: true,
     },
     {
+      id: 'projectAgentBootstrap',
+      label: 'Project Agent Bootstrap',
+      args: ['agent', 'bootstrap', '--for-agent', 'generic', '--json'],
+      required: true,
+      requiresProjects: true,
+      perProject: true,
+      cwd: 'project',
+    },
+    {
       id: 'workspaceExplain',
       label: DASHBOARD_COMMAND_CONTRACTS.workspaceExplain.label,
       args: ['workspace', 'explain', 'release-blocked', '--json', '--write'],
