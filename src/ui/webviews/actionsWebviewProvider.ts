@@ -53,9 +53,7 @@ import {
   assertVerifiedGoalCommandSafety,
   assertVerifiedGoalPackageManifestSafety,
   assertVerifiedGoalSourceMutationSafety,
-  parseVerifiedGoalPlanResult,
   parseVerifiedGoalVerifyResult,
-  verifiedGoalPlanArgs,
   verifiedGoalVerifyArgs,
   type VerifiedGoalContractPayload,
 } from '../../core/verifiedGoalIntent.js';
@@ -2365,27 +2363,26 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         hasProjectScope: Boolean(input.projectPath),
       });
       if (intent) {
-        const planExecution = await runRapidkitStreaming<unknown>({
-          command: verifiedGoalPlanArgs({
-            intent,
-            projectName: resolveStudioRepairProjectTarget({
-              explicitProjectName: input.projectName,
-              affectedProjectNames: input.handoff?.affectedProjectNames,
-              projectPath: input.projectPath,
-            }),
-          }),
-          cwd: input.workspacePath,
-          featureLabel: 'Verified engineering goal',
-          timeoutMs: 2 * 60_000,
+        const projectName = resolveStudioRepairProjectTarget({
+          explicitProjectName: input.projectName,
+          affectedProjectNames: input.handoff?.affectedProjectNames,
+          projectPath: input.projectPath,
         });
-        if (planExecution.failed || !planExecution.result) {
-          throw new Error(
-            planExecution.stderr ||
-              planExecution.stdout ||
-              'Workspai CLI could not create the verified goal contract.'
-          );
-        }
-        verifiedGoal = parseVerifiedGoalPlanResult(planExecution.result).goal;
+        const prepared = await prepareGovernedGoalSession({
+          workspacePath: input.workspacePath,
+          objective: input.task,
+          ...(input.projectPath && projectName ? { projectName } : {}),
+          onPhase: (label) =>
+            this._postInlineCreate('sidebarStudioThinking', {
+              sessionId: input.sessionId,
+              label,
+            }),
+        });
+        governedGoalId = prepared.goalPackId;
+        governedGoal = prepared.governedGoal;
+        verifiedGoal = prepared.verifiedGoal;
+        goalMaxAttempts = prepared.maxAttempts;
+        goalAttemptsUsed = prepared.attemptsUsed;
       }
     }
     const inspectedSource = new Map<string, string | null>();

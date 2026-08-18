@@ -4,7 +4,9 @@ import {
   isGoalLifecycleResult,
   isGoalPlanResult,
   readPreparedVerifiedGoal,
+  readGoalCoverageRuntimeBinding,
   readGoalExecutionPolicy,
+  readGoalPlanningDecision,
   readGoalVerificationAttempts,
   readGoalIndex,
   runGoalCommand,
@@ -55,6 +57,8 @@ export async function prepareGovernedGoalSession(input: {
   readExecutionPolicy?: typeof readGoalExecutionPolicy;
   readVerificationAttempts?: typeof readGoalVerificationAttempts;
   readIndex?: typeof readGoalIndex;
+  readPlanningDecision?: typeof readGoalPlanningDecision;
+  readCoverageRuntimeBinding?: typeof readGoalCoverageRuntimeBinding;
 }): Promise<GovernedGoalSessionBinding> {
   const run = input.run ?? runGoalCommand;
   const args = [input.objective, '--for-agent', input.consumer ?? 'generic'];
@@ -71,8 +75,19 @@ export async function prepareGovernedGoalSession(input: {
     throw commandFailure(planned, 'Workspai CLI returned an incompatible Goal plan.');
   }
   if (planned.value.result !== 'planned') {
+    const decision = await (input.readPlanningDecision ?? readGoalPlanningDecision)(
+      input.workspacePath,
+      planned.value.goalPack.id
+    );
+    const guidance = decision
+      ? [
+          decision.reason,
+          decision.question,
+          ...decision.prerequisites.map((entry) => `Required: ${entry}`),
+        ].join(' ')
+      : 'Review the Goal Pack to resolve its scope, decision, or evidence requirements.';
     throw new Error(
-      `Goal requires review before execution (${planned.value.result}). Open Workspai: Review Governed Goals to resolve its scope or evidence requirements.`
+      `Goal needs input before execution (${planned.value.result}). ${guidance} No source was changed.`
     );
   }
 
@@ -84,6 +99,20 @@ export async function prepareGovernedGoalSession(input: {
     throw new Error(
       'The planned Goal Pack is unavailable or does not match the intent compiled for this request.'
     );
+  }
+  if (plannedEntry.category === 'test-coverage') {
+    const binding = await (input.readCoverageRuntimeBinding ?? readGoalCoverageRuntimeBinding)(
+      input.workspacePath,
+      plannedEntry
+    );
+    if (!binding) {
+      throw new Error('The Goal coverage runtime binding is missing or incompatible.');
+    }
+    if (!binding.runtime && binding.detectedRuntimes.length > 1) {
+      throw new Error(
+        `Goal needs input before execution (needs-confirmation). Choose exactly one coverage runtime from the detected scope: ${binding.detectedRuntimes.join(', ')}, then regenerate the Goal. No source was changed.`
+      );
+    }
   }
   const policy = await (input.readExecutionPolicy ?? readGoalExecutionPolicy)(
     input.workspacePath,

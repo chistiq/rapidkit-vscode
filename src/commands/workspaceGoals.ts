@@ -147,6 +147,7 @@ async function pickGoalAction(workspacePath: string, goal: GoalEntry): Promise<v
     },
   ];
   if (
+    goal.state === 'ready-to-plan' &&
     goal.lifecycle !== 'active' &&
     goal.lifecycle !== 'verified' &&
     goal.lifecycle !== 'cancelled'
@@ -155,6 +156,18 @@ async function pickGoalAction(workspacePath: string, goal: GoalEntry): Promise<v
       label: '$(target) Activate',
       description: 'Make this the active objective',
       operation: 'activate',
+    });
+  }
+  if (goal.state !== 'ready-to-plan' && !['cancelled', 'verified'].includes(goal.lifecycle)) {
+    options.unshift({
+      label: '$(question) Review required input',
+      description:
+        goal.state === 'needs-confirmation'
+          ? 'Clarify scope or intent before activation'
+          : goal.state === 'needs-evidence'
+            ? 'Configure the required measurement evidence'
+            : 'Inspect the blocker recorded by the CLI',
+      command: goal.goalPack,
     });
   }
   if (goal.lifecycle === 'active') {

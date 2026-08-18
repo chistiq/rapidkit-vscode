@@ -7,6 +7,7 @@ import {
   GOAL_INDEX_RELATIVE_PATH,
   buildActiveGoalPromptSection,
   parseGoalCommandOutput,
+  parseCliOperationError,
   parseGoalEntry,
   parseGoalIndex,
   findGoalPackForVerifiedGoal,
@@ -304,6 +305,27 @@ describe('workspace governed Goals', () => {
     expect(
       parseGoalCommandOutput(JSON.stringify({ schemaVersion: 'workspai.goal-result.v2' }))
     ).toBeNull();
+  });
+
+  it('extracts a safe actionable message from a versioned CLI operation error', () => {
+    expect(
+      parseCliOperationError(
+        JSON.stringify({
+          schemaVersion: 'workspai-cli-operation-result-v1',
+          operation: 'goal.plan',
+          status: 'error',
+          exitCode: 1,
+          error: {
+            code: 'goal.plan.failed',
+            message: 'Goal index is inconsistent.',
+          },
+          context: { scope: null },
+        })
+      )
+    ).toMatchObject({
+      operation: 'goal.plan',
+      error: { code: 'goal.plan.failed', message: 'Goal index is inconsistent.' },
+    });
   });
 
   it('redacts local workspace and home paths from surfaced CLI failures', () => {

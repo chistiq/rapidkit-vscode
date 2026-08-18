@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Routed measurable Agent requests through the same CLI-authored Goal Pack
+  lifecycle as Goal mode, removing the extension's parallel verified-goal
+  planning path and preserving CLI decisions for polyglot coverage scopes.
+- Limited Goal activation actions to `ready-to-plan` entries and exposed
+  clarification, evidence, and blocker states as review actions instead.
+- Added a defense-in-depth runtime-binding check so a polyglot coverage plan
+  produced by an older CLI cannot reach mutation without one selected runtime.
+
+### Fixed
+
+- Parsed versioned CLI operation errors into concise, redacted user guidance
+  instead of rendering raw JSON in Sidebar sessions.
+- Surfaced the Goal Pack's canonical decision question and measurement
+  prerequisites when Studio pauses before mutation.
+
 ## [0.40.0] - 2026-08-17
 
 ### Added

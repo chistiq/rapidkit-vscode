@@ -157,6 +157,7 @@ describe('governed Goal Assistant session', () => {
           goals: [entry('planned')],
         },
       }),
+      readCoverageRuntimeBinding: async () => ({ runtime: 'node', detectedRuntimes: ['node'] }),
       readExecutionPolicy: async () => ({ maxAttempts: 5 }),
       readVerificationAttempts: async () => 0,
       readPreparedGoal: async () => verifiedGoal(),
@@ -213,8 +214,91 @@ describe('governed Goal Assistant session', () => {
         objective: 'Improve the project',
         run,
       })
-    ).rejects.toThrow('Goal requires review before execution (needs-confirmation)');
+    ).rejects.toThrow('Goal needs input before execution (needs-confirmation)');
     expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces the CLI-authored decision instead of a generic Goal failure', async () => {
+    const run = vi.fn().mockResolvedValue(
+      result({
+        schemaVersion: 'workspai.goal-plan-result.v1',
+        result: 'needs-confirmation',
+        resolution: { source: 'explicit', invocationScope: 'workspace' },
+        goalPack: {
+          schemaVersion: 'workspai.goal-pack.v1',
+          id: goalPackId,
+          fingerprint: 'a'.repeat(64),
+        },
+        agentHandoff: {
+          schemaVersion: 'workspai.goal-agent-handoff.v1',
+          goalId: goalPackId,
+          goalFingerprint: 'a'.repeat(64),
+        },
+        writtenArtifacts: [],
+        dryRun: false,
+        resumed: false,
+      })
+    );
+
+    await expect(
+      prepareGovernedGoalSession({
+        workspacePath: '/workspace',
+        objective: 'Raise test coverage to 85%',
+        run,
+        readPlanningDecision: async () => ({
+          reason: 'Coverage spans C++, Python, and Ruby.',
+          question: 'Which runtime should this Goal measure?',
+          prerequisites: ['Name one runtime or language in the Goal.'],
+        }),
+      })
+    ).rejects.toThrow('Which runtime should this Goal measure?');
+  });
+
+  it('blocks an older CLI plan that omitted a required polyglot coverage runtime', async () => {
+    const coverageGoal = entry('planned', {
+      objective: 'Raise test coverage to 85%',
+      category: 'test-coverage',
+    });
+    const plan: GoalPlanResult = {
+      schemaVersion: 'workspai.goal-plan-result.v1',
+      result: 'planned',
+      resolution: { source: 'explicit', invocationScope: 'workspace' },
+      goalPack: {
+        schemaVersion: 'workspai.goal-pack.v1',
+        id: goalPackId,
+        fingerprint: coverageGoal.fingerprint,
+      },
+      agentHandoff: {
+        schemaVersion: 'workspai.goal-agent-handoff.v1',
+        goalId: goalPackId,
+        goalFingerprint: coverageGoal.fingerprint,
+      },
+      writtenArtifacts: [coverageGoal.goalPack, coverageGoal.agentHandoff],
+      dryRun: false,
+      resumed: false,
+    };
+
+    await expect(
+      prepareGovernedGoalSession({
+        workspacePath: '/workspace',
+        objective: coverageGoal.objective,
+        run: vi.fn().mockResolvedValue(result(plan)),
+        readIndex: async () => ({
+          kind: 'valid' as const,
+          artifactPath: '/workspace/.workspai/goals/index.json',
+          value: {
+            schemaVersion: 'workspai.goal-index.v1' as const,
+            generatedAt: coverageGoal.updatedAt,
+            activeGoalId: null,
+            goals: [coverageGoal],
+          },
+        }),
+        readCoverageRuntimeBinding: async () => ({
+          runtime: null,
+          detectedRuntimes: ['cpp', 'python', 'ruby'],
+        }),
+      })
+    ).rejects.toThrow('Choose exactly one coverage runtime');
   });
 
   it('activates arbitrary engineering goals without inventing a deterministic verifier', async () => {

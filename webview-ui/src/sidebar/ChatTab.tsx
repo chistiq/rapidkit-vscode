@@ -197,7 +197,7 @@ export function ChatTab(props: ChatTabProps) {
         )}
         {!repairMode && activeSession?.status === 'error' && activeSession.error ? (
           <SidebarMessage role="ai">
-            <strong>Studio paused.</strong>
+            <strong>Studio needs your input</strong>
             <p>{activeSession.error}</p>
           </SidebarMessage>
         ) : null}

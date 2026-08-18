@@ -135,7 +135,21 @@ export type GoalAgentHandoff = {
 
 export type GoalCommandResult =
   | { ok: true; command: EvidenceCliRunResult; value: GoalPlanResult | GoalLifecycleResult }
-  | { ok: false; command?: EvidenceCliRunResult; error: string };
+  | {
+      ok: false;
+      command?: EvidenceCliRunResult;
+      error: string;
+      code?: string;
+      operation?: string;
+    };
+
+type CliOperationError = {
+  schemaVersion: 'workspai-cli-operation-result-v1';
+  operation: string;
+  status: 'error';
+  exitCode: number;
+  error: { code: string; message: string };
+};
 
 export function isGoalPlanResult(
   value: GoalPlanResult | GoalLifecycleResult
@@ -414,6 +428,89 @@ export async function readGoalExecutionPolicy(
   return { maxAttempts: Number(maxAttempts) };
 }
 
+export async function readGoalCoverageRuntimeBinding(
+  workspacePath: string,
+  goal: GoalEntry
+): Promise<{ runtime: string | null; detectedRuntimes: string[] } | null> {
+  if (goal.category !== 'test-coverage') {
+    return { runtime: null, detectedRuntimes: [] };
+  }
+  const root = path.resolve(workspacePath);
+  const artifactPath = path.resolve(root, goal.goalPack);
+  const relative = path.relative(root, artifactPath);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    return null;
+  }
+  const result = await readJsonArtifact(artifactPath);
+  if (
+    result.kind !== 'valid' ||
+    result.raw.id !== goal.id ||
+    result.raw.fingerprint !== goal.fingerprint
+  ) {
+    return null;
+  }
+  const intent = isRecord(result.raw.intent) ? result.raw.intent : null;
+  const requestedTarget =
+    intent && isRecord(intent.requestedTarget) ? intent.requestedTarget : null;
+  const baseline = isRecord(result.raw.baseline) ? result.raw.baseline : null;
+  const runtime =
+    typeof requestedTarget?.runtime === 'string' && requestedTarget.runtime.trim()
+      ? requestedTarget.runtime.trim()
+      : null;
+  const detectedRuntimes = Array.isArray(baseline?.runtimes)
+    ? [
+        ...new Set(
+          baseline.runtimes.filter(
+            (entry): entry is string => typeof entry === 'string' && Boolean(entry.trim())
+          )
+        ),
+      ].sort()
+    : [];
+  return { runtime, detectedRuntimes };
+}
+
+export async function readGoalPlanningDecision(
+  workspacePath: string,
+  goalId: string
+): Promise<{ reason: string; question: string; prerequisites: string[] } | null> {
+  const index = await readGoalIndex(workspacePath);
+  const goal =
+    index.kind === 'valid' ? index.value.goals.find((entry) => entry.id === goalId) : null;
+  if (!goal) {
+    return null;
+  }
+  const root = path.resolve(workspacePath);
+  const artifactPath = path.resolve(root, goal.goalPack);
+  const relative = path.relative(root, artifactPath);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    return null;
+  }
+  const result = await readJsonArtifact(artifactPath);
+  if (
+    result.kind !== 'valid' ||
+    result.raw.id !== goal.id ||
+    result.raw.fingerprint !== goal.fingerprint ||
+    !isRecord(result.raw.decision) ||
+    result.raw.decision.required !== true ||
+    typeof result.raw.decision.reason !== 'string' ||
+    typeof result.raw.decision.question !== 'string'
+  ) {
+    return null;
+  }
+  const preflight = isRecord(result.raw.preflight) ? result.raw.preflight : null;
+  const measurement = preflight && isRecord(preflight.measurement) ? preflight.measurement : null;
+  const prerequisites = Array.isArray(measurement?.prerequisites)
+    ? measurement.prerequisites.filter(
+        (entry): entry is string => typeof entry === 'string' && Boolean(entry.trim())
+      )
+    : [];
+  return {
+    reason: result.raw.decision.reason,
+    question: result.raw.decision.question,
+    prerequisites: [...new Set(prerequisites)].slice(0, 12),
+  };
+}
+
 function parseGoalAgentHandoff(value: unknown, goal: GoalEntry): GoalAgentHandoff | null {
   if (
     !isRecord(value) ||
@@ -590,6 +687,24 @@ export function parseGoalCommandOutput(
   return null;
 }
 
+export function parseCliOperationError(output: string): CliOperationError | null {
+  const value = parseTrailingJson<Record<string, unknown>>(output);
+  if (
+    !value ||
+    value.schemaVersion !== 'workspai-cli-operation-result-v1' ||
+    value.status !== 'error' ||
+    typeof value.operation !== 'string' ||
+    !Number.isInteger(value.exitCode) ||
+    !isRecord(value.error) ||
+    typeof value.error.code !== 'string' ||
+    typeof value.error.message !== 'string' ||
+    !value.error.message.trim()
+  ) {
+    return null;
+  }
+  return value as unknown as CliOperationError;
+}
+
 export async function runGoalCommand(input: {
   workspacePath: string;
   args: string[];
@@ -606,13 +721,18 @@ export async function runGoalCommand(input: {
   });
   const value = parseGoalCommandOutput(command.stdout);
   if (command.exitCode !== 0 || !value) {
+    const operationError =
+      parseCliOperationError(command.stdout) ?? parseCliOperationError(command.stderr);
     const detail = sanitizeGoalCommandDetail(
-      command.stderr.trim() || command.stdout.trim(),
+      operationError?.error.message || command.stderr.trim() || command.stdout.trim(),
       input.workspacePath
     );
     return {
       ok: false,
       command,
+      ...(operationError
+        ? { code: operationError.error.code, operation: operationError.operation }
+        : {}),
       error:
         detail ||
         `Workspai returned exit code ${command.exitCode} without a compatible Goal result.`,
