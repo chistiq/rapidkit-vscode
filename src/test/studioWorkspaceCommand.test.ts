@@ -159,7 +159,7 @@ describe('Studio workspace command capability policy', () => {
     ).toEqual(['--no-install', 'workspai', 'workspace', 'remediation-plan', '--json']);
   });
 
-  it('gives local Workspai producers the governed ten-minute execution budget', () => {
+  it('gives governed producers and project validation the ten-minute execution budget', () => {
     expect(
       resolveStudioWorkspaceCommandPlan({
         workspacePath: '/workspace',
@@ -174,6 +174,12 @@ describe('Studio workspace command capability policy', () => {
       resolveStudioWorkspaceCommandPlan({
         workspacePath: '/workspace',
         request: { executable: 'pytest', args: ['-q'], purpose: 'test' },
+      }).timeoutMs
+    ).toBe(600_000);
+    expect(
+      resolveStudioWorkspaceCommandPlan({
+        workspacePath: '/workspace',
+        request: { executable: 'git', args: ['status', '--short'], purpose: 'inspect' },
       }).timeoutMs
     ).toBe(120_000);
   });
@@ -196,6 +202,23 @@ describe('Studio workspace command capability policy', () => {
         timedOut: true,
       })
     ).toBe('Workspace command timed out after 600000ms.');
+  });
+
+  it('reports an external termination signal instead of an ambiguous exit failure', () => {
+    const plan = resolveStudioWorkspaceCommandPlan({
+      workspacePath: '/workspace',
+      request: { executable: 'pytest', args: ['-q'], purpose: 'test' },
+    });
+    expect(
+      describeStudioWorkspaceCommandFailure({
+        ...plan,
+        exitCode: null,
+        stdout: '',
+        stderr: '',
+        timedOut: false,
+        terminationSignal: 'SIGTERM',
+      })
+    ).toBe('Workspace command was terminated by SIGTERM.');
   });
 
   it('rejects cwd and project-local executable escapes', () => {

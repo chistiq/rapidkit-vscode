@@ -145,7 +145,7 @@ import {
 } from '../../core/workspaceGoals.js';
 import {
   prepareGovernedGoalSession,
-  restoreGovernedGoalSession,
+  restoreOrRenewGovernedGoalSession,
 } from '../../core/governedGoalSession.js';
 import {
   bootstrapProjectAgent,
@@ -2391,10 +2391,15 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     let goalMaxAttempts: number | undefined;
     let goalAttemptsUsed: number | undefined;
     if (input.assistantMode === 'goal' && (governedGoal || verifiedGoal)) {
-      const restored = await restoreGovernedGoalSession({
+      const restored = await restoreOrRenewGovernedGoalSession({
         workspacePath: input.workspacePath,
         ...(governedGoal ? { governedGoal } : {}),
         ...(verifiedGoal ? { verifiedGoal } : {}),
+        onPhase: (label) =>
+          this._postInlineCreate('sidebarStudioThinking', {
+            sessionId: input.sessionId,
+            label,
+          }),
       });
       governedGoalId = restored.goalPackId;
       governedGoal = restored.governedGoal;

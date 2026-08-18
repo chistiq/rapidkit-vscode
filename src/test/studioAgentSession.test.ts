@@ -2065,6 +2065,123 @@ describe('Studio Agent session runtime', () => {
     );
   });
 
+  it('rebuilds a Goal remediation plan once when canonical evidence advances during selection', async () => {
+    const registry = new StudioAgentToolRegistry();
+    let remediationExecuted = false;
+    let planRefreshes = 0;
+    let inspections = 0;
+    registry.register({
+      name: 'inspect-evidence',
+      title: 'Inspect evidence',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, output: { observed: true } };
+      },
+    });
+    registry.register({
+      name: 'run-governed-command',
+      title: 'Refresh remediation plan',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        planRefreshes += 1;
+        return { ok: true, changed: false };
+      },
+    });
+    registry.register({
+      name: 'inspect-remediation-plan',
+      title: 'Inspect remediation plan',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        inspections += 1;
+        if (inspections === 1) {
+          return {
+            ok: false,
+            error: 'Blocker artifact is newer than the remediation plan.',
+            output: { freshness: { verdict: 'stale' }, steps: [] },
+          };
+        }
+        return {
+          ok: true,
+          output: {
+            freshness: { verdict: 'fresh' },
+            steps: [
+              {
+                id: 'doctor.ledger-api:dependency-sync',
+                order: 1,
+                dependsOn: [],
+                risk: 'guarded',
+                studioState: 'ready',
+                executable: true,
+              },
+            ],
+          },
+        };
+      },
+    });
+    registry.register({
+      name: 'execute-remediation-step',
+      title: 'Execute remediation step',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        remediationExecuted = true;
+        return closedCliRepairResult({ transactionId: 'repair-stale-plan' });
+      },
+    });
+    registry.register({
+      name: 'verify-goal',
+      title: 'Verify Goal',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        return { ok: true, cardBlocking: false };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'goal-stale-plan-recovery-session',
+        workspacePath: '/workspace',
+        projectPath: '/workspace/ledger-api',
+        cardId: 'goal-test-coverage-12345678',
+        assistantMode: 'goal',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: true,
+        goal: verifiedDependencyGoal(),
+      },
+      {
+        async next() {
+          return remediationExecuted
+            ? { type: 'tool', toolName: 'verify-goal', input: {}, reason: 'Verify Goal.' }
+            : {
+                type: 'tool',
+                toolName: 'inspect-evidence',
+                input: { paths: ['same-report.json'] },
+                reason: 'Repeat unchanged evidence.',
+              };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Raise test coverage to 85%');
+
+    expect(result.status).toBe('completed');
+    expect(remediationExecuted).toBe(true);
+    expect(planRefreshes).toBe(2);
+    expect(inspections).toBe(2);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'model.checkpoint',
+        data: expect.objectContaining({ recovery: 'goal-remediation-plan-stale-retry' }),
+      })
+    );
+  });
+
   it('protects provider credits when distinct reads do not produce a source change', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({

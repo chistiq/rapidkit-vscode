@@ -54,6 +54,9 @@ export async function prepareGovernedGoalSession(input: {
   workspacePath: string;
   objective: string;
   projectName?: string;
+  scope?: GovernedGoalSessionDescriptor['scope'];
+  runtime?: string;
+  refresh?: boolean;
   consumer?: 'generic' | 'claude' | 'codex';
   onPhase?: (label: string) => void;
   run?: GoalRunner;
@@ -68,8 +71,23 @@ export async function prepareGovernedGoalSession(input: {
 }): Promise<GovernedGoalSessionBinding> {
   const run = input.run ?? runGoalCommand;
   const args = [input.objective, '--for-agent', input.consumer ?? 'generic'];
-  if (input.projectName) {
+  if (input.scope) {
+    args.push(
+      '--scope',
+      input.scope.kind === 'project'
+        ? `project:${input.scope.projects[0]}`
+        : input.scope.kind === 'project-set'
+          ? `projects:${input.scope.projects.join(',')}`
+          : 'workspace'
+    );
+  } else if (input.projectName) {
     args.push('--scope', `project:${input.projectName}`);
+  }
+  if (input.runtime) {
+    args.push('--runtime', input.runtime);
+  }
+  if (input.refresh) {
+    args.push('--refresh');
   }
   input.onPhase?.('Defining an evidence-bound CLI-governed Goal...');
   let planned: GoalCommandResult | null = null;
@@ -322,4 +340,71 @@ export async function restoreGovernedGoalSession(input: {
     maxAttempts: policy.maxAttempts,
     attemptsUsed: Math.max(attemptsUsed, repairAttemptsUsed),
   };
+}
+
+/**
+ * Resume an immutable Goal when its source bindings are current. A Goal from
+ * an older CLI that predates verification receipts can become stale after its
+ * own canonical verification refresh; in that narrow case, renew the same
+ * objective and selected scope through the public CLI instead of weakening
+ * freshness validation or asking the operator to reconstruct the Goal.
+ */
+export async function restoreOrRenewGovernedGoalSession(input: {
+  workspacePath: string;
+  governedGoal?: GovernedGoalSessionDescriptor;
+  verifiedGoal?: VerifiedGoalContractPayload;
+  run?: GoalRunner;
+  onPhase?: (label: string) => void;
+  prepare?: typeof prepareGovernedGoalSession;
+  restore?: typeof restoreGovernedGoalSession;
+  readIndex?: typeof readGoalIndex;
+  readCoverageRuntimeBinding?: typeof readGoalCoverageRuntimeBinding;
+}): Promise<GovernedGoalSessionBinding> {
+  const run = input.run ?? runGoalCommand;
+  const currentGoal = input.governedGoal;
+  const goalPackId = currentGoal?.id;
+  if (currentGoal && goalPackId) {
+    const status = await run({
+      workspacePath: input.workspacePath,
+      args: ['--status', goalPackId],
+      label: 'Validate governed Goal binding',
+    });
+    if (!status.ok) {
+      if (!/\bstale\b|regenerate it with --refresh/i.test(status.error)) {
+        throw commandFailure(status, 'Workspai CLI could not validate the governed Goal binding.');
+      }
+      input.onPhase?.('Renewing the Goal against current canonical evidence...');
+      let runtime =
+        input.verifiedGoal?.kind === 'test-coverage' &&
+        typeof input.verifiedGoal.criteria.runtime === 'string'
+          ? input.verifiedGoal.criteria.runtime
+          : undefined;
+      if (!runtime && currentGoal.category === 'test-coverage') {
+        const index = await (input.readIndex ?? readGoalIndex)(input.workspacePath);
+        const entry =
+          index.kind === 'valid'
+            ? index.value.goals.find((candidate) => candidate.id === goalPackId)
+            : undefined;
+        if (entry) {
+          runtime =
+            (
+              await (input.readCoverageRuntimeBinding ?? readGoalCoverageRuntimeBinding)(
+                input.workspacePath,
+                entry
+              )
+            )?.runtime ?? undefined;
+        }
+      }
+      return (input.prepare ?? prepareGovernedGoalSession)({
+        workspacePath: input.workspacePath,
+        objective: currentGoal.objective,
+        scope: currentGoal.scope,
+        ...(runtime ? { runtime } : {}),
+        refresh: true,
+        run,
+        onPhase: input.onPhase,
+      });
+    }
+  }
+  return (input.restore ?? restoreGovernedGoalSession)(input);
 }

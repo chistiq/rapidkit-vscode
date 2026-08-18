@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   prepareGovernedGoalSession,
   restoreGovernedGoalSession,
+  restoreOrRenewGovernedGoalSession,
 } from '../core/governedGoalSession.js';
 import type { VerifiedGoalContractPayload } from '../core/verifiedGoalIntent.js';
 import type {
@@ -515,5 +516,125 @@ describe('governed Goal Assistant session', () => {
     } finally {
       await fs.remove(workspacePath);
     }
+  });
+
+  it('renews a stale persisted Goal with the same objective, scope, and runtime', async () => {
+    const staleResult: GoalCommandResult = {
+      ok: false,
+      command: {
+        exitCode: 1,
+        stdout: '',
+        stderr: 'Goal is stale. Regenerate it with --refresh.',
+        displayCommand: 'workspai goal --status',
+      },
+      error: 'Goal is stale. Regenerate it with --refresh.',
+    };
+    const run = vi.fn().mockResolvedValue(staleResult);
+    const renewed = {
+      goalPackId: 'goal-renewed-12345678',
+      governedGoal: {
+        schemaVersion: 'workspai.studio-governed-goal.v1' as const,
+        id: 'goal-renewed-12345678',
+        fingerprint: 'c'.repeat(64),
+        objective: 'Raise test coverage to 75%',
+        category: 'test-coverage' as const,
+        scope: entry('failed').scope,
+        completionMode: 'deterministic-verification' as const,
+      },
+      verifiedGoal: verifiedGoal(),
+      maxAttempts: 5,
+      attemptsUsed: 0,
+    };
+    const prepare = vi.fn().mockResolvedValue(renewed);
+    const oldGoal = {
+      schemaVersion: 'workspai.studio-governed-goal.v1' as const,
+      id: goalPackId,
+      fingerprint: 'a'.repeat(64),
+      objective: 'Raise test coverage to 75%',
+      category: 'test-coverage' as const,
+      scope: entry('failed').scope,
+      completionMode: 'deterministic-verification' as const,
+    };
+    const oldVerified = verifiedGoal();
+    oldVerified.criteria = {
+      kind: 'test-coverage',
+      minimumPercent: 75,
+      runtime: 'node',
+    };
+
+    await expect(
+      restoreOrRenewGovernedGoalSession({
+        workspacePath: '/workspace',
+        governedGoal: oldGoal,
+        verifiedGoal: oldVerified,
+        run,
+        prepare,
+      })
+    ).resolves.toBe(renewed);
+
+    expect(run).toHaveBeenCalledWith({
+      workspacePath: '/workspace',
+      args: ['--status', goalPackId],
+      label: 'Validate governed Goal binding',
+    });
+    expect(prepare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspacePath: '/workspace',
+        objective: oldGoal.objective,
+        scope: oldGoal.scope,
+        runtime: 'node',
+        refresh: true,
+      })
+    );
+  });
+
+  it('recovers a stale coverage runtime from the immutable Goal when session state is incomplete', async () => {
+    const run = vi.fn().mockResolvedValue({
+      ok: false,
+      command: {
+        exitCode: 1,
+        stdout: '',
+        stderr: 'Goal is stale. Regenerate it with --refresh.',
+        displayCommand: 'workspai goal --status',
+      },
+      error: 'Goal is stale. Regenerate it with --refresh.',
+    } satisfies GoalCommandResult);
+    const prepare = vi.fn().mockResolvedValue({});
+    const staleEntry = entry('failed');
+
+    await restoreOrRenewGovernedGoalSession({
+      workspacePath: '/workspace',
+      governedGoal: {
+        schemaVersion: 'workspai.studio-governed-goal.v1',
+        id: goalPackId,
+        fingerprint: staleEntry.fingerprint,
+        objective: staleEntry.objective,
+        category: staleEntry.category,
+        scope: staleEntry.scope,
+        completionMode: 'deterministic-verification',
+      },
+      run,
+      prepare,
+      readIndex: async () => ({
+        kind: 'valid',
+        artifactPath: '/workspace/.workspai/goals/index.json',
+        value: {
+          schemaVersion: 'workspai.goal-index.v1',
+          generatedAt: staleEntry.updatedAt,
+          activeGoalId: goalPackId,
+          goals: [staleEntry],
+        },
+      }),
+      readCoverageRuntimeBinding: async () => ({ runtime: 'python', detectedRuntimes: ['python'] }),
+    });
+
+    expect(prepare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        objective: staleEntry.objective,
+        scope: staleEntry.scope,
+        runtime: 'python',
+        refresh: true,
+      })
+    );
   });
 });

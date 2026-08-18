@@ -65,6 +65,15 @@ export type GoalEntry = {
   verifiedGoalId?: string;
   repairTransactionId?: string;
   repairTransactionIds?: string[];
+  verificationReceipt?: {
+    verifiedGoalId: string;
+    attempt: number;
+    statusHash: string;
+    modelHash: string;
+    graphFingerprint: string;
+    graphFingerprintSemantics: 'workspace-knowledge-graph-inputs-v1' | 'canonical-json-v1';
+    recordedAt: string;
+  };
 };
 
 export type GoalIndex = {
@@ -297,7 +306,24 @@ export function parseGoalEntry(value: unknown): GoalEntry | null {
       (!isUniqueStringArray(value.repairTransactionIds, { min: 1, max: 25 }) ||
         !value.repairTransactionIds.every((entry) => /^[A-Za-z0-9_-]{12,128}$/.test(entry)) ||
         (typeof value.repairTransactionId === 'string' &&
-          value.repairTransactionIds.at(-1) !== value.repairTransactionId)))
+          value.repairTransactionIds.at(-1) !== value.repairTransactionId))) ||
+    (value.verificationReceipt !== undefined &&
+      (!isRecord(value.verificationReceipt) ||
+        typeof value.verificationReceipt.verifiedGoalId !== 'string' ||
+        value.verificationReceipt.verifiedGoalId !== value.verifiedGoalId ||
+        !Number.isInteger(value.verificationReceipt.attempt) ||
+        Number(value.verificationReceipt.attempt) < 1 ||
+        typeof value.verificationReceipt.statusHash !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(value.verificationReceipt.statusHash) ||
+        typeof value.verificationReceipt.modelHash !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(value.verificationReceipt.modelHash) ||
+        typeof value.verificationReceipt.graphFingerprint !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(value.verificationReceipt.graphFingerprint) ||
+        !['workspace-knowledge-graph-inputs-v1', 'canonical-json-v1'].includes(
+          String(value.verificationReceipt.graphFingerprintSemantics)
+        ) ||
+        typeof value.verificationReceipt.recordedAt !== 'string' ||
+        Number.isNaN(Date.parse(value.verificationReceipt.recordedAt))))
   ) {
     return null;
   }

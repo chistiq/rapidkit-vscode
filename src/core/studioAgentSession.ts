@@ -1494,7 +1494,10 @@ export class StudioAgentSession {
     }
 
     const governedProducer = this.registry.get('run-governed-command');
-    if (governedProducer) {
+    const refreshRemediationPlan = async (reason: string): Promise<void> => {
+      if (!governedProducer) {
+        return;
+      }
       await this.emit(
         'model.checkpoint',
         {
@@ -1509,13 +1512,17 @@ export class StudioAgentSession {
           type: 'tool',
           toolName: 'run-governed-command',
           input: { commandId: 'workspaceRemediationPlan' },
-          reason: 'Refresh the contract-authored remediation plan for the active Goal scope.',
+          reason,
         },
         requestId
       );
-    }
+    };
 
-    const inspected = await this.executeTool(
+    await refreshRemediationPlan(
+      'Refresh the contract-authored remediation plan for the active Goal scope.'
+    );
+
+    let inspected = await this.executeTool(
       {
         type: 'tool',
         toolName: 'inspect-remediation-plan',
@@ -1524,6 +1531,43 @@ export class StudioAgentSession {
       },
       requestId
     );
+    const inspectedOutput = toolOutputRecord(inspected);
+    const freshness = inspectedOutput?.freshness;
+    const stalePlan =
+      !inspected.ok &&
+      freshness !== null &&
+      typeof freshness === 'object' &&
+      !Array.isArray(freshness) &&
+      (freshness as Record<string, unknown>).verdict === 'stale';
+    if (stalePlan && governedProducer) {
+      // A stale verdict is itself proof that canonical evidence advanced after
+      // the first plan was produced. Move deterministic recovery into a new
+      // causal epoch so the duplicate-tool guard permits exactly one rebuild;
+      // arbitrary model retries remain bounded by the normal guard.
+      this.causalEpoch += 1;
+      this.exhaustedTools.clear();
+      await this.emit(
+        'model.checkpoint',
+        {
+          summary:
+            'Goal evidence advanced while the repair plan was being selected. Studio is rebuilding the plan once from the newest canonical evidence.',
+          recovery: 'goal-remediation-plan-stale-retry',
+        },
+        requestId
+      );
+      await refreshRemediationPlan(
+        'Rebuild the remediation plan after its source evidence advanced.'
+      );
+      inspected = await this.executeTool(
+        {
+          type: 'tool',
+          toolName: 'inspect-remediation-plan',
+          input: {},
+          reason: 'Inspect the rebuilt Goal remediation plan against current evidence.',
+        },
+        requestId
+      );
+    }
     if (!inspected.ok) {
       return undefined;
     }

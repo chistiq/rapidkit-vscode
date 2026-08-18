@@ -82,6 +82,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Renewed legacy stale Goal sessions through the CLI with their original
+  objective, selected scope, and runtime instead of stopping the Studio loop.
+- Rebuilt a remediation plan once when its canonical blocker evidence advances
+  during selection, while retaining causal retry bounds for model-driven calls.
+- Gave project-native test, build, and dependency validation a governed
+  ten-minute budget and now reports timeout or termination signals explicitly.
 - Parsed versioned CLI operation errors into concise, redacted user guidance
   instead of rendering raw JSON in Sidebar sessions.
 - Surfaced the Goal Pack's canonical decision question and measurement

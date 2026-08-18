@@ -38,6 +38,7 @@ export type StudioWorkspaceCommandExecution = StudioWorkspaceCommandPlan & {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  terminationSignal?: string;
 };
 
 export function describeStudioWorkspaceCommandFailure(
@@ -51,6 +52,9 @@ export function describeStudioWorkspaceCommandFailure(
   }
   if (execution.timedOut) {
     return `Workspace command timed out after ${execution.timeoutMs}ms.`;
+  }
+  if (execution.terminationSignal) {
+    return `Workspace command was terminated by ${execution.terminationSignal}.`;
   }
   return execution.exitCode === null
     ? 'Workspace command was terminated before it returned an exit code.'
@@ -355,7 +359,8 @@ export function resolveStudioWorkspaceCommandPlan(input: {
   // local Workspai invocation receives the same upper bound as Studio's
   // governed producers. This prevents a timeout from surfacing as the
   // misleading "no exit code" failure.
-  const defaultTimeoutMs = workspaiCommand ? 600_000 : 120_000;
+  const longRunningPurpose = ['test', 'build', 'dependency'].includes(request.purpose);
+  const defaultTimeoutMs = workspaiCommand || longRunningPurpose ? 600_000 : 120_000;
   const timeoutMs = Math.min(Math.max(request.timeoutMs ?? defaultTimeoutMs, 1_000), 600_000);
   return {
     executable: request.executable,
@@ -457,6 +462,7 @@ export async function runStudioWorkspaceCommand(
         stdout: boundedOutput(stdout),
         stderr: boundedOutput([stderr, captureError].filter(Boolean).join('\n')),
         timedOut: Boolean(result.timedOut),
+        ...(result.signal ? { terminationSignal: String(result.signal) } : {}),
       };
     } finally {
       clearInterval(captureMonitor);
