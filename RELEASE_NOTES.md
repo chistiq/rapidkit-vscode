@@ -1,6 +1,6 @@
 # Release Notes
 
-## v0.40.0 (Unreleased)
+## v0.40.0 (August 18, 2026)
 
 ### Governed Goals, canonical agent entry, and verified source repair
 
@@ -39,7 +39,7 @@ Compatibility:
 
 Release posture: `governed-goals-and-canonical-agent-entry`
 
-Publication status: not yet published.
+Publication status: published.
 
 ## v0.39.0 (August 11, 2026)
 
