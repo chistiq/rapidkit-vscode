@@ -32,9 +32,10 @@ export type VerifiedGoalContractPayload = {
   kind: VerifiedGoalKind;
   summary: string;
   scope: {
-    kind: 'workspace' | 'project';
+    kind: 'workspace' | 'project' | 'project-set';
     projectName?: string;
     projectPath?: string;
+    projects?: Array<{ projectName: string; projectPath: string }>;
   };
   constraints: {
     allowBreakingChanges: boolean;
@@ -228,7 +229,27 @@ export function parseVerifiedGoalContract(value: unknown): VerifiedGoalContractP
     !VERIFIED_GOAL_KINDS.includes(goal.kind as VerifiedGoalKind) ||
     typeof goal.summary !== 'string' ||
     !scope ||
-    (scope.kind !== 'workspace' && scope.kind !== 'project') ||
+    !['workspace', 'project', 'project-set'].includes(String(scope.kind)) ||
+    (scope.kind === 'project' &&
+      (typeof scope.projectName !== 'string' ||
+        !scope.projectName.trim() ||
+        typeof scope.projectPath !== 'string' ||
+        !scope.projectPath.trim())) ||
+    (scope.kind === 'project-set' &&
+      (!Array.isArray(scope.projects) ||
+        scope.projects.length < 2 ||
+        scope.projects.some(
+          (entry) =>
+            !entry ||
+            typeof entry !== 'object' ||
+            Array.isArray(entry) ||
+            typeof (entry as Record<string, unknown>).projectName !== 'string' ||
+            typeof (entry as Record<string, unknown>).projectPath !== 'string'
+        ) ||
+        new Set(scope.projects.map((entry) => (entry as Record<string, unknown>).projectName))
+          .size !== scope.projects.length ||
+        new Set(scope.projects.map((entry) => (entry as Record<string, unknown>).projectPath))
+          .size !== scope.projects.length)) ||
     !constraints ||
     typeof constraints.allowBreakingChanges !== 'boolean' ||
     typeof constraints.allowForce !== 'boolean' ||

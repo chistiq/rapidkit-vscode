@@ -64,9 +64,15 @@ export type StudioAgentPersistedSession = {
       | 'documentation'
       | 'system-understanding';
     scope: {
-      kind: 'workspace' | 'project';
+      kind: 'workspace' | 'project' | 'project-set';
       projects: string[];
-      selectionSource: 'workspace' | 'invocation-project' | 'explicit';
+      selectionSource:
+        | 'workspace'
+        | 'single-project-workspace'
+        | 'invocation-project'
+        | 'explicit'
+        | 'interactive';
+      resolution?: 'selected' | 'selection-required';
     };
     /**
      * Deterministic goals have an exact CLI success producer. Every other
@@ -89,9 +95,10 @@ export type StudioAgentPersistedSession = {
     kind: 'release-readiness' | 'dependency-security' | 'test-coverage';
     summary: string;
     scope: {
-      kind: 'workspace' | 'project';
+      kind: 'workspace' | 'project' | 'project-set';
       projectName?: string;
       projectPath?: string;
+      projects?: Array<{ projectName: string; projectPath: string }>;
     };
     constraints: {
       allowBreakingChanges: boolean;

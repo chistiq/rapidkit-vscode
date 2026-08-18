@@ -55,7 +55,7 @@ Try retry, refactoring, performance, documentation, or coverage outcomes from
 Coverage, dependency-security, and release-readiness Goals use exact CLI
 verifiers. Other Goals keep the same scope, evidence, transaction, rollback,
 and attempt controls, but finish with outcome review plus CLI workspace safety
-checks—not a false machine-proof claim. Requires Workspai CLI 0.59.0+.
+checks—not a false machine-proof claim. Requires Workspai CLI 0.60.0+.
 
 ## Why Workspai
 

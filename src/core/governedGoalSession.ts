@@ -37,6 +37,10 @@ type GoalRunner = (input: {
   label: string;
 }) => Promise<GoalCommandResult>;
 
+export type GovernedGoalScopeSelection =
+  | { kind: 'workspace' }
+  | { kind: 'projects'; projects: string[] };
+
 function commandFailure(result: GoalCommandResult, incompatibleMessage: string): Error {
   return new Error(result.ok ? incompatibleMessage : result.error);
 }
@@ -59,6 +63,8 @@ export async function prepareGovernedGoalSession(input: {
   readIndex?: typeof readGoalIndex;
   readPlanningDecision?: typeof readGoalPlanningDecision;
   readCoverageRuntimeBinding?: typeof readGoalCoverageRuntimeBinding;
+  selectScope?: (input: { projects: string[] }) => Promise<GovernedGoalScopeSelection | null>;
+  selectCoverageRuntime?: (input: { runtimes: string[] }) => Promise<string | null>;
 }): Promise<GovernedGoalSessionBinding> {
   const run = input.run ?? runGoalCommand;
   const args = [input.objective, '--for-agent', input.consumer ?? 'generic'];
@@ -66,19 +72,54 @@ export async function prepareGovernedGoalSession(input: {
     args.push('--scope', `project:${input.projectName}`);
   }
   input.onPhase?.('Defining an evidence-bound CLI-governed Goal...');
-  const planned = await run({
-    workspacePath: input.workspacePath,
-    args,
-    label: 'Define governed Goal',
-  });
-  if (!planned.ok || !isGoalPlanResult(planned.value)) {
-    throw commandFailure(planned, 'Workspai CLI returned an incompatible Goal plan.');
-  }
-  if (planned.value.result !== 'planned') {
+  let planned: GoalCommandResult | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    planned = await run({
+      workspacePath: input.workspacePath,
+      args: [...args],
+      label: 'Define governed Goal',
+    });
+    if (!planned.ok || !isGoalPlanResult(planned.value)) {
+      throw commandFailure(planned, 'Workspai CLI returned an incompatible Goal plan.');
+    }
+    if (planned.value.result === 'planned') {
+      break;
+    }
     const decision = await (input.readPlanningDecision ?? readGoalPlanningDecision)(
       input.workspacePath,
       planned.value.goalPack.id
     );
+    if (decision?.scopeSelectionRequired && input.selectScope && !args.includes('--scope')) {
+      const selection = await input.selectScope({ projects: decision.scopeProjects ?? [] });
+      if (!selection) {
+        throw new Error('Goal scope selection was cancelled. No source was changed.');
+      }
+      const scope =
+        selection.kind === 'workspace'
+          ? 'workspace'
+          : selection.projects.length === 1
+            ? `project:${selection.projects[0]}`
+            : `projects:${selection.projects.join(',')}`;
+      args.push('--scope', scope);
+      input.onPhase?.('Binding the selected canonical project scope...');
+      continue;
+    }
+    if (
+      decision &&
+      (decision.runtimeChoices?.length ?? 0) > 1 &&
+      input.selectCoverageRuntime &&
+      !args.includes('--runtime')
+    ) {
+      const runtime = await input.selectCoverageRuntime({
+        runtimes: decision.runtimeChoices ?? [],
+      });
+      if (!runtime) {
+        throw new Error('Goal runtime selection was cancelled. No source was changed.');
+      }
+      args.push('--runtime', runtime);
+      input.onPhase?.('Binding the selected canonical runtime...');
+      continue;
+    }
     const guidance = decision
       ? [
           decision.reason,
@@ -89,6 +130,13 @@ export async function prepareGovernedGoalSession(input: {
     throw new Error(
       `Goal needs input before execution (${planned.value.result}). ${guidance} No source was changed.`
     );
+  }
+
+  if (!planned || !planned.ok || !isGoalPlanResult(planned.value)) {
+    throw new Error('Workspai CLI did not return a usable Goal plan.');
+  }
+  if (planned.value.result !== 'planned') {
+    throw new Error('Goal selection did not converge after bounded planning attempts.');
   }
 
   const goalPackId = planned.value.goalPack.id;

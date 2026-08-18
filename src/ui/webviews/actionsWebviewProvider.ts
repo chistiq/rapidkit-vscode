@@ -758,6 +758,65 @@ function parseStudioBlockerHandoffPayload(value: unknown): StudioBlockerHandoff 
   return value;
 }
 
+async function selectGovernedGoalScope(input: {
+  projects: string[];
+}): Promise<import('../../core/governedGoalSession.js').GovernedGoalScopeSelection | null> {
+  const mode = await vscode.window.showQuickPick(
+    [
+      {
+        label: 'One project',
+        description: 'Apply this Goal to one canonical project',
+        value: 'one' as const,
+      },
+      {
+        label: 'Multiple projects',
+        description: 'Apply this Goal to a selected project set',
+        value: 'many' as const,
+      },
+      {
+        label: 'Entire workspace',
+        description: 'Apply this Goal to every registered project',
+        value: 'workspace' as const,
+      },
+    ],
+    { title: 'Where should this Goal apply?', placeHolder: 'Choose a bounded canonical scope' }
+  );
+  if (!mode) {
+    return null;
+  }
+  if (mode.value === 'workspace') {
+    return { kind: 'workspace' };
+  }
+  const selected = await vscode.window.showQuickPick(
+    input.projects.map((project) => ({ label: project, project })),
+    {
+      title: mode.value === 'one' ? 'Choose one project' : 'Choose projects',
+      placeHolder: 'Projects come from the canonical Workspace Model',
+      canPickMany: mode.value === 'many',
+    }
+  );
+  if (!selected || (Array.isArray(selected) && selected.length === 0)) {
+    return null;
+  }
+  const projects = (Array.isArray(selected) ? selected : [selected]).map((item) => item.project);
+  if (mode.value === 'many' && projects.length < 2) {
+    void vscode.window.showWarningMessage('Select at least two projects for a project-set Goal.');
+    return null;
+  }
+  return { kind: 'projects', projects };
+}
+
+async function selectGovernedGoalRuntime(input: { runtimes: string[] }): Promise<string | null> {
+  const selected = await vscode.window.showQuickPick(
+    input.runtimes.map((runtime) => ({ label: runtime, runtime })),
+    {
+      title: 'Which canonical runtime should this Goal measure?',
+      placeHolder: 'Runtime choices come from the selected Workspace Model scope',
+    }
+  );
+  return selected?.runtime ?? null;
+}
+
 export type WorkspaiSecondaryTab = 'create' | 'impact' | 'studio';
 export type WorkspaiSecondaryTabPayload = {
   workspace?: { name?: string; path?: string; workspaceRootPath?: string } | null;
@@ -2345,6 +2404,8 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         workspacePath: input.workspacePath,
         objective: input.task,
         ...(input.projectPath && projectName ? { projectName } : {}),
+        selectScope: selectGovernedGoalScope,
+        selectCoverageRuntime: selectGovernedGoalRuntime,
         onPhase: (label) =>
           this._postInlineCreate('sidebarStudioThinking', {
             sessionId: input.sessionId,
@@ -2372,6 +2433,8 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           workspacePath: input.workspacePath,
           objective: input.task,
           ...(input.projectPath && projectName ? { projectName } : {}),
+          selectScope: selectGovernedGoalScope,
+          selectCoverageRuntime: selectGovernedGoalRuntime,
           onPhase: (label) =>
             this._postInlineCreate('sidebarStudioThinking', {
               sessionId: input.sessionId,

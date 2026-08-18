@@ -66,23 +66,20 @@ function main() {
   const catalogPath = path.join(workspaiFrontRoot, 'lib/features/catalog.ts');
   const manifestPath = path.join(workspaiFrontRoot, 'data/rapidkit-free-modules.manifest.json');
   const aiFreeFeaturesPath = path.join(vscodeRoot, 'src/commands/aiFreeFeatures.ts');
-  const contractPath = path.join(vscodeRoot, 'contracts/runtime-command-surface.v1.json');
+  const createPlannerPath = path.join(vscodeRoot, 'contracts/create-planner-capabilities.v1.json');
   const packageJsonPath = path.join(vscodeRoot, 'package.json');
 
   const catalogSource = read(catalogPath);
   const aiFreeSource = read(aiFreeFeaturesPath);
   const packageJson = JSON.parse(read(packageJsonPath) || '{}');
-  const contract = JSON.parse(read(contractPath) || '{}');
+  const createPlanner = JSON.parse(read(createPlannerPath) || '{}');
 
   if (!catalogSource || !aiFreeSource) {
     reportAndExit();
   }
 
   const aiFeaturesBlock = extractCatalogBlock(catalogSource, 'aiFeatures');
-  const shippedAiFeatures = countRegexMatches(
-    aiFeaturesBlock,
-    /available:\s*true/g
-  );
+  const shippedAiFeatures = countRegexMatches(aiFeaturesBlock, /available:\s*true/g);
   const incidentStudioCard = /slug:\s*'incident-studio'/.test(aiFeaturesBlock);
   const coreFreeAiActions = shippedAiFeatures - (incidentStudioCard ? 1 : 0);
 
@@ -107,9 +104,18 @@ function main() {
 
   const defaultKitEnum =
     packageJson.contributes?.configuration?.properties?.['workspai.defaultKit']?.enum ?? [];
-  const contractKits = contract.scaffoldKits ?? [];
+  const contractKits = [
+    ...(Array.isArray(createPlanner.nativeCreate)
+      ? createPlanner.nativeCreate.map((entry) => entry?.id).filter(Boolean)
+      : []),
+    ...(Array.isArray(createPlanner.officialCreate)
+      ? createPlanner.officialCreate
+          .filter((entry) => entry?.canExecuteCreate === true)
+          .map((entry) => entry.id)
+      : []),
+  ];
   if (JSON.stringify(defaultKitEnum) !== JSON.stringify(contractKits)) {
-    errors.push('Extension defaultKit enum diverges from runtime command surface contract.');
+    errors.push('Extension defaultKit enum diverges from executable create-planner contracts.');
   }
 
   runNodeScript(
@@ -134,19 +140,33 @@ function main() {
   );
 
   const workspaiParityScript = path.join(workspaiFrontRoot, 'scripts/check-free-claim-parity.mjs');
-  runNodeScript('workspai-front check-free-claim-parity.mjs', workspaiParityScript, workspaiFrontRoot);
+  runNodeScript(
+    'workspai-front check-free-claim-parity.mjs',
+    workspaiParityScript,
+    workspaiFrontRoot
+  );
 
   const localVitest = path.join(vscodeRoot, 'node_modules/vitest/vitest.mjs');
   const vitestCommand = fs.existsSync(localVitest) ? process.execPath : 'npx';
   const vitestArgs = fs.existsSync(localVitest)
-    ? [localVitest, 'run', 'src/test/runtimeCommandSurfaceParity.test.ts', 'src/test/incidentStudioConsolidation.test.ts']
-    : ['vitest', 'run', 'src/test/runtimeCommandSurfaceParity.test.ts', 'src/test/incidentStudioConsolidation.test.ts'];
+    ? [
+        localVitest,
+        'run',
+        'src/test/runtimeCommandSurfaceParity.test.ts',
+        'src/test/incidentStudioConsolidation.test.ts',
+      ]
+    : [
+        'vitest',
+        'run',
+        'src/test/runtimeCommandSurfaceParity.test.ts',
+        'src/test/incidentStudioConsolidation.test.ts',
+      ];
 
-  const vitest = spawnSync(
-    vitestCommand,
-    vitestArgs,
-    { cwd: vscodeRoot, encoding: 'utf8', shell: !fs.existsSync(localVitest) }
-  );
+  const vitest = spawnSync(vitestCommand, vitestArgs, {
+    cwd: vscodeRoot,
+    encoding: 'utf8',
+    shell: !fs.existsSync(localVitest),
+  });
   if (vitest.status !== 0) {
     errors.push('Extension runtime/incident consolidation parity tests failed.');
     if (vitest.stdout) {

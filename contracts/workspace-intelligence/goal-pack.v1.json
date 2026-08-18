@@ -148,6 +148,11 @@
           "properties": {
             "status": { "enum": ["available", "requires-setup", "unsupported", "not-applicable"] },
             "runtime": { "type": ["string", "null"] },
+            "runtimeChoices": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "uniqueItems": true
+            },
             "runner": { "type": ["string", "null"] },
             "existingEvidence": {
               "type": "array",
@@ -284,15 +289,46 @@
       "type": "object",
       "required": ["kind", "projects", "selectionSource"],
       "properties": {
-        "kind": { "enum": ["workspace", "project"] },
+        "kind": { "enum": ["workspace", "project", "project-set"] },
         "projects": {
           "type": "array",
           "minItems": 1,
           "items": { "type": "string", "minLength": 1 },
           "uniqueItems": true
         },
-        "selectionSource": { "enum": ["workspace", "invocation-project", "explicit"] }
+        "selectionSource": {
+          "enum": [
+            "workspace",
+            "single-project-workspace",
+            "invocation-project",
+            "explicit",
+            "interactive"
+          ]
+        },
+        "resolution": { "enum": ["selected", "selection-required"] }
       },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "project" } } },
+          "then": { "properties": { "projects": { "type": "array", "maxItems": 1 } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "project-set" } } },
+          "then": { "properties": { "projects": { "type": "array", "minItems": 2 } } }
+        },
+        {
+          "if": {
+            "properties": { "resolution": { "const": "selection-required" } },
+            "required": ["resolution"]
+          },
+          "then": {
+            "properties": {
+              "kind": { "const": "workspace" },
+              "selectionSource": { "const": "workspace" }
+            }
+          }
+        }
+      ],
       "additionalProperties": false
     },
     "modelBinding": {

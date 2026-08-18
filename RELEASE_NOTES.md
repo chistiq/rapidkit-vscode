@@ -1,10 +1,10 @@
 # Release Notes
 
-## v0.40.0 (August 17, 2026)
+## v0.40.0 (Unreleased)
 
 ### Governed Goals, canonical agent entry, and verified source repair
 
-Workspai for VS Code 0.40.0 is verified against Workspai CLI 0.59.1 and turns Goal,
+Workspai for VS Code 0.40.0 is verified against Workspai CLI 0.60.0 and turns Goal,
 Agent, native Chat, and Incident Studio into consumers of the same canonical
 entry, evidence, repair, and verification contracts.
 
@@ -13,6 +13,11 @@ Highlights:
 - Goal is a first-class Assistant mode for arbitrary bounded engineering
   outcomes, backed by CLI-authored Goal Packs, durable attempt budgets, and
   evidence-aware completion.
+- Goal scope follows the selected project automatically; multi-project
+  workspaces offer one project, a project set, or the full workspace without
+  making the model guess.
+- Polyglot coverage Goals select only canonical runtimes supplied by the CLI,
+  and incompatible project sets stop before mutation.
 - Adopted projects must pass the portable project-entry and agent-bootstrap
   contract before broad discovery or mutation.
 - Sidebar and native Chat share one project-bound repair controller, bounded
@@ -27,12 +32,14 @@ Highlights:
 Compatibility:
 
 - VS Code 1.106.0+
-- Workspai CLI 0.59.0+
+- Workspai CLI 0.60.0+
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
 [Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.40.0/releases/RELEASE_NOTES_v0.40.0.md)
 
 Release posture: `governed-goals-and-canonical-agent-entry`
+
+Publication status: not yet published.
 
 ## v0.39.0 (August 11, 2026)
 

@@ -2,7 +2,7 @@
 {
   "productId": "workspai-vscode",
   "headline": "Governed Goals and Canonical Agent Entry",
-  "summary": "Workspai for VS Code 0.40.0 is verified against CLI 0.59.1 so Goal, Agent, native Chat, and Incident Studio enter adopted projects through one portable contract and accept source changes only through governed repair and verification.",
+  "summary": "Workspai for VS Code 0.40.0 is verified against CLI 0.60.0 so Goal, Agent, native Chat, and Incident Studio share canonical project scope, runtime identity, evidence, repair, and verification.",
   "highlights": [
     {
       "icon": "🎯",
@@ -22,7 +22,7 @@
     },
     {
       "icon": "✅",
-      "text": "CLI 0.59 contract parity, capability gates, and packaged-artifact inspection fail closed"
+      "text": "CLI 0.60 contract parity, capability gates, and packaged-artifact inspection fail closed"
     }
   ]
 }
@@ -30,11 +30,11 @@
 
 # Workspai VS Code v0.40.0
 
-Released August 17, 2026.
+Release candidate. Not yet published.
 
 ## Governed Goals and Canonical Agent Entry
 
-Workspai for VS Code 0.40.0 is validated against Workspai CLI 0.59.1. This
+Workspai for VS Code 0.40.0 is validated against Workspai CLI 0.60.0. This
 release gives Goal, Agent, native Chat, and Incident Studio one governed route
 from an adopted project to canonical evidence, bounded source work, a CLI-owned
 repair transaction, changed-file review, and exact verification.
@@ -59,10 +59,33 @@ available consistently to Ask, Plan, Agent, Studio, and native Chat, survives
 extension reloads, and remains tied to the selected workspace and project.
 Attempt budgets are immutable and durable; a retry cannot silently reset them.
 
+## Goal scope and runtime stay canonical
+
+Goal follows the user's invocation context instead of asking the model to infer
+where work should happen. A Goal started for an adopted project binds to that
+project. At a multi-project workspace root, Studio offers one project, a
+project set, or the complete workspace and replays the selection through the
+CLI's explicit `--scope` contract.
+
+Coverage Goals reuse runtime choices from the canonical Workspace Model. When
+a selected project or project set has more than one valid coverage runtime,
+Studio asks once and replays the answer through `--runtime`. A project set with
+no common runtime remains review-required; the extension never measures one
+runtime while silently omitting another selected project.
+
+Interactive choices are bounded, cancellable, and completed before mutation
+tools become available. JSON errors and CLI decisions are rendered as concise,
+redacted guidance rather than raw operation envelopes.
+
+The release claim gate now derives the extension's default-kit choices from
+the executable native and official create-planner contracts. Official Tauri,
+Electron, VS Code extension, and Laravel generators remain available without
+being mistaken for native runtime scaffold entries.
+
 ## Adopted projects have one canonical first entry
 
 Before broad source discovery or mutation, the extension resolves the selected
-project through Workspai CLI 0.59.1 and validates its portable entry contract
+project through Workspai CLI 0.60.0 and validates its portable entry contract
 and agent-bootstrap receipt. This proves workspace resolution, project identity,
 freshness, compatibility, and agent grounding without exposing the user's
 machine-local canonical workspace path.
@@ -117,12 +140,13 @@ packaging.
 ## Compatibility
 
 - VS Code 1.106.0 or newer
-- Workspai CLI 0.59.0 or newer
+- Workspai CLI 0.60.0 or newer
 - RapidKit Core 0.6.0 only when a Python-backed kit or module requires it
 
-The 0.59.0 CLI floor is capability-driven. Goal integrity transitions, durable
-attempt budgets, project entry, agent bootstrap, and the repair consumer
-protocol are runtime requirements for 0.40.0, not optional display metadata.
+The 0.60.0 CLI floor is capability-driven. Project-set Goal scope, canonical
+runtime choices, Goal integrity transitions, durable attempt budgets, project
+entry, agent bootstrap, and the repair consumer protocol are runtime
+requirements for 0.40.0, not optional display metadata.
 Older or capability-incomplete CLIs receive an actionable gate before the
 extension begins an enterprise workflow.
 
@@ -148,8 +172,8 @@ npm install -g workspai@latest
 
 ## Validation
 
-- CLI generation and both canonical contract mirrors match Workspai CLI 0.59.1.
-- Host and Webview type checks passed; 389 test files and 2,849 tests passed,
+- CLI generation and both canonical contract mirrors match Workspai CLI 0.60.0.
+- Host and Webview type checks passed; 389 test files and 2,854 tests passed,
   with one file and five tests explicitly skipped.
 - All 22 enterprise scenarios passed. Production build and VSIX inspection
   passed for a 173-file, 6.05 MB `rapidkit-vscode-0.40.0.vsix` artifact.

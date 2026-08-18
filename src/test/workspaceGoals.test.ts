@@ -12,6 +12,7 @@ import {
   parseGoalIndex,
   findGoalPackForVerifiedGoal,
   readGoalIndex,
+  readGoalPlanningDecision,
   readActiveGoalHandoff,
   readPreparedVerifiedGoal,
   readGoalVerificationAttempts,
@@ -68,6 +69,30 @@ describe('workspace governed Goals', () => {
         })
       )
     ).toBeNull();
+    expect(
+      parseGoalEntry(
+        goalEntry({
+          scope: {
+            kind: 'project-set',
+            projects: ['api', 'worker'],
+            selectionSource: 'interactive',
+            resolution: 'selected',
+          },
+        })
+      )
+    ).not.toBeNull();
+    expect(
+      parseGoalEntry(
+        goalEntry({
+          scope: {
+            kind: 'project-set',
+            projects: ['api'],
+            selectionSource: 'interactive',
+            resolution: 'selected',
+          },
+        })
+      )
+    ).toBeNull();
   });
 
   it('requires activeGoalId to reference a registered Goal', () => {
@@ -98,6 +123,39 @@ describe('workspace governed Goals', () => {
     });
     await fs.writeJson(artifactPath, { schemaVersion: 'future.goal-index.v2' });
     await expect(readGoalIndex(root)).resolves.toMatchObject({ kind: 'incompatible' });
+  });
+
+  it('uses canonical common runtime choices from Goal measurement preflight', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-extension-goal-decision-'));
+    temporaryDirectories.push(root);
+    const entry = goalEntry({ state: 'needs-confirmation', lifecycle: 'planned' });
+    await fs.outputJson(path.join(root, GOAL_INDEX_RELATIVE_PATH), {
+      schemaVersion: 'workspai.goal-index.v1',
+      generatedAt: '2026-08-16T10:00:02.000Z',
+      activeGoalId: null,
+      goals: [entry],
+    });
+    await fs.outputJson(path.join(root, entry.goalPack), {
+      id: entry.id,
+      fingerprint: entry.fingerprint,
+      scope: entry.scope,
+      decision: {
+        required: true,
+        reason: 'Coverage runtime selection is required.',
+        question: 'Choose one canonical runtime.',
+      },
+      preflight: {
+        measurement: {
+          runtimeChoices: ['cpp', 'node'],
+          prerequisites: [],
+        },
+      },
+      baseline: { runtimes: ['cpp', 'dotnet', 'node', 'python'] },
+    });
+
+    await expect(readGoalPlanningDecision(root, entry.id)).resolves.toMatchObject({
+      runtimeChoices: ['cpp', 'node'],
+    });
   });
 
   it('binds a prepared verified-goal contract back to its canonical Goal Pack', async () => {

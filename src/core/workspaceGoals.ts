@@ -48,9 +48,15 @@ export type GoalEntry = {
   state: GoalPlanningState;
   lifecycle: GoalLifecycle;
   scope: {
-    kind: 'workspace' | 'project';
+    kind: 'workspace' | 'project' | 'project-set';
     projects: string[];
-    selectionSource: 'workspace' | 'invocation-project' | 'explicit';
+    selectionSource:
+      | 'workspace'
+      | 'single-project-workspace'
+      | 'invocation-project'
+      | 'explicit'
+      | 'interactive';
+    resolution?: 'selected' | 'selection-required';
   };
   createdAt: string;
   updatedAt: string;
@@ -263,11 +269,19 @@ export function parseGoalEntry(value: unknown): GoalEntry | null {
     !GOAL_CATEGORIES.has(value.category as GoalCategory) ||
     !GOAL_STATES.has(value.state as GoalPlanningState) ||
     !GOAL_LIFECYCLES.has(value.lifecycle as GoalLifecycle) ||
-    (value.scope.kind !== 'workspace' && value.scope.kind !== 'project') ||
+    !['workspace', 'project', 'project-set'].includes(String(value.scope.kind)) ||
     !isUniqueStringArray(projects, { min: 1 }) ||
-    !['workspace', 'invocation-project', 'explicit'].includes(
-      String(value.scope.selectionSource)
-    ) ||
+    (value.scope.kind === 'project' && projects.length !== 1) ||
+    (value.scope.kind === 'project-set' && projects.length < 2) ||
+    ![
+      'workspace',
+      'single-project-workspace',
+      'invocation-project',
+      'explicit',
+      'interactive',
+    ].includes(String(value.scope.selectionSource)) ||
+    (value.scope.resolution !== undefined &&
+      !['selected', 'selection-required'].includes(String(value.scope.resolution))) ||
     typeof value.createdAt !== 'string' ||
     Number.isNaN(Date.parse(value.createdAt)) ||
     typeof value.updatedAt !== 'string' ||
@@ -472,7 +486,14 @@ export async function readGoalCoverageRuntimeBinding(
 export async function readGoalPlanningDecision(
   workspacePath: string,
   goalId: string
-): Promise<{ reason: string; question: string; prerequisites: string[] } | null> {
+): Promise<{
+  reason: string;
+  question: string;
+  prerequisites: string[];
+  scopeProjects: string[];
+  scopeSelectionRequired: boolean;
+  runtimeChoices: string[];
+} | null> {
   const index = await readGoalIndex(workspacePath);
   const goal =
     index.kind === 'valid' ? index.value.goals.find((entry) => entry.id === goalId) : null;
@@ -504,10 +525,24 @@ export async function readGoalPlanningDecision(
         (entry): entry is string => typeof entry === 'string' && Boolean(entry.trim())
       )
     : [];
+  const scope = isRecord(result.raw.scope) ? result.raw.scope : null;
+  const scopeProjects = Array.isArray(scope?.projects)
+    ? scope.projects.filter(
+        (entry): entry is string => typeof entry === 'string' && Boolean(entry.trim())
+      )
+    : [];
+  const runtimeChoices = Array.isArray(measurement?.runtimeChoices)
+    ? measurement.runtimeChoices.filter(
+        (entry): entry is string => typeof entry === 'string' && Boolean(entry.trim())
+      )
+    : [];
   return {
     reason: result.raw.decision.reason,
     question: result.raw.decision.question,
     prerequisites: [...new Set(prerequisites)].slice(0, 12),
+    scopeProjects: [...new Set(scopeProjects)].sort(),
+    scopeSelectionRequired: scope?.resolution === 'selection-required',
+    runtimeChoices: [...new Set(runtimeChoices)].sort(),
   };
 }
 
@@ -528,6 +563,7 @@ function parseGoalAgentHandoff(value: unknown, goal: GoalEntry): GoalAgentHandof
     !isUniqueStringArray(value.scope.projects, { min: 1 }) ||
     value.scope.projects.join('\0') !== goal.scope.projects.join('\0') ||
     value.scope.selectionSource !== goal.scope.selectionSource ||
+    (value.scope.resolution ?? 'selected') !== (goal.scope.resolution ?? 'selected') ||
     !isRecord(value.discovery) ||
     value.discovery.index !== GOAL_INDEX_RELATIVE_PATH ||
     typeof value.discovery.statusCommand !== 'string' ||

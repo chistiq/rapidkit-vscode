@@ -249,9 +249,117 @@ describe('governed Goal Assistant session', () => {
           reason: 'Coverage spans C++, Python, and Ruby.',
           question: 'Which runtime should this Goal measure?',
           prerequisites: ['Name one runtime or language in the Goal.'],
+          scopeProjects: [],
+          scopeSelectionRequired: false,
+          runtimeChoices: ['cpp', 'python', 'ruby'],
         }),
       })
     ).rejects.toThrow('Which runtime should this Goal measure?');
+  });
+
+  it('resolves workspace scope and runtime choices before activating a Goal', async () => {
+    const needsInput = (id: string): GoalPlanResult => ({
+      schemaVersion: 'workspai.goal-plan-result.v1',
+      result: 'needs-confirmation',
+      resolution: { source: 'explicit', invocationScope: 'workspace' },
+      goalPack: {
+        schemaVersion: 'workspai.goal-pack.v1',
+        id,
+        fingerprint: 'a'.repeat(64),
+      },
+      agentHandoff: {
+        schemaVersion: 'workspai.goal-agent-handoff.v1',
+        goalId: id,
+        goalFingerprint: 'a'.repeat(64),
+      },
+      writtenArtifacts: [],
+      dryRun: false,
+      resumed: false,
+    });
+    const selectedEntry = entry('planned', {
+      scope: {
+        kind: 'project-set',
+        projects: ['api', 'worker'],
+        selectionSource: 'explicit',
+        resolution: 'selected',
+      },
+    });
+    const planned = { ...needsInput(goalPackId), result: 'planned' as const };
+    const run = vi
+      .fn()
+      .mockResolvedValueOnce(result(needsInput('goal-scope-12345678')))
+      .mockResolvedValueOnce(result(needsInput('goal-runtime-12345678')))
+      .mockResolvedValueOnce(result(planned))
+      .mockResolvedValueOnce(
+        result(lifecycle('activate', { ...selectedEntry, lifecycle: 'active' }, null))
+      )
+      .mockResolvedValueOnce(
+        result(
+          lifecycle(
+            'prepare',
+            { ...selectedEntry, lifecycle: 'verification-ready' },
+            verifiedGoalId
+          )
+        )
+      );
+    const readPlanningDecision = vi
+      .fn()
+      .mockResolvedValueOnce({
+        reason: 'Scope is unresolved.',
+        question: 'Where should this Goal apply?',
+        prerequisites: [],
+        scopeProjects: ['api', 'worker', 'web'],
+        scopeSelectionRequired: true,
+        runtimeChoices: ['node', 'python'],
+      })
+      .mockResolvedValueOnce({
+        reason: 'Coverage runtime is unresolved.',
+        question: 'Which runtime should this Goal measure?',
+        prerequisites: [],
+        scopeProjects: ['api', 'worker'],
+        scopeSelectionRequired: false,
+        runtimeChoices: ['node', 'python'],
+      });
+
+    await prepareGovernedGoalSession({
+      workspacePath: '/workspace',
+      objective: 'Raise test coverage to 75%',
+      run,
+      readPlanningDecision,
+      selectScope: async () => ({ kind: 'projects', projects: ['api', 'worker'] }),
+      selectCoverageRuntime: async () => 'python',
+      readIndex: async () => ({
+        kind: 'valid' as const,
+        artifactPath: '/workspace/.workspai/goals/index.json',
+        value: {
+          schemaVersion: 'workspai.goal-index.v1' as const,
+          generatedAt: selectedEntry.updatedAt,
+          activeGoalId: null,
+          goals: [selectedEntry],
+        },
+      }),
+      readCoverageRuntimeBinding: async () => ({
+        runtime: 'python',
+        detectedRuntimes: ['node', 'python'],
+      }),
+      readExecutionPolicy: async () => ({ maxAttempts: 5 }),
+      readVerificationAttempts: async () => 0,
+      readPreparedGoal: async () => verifiedGoal(),
+    });
+
+    expect(run.mock.calls.slice(0, 3).map(([call]) => call.args)).toEqual([
+      ['Raise test coverage to 75%', '--for-agent', 'generic'],
+      ['Raise test coverage to 75%', '--for-agent', 'generic', '--scope', 'projects:api,worker'],
+      [
+        'Raise test coverage to 75%',
+        '--for-agent',
+        'generic',
+        '--scope',
+        'projects:api,worker',
+        '--runtime',
+        'python',
+      ],
+    ]);
   });
 
   it('blocks an older CLI plan that omitted a required polyglot coverage runtime', async () => {

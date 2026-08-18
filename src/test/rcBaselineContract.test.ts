@@ -31,8 +31,8 @@ describe('RC baseline contract', () => {
     const baseline = readRoadmapFile('WORKSPAI_EXTENSION_RC_BASELINE_2026-06-28.md');
 
     expect(packageJson.version).toBe('0.40.0');
-    expect(MIN_RAPIDKIT_CLI_VERSION).toBe('0.59.0');
-    expect(VERIFIED_RAPIDKIT_CLI_VERSION).toBe('0.59.1');
+    expect(MIN_RAPIDKIT_CLI_VERSION).toBe('0.60.0');
+    expect(VERIFIED_RAPIDKIT_CLI_VERSION).toBe('0.60.0');
     expect(matrix.npmTruthBaseline).toBe(VERIFIED_RAPIDKIT_CLI_VERSION);
     expect(baseline).toContain('rapidkit@0.42.0');
     expect(baseline).toContain('rapidkit-vscode@0.35.0');

@@ -7,24 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Routed measurable Agent requests through the same CLI-authored Goal Pack
-  lifecycle as Goal mode, removing the extension's parallel verified-goal
-  planning path and preserving CLI decisions for polyglot coverage scopes.
-- Limited Goal activation actions to `ready-to-plan` entries and exposed
-  clarification, evidence, and blocker states as review actions instead.
-- Added a defense-in-depth runtime-binding check so a polyglot coverage plan
-  produced by an older CLI cannot reach mutation without one selected runtime.
-
-### Fixed
-
-- Parsed versioned CLI operation errors into concise, redacted user guidance
-  instead of rendering raw JSON in Sidebar sessions.
-- Surfaced the Goal Pack's canonical decision question and measurement
-  prerequisites when Studio pauses before mutation.
-
-## [0.40.0] - 2026-08-17
+## [0.40.0] - Unreleased
 
 ### Added
 
@@ -50,13 +33,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Added canonical Goal scope selection for multi-project workspaces. Studio now
+  offers one project, a project set, or the whole workspace, then binds
+  polyglot coverage to a runtime already present in the CLI Workspace Model.
+  Every selection is replayed through explicit `--scope` and `--runtime`
+  arguments before Goal activation; cancellation never exposes mutation tools.
+- Routed measurable Agent requests through the same CLI-authored Goal Pack
+  lifecycle as Goal mode, removing the extension's parallel verified-goal
+  planning path and preserving CLI decisions for polyglot coverage scopes.
+- Limited Goal activation actions to `ready-to-plan` entries and exposed
+  clarification, evidence, and blocker states as review actions instead.
+- Added a defense-in-depth runtime-binding check so a polyglot coverage plan
+  produced by an older CLI cannot reach mutation without one selected runtime.
 - Enforced ASCII English across authored extension source, webview code, tests,
   fixtures, documentation, release material, and filenames through pre-commit,
   lint, CI packaging, and prepublication guards.
-- Promoted the CLI 0.59 Goal Pack, Goal Index, agent handoff, plan result, and
+- Promoted the CLI 0.60 Goal Pack, Goal Index, agent handoff, plan result, and
   lifecycle result contracts from mirrored placeholders to guarded runtime and
   evidence consumers.
-- Promoted the CLI 0.59 project-entry and agent-bootstrap receipt schemas to
+- Promoted the CLI 0.60 project-entry and agent-bootstrap receipt schemas to
   runtime consumers and added the same preflight to the local polyglot E2E
   qualification plan.
 - Added Goal creation and status commands to the Dashboard CLI reference while
@@ -87,6 +82,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Parsed versioned CLI operation errors into concise, redacted user guidance
+  instead of rendering raw JSON in Sidebar sessions.
+- Surfaced the Goal Pack's canonical decision question and measurement
+  prerequisites when Studio pauses before mutation.
+- Corrected cross-product claim parity to compare the extension's default-kit
+  setting with executable native and official create-planner entries instead
+  of the narrower runtime scaffold subset.
 - Fixed cancelled and rolled-back CLI repairs being presented as pending user
   decisions, and deduplicated repeated protected-evidence explanations.
 - Fixed linked-project repair receipts and native diffs so changed files are
@@ -135,16 +137,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Compatibility
 
-- Extension baseline: Workspai CLI 0.59.0+ with the advertised top-level `goal`
+- Extension baseline: Workspai CLI 0.60.0+ with the advertised top-level `goal`
   capability. Older CLIs receive an actionable version/capability gate instead
   of a parsed terminal fallback.
 
 ### Verification
 
 - Canonical contract generation and CLI/extension mirror parity passed against
-  Workspai CLI 0.59.1. The extension remains backward-compatible with the
-  capability-complete 0.59.0 baseline.
-- Host/Webview type checking passed; 389 test files and 2,849 tests passed, with
+  Workspai CLI 0.60.0. The extension fails closed on older CLIs before using
+  project-set scope or canonical runtime-selection contracts.
+- Host/Webview type checking passed; 389 test files and 2,854 tests passed, with
   one file and five tests explicitly skipped.
 - All 22 enterprise scenarios passed; production build and VSIX inspection
   passed for a 173-file, 6.05 MB `rapidkit-vscode-0.40.0.vsix` package.
@@ -2688,7 +2690,16 @@ Thank you for using RapidKit! 🚀
 
 ---
 
-[Unreleased]: https://github.com/chistiq/rapidkit-vscode/compare/v0.32.0...HEAD
+[Unreleased]: https://github.com/chistiq/rapidkit-vscode/compare/v0.40.0...HEAD
+[0.40.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.39.0...v0.40.0
+[0.39.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.38.0...v0.39.0
+[0.38.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.37.0...v0.38.0
+[0.37.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.36.0...v0.37.0
+[0.36.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.35.0...v0.36.0
+[0.35.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.34.0...v0.35.0
+[0.34.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.33.0...v0.34.0
+[0.33.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.32.1...v0.33.0
+[0.32.1]: https://github.com/chistiq/rapidkit-vscode/compare/v0.32.0...v0.32.1
 [0.32.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.32.0
 [0.31.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.31.0
 [0.30.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.30.0
