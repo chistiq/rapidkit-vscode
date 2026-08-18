@@ -170,6 +170,7 @@ import {
 } from '../../core/studioAgentWorkspaiTools.js';
 import { inspectStudioAgentFiles } from '../../core/sidebarStudioAgentRuntime.js';
 import {
+  describeStudioWorkspaceCommandFailure,
   resolveStudioWorkspaceCommandPlan,
   runStudioWorkspaceCommand,
   type StudioWorkspaceCommandRequest,
@@ -2369,9 +2370,16 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
 
     const store = new VSCodeStudioAgentSessionStore(this._context);
     const persistedCandidate = input.sessionId ? await store.load(input.sessionId) : undefined;
+    const persistedGoalProjectPath =
+      input.assistantMode === 'goal' && persistedCandidate?.goal?.scope.kind === 'project'
+        ? persistedCandidate.goal.scope.projectPath
+        : undefined;
     const persisted =
       persistedCandidate &&
-      studioAgentSessionScopeMatches(persistedCandidate, input) &&
+      studioAgentSessionScopeMatches(persistedCandidate, {
+        ...input,
+        projectPath: input.projectPath ?? persistedGoalProjectPath,
+      }) &&
       persistedCandidate.assistantMode === input.assistantMode &&
       persistedCandidate.status !== 'completed' &&
       persistedCandidate.status !== 'cancelled'
@@ -2448,6 +2456,27 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         goalAttemptsUsed = prepared.attemptsUsed;
       }
     }
+    const verifiedGoalProject =
+      verifiedGoal?.scope.kind === 'project'
+        ? {
+            name: verifiedGoal.scope.projectName,
+            path: verifiedGoal.scope.projectPath,
+          }
+        : undefined;
+    const effectiveProjectPath = input.projectPath ?? verifiedGoalProject?.path;
+    const effectiveProjectName = input.projectName ?? verifiedGoalProject?.name;
+    if (effectiveProjectPath && !input.projectPath) {
+      const projectBootstrap = await bootstrapProjectAgent({
+        projectPath: effectiveProjectPath,
+        workspacePath: input.workspacePath,
+        consumer: 'generic',
+      });
+      requireUsableProjectAgentBootstrap(projectBootstrap);
+      if (mode.canMutateWorkspace) {
+        requireReadyProjectAgentBootstrap(projectBootstrap);
+      }
+      projectBootstrapPrompt = buildProjectAgentBootstrapPromptSection(projectBootstrap);
+    }
     const inspectedSource = new Map<string, string | null>();
     const evidenceUris = await vscode.workspace.findFiles(
       new vscode.RelativePattern(input.workspacePath, '.workspai/**/*'),
@@ -2461,8 +2490,8 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       buildEvidenceAgentContextBundle({
         workspacePath: input.workspacePath,
         workspaceName: path.basename(input.workspacePath),
-        projectPath: input.projectPath,
-        projectName: input.projectName,
+        projectPath: effectiveProjectPath,
+        projectName: effectiveProjectName,
         ...(input.handoff
           ? {
               card: {
@@ -2498,6 +2527,36 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     const assistantObjective = [projectBootstrapPrompt, baseAssistantObjective, activeGoalPrompt]
       .filter(Boolean)
       .join('\n\n');
+    const goalRemediationHandoff: StudioBlockerHandoff | undefined = governedGoal
+      ? {
+          schemaVersion: 'rapidkit-studio-blocker-handoff-v1',
+          cardId: 'doctor',
+          cardLabel: 'Goal prerequisite',
+          cardStatus: 'fail',
+          blocking: true,
+          blockers: [
+            verifiedGoal?.baseline.message ||
+              `A runtime prerequisite is preventing Goal verification: ${governedGoal.objective}`,
+          ],
+          affectedProjectNames:
+            verifiedGoal?.scope.kind === 'project'
+              ? [verifiedGoal.scope.projectName!]
+              : verifiedGoal?.scope.kind === 'project-set'
+                ? (verifiedGoal.scope.projects ?? []).map((project) => project.projectName)
+                : governedGoal.scope.projects,
+          artifactPath:
+            verifiedGoal?.artifactPaths.latestReport ??
+            '.workspai/reports/verified-goal-last-run.json',
+          sourceCommand:
+            effectiveProjectPath !== undefined
+              ? 'npx workspai doctor project --json'
+              : 'npx workspai doctor workspace --json',
+          scope: effectiveProjectPath !== undefined ? 'project' : 'workspace',
+          blockerSignature: verifiedGoal?.fingerprint ?? governedGoal.fingerprint,
+          ...(effectiveProjectPath ? { projectPath: effectiveProjectPath } : {}),
+          workspacePath: input.workspacePath,
+        }
+      : undefined;
     const host: StudioAgentWorkspaiToolHost = {
       discover: async (request: { workspacePath: string; glob?: string; limit?: number }) => ({
         ok: true,
@@ -3010,10 +3069,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             ...(commandObserved
               ? {}
               : {
-                  error:
-                    execution.stderr ||
-                    execution.stdout ||
-                    `Workspace command exited with ${execution.exitCode ?? 'no exit code'}.`,
+                  error: describeStudioWorkspaceCommandFailure(execution),
                 }),
           };
         } catch (error) {
@@ -3099,14 +3155,146 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           return { ok: false, error: error instanceof Error ? error.message : String(error) };
         }
       },
-      inspectRemediationPlan: async () => ({
-        ok: false,
-        error: 'A blocker card is required to resolve a governed remediation plan.',
-      }),
-      executeRemediationStep: async () => ({
-        ok: false,
-        error: 'A blocker card is required to execute a governed remediation step.',
-      }),
+      inspectRemediationPlan: async (request: { workspacePath: string; projectPath?: string }) => {
+        if (!goalRemediationHandoff) {
+          return {
+            ok: false,
+            error: 'A blocker card or governed Goal is required to resolve a remediation plan.',
+          };
+        }
+        clearDoctorRemediationPlanCache();
+        const plan = await readDoctorRemediationPlanForStudio({
+          workspacePath: request.workspacePath,
+          handoff: {
+            ...goalRemediationHandoff,
+            ...(request.projectPath ? { projectPath: request.projectPath, scope: 'project' } : {}),
+          },
+          maxSteps: 8,
+        });
+        if (!plan) {
+          return {
+            ok: false,
+            error:
+              'No project-scoped CLI remediation action currently matches the active Goal. Refresh the workspace remediation plan, then continue with source diagnosis if it remains empty.',
+          };
+        }
+        return {
+          ok: plan.freshness.verdict !== 'stale',
+          output: {
+            schemaVersion: plan.schemaVersion,
+            sourcePath: plan.sourcePath,
+            generatedAt: plan.generatedAt,
+            scope: plan.scope,
+            freshness: plan.freshness,
+            hiddenStepCount: plan.hiddenStepCount,
+            steps: plan.visibleSteps.map((step) => ({
+              id: step.id,
+              dependsOn: step.dependsOn,
+              order: step.order,
+              phase: step.phase,
+              projectName: step.projectName,
+              projectPath: step.projectPath,
+              risk: step.risk,
+              executable: step.executable,
+              studioState: step.studioState,
+              canApply: step.canApply,
+              requiresApproval: step.requiresApproval,
+              title: step.previewTitle,
+              summary: step.previewSummary,
+            })),
+          },
+          ...(plan.freshness.verdict === 'stale'
+            ? {
+                error:
+                  plan.freshness.reason ??
+                  'The Goal remediation plan is stale and must be refreshed before execution.',
+              }
+            : {}),
+        };
+      },
+      executeRemediationStep: async (request: {
+        stepId: string;
+        workspacePath: string;
+        projectPath?: string;
+        reportProgress?: (data: Record<string, unknown>) => Promise<void>;
+      }) => {
+        if (!goalRemediationHandoff) {
+          return {
+            ok: false,
+            error: 'A blocker card or governed Goal is required to execute a remediation step.',
+          };
+        }
+        clearDoctorRemediationPlanCache();
+        const plan = await readDoctorRemediationPlanForStudio({
+          workspacePath: request.workspacePath,
+          handoff: {
+            ...goalRemediationHandoff,
+            ...(request.projectPath ? { projectPath: request.projectPath, scope: 'project' } : {}),
+          },
+          maxSteps: 8,
+        });
+        const step = plan?.visibleSteps.find((candidate) => candidate.id === request.stepId);
+        if (
+          !step ||
+          plan?.freshness.verdict === 'stale' ||
+          step.risk === 'invasive' ||
+          (!step.executable && !step.canApply) ||
+          (step.studioState !== 'ready' && step.studioState !== 'review-required')
+        ) {
+          return {
+            ok: false,
+            error:
+              'The selected Goal remediation action is stale, invasive, outside scope, or no longer executable. Refresh the plan before choosing another action.',
+          };
+        }
+        await this._assertSidebarStudioMutationAllowed({
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+          actionLabel: `CLI-owned Goal prerequisite ${request.stepId}`,
+          governedRepair: { contractAuthorized: true, reversible: true },
+        });
+        const result = await executeCliOwnedCanonicalRepair({
+          workspacePath: request.workspacePath,
+          cardId: goalRemediationHandoff.cardId,
+          projectName: step.projectName || effectiveProjectName,
+          actionId: request.stepId,
+          approvedBy: 'vscode:goal-agent',
+          reportProgress: request.reportProgress
+            ? (progress: WorkspaceRepairProgress) => request.reportProgress!({ repair: progress })
+            : undefined,
+        });
+        const disposition = resolveStudioCliRepairDisposition({
+          transaction: result.transaction,
+          sourceCandidates: selectStudioSourceRepairCandidates(
+            result.transaction.checkpoint.files
+              .filter((file) => file.existed)
+              .map((file) => file.path),
+            12
+          ),
+        });
+        return {
+          ok: disposition.closed,
+          changed: disposition.closed && result.changedPaths.length > 0,
+          output: {
+            transaction: projectWorkspaceRepairTransactionForConsumer(result.transaction),
+            changedPaths: disposition.closed ? result.changedPaths : [],
+            fileChanges: result.fileChanges,
+            nextAction: disposition.nextAction,
+            requiresUserDecision: disposition.requiresUserDecision,
+            terminalReason: disposition.terminalReason,
+            decision: result.transaction.decision,
+          },
+          ...(disposition.closed
+            ? {}
+            : {
+                requiresUserDecision: disposition.requiresUserDecision,
+                terminalReason: disposition.terminalReason,
+                error:
+                  result.transaction.decision?.reason ??
+                  `CLI Goal prerequisite repair ended in ${result.transaction.state}.`,
+              }),
+        };
+      },
       inspectDependencySecurity: async () => ({
         ok: false,
         error: 'A blocker card is required to inspect dependency security evidence.',
@@ -3286,7 +3474,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     const options = {
       id: input.sessionId,
       workspacePath: input.workspacePath,
-      ...(input.projectPath ? { projectPath: input.projectPath } : {}),
+      ...(effectiveProjectPath ? { projectPath: effectiveProjectPath } : {}),
       cardId: scopeId,
       assistantMode: input.assistantMode,
       ...(input.requestedModelId ? { selectedModelId: input.requestedModelId } : {}),
@@ -3309,7 +3497,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           undefined,
           input.requestedModelId,
           [
-            { path: input.projectPath, token: '$PROJECT' },
+            { path: effectiveProjectPath, token: '$PROJECT' },
             { path: input.workspacePath, token: '$WORKSPACE' },
           ]
         );
@@ -4017,10 +4205,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             ...(commandObserved
               ? {}
               : {
-                  error:
-                    execution.stderr ||
-                    execution.stdout ||
-                    `Workspace command exited with ${execution.exitCode ?? 'no exit code'}.`,
+                  error: describeStudioWorkspaceCommandFailure(execution),
                 }),
           };
         } catch (error) {

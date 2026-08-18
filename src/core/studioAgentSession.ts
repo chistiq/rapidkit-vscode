@@ -1334,6 +1334,57 @@ export class StudioAgentSession {
             );
           consecutiveCausalRejections = causalRejection ? consecutiveCausalRejections + 1 : 0;
           if (consecutiveCausalRejections >= 2) {
+            const remediation = await this.recoverGoalFromCurrentRemediationPlan(requestId);
+            if (remediation) {
+              latestObservation = remediation;
+              const remediationClosure = verifiedCliRepairClosure(remediation);
+              if (remediationClosure && this.state.goal && this.registry.get('verify-goal')) {
+                await this.emit(
+                  'model.checkpoint',
+                  {
+                    summary:
+                      'The Goal prerequisite repair closed safely. Studio is measuring the immutable Goal criteria before returning control to the model.',
+                    recovery: 'goal-post-prerequisite-verification',
+                    transactionId: remediationClosure.transactionId,
+                  },
+                  requestId
+                );
+                latestObservation = await this.executeTool(
+                  {
+                    type: 'tool',
+                    toolName: 'verify-goal',
+                    input: {},
+                    reason:
+                      'Measure the immutable Goal criteria after the closed prerequisite repair.',
+                  },
+                  requestId
+                );
+                if (
+                  latestObservation.ok === true &&
+                  latestObservation.cardBlocking === false &&
+                  this.hasCanonicalChainClosure(requestId)
+                ) {
+                  await this.emit(
+                    'session.completed',
+                    {
+                      summary: 'Goal verified by the CLI after its prerequisite repair.',
+                      transactionId: remediationClosure.transactionId,
+                      goalId: this.state.goal.id,
+                      goalStatus: toolOutputRecord(latestObservation)?.status,
+                      workspaceResolved: remediationClosure.workspaceResolved,
+                      remainingActionIds: remediationClosure.remainingActionIds,
+                    },
+                    requestId
+                  );
+                  await this.setStatus('completed');
+                  return this.snapshot();
+                }
+              }
+              causalRecoveryAttempts = 0;
+              consecutiveCausalRejections = 0;
+              consecutiveModelDecisionsWithoutSemanticProgress = 0;
+              continue;
+            }
             if (causalRecoveryAttempts >= 1) {
               throw new Error(
                 'Studio Agent stopped a causal retry loop after deterministic verification produced no new evidence.'
@@ -1417,6 +1468,123 @@ export class StudioAgentSession {
       await this.setStatus('failed');
       return this.snapshot();
     }
+  }
+
+  /**
+   * A governed Goal must not fail merely because the model repeated an
+   * evidence producer. Before giving up, the controller refreshes the
+   * contract-authored remediation plan and executes the first bounded action
+   * that is both dependency-ready and accepted by the CLI Repair Engine.
+   *
+   * This fallback is intentionally Goal-only: incident repair already owns a
+   * dedicated recover-active-blocker prelude. It also stays disabled during a
+   * general source-repair epoch, where producer refresh is causally forbidden
+   * until a real source transaction occurs.
+   */
+  private async recoverGoalFromCurrentRemediationPlan(
+    requestId: string
+  ): Promise<StudioAgentToolResult | undefined> {
+    if (
+      this.state.assistantMode !== 'goal' ||
+      this.generalSourceRepairActive ||
+      !this.registry.get('inspect-remediation-plan') ||
+      !this.registry.get('execute-remediation-step')
+    ) {
+      return undefined;
+    }
+
+    const governedProducer = this.registry.get('run-governed-command');
+    if (governedProducer) {
+      await this.emit(
+        'model.checkpoint',
+        {
+          summary:
+            'Goal verification made no causal progress. Studio is refreshing the project-scoped CLI remediation contract before asking the model again.',
+          recovery: 'goal-remediation-plan-refresh',
+        },
+        requestId
+      );
+      await this.executeTool(
+        {
+          type: 'tool',
+          toolName: 'run-governed-command',
+          input: { commandId: 'workspaceRemediationPlan' },
+          reason: 'Refresh the contract-authored remediation plan for the active Goal scope.',
+        },
+        requestId
+      );
+    }
+
+    const inspected = await this.executeTool(
+      {
+        type: 'tool',
+        toolName: 'inspect-remediation-plan',
+        input: {},
+        reason: 'Select the next bounded CLI remediation action for the active Goal.',
+      },
+      requestId
+    );
+    if (!inspected.ok) {
+      return undefined;
+    }
+    const steps = toolOutputRecord(inspected)?.steps;
+    if (!Array.isArray(steps)) {
+      return undefined;
+    }
+    const currentIds = new Set(
+      steps
+        .map((entry) =>
+          entry && typeof entry === 'object' && !Array.isArray(entry)
+            ? (entry as Record<string, unknown>).id
+            : undefined
+        )
+        .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+    );
+    const eligible = steps
+      .filter((entry): entry is Record<string, unknown> =>
+        Boolean(entry && typeof entry === 'object' && !Array.isArray(entry))
+      )
+      .filter((step) => {
+        const dependencies = Array.isArray(step.dependsOn)
+          ? step.dependsOn.filter((entry): entry is string => typeof entry === 'string')
+          : [];
+        return (
+          typeof step.id === 'string' &&
+          step.risk !== 'invasive' &&
+          (step.studioState === 'ready' || step.studioState === 'review-required') &&
+          (step.canApply === true || step.executable === true) &&
+          dependencies.every((dependency) => !currentIds.has(dependency))
+        );
+      })
+      .sort(
+        (left, right) =>
+          Number(left.order ?? Number.MAX_SAFE_INTEGER) -
+          Number(right.order ?? Number.MAX_SAFE_INTEGER)
+      )[0];
+    if (!eligible || typeof eligible.id !== 'string') {
+      return undefined;
+    }
+
+    await this.emit(
+      'model.checkpoint',
+      {
+        summary:
+          'The refreshed CLI plan contains a bounded action. Studio is executing it through the Repair Engine and will continue the Goal afterward.',
+        recovery: 'goal-remediation-step',
+        stepId: eligible.id,
+      },
+      requestId
+    );
+    const execution = await this.executeTool(
+      {
+        type: 'tool',
+        toolName: 'execute-remediation-step',
+        input: { stepId: eligible.id },
+        reason: 'Execute the next dependency-ready remediation action for the active Goal.',
+      },
+      requestId
+    );
+    return execution.ok || execution.changed === true ? execution : undefined;
   }
 
   private async executeTool(

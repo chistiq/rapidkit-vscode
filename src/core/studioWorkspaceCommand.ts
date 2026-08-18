@@ -40,6 +40,23 @@ export type StudioWorkspaceCommandExecution = StudioWorkspaceCommandPlan & {
   timedOut: boolean;
 };
 
+export function describeStudioWorkspaceCommandFailure(
+  execution: StudioWorkspaceCommandExecution
+): string {
+  if (execution.stderr.trim()) {
+    return execution.stderr;
+  }
+  if (execution.stdout.trim()) {
+    return execution.stdout;
+  }
+  if (execution.timedOut) {
+    return `Workspace command timed out after ${execution.timeoutMs}ms.`;
+  }
+  return execution.exitCode === null
+    ? 'Workspace command was terminated before it returned an exit code.'
+    : `Workspace command exited with code ${execution.exitCode}.`;
+}
+
 /**
  * Public capability catalog. Supporting another ecosystem is intentionally a
  * data-only change plus a policy test; the Agent runtime and model protocol do
@@ -329,7 +346,17 @@ export function resolveStudioWorkspaceCommandPlan(input: {
     args: request.args,
   });
 
-  const timeoutMs = Math.min(Math.max(request.timeoutMs ?? 120_000, 1_000), 600_000);
+  const workspaiCommand =
+    ['workspai', 'wspai'].includes(executableName) ||
+    (['npx', 'pnpx', 'bunx'].includes(executableName) &&
+      request.args.some((arg) => arg === 'workspai' || arg === 'wspai'));
+  // Canonical producers can legitimately model large polyglot workspaces for
+  // several minutes. A generic diagnostic keeps the tighter budget, while a
+  // local Workspai invocation receives the same upper bound as Studio's
+  // governed producers. This prevents a timeout from surfacing as the
+  // misleading "no exit code" failure.
+  const defaultTimeoutMs = workspaiCommand ? 600_000 : 120_000;
+  const timeoutMs = Math.min(Math.max(request.timeoutMs ?? defaultTimeoutMs, 1_000), 600_000);
   return {
     executable: request.executable,
     args: [...request.args],

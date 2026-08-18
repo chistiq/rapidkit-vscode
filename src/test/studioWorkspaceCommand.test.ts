@@ -5,6 +5,7 @@ import fs from 'fs-extra';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  describeStudioWorkspaceCommandFailure,
   resolveStudioWorkspaceCommandPlan,
   runStudioWorkspaceCommand,
 } from '../core/studioWorkspaceCommand.js';
@@ -156,6 +157,45 @@ describe('Studio workspace command capability policy', () => {
         },
       }).args
     ).toEqual(['--no-install', 'workspai', 'workspace', 'remediation-plan', '--json']);
+  });
+
+  it('gives local Workspai producers the governed ten-minute execution budget', () => {
+    expect(
+      resolveStudioWorkspaceCommandPlan({
+        workspacePath: '/workspace',
+        request: {
+          executable: 'npx',
+          args: ['--no-install', 'workspai', 'doctor', 'project', '--json'],
+          purpose: 'inspect',
+        },
+      }).timeoutMs
+    ).toBe(600_000);
+    expect(
+      resolveStudioWorkspaceCommandPlan({
+        workspacePath: '/workspace',
+        request: { executable: 'pytest', args: ['-q'], purpose: 'test' },
+      }).timeoutMs
+    ).toBe(120_000);
+  });
+
+  it('reports a timeout instead of the ambiguous no-exit-code message', () => {
+    const plan = resolveStudioWorkspaceCommandPlan({
+      workspacePath: '/workspace',
+      request: {
+        executable: 'npx',
+        args: ['--no-install', 'workspai', 'doctor', 'project', '--json'],
+        purpose: 'inspect',
+      },
+    });
+    expect(
+      describeStudioWorkspaceCommandFailure({
+        ...plan,
+        exitCode: null,
+        stdout: '',
+        stderr: '',
+        timedOut: true,
+      })
+    ).toBe('Workspace command timed out after 600000ms.');
   });
 
   it('rejects cwd and project-local executable escapes', () => {

@@ -91,6 +91,8 @@ describe('Workspai assistant mode contract', () => {
     expect(toolsFor('goal')).toContain('query-workspace-graph');
     expect(toolsFor('goal')).toContain('delete-workspace-files');
     expect(toolsFor('goal')).toContain('run-workspace-command');
+    expect(toolsFor('goal')).toContain('inspect-remediation-plan');
+    expect(toolsFor('goal')).toContain('execute-remediation-step');
     expect(toolsFor('goal')).toContain('verify-goal');
     expect(toolsFor('goal')).not.toContain('recover-active-blocker');
     expect(toolsFor('goal')).not.toContain('verify-blocker');

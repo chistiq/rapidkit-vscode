@@ -25,6 +25,7 @@ import {
 } from './studioWorkspaceInspection.js';
 import { runRapidkitStreaming } from './streamingRapidkitRunner.js';
 import {
+  describeStudioWorkspaceCommandFailure,
   resolveStudioWorkspaceCommandPlan,
   runStudioWorkspaceCommand,
   type StudioWorkspaceCommandRequest,
@@ -419,8 +420,7 @@ export async function runNativeChatStudioAgent(input: {
           ...(execution.exitCode === 0
             ? {}
             : {
-                error:
-                  execution.stderr || execution.stdout || `Command exited ${execution.exitCode}.`,
+                error: describeStudioWorkspaceCommandFailure(execution),
               }),
         };
       } catch (error) {

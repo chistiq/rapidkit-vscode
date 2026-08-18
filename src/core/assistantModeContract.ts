@@ -101,6 +101,8 @@ const CONTRACTS: Record<WorkspaiAssistantMode, WorkspaiAssistantModeContract> = 
       'delete-workspace-files',
       'run-governed-command',
       'run-workspace-command',
+      'inspect-remediation-plan',
+      'execute-remediation-step',
       'verify-goal',
     ],
   },
