@@ -1,5 +1,45 @@
 # Release Notes
 
+## v0.41.0 (August 19, 2026)
+
+### Intelligent Agent Preflight and Enriched Repair Loop
+
+Workspai for VS Code 0.41.0 is validated against Workspai CLI 0.61.0. This
+release makes free-form agent sessions intent-aware, adds a replan decision
+to the repair loop, enriches the workspace context consumed by all agent modes,
+and applies a minimal, enterprise-level visual redesign to the chat experience.
+
+The extension continues to consume the CLI's published schemas, capability
+inventory, repair transaction, and verification artifacts. Missing, stale,
+incompatible, or unsafe evidence blocks the relevant operation with an
+actionable explanation.
+
+Highlights:
+
+- Free-form agent sessions run a preflight turn without tools to determine
+  whether the user request is clear engineering intent before executing workspace
+  inspection and repair tools.
+- Replan adds a safe retry option that discards the current failed plan for the
+  same repair target without forcing a full cancel and restart.
+- WorkspaceAgentContext is enriched with impact, doctor, analyze, readiness,
+  verify, explain, and diff summaries so agents read one file instead of many.
+- Chat UI follows professional minimal enterprise conventions for typography,
+  spacing, empty states, and error displays.
+- CLI 0.61.0 contract alignment across repair transaction, repair capabilities,
+  and extension-cli compatibility.
+
+Compatibility:
+
+- VS Code 1.106.0+
+- Workspai CLI 0.61.0+
+- RapidKit Core 0.6.0 only for Python-backed kits/modules
+
+[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.41.0/releases/RELEASE_NOTES_v0.41.0.md)
+
+Release posture: `intent-first-agent-preflight-and-enriched-repair-loop`
+
+Publication status: published.
+
 ## v0.40.0 (August 18, 2026)
 
 ### Governed Goals, canonical agent entry, and verified source repair

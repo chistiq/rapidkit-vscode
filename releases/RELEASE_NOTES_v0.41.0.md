@@ -30,7 +30,7 @@
 
 # Workspai VS Code v0.41.0
 
-Release candidate. Not yet published.
+Published.
 
 ## Intelligent Agent Preflight and Enriched Repair Loop
 
