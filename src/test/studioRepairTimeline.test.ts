@@ -45,6 +45,24 @@ describe('Studio repair timeline', () => {
     expect(timeline.at(-1)?.phase).toBe('next-phase');
   });
 
+  it('coalesces CLI repair sub-phases into one applying step', () => {
+    const planning = {
+      action: 'cli-repair-engine',
+      status: 'running' as const,
+      phase: 'cli-repair-plan',
+      title: 'Preparing the change',
+      summary: 'Bounding the edit.',
+    };
+    const executing = {
+      ...planning,
+      phase: 'cli-repair-execute',
+      title: 'Applying the repair',
+      summary: 'Changing and verifying files.',
+    };
+
+    expect(appendStudioRepairTimelineEntry([planning], executing)).toEqual([executing]);
+  });
+
   it('coalesces live evidence generations into one current activity', () => {
     const first = {
       action: 'live-evidence',

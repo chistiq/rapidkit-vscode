@@ -89,8 +89,8 @@ const SENSITIVE_PATCH_PATH =
 const GENERATED_OR_VENDOR_TARGET =
   /(?:^|\/)(?:\.git|node_modules|dist|build|coverage)(?:\/|$)|^\.workspai\/(?:reports|cache|snapshots)(?:\/|$)/i;
 
-function normalizeRelativePath(value: string): string {
-  return value.replace(/\\/g, '/').replace(/^\.\//, '');
+function normalizeRelativePath(value: string | undefined): string {
+  return (value ?? '').replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
 function isPathInside(parentPath: string, candidatePath: string): boolean {
@@ -193,6 +193,111 @@ function collectContractAuthoredPathValues(value: unknown, key = ''): string[] {
   return Object.entries(value as Record<string, unknown>).flatMap(([childKey, childValue]) =>
     collectContractAuthoredPathValues(childValue, childKey)
   );
+}
+
+function collectAnalyzeFindingSourceTargets(input: {
+  payload: unknown;
+  workspacePath: string;
+  projectPath?: string;
+}): string[] {
+  if (!input.payload || typeof input.payload !== 'object' || Array.isArray(input.payload)) {
+    return [];
+  }
+  const payload = input.payload as Record<string, unknown>;
+  if (payload.schemaVersion !== 'rapidkit-analyze-v1' || !Array.isArray(payload.findings)) {
+    return [];
+  }
+  const projectRelative = input.projectPath?.trim()
+    ? normalizeRelativePath(path.relative(input.workspacePath, input.projectPath))
+    : '';
+  const projectName = input.projectPath?.trim() ? path.basename(input.projectPath) : '';
+  const targets = new Set<string>();
+  for (const rawFinding of payload.findings) {
+    if (!rawFinding || typeof rawFinding !== 'object' || Array.isArray(rawFinding)) {
+      continue;
+    }
+    const finding = rawFinding as Record<string, unknown>;
+    const files = Array.isArray(finding.files)
+      ? finding.files.filter(
+          (entry): entry is string => typeof entry === 'string' && Boolean(entry.trim())
+        )
+      : [];
+    if (files.length === 0) {
+      continue;
+    }
+    const findingTarget =
+      typeof finding.target === 'string' ? normalizeRelativePath(finding.target) : '';
+    if (
+      projectRelative &&
+      findingTarget &&
+      findingTarget !== '.' &&
+      findingTarget !== projectRelative &&
+      findingTarget !== projectName
+    ) {
+      continue;
+    }
+    for (const file of files) {
+      const scopedPath =
+        input.projectPath || !findingTarget || findingTarget === '.'
+          ? file
+          : `${findingTarget}/${file.replace(/^\.\//, '')}`;
+      const relativePath = resolveRepairTargetRelativePath({
+        workspacePath: input.workspacePath,
+        projectPath: input.projectPath,
+        scope: input.projectPath ? 'project' : 'workspace',
+        targetPath: scopedPath,
+      });
+      if (
+        !relativePath ||
+        GENERATED_OR_VENDOR_TARGET.test(relativePath) ||
+        !isStudioModelOwnedSourcePath(relativePath)
+      ) {
+        continue;
+      }
+      targets.add(relativePath);
+    }
+  }
+  return [...targets];
+}
+
+async function discoverAnalyzeFindingRepairTargets(input: {
+  workspacePath: string;
+  projectPath?: string;
+  attachments: Awaited<ReturnType<typeof buildEvidenceAgentContextBundle>>['attachments'];
+}): Promise<string[]> {
+  const targets = new Set<string>();
+  for (const attachment of input.attachments) {
+    if (targets.size >= MAX_CONTRACT_TARGET_CANDIDATES || !attachment.exists) {
+      continue;
+    }
+    if (!attachment.relativePath.endsWith('.json')) {
+      continue;
+    }
+    const artifactPath = path.resolve(input.workspacePath, attachment.relativePath);
+    if (!isPathInside(input.workspacePath, artifactPath)) {
+      continue;
+    }
+    try {
+      const stats = await fs.stat(artifactPath);
+      if (stats.size > MAX_CONTRACT_TARGET_SOURCE_BYTES) {
+        continue;
+      }
+      const payload = JSON.parse(await fs.readFile(artifactPath, 'utf8')) as unknown;
+      for (const relativePath of collectAnalyzeFindingSourceTargets({
+        payload,
+        workspacePath: input.workspacePath,
+        projectPath: input.projectPath,
+      })) {
+        targets.add(relativePath);
+        if (targets.size >= MAX_CONTRACT_TARGET_CANDIDATES) {
+          break;
+        }
+      }
+    } catch {
+      // Analyze evidence remains diagnostic when a report is malformed.
+    }
+  }
+  return [...targets];
 }
 
 async function discoverContractAuthoredRepairTargets(input: {
@@ -303,7 +408,14 @@ export async function collectSidebarStudioRepairEvidence(input: {
         workspacePath: input.workspacePath,
         attachments: bundle.attachments,
       });
-  const exactTargetPaths = Array.from(new Set([...hintedTargetPaths, ...contractTargetPaths]));
+  const analyzeTargetPaths = await discoverAnalyzeFindingRepairTargets({
+    workspacePath: input.workspacePath,
+    projectPath: repairProjectPath,
+    attachments: bundle.attachments,
+  });
+  const exactTargetPaths = Array.from(
+    new Set([...hintedTargetPaths, ...analyzeTargetPaths, ...contractTargetPaths])
+  );
 
   const expectedBaseSha256: Record<string, string | null> = {};
   const autonomousTargetPaths: string[] = [];
@@ -313,6 +425,12 @@ export async function collectSidebarStudioRepairEvidence(input: {
   ];
   if (bundle.missingRequired.length > 0) {
     sections.push(`- Missing required evidence: ${bundle.missingRequired.join(', ')}`);
+  }
+  if (analyzeTargetPaths.length > 0) {
+    sections.push(
+      `- Analyze finding source targets: ${analyzeTargetPaths.join(', ')}`,
+      '- Missing targets are inspectable as exists:false and may be created through a CLI-owned proposal.'
+    );
   }
   if (contractTargetPaths.length > 0) {
     sections.push(
@@ -563,6 +681,7 @@ function buildSidebarCardRepairPatchPrompt(input: {
     '```',
     `- commandId must be one of: ${STUDIO_EVIDENCE_REFRESH_COMMAND_IDS.join(', ')}. Studio will policy-check and run it, then return the new artifacts to you in this same session.`,
     '- Only edit files needed for this blocker; do not scaffold unrelated frameworks or broad architecture.',
+    '- JSON files (.json) must contain strictly valid JSON. Never include comments (// or /* */), trailing commas, or non-standard syntax.',
     '- For every file you create or modify, output a fenced code block in exactly this format:',
     '```<language> path: <relative/path/to/file>',
     '// complete final file content (never a fragment or placeholder)',

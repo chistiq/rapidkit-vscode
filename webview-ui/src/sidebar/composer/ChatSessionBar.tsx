@@ -17,7 +17,7 @@ function sessionStatusLabel(session: ChatSession | null): string | null {
     return null;
   }
   if (session.status === 'streaming') {
-    return session.activityLabel || 'Replying…';
+    return session.activityLabel || 'Working…';
   }
   if (session.incident?.repairStatus) {
     const statusLabels: Record<string, string> = {

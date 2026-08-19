@@ -5,7 +5,11 @@ import {
   DASHBOARD_COMMAND_CONTRACTS,
   resolveDashboardCommandContract,
 } from '../core/dashboardCommandContracts';
-import { resolveDashboardCommandExecutionPlan } from '../core/dashboardCommandExecutionPlan';
+import {
+  applyStudioGovernedCommandReuse,
+  preserveAllAgentConsumersForStudioRefresh,
+  resolveDashboardCommandExecutionPlan,
+} from '../core/dashboardCommandExecutionPlan';
 import {
   isDashboardCommandCapabilityAdvertised,
   resolveDashboardCommandCapabilityRequirement,
@@ -377,6 +381,88 @@ describe('resolveDashboardCommandExecutionChannel', () => {
     ).toBe(true);
     expect(
       infraPlanRequirement && isDashboardCommandCapabilityAdvertised(surface, infraPlanRequirement)
+    ).toBe(true);
+  });
+});
+
+describe('preserveAllAgentConsumersForStudioRefresh', () => {
+  it('widens a pinned --target to every agent consumer', () => {
+    expect(
+      preserveAllAgentConsumersForStudioRefresh([
+        'workspace',
+        'agent',
+        'sync',
+        '--target',
+        'vscode',
+        '--json',
+      ])
+    ).toEqual(['workspace', 'agent', 'sync', '--target', 'all', '--json']);
+  });
+});
+
+describe('applyStudioGovernedCommandReuse', () => {
+  it('rejects a second identical generation and caps the same blocker at two attempts', () => {
+    const attempts = new Map();
+    const generations = new Map();
+    const first = applyStudioGovernedCommandReuse({
+      commandId: 'workspaceIntelligenceChain',
+      evidenceGeneration: 'gen-1',
+      blockerSignature: 'blocker-a',
+      attempts,
+      generations,
+    });
+    expect(first.allow).toBe(true);
+    const duplicate = applyStudioGovernedCommandReuse({
+      commandId: 'workspaceIntelligenceChain',
+      evidenceGeneration: 'gen-1',
+      blockerSignature: 'blocker-a',
+      attempts,
+      generations,
+    });
+    expect(duplicate).toMatchObject({
+      allow: false,
+      error: expect.stringContaining('already ran against this evidence generation'),
+    });
+    const capped = applyStudioGovernedCommandReuse({
+      commandId: 'workspaceIntelligenceChain',
+      evidenceGeneration: 'gen-1',
+      blockerSignature: 'blocker-a',
+      attempts,
+      generations,
+    });
+    expect(capped).toMatchObject({
+      allow: false,
+      error: expect.stringContaining('already ran twice for the same semantic blocker'),
+    });
+  });
+
+  it('allows the same producer after evidence generation changes', () => {
+    const attempts = new Map();
+    const generations = new Map();
+    expect(
+      applyStudioGovernedCommandReuse({
+        commandId: 'workspaceAgentSync',
+        evidenceGeneration: 'gen-1',
+        blockerSignature: 'blocker-a',
+        attempts,
+        generations,
+      }).allow
+    ).toBe(true);
+    applyStudioGovernedCommandReuse({
+      commandId: 'workspaceAgentSync',
+      evidenceGeneration: 'gen-1',
+      blockerSignature: 'blocker-a',
+      attempts,
+      generations,
+    });
+    expect(
+      applyStudioGovernedCommandReuse({
+        commandId: 'workspaceAgentSync',
+        evidenceGeneration: 'gen-2',
+        blockerSignature: 'blocker-a',
+        attempts,
+        generations,
+      }).allow
     ).toBe(true);
   });
 });

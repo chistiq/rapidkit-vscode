@@ -67,6 +67,7 @@ describe('Studio Agent Workspai tool registry', () => {
         },
       },
     });
+    expect(registry.get('inspect-source')?.description).toContain('exists:false');
     expect(registry.get('apply-workspace-patch')?.inputSchema).toMatchObject({
       additionalProperties: false,
       properties: {

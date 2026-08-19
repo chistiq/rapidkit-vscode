@@ -14,10 +14,11 @@ import {
   type WorkspaceRepairCliExecutionResult,
   type WorkspaceRepairDecision,
 } from './workspaceRepairCliClient.js';
+import { collectSidebarStudioRepairEvidence } from './sidebarStudioPatchBridge.js';
 import { deduplicateStudioMessage } from './studioRepairPresentation.js';
 import {
   resolveStudioCliRepairDisposition,
-  selectStudioSourceRepairCandidates,
+  selectStudioPostCliSourceCandidates,
 } from './studioRepairReceipt.js';
 import { runNativeChatStudioAgent } from './nativeChatStudioAgent.js';
 import { renderNativeRepairDecisionButtons } from './nativeChatRepairDecisionActions.js';
@@ -245,11 +246,15 @@ export async function runNativeChatRepair(input: {
     approvedBy: 'vscode:native-chat-repair',
     reportProgress: (progress) => input.stream.progress(progress.message),
   });
-  const sourceCandidates = selectStudioSourceRepairCandidates(
-    (result.transaction.checkpoint?.files ?? [])
-      .filter((file) => file.existed)
-      .map((file) => file.path)
-  );
+  const repairEvidence = await collectSidebarStudioRepairEvidence({
+    workspacePath,
+    projectPath: input.context.projectRootPath,
+    handoff,
+  });
+  const sourceCandidates = selectStudioPostCliSourceCandidates({
+    autonomousTargetPaths: repairEvidence.autonomousTargetPaths,
+    checkpointFiles: result.transaction.checkpoint?.files,
+  });
   const disposition = resolveStudioCliRepairDisposition({
     transaction: result.transaction,
     sourceCandidates,
@@ -272,6 +277,9 @@ export async function runNativeChatRepair(input: {
         nextAction: 'general-source-repair',
         recoveryPath: 'general-source-repair',
         sourceCandidates,
+        ...(disposition.sourceRepairInstruction
+          ? { instruction: disposition.sourceRepairInstruction }
+          : {}),
         transaction: projectWorkspaceRepairTransactionForConsumer(result.transaction),
       },
     });

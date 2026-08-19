@@ -9,7 +9,9 @@ import {
   decideCliOwnedRepair,
   executeCliOwnedCanonicalRepair,
   executeCliOwnedPatchRepair,
+  hydrateStudioRepairEventFileChanges,
   projectWorkspaceRepairTransactionForConsumer,
+  readCliOwnedRepairFileChanges,
   readCliOwnedRepairFileComparison,
   resolveInstalledWorkspaiCli,
   resolveWorkspaiNodeExecutables,
@@ -173,7 +175,7 @@ describe('CLI-owned Workspace Repair client', () => {
     ];
     artifact.decision = {
       reason: 'Review /opt/fixtures/source/grpc/CMakeLists.txt before continuing.',
-      options: ['manual-repair', 'cancel'],
+      options: ['replan', 'manual-repair', 'cancel'],
       causes: [
         {
           kind: 'source-repair-required',
@@ -192,6 +194,39 @@ describe('CLI-owned Workspace Repair client', () => {
     expect(serialized).not.toContain('../../private');
     expect(serialized).toContain('$LOCAL_PATH');
     expect(serialized).toContain('$EXTERNAL_PATH');
+  });
+
+  it('keeps embedded producer reports out of consumer transaction projections', () => {
+    const artifact = transaction('tx-large-producer-output', 'decision-required');
+    const rawEvidence = JSON.stringify({
+      workspace: { path: '/home/example/private/workspace' },
+      projects: Array.from({ length: 200 }, (_, index) => ({ index, status: 'blocked' })),
+    });
+    artifact.stages = [
+      {
+        id: 'target-precondition',
+        kind: 'verify',
+        status: 'failed',
+        summary: `Target precondition failed before checkpoint: ${rawEvidence}`,
+      },
+    ];
+    artifact.decision = {
+      reason: `Target precondition failed before checkpoint: ${rawEvidence}`,
+      options: ['cancel'],
+      causes: [
+        {
+          kind: 'failed-precondition',
+          id: 'runtime:producer-output',
+          message: `Target precondition failed before checkpoint: ${rawEvidence}`,
+        },
+      ],
+    };
+
+    const serialized = JSON.stringify(projectWorkspaceRepairTransactionForConsumer(artifact));
+    expect(serialized).not.toContain('/home/example');
+    expect(serialized).not.toContain('projects');
+    expect(serialized.length).toBeLessThan(2_000);
+    expect(serialized).toContain('compile a new bounded plan');
   });
 
   it('resolves Node from the npm installation that owns Workspai instead of the VS Code executable', async () => {
@@ -591,7 +626,7 @@ describe('CLI-owned Workspace Repair client', () => {
     const decision = transaction('tx-decision', 'decision-required');
     decision.decision = {
       reason: 'The plan exceeds guarded risk.',
-      options: ['approve-invasive', 'manual-repair', 'cancel'],
+      options: ['approve-invasive', 'replan', 'manual-repair', 'cancel'],
       causes: [
         {
           kind: 'missing-executable',
@@ -763,7 +798,7 @@ describe('CLI-owned Workspace Repair client', () => {
     const stale = transaction('tx-stale', 'decision-required');
     stale.decision = {
       reason: 'No compatible automatic action was available in the previous evidence.',
-      options: ['manual-repair', 'cancel'],
+      options: ['replan', 'manual-repair', 'cancel'],
     };
     await fs.outputJson(
       path.join(workspacePath, '.workspai', 'reports', 'workspace-repair-last-run.json'),
@@ -803,6 +838,70 @@ describe('CLI-owned Workspace Repair client', () => {
 
     expect(actions).toEqual(['plan', 'approve', 'execute']);
     expect(result.transaction).toMatchObject({ transactionId: 'tx-fresh', state: 'closed' });
+  });
+
+  it('automatically recompiles one plan when fresh evidence invalidates the approved target', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-client-'));
+    const metadata = await installedPackage(workspacePath);
+    const actions: string[] = [];
+    let planCount = 0;
+
+    const result = await executeCliOwnedCanonicalRepair({
+      workspacePath,
+      cardId: 'doctor',
+      approvedBy: 'vscode:test',
+      installedPackages: [metadata],
+      runner: repairProtocolRunner(async ({ args }) => {
+        const action = args[2];
+        actions.push(action);
+        if (action === 'plan') {
+          planCount += 1;
+          return {
+            exitCode: 0,
+            stdout: operation(transaction(`tx-plan-${planCount}`, 'awaiting-approval')),
+            stderr: '',
+          };
+        }
+        if (action === 'approve') {
+          return {
+            exitCode: 0,
+            stdout: operation(transaction(`tx-plan-${planCount}`, 'approved')),
+            stderr: '',
+          };
+        }
+        if (planCount === 1) {
+          const stale = transaction('tx-plan-1', 'decision-required');
+          stale.stages = [
+            {
+              id: 'target-precondition',
+              kind: 'verify',
+              status: 'failed',
+              summary: 'Fresh evidence changed.',
+            },
+          ];
+          stale.decision = {
+            reason: 'Target precondition failed before checkpoint: {"status":"blocked"}',
+            options: ['cancel'],
+            causes: [
+              {
+                kind: 'failed-precondition',
+                id: 'runtime:stale-target',
+                message: 'Fresh evidence changed.',
+              },
+            ],
+          };
+          return { exitCode: 2, stdout: operation(stale), stderr: '' };
+        }
+        return {
+          exitCode: 0,
+          stdout: operation(transaction('tx-plan-2', 'closed')),
+          stderr: '',
+        };
+      }),
+    });
+
+    expect(actions).toEqual(['plan', 'approve', 'execute', 'plan', 'approve', 'execute']);
+    expect(result.transaction).toMatchObject({ transactionId: 'tx-plan-2', state: 'closed' });
   });
 
   it('rejects an uninspected patch before creating a proposal', async () => {
@@ -876,6 +975,75 @@ describe('CLI-owned Workspace Repair client', () => {
       stale: true,
       failReason: 'The file changed again after this repair transaction.',
     });
+  });
+
+  it('rebuilds bounded hunks from CLI transaction files without requiring durable source', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-hydrate-'));
+    const transactionId = 'receipt-transaction-hydrate';
+    const relativePath = 'src/service.ts';
+    const before = 'export const mode = "before";\n';
+    const after = 'export const mode = "after";\n';
+    const backupRef = 'checkpoint/0000.bin';
+    const artifact = transaction(transactionId, 'closed');
+    artifact.checkpoint = {
+      status: 'captured',
+      files: [
+        {
+          path: relativePath,
+          existed: true,
+          beforeHash: crypto.createHash('sha256').update(before).digest('hex'),
+          afterHash: crypto.createHash('sha256').update(after).digest('hex'),
+          backupRef,
+        },
+      ],
+    };
+    const transactionDirectory = path.join(
+      workspacePath,
+      '.workspai',
+      'repair',
+      'transactions',
+      transactionId
+    );
+    await fs.outputFile(path.join(transactionDirectory, backupRef), before);
+    await fs.outputFile(path.join(workspacePath, relativePath), after);
+    await fs.writeJson(path.join(transactionDirectory, 'transaction.json'), artifact);
+
+    const fileChanges = await readCliOwnedRepairFileChanges({
+      workspacePath,
+      transaction: artifact,
+    });
+    expect(fileChanges).toEqual([
+      expect.objectContaining({
+        relativePath,
+        status: 'modified',
+        binary: false,
+        stale: false,
+      }),
+    ]);
+    expect(fileChanges[0]?.diffLines).toEqual(
+      expect.arrayContaining([
+        { type: 'removed', content: 'export const mode = "before";' },
+        { type: 'added', content: 'export const mode = "after";' },
+      ])
+    );
+
+    const durableEvent = {
+      type: 'tool.completed',
+      data: {
+        output: {
+          transaction: { transactionId },
+          changedPaths: [relativePath],
+        },
+      },
+    };
+    const hydrated = await hydrateStudioRepairEventFileChanges({
+      workspacePath,
+      event: durableEvent,
+    });
+    expect(durableEvent.data.output).not.toHaveProperty('fileChanges');
+    expect((hydrated.data.output as { fileChanges: typeof fileChanges }).fileChanges).toEqual(
+      fileChanges
+    );
   });
 
   it('opens a linked-project receipt through its portable project-relative display path', async () => {

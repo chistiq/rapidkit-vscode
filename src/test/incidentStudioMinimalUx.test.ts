@@ -41,9 +41,10 @@ describe('incident studio minimal UX guard', () => {
     const composer = read('webview-ui/src/sidebar/composer/ComposerShell.tsx');
 
     expect(sidebar).toContain("'Describe the issue or task'");
-    expect(sidebar).toContain("'Studio is repairing. Add context if needed.'");
+    expect(sidebar).toContain("'Add context to continue the repair'");
     expect(sidebar).not.toContain('Ask clarifying questions about the fix');
-    expect(chatTab).toContain('!repairMode && composerScopeLabel');
+    expect(chatTab).toContain('composerScopeLabel');
+    expect(chatTab).toContain('activeSession?.incident || activeSession?.editorIssue');
     expect(chatTab).toContain('onOpenAdd={repairMode ? undefined');
     expect(chatTab).toContain('addLabel={repairMode ? undefined');
     expect(composer).toContain('onOpenAdd?: () => void');

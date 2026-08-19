@@ -16,6 +16,9 @@ function activityKind(phase: string): 'inspect' | 'fix' | 'verify' | 'complete' 
 }
 
 function progressIdentity(progress: SidebarStudioActionProgressView): string {
+  if (progress.action === 'cli-repair-engine' || (progress.phase ?? '').startsWith('cli-repair-')) {
+    return 'activity:cli-repair';
+  }
   if (progress.action === 'live-evidence' || progress.phase === 'observing-evidence') {
     return 'live-evidence:observing-evidence';
   }

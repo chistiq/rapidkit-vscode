@@ -8,7 +8,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('vscode', () => ({}));
 
-import { fingerprintStudioWorkspaceSourceState } from '../core/studioWorkspaceInspection.js';
+import {
+  fingerprintStudioWorkspaceSourceState,
+  planStudioWorkspaceSearch,
+} from '../core/studioWorkspaceInspection.js';
 
 const exec = promisify(execFile);
 const roots: string[] = [];
@@ -65,5 +68,16 @@ describe('Studio workspace source fingerprint', () => {
     expect(after).not.toBeNull();
     expect(after?.diff).not.toContain('asset.bin');
     expect(after?.fingerprint).not.toBe(before?.fingerprint);
+  });
+});
+
+describe('Studio workspace search planning', () => {
+  it('prefers CI workflow globs over a lexical content scan', () => {
+    expect(planStudioWorkspaceSearch('github workflow')).toEqual(
+      expect.objectContaining({
+        pathGlobs: expect.arrayContaining(['.github/workflows/**/*.{yml,yaml}', '.gitlab-ci.yml']),
+      })
+    );
+    expect(planStudioWorkspaceSearch('ci.yml').pathGlobs).toContain('**/*ci.yml*');
   });
 });

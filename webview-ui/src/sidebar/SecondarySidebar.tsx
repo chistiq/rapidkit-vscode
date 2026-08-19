@@ -71,8 +71,10 @@ import {
 import { appendStudioRepairTimelineEntry } from '@/lib/studioRepairTimeline';
 import { resolveStudioIncidentRepairStatus } from '@/lib/studioIncidentRepairStatus';
 import {
+  describeStudioCliRepairPhase,
   describeStudioTerminalFailure,
   isStudioRepairActivelyOwned,
+  isStudioUserFacingNarration,
   settleStudioTimeline,
   terminalizeStudioProgress,
   terminalizeStudioTimeline,
@@ -842,7 +844,13 @@ export function SecondarySidebar() {
         } else if (eventType === 'model.message') {
           const text = typeof eventData.text === 'string' ? eventData.text.trim() : '';
           if (text && eventSessionId) {
-            studio.setActivity(eventSessionId, text);
+            studio.setActivity(
+              eventSessionId,
+              eventData.clarification ? 'Waiting for your input…' : text
+            );
+            if (isStudioUserFacingNarration(text)) {
+              studio.appendChunk(eventSessionId, `${text}\n\n`);
+            }
           }
         } else if (eventType === 'model.checkpoint') {
           const summary =
@@ -919,7 +927,13 @@ export function SecondarySidebar() {
           const repair = eventData.repair as Record<string, unknown>;
           const phase = typeof repair.phase === 'string' ? repair.phase : 'execute';
           const state = typeof repair.state === 'string' ? repair.state : undefined;
-          const decisionRequired = state === 'decision-required' || state === 'rollback-required';
+          const sourceReplan = repair.recovery === 'source-replan';
+          const decisionRequired =
+            repair.requiresUserDecision === false
+              ? false
+              : repair.requiresUserDecision === true ||
+                state === 'decision-required' ||
+                state === 'rollback-required';
           const failed = state === 'failed' || state === 'cancelled';
           const closed = state === 'closed';
           const rolledBack = state === 'rolled-back';
@@ -930,29 +944,19 @@ export function SecondarySidebar() {
               : phase === 'complete' && closed
                 ? 'done'
                 : 'running';
-          const phaseTitle =
-            phase === 'plan'
-              ? 'Planning the repair transaction'
-              : phase === 'approval'
-                ? 'Binding approval to the repair plan'
-                : phase === 'execute'
-                  ? 'Executing the CLI repair transaction'
-                  : decisionRequired
-                    ? 'Repair decision required'
-                    : rolledBack
-                      ? 'Repair changes rolled back'
-                      : closed
-                        ? 'Repair transaction verified'
-                        : 'Repair transaction stopped';
+          const phaseCopy = describeStudioCliRepairPhase({
+            phase,
+            sourceReplan,
+            decisionRequired,
+            rolledBack,
+            closed: phase === 'complete' && closed,
+          });
           startStudioActionProgress({
             action: 'cli-repair-engine',
             status,
             phase: `cli-repair-${phase}`,
-            title: phaseTitle,
-            summary:
-              typeof repair.message === 'string'
-                ? humanizeStudioError(repair.message)
-                : 'The Workspai CLI is advancing the durable repair transaction.',
+            title: phaseCopy.title,
+            summary: phaseCopy.summary,
             transactionId:
               typeof repair.transactionId === 'string' ? repair.transactionId : undefined,
             requiresApproval: decisionRequired,
@@ -1118,7 +1122,7 @@ export function SecondarySidebar() {
               : transactionRestored
                 ? 'The CLI could not clear the selected target and restored the source checkpoint. No attempted source edit remains applied.'
                 : typeof eventData.error === 'string'
-                  ? eventData.error
+                  ? humanizeStudioError(eventData.error)
                   : changedFiles
                     ? transactionClosed
                       ? 'The CLI verified and closed this source transaction.'
@@ -1276,10 +1280,15 @@ export function SecondarySidebar() {
               : eventType === 'session.cancelled'
                 ? 'cancelled'
                 : undefined;
+          const repairTransactionState =
+            typeof eventData.repairTransactionState === 'string'
+              ? eventData.repairTransactionState
+              : undefined;
           const terminalPresentation = describeStudioTerminalFailure({
             error: humanizeStudioError(rawFailureMessage),
             terminalReason: eventTerminalReason,
             requiresUserDecision: eventRequiresDecision,
+            repairTransactionState,
           });
           startStudioActionProgress({
             action: activeBlockerHandoff ? 'repair-session' : 'assistant-session',
@@ -1420,12 +1429,17 @@ export function SecondarySidebar() {
           });
           const persistedTerminalReason =
             typeof data.terminalReason === 'string' ? data.terminalReason : undefined;
+          const persistedRepairTransactionState =
+            typeof data.repairTransactionState === 'string'
+              ? data.repairTransactionState
+              : undefined;
           const terminalPresentation = describeStudioTerminalFailure({
             error:
               typeof data.error === 'string' && data.error.trim()
                 ? humanizeStudioError(data.error)
                 : 'No live Studio process owns this persisted repair. Resume only when you choose to continue.',
             terminalReason: persistedTerminalReason,
+            repairTransactionState: persistedRepairTransactionState,
           });
           const inactiveMessage = terminalPresentation.summary;
           setStudioIncidentProgress((previous) => {
@@ -1723,6 +1737,13 @@ export function SecondarySidebar() {
         break;
       }
       case 'sidebarStudioEvidencePulse': {
+        const liveRepair =
+          studio.sessions.some(
+            (session) => session.sessionId === studio.activeId && session.status === 'streaming'
+          ) || studioAutoFixBusy;
+        if (liveRepair) {
+          break;
+        }
         const pulseIncidentKey = resolveStudioIncidentKeyForEvent(data);
         const changedCount = Array.isArray(data.changedPaths) ? data.changedPaths.length : 0;
         const pulse = parseSidebarStudioActionProgress({
@@ -1752,6 +1773,8 @@ export function SecondarySidebar() {
         const rawFailureMessage = (data.error as string) || 'Unknown error';
         const terminalReason =
           typeof data.terminalReason === 'string' ? data.terminalReason : undefined;
+        const repairTransactionState =
+          typeof data.repairTransactionState === 'string' ? data.repairTransactionState : undefined;
         const errorDecisionOptions = Array.isArray(data.decisionOptions)
           ? data.decisionOptions.filter(
               (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
@@ -1767,6 +1790,7 @@ export function SecondarySidebar() {
           error: humanizeStudioError(rawFailureMessage),
           terminalReason,
           requiresUserDecision,
+          repairTransactionState,
         });
         const failureMessage = terminalPresentation.summary;
         const failedIncidentKey = resolveStudioIncidentKeyForSession(failedSessionId);
@@ -2262,15 +2286,27 @@ export function SecondarySidebar() {
           data.action === 'run-remediation-command' ||
           data.action === 'refresh-remediation-plan'
         ) {
-          setStudioAutoFixBusy(data.status === 'running');
-          setStudioPatchApplyBusy(
-            data.status === 'running' &&
-              (data.action === 'apply-patch' || data.action === 'apply-remediation-step')
+          const liveSession = studio.sessions.some(
+            (session) => session.sessionId === studio.activeId && session.status === 'streaming'
           );
+          if (data.status === 'running') {
+            setStudioAutoFixBusy(true);
+            setStudioPatchApplyBusy(
+              data.action === 'apply-patch' || data.action === 'apply-remediation-step'
+            );
+          } else if (!liveSession) {
+            setStudioAutoFixBusy(false);
+            setStudioPatchApplyBusy(false);
+          }
         }
         if (data.action === 'retry-audit') {
-          setStudioAutoFixBusy(false);
-          setStudioPatchApplyBusy(false);
+          const liveSession = studio.sessions.some(
+            (session) => session.sessionId === studio.activeId && session.status === 'streaming'
+          );
+          if (!liveSession) {
+            setStudioAutoFixBusy(false);
+            setStudioPatchApplyBusy(false);
+          }
         }
         if (data.action === 'ship-loop-step' || data.action === 'refresh-ship-loop') {
           setShipLoopBusy(data.status === 'running');
@@ -2720,10 +2756,14 @@ export function SecondarySidebar() {
   const activeStudioIntelligencePhase =
     activeStudioActionProgress?.intelligencePhase ??
     resolveStudioIntelligencePhaseFromCard(activeBlockerHandoff?.cardId);
-  const visibleStudioVerifyFailureForResult = activeStudioRepairRunning
+  const hideContinuingRepairResult =
+    activeStudioRepairRunning ||
+    activeStudioActionProgress?.status === 'failed' ||
+    activeStudioTerminalReason === 'ai-provider-unavailable';
+  const visibleStudioVerifyFailureForResult = hideContinuingRepairResult
     ? null
     : activeStudioVerifyFailure;
-  const visibleStudioReturnStateForResult = activeStudioRepairRunning
+  const visibleStudioReturnStateForResult = hideContinuingRepairResult
     ? null
     : activeStudioReturnState;
   const visibleStudioRollbackCommandForResult = activeStudioRepairRunning
@@ -2938,7 +2978,12 @@ export function SecondarySidebar() {
     );
   };
   const studioAutoFix = () => {
-    if (!activeBlockerHandoff) {
+    if (
+      !activeBlockerHandoff ||
+      studioAutoFixBusy ||
+      studioPatchApplyBusy ||
+      activeStudio?.status === 'streaming'
+    ) {
       return;
     }
     if (activeStudioReviewRequired) {
@@ -3272,7 +3317,7 @@ export function SecondarySidebar() {
       <ChatTab
         active={activeTab === 'studio' && assistantMode === 'ask'}
         contextLabel="Workspai Ask"
-        placeholder="Ask with workspace context"
+        placeholder="Ask anything about this workspace"
         scope={scope}
         sessions={studio.sessions}
         activeSessionId={studio.activeId}
@@ -3352,11 +3397,11 @@ export function SecondarySidebar() {
         }
         placeholder={
           activeBlockerHandoff?.studioMode === 'FIX'
-            ? 'Studio is repairing. Add context if needed.'
+            ? 'Add context to continue the repair'
             : activeBlockerHandoff
-              ? 'Studio is checking this blocker. Add context if needed.'
+              ? 'Add context to continue'
               : assistantMode === 'goal'
-                ? 'Define a measurable outcome, e.g. Raise test coverage to 75%'
+                ? 'Name a measurable outcome'
                 : 'Describe the issue or task'
         }
         scope={scope}
@@ -3498,9 +3543,10 @@ export function SecondarySidebar() {
             <>
               <StudioRepairPrelude
                 handoff={activeBlockerHandoff}
-                busy={activeStudioRepairRunning}
+                busy={activeStudioRepairRunning || studioAutoFixBusy || studioPatchApplyBusy}
                 completed={activeStudioCompleted}
                 resumable={
+                  !activeStudioRepairRunning &&
                   !activeStudioReviewRequired &&
                   (activeStudio?.status === 'error' ||
                     activeStudio?.incident?.repairStatus === 'blocked')

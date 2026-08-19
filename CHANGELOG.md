@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-08-19
+
+### Added
+
+- Enriched agent context consumption with impact, doctor, analyze, readiness,
+  verify, explain, and diff summaries from CLI 0.61.0.
+- Added replan decision option in repair decision UI, letting the model discard
+  a failed plan and generate a fresh proposal for the same target.
+- Free-form agent sessions now use a preflight turn to understand user intent
+  before executing tools, with clarification pause for vague requests.
+- Minimal, enterprise-level chat UI redesign with refined typography, colors,
+  spacing, empty states, and error displays.
+- Dashboard card and artifact tab optimization for responsive, minimal layout.
+
+### Changed
+
+- Aligned all extension contracts with CLI 0.61.0 (repair transaction, repair
+  capabilities, analyze, extension-cli-compatibility).
+- Enhanced system prompt for agent mode to promote intent understanding before
+  tool use and allow plain-text clarification messages.
+- Refined sidebar, composer, and session bar CSS for professional appearance.
+
 ## [0.40.0] - Unreleased
 
 ### Added

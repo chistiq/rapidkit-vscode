@@ -48,6 +48,12 @@ export function requireStudioCardRepairCapability(cardId: string): StudioCardRep
   return capability;
 }
 
-export function studioCardAllowsModelSourceMutation(cardId: string): boolean {
-  return requireStudioCardRepairCapability(cardId).repairPolicy !== 'refresh-producer';
+export function studioCardSupportsGovernedSourceMutation(cardId: string): boolean {
+  // A repair policy selects the contract-owned first action; it is not an
+  // authorization boundary. If that accelerator leaves the card blocked, an
+  // autonomous Studio session must retain its governed source capability
+  // plane. Canonical .workspai state remains protected independently by the
+  // workspace path policy and the CLI Repair Engine transaction contract.
+  requireStudioCardRepairCapability(cardId);
+  return true;
 }

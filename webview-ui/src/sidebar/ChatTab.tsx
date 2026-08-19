@@ -112,10 +112,7 @@ export function ChatTab(props: ChatTabProps) {
     streamEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [active, activeSession?.messages, activeSession?.status, props.activityActive]);
   const composerScopeLabel = sessionScopeDisplayName(activeSession, props.scope);
-  const scopedPlaceholder =
-    !repairMode && composerScopeLabel && composerScopeLabel !== 'No workspace selected'
-      ? `${props.placeholder} · ${composerScopeLabel}`
-      : props.placeholder;
+  const scopedPlaceholder = props.placeholder;
 
   const submit = (text?: string) => {
     const trimmed = (text ?? prompt).trim();
@@ -160,25 +157,36 @@ export function ChatTab(props: ChatTabProps) {
       aria-label={props.contextLabel}
       hidden={!active}
     >
+      <ChatSessionBar
+        activeSession={activeSession}
+        sessionCount={sessions.length}
+        compact={repairMode}
+        allowNewSession={!repairMode}
+        contextText={
+          activeSession?.incident || activeSession?.editorIssue
+            ? composerScopeLabel
+            : null
+        }
+        onNewSession={() => {
+          props.onNewSession();
+          setPrompt('');
+        }}
+        onOpenHistory={() => setToolsOpen(true)}
+      />
       {props.headerChrome ? (
         <div className="ws-sidebar__chat-chrome">{props.headerChrome}</div>
       ) : null}
       <div className="ws-sidebar__stream" aria-live="polite">
         {!activeSession || activeSession.messages.length === 0 ? (
           repairMode || hasChromeContent ? null : (
-            <SidebarMessage role="ai">
-              <strong>{props.contextLabel}</strong>
-              <p>
-                Ask about this scope. Follow-ups stay in the same thread — use{' '}
-                <strong>New chat</strong> when you switch topics.
-              </p>
-            </SidebarMessage>
+            <div className="ws-sidebar__empty-canvas" aria-hidden="true">
+              <span className="ws-sidebar__empty-hint">Ask anything about this workspace</span>
+            </div>
           )
         ) : (
           activeSession.messages.map((message, idx) => {
             const isLastAssistant =
               message.role === 'assistant' && idx === activeSession.messages.length - 1;
-            const agentActive = isLastAssistant && activeSession.status === 'streaming';
             return (
               <SidebarMessage key={idx} role={message.role === 'user' ? 'user' : 'ai'}>
                 {message.role === 'assistant' ? (
@@ -196,35 +204,15 @@ export function ChatTab(props: ChatTabProps) {
           })
         )}
         {!repairMode && activeSession?.status === 'error' && activeSession.error ? (
-          <SidebarMessage role="ai">
-            <strong>Studio needs your input</strong>
-            <p>{activeSession.error}</p>
-          </SidebarMessage>
+          <div className="ws-sidebar__error-notice" role="alert">
+            {activeSession.error}
+          </div>
         ) : null}
         {props.streamChrome ? (
-          repairMode ? (
-            <div className="ws-sidebar__studio-live-activity">{props.streamChrome}</div>
-          ) : (
-            <SidebarMessage role="ai">
-              <div className="ws-sidebar__studio-live-activity">{props.streamChrome}</div>
-            </SidebarMessage>
-          )
+          <div className="ws-sidebar__studio-live-activity">{props.streamChrome}</div>
         ) : null}
         <div ref={streamEndRef} aria-hidden="true" />
       </div>
-
-      <ChatSessionBar
-        activeSession={activeSession}
-        sessionCount={sessions.length}
-        compact={repairMode}
-        allowNewSession={!repairMode}
-        contextText={composerScopeLabel === 'No workspace selected' ? null : composerScopeLabel}
-        onNewSession={() => {
-          props.onNewSession();
-          setPrompt('');
-        }}
-        onOpenHistory={() => setToolsOpen(true)}
-      />
 
       <ComposerShell
         value={prompt}
@@ -240,7 +228,6 @@ export function ChatTab(props: ChatTabProps) {
         onRefreshModels={props.onRefreshModels}
         onOpenAdd={repairMode ? undefined : () => setToolsOpen((v) => !v)}
         addLabel={repairMode ? undefined : `${props.contextLabel} tools`}
-        contextLabel={composerScopeLabel}
         drawer={drawerNode}
         modeSelector={props.composerModeSelector}
       />

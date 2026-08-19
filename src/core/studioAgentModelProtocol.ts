@@ -310,6 +310,7 @@ function conciseToolOutput(
         'blockedCandidates',
         'dependencyDiagnostics',
         'sourceCandidates',
+        'instruction',
         'unresolvedProjects',
         'processedProjects',
         'projectNames',
@@ -417,14 +418,21 @@ export function parseStudioAgentModelAction(input: {
   allowedTools: readonly string[];
 }): StudioAgentModelAction {
   const value = exactJson(input.text);
+  if (!value) {
+    return {
+      type: 'message',
+      text:
+        input.text.trim() || 'The model response did not satisfy the Studio Agent action contract.',
+    };
+  }
   if (
-    !value ||
     value.schemaVersion !== STUDIO_AGENT_MODEL_ACTION_SCHEMA_VERSION ||
     typeof value.action !== 'string'
   ) {
     return {
       type: 'message',
-      text: 'The model response did not satisfy the Studio Agent action contract.',
+      text:
+        input.text.trim() || 'The model response did not satisfy the Studio Agent action contract.',
     };
   }
   if (
@@ -499,6 +507,15 @@ function promptForTurn(
                   'Do not claim completion from a patch or intermediate metric. Finish only after verify-goal closes the Goal Pack as verified.',
                 ]
             : []),
+          ...(mode === 'agent' && !context.session.goal && !context.session.governedGoal
+            ? [
+                'This is a free-form Agent session without a pre-defined blocker or goal. First, use your intelligence to understand what the user actually wants. If the request is vague, off-topic, or non-actionable (e.g. greetings, jokes, unrelated questions), respond with a brief clarifying message instead of running tools — you may send a plain-text message without a tool call in this case.',
+                'When the request is a clear engineering task, interpret it as the objective and resolve it autonomously through the full intelligent loop: discover → inspect → patch → verify → complete.',
+                'After every closed CLI repair transaction, run verify-blocker to confirm workspace health, then inspect-workspace-changes to review the final diff. Only complete after both succeed.',
+                'When the request is ambiguous about scope (workspace vs. a specific project), use query-workspace-graph or discover-workspace-files to enumerate available projects first. If multiple projects exist and the target is unclear, ask the user to confirm the intended project before mutating source.',
+              ]
+            : []),
+          'Before starting any repair or feature work, inspect the existing Workspace Intelligence evidence (Doctor, Readiness, Analyze, Dependency Graph) through inspect-evidence and query-workspace-graph. Use these pre-generated artifacts to understand the workspace model, dependency structure, and health posture — they provide faster and more accurate context than raw source inspection alone.',
           'When the session includes a verified goal, treat its scope, constraints, baseline, and criteria as the authoritative definition of done. Continue until verify-goal returns state=verified; a plausible patch, higher metric, or successful single command is not completion.',
           'Verified goals are resumable transactions. Never weaken their target, disable required build/tests, enable force, or permit breaking changes unless the durable goal contract already authorizes it.',
           'Never delegate a resolvable step to the operator. Never claim completion while governed verification is required and still blocking.',
@@ -517,14 +534,17 @@ function promptForTurn(
           'When a blocker has a CLI-authored remediation plan, inspect the current plan and execute eligible steps by stepId. Never emit an unstructured shell string; use the structured workspace command tool when the plan does not cover the diagnosed source cause.',
           'For a dependency vulnerability blocker, use fresh Doctor evidence to inspect the affected manifests and compatibility constraints. Propose the smallest compatible source change; the CLI adapter owns reconciliation, audit, declared tests/build, and verification for the detected ecosystem.',
           'When a blocker accelerator returns general-source-repair, no-safe-upgrade, a no-op, or a breaking/downgrade-only candidate, that accelerator is exhausted for the current causal generation. Do not call it again. Move to the general capability plane: inspect exact manifests and compatibility constraints, use structured project-native commands to discover admissible versions or alternatives, apply a SHA-protected source transaction, then build, test, audit, run the unified chain, and verify.',
+          'A rejected model proposal is not an operator decision. Read the rejection cause, inspect the exact producer artifact and its normalized finding, map that finding to the source file or missing source artifact that can change the verdict, and submit materially different content. Never rewrite an unchanged file merely because it appeared in an earlier source-candidate list.',
+          'For aggregate cards such as Analyze, Readiness, Workspace Verify, and Workspace Intelligence, the aggregate message is not the source target. Trace it to the project-scoped blocking finding first. Repair one causal finding family, refresh its owning producer, then let the controller advance to the next blocker.',
           'Dependency source repair is runtime-native, not npm-specific. Use the Doctor-authored audit invocation and the detected manifest plus lock/baseline for Node, Python, Go, Rust, JVM, PHP, Ruby, .NET, Elixir, Deno, Bun, or native projects. Before requesting a breaking decision, perform one bounded compatibility investigation of the affected package, its owning direct dependency, admissible constraint or override support, and available replacement path.',
           'During an active general-source-repair phase, do not run Doctor, Readiness, Verify, remediation-plan, or Workspace Intelligence commands through run-workspace-command. The runtime has intentionally locked those evidence producers until you make a real source change.',
           'A project-native diagnostic such as npm audit commonly exits non-zero because it found a problem. Treat its stdout/stderr as causal evidence, not as permission to rerun the same command. Inspect the authorized manifest, choose a compatible source-level resolution, and apply one patch transaction.',
           'For local Workspai CLI execution through npx, the only valid shape is executable npx with --no-install followed by workspai and its arguments. Never use a bare npx doctor/readiness/verify invocation.',
           'Never repeat an inspection, audit, remediation, or verify action against the same causal evidence generation. Reuse the prior observation and advance to a different causal action.',
           'Never retry an exhausted repair accelerator and never hand-edit a package-manager lockfile. Move to inspected source and submit one guarded proposal through the CLI-owned patch transaction.',
+          'JSON files (.json) require strictly valid JSON. Never include comments (// or /* */), trailing commas, or non-standard syntax in any .json file content.',
           'Blocker-specific tools are optional accelerators, not capability boundaries. If an accelerator does not cover the diagnosed project or error, continue with discovery, diagnostics, inspected edits, project-native commands, diff review, and governed verification.',
-          'Treat failed target verification as a new observation and repair the causal source defect it reports. A selected repair may close while unrelated workspace findings remain; report those findings as next work instead of reopening or misclassifying the verified target.',
+          'Treat failed target verification as a new observation and repair the causal source defect it reports. Remaining sourceCandidates after a rolled-back CLI transaction are the next causal targets: inspect them before proposing, create any path that inspect-source reports as exists:false, and do not rewrite a restored file whose content already failed verification. A selected repair may close while unrelated workspace findings remain; report those findings as next work instead of reopening or misclassifying the verified target.',
           'One repair session owns the selected card and its causal action set. Do not absorb unrelated blocking cards merely because they appear in the same workspace dashboard.',
           'Recent in-memory observations preserve bounded inspected source for the current run. Reuse that content to patch or run the next causal diagnostic; do not re-inspect a file merely because another tool ran afterward.',
         ]
@@ -540,7 +560,9 @@ function promptForTurn(
   return [
     `You are Workspai Assistant operating in ${mode.toUpperCase()} mode inside one trusted workspace.`,
     ...modeInstructions,
-    'Select exactly one provided native tool per turn.',
+    mode === 'agent' && !context.session.goal && !context.session.governedGoal
+      ? 'Select exactly one provided native tool per turn, or send a plain-text message if the user request requires clarification or is not an engineering task.'
+      : 'Select exactly one provided native tool per turn.',
     'If native tool calling is unavailable, use exactly one JSON action with no markdown or prose.',
     `Action schema: ${STUDIO_AGENT_MODEL_ACTION_SCHEMA_VERSION}`,
     'Tool action: {"schemaVersion":"workspai.studio-agent-model-action.v1","action":"tool","toolName":"...","input":{},"reason":"..."}',
@@ -578,7 +600,7 @@ function promptForTurn(
     }`,
     `Source action required: ${
       context.sourceActionRequired
-        ? 'YES. Repeated inspection has exhausted the bounded read budget. Select one available change tool that advances the repair transaction; do not rerun Doctor, Verify, or another inspection.'
+        ? 'YES. The bounded recovery budget is exhausted. If no exact source target has been inspected, use the available causal inspection tools once; otherwise submit one available governed source mutation. Do not rerun Doctor, Verify, or a prior diagnostic.'
         : 'no'
     }`,
     `Steering: ${boundedJson(context.steering.map(redactLocalPathsForConsumer), 2_000)}`,
@@ -611,6 +633,8 @@ export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter 
   private pendingToolCall:
     | { callId: string; name: string; input: Record<string, unknown> }
     | undefined;
+  private preflightCompleted = false;
+  freeFormPreflight = false;
 
   constructor(
     private readonly objective: string,
@@ -687,6 +711,40 @@ export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter 
         { role: 'user' as const, content: prompt },
       ],
     });
+    if (this.freeFormPreflight && !this.preflightCompleted) {
+      this.preflightCompleted = true;
+      const preflightPrompt = [
+        standardPrompt,
+        '',
+        'IMPORTANT: This is the first turn. Analyze the user request before acting.',
+        'If the request is a clear, actionable engineering task, respond with exactly: PROCEED',
+        'If the request is vague, off-topic, or needs clarification, respond with a brief helpful message to the user.',
+        'Do NOT call any tools yet.',
+      ].join('\n');
+      const preflightResponse = await this.complete(preflightPrompt, {
+        ...request,
+        tools: [],
+        messages: [
+          ...this.conversationWindow(4),
+          { role: 'user' as const, content: preflightPrompt },
+        ],
+      });
+      if (typeof preflightResponse === 'string') {
+        const trimmed = preflightResponse.trim();
+        if (trimmed === 'PROCEED' || /^proceed$/i.test(trimmed)) {
+          this.conversation.push(
+            { role: 'user', content: standardPrompt },
+            { role: 'assistant', content: 'Understood. Starting the engineering task.' }
+          );
+        } else {
+          this.conversation.push(
+            { role: 'user', content: preflightPrompt },
+            { role: 'assistant', content: trimmed }
+          );
+          return { type: 'message' as const, text: trimmed };
+        }
+      }
+    }
     let response: Awaited<ReturnType<StudioAgentModelCompletion>>;
     let prompt = standardPrompt;
     try {

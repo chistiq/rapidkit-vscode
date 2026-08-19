@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  describeStudioCliRepairPhase,
   describeStudioTerminalFailure,
   isStudioRepairActivelyOwned,
+  isStudioUserFacingNarration,
   settleStudioTimeline,
   terminalizeStudioProgress,
   terminalizeStudioTimeline,
@@ -30,6 +32,22 @@ describe('Studio session lifecycle', () => {
       isStudioRepairActivelyOwned({
         sessionStatus: 'streaming',
         autoFixBusy: true,
+        patchApplyBusy: false,
+        progressStatus: 'running',
+      })
+    ).toBe(true);
+    expect(
+      isStudioRepairActivelyOwned({
+        sessionStatus: 'streaming',
+        autoFixBusy: false,
+        patchApplyBusy: false,
+        progressStatus: 'done',
+      })
+    ).toBe(true);
+    expect(
+      isStudioRepairActivelyOwned({
+        sessionStatus: 'idle',
+        autoFixBusy: false,
         patchApplyBusy: false,
         progressStatus: 'running',
       })
@@ -96,6 +114,68 @@ describe('Studio session lifecycle', () => {
       connectionFailure: false,
       technicalDetail: 'The same forbidden evidence producer was requested again.',
     });
+  });
+
+  it('presents an AI provider outage after CLI rollback as reconnect, not Resume', () => {
+    expect(
+      describeStudioTerminalFailure({
+        error: 'Request Failed: 502 Bad Gateway',
+        terminalReason: 'ai-provider-unavailable',
+        repairTransactionState: 'rolled-back',
+      })
+    ).toMatchObject({
+      title: 'Latest repair rolled back · AI connection needed',
+      summary: expect.stringContaining('Reconnect the AI provider'),
+      terminalReason: 'ai-provider-unavailable',
+      connectionFailure: false,
+      technicalDetail: 'Request Failed: 502 Bad Gateway',
+    });
+  });
+
+  it('presents a provider outage without a CLI mutation as a retained reconnect', () => {
+    expect(
+      describeStudioTerminalFailure({
+        error: 'Request Failed: fetch failed',
+        terminalReason: 'ai-provider-unavailable',
+      })
+    ).toMatchObject({
+      title: 'AI connection needed',
+      summary: expect.stringContaining('latest CLI repair outcome is retained'),
+      terminalReason: 'ai-provider-unavailable',
+      connectionFailure: false,
+    });
+  });
+
+  it('presents exhausted autonomous recovery as a resumable pause', () => {
+    expect(
+      describeStudioTerminalFailure({
+        error: 'No causal source progress was produced.',
+        terminalReason: 'model-source-progress-exhausted',
+        requiresUserDecision: false,
+      })
+    ).toMatchObject({
+      title: 'Repair paused',
+      summary: expect.stringContaining('durable session can resume'),
+      terminalReason: 'model-source-progress-exhausted',
+      connectionFailure: false,
+    });
+  });
+
+  it('collapses CLI repair phases into one product-facing applying step', () => {
+    expect(describeStudioCliRepairPhase({ phase: 'execute' })).toMatchObject({
+      title: 'Applying the repair',
+    });
+    expect(describeStudioCliRepairPhase({ rolledBack: true })).toMatchObject({
+      title: 'Restored the last change',
+    });
+    expect(describeStudioCliRepairPhase({ closed: true })).toMatchObject({
+      title: 'Verified the change',
+    });
+  });
+
+  it('keeps protocol payloads out of user-facing narration', () => {
+    expect(isStudioUserFacingNarration('The CI workflow is missing for commerce-api.')).toBe(true);
+    expect(isStudioUserFacingNarration('{"toolName":"inspect-source"}')).toBe(false);
   });
 
   it('settles persisted live evidence before hydration renders history', () => {

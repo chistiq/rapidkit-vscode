@@ -234,7 +234,7 @@ export function ChatToolsDrawer(props: ChatToolsDrawerProps) {
                           );
                           const statusLabel =
                             session.status === 'streaming'
-                              ? 'Replying…'
+                              ? 'Working…'
                               : session.status === 'error'
                                 ? 'Stopped'
                                 : turnCount > 0

@@ -116,16 +116,27 @@ Incident Studio and `@workspai /repair` use the same durable
 CLI transaction client, Stop Gate, and receipt builder. Native Chat is a second
 presentation surface, not a second repair engine.
 
-Each card declares one repair policy in the mirrored CLI contract:
+Each card declares one repair policy in the mirrored CLI contract. The policy
+selects the safest first action; it is never a source-mutation authorization
+boundary. Every policy converges on the same model-driven causal repair loop
+when its first action leaves the exact card blocked:
 
 - `refresh-producer`: run the exact producer deterministically without a model
-  call. A remaining blocker stops with producer evidence; source mutation is
-  unavailable.
+  call. If the fresh result remains blocked, pass that observation to the
+  governed general source-repair capability plane.
 - `diagnose-and-repair`: run the deterministic CLI repair prelude, then expose
-  the inspected source capability plane only when the typed result requests a
-  source repair.
-- `source-repair-then-produce`: permit a bounded source repair, then require the
-  exact card producer and canonical verification before completion.
+  the general capability plane when the typed result requests source repair or
+  the bounded accelerator cannot close the target.
+- `source-repair-then-produce`: diagnose and permit a bounded source repair,
+  then require the exact card producer and canonical verification before
+  completion.
+
+The shared loop is `observe -> diagnose -> inspect -> act -> verify -> continue
+or decide`. Graph retrieval, governed evidence, source search, diagnostics,
+structured project-native commands, exact edits, complete-file replacement,
+file creation/deletion, and final diff review are capabilities inside that
+loop. Card-specific tools accelerate common cases but never define the limit
+of what the model may diagnose or propose.
 
 ## Assistant mode closure contracts
 
@@ -190,7 +201,32 @@ Intelligence producers are withheld until a real source transaction advances
 the causal epoch. If exact target verification fails, the CLI rolls the change
 back and the typed receipt returns the model to another bounded source attempt;
 it is not presented as success or as a fabricated user decision. Repeated
-actions against the same evidence generation are circuit-broken.
+actions against the same evidence generation are rejected without stopping the
+session. The controller verifies once, transfers control to general source
+diagnosis, and finally constrains the next model turn to causal inspection or a
+governed mutation. Only an exhausted bounded model-recovery budget pauses the
+durable session; it never manufactures a CLI approval decision.
+
+The model owns diagnosis and source reasoning. The CLI owns evidence producers,
+mutation transactions, validation, rollback, and the final truth verdict. Real
+external boundaries remain explicit: missing toolchains, credentials, untrusted
+workspaces, destructive or invasive choices, incompatible protocols, and model
+provider failure cannot be bypassed by either layer.
+
+Model-correctable proposal failures never become operator decisions. When the
+CLI rejects a no-op, stale hash, protected target, duplicate target, or scope
+escape before checkpoint, Studio keeps the session active, exposes only causal
+evidence/source inspection tools, and withholds mutation until a fresh source
+inspection authorizes a materially different proposal. Aggregate cards are
+traced through their exact producer to a project-scoped finding before source
+selection; the aggregate Readiness or Verify message is never treated as a
+file target.
+
+A missing or unlaunchable runtime executable is different: Studio pauses once
+with setup guidance and a durable transaction id. It does not start an
+identical plan while the toolchain fingerprint is unchanged. Cancel and manual
+takeover release ownership terminally; neither decision silently restarts the
+agent loop.
 
 Provider control context uses `$WORKSPACE` and `$PROJECT` identities. Absolute
 host paths, traversal-based CLI execution identity, checkpoint internals, and

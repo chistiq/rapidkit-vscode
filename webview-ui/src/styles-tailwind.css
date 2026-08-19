@@ -3553,6 +3553,14 @@
     .enterprise-action-grid--governance {
       grid-template-columns: minmax(0, 1fr);
     }
+
+    .workspai-action-tile {
+      padding: 10px 12px;
+    }
+
+    .workspai-action-tile__contract {
+      padding-left: 0;
+    }
   }
 
   .dashboard-overview-quick-nav {
@@ -7148,7 +7156,7 @@
   .workspai-action-grid,
   .enterprise-action-grid {
     display: grid;
-    gap: 6px;
+    gap: 8px;
   }
 
   .workspai-action-grid:not(.workspai-action-grid--project):not(
@@ -7212,9 +7220,11 @@
   }
 
   .workspai-action-tile {
-    min-height: 52px;
-    padding: 8px 10px;
+    min-height: 48px;
+    padding: 10px 12px;
     flex-wrap: wrap;
+    border-radius: var(--workspai-radius-md, 7px);
+    transition: border-color 0.12s ease, background 0.12s ease;
   }
 
   .workspai-action-tile--full {
@@ -7225,17 +7235,17 @@
   .enterprise-action-grid button:hover,
   .enterprise-project-builder-action:hover,
   .enterprise-framework-grid button:hover {
-    border-color: var(--vscode-focusBorder);
-    background: var(--vscode-list-hoverBackground);
+    border-color: color-mix(in srgb, var(--vscode-focusBorder) 60%, var(--vscode-panel-border));
+    background: color-mix(in srgb, var(--vscode-list-hoverBackground) 50%, transparent);
   }
 
   .workspai-action-tile:disabled {
-    opacity: 0.45;
+    opacity: 0.5;
     cursor: not-allowed;
   }
 
   .workspai-action-tile--pending:disabled {
-    opacity: 0.86;
+    opacity: 0.9;
   }
 
   .workspai-action-tile__icon {
@@ -7249,7 +7259,11 @@
   .enterprise-action-grid button span,
   .enterprise-project-builder-action span,
   .enterprise-framework-grid button span {
+    flex: 1;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
   }
 
   .workspai-action-tile__copy strong,
@@ -7271,27 +7285,36 @@
   .enterprise-project-builder-action strong,
   .enterprise-framework-grid strong {
     font-size: 11.5px;
-    font-weight: 800;
+    font-weight: 700;
+    letter-spacing: -0.01em;
   }
 
   .workspai-action-tile__copy small,
   .enterprise-action-grid small,
   .enterprise-project-builder-action small,
   .enterprise-framework-grid small {
-    margin-top: 1px;
+    margin-top: 0;
     color: var(--vscode-descriptionForeground);
-    font-size: 10px;
+    font-size: 10.5px;
+    opacity: 0.85;
+    line-height: 1.35;
+    max-height: 2.7em;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
   }
 
   .workspai-action-tile__evidence,
   .workspai-action-tile__state {
+    flex-shrink: 0;
+    align-self: center;
     margin-left: auto;
-    padding: 2px 7px;
+    padding: 3px 8px;
     border-radius: 999px;
-    font-size: 9px;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
     white-space: nowrap;
   }
 
@@ -7326,7 +7349,8 @@
     gap: 4px;
     padding-left: 23px;
     color: var(--vscode-descriptionForeground);
-    font-size: 8.5px;
+    font-size: 9px;
+    opacity: 0.7;
   }
 
   .workspai-action-tile__contract span {
@@ -7334,14 +7358,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    border: 1px solid var(--vscode-panel-border);
+    border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 60%, transparent);
     border-radius: 999px;
     padding: 1px 6px;
-    background: color-mix(
-      in srgb,
-      var(--vscode-editor-inactiveSelectionBackground) 62%,
-      transparent
-    );
+    background: transparent;
   }
 
   .workspai-action-tile--primary {

@@ -12,6 +12,7 @@ export function describeStudioTerminalFailure(input: {
   error: string;
   terminalReason?: string;
   requiresUserDecision?: boolean;
+  repairTransactionState?: string;
 }): StudioTerminalFailurePresentation {
   const error = input.error.trim();
   const terminalReason = input.terminalReason?.trim() || undefined;
@@ -26,6 +27,26 @@ export function describeStudioTerminalFailure(input: {
       ...(error ? { technicalDetail: error } : {}),
       terminalReason: terminalReason ?? 'cli-repair-contract-mismatch',
       connectionFailure: true,
+    };
+  }
+  if (terminalReason === 'ai-provider-unavailable') {
+    if (input.repairTransactionState === 'rolled-back') {
+      return {
+        title: 'Latest repair rolled back · AI connection needed',
+        summary:
+          'The CLI restored the bounded source change because verification remained blocked. Reconnect the AI provider to plan a different causal source repair.',
+        ...(error ? { technicalDetail: error } : {}),
+        terminalReason,
+        connectionFailure: false,
+      };
+    }
+    return {
+      title: 'AI connection needed',
+      summary:
+        'Studio could not reach the configured AI provider. The latest CLI repair outcome is retained; reconnect before requesting a new source proposal.',
+      ...(error ? { technicalDetail: error } : {}),
+      terminalReason,
+      connectionFailure: false,
     };
   }
   if (input.requiresUserDecision) {
@@ -64,6 +85,19 @@ export function describeStudioTerminalFailure(input: {
       connectionFailure: false,
     };
   }
+  if (
+    terminalReason === 'model-source-progress-exhausted' ||
+    terminalReason === 'causal-source-progress-exhausted'
+  ) {
+    return {
+      title: 'Repair paused',
+      summary:
+        'Studio exhausted its bounded autonomous recovery path without a verified source change. The durable session can resume with added context or a fresh model turn.',
+      ...(error ? { technicalDetail: error } : {}),
+      terminalReason,
+      connectionFailure: false,
+    };
+  }
   return {
     title: 'Repair stopped',
     summary: error || 'Studio stopped before canonical verification could close the repair.',
@@ -78,10 +112,73 @@ export function isStudioRepairActivelyOwned(input: {
   patchApplyBusy: boolean;
   progressStatus?: SidebarStudioActionProgressView['status'];
 }): boolean {
-  if (input.sessionStatus !== 'streaming') {
-    return false;
+  if (input.sessionStatus === 'streaming') {
+    return true;
+  }
+  if (
+    input.sessionStatus === 'error' ||
+    input.sessionStatus === 'cancelled' ||
+    input.sessionStatus === 'completed'
+  ) {
+    return input.autoFixBusy || input.patchApplyBusy;
   }
   return input.autoFixBusy || input.patchApplyBusy || input.progressStatus === 'running';
+}
+
+export function isStudioUserFacingNarration(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length < 12 || trimmed.length > 2_000) {
+    return false;
+  }
+  if (/^[{[]/.test(trimmed) || /"toolName"\s*:/.test(trimmed)) {
+    return false;
+  }
+  return /[A-Za-z]/.test(trimmed);
+}
+
+export function describeStudioCliRepairPhase(input: {
+  phase?: string;
+  sourceReplan?: boolean;
+  decisionRequired?: boolean;
+  rolledBack?: boolean;
+  closed?: boolean;
+}): { title: string; summary: string } {
+  if (input.sourceReplan) {
+    return {
+      title: 'Choosing a different fix',
+      summary: 'The last edit did not close the finding. Studio is targeting a different cause.',
+    };
+  }
+  if (input.decisionRequired) {
+    return {
+      title: 'Decision needed',
+      summary: 'This change needs an explicit choice before it can continue.',
+    };
+  }
+  if (input.rolledBack) {
+    return {
+      title: 'Restored the last change',
+      summary:
+        'Verification still failed, so the files were put back. A different edit can follow.',
+    };
+  }
+  if (input.closed) {
+    return {
+      title: 'Verified the change',
+      summary: 'Checkpoint, tests, and canonical verification all passed.',
+    };
+  }
+  if (input.phase === 'plan' || input.phase === 'approval') {
+    return {
+      title: 'Preparing the change',
+      summary: 'Bounding and approving the smallest safe edit.',
+    };
+  }
+  return {
+    title: 'Applying the repair',
+    summary:
+      'Changing, checking, and verifying the files. Nothing is kept unless verification passes.',
+  };
 }
 
 export function terminalizeStudioProgress(

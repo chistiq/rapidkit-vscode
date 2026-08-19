@@ -255,7 +255,8 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
   register({
     name: 'inspect-source',
     title: 'Inspect source files',
-    description: 'Read exact workspace source files before proposing changes.',
+    description:
+      'Read exact workspace source files before proposing changes. A missing path returns exists:false with sha256 null; that is a successful observation. Create it with apply-workspace-patch using that null hash. Do not retry the same missing path.',
     inputSchema: {
       type: 'object',
       required: ['paths'],
@@ -460,7 +461,8 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
               },
               patchedContent: {
                 type: 'string',
-                description: 'Complete replacement content for the inspected source file.',
+                description:
+                  'Complete replacement content for the inspected source file. JSON files (.json) must contain strictly valid JSON with no comments, no trailing commas, and no syntax extensions.',
               },
             },
           },

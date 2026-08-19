@@ -11,6 +11,7 @@ import {
 } from '../utils/platformCapabilities.js';
 import { compareSemver, MIN_RAPIDKIT_CLI_VERSION } from './cliVersionPolicy.js';
 import { redactLocalPathsForConsumer } from './consumerPathRedaction.js';
+import { summarizeStudioRepairMessage } from './studioRepairPresentation.js';
 
 const CLI_OPERATION_SCHEMA = 'workspai-cli-operation-result-v1';
 const REPAIR_PROPOSAL_SCHEMA = 'workspai.workspace-repair-proposal.v1';
@@ -41,6 +42,7 @@ const REPAIR_DECISIONS = new Set<string>([
   'approve-invasive',
   'allow-breaking',
   'allow-force',
+  'replan',
   'manual-repair',
   'rollback',
   'cancel',
@@ -66,6 +68,7 @@ export type WorkspaceRepairDecision =
   | 'approve-invasive'
   | 'allow-breaking'
   | 'allow-force'
+  | 'replan'
   | 'manual-repair'
   | 'rollback'
   | 'cancel';
@@ -272,7 +275,7 @@ export function projectWorkspaceRepairTransactionForConsumer(
       id: stage.id,
       kind: stage.kind,
       status: stage.status,
-      summary: redactLocalPathsForConsumer(stage.summary),
+      summary: summarizeStudioRepairMessage(stage.summary) ?? 'Repair stage updated.',
     })),
     ...(transaction.verification
       ? {
@@ -285,14 +288,18 @@ export function projectWorkspaceRepairTransactionForConsumer(
     ...(transaction.decision
       ? {
           decision: {
-            reason: redactLocalPathsForConsumer(transaction.decision.reason),
+            reason:
+              summarizeStudioRepairMessage(transaction.decision.reason) ??
+              'The CLI requires a bounded repair decision.',
             options: [...transaction.decision.options],
             ...(transaction.decision.causes
               ? {
                   causes: transaction.decision.causes.map(
                     ({ projectPath: _projectPath, message, ...cause }) => ({
                       ...cause,
-                      message: redactLocalPathsForConsumer(message),
+                      message:
+                        summarizeStudioRepairMessage(message) ??
+                        'The repair precondition requires review.',
                     })
                   ),
                 }
@@ -310,7 +317,10 @@ type WorkspaceRepairFileComparison = WorkspaceRepairCliFileChange & {
 
 function completedRepairMessage(transaction: WorkspaceRepairCliTransaction): string {
   if (transaction.state !== 'closed') {
-    return transaction.decision?.reason ?? `Repair ended in ${transaction.state}.`;
+    return (
+      summarizeStudioRepairMessage(transaction.decision?.reason) ??
+      `Repair ended in ${transaction.state}.`
+    );
   }
   if (transaction.verification?.workspaceStatus === 'blocked') {
     return 'Selected repair closed. Other governed workspace findings remain and are available as the next repair target.';
@@ -323,6 +333,8 @@ export type WorkspaceRepairProgress = {
   state?: WorkspaceRepairTransactionState;
   transactionId?: string;
   message: string;
+  requiresUserDecision?: boolean;
+  recovery?: 'source-replan';
 };
 
 export type WorkspaceRepairPatch = {
@@ -1100,6 +1112,80 @@ async function repairExecutionResult(input: {
   return { transaction: input.transaction, changedPaths: paths, fileChanges };
 }
 
+function asObjectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function repairTransactionIdFromUnknown(value: unknown): string | undefined {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return trimmed || undefined;
+}
+
+export async function readCliOwnedRepairFileChanges(input: {
+  workspacePath: string;
+  transaction: WorkspaceRepairCliTransaction;
+}): Promise<WorkspaceRepairCliFileChange[]> {
+  return (await repairExecutionResult(input)).fileChanges;
+}
+
+/**
+ * Rebuild bounded hunks from CLI checkpoint files for a replayed tool event.
+ * Callers must not write the returned fileChanges back into durable session JSON.
+ */
+export async function hydrateStudioRepairEventFileChanges<
+  T extends { type: string; data?: unknown },
+>(input: {
+  workspacePath: string;
+  event: T;
+  fileChangeCache?: Map<string, WorkspaceRepairCliFileChange[]>;
+}): Promise<T> {
+  if (input.event.type !== 'tool.completed' && input.event.type !== 'tool.failed') {
+    return input.event;
+  }
+  const data = asObjectRecord(input.event.data);
+  const output = asObjectRecord(data?.output);
+  const transaction = asObjectRecord(output?.transaction) ?? asObjectRecord(data?.transaction);
+  const transactionId =
+    repairTransactionIdFromUnknown(transaction?.transactionId) ??
+    repairTransactionIdFromUnknown(output?.transactionId) ??
+    repairTransactionIdFromUnknown(data?.transactionId);
+  if (!transactionId) {
+    return input.event;
+  }
+  const cache = input.fileChangeCache;
+  let fileChanges = cache?.get(transactionId);
+  if (!fileChanges) {
+    try {
+      const loaded = await readCliOwnedRepairById({
+        workspacePath: input.workspacePath,
+        transactionId,
+      });
+      fileChanges = await readCliOwnedRepairFileChanges({
+        workspacePath: input.workspacePath,
+        transaction: loaded,
+      });
+    } catch {
+      fileChanges = [];
+    }
+    cache?.set(transactionId, fileChanges);
+  }
+  if (fileChanges.length === 0) {
+    return input.event;
+  }
+  return {
+    ...input.event,
+    data: {
+      ...(data ?? {}),
+      output: {
+        ...(output ?? {}),
+        fileChanges,
+      },
+    },
+  };
+}
+
 function isRepairTransaction(value: unknown): value is WorkspaceRepairCliTransaction {
   const candidate = value as Partial<WorkspaceRepairCliTransaction> | undefined;
   const decisionOptions = candidate?.decision?.options;
@@ -1212,11 +1298,18 @@ async function advanceApprovedRepair(input: {
 }): Promise<WorkspaceRepairCliExecutionResult> {
   let transaction = input.transaction;
   if (transaction.state === 'decision-required') {
+    const modelCorrectableProposal =
+      Boolean(transaction.decision?.causes?.length) &&
+      transaction.decision?.causes?.every((cause) => cause.kind === 'failed-precondition');
     await input.reportProgress?.({
-      phase: 'complete',
+      phase: modelCorrectableProposal ? 'plan' : 'complete',
       state: transaction.state,
       transactionId: transaction.transactionId,
-      message: transaction.decision?.reason ?? 'Repair requires an explicit user decision.',
+      message:
+        summarizeStudioRepairMessage(transaction.decision?.reason) ??
+        'Repair requires an explicit user decision.',
+      requiresUserDecision: !modelCorrectableProposal,
+      ...(modelCorrectableProposal ? { recovery: 'source-replan' as const } : {}),
     });
     return repairExecutionResult({ workspacePath: input.workspacePath, transaction });
   }
@@ -1278,7 +1371,9 @@ async function resumeRepair(input: {
       phase: 'complete',
       state: input.transaction.state,
       transactionId: input.transaction.transactionId,
-      message: input.transaction.decision?.reason ?? 'Repair requires an explicit user decision.',
+      message:
+        summarizeStudioRepairMessage(input.transaction.decision?.reason) ??
+        'Repair requires an explicit user decision.',
     });
     return repairExecutionResult({
       workspacePath: input.workspacePath,
@@ -1311,6 +1406,21 @@ async function resumeRepair(input: {
     message: completedRepairMessage(transaction),
   });
   return repairExecutionResult({ workspacePath: input.workspacePath, transaction });
+}
+
+function requiresFreshAutomaticRepairPlan(transaction: WorkspaceRepairCliTransaction): boolean {
+  const causes = transaction.decision?.causes ?? [];
+  return (
+    transaction.state === 'decision-required' &&
+    transaction.checkpoint.status === 'pending' &&
+    transaction.decision?.options.length === 1 &&
+    transaction.decision.options[0] === 'cancel' &&
+    causes.length > 0 &&
+    causes.every((cause) => cause.kind === 'failed-precondition') &&
+    transaction.stages.some(
+      (stage) => stage.id === 'target-precondition' && stage.status === 'failed'
+    )
+  );
 }
 
 export async function decideCliOwnedRepair(input: {
@@ -1539,21 +1649,22 @@ export async function executeCliOwnedCanonicalRepair(input: {
     phase: 'plan',
     message: 'CLI is deriving the repair transaction from fresh governed evidence.',
   });
+  const planArgs = [
+    '--card',
+    input.cardId,
+    '--max-risk',
+    'guarded',
+    ...(input.projectName ? ['--project', input.projectName] : []),
+    ...(input.actionId ? ['--action-id', input.actionId] : []),
+  ];
   const transaction = await invokeRepair({
     workspacePath: input.workspacePath,
     entrypoint,
     action: 'plan',
-    args: [
-      '--card',
-      input.cardId,
-      '--max-risk',
-      'guarded',
-      ...(input.projectName ? ['--project', input.projectName] : []),
-      ...(input.actionId ? ['--action-id', input.actionId] : []),
-    ],
+    args: planArgs,
     runner: input.runner ?? defaultCliRunner,
   });
-  return advanceApprovedRepair({
+  let result = await advanceApprovedRepair({
     workspacePath: input.workspacePath,
     entrypoint,
     transaction,
@@ -1561,4 +1672,30 @@ export async function executeCliOwnedCanonicalRepair(input: {
     runner: input.runner ?? defaultCliRunner,
     reportProgress: input.reportProgress,
   });
+  if (!requiresFreshAutomaticRepairPlan(result.transaction)) {
+    return result;
+  }
+  await input.reportProgress?.({
+    phase: 'plan',
+    state: result.transaction.state,
+    transactionId: result.transaction.transactionId,
+    message:
+      'Fresh evidence changed before mutation. Studio is compiling one new bounded plan automatically.',
+  });
+  const refreshedPlan = await invokeRepair({
+    workspacePath: input.workspacePath,
+    entrypoint,
+    action: 'plan',
+    args: planArgs,
+    runner: input.runner ?? defaultCliRunner,
+  });
+  result = await advanceApprovedRepair({
+    workspacePath: input.workspacePath,
+    entrypoint,
+    transaction: refreshedPlan,
+    approvedBy: input.approvedBy,
+    runner: input.runner ?? defaultCliRunner,
+    reportProgress: input.reportProgress,
+  });
+  return result;
 }

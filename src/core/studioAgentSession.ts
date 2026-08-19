@@ -72,17 +72,36 @@ const DURABLE_EVENT_ARRAY_LIMIT = 50;
 const GENERAL_SOURCE_REPAIR_TOOL_NAMES = new Set([
   'discover-workspace-files',
   'inspect-source',
+  'inspect-evidence',
   'search-workspace',
+  'query-workspace-graph',
   'inspect-workspace-diagnostics',
   'run-workspace-command',
   'apply-workspace-patch',
+  'apply-workspace-edits',
   'delete-workspace-files',
   'inspect-workspace-changes',
+]);
+
+const CAUSAL_SOURCE_INSPECTION_TOOL_NAMES = new Set([
+  'discover-workspace-files',
+  'inspect-source',
+  'inspect-evidence',
+  'search-workspace',
+  'query-workspace-graph',
+  'inspect-workspace-diagnostics',
+]);
+
+const GOVERNED_SOURCE_MUTATION_TOOL_NAMES = new Set([
+  'apply-workspace-patch',
+  'apply-workspace-edits',
+  'delete-workspace-files',
 ]);
 
 const CLI_REPAIR_MUTATION_TOOL_NAMES = new Set([
   'recover-active-blocker',
   'apply-workspace-patch',
+  'apply-workspace-edits',
   'delete-workspace-files',
   'execute-remediation-step',
   // These aliases stay readable for older durable sessions, but successful
@@ -91,6 +110,77 @@ const CLI_REPAIR_MUTATION_TOOL_NAMES = new Set([
   'upgrade-dependency-security',
   'complete-dependency-transaction',
 ]);
+
+function isAiProviderFailure(message: string): boolean {
+  return /(request failed:|ai provider|provider request|fetch failed|network(?: error)?|econn(?:reset|refused)|etimedout|invalid_api_key|incorrect api key|could not reach the (?:configured )?ai provider)/i.test(
+    message
+  );
+}
+
+function durableRepairTransactionState(
+  state: string | undefined
+): 'closed' | 'rolled-back' | 'decision-required' | 'active' | undefined {
+  if (state === 'closed' || state === 'rolled-back' || state === 'decision-required') {
+    return state;
+  }
+  if (
+    state === 'approved' ||
+    state === 'checkpointed' ||
+    state === 'executing' ||
+    state === 'verifying' ||
+    state === 'rollback-required' ||
+    state === 'rolling-back' ||
+    state === 'active'
+  ) {
+    return 'active';
+  }
+  return undefined;
+}
+
+function repairTransactionStateFromToolData(
+  data: Record<string, unknown> | undefined
+): ReturnType<typeof durableRepairTransactionState> {
+  if (!data) {
+    return undefined;
+  }
+  const toolName = data.toolName;
+  if (typeof toolName === 'string' && !CLI_REPAIR_MUTATION_TOOL_NAMES.has(toolName)) {
+    return undefined;
+  }
+  const output = data.output;
+  if (!output || typeof output !== 'object' || Array.isArray(output)) {
+    return undefined;
+  }
+  const transaction = (output as { transaction?: unknown }).transaction;
+  if (!transaction || typeof transaction !== 'object' || Array.isArray(transaction)) {
+    return undefined;
+  }
+  const state = (transaction as { state?: unknown }).state;
+  return typeof state === 'string' ? durableRepairTransactionState(state) : undefined;
+}
+
+function latestDurableRepairTransactionState(input: {
+  latestObservation?: StudioAgentToolResult;
+  events: StudioAgentEvent[];
+}): ReturnType<typeof durableRepairTransactionState> {
+  const fromObservation = repairTransactionStateFromToolData(
+    input.latestObservation ? { output: input.latestObservation.output as unknown } : undefined
+  );
+  if (fromObservation) {
+    return fromObservation;
+  }
+  for (let index = input.events.length - 1; index >= 0; index -= 1) {
+    const event = input.events[index];
+    if (event.type !== 'tool.completed' && event.type !== 'tool.failed') {
+      continue;
+    }
+    const mapped = repairTransactionStateFromToolData(event.data);
+    if (mapped) {
+      return mapped;
+    }
+  }
+  return undefined;
+}
 
 class StudioAgentReviewRequiredError extends Error {
   readonly terminalReason: string;
@@ -146,6 +236,22 @@ function requestsGeneralSourceRepair(result: StudioAgentToolResult): boolean {
     output?.nextAction === 'general-source-repair' ||
     output?.fallbackCapability === 'general-source-repair' ||
     output?.recoveryPath === 'general-source-repair'
+  );
+}
+
+function shouldInspectGeneralSourceCandidates(
+  toolName: string,
+  result: StudioAgentToolResult
+): boolean {
+  if (!requestsGeneralSourceRepair(result) || toolOutputRecord(result)?.proposalRejected === true) {
+    return false;
+  }
+  if (toolName === 'recover-active-blocker') {
+    return true;
+  }
+  return (
+    CLI_REPAIR_MUTATION_TOOL_NAMES.has(toolName) &&
+    cliRepairTransactionState(result) === 'rolled-back'
   );
 }
 
@@ -331,6 +437,7 @@ function durableEventValue(value: unknown, depth = 0): unknown {
   }
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !/^(?:fileChanges|diffLines)$/i.test(key))
       .slice(0, 80)
       .map(([key, entry]) => [
         key,
@@ -580,6 +687,8 @@ export class StudioAgentSession {
   private causalEpoch = 0;
   private generalSourceRepairActive = false;
   private sourceRepairDirective: Record<string, unknown> | undefined;
+  private sourceActionRequired = false;
+  private proposalRecoveryInspectionRequired = false;
   private latestActiveCardId: string;
   private latestEvidenceGeneration: string | undefined;
   private latestBlockerSignature: string | undefined;
@@ -646,10 +755,16 @@ export class StudioAgentSession {
       if (result && requestsGeneralSourceRepair(result)) {
         this.generalSourceRepairActive = true;
         this.sourceRepairDirective = toolOutputRecord(result);
+        if (toolOutputRecord(result)?.proposalRejected === true) {
+          this.proposalRecoveryInspectionRequired = true;
+          this.sourceActionRequired = true;
+        }
       }
       if (event.type === 'verify.completed' && verifiedNonBlockingResult(data)) {
         this.generalSourceRepairActive = false;
         this.sourceRepairDirective = undefined;
+        this.proposalRecoveryInspectionRequired = false;
+        this.sourceActionRequired = false;
       }
       if (event.type === 'tool.started' && data?.toolName === 'verify-goal') {
         this.goalVerificationAttempts += 1;
@@ -723,11 +838,26 @@ export class StudioAgentSession {
     const resumedFailedAgentSession =
       isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
       this.options.restoredSession?.status === 'failed';
+    const resumedProviderFailure =
+      resumedFailedAgentSession &&
+      [...(this.options.restoredSession?.events ?? [])]
+        .reverse()
+        .some(
+          (event) =>
+            event.type === 'session.failed' &&
+            Boolean(
+              event.data &&
+              typeof event.data === 'object' &&
+              !Array.isArray(event.data) &&
+              (event.data as Record<string, unknown>).terminalReason === 'ai-provider-unavailable'
+            )
+        );
     let deterministicRecoveryPending =
       isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
+      !this.isFreeFormAgentSession() &&
       this.options.repairPolicy !== 'refresh-producer' &&
       Boolean(this.registry.get('recover-active-blocker')) &&
-      (resumedFailedAgentSession ||
+      ((!resumedProviderFailure && resumedFailedAgentSession) ||
         (!this.generalSourceRepairActive &&
           !this.state.events.some((event) => {
             if (event.type !== 'tool.completed' && event.type !== 'tool.failed') {
@@ -806,9 +936,44 @@ export class StudioAgentSession {
               return this.snapshot();
             }
           }
-          throw new Error(
-            `Studio stopped provider calls after ${modelDecisionLimit} consecutive model decisions without semantic progress. ` +
-              'The blocker remains verified as unresolved; no additional model credit was spent.'
+          if (!this.generalSourceRepairActive) {
+            this.generalSourceRepairActive = true;
+            this.sourceRepairDirective = {
+              nextAction: 'general-source-repair',
+              recoveryPath: 'provider-circuit-breaker',
+              cardId: this.latestActiveCardId,
+              instruction:
+                'The blocker remains verified. Diagnose and repair its causal source through the general workspace capability plane.',
+            };
+            consecutiveModelDecisionsWithoutSemanticProgress = 0;
+            await this.emit(
+              'model.checkpoint',
+              {
+                summary:
+                  'Deterministic verification confirmed the blocker remains. Studio is widening the next model turn to governed source diagnosis instead of stopping.',
+                recovery: 'provider-to-source-repair',
+              },
+              requestId
+            );
+            continue;
+          }
+          if (!this.sourceActionRequired) {
+            this.sourceActionRequired = true;
+            consecutiveModelDecisionsWithoutSemanticProgress = 0;
+            await this.emit(
+              'model.checkpoint',
+              {
+                summary:
+                  'The diagnosis loop made no semantic progress. Studio is constraining the next turn to the causal source path instead of repeating evidence producers.',
+                recovery: 'require-causal-source-action',
+              },
+              requestId
+            );
+            continue;
+          }
+          throw new StudioAgentTerminalError(
+            `The model made ${modelDecisionLimit} additional decisions without a causal source change after deterministic verification and constrained recovery.`,
+            'model-source-progress-exhausted'
           );
         }
         const action: StudioAgentModelAction = deterministicSatisfiedGoalVerificationPending
@@ -883,18 +1048,44 @@ export class StudioAgentSession {
         }
         turnsSinceCheckpoint += 1;
         if (action.type === 'message') {
-          consecutiveProtocolMisses += 1;
-          await this.emit('model.message', { text: action.text }, requestId);
-          if (consecutiveProtocolMisses >= 3) {
-            throw new Error(
-              'Selected model did not produce a valid native Studio tool call after 3 attempts.'
-            );
+          const isFreeFormClarification =
+            this.isFreeFormAgentSession() && !this.hasMutated() && this.steering.length === 0;
+          if (isFreeFormClarification) {
+            await this.emit('model.message', { text: action.text, clarification: true }, requestId);
+            const waitStart = Date.now();
+            const steeringBefore = this.steering.length;
+            while (
+              this.steering.length === steeringBefore &&
+              !this.abortController.signal.aborted &&
+              Date.now() - waitStart < 120_000
+            ) {
+              await new Promise((resolve) => setTimeout(resolve, 500));
+            }
+            if (this.abortController.signal.aborted) {
+              break;
+            }
+            latestObservation = {
+              ok: true,
+              output: {
+                userResponse: this.steering[this.steering.length - 1],
+                instruction:
+                  'The user answered your clarification. Proceed with the selected scope.',
+              },
+            };
+          } else {
+            consecutiveProtocolMisses += 1;
+            await this.emit('model.message', { text: action.text }, requestId);
+            if (consecutiveProtocolMisses >= 3) {
+              throw new Error(
+                'Selected model did not produce a valid native Studio tool call after 3 attempts.'
+              );
+            }
+            latestObservation = {
+              ok: false,
+              error:
+                'The repair is still active. Choose a tool or complete only after verified evidence.',
+            };
           }
-          latestObservation = {
-            ok: false,
-            error:
-              'The repair is still active. Choose a tool or complete only after verified evidence.',
-          };
         } else if (action.type === 'complete') {
           consecutiveProtocolMisses = 0;
           const completionPolicyViolation = this.completionPolicyViolation(
@@ -1044,11 +1235,30 @@ export class StudioAgentSession {
               await this.setStatus('completed');
               return this.snapshot();
             }
-            throw new StudioAgentTerminalError(
-              latestObservation.error ??
-                'The exact CLI producer completed but the producer-owned card remains blocked.',
-              'producer-refresh-unresolved'
+            this.generalSourceRepairActive = true;
+            this.sourceRepairDirective = {
+              nextAction: 'general-source-repair',
+              recoveryPath: 'diagnose-causal-source',
+              cardId: this.latestActiveCardId,
+              producerRefresh: 'completed-but-blocking',
+              observation:
+                latestObservation.error ??
+                'The exact CLI producer completed but the card remains blocked.',
+              instruction:
+                'Diagnose the causal source defect, inspect the smallest relevant source and evidence set, apply a governed source transaction when warranted, and let the CLI Repair Engine verify closure.',
+            };
+            consecutiveModelDecisionsWithoutSemanticProgress = 0;
+            await this.emit(
+              'model.checkpoint',
+              {
+                summary:
+                  'The exact producer refreshed and the card is still blocked. Studio is transferring the fresh observation to the general source-repair capability plane.',
+                recovery: 'producer-to-source-repair',
+                cardId: this.latestActiveCardId,
+              },
+              requestId
             );
+            continue;
           }
           const cliClosure = verifiedCliRepairClosure(latestObservation);
           if (cliClosure) {
@@ -1226,6 +1436,8 @@ export class StudioAgentSession {
             effectiveAction.toolName !== 'verify-goal'
           ) {
             consecutiveModelDecisionsWithoutSemanticProgress = 0;
+            this.sourceActionRequired = false;
+            this.proposalRecoveryInspectionRequired = false;
           }
           if (
             isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
@@ -1266,16 +1478,17 @@ export class StudioAgentSession {
           const sourceCandidates = sourceRepairInspectionCandidates(latestObservation);
           if (
             isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
-            effectiveAction.toolName === 'recover-active-blocker' &&
-            requestsGeneralSourceRepair(latestObservation) &&
+            shouldInspectGeneralSourceCandidates(effectiveAction.toolName, latestObservation) &&
             sourceCandidates.length > 0 &&
             this.registry.get('inspect-source')
           ) {
+            const recoveredFromAccelerator = effectiveAction.toolName === 'recover-active-blocker';
             await this.emit(
               'model.checkpoint',
               {
-                summary:
-                  'Blocker accelerators delegated to source repair. Studio is loading the exact causal manifests before spending a model decision.',
+                summary: recoveredFromAccelerator
+                  ? 'Blocker accelerators delegated to source repair. Studio is loading the exact causal manifests before spending a model decision.'
+                  : 'CLI restored the previous source. Studio is loading remaining source candidates before spending a model decision.',
                 recovery: 'general-source-inspection',
                 sourceCandidates,
               },
@@ -1286,14 +1499,17 @@ export class StudioAgentSession {
                 type: 'tool',
                 toolName: 'inspect-source',
                 input: { paths: sourceCandidates },
-                reason:
-                  'Authorize and inspect the exact source candidates returned by blocker recovery.',
+                reason: recoveredFromAccelerator
+                  ? 'Authorize and inspect the exact source candidates returned by blocker recovery.'
+                  : 'Inspect remaining source candidates after the CLI transaction was restored.',
               },
               requestId
             );
           }
           if (this.causalEpoch > causalEpochBeforeTool) {
             causalRecoveryAttempts = 0;
+            consecutiveModelDecisionsWithoutSemanticProgress = 0;
+            consecutiveCausalRejections = 0;
           }
           const activeBlockerAdvanced =
             latestObservation.cardBlocking === true &&
@@ -1307,6 +1523,8 @@ export class StudioAgentSession {
           ) {
             this.generalSourceRepairActive = false;
             this.sourceRepairDirective = undefined;
+            this.sourceActionRequired = false;
+            this.proposalRecoveryInspectionRequired = false;
             this.exhaustedTools.clear();
             deterministicRecoveryPending = true;
             consecutiveModelDecisionsWithoutSemanticProgress = 0;
@@ -1385,10 +1603,36 @@ export class StudioAgentSession {
               consecutiveModelDecisionsWithoutSemanticProgress = 0;
               continue;
             }
-            if (causalRecoveryAttempts >= 1) {
-              throw new Error(
-                'Studio Agent stopped a causal retry loop after deterministic verification produced no new evidence.'
+            if (causalRecoveryAttempts >= 2) {
+              throw new StudioAgentTerminalError(
+                'Deterministic verification and two constrained causal recoveries produced no new source or blocker evidence.',
+                'causal-source-progress-exhausted'
               );
+            }
+            if (causalRecoveryAttempts >= 1) {
+              this.generalSourceRepairActive = true;
+              this.sourceRepairDirective = {
+                ...(this.sourceRepairDirective ?? {}),
+                nextAction: 'general-source-repair',
+                recoveryPath: 'causal-source-action-required',
+                cardId: this.latestActiveCardId,
+                instruction:
+                  'Reuse prior observations and advance to an inspected source mutation. Do not repeat the same producer or diagnostic.',
+              };
+              this.sourceActionRequired = true;
+              causalRecoveryAttempts += 1;
+              consecutiveCausalRejections = 0;
+              consecutiveModelDecisionsWithoutSemanticProgress = 0;
+              await this.emit(
+                'model.checkpoint',
+                {
+                  summary:
+                    'Verification produced no new evidence. Studio is keeping the session active and constraining the next turn to a causal source action.',
+                  recovery: 'causal-source-escalation',
+                },
+                requestId
+              );
+              continue;
             }
             causalRecoveryAttempts += 1;
             consecutiveCausalRejections = 0;
@@ -1444,10 +1688,17 @@ export class StudioAgentSession {
       return this.snapshot();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const providerFailure = isAiProviderFailure(message);
+      const repairTransactionState = latestDurableRepairTransactionState({
+        latestObservation,
+        events: this.state.events,
+      });
       await this.emit(
         'session.failed',
         {
           error: message,
+          ...(providerFailure ? { terminalReason: 'ai-provider-unavailable' } : {}),
+          ...(repairTransactionState ? { repairTransactionState } : {}),
           ...(error instanceof StudioAgentReviewRequiredError ||
           error instanceof StudioAgentTerminalError
             ? {
@@ -1678,17 +1929,18 @@ export class StudioAgentSession {
       const priorRejections = this.toolAttemptsByEpoch.get(rejectionKey) ?? 0;
       this.toolAttemptsByEpoch.set(rejectionKey, priorRejections + 1);
       const repeated = priorRejections >= 1;
+      if (repeated) {
+        this.sourceActionRequired = true;
+      }
       const result: StudioAgentToolResult = repeated
         ? {
             ok: false,
-            error: `${phaseViolation.message} The same forbidden evidence producer was requested again without a causal source change.`,
+            error: `${phaseViolation.message} The duplicate producer request was rejected without stopping the session. Continue with a causal source action.`,
             requiresUserDecision: false,
-            terminalReason: 'source-repair-policy-loop',
             output: {
-              nextAction: 'source-repair-stopped',
+              nextAction: 'causal-source-change-required',
               requiresUserDecision: false,
-              terminalReason: 'source-repair-policy-loop',
-              recoveryPath: 'causal-source-change-required',
+              recoveryPath: 'general-source-repair',
             },
           }
         : { ok: false, error: phaseViolation.message };
@@ -1828,8 +2080,12 @@ export class StudioAgentSession {
         };
       }
     }
+    const transactionState = cliRepairTransactionState(result);
+    const proposalRejected = toolOutputRecord(result)?.proposalRejected === true;
+    const rolledBackOrRejected = transactionState === 'rolled-back' || proposalRejected === true;
     const evidenceAdvanced =
       Boolean(result.changed) ||
+      rolledBackOrRejected ||
       (tool.activity !== 'change' &&
         this.latestEvidenceGeneration !== undefined &&
         Boolean(result.evidenceGeneration) &&
@@ -1854,17 +2110,35 @@ export class StudioAgentSession {
     if (typeof activeHandoff?.cardId === 'string' && activeHandoff.cardId.trim()) {
       this.latestActiveCardId = activeHandoff.cardId.trim();
     }
-    if (result.changed === true) {
+    if (result.changed === true || rolledBackOrRejected) {
       this.exhaustedTools.clear();
+      this.sourceActionRequired = false;
+      if (result.changed === true) {
+        this.proposalRecoveryInspectionRequired = false;
+      }
     }
     this.rememberExhaustedTools(result.output);
     if (requestsGeneralSourceRepair(result)) {
       this.generalSourceRepairActive = true;
       this.sourceRepairDirective = toolOutputRecord(result);
+      if (toolOutputRecord(result)?.proposalRejected === true) {
+        this.proposalRecoveryInspectionRequired = true;
+        this.sourceActionRequired = true;
+      }
+    }
+    if (
+      this.proposalRecoveryInspectionRequired &&
+      tool.name === 'inspect-source' &&
+      result.ok === true
+    ) {
+      this.proposalRecoveryInspectionRequired = false;
+      this.sourceActionRequired = true;
     }
     if (tool.activity === 'verify' && result.ok === true && result.cardBlocking === false) {
       this.generalSourceRepairActive = false;
       this.sourceRepairDirective = undefined;
+      this.sourceActionRequired = false;
+      this.proposalRecoveryInspectionRequired = false;
     }
     if (evidenceAdvanced) {
       this.causalEpoch += 1;
@@ -1986,6 +2260,25 @@ export class StudioAgentSession {
     );
   }
 
+  private isFreeFormAgentSession(): boolean {
+    return (
+      this.state.assistantMode === 'agent' &&
+      this.state.cardId.startsWith('assistant:') &&
+      !this.state.goal &&
+      !this.state.governedGoal
+    );
+  }
+
+  private hasMutated(): boolean {
+    return this.state.events.some((event) => {
+      if (event.type !== 'tool.completed') {
+        return false;
+      }
+      const data = event.data as Record<string, unknown>;
+      return GOVERNED_SOURCE_MUTATION_TOOL_NAMES.has(String(data.toolName ?? ''));
+    });
+  }
+
   private hasCanonicalChainClosure(requestId: string): boolean {
     const requestEvents = this.state.events.filter((event) => event.requestId === requestId);
     const latestSourceMutation = [...requestEvents].reverse().find((event) => {
@@ -2029,13 +2322,25 @@ export class StudioAgentSession {
     latestObservation?: StudioAgentToolResult,
     sourceActionRequired = false
   ): StudioAgentModelContext {
+    const mustTakeSourceAction = sourceActionRequired || this.sourceActionRequired;
+    const hasInspectedSource = this.recentObservations.some(
+      (observation) => observation.toolName === 'inspect-source' && observation.result.ok === true
+    );
     const tools = this.registry
       .list()
       .filter((tool) => !this.exhaustedTools.has(tool.name))
       .filter(
         (tool) => !this.generalSourceRepairActive || GENERAL_SOURCE_REPAIR_TOOL_NAMES.has(tool.name)
       )
-      .filter((tool) => !sourceActionRequired || tool.activity === 'change')
+      .filter(
+        (tool) =>
+          !mustTakeSourceAction ||
+          (this.proposalRecoveryInspectionRequired
+            ? CAUSAL_SOURCE_INSPECTION_TOOL_NAMES.has(tool.name)
+            : hasInspectedSource
+              ? GOVERNED_SOURCE_MUTATION_TOOL_NAMES.has(tool.name)
+              : CAUSAL_SOURCE_INSPECTION_TOOL_NAMES.has(tool.name))
+      )
       .map((tool) => ({
         name: tool.name,
         title: tool.title,
@@ -2057,7 +2362,7 @@ export class StudioAgentSession {
       ...(this.generalSourceRepairActive && this.sourceRepairDirective
         ? { sourceRepairDirective: this.sourceRepairDirective }
         : {}),
-      ...(sourceActionRequired ? { sourceActionRequired: true } : {}),
+      ...(mustTakeSourceAction ? { sourceActionRequired: true } : {}),
       steering: this.steering.splice(0),
     };
   }

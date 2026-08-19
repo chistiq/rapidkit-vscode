@@ -473,6 +473,8 @@ describe('Studio Agent model protocol', () => {
         nextAction: 'general-source-repair',
         unresolvedProjects: ['app'],
         sourceCandidates: ['app/package.json'],
+        instruction:
+          'Inspect any remaining path that still exists:false and create it with apply-workspace-patch using sha256 null.',
       },
       steering: [],
     } satisfies StudioAgentModelContext;
@@ -482,6 +484,7 @@ describe('Studio Agent model protocol', () => {
     expect(prompt).toContain('Source repair phase: ACTIVE');
     expect(prompt).toContain('app/package.json');
     expect(prompt).toContain('intentionally withheld until a real source transaction');
+    expect(prompt).toContain('exists:false');
   });
 
   it('maps native allowlisted tool calls and the explicit completion tool without text JSON', async () => {

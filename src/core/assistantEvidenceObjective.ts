@@ -33,6 +33,9 @@ export function buildAssistantEvidenceObjective(input: {
     isAutonomousWorkspaiAssistantMode(input.assistantMode) && input.freshness.verdict !== 'fresh'
       ? 'Refresh the governed producer before relying on stale or missing evidence.'
       : 'Use inspect-evidence for the smallest relevant artifact set; do not infer artifact contents from filenames.',
+    isAutonomousWorkspaiAssistantMode(input.assistantMode)
+      ? 'You have full autonomy to resolve this request. Start by inspecting the workspace model and dependency graph via query-workspace-graph, then use existing intelligence evidence to understand project structure and health before diving into source. Apply changes through the CLI-owned repair transaction, verify the result, and complete — all within the intelligent loop.'
+      : undefined,
     !isAutonomousWorkspaiAssistantMode(input.assistantMode) && input.freshness.verdict !== 'fresh'
       ? 'Ask and Plan are read-only: report the freshness limitation instead of presenting stale evidence as current truth.'
       : undefined,

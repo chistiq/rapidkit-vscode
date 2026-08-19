@@ -38,17 +38,23 @@ export function StudioRepairPrelude({
   const [showDecisionOptions, setShowDecisionOptions] = useState(false);
   const scopeLabel = handoff.scope === 'project' ? 'project evidence' : 'workspace evidence';
   const connectionFailure = terminalReason === 'cli-repair-contract-mismatch';
+  const providerFailure = terminalReason === 'ai-provider-unavailable';
+  const toolchainFailure = terminalReason === 'repair-toolchain-unavailable';
   const status = completed
-    ? 'Verified by the CLI'
+    ? 'Verified'
     : busy
       ? 'Working on the repair'
       : reviewRequired
-        ? 'Decision required'
+        ? toolchainFailure
+          ? 'Toolchain setup required'
+          : 'Decision required'
         : connectionFailure
           ? 'CLI connection needed'
-          : resumable
-            ? 'Repair paused'
-            : 'Repair ready';
+          : providerFailure
+            ? 'AI connection needed'
+            : resumable
+              ? 'Repair paused'
+              : 'Repair ready';
 
   return (
     <section className="ws-sidebar__repair-prelude" aria-label="Studio repair startup">
@@ -60,12 +66,16 @@ export function StudioRepairPrelude({
             : busy
               ? 'running'
               : reviewRequired
-                ? 'review'
+                ? toolchainFailure
+                  ? 'connection'
+                  : 'review'
                 : connectionFailure
                   ? 'connection'
-                  : resumable
+                  : providerFailure
                     ? 'paused'
-                    : 'ready'
+                    : resumable
+                      ? 'paused'
+                      : 'ready'
         }
       >
         <div className="ws-sidebar__repair-copy">
@@ -80,16 +90,48 @@ export function StudioRepairPrelude({
           <span className="ws-sidebar__repair-meta">
             {connectionFailure
               ? 'Repair did not start · no files changed'
-              : completed
-                ? 'Canonical evidence is current'
-                : busy
-                  ? `Using governed ${scopeLabel}`
-                  : `${scopeLabel} · verification required`}
+              : providerFailure
+                ? 'Latest repair is retained · reconnect to continue'
+                : completed
+                  ? 'Canonical evidence is current'
+                  : busy
+                    ? 'Using current evidence'
+                    : toolchainFailure
+                      ? 'A required runtime tool could not be launched'
+                      : `${scopeLabel} · verification required`}
           </span>
           {reviewRequired ? (
             <>
               <p>{reviewMessage || 'Studio needs an explicit engineering decision to continue.'}</p>
-              {onReview || (decisionOptions.length > 0 && onDecision) ? (
+              {toolchainFailure ? (
+                <div
+                  className="ws-sidebar__repair-controls"
+                  role="group"
+                  aria-label="Studio toolchain recovery controls"
+                >
+                  {onOpenSetup ? (
+                    <button
+                      type="button"
+                      className="ws-sidebar__inline ws-sidebar__inline--primary"
+                      onClick={onOpenSetup}
+                    >
+                      Open setup
+                    </button>
+                  ) : null}
+                  <button type="button" className="ws-sidebar__inline" onClick={onStart}>
+                    Retry repair
+                  </button>
+                  {decisionOptions.includes('cancel') && onDecision ? (
+                    <button
+                      type="button"
+                      className="ws-sidebar__inline"
+                      onClick={() => onDecision('cancel', transactionId)}
+                    >
+                      Cancel
+                    </button>
+                  ) : null}
+                </div>
+              ) : onReview || (decisionOptions.length > 0 && onDecision) ? (
                 <div
                   className="ws-sidebar__repair-controls"
                   role="group"
@@ -159,6 +201,14 @@ export function StudioRepairPrelude({
                     </button>
                   ) : null}
                 </>
+              ) : providerFailure ? (
+                <button
+                  type="button"
+                  className="ws-sidebar__inline ws-sidebar__inline--primary"
+                  onClick={onStart}
+                >
+                  Retry AI connection
+                </button>
               ) : (
                 <button type="button" className="ws-sidebar__inline" onClick={onStart}>
                   {resumable ? 'Resume repair' : 'Start repair'}

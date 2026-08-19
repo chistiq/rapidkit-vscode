@@ -8,7 +8,7 @@ import { isStudioBlockerHandoff } from '../contracts/studio-blocker-handoff-cont
 import { DASHBOARD_EVIDENCE_CARD_IDS } from '../contracts/dashboardEvidenceCards.js';
 import {
   requireStudioCardRepairCapability,
-  studioCardAllowsModelSourceMutation,
+  studioCardSupportsGovernedSourceMutation,
 } from '../contracts/studioCardRepairCapabilities.js';
 
 const repoRoot = path.resolve(__dirname, '..', '..');
@@ -237,9 +237,7 @@ describe('Phase 3 studio contracts parity', () => {
     'enforces the declared producer/source ownership policy for %s',
     (cardId) => {
       const capability = requireStudioCardRepairCapability(cardId);
-      expect(studioCardAllowsModelSourceMutation(cardId)).toBe(
-        capability.repairPolicy !== 'refresh-producer'
-      );
+      expect(studioCardSupportsGovernedSourceMutation(cardId)).toBe(true);
       if (capability.repairPolicy === 'refresh-producer') {
         expect(capability.producerCommand).toBe(capability.verifyCommand);
         expect(capability.producerArtifact).toBe(capability.verifyArtifact);

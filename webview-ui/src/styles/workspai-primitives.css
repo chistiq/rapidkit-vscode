@@ -211,32 +211,32 @@
   gap: 4px;
   min-height: 20px;
   padding: 2px 8px;
-  border: 1px solid var(--ws-border-subtle);
+  border: 1px solid color-mix(in srgb, var(--ws-border-subtle) 70%, transparent);
   border-radius: var(--ws-radius-sm);
-  background: color-mix(in srgb, var(--ws-surface-raised) 70%, transparent);
+  background: transparent;
   color: var(--ws-text-muted);
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   line-height: 1.3;
   white-space: nowrap;
 }
 
 .ws-chip--success {
-  border-color: color-mix(in srgb, var(--ws-success) 35%, transparent);
-  background: color-mix(in srgb, var(--ws-success) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ws-success) 28%, transparent);
+  background: color-mix(in srgb, var(--ws-success) 8%, transparent);
   color: var(--ws-success);
 }
 
 .ws-chip--warn {
-  border-color: color-mix(in srgb, var(--ws-warn) 35%, transparent);
-  background: color-mix(in srgb, var(--ws-warn) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ws-warn) 28%, transparent);
+  background: color-mix(in srgb, var(--ws-warn) 8%, transparent);
   color: var(--ws-warn);
 }
 
 .ws-chip--error {
-  border-color: color-mix(in srgb, var(--ws-error) 35%, transparent);
-  background: color-mix(in srgb, var(--ws-error) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ws-error) 28%, transparent);
+  background: color-mix(in srgb, var(--ws-error) 8%, transparent);
   color: var(--ws-error);
 }
 
@@ -1004,22 +1004,22 @@
 .workspai-action-tile__evidence--healthy,
 .release-hub__stage--healthy {
   color: var(--ws-success, #4ec9b0);
-  border-color: color-mix(in srgb, var(--ws-success, #4ec9b0) 36%, var(--ws-border-subtle));
-  background: color-mix(in srgb, var(--ws-success, #4ec9b0) 8%, transparent);
+  border-color: color-mix(in srgb, var(--ws-success, #4ec9b0) 25%, transparent);
+  background: color-mix(in srgb, var(--ws-success, #4ec9b0) 6%, transparent);
 }
 
 .workspai-action-tile__evidence--attention,
 .release-hub__stage--attention {
   color: var(--ws-warn, #dba617);
-  border-color: color-mix(in srgb, var(--ws-warn, #dba617) 36%, var(--ws-border-subtle));
-  background: color-mix(in srgb, var(--ws-warn, #dba617) 8%, transparent);
+  border-color: color-mix(in srgb, var(--ws-warn, #dba617) 25%, transparent);
+  background: color-mix(in srgb, var(--ws-warn, #dba617) 6%, transparent);
 }
 
 .workspai-action-tile__evidence--blocked,
 .release-hub__stage--blocked {
   color: var(--ws-error, #f14c4c);
-  border-color: color-mix(in srgb, var(--ws-error, #f14c4c) 42%, var(--ws-border-subtle));
-  background: color-mix(in srgb, var(--ws-error, #f14c4c) 8%, transparent);
+  border-color: color-mix(in srgb, var(--ws-error, #f14c4c) 30%, transparent);
+  background: color-mix(in srgb, var(--ws-error, #f14c4c) 6%, transparent);
 }
 
 .release-hub__stage--healthy .release-hub__badge {
@@ -1035,18 +1035,18 @@
 }
 
 .project-doctor-card--healthy {
-  border-color: color-mix(in srgb, var(--ws-success, #4ec9b0) 36%, var(--ws-border-subtle));
-  background: color-mix(in srgb, var(--ws-success, #4ec9b0) 7%, transparent);
+  border-color: color-mix(in srgb, var(--ws-success, #4ec9b0) 25%, var(--ws-border-subtle));
+  background: color-mix(in srgb, var(--ws-success, #4ec9b0) 4%, transparent);
 }
 
 .project-doctor-card--attention {
-  border-color: color-mix(in srgb, var(--ws-warn, #dba617) 36%, var(--ws-border-subtle));
-  background: color-mix(in srgb, var(--ws-warn, #dba617) 7%, transparent);
+  border-color: color-mix(in srgb, var(--ws-warn, #dba617) 25%, var(--ws-border-subtle));
+  background: color-mix(in srgb, var(--ws-warn, #dba617) 4%, transparent);
 }
 
 .project-doctor-card--blocked {
-  border-color: color-mix(in srgb, var(--ws-error, #f14c4c) 42%, var(--ws-border-subtle));
-  background: color-mix(in srgb, var(--ws-error, #f14c4c) 7%, transparent);
+  border-color: color-mix(in srgb, var(--ws-error, #f14c4c) 30%, var(--ws-border-subtle));
+  background: color-mix(in srgb, var(--ws-error, #f14c4c) 4%, transparent);
 }
 
 .project-doctor-card__status--healthy {
@@ -1691,22 +1691,23 @@
 .workspace-intelligence-detail-card {
   grid-column: 1 / -1;
   min-width: 0;
-  border: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
-  border-radius: var(--ws-radius-sm, 6px);
-  background: color-mix(
-    in srgb,
-    var(--ws-surface, var(--vscode-editor-background)) 92%,
-    transparent
-  );
+  border: 1px solid color-mix(in srgb, var(--ws-border-subtle, var(--vscode-panel-border)) 70%, transparent);
+  border-radius: var(--ws-radius-md, 7px);
+  background: transparent;
   overflow: hidden;
+  transition: border-color 0.12s ease;
+}
+
+.workspace-intelligence-detail-card:hover {
+  border-color: var(--ws-border-subtle, var(--vscode-panel-border));
 }
 
 .workspace-intelligence-detail-card__summary {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 52px;
-  padding: 8px 10px;
+  min-height: 48px;
+  padding: 10px 12px;
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -1720,18 +1721,14 @@
 .workspace-intelligence-detail-card__summary:hover {
   background: color-mix(
     in srgb,
-    var(--ws-surface-hover, var(--vscode-list-hoverBackground)) 65%,
+    var(--ws-surface-hover, var(--vscode-list-hoverBackground)) 40%,
     transparent
   );
 }
 
 .workspace-intelligence-detail-card[open] > .workspace-intelligence-detail-card__summary {
-  border-bottom: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
-  background: color-mix(
-    in srgb,
-    var(--ws-surface-raised, var(--vscode-editor-background)) 55%,
-    transparent
-  );
+  border-bottom: 1px solid color-mix(in srgb, var(--ws-border-subtle, var(--vscode-panel-border)) 50%, transparent);
+  background: transparent;
 }
 
 .workspace-intelligence-detail-card__icon {
@@ -1756,8 +1753,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 
 .workspace-intelligence-detail-card__meta {
@@ -1800,8 +1798,8 @@
 .workspace-intelligence-detail-card__body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px 10px 10px;
+  gap: 10px;
+  padding: 10px 12px 12px;
 }
 
 .workspace-intelligence-detail-card__section {
@@ -1809,21 +1807,18 @@
   flex-direction: column;
   gap: 6px;
   padding: 8px 10px;
-  border: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
+  border: 1px solid color-mix(in srgb, var(--ws-border-subtle, var(--vscode-panel-border)) 50%, transparent);
   border-radius: var(--ws-radius-sm, 6px);
-  background: color-mix(
-    in srgb,
-    var(--ws-surface, var(--vscode-editor-background)) 88%,
-    transparent
-  );
+  background: transparent;
 }
 
 .workspace-intelligence-detail-card__section h4 {
   margin: 0;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.3;
   color: var(--ws-text, var(--vscode-foreground));
+  letter-spacing: -0.005em;
 }
 
 .workspace-intelligence-detail-card__section pre {
@@ -1842,14 +1837,10 @@
   min-width: 0;
   flex-direction: column;
   gap: var(--ws-space-sm, 8px);
-  border: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
-  border-radius: var(--ws-radius-sm, 6px);
-  padding: 10px;
-  background: color-mix(
-    in srgb,
-    var(--ws-surface, var(--vscode-editor-background)) 92%,
-    transparent
-  );
+  border: 1px solid color-mix(in srgb, var(--ws-border-subtle, var(--vscode-panel-border)) 60%, transparent);
+  border-radius: var(--ws-radius-md, 7px);
+  padding: 12px;
+  background: transparent;
 }
 
 .workspace-explainability-stack__header {
@@ -1895,14 +1886,10 @@
   min-width: 0;
   flex-direction: column;
   gap: 7px;
-  border: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
+  border: 1px solid color-mix(in srgb, var(--ws-border-subtle, var(--vscode-panel-border)) 50%, transparent);
   border-radius: var(--ws-radius-sm, 6px);
-  padding: 8px;
-  background: color-mix(
-    in srgb,
-    var(--ws-surface-raised, var(--vscode-editor-background)) 80%,
-    transparent
-  );
+  padding: 8px 10px;
+  background: transparent;
 }
 
 .workspace-explainability-stack__item header {
@@ -2056,15 +2043,11 @@
 .workspace-graph-preview {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  border: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
-  border-radius: var(--ws-radius-sm, 6px);
-  background: color-mix(
-    in srgb,
-    var(--ws-surface, var(--vscode-editor-background)) 92%,
-    transparent
-  );
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--ws-border-subtle, var(--vscode-panel-border)) 60%, transparent);
+  border-radius: var(--ws-radius-md, 7px);
+  background: transparent;
 }
 
 .workspace-graph-preview--empty {
@@ -2076,13 +2059,13 @@
   gap: 10px;
   border-color: color-mix(
     in srgb,
-    var(--ws-warning, #d9a441) 42%,
-    var(--ws-border-subtle, var(--vscode-panel-border))
+    var(--ws-warning, #d9a441) 30%,
+    color-mix(in srgb, var(--ws-border-subtle, var(--vscode-panel-border)) 60%, transparent)
   );
   background: color-mix(
     in srgb,
-    var(--ws-warning, #d9a441) 8%,
-    var(--ws-surface, var(--vscode-editor-background))
+    var(--ws-warning, #d9a441) 5%,
+    transparent
   );
 }
 

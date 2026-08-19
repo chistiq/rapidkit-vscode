@@ -373,4 +373,61 @@ describe('sidebar Studio AI patch autonomy boundary', () => {
       await fs.rm(workspacePath, { recursive: true, force: true });
     }
   });
+
+  it('promotes Analyze missing-file findings into project-scoped inspect targets', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-studio-analyze-ci-'));
+    const projectPath = path.join(workspacePath, 'commerce-api');
+    const reportsPath = path.join(workspacePath, '.workspai', 'reports');
+    await fs.mkdir(reportsPath, { recursive: true });
+    await fs.mkdir(projectPath, { recursive: true });
+    await fs.writeFile(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-context-agent.json'),
+      JSON.stringify({ schemaVersion: 'workspace-context-agent-v1' })
+    );
+    await fs.writeFile(
+      path.join(reportsPath, 'analyze-last-run.json'),
+      JSON.stringify({
+        schemaVersion: 'rapidkit-analyze-v1',
+        findings: [
+          {
+            id: 'project.ci.missing',
+            severity: 'warn',
+            title: 'Continuous integration is missing',
+            detail: 'No recognized CI/CD configuration file was detected for this project.',
+            target: 'commerce-api',
+            remediation:
+              'Add CI configuration so tests and checks run automatically for every change.',
+            files: ['.github/workflows/ci.yml'],
+          },
+        ],
+      })
+    );
+
+    try {
+      const evidence = await collectSidebarStudioRepairEvidence({
+        workspacePath,
+        projectPath,
+        handoff: {
+          schemaVersion: STUDIO_BLOCKER_HANDOFF_SCHEMA_VERSION,
+          cardId: 'analyze',
+          cardStatus: 'fail',
+          blockers: ['Continuous integration is missing'],
+          artifactPath: '.workspai/reports/analyze-last-run.json',
+          sourceCommand: 'npx workspai analyze --json',
+          scope: 'project',
+          blockerSignature: 'analyze-ci-missing',
+          verifyCommand: 'npx workspai analyze --json',
+        },
+      });
+      expect(evidence.exactTargetPaths).toContain('.github/workflows/ci.yml');
+      expect(evidence.autonomousTargetPaths).toContain('.github/workflows/ci.yml');
+      expect(evidence.expectedBaseSha256['.github/workflows/ci.yml']).toBeNull();
+      expect(evidence.promptSection).toContain(
+        '<repair-target path=".github/workflows/ci.yml" base-sha256="absent">'
+      );
+      expect(evidence.promptSection).toContain('[file does not exist]');
+    } finally {
+      await fs.rm(workspacePath, { recursive: true, force: true });
+    }
+  });
 });

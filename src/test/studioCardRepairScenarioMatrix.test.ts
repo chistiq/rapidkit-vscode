@@ -107,4 +107,89 @@ describe('Studio card repair end-to-end matrix', () => {
       );
     }
   );
+
+  it.each(
+    DASHBOARD_EVIDENCE_CARD_IDS.filter(
+      (cardId) => requireStudioCardRepairCapability(cardId).repairPolicy === 'refresh-producer'
+    )
+  )('hands unresolved producer-owned card %s to governed source mutation', async (cardId) => {
+    const registry = new StudioAgentToolRegistry();
+    let modelCalls = 0;
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Refresh exact producer',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        return { ok: false, cardBlocking: true, error: `${cardId} remains blocked.` };
+      },
+    });
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply governed source repair',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ok: true,
+          changed: true,
+          output: {
+            changedPaths: ['project/source.fixture'],
+            transaction: {
+              transactionId: `repair-${cardId}`,
+              state: 'closed',
+              verification: {
+                status: 'passed',
+                targetStatus: 'passed',
+                workspaceStatus: 'passed',
+                remainingActionIds: [],
+                summary: `${cardId} passed canonical verification.`,
+              },
+            },
+          },
+        };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        workspacePath: '/tmp/workspai-card-source-repair',
+        cardId,
+        assistantMode: 'agent',
+        repairPolicy: 'refresh-producer',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      {
+        async next(context) {
+          modelCalls += 1;
+          expect(context.sourceRepairDirective).toEqual(
+            expect.objectContaining({
+              nextAction: 'general-source-repair',
+              cardId,
+            })
+          );
+          expect(context.tools.map((tool) => tool.name)).toContain('apply-workspace-patch');
+          return {
+            type: 'tool',
+            toolName: 'apply-workspace-patch',
+            input: { patches: [] },
+            reason: 'Apply the diagnosed causal source repair.',
+          };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run(`Repair ${cardId}`);
+
+    expect(result.status).toBe('completed');
+    expect(modelCalls).toBe(1);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'model.checkpoint',
+        data: expect.objectContaining({ recovery: 'producer-to-source-repair' }),
+      })
+    );
+  });
 });

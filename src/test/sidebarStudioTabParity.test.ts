@@ -73,7 +73,10 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(provider).not.toContain('rollbackAppliedPatches');
     expect(provider).toContain("decision: 'rollback'");
     expect(provider).toContain("approvedBy: 'vscode:explicit-user-undo'");
+    expect(provider).toContain('applyStudioGovernedCommandReuse');
+    expect(provider).toContain('hydrateStudioRepairEventFileChanges');
     expect(provider).toContain('readCliOwnedRepairFileComparison');
+    expect(cliClient).toContain('export async function hydrateStudioRepairEventFileChanges');
     expect(provider).toContain('await vscode.commands.executeCommand(');
     expect(provider).toContain("'vscode.diff'");
     expect(provider).toContain('buildStudioVerifiedRepairReceipt');
@@ -93,7 +96,8 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(actionProgress).toContain('onUndo(progress.transactionId!)');
     expect(secondary).toContain("eventType === 'tool.completed' || eventType === 'tool.failed'");
     expect(secondary).toContain("action: 'cli-repair-engine'");
-    expect(secondary).toContain('Repair transaction verified');
+    expect(secondary).toContain('describeStudioCliRepairPhase');
+    expect(secondary).toContain('title: phaseCopy.title');
     expect(secondary).toContain(
       "status: policyRejected ? 'done' : eventType === 'tool.completed' ? 'done' : 'failed'"
     );
@@ -235,7 +239,8 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(provider).not.toContain('private async _executeSidebarEvidenceRepair');
     expect(provider).toContain('resolveDashboardCommandExecutionPlan(request.commandId)');
     expect(provider).toContain('preserveAllAgentConsumersForStudioRefresh');
-    expect(provider).toContain("args[targetIndex + 1] = 'all'");
+    const executionPlan = read('src/core/dashboardCommandExecutionPlan.ts');
+    expect(executionPlan).toContain("args[targetIndex + 1] = 'all'");
     expect(provider).toContain('actionLabel: `Studio Agent ${request.commandId}`');
     expect(provider).toContain('_activeStudioAgentSessions');
     expect(provider).toContain('session.steer');
@@ -269,6 +274,8 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
 
     expect(secondary).toContain('StudioPatchReview');
     expect(secondary).toContain("case 'sidebarStudioEvidencePulse'");
+    expect(secondary).toContain("session.status === 'streaming'");
+    expect(secondary).toContain('if (liveRepair) {');
     expect(secondary).toContain("action: 'live-evidence'");
     expect(secondary).toContain('StudioRemediationPlan');
     expect(secondary).toContain('StudioBlockerChrome');
@@ -314,8 +321,14 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(repairPrelude).toContain('Working on the repair');
     expect(repairPrelude).toContain('Start repair');
     expect(repairPrelude).toContain('Resume repair');
+    expect(repairPrelude).toContain('Retry AI connection');
+    expect(repairPrelude).toContain("terminalReason === 'ai-provider-unavailable'");
     expect(repairPrelude).toContain('Stop session');
     expect(repairPrelude).toContain('Choose how to continue');
+    expect(repairPrelude).toContain("terminalReason === 'repair-toolchain-unavailable'");
+    expect(repairPrelude).toContain('Toolchain setup required');
+    expect(repairPrelude).toContain('Open setup');
+    expect(repairPrelude).toContain('Retry repair');
     expect(repairPrelude).toContain('ws-sidebar__repair-decision-options');
     expect(repairPrelude).toContain('onDecision(decision, transactionId)');
     expect(repairPrelude).toContain('explicit engineering decision');
@@ -365,11 +378,19 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(provider).toContain("event.type === 'session.failed'");
     expect(provider).toContain('failureData?.requiresUserDecision === true');
     expect(provider).toContain("typeof failureData?.terminalReason === 'string'");
+    expect(provider).toContain("typeof failureData?.repairTransactionState === 'string'");
+    expect(secondary).toContain('repairTransactionState');
+    expect(secondary).toContain("status === 'streaming'");
     expect(provider).toContain('terminalFailureData?.requiresUserDecision === true');
     expect(provider).toContain("typeof terminalFailureData?.terminalReason === 'string'");
     expect(secondary).toContain("case 'sidebarStudioSessionState':");
     expect(secondary).toContain('data.requiresUserDecision === true');
-    expect(secondary).toContain('describeStudioTerminalFailure');
+    expect(secondary).toContain('describeStudioCliRepairPhase');
+    expect(secondary).toContain('isStudioUserFacingNarration');
+    expect(secondary).toContain('appendChunk(eventSessionId');
+    expect(actionProgress).toContain(
+      '<details className="ws-sidebar__studio-file-preview" open={!historical && progress.status !== \'running\'}>'
+    );
     expect(secondary).toContain('terminalizeStudioTimeline');
     expect(secondary).toContain("action: 'open-setup'");
     expect(secondary).not.toContain('Studio exhausted the bounded repair strategies');

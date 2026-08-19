@@ -209,11 +209,20 @@ export function CreateTab(props: CreateTabProps) {
       aria-label="Create with AI"
       hidden={!active}
     >
+      <ChatSessionBar
+        activeSession={activeBarSession}
+        sessionCount={props.sessions.length}
+        statusText={activeStatusText}
+        onNewSession={startNewSession}
+        onOpenHistory={() => setHistoryOpen(true)}
+      />
+
       <div className="ws-sidebar__stream" aria-live="polite">
-        <SidebarMessage role="ai">
-          <strong>What are we building?</strong>
-          <p>Describe the product or workspace. Use + to create manually or pick a quick start.</p>
-        </SidebarMessage>
+        {messages.length === 0 ? (
+          <div className="ws-sidebar__empty-canvas" aria-hidden="true">
+            <span className="ws-sidebar__empty-hint">Describe what you want to build</span>
+          </div>
+        ) : null}
         {messages.map((message, index) => (
           <CreateMessageView
             key={message.id}
@@ -231,14 +240,6 @@ export function CreateTab(props: CreateTabProps) {
           />
         ))}
       </div>
-
-      <ChatSessionBar
-        activeSession={activeBarSession}
-        sessionCount={props.sessions.length}
-        statusText={activeStatusText}
-        onNewSession={startNewSession}
-        onOpenHistory={() => setHistoryOpen(true)}
-      />
 
       <ComposerShell
         value={prompt}

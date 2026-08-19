@@ -1,7 +1,36 @@
 import type { WorkspaceRepairCliTransaction } from './workspaceRepairCliClient.js';
+import { redactLocalPathsForConsumer } from './consumerPathRedaction.js';
+
+const MAX_STUDIO_REPAIR_MESSAGE_CHARS = 700;
+
+/**
+ * Convert CLI-owned diagnostic prose into a bounded, portable UI summary.
+ *
+ * Complete machine evidence remains available through governed artifacts and
+ * transaction inspection. Cards and Chat must never render an embedded JSON
+ * report, local filesystem roots, or an unbounded command payload.
+ */
+export function summarizeStudioRepairMessage(value: string | undefined): string | undefined {
+  const redacted = redactLocalPathsForConsumer(value ?? '').trim();
+  if (!redacted) {
+    return undefined;
+  }
+  if (/^Target precondition failed before checkpoint:/i.test(redacted)) {
+    return 'Fresh evidence no longer matched the approved repair target. Studio will compile a new bounded plan before changing source.';
+  }
+  const structuredPayload = redacted.search(/(?:^|:\s*)(?:[{]|[[])\s*(?:["{]|[[])/);
+  const withoutPayload =
+    structuredPayload >= 0 && redacted.length - structuredPayload > 240
+      ? `${redacted.slice(0, structuredPayload).replace(/[:\s]+$/, '')}. Detailed diagnostics remain available in the governed transaction.`
+      : redacted;
+  const normalized = withoutPayload.replace(/\s+/g, ' ').trim();
+  return normalized.length <= MAX_STUDIO_REPAIR_MESSAGE_CHARS
+    ? normalized
+    : `${normalized.slice(0, MAX_STUDIO_REPAIR_MESSAGE_CHARS - 1).trimEnd()}…`;
+}
 
 export function deduplicateStudioMessage(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
+  const trimmed = summarizeStudioRepairMessage(value);
   if (!trimmed) {
     return undefined;
   }
@@ -43,6 +72,22 @@ export function describeStudioRepairOutcome(
     };
   }
   if (transaction.state === 'decision-required' && transaction.decision) {
+    const modelCorrectableProposal =
+      transaction.decision.options?.length === 1 &&
+      transaction.decision.options[0] === 'cancel' &&
+      Boolean(transaction.decision.causes?.length) &&
+      transaction.decision.causes?.every((cause) => cause.kind === 'failed-precondition');
+    if (modelCorrectableProposal) {
+      return {
+        status: 'review',
+        phase: 'repair-replan-required',
+        title: 'Refining source target',
+        summary:
+          reason ??
+          'The proposed source change did not prove progress. Studio is tracing the exact causal finding and compiling a different bounded proposal.',
+        requiresUserDecision: false,
+      };
+    }
     return {
       status: 'review',
       phase: 'repair-decision-required',

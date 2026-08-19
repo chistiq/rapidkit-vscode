@@ -35,23 +35,60 @@ describe('native Chat and Incident Studio orchestration parity', () => {
     expect(renderer).toContain("event.type === 'tool.completed'");
   });
 
+  it('turns a real toolchain boundary into an actionable native Chat handoff', () => {
+    const nativeAgent = read('src/core/nativeChatStudioAgent.ts');
+    expect(nativeAgent).toContain("data.terminalReason === 'repair-toolchain-unavailable'");
+    expect(nativeAgent).toContain('Toolchain setup required');
+    expect(nativeAgent).toContain("command: 'workspai.openSetup'");
+    expect(nativeAgent).toContain("decisionOptions.includes('cancel')");
+  });
+
   it('continues typed source-repair receipts in the source-only plane', () => {
     const nativeRepair = read('src/core/nativeChatRepair.ts');
     const nativeAgent = read('src/core/nativeChatStudioAgent.ts');
+    const provider = read('src/ui/webviews/actionsWebviewProvider.ts');
     expect(nativeRepair).toContain('initialSourceRepairDirective: {');
-    expect(nativeAgent).toContain('resolveStudioCliRepairDisposition({');
+    expect(nativeAgent).toContain('presentStudioCliOwnedRepairObservation');
+    expect(provider).toContain('presentStudioCliOwnedRepairObservation');
+    expect(provider).toContain('presentAssistantCliRepairResult');
     expect(nativeAgent).toContain('repairPolicy: cardRepairCapability.repairPolicy');
     expect(nativeAgent).toContain(
       'initialSourceRepairDirective: input.initialSourceRepairDirective'
     );
+    expect(nativeRepair).toContain('selectStudioPostCliSourceCandidates');
+    expect(nativeRepair).toContain('collectSidebarStudioRepairEvidence');
+    expect(nativeAgent).toContain('selectStudioPostCliSourceCandidates');
+    expect(nativeAgent).toContain('expectedBaseSha256');
+  });
+
+  it('keeps recover, remediation, and governed producers on the same CLI host as Sidebar', () => {
+    const nativeAgent = read('src/core/nativeChatStudioAgent.ts');
+    expect(nativeAgent).toContain('recoverActiveBlocker: async');
+    expect(nativeAgent).toContain('readDoctorRemediationPlanForStudio');
+    expect(nativeAgent).toContain('executeRemediationStep: async');
+    expect(nativeAgent).toContain('runGovernedCommand: async');
+    expect(nativeAgent).toContain('inspectDependencySecurity: async');
+    expect(nativeAgent).toContain('executeCliOwnedCanonicalRepair');
+    expect(nativeAgent).toContain('parseStudioDependencyUpgradeCandidates');
+    expect(nativeAgent).toContain('isExpectedDiagnosticFindingExit');
+    expect(nativeAgent).toContain('refreshDependencyDoctorEvidence');
+    expect(nativeAgent).toContain('preserveAllAgentConsumersForStudioRefresh');
+    expect(nativeAgent).toContain('applyStudioGovernedCommandReuse');
+    expect(nativeAgent).not.toContain('unsupported(');
+    expect(nativeAgent).not.toContain('not available in this source-repair phase');
+    expect(nativeAgent).not.toContain('runStudioActiveBlockerRecovery');
   });
 
   it('shares workspace inspection primitives with the webview Studio host', () => {
     const provider = read('src/ui/webviews/actionsWebviewProvider.ts');
+    const nativeAgent = read('src/core/nativeChatStudioAgent.ts');
     const inspection = read('src/core/studioWorkspaceInspection.ts');
     expect(provider).toContain("from '../../core/studioWorkspaceInspection.js'");
     expect(inspection).toContain('export async function discoverStudioWorkspaceFiles');
     expect(inspection).toContain('export function inspectStudioWorkspaceDiagnostics');
     expect(inspection).toContain('export async function inspectStudioWorkspaceChanges');
+    expect(inspection).toContain('export async function searchStudioWorkspaceSource');
+    expect(nativeAgent).toContain('searchStudioWorkspaceSource');
+    expect(provider).toContain('searchStudioWorkspaceSource');
   });
 });

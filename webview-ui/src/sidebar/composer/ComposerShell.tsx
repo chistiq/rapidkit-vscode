@@ -23,7 +23,7 @@ interface ComposerShellProps {
 }
 
 const MIN_INPUT_HEIGHT = 48;
-const MAX_INPUT_HEIGHT = 140;
+const MAX_INPUT_HEIGHT = 160;
 
 /** Fixed composer with a rounded surface, standard input height, and warm hover states. */
 export function ComposerShell(props: ComposerShellProps) {

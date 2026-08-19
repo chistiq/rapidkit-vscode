@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import fs from 'fs-extra';
 import * as vscode from 'vscode';
 
 import type { StudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
@@ -22,6 +23,7 @@ import {
   fingerprintStudioWorkspaceSourceState,
   inspectStudioWorkspaceChanges,
   inspectStudioWorkspaceDiagnostics,
+  searchStudioWorkspaceSource,
 } from './studioWorkspaceInspection.js';
 import { runRapidkitStreaming } from './streamingRapidkitRunner.js';
 import {
@@ -37,22 +39,48 @@ import {
 import {
   executeCliOwnedCanonicalRepair,
   executeCliOwnedPatchRepair,
-  projectWorkspaceRepairTransactionForConsumer,
   type WorkspaceRepairDecision,
   type WorkspaceRepairProgress,
 } from './workspaceRepairCliClient.js';
-import { deduplicateStudioMessage } from './studioRepairPresentation.js';
 import { buildDashboardEvidenceBundle } from './dashboardEvidenceBridge.js';
-import { runIncidentInlineCommand } from '../ui/panels/incidentStudioInlineCommandBridge.js';
+import {
+  isExpectedDiagnosticFindingExit,
+  runIncidentInlineCommand,
+} from '../ui/panels/incidentStudioInlineCommandBridge.js';
+import {
+  clearDoctorRemediationPlanCache,
+  readDoctorRemediationPlanForStudio,
+} from './doctorRemediationPlanReader.js';
+import {
+  applyStudioGovernedCommandReuse,
+  preserveAllAgentConsumersForStudioRefresh,
+  resolveDashboardCommandExecutionPlan,
+} from './dashboardCommandExecutionPlan.js';
+import {
+  STUDIO_CANONICAL_INTELLIGENCE_ARGS,
+  STUDIO_CANONICAL_INTELLIGENCE_COMMAND,
+} from './studioCanonicalIntelligenceRepair.js';
+import {
+  resolveWorkspaceIntelligenceRunPreflight,
+  resolveWorkspaceIntelligenceRunStage,
+  resolveWorkspaceIntelligenceStreamProgress,
+} from './workspaceIntelligenceChainContract.js';
+import type { StudioEvidenceRefreshCommandId } from './sidebarStudioAgentRuntime.js';
+import {
+  buildStudioDependencySecurityCommand,
+  parseStudioDependencyUpgradeCandidates,
+  resolveStudioDependencySecurityTarget,
+} from './studioDependencySecurity.js';
+import { buildRapidkitCommand } from '../utils/platformCapabilities.js';
 import {
   buildStudioVerifiedRepairReceipt,
-  resolveStudioCliRepairDisposition,
-  selectStudioSourceRepairCandidates,
+  presentStudioCliOwnedRepairObservation,
+  selectStudioPostCliSourceCandidates,
 } from './studioRepairReceipt.js';
 import { renderNativeRepairDecisionButtons } from './nativeChatRepairDecisionActions.js';
 import {
   requireStudioCardRepairCapability,
-  studioCardAllowsModelSourceMutation,
+  studioCardSupportsGovernedSourceMutation,
 } from '../contracts/studioCardRepairCapabilities.js';
 import {
   bootstrapProjectAgent,
@@ -70,51 +98,6 @@ const REPAIR_DECISIONS = new Set<WorkspaceRepairDecision>([
   'rollback',
   'cancel',
 ]);
-
-async function searchWorkspace(input: {
-  query: string;
-  paths?: string[];
-  workspacePath: string;
-  projectPath?: string;
-}): Promise<Array<{ path: string; line: number; preview: string }>> {
-  const sourceRoot = input.projectPath?.trim() || input.workspacePath;
-  const include = input.paths?.length ? `{${input.paths.join(',')}}` : '**/*';
-  const uris = await vscode.workspace.findFiles(
-    new vscode.RelativePattern(sourceRoot, include),
-    '{**/.git/**,**/node_modules/**,**/dist/**,**/build/**,**/.workspai/cache/**}',
-    120
-  );
-  const matches: Array<{ path: string; line: number; preview: string }> = [];
-  for (const uri of uris) {
-    if (matches.length >= 80) {
-      break;
-    }
-    try {
-      const lines = Buffer.from(await vscode.workspace.fs.readFile(uri))
-        .toString('utf8')
-        .split(/\r?\n/);
-      lines.forEach((line, index) => {
-        if (matches.length < 80 && line.includes(input.query)) {
-          matches.push({
-            path: path.relative(sourceRoot, uri.fsPath).replace(/\\/g, '/'),
-            line: index + 1,
-            preview: line.trim().slice(0, 240),
-          });
-        }
-      });
-    } catch {
-      // Binary and transient files are not source observations.
-    }
-  }
-  return matches;
-}
-
-function unsupported(capability: string) {
-  return async () => ({
-    ok: false,
-    error: `${capability} is not available in this source-repair phase. Inspect source and use a CLI-owned patch transaction.`,
-  });
-}
 
 export async function runNativeChatStudioAgent(input: {
   extensionContext: vscode.ExtensionContext;
@@ -140,13 +123,19 @@ export async function runNativeChatStudioAgent(input: {
   });
   requireReadyProjectAgentBootstrap(projectBootstrap);
 
-  const repairEvidence = await collectSidebarStudioRepairEvidence({
+  let repairEvidence = await collectSidebarStudioRepairEvidence({
     workspacePath: input.workspacePath,
     projectPath: input.projectPath,
     handoff: input.handoff,
   });
   const cardRepairCapability = requireStudioCardRepairCapability(input.handoff.cardId);
   const inspectedSource = new Map<string, string | null>();
+  const commandGenerations = new Map<StudioEvidenceRefreshCommandId, string>();
+  const commandAttempts = new Map<
+    StudioEvidenceRefreshCommandId,
+    { blockerSignature?: string; evidenceGeneration: string; count: number }
+  >();
+  const activeBlockerSignature = input.handoff.blockerSignature;
   const projectName = resolveStudioRepairProjectTarget({
     affectedProjectNames: input.handoff.affectedProjectNames,
     projectPath: input.projectPath,
@@ -154,66 +143,113 @@ export async function runNativeChatStudioAgent(input: {
   const reportProgress = (callback?: (data: Record<string, unknown>) => Promise<void>) =>
     callback ? (progress: WorkspaceRepairProgress) => callback({ repair: progress }) : undefined;
 
-  const presentCliRepairResult = (
+  const refreshDependencyDoctorEvidence = async (workspacePath: string) => {
+    const plan = resolveDashboardCommandExecutionPlan('checkWorkspaceHealth');
+    if (plan.cliArgs.length === 0) {
+      throw new Error('Doctor evidence producer is unavailable.');
+    }
+    const command = buildRapidkitCommand(plan.cliArgs);
+    const execution = await runIncidentInlineCommand({
+      command,
+      workspacePath,
+      actionId: 'native-chat-dependency-doctor-refresh',
+    });
+    if (![0, 1, 2].includes(execution.exitCode ?? -1)) {
+      throw new Error(execution.error ?? execution.stderrTail ?? 'Doctor evidence refresh failed.');
+    }
+    repairEvidence = await collectSidebarStudioRepairEvidence({
+      workspacePath,
+      projectPath: input.projectPath,
+      handoff: input.handoff,
+    });
+    return execution;
+  };
+
+  const presentCliRepairResult = async (
     result: Awaited<ReturnType<typeof executeCliOwnedCanonicalRepair>>
   ) => {
-    const sourceCandidates = selectStudioSourceRepairCandidates(
-      [
-        ...result.transaction.checkpoint.files
-          .filter((file) => file.existed)
-          .map((file) => file.path),
-        ...repairEvidence.autonomousTargetPaths,
-      ],
-      20
-    );
-    const disposition = resolveStudioCliRepairDisposition({
-      transaction: result.transaction,
-      sourceCandidates,
+    repairEvidence = await collectSidebarStudioRepairEvidence({
+      workspacePath: input.workspacePath,
+      projectPath: input.projectPath,
+      handoff: input.handoff,
     });
-    return {
-      ok: disposition.closed,
-      changed: disposition.closed && result.changedPaths.length > 0,
-      output: {
-        transaction: projectWorkspaceRepairTransactionForConsumer(result.transaction),
-        changedPaths: disposition.closed ? result.changedPaths : [],
-        fileChanges: result.fileChanges,
-        closureReady: disposition.closed,
-        nextAction: disposition.nextAction,
-        requiresUserDecision: disposition.requiresUserDecision,
-        terminalReason: disposition.terminalReason,
-        decision: result.transaction.decision,
-        missingExecutables: disposition.missingExecutables,
-        ...(disposition.generalSourceRepair
-          ? {
-              recoveryPath: 'general-source-repair',
-              sourceCandidates,
-              recommendedTools: [
-                'discover-workspace-files',
-                'inspect-source',
-                'search-workspace',
-                'inspect-workspace-diagnostics',
-                'run-workspace-command',
-                'apply-workspace-patch',
-                'inspect-workspace-changes',
-              ],
-            }
-          : {}),
-      },
-      ...(disposition.closed
-        ? {}
-        : {
-            error:
-              deduplicateStudioMessage(result.transaction.decision?.reason) ??
-              (disposition.rolledBackForAnotherSourceAttempt
-                ? 'The attempted source change did not close the exact blocker and was rolled back. Inspect the refreshed cause and propose a different source change.'
-                : `CLI repair ended in ${result.transaction.state}.`),
-          }),
-      ...(disposition.terminalReason ? { terminalReason: disposition.terminalReason } : {}),
-      ...(disposition.requiresUserDecision ? { requiresUserDecision: true } : {}),
-    };
+    return presentStudioCliOwnedRepairObservation({
+      result,
+      sourceCandidates: selectStudioPostCliSourceCandidates({
+        autonomousTargetPaths: repairEvidence.autonomousTargetPaths,
+        checkpointFiles: result.transaction.checkpoint.files,
+      }),
+      authorizedEvidencePaths: repairEvidence.authorizedEvidencePaths,
+      evidenceGeneration: repairEvidence.evidenceFingerprint,
+      proposalRejectedInstruction:
+        'Do not retry the rejected content. Inspect the exact producer evidence, map its blocking finding to a causal source target, inspect that source, and submit a materially different bounded proposal.',
+    });
+  };
+
+  const runCanonicalRepair = async (request: {
+    workspacePath: string;
+    projectPath?: string;
+    projectName?: string;
+    actionId?: string;
+    reportProgress?: (data: Record<string, unknown>) => Promise<void>;
+  }) => {
+    const result = await executeCliOwnedCanonicalRepair({
+      workspacePath: request.workspacePath,
+      cardId: input.handoff.cardId,
+      projectName: request.projectName ?? projectName,
+      ...(request.actionId ? { actionId: request.actionId } : {}),
+      approvedBy: 'vscode:native-chat-agent',
+      reportProgress: reportProgress(request.reportProgress),
+    });
+    return presentCliRepairResult(result);
   };
 
   const host: StudioAgentWorkspaiToolHost = {
+    recoverActiveBlocker: async (request) => {
+      clearDoctorRemediationPlanCache();
+      const plan = await readDoctorRemediationPlanForStudio({
+        workspacePath: request.workspacePath,
+        handoff: {
+          ...input.handoff,
+          ...(request.projectPath ? { projectPath: request.projectPath } : {}),
+        },
+        maxSteps: 8,
+      });
+      const step = plan?.visibleSteps.find(
+        (candidate) =>
+          candidate.risk !== 'invasive' &&
+          (candidate.studioState === 'ready' || candidate.studioState === 'review-required') &&
+          (candidate.canApply || candidate.executable)
+      );
+      if (!step) {
+        return {
+          ok: false,
+          changed: false,
+          evidenceGeneration: repairEvidence.evidenceFingerprint,
+          output: {
+            recoveryPath: 'general-source-repair',
+            nextAction: 'general-source-repair',
+            sourceCandidates: repairEvidence.autonomousTargetPaths,
+            recommendedTools: [
+              'inspect-source',
+              'search-workspace',
+              'inspect-workspace-diagnostics',
+              'run-workspace-command',
+              'apply-workspace-patch',
+            ],
+          },
+          error:
+            'No exact executable action matches the active blocker. Continue with inspected source repair; do not create a card-wide transaction.',
+        };
+      }
+      return runCanonicalRepair({
+        workspacePath: request.workspacePath,
+        projectPath: request.projectPath || step.projectPath,
+        projectName: step.projectName ?? projectName,
+        actionId: step.actionId ?? step.id,
+        reportProgress: request.reportProgress,
+      });
+    },
     discover: async (request) => ({
       ok: true,
       output: { files: await discoverStudioWorkspaceFiles(request) },
@@ -232,12 +268,14 @@ export async function runNativeChatStudioAgent(input: {
       if (request.kind === 'source') {
         observations.forEach((entry) => {
           inspectedSource.set(entry.path, entry.sha256);
+          repairEvidence.expectedBaseSha256[entry.path] = entry.sha256;
           if (request.projectPath) {
             const workspaceRelative = path
               .relative(request.workspacePath, path.resolve(request.projectPath, entry.path))
               .replace(/\\/g, '/');
             if (workspaceRelative) {
               inspectedSource.set(workspaceRelative, entry.sha256);
+              repairEvidence.expectedBaseSha256[workspaceRelative] = entry.sha256;
             }
           }
         });
@@ -248,7 +286,7 @@ export async function runNativeChatStudioAgent(input: {
         evidenceGeneration: repairEvidence.evidenceFingerprint,
       };
     },
-    search: async (request) => ({ ok: true, output: await searchWorkspace(request) }),
+    search: async (request) => ({ ok: true, output: await searchStudioWorkspaceSource(request) }),
     graphSearch: async (request) => {
       const limit = Math.min(Math.max(Math.trunc(request.limit ?? 12), 1), 50);
       const execution = await runRapidkitStreaming<unknown>({
@@ -288,7 +326,7 @@ export async function runNativeChatStudioAgent(input: {
       output: await inspectStudioWorkspaceChanges(request),
     }),
     applyPatches: async (request) => {
-      if (!studioCardAllowsModelSourceMutation(cardRepairCapability.cardId)) {
+      if (!studioCardSupportsGovernedSourceMutation(cardRepairCapability.cardId)) {
         return {
           ok: false,
           error:
@@ -322,7 +360,10 @@ export async function runNativeChatStudioAgent(input: {
         patches: normalized.map((patch) => ({
           relativePath: patch.relativePath,
           operation: patch.operation,
-          baseSha256: patch.baseSha256 ?? inspectedSource.get(patch.relativePath),
+          baseSha256:
+            patch.baseSha256 ??
+            inspectedSource.get(patch.relativePath) ??
+            repairEvidence.expectedBaseSha256[patch.relativePath],
           patchedContent: patch.patchedContent,
         })),
         reportProgress: reportProgress(request.reportProgress),
@@ -357,7 +398,8 @@ export async function runNativeChatStudioAgent(input: {
         patchedContent: '',
         hunks: [],
         status: 'pending',
-        baseSha256: inspectedSource.get(relativePath),
+        baseSha256:
+          inspectedSource.get(relativePath) ?? repairEvidence.expectedBaseSha256[relativePath],
       }));
       return host.applyPatches({ ...request, patches });
     },
@@ -396,6 +438,7 @@ export async function runNativeChatStudioAgent(input: {
           return {
             ok: false,
             changed: true,
+            evidenceGeneration: repairEvidence.evidenceFingerprint,
             requiresUserDecision: true,
             terminalReason: 'workspace-command-source-mutation-detected',
             error:
@@ -408,16 +451,27 @@ export async function runNativeChatStudioAgent(input: {
             },
           };
         }
+        const diagnosticFindings = isExpectedDiagnosticFindingExit({
+          command: plan.displayCommand,
+          exitCode: execution.exitCode,
+          stdout: execution.stdout,
+          stderr: execution.stderr,
+        });
+        const commandObserved = execution.exitCode === 0 || diagnosticFindings;
         return {
-          ok: execution.exitCode === 0,
+          ok: commandObserved,
           changed: false,
+          evidenceGeneration: repairEvidence.evidenceFingerprint,
           output: {
             ...execution,
+            ...(commandObserved
+              ? { diagnosticOutcome: diagnosticFindings ? 'findings' : 'clean' }
+              : {}),
             changedPaths: [],
             observedSourceChange: false,
             sourceFingerprint: after.fingerprint,
           },
-          ...(execution.exitCode === 0
+          ...(commandObserved
             ? {}
             : {
                 error: describeStudioWorkspaceCommandFailure(execution),
@@ -427,22 +481,329 @@ export async function runNativeChatStudioAgent(input: {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
     },
-    runGovernedCommand: unsupported('Governed evidence refresh'),
-    inspectRemediationPlan: unsupported('Remediation-plan inspection'),
-    executeRemediationStep: unsupported('Deterministic remediation'),
-    inspectDependencySecurity: unsupported('Dependency security inspection'),
-    repairDependencySecurity: unsupported('Dependency security repair'),
-    upgradeDependencySecurity: unsupported('Dependency upgrade'),
-    completeDependencyTransaction: async (request) => {
-      const result = await executeCliOwnedCanonicalRepair({
-        workspacePath: request.workspacePath,
-        cardId: input.handoff.cardId,
-        projectName,
-        approvedBy: 'vscode:native-chat-agent',
-        reportProgress: reportProgress(request.reportProgress),
+    runGovernedCommand: async (request) => {
+      const reuse = applyStudioGovernedCommandReuse({
+        commandId: request.commandId,
+        evidenceGeneration: repairEvidence.evidenceFingerprint,
+        blockerSignature: activeBlockerSignature,
+        attempts: commandAttempts,
+        generations: commandGenerations,
       });
-      return presentCliRepairResult(result);
+      if (!reuse.allow) {
+        return {
+          ok: false,
+          evidenceGeneration: reuse.evidenceGeneration,
+          ...(reuse.blockerSignature ? { blockerSignature: reuse.blockerSignature } : {}),
+          error: reuse.error,
+        };
+      }
+      const plan = resolveDashboardCommandExecutionPlan(request.commandId);
+      if (request.commandId !== 'workspaceIntelligenceChain' && plan.cliArgs.length === 0) {
+        return { ok: false, error: `No governed command exists for ${request.commandId}.` };
+      }
+      const cliArgs =
+        request.commandId === 'workspaceAgentSync'
+          ? preserveAllAgentConsumersForStudioRefresh(plan.cliArgs)
+          : plan.cliArgs;
+      const command =
+        request.commandId === 'workspaceIntelligenceChain'
+          ? STUDIO_CANONICAL_INTELLIGENCE_COMMAND
+          : buildRapidkitCommand(cliArgs);
+      const execution =
+        request.commandId === 'workspaceIntelligenceChain'
+          ? await (async () => {
+              let progressWrites = Promise.resolve();
+              const streamed = await runRapidkitStreaming({
+                command: [...STUDIO_CANONICAL_INTELLIGENCE_ARGS],
+                cwd: request.workspacePath,
+                featureLabel: 'Workspace Intelligence',
+                timeoutMs: 10 * 60_000,
+                onEvent: (event) => {
+                  const progress = resolveWorkspaceIntelligenceStreamProgress(event);
+                  if (
+                    !progress ||
+                    progress.kind !== 'stage' ||
+                    progress.status !== 'started' ||
+                    !request.reportProgress
+                  ) {
+                    return;
+                  }
+                  progressWrites = progressWrites.then(() =>
+                    request.reportProgress!({
+                      intelligencePhase: progress.id,
+                      intelligenceMilestoneKind: progress.kind,
+                      intelligenceMilestoneStatus: progress.status,
+                      message: progress.message,
+                    })
+                  );
+                },
+              });
+              await progressWrites;
+              const producerCompleted = streamed.exitCode === 0 || streamed.exitCode === 2;
+              const lifecycleMessage = streamed.lastLifecycleEvent?.message?.trim();
+              const stderrTail = streamed.stderr.trim().split('\n').filter(Boolean).pop();
+              return {
+                command,
+                success: producerCompleted,
+                exitCode: streamed.exitCode,
+                output: streamed.result
+                  ? JSON.stringify(streamed.result).slice(0, 12_000)
+                  : undefined,
+                stderrTail: producerCompleted ? undefined : stderrTail,
+                ...(producerCompleted
+                  ? {}
+                  : {
+                      error:
+                        lifecycleMessage ||
+                        stderrTail ||
+                        `Workspace Intelligence exited with code ${streamed.exitCode}.`,
+                    }),
+              };
+            })()
+          : await runIncidentInlineCommand({
+              command,
+              workspacePath: request.workspacePath,
+              projectPath: request.projectPath,
+              actionId: `native-chat-${request.commandId}`,
+            });
+      repairEvidence = await collectSidebarStudioRepairEvidence({
+        workspacePath: request.workspacePath,
+        projectPath: request.projectPath,
+        handoff: input.handoff,
+      });
+      const producerCompleted = execution.exitCode === 0 || execution.exitCode === 2;
+      const intelligenceRun =
+        request.commandId === 'workspaceIntelligenceChain'
+          ? await fs
+              .readJson(
+                path.join(
+                  request.workspacePath,
+                  '.workspai',
+                  'reports',
+                  'workspace-intelligence-run-last-run.json'
+                )
+              )
+              .catch(() => undefined)
+          : undefined;
+      const intelligencePhase = resolveWorkspaceIntelligenceRunStage(intelligenceRun);
+      const intelligencePreflight = resolveWorkspaceIntelligenceRunPreflight(intelligenceRun);
+      return {
+        ok: producerCompleted,
+        changed: false,
+        ...(intelligencePhase ? { intelligencePhase } : {}),
+        evidenceGeneration: repairEvidence.evidenceFingerprint,
+        output: {
+          ...execution,
+          ...(intelligencePhase ? { intelligencePhase } : {}),
+          ...(intelligencePreflight ? { intelligencePreflight } : {}),
+        },
+        ...(producerCompleted
+          ? {}
+          : { error: execution.error ?? execution.stderrTail ?? 'Governed command failed.' }),
+      };
     },
+    inspectRemediationPlan: async (request) => {
+      clearDoctorRemediationPlanCache();
+      const plan = await readDoctorRemediationPlanForStudio({
+        workspacePath: request.workspacePath,
+        handoff: {
+          ...input.handoff,
+          ...(request.projectPath ? { projectPath: request.projectPath } : {}),
+        },
+        maxSteps: 64,
+      });
+      if (!plan) {
+        return {
+          ok: false,
+          evidenceGeneration: repairEvidence.evidenceFingerprint,
+          error:
+            'No contract-authored remediation plan is available. Run the workspaceRemediationPlan governed producer first.',
+        };
+      }
+      return {
+        ok: plan.freshness.verdict !== 'stale',
+        evidenceGeneration: repairEvidence.evidenceFingerprint,
+        output: {
+          schemaVersion: plan.schemaVersion,
+          sourcePath: plan.sourcePath,
+          generatedAt: plan.generatedAt,
+          scope: plan.scope,
+          freshness: plan.freshness,
+          hiddenStepCount: plan.hiddenStepCount,
+          steps: plan.visibleSteps.map((step) => ({
+            id: step.id,
+            dependsOn: step.dependsOn,
+            order: step.order,
+            phase: step.phase,
+            projectName: step.projectName,
+            projectPath: step.projectPath,
+            risk: step.risk,
+            executable: step.executable,
+            studioState: step.studioState,
+            canApply: step.canApply,
+            title: step.previewTitle,
+            summary: step.previewSummary,
+          })),
+        },
+        ...(plan.freshness.verdict === 'stale'
+          ? {
+              error:
+                plan.freshness.reason ??
+                'The remediation plan is stale. Refresh its governed source evidence first.',
+            }
+          : {}),
+      };
+    },
+    executeRemediationStep: async (request) =>
+      runCanonicalRepair({
+        workspacePath: request.workspacePath,
+        projectPath: request.projectPath,
+        actionId: request.stepId,
+        reportProgress: request.reportProgress,
+      }),
+    inspectDependencySecurity: async (request) => {
+      try {
+        const resolveTarget = () =>
+          resolveStudioDependencySecurityTarget({
+            workspacePath: request.workspacePath,
+            ...(request.projectName ? { projectName: request.projectName } : {}),
+          });
+        let target: Awaited<ReturnType<typeof resolveStudioDependencySecurityTarget>>;
+        try {
+          target = await resolveTarget();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!message.includes('No fresh dependency-security blocker exists')) {
+            throw error;
+          }
+          const doctorRefresh = await refreshDependencyDoctorEvidence(request.workspacePath);
+          try {
+            target = await resolveTarget();
+          } catch (refreshError) {
+            const refreshedMessage =
+              refreshError instanceof Error ? refreshError.message : String(refreshError);
+            if (refreshedMessage.includes('No fresh dependency-security blocker exists')) {
+              repairEvidence = await collectSidebarStudioRepairEvidence({
+                workspacePath: request.workspacePath,
+                projectPath: request.projectPath,
+                handoff: input.handoff,
+              });
+              return {
+                ok: true,
+                changed: false,
+                evidenceGeneration: repairEvidence.evidenceFingerprint,
+                output: {
+                  dependencyBlockerPresent: false,
+                  doctorRefresh,
+                  nextAction: 'verify-blocker',
+                },
+              };
+            }
+            throw refreshError;
+          }
+        }
+        const command = buildStudioDependencySecurityCommand(target, 'inspect');
+        const execution = await runIncidentInlineCommand({
+          command,
+          workspacePath: request.workspacePath,
+          projectPath: target.projectPath,
+          actionId: `native-chat-security-inspect-${target.projectName}`,
+          captureStdout: true,
+        });
+        const auditCompleted = execution.exitCode === 0 || execution.exitCode === 1;
+        const parsedResolutionCandidates = execution.capturedStdout
+          ? await parseStudioDependencyUpgradeCandidates({
+              target,
+              auditJson: execution.capturedStdout,
+            }).catch(() => [])
+          : [];
+        const resolutionCandidates =
+          parsedResolutionCandidates.length > 0 || target.repairCommand
+            ? parsedResolutionCandidates
+            : [
+                {
+                  packageName: `${target.packageManager}-dependency-graph`,
+                  relationship: 'unknown' as const,
+                  ownerPackages: [],
+                  resolutionStrategies: [
+                    'constraint-update' as const,
+                    'replacement' as const,
+                    'policy-exception' as const,
+                    'upstream-wait' as const,
+                  ],
+                  disposition: 'no-exact-fix' as const,
+                  autoExecutable: false,
+                },
+              ];
+        const upgradeCandidates = resolutionCandidates.filter(
+          (candidate) => candidate.autoExecutable
+        );
+        const blockedCandidates = resolutionCandidates.filter(
+          (candidate) => !candidate.autoExecutable
+        );
+        return {
+          ok: auditCompleted,
+          changed: false,
+          evidenceGeneration: repairEvidence.evidenceFingerprint,
+          output: {
+            target,
+            command,
+            auditExitCode: execution.exitCode,
+            auditSummary: execution.output ?? execution.error ?? execution.stderrTail,
+            upgradeCandidates,
+            resolutionCandidates,
+            blockedCandidates,
+            ...(blockedCandidates.length > 0
+              ? {
+                  fallbackCapability: 'general-source-repair',
+                  recommendedTools: [
+                    'inspect-source',
+                    'run-workspace-command',
+                    'apply-workspace-patch',
+                    'inspect-workspace-changes',
+                  ],
+                  exhaustedTools: [
+                    'inspect-dependency-security',
+                    'repair-dependency-security',
+                    'upgrade-dependency-security',
+                  ],
+                }
+              : {}),
+            nextAction:
+              upgradeCandidates.length > 0
+                ? 'upgrade-dependency-security'
+                : blockedCandidates.length > 0
+                  ? 'general-source-repair'
+                  : 'inspect-remediation-plan',
+          },
+          ...(!auditCompleted
+            ? { error: execution.error ?? execution.stderrTail ?? 'Dependency inspection failed.' }
+            : {}),
+        };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+    repairDependencySecurity: async (request) =>
+      runCanonicalRepair({
+        workspacePath: request.workspacePath,
+        projectPath: request.projectPath,
+        projectName: request.projectName ?? projectName,
+        reportProgress: request.reportProgress,
+      }),
+    upgradeDependencySecurity: async (request) =>
+      runCanonicalRepair({
+        workspacePath: request.workspacePath,
+        projectPath: request.projectPath,
+        projectName: request.projectName ?? projectName,
+        reportProgress: request.reportProgress,
+      }),
+    completeDependencyTransaction: async (request) =>
+      runCanonicalRepair({
+        workspacePath: request.workspacePath,
+        projectPath: request.projectPath,
+        reportProgress: request.reportProgress,
+      }),
     verify: async (request) => {
       const execution = await runIncidentInlineCommand({
         command: input.handoff.verifyCommand ?? input.handoff.sourceCommand,
@@ -490,6 +851,7 @@ export async function runNativeChatStudioAgent(input: {
     `Verify command: ${input.handoff.verifyCommand}`,
     repairEvidence.promptSection,
     'Inspect causal project source before editing. Canonical .workspai/.rapidkit state and evidence are never source targets. Use apply-workspace-patch for every source mutation. The CLI owns checkpoint, validation, verification, closure, and rollback.',
+    'JSON files (.json) must contain strictly valid JSON. Never include comments, trailing commas, or non-standard syntax in .json file content.',
   ].join('\n\n');
   const registry = createStudioAgentWorkspaiToolRegistry({
     host,
@@ -570,7 +932,19 @@ export async function runNativeChatStudioAgent(input: {
             typeof entry === 'string' && REPAIR_DECISIONS.has(entry as WorkspaceRepairDecision)
         )
       : [];
-    if (data.requiresUserDecision === true && transactionId && decisionOptions.length > 0) {
+    if (data.terminalReason === 'repair-toolchain-unavailable') {
+      input.stream.markdown(
+        '### Toolchain setup required\n\nA required runtime tool could not be launched. Repair the local toolchain, then resume this durable session; no unverified source change was accepted.'
+      );
+      input.stream.button({
+        command: 'workspai.openSetup',
+        title: 'Open Workspai Setup',
+        tooltip: 'Open setup and runtime diagnostics',
+      });
+      if (transactionId && decisionOptions.includes('cancel')) {
+        renderNativeRepairDecisionButtons(input.stream, transactionId, ['cancel']);
+      }
+    } else if (data.requiresUserDecision === true && transactionId && decisionOptions.length > 0) {
       input.stream.markdown(
         '### Decision required\n\nThe source repair paused at an explicit CLI policy boundary. Choose an option for this exact transaction.'
       );

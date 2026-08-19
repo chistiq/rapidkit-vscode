@@ -39,6 +39,30 @@ describe('nativeChatToolEventRenderer', () => {
     expect(stream.progress).toHaveBeenNthCalledWith(3, 'Completed: Apply Workspace Patch');
   });
 
+  it('renders changed-file diffs into native Chat markdown', () => {
+    const stream = { markdown: vi.fn(), progress: vi.fn() };
+    renderNativeStudioAgentEvent(
+      stream as any,
+      event('tool.completed', {
+        toolName: 'apply-workspace-patch',
+        output: {
+          fileChanges: [
+            {
+              relativePath: 'api/package.json',
+              diffLines: [
+                { type: 'removed', content: '  "name": "api"' },
+                { type: 'added', content: '  "name": "commerce-api"' },
+              ],
+            },
+          ],
+        },
+      })
+    );
+    expect(stream.markdown).toHaveBeenCalledWith(expect.stringContaining('```diff'));
+    expect(stream.markdown).toHaveBeenCalledWith(expect.stringContaining('api/package.json'));
+    expect(stream.progress).not.toHaveBeenCalled();
+  });
+
   it('streams model narration without exposing internal event envelopes', () => {
     const stream = { markdown: vi.fn(), progress: vi.fn() };
     renderNativeStudioAgentEvent(
@@ -46,5 +70,10 @@ describe('nativeChatToolEventRenderer', () => {
       event('model.message', { text: 'Inspecting the failing adapter.' })
     );
     expect(stream.markdown).toHaveBeenCalledWith('Inspecting the failing adapter.\n\n');
+    renderNativeStudioAgentEvent(
+      stream as any,
+      event('model.message', { text: '{"toolName":"inspect-source"}' })
+    );
+    expect(stream.markdown).toHaveBeenCalledTimes(1);
   });
 });

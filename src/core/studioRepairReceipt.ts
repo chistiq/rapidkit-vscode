@@ -1,3 +1,7 @@
+import { projectWorkspaceRepairTransactionForConsumer } from './workspaceRepairCliClient.js';
+import type { WorkspaceRepairCliExecutionResult } from './workspaceRepairCliClient.js';
+import { deduplicateStudioMessage } from './studioRepairPresentation.js';
+
 export type StudioRepairReceiptEvent = {
   type: string;
   data: unknown;
@@ -13,11 +17,18 @@ export type StudioVerifiedRepairReceipt = {
 export type StudioCliRepairDisposition = {
   closed: boolean;
   generalSourceRepair: boolean;
+  modelCorrectableProposal: boolean;
   rolledBackForAnotherSourceAttempt: boolean;
   requiresUserDecision: boolean;
-  nextAction: 'closed' | 'general-source-repair' | 'review-required' | 'repair-stopped';
+  nextAction:
+    | 'closed'
+    | 'general-source-repair'
+    | 'replan-required'
+    | 'review-required'
+    | 'repair-stopped';
   terminalReason?: 'cli-repair-decision-required' | 'repair-toolchain-unavailable';
   missingExecutables: Array<{ projectPath: string; executable: string }>;
+  sourceRepairInstruction?: string;
 };
 
 type StudioRepairDecisionCause = {
@@ -54,6 +65,37 @@ export function selectStudioSourceRepairCandidates(paths: readonly string[], lim
     }
   }
   return [...candidates];
+}
+
+export function selectStudioPostCliSourceCandidates(input: {
+  autonomousTargetPaths: readonly string[];
+  checkpointFiles?: ReadonlyArray<{ path: string }>;
+  limit?: number;
+}): string[] {
+  return selectStudioSourceRepairCandidates(
+    [...input.autonomousTargetPaths, ...(input.checkpointFiles ?? []).map((file) => file.path)],
+    input.limit ?? 20
+  );
+}
+
+export function describeStudioPostCliSourceRepair(input: {
+  rolledBack: boolean;
+  sourceCandidates: readonly string[];
+}): string {
+  const remaining = selectStudioSourceRepairCandidates(input.sourceCandidates, 8);
+  const candidateClause =
+    remaining.length > 0 ? ` Remaining source candidates: ${remaining.join(', ')}.` : '';
+  if (input.rolledBack) {
+    return (
+      `The attempted source change did not close the exact blocker and was rolled back.${candidateClause} ` +
+      'Inspect any remaining path that still exists:false and create it with apply-workspace-patch using sha256 null. ' +
+      'Do not rewrite a restored file unless its content must change to close the finding.'
+    );
+  }
+  return (
+    `Inspect remaining source candidates and repair the causal finding.${candidateClause} ` +
+    'Create any path that inspect-source reports as exists:false. Do not rewrite a file whose prior content failed verification.'
+  );
 }
 
 /**
@@ -114,6 +156,12 @@ export function resolveStudioCliRepairDisposition(input: {
     decisionRequired &&
     decisionCauses.length > 0 &&
     decisionCauses.every((cause) => cause.kind === 'source-repair-required');
+  const modelCorrectableProposalDecision =
+    decisionRequired &&
+    input.transaction.decision?.options?.length === 1 &&
+    input.transaction.decision.options[0] === 'cancel' &&
+    decisionCauses.length > 0 &&
+    decisionCauses.every((cause) => cause.kind === 'failed-precondition');
   const rolledBackForAnotherSourceAttempt =
     input.transaction.state === 'rolled-back' &&
     (input.transaction.verification?.status === 'failed' ||
@@ -121,18 +169,22 @@ export function resolveStudioCliRepairDisposition(input: {
   const generalSourceRepair =
     !closed &&
     input.sourceCandidates.length > 0 &&
-    (sourceRepairDecision || rolledBackForAnotherSourceAttempt);
-  const requiresUserDecision = decisionRequired && !generalSourceRepair;
+    (sourceRepairDecision || modelCorrectableProposalDecision || rolledBackForAnotherSourceAttempt);
+  const requiresUserDecision =
+    decisionRequired && !generalSourceRepair && !modelCorrectableProposalDecision;
   const nextAction = closed
     ? 'closed'
     : generalSourceRepair
       ? 'general-source-repair'
-      : requiresUserDecision
-        ? 'review-required'
-        : 'repair-stopped';
+      : modelCorrectableProposalDecision
+        ? 'replan-required'
+        : requiresUserDecision
+          ? 'review-required'
+          : 'repair-stopped';
   return {
     closed,
     generalSourceRepair,
+    modelCorrectableProposal: modelCorrectableProposalDecision,
     rolledBackForAnotherSourceAttempt,
     requiresUserDecision,
     nextAction,
@@ -145,6 +197,106 @@ export function resolveStudioCliRepairDisposition(input: {
         }
       : {}),
     missingExecutables,
+    ...(generalSourceRepair
+      ? {
+          sourceRepairInstruction: describeStudioPostCliSourceRepair({
+            rolledBack: rolledBackForAnotherSourceAttempt,
+            sourceCandidates: input.sourceCandidates,
+          }),
+        }
+      : {}),
+  };
+}
+
+export const STUDIO_GENERAL_SOURCE_REPAIR_RECOMMENDED_TOOLS = [
+  'discover-workspace-files',
+  'inspect-source',
+  'inspect-evidence',
+  'search-workspace',
+  'query-workspace-graph',
+  'inspect-workspace-diagnostics',
+  'run-workspace-command',
+  'apply-workspace-patch',
+  'apply-workspace-edits',
+  'inspect-workspace-changes',
+] as const;
+
+export function presentStudioCliOwnedRepairObservation(input: {
+  result: WorkspaceRepairCliExecutionResult;
+  sourceCandidates: readonly string[];
+  authorizedEvidencePaths?: readonly string[];
+  evidenceGeneration?: string;
+  proposalRejectedInstruction: string;
+  recommendedTools?: readonly string[];
+  exhaustedTools?: readonly string[];
+  includeFallbackCapability?: boolean;
+  unresolvedMessage?: (state: string) => string;
+}): {
+  ok: boolean;
+  changed: boolean;
+  evidenceGeneration?: string;
+  output: Record<string, unknown>;
+  error?: string;
+  terminalReason?: StudioCliRepairDisposition['terminalReason'];
+  requiresUserDecision?: boolean;
+} {
+  const disposition = resolveStudioCliRepairDisposition({
+    transaction: input.result.transaction,
+    sourceCandidates: input.sourceCandidates,
+  });
+  const recommendedTools = input.recommendedTools ?? STUDIO_GENERAL_SOURCE_REPAIR_RECOMMENDED_TOOLS;
+  const unresolvedMessage =
+    input.unresolvedMessage ?? ((state: string) => `CLI repair ended in ${state}.`);
+  return {
+    ok: disposition.closed,
+    changed: disposition.closed && input.result.changedPaths.length > 0,
+    ...(input.evidenceGeneration ? { evidenceGeneration: input.evidenceGeneration } : {}),
+    output: {
+      transaction: projectWorkspaceRepairTransactionForConsumer(input.result.transaction),
+      changedPaths: disposition.closed ? input.result.changedPaths : [],
+      fileChanges: input.result.fileChanges,
+      closureReady: disposition.closed,
+      nextAction: disposition.nextAction,
+      requiresUserDecision: disposition.requiresUserDecision,
+      terminalReason: disposition.terminalReason,
+      decision: input.result.transaction.decision,
+      missingExecutables: disposition.missingExecutables,
+      ...(disposition.modelCorrectableProposal
+        ? {
+            proposalRejected: true,
+            instruction: input.proposalRejectedInstruction,
+            ...(input.authorizedEvidencePaths
+              ? { evidenceCandidates: input.authorizedEvidencePaths }
+              : {}),
+          }
+        : {}),
+      ...(disposition.generalSourceRepair
+        ? {
+            recoveryPath: 'general-source-repair',
+            sourceCandidates: input.sourceCandidates,
+            recommendedTools,
+            ...(input.includeFallbackCapability
+              ? { fallbackCapability: 'general-source-repair' }
+              : {}),
+            ...(input.exhaustedTools ? { exhaustedTools: input.exhaustedTools } : {}),
+            ...(disposition.modelCorrectableProposal || !disposition.sourceRepairInstruction
+              ? {}
+              : { instruction: disposition.sourceRepairInstruction }),
+          }
+        : {}),
+    },
+    ...(disposition.closed
+      ? {}
+      : {
+          error:
+            deduplicateStudioMessage(input.result.transaction.decision?.reason) ??
+            (disposition.rolledBackForAnotherSourceAttempt
+              ? (disposition.sourceRepairInstruction ??
+                'The attempted source change did not close the exact blocker and was rolled back.')
+              : unresolvedMessage(input.result.transaction.state)),
+        }),
+    ...(disposition.terminalReason ? { terminalReason: disposition.terminalReason } : {}),
+    ...(disposition.requiresUserDecision ? { requiresUserDecision: true } : {}),
   };
 }
 

@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildStudioVerifiedRepairReceipt,
+  describeStudioPostCliSourceRepair,
+  presentStudioCliOwnedRepairObservation,
   resolveStudioCliRepairDisposition,
+  selectStudioPostCliSourceCandidates,
   selectStudioSourceRepairCandidates,
 } from '../core/studioRepairReceipt.js';
+import type { WorkspaceRepairCliExecutionResult } from '../core/workspaceRepairCliClient.js';
 
 describe('Studio verified repair receipt', () => {
   it('keeps canonical state and lockfiles out of source repair on every path separator', () => {
@@ -20,13 +24,25 @@ describe('Studio verified repair receipt', () => {
     ).toEqual(['project/src/index.ts', 'project/src/worker.ts']);
   });
 
+  it('keeps remaining Analyze targets ahead of a rolled-back checkpoint file', () => {
+    expect(
+      selectStudioPostCliSourceCandidates({
+        autonomousTargetPaths: ['.github/workflows/ci.yml'],
+        checkpointFiles: [
+          { path: 'package.json' },
+          { path: '.workspai/reports/analyze-last-run.json' },
+        ],
+      })
+    ).toEqual(['.github/workflows/ci.yml', 'package.json']);
+  });
+
   it('keeps missing SDK/toolchain preconditions out of general source repair', () => {
     expect(
       resolveStudioCliRepairDisposition({
         transaction: {
           state: 'decision-required',
           decision: {
-            options: ['manual-repair', 'cancel'],
+            options: ['replan', 'manual-repair', 'cancel'],
             causes: [
               {
                 kind: 'missing-executable',
@@ -50,6 +66,7 @@ describe('Studio verified repair receipt', () => {
     ).toEqual({
       closed: false,
       generalSourceRepair: false,
+      modelCorrectableProposal: false,
       rolledBackForAnotherSourceAttempt: false,
       requiresUserDecision: true,
       nextAction: 'review-required',
@@ -67,7 +84,7 @@ describe('Studio verified repair receipt', () => {
         transaction: {
           state: 'decision-required',
           decision: {
-            options: ['manual-repair', 'cancel'],
+            options: ['replan', 'manual-repair', 'cancel'],
             causes: [{ kind: 'source-repair-required', projectPath: 'web' }],
           },
           adapterEvaluations: [],
@@ -79,6 +96,73 @@ describe('Studio verified repair receipt', () => {
       requiresUserDecision: false,
       nextAction: 'general-source-repair',
       missingExecutables: [],
+    });
+  });
+
+  it('routes a stale precondition to replanning without inventing a user decision', () => {
+    expect(
+      resolveStudioCliRepairDisposition({
+        transaction: {
+          state: 'decision-required',
+          decision: {
+            options: ['cancel'],
+            causes: [{ kind: 'failed-precondition' }],
+          },
+          adapterEvaluations: [],
+        },
+        sourceCandidates: [],
+      })
+    ).toEqual({
+      closed: false,
+      generalSourceRepair: false,
+      modelCorrectableProposal: true,
+      rolledBackForAnotherSourceAttempt: false,
+      requiresUserDecision: false,
+      nextAction: 'replan-required',
+      missingExecutables: [],
+    });
+  });
+
+  it('returns a rejected no-op proposal to governed causal source repair', () => {
+    expect(
+      resolveStudioCliRepairDisposition({
+        transaction: {
+          state: 'decision-required',
+          decision: {
+            options: ['cancel'],
+            causes: [{ kind: 'failed-precondition', projectPath: 'commerce-api' }],
+          },
+          adapterEvaluations: [],
+        },
+        sourceCandidates: ['commerce-api/package.json'],
+      })
+    ).toMatchObject({
+      closed: false,
+      generalSourceRepair: true,
+      modelCorrectableProposal: true,
+      requiresUserDecision: false,
+      nextAction: 'general-source-repair',
+    });
+  });
+
+  it('preserves a real engineering decision when failed preconditions expose more than cancel', () => {
+    expect(
+      resolveStudioCliRepairDisposition({
+        transaction: {
+          state: 'decision-required',
+          decision: {
+            options: ['replan', 'manual-repair', 'cancel'],
+            causes: [{ kind: 'failed-precondition', projectPath: 'commerce-api' }],
+          },
+          adapterEvaluations: [],
+        },
+        sourceCandidates: ['commerce-api/package.json'],
+      })
+    ).toMatchObject({
+      generalSourceRepair: false,
+      modelCorrectableProposal: false,
+      requiresUserDecision: true,
+      nextAction: 'review-required',
     });
   });
 
@@ -107,6 +191,7 @@ describe('Studio verified repair receipt', () => {
     ).toEqual({
       closed: false,
       generalSourceRepair: false,
+      modelCorrectableProposal: false,
       rolledBackForAnotherSourceAttempt: false,
       requiresUserDecision: false,
       nextAction: 'repair-stopped',
@@ -127,11 +212,64 @@ describe('Studio verified repair receipt', () => {
     ).toEqual({
       closed: false,
       generalSourceRepair: true,
+      modelCorrectableProposal: false,
       rolledBackForAnotherSourceAttempt: true,
       requiresUserDecision: false,
       nextAction: 'general-source-repair',
       missingExecutables: [],
+      sourceRepairInstruction: describeStudioPostCliSourceRepair({
+        rolledBack: true,
+        sourceCandidates: ['web/package.json'],
+      }),
     });
+  });
+
+  it('names remaining Analyze candidates after a rolled-back verify failure', () => {
+    expect(
+      describeStudioPostCliSourceRepair({
+        rolledBack: true,
+        sourceCandidates: ['.github/workflows/ci.yml', 'commerce-api/package.json'],
+      })
+    ).toContain('Remaining source candidates: .github/workflows/ci.yml, commerce-api/package.json');
+  });
+
+  it('turns a rolled-back CLI transaction into a source-repair observation for every host', () => {
+    const observation = presentStudioCliOwnedRepairObservation({
+      result: {
+        changedPaths: ['commerce-api/package.json'],
+        fileChanges: [],
+        transaction: {
+          schemaVersion: 'workspai.workspace-repair-transaction.v1',
+          transactionId: 'repair-analyze-rollback',
+          state: 'rolled-back',
+          target: { cardId: 'analyze', scope: 'project', actionIds: [] },
+          checkpoint: {
+            status: 'restored',
+            files: [{ path: 'commerce-api/package.json', existed: true, beforeHash: 'abc' }],
+          },
+          stages: [],
+          verification: {
+            status: 'failed',
+            targetStatus: 'failed',
+            artifact: '.workspai/reports/workspace-intelligence-run-last-run.json',
+            exitCode: 1,
+            summary: 'Analyze still missing CI',
+          },
+        },
+      } as WorkspaceRepairCliExecutionResult,
+      sourceCandidates: ['.github/workflows/ci.yml', 'commerce-api/package.json'],
+      proposalRejectedInstruction: 'Do not retry the rejected content.',
+    });
+
+    expect(observation.ok).toBe(false);
+    expect(observation.changed).toBe(false);
+    expect(observation.output).toMatchObject({
+      nextAction: 'general-source-repair',
+      recoveryPath: 'general-source-repair',
+      sourceCandidates: ['.github/workflows/ci.yml', 'commerce-api/package.json'],
+      changedPaths: [],
+    });
+    expect(String(observation.error)).toContain('.github/workflows/ci.yml');
   });
 
   it('derives changed files, transaction identity, and full closure from durable events', () => {

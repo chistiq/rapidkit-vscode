@@ -106,7 +106,11 @@ import {
 } from '../../core/doctorRemediationPlanReader.js';
 import { resolveDashboardCommandContractByVscodeCommand } from '../../core/dashboardCommandContracts.js';
 import { gateDashboardCommandCapability } from '../../core/dashboardCommandCapabilityGate.js';
-import { resolveDashboardCommandExecutionPlan } from '../../core/dashboardCommandExecutionPlan.js';
+import {
+  applyStudioGovernedCommandReuse,
+  preserveAllAgentConsumersForStudioRefresh,
+  resolveDashboardCommandExecutionPlan,
+} from '../../core/dashboardCommandExecutionPlan.js';
 import { collectSidebarStudioRepairEvidence } from '../../core/sidebarStudioPatchBridge.js';
 import type { StudioEvidenceRefreshCommandId } from '../../core/sidebarStudioAgentRuntime.js';
 import { normalizePatchesForWorkspaceScope, type FilePatch } from '../../core/patchApplyEngine.js';
@@ -159,8 +163,8 @@ import {
 } from '../../core/studioAgentSession.js';
 import {
   buildStudioVerifiedRepairReceipt,
-  resolveStudioCliRepairDisposition,
-  selectStudioSourceRepairCandidates,
+  presentStudioCliOwnedRepairObservation,
+  selectStudioPostCliSourceCandidates,
 } from '../../core/studioRepairReceipt.js';
 import { VSCodeStudioAgentSessionStore } from '../../core/studioAgentSessionStore.js';
 import { ContractStudioAgentModelAdapter } from '../../core/studioAgentModelProtocol.js';
@@ -180,16 +184,19 @@ import {
   fingerprintStudioWorkspaceSourceState,
   inspectStudioWorkspaceChanges,
   inspectStudioWorkspaceDiagnostics,
+  searchStudioWorkspaceSource,
 } from '../../core/studioWorkspaceInspection.js';
 import {
   decideCliOwnedRepair,
   executeCliOwnedCanonicalRepair,
   executeCliOwnedPatchRepair,
   projectWorkspaceRepairTransactionForConsumer,
+  hydrateStudioRepairEventFileChanges,
   readCliOwnedRepairById,
   readCliOwnedRepairFileComparison,
   resolveCliOwnedRepairFilePath,
   readLatestCliOwnedRepair,
+  type WorkspaceRepairCliFileChange,
   type WorkspaceRepairDecision,
   type WorkspaceRepairProgress,
 } from '../../core/workspaceRepairCliClient.js';
@@ -198,25 +205,19 @@ import {
   compileInspectedStudioTextEdits,
 } from '../../core/studioWorkspaceFileTransactions.js';
 import { resolveStudioRepairProjectTarget } from '../../core/studioRepairProjectTarget.js';
-import { describeStudioRepairOutcome } from '../../core/studioRepairPresentation.js';
+import {
+  deduplicateStudioMessage,
+  describeStudioRepairOutcome,
+} from '../../core/studioRepairPresentation.js';
 import {
   requireStudioCardRepairCapability,
-  studioCardAllowsModelSourceMutation,
+  studioCardSupportsGovernedSourceMutation,
 } from '../../contracts/studioCardRepairCapabilities.js';
 
 const PYTHON_ENGINE_REQUIRED_CREATION_PROFILES = new Set(['python-only', 'polyglot', 'enterprise']);
 
 function shouldSkipPythonEngineForCreationProfile(profile: string | undefined): boolean {
   return !PYTHON_ENGINE_REQUIRED_CREATION_PROFILES.has(profile ?? 'minimal');
-}
-
-function preserveAllAgentConsumersForStudioRefresh(cliArgs: readonly string[]): string[] {
-  const args = [...cliArgs];
-  const targetIndex = args.indexOf('--target');
-  if (targetIndex >= 0 && targetIndex + 1 < args.length) {
-    args[targetIndex + 1] = 'all';
-  }
-  return args;
 }
 
 type SidebarStudioActionFailurePayload = {
@@ -1093,7 +1094,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           ? { summary: `Rolled back ${result.changedPaths.length} CLI-owned repair change(s).` }
           : {
               error:
-                result.transaction.decision?.reason ??
+                deduplicateStudioMessage(result.transaction.decision?.reason) ??
                 `CLI rollback ended in ${result.transaction.state}.`,
             }),
       });
@@ -2323,6 +2324,24 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private async _replayPersistedStudioAgentEvents(input: {
+    workspacePath: string;
+    events: Array<{ type: string; data?: unknown }>;
+  }): Promise<void> {
+    const fileChangeCache = new Map<string, WorkspaceRepairCliFileChange[]>();
+    const replay = input.events
+      .filter((event) => event.type !== 'session.created' && event.type !== 'session.status')
+      .slice(-120);
+    for (const event of replay) {
+      const hydrated = await hydrateStudioRepairEventFileChanges({
+        workspacePath: input.workspacePath,
+        event,
+        fileChangeCache,
+      });
+      this._postInlineCreate('sidebarStudioAgentEvent', { event: hydrated, replay: true });
+    }
+  }
+
   private async _runUnifiedAssistantSession(input: {
     task: string;
     sessionId?: string;
@@ -2483,6 +2502,12 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       projectBootstrapPrompt = buildProjectAgentBootstrapPromptSection(projectBootstrap);
     }
     const inspectedSource = new Map<string, string | null>();
+    const expectedBaseSha256: Record<string, string | null> = {};
+    const commandGenerations = new Map<StudioEvidenceRefreshCommandId, string>();
+    const commandAttempts = new Map<
+      StudioEvidenceRefreshCommandId,
+      { blockerSignature?: string; evidenceGeneration: string; count: number }
+    >();
     const evidenceUris = await vscode.workspace.findFiles(
       new vscode.RelativePattern(input.workspacePath, '.workspai/**/*'),
       '{**/.workspai/cache/**,**/.workspai/snapshots/**,**/*.tmp}',
@@ -2562,6 +2587,32 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           workspacePath: input.workspacePath,
         }
       : undefined;
+    const presentAssistantCliRepairResult = async (
+      result: Awaited<ReturnType<typeof executeCliOwnedCanonicalRepair>>,
+      request: { workspacePath: string; projectPath?: string }
+    ) => {
+      const handoff = input.handoff ?? goalRemediationHandoff;
+      const repairEvidence = handoff
+        ? await collectSidebarStudioRepairEvidence({
+            workspacePath: request.workspacePath,
+            projectPath: request.projectPath,
+            handoff,
+          })
+        : undefined;
+      return presentStudioCliOwnedRepairObservation({
+        result,
+        sourceCandidates: selectStudioPostCliSourceCandidates({
+          autonomousTargetPaths: repairEvidence?.autonomousTargetPaths ?? [],
+          checkpointFiles: result.transaction.checkpoint.files,
+        }),
+        authorizedEvidencePaths: repairEvidence?.authorizedEvidencePaths,
+        evidenceGeneration: repairEvidence?.evidenceFingerprint,
+        proposalRejectedInstruction:
+          input.assistantMode === 'goal'
+            ? 'Do not retry the rejected content. Re-read the exact Goal prerequisite evidence and choose a materially different causal source target.'
+            : 'Do not retry the rejected content. Trace the exact producer finding to a causal source target, inspect it, and submit a materially different bounded proposal.',
+      });
+    };
     const host: StudioAgentWorkspaiToolHost = {
       discover: async (request: { workspacePath: string; glob?: string; limit?: number }) => ({
         ok: true,
@@ -2589,12 +2640,14 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         if (request.kind === 'source') {
           observations.forEach((entry) => {
             inspectedSource.set(entry.path, entry.sha256);
+            expectedBaseSha256[entry.path] = entry.sha256;
             if (request.projectPath) {
               const workspaceRelative = path
                 .relative(request.workspacePath, path.resolve(request.projectPath, entry.path))
                 .replace(/\\/g, '/');
               if (workspaceRelative) {
                 inspectedSource.set(workspaceRelative, entry.sha256);
+                expectedBaseSha256[workspaceRelative] = entry.sha256;
               }
             }
           });
@@ -2607,36 +2660,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         workspacePath: string;
         projectPath?: string;
       }) => {
-        const sourceRoot = request.projectPath?.trim() || request.workspacePath;
-        const include = request.paths?.length ? `{${request.paths.join(',')}}` : '**/*';
-        const uris = await vscode.workspace.findFiles(
-          new vscode.RelativePattern(sourceRoot, include),
-          '{**/.git/**,**/node_modules/**,**/dist/**,**/build/**,**/.workspai/cache/**}',
-          120
-        );
-        const matches: Array<{ path: string; line: number; preview: string }> = [];
-        for (const uri of uris) {
-          if (matches.length >= 80) {
-            break;
-          }
-          try {
-            const lines = Buffer.from(await vscode.workspace.fs.readFile(uri))
-              .toString('utf8')
-              .split(/\r?\n/);
-            lines.forEach((line, index) => {
-              if (matches.length < 80 && line.includes(request.query)) {
-                matches.push({
-                  path: path.relative(sourceRoot, uri.fsPath).replace(/\\/g, '/'),
-                  line: index + 1,
-                  preview: line.trim().slice(0, 240),
-                });
-              }
-            });
-          } catch {
-            // Binary and transient files are skipped.
-          }
-        }
-        return { ok: true, output: matches };
+        return { ok: true, output: await searchStudioWorkspaceSource(request) };
       },
       graphSearch: async (request: { query: string; limit?: number; workspacePath: string }) => {
         const limit = Math.min(Math.max(Math.trunc(request.limit ?? 12), 1), 50);
@@ -2763,30 +2787,17 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           patches: normalized.map((patch) => ({
             relativePath: patch.relativePath,
             operation: patch.operation,
-            baseSha256: patch.baseSha256 ?? inspectedSource.get(patch.relativePath),
+            baseSha256:
+              patch.baseSha256 ??
+              inspectedSource.get(patch.relativePath) ??
+              expectedBaseSha256[patch.relativePath],
             patchedContent: patch.patchedContent,
           })),
           reportProgress: request.reportProgress
             ? (progress: WorkspaceRepairProgress) => request.reportProgress!({ repair: progress })
             : undefined,
         });
-        const closed = result.transaction.state === 'closed';
-        return {
-          ok: closed,
-          changed: result.changedPaths.length > 0,
-          output: {
-            transaction: projectWorkspaceRepairTransactionForConsumer(result.transaction),
-            changedPaths: result.changedPaths,
-            fileChanges: result.fileChanges,
-          },
-          ...(closed
-            ? {}
-            : {
-                error:
-                  result.transaction.decision?.reason ??
-                  `CLI repair ended in ${result.transaction.state}.`,
-              }),
-        };
+        return presentAssistantCliRepairResult(result, request);
       },
       applyTextEdits: async (request: {
         edits: Array<{ relativePath: string; oldText: string; newText: string }>;
@@ -2892,29 +2903,16 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             patches: normalized.map((patch) => ({
               relativePath: patch.relativePath,
               operation: 'delete',
-              baseSha256: patch.baseSha256 ?? inspectedSource.get(patch.relativePath),
+              baseSha256:
+                patch.baseSha256 ??
+                inspectedSource.get(patch.relativePath) ??
+                expectedBaseSha256[patch.relativePath],
             })),
             reportProgress: request.reportProgress
               ? (progress: WorkspaceRepairProgress) => request.reportProgress!({ repair: progress })
               : undefined,
           });
-          const closed = result.transaction.state === 'closed';
-          return {
-            ok: closed,
-            changed: result.changedPaths.length > 0,
-            output: {
-              transaction: projectWorkspaceRepairTransactionForConsumer(result.transaction),
-              changedPaths: result.changedPaths,
-              fileChanges: result.fileChanges,
-            },
-            ...(closed
-              ? {}
-              : {
-                  error:
-                    result.transaction.decision?.reason ??
-                    `CLI repair ended in ${result.transaction.state}.`,
-                }),
-          };
+          return presentAssistantCliRepairResult(result, request);
         } catch (error) {
           return { ok: false, error: error instanceof Error ? error.message : String(error) };
         }
@@ -2925,6 +2923,32 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         projectPath?: string;
         reportProgress?: (data: Record<string, unknown>) => Promise<void>;
       }) => {
+        const governedHandoff = input.handoff ?? goalRemediationHandoff;
+        const governedEvidence = governedHandoff
+          ? await collectSidebarStudioRepairEvidence({
+              workspacePath: request.workspacePath,
+              projectPath: request.projectPath,
+              handoff: governedHandoff,
+            })
+          : undefined;
+        const evidenceGeneration =
+          governedEvidence?.evidenceFingerprint ?? evidenceFreshness.verdict ?? 'assistant-session';
+        const blockerSignature = governedHandoff?.blockerSignature;
+        const reuse = applyStudioGovernedCommandReuse({
+          commandId: request.commandId,
+          evidenceGeneration,
+          ...(blockerSignature ? { blockerSignature } : {}),
+          attempts: commandAttempts,
+          generations: commandGenerations,
+        });
+        if (!reuse.allow) {
+          return {
+            ok: false,
+            evidenceGeneration: reuse.evidenceGeneration,
+            ...(reuse.blockerSignature ? { blockerSignature: reuse.blockerSignature } : {}),
+            error: reuse.error,
+          };
+        }
         const plan = resolveDashboardCommandExecutionPlan(request.commandId);
         if (request.commandId !== 'workspaceIntelligenceChain' && plan.cliArgs.length === 0) {
           return { ok: false, error: `No governed command exists for ${request.commandId}.` };
@@ -2969,11 +2993,36 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           },
         });
         await progressWrites;
+        const refreshedEvidence = governedHandoff
+          ? await collectSidebarStudioRepairEvidence({
+              workspacePath: request.workspacePath,
+              projectPath: request.projectPath,
+              handoff: governedHandoff,
+            })
+          : undefined;
         const evidenceRefreshCompleted =
           execution.failed === false && (execution.exitCode === 0 || execution.exitCode === 2);
+        const intelligenceRun =
+          request.commandId === 'workspaceIntelligenceChain'
+            ? await fs
+                .readJson(
+                  path.join(
+                    request.workspacePath,
+                    '.workspai',
+                    'reports',
+                    'workspace-intelligence-run-last-run.json'
+                  )
+                )
+                .catch(() => undefined)
+            : undefined;
+        const intelligencePhase = resolveWorkspaceIntelligenceRunStage(intelligenceRun);
+        const intelligencePreflight = resolveWorkspaceIntelligenceRunPreflight(intelligenceRun);
         return {
           ok: evidenceRefreshCompleted,
           cardBlocking: execution.exitCode === 2,
+          changed: false,
+          ...(intelligencePhase ? { intelligencePhase } : {}),
+          evidenceGeneration: refreshedEvidence?.evidenceFingerprint ?? evidenceGeneration,
           output: {
             commandId: request.commandId,
             exitCode: execution.exitCode,
@@ -2981,6 +3030,8 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             result: execution.result,
             stdout: execution.stdout,
             stderr: execution.stderr,
+            ...(intelligencePhase ? { intelligencePhase } : {}),
+            ...(intelligencePreflight ? { intelligencePreflight } : {}),
           },
           ...(evidenceRefreshCompleted
             ? {}
@@ -3109,53 +3160,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               ? (progress: WorkspaceRepairProgress) => request.reportProgress!({ repair: progress })
               : undefined,
           });
-          const sourceCandidates = selectStudioSourceRepairCandidates(
-            result.transaction.checkpoint.files
-              .filter((file) => file.existed)
-              .map((file) => file.path),
-            12
-          );
-          const disposition = resolveStudioCliRepairDisposition({
-            transaction: result.transaction,
-            sourceCandidates,
-          });
-          const {
-            closed,
-            generalSourceRepair,
-            requiresUserDecision,
-            terminalReason,
-            rolledBackForAnotherSourceAttempt,
-          } = disposition;
-          return {
-            ok: closed,
-            changed: closed && result.changedPaths.length > 0,
-            output: {
-              transaction: projectWorkspaceRepairTransactionForConsumer(result.transaction),
-              changedPaths: closed ? result.changedPaths : [],
-              fileChanges: result.fileChanges,
-              closureReady: closed,
-              nextAction: disposition.nextAction,
-              requiresUserDecision,
-              terminalReason,
-              decision: result.transaction.decision,
-              missingExecutables: disposition.missingExecutables,
-              ...(generalSourceRepair
-                ? {
-                    recoveryPath: 'general-source-repair',
-                    sourceCandidates,
-                  }
-                : {}),
-            },
-            ...(closed
-              ? {}
-              : {
-                  error:
-                    result.transaction.decision?.reason ??
-                    (rolledBackForAnotherSourceAttempt
-                      ? 'The attempted source change did not close the exact blocker and was rolled back. Inspect the refreshed cause and propose a different source change.'
-                      : `CLI dependency repair ended in ${result.transaction.state}.`),
-                }),
-          };
+          return presentAssistantCliRepairResult(result, request);
         } catch (error) {
           return { ok: false, error: error instanceof Error ? error.message : String(error) };
         }
@@ -3268,37 +3273,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             ? (progress: WorkspaceRepairProgress) => request.reportProgress!({ repair: progress })
             : undefined,
         });
-        const disposition = resolveStudioCliRepairDisposition({
-          transaction: result.transaction,
-          sourceCandidates: selectStudioSourceRepairCandidates(
-            result.transaction.checkpoint.files
-              .filter((file) => file.existed)
-              .map((file) => file.path),
-            12
-          ),
-        });
-        return {
-          ok: disposition.closed,
-          changed: disposition.closed && result.changedPaths.length > 0,
-          output: {
-            transaction: projectWorkspaceRepairTransactionForConsumer(result.transaction),
-            changedPaths: disposition.closed ? result.changedPaths : [],
-            fileChanges: result.fileChanges,
-            nextAction: disposition.nextAction,
-            requiresUserDecision: disposition.requiresUserDecision,
-            terminalReason: disposition.terminalReason,
-            decision: result.transaction.decision,
-          },
-          ...(disposition.closed
-            ? {}
-            : {
-                requiresUserDecision: disposition.requiresUserDecision,
-                terminalReason: disposition.terminalReason,
-                error:
-                  result.transaction.decision?.reason ??
-                  `CLI Goal prerequisite repair ended in ${result.transaction.state}.`,
-              }),
-        };
+        return presentAssistantCliRepairResult(result, request);
       },
       inspectDependencySecurity: async () => ({
         ok: false,
@@ -3513,7 +3488,23 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       persisted,
       input.history
     );
+    if (
+      input.assistantMode === 'agent' &&
+      !governedGoal &&
+      !verifiedGoal &&
+      !input.handoff &&
+      !persisted &&
+      scopeId.startsWith('assistant:')
+    ) {
+      model.freeFormPreflight = true;
+    }
     const session = new StudioAgentSession(options, model, registry, store);
+    if (persisted) {
+      await this._replayPersistedStudioAgentEvents({
+        workspacePath: input.workspacePath,
+        events: persisted.events,
+      });
+    }
     session.onEvent((event) => this._postInlineCreate('sidebarStudioAgentEvent', { event }));
     this._activeStudioAgentSessions.set(session.id, session);
     const completed = await session.run(input.task).finally(() => {
@@ -3550,6 +3541,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       sessionId: completed.id,
       ...(typeof failureData?.terminalReason === 'string'
         ? { terminalReason: failureData.terminalReason }
+        : {}),
+      ...(typeof failureData?.repairTransactionState === 'string'
+        ? { repairTransactionState: failureData.repairTransactionState }
         : {}),
       ...(failureData?.requiresUserDecision === true
         ? {
@@ -3767,35 +3761,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         workspacePath: string;
         projectPath?: string;
       }) => {
-        const sourceRoot = request.projectPath?.trim() || request.workspacePath;
-        const include = request.paths?.length ? `{${request.paths.join(',')}}` : '**/*';
-        const uris = await vscode.workspace.findFiles(
-          new vscode.RelativePattern(sourceRoot, include),
-          '{**/.git/**,**/node_modules/**,**/dist/**,**/build/**,**/.workspai/cache/**}',
-          120
-        );
-        const matches: Array<{ path: string; line: number; preview: string }> = [];
-        for (const uri of uris) {
-          if (matches.length >= 80) {
-            break;
-          }
-          try {
-            const content = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
-            const lines = content.split(/\r?\n/);
-            lines.forEach((line, index) => {
-              if (matches.length < 80 && line.includes(request.query)) {
-                matches.push({
-                  path: path.relative(sourceRoot, uri.fsPath).replace(/\\/g, '/'),
-                  line: index + 1,
-                  preview: line.trim().slice(0, 240),
-                });
-              }
-            });
-          } catch {
-            // Binary, inaccessible, and transient files are intentionally skipped.
-          }
-        }
-        return { ok: true, output: matches };
+        return { ok: true, output: await searchStudioWorkspaceSource(request) };
       },
       graphSearch: async (request: { query: string; limit?: number; workspacePath: string }) => {
         const limit = Math.min(Math.max(Math.trunc(request.limit ?? 12), 1), 50);
@@ -3861,7 +3827,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         projectPath?: string;
         reportProgress?: (data: Record<string, unknown>) => Promise<void>;
       }) => {
-        if (!studioCardAllowsModelSourceMutation(cardRepairCapability.cardId)) {
+        if (!studioCardSupportsGovernedSourceMutation(cardRepairCapability.cardId)) {
           return {
             ok: false,
             error:
@@ -3951,7 +3917,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         projectPath?: string;
         reportProgress?: (data: Record<string, unknown>) => Promise<void>;
       }) => {
-        if (!studioCardAllowsModelSourceMutation(cardRepairCapability.cardId)) {
+        if (!studioCardSupportsGovernedSourceMutation(cardRepairCapability.cardId)) {
           return {
             ok: false,
             error:
@@ -3992,34 +3958,21 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         projectPath?: string;
         reportProgress?: (data: Record<string, unknown>) => Promise<void>;
       }) => {
-        const priorAttempt = commandAttempts.get(request.commandId);
-        const attemptsForBlocker =
-          priorAttempt?.blockerSignature === activeBlockerSignature &&
-          priorAttempt.evidenceGeneration === repairEvidence.evidenceFingerprint
-            ? priorAttempt.count
-            : 0;
-        if (attemptsForBlocker >= 2) {
-          return {
-            ok: false,
-            evidenceGeneration: repairEvidence.evidenceFingerprint,
-            blockerSignature: activeBlockerSignature,
-            error: `${request.commandId} already ran twice for the same semantic blocker. Do not refresh again; inspect its output and repair the source cause or choose the next dependency.`,
-          };
-        }
-        commandAttempts.set(request.commandId, {
-          blockerSignature: activeBlockerSignature,
+        const reuse = applyStudioGovernedCommandReuse({
+          commandId: request.commandId,
           evidenceGeneration: repairEvidence.evidenceFingerprint,
-          count: attemptsForBlocker + 1,
+          blockerSignature: activeBlockerSignature,
+          attempts: commandAttempts,
+          generations: commandGenerations,
         });
-        const observedGeneration = commandGenerations.get(request.commandId);
-        if (observedGeneration === repairEvidence.evidenceFingerprint) {
+        if (!reuse.allow) {
           return {
             ok: false,
-            evidenceGeneration: repairEvidence.evidenceFingerprint,
-            error: `${request.commandId} already ran against this evidence generation. Inspect the observation or choose the next producer in the chain.`,
+            evidenceGeneration: reuse.evidenceGeneration,
+            ...(reuse.blockerSignature ? { blockerSignature: reuse.blockerSignature } : {}),
+            error: reuse.error,
           };
         }
-        commandGenerations.set(request.commandId, repairEvidence.evidenceFingerprint);
         const plan = resolveDashboardCommandExecutionPlan(request.commandId);
         if (request.commandId !== 'workspaceIntelligenceChain' && plan.cliArgs.length === 0) {
           return { ok: false, error: `No governed command exists for ${request.commandId}.` };
@@ -4349,58 +4302,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             ? (progress: WorkspaceRepairProgress) => request.reportProgress!({ repair: progress })
             : undefined,
         });
-        repairEvidence = await collectSidebarStudioRepairEvidence({
-          workspacePath: request.workspacePath,
-          projectPath: request.projectPath,
-          handoff: activeHandoff,
-        });
-        const sourceCandidates = selectStudioSourceRepairCandidates(
-          result.transaction.checkpoint.files
-            .filter((file) => file.existed)
-            .map((file) => file.path),
-          12
-        );
-        const disposition = resolveStudioCliRepairDisposition({
-          transaction: result.transaction,
-          sourceCandidates,
-        });
-        const {
-          closed,
-          generalSourceRepair,
-          requiresUserDecision,
-          terminalReason,
-          rolledBackForAnotherSourceAttempt,
-        } = disposition;
         return {
-          ok: closed,
-          changed: closed && result.changedPaths.length > 0,
-          evidenceGeneration: repairEvidence.evidenceFingerprint,
+          ...(await presentCliRepairResult(result)),
           blockerSignature: activeBlockerSignature,
-          output: {
-            transaction: projectWorkspaceRepairTransactionForConsumer(result.transaction),
-            changedPaths: closed ? result.changedPaths : [],
-            fileChanges: result.fileChanges,
-            nextAction: disposition.nextAction,
-            requiresUserDecision,
-            terminalReason,
-            decision: result.transaction.decision,
-            ...(generalSourceRepair
-              ? {
-                  recoveryPath: 'general-source-repair',
-                  fallbackCapability: 'general-source-repair',
-                  sourceCandidates,
-                }
-              : {}),
-          },
-          ...(closed
-            ? {}
-            : {
-                error:
-                  result.transaction.decision?.reason ??
-                  (rolledBackForAnotherSourceAttempt
-                    ? 'The attempted source change did not close the exact blocker and was rolled back. Inspect the refreshed cause and propose a different source change.'
-                    : `CLI repair ended in ${result.transaction.state}.`),
-              }),
         };
       },
       inspectDependencySecurity: async (request: {
@@ -4701,74 +4605,25 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         projectPath: input.projectPath,
         handoff: activeHandoff,
       });
-      const sourceCandidates = selectStudioSourceRepairCandidates(
-        [
-          ...result.transaction.checkpoint.files
-            .filter((file) => file.existed)
-            .map((file) => file.path),
-          ...repairEvidence.autonomousTargetPaths,
-        ],
-        12
-      );
-      const disposition = resolveStudioCliRepairDisposition({
-        transaction: result.transaction,
-        sourceCandidates,
-      });
-      const {
-        closed,
-        generalSourceRepair,
-        requiresUserDecision,
-        terminalReason,
-        rolledBackForAnotherSourceAttempt,
-      } = disposition;
-      return {
-        ok: closed,
-        changed: closed && result.changedPaths.length > 0,
+      return presentStudioCliOwnedRepairObservation({
+        result,
+        sourceCandidates: selectStudioPostCliSourceCandidates({
+          autonomousTargetPaths: repairEvidence.autonomousTargetPaths,
+          checkpointFiles: result.transaction.checkpoint.files,
+        }),
+        authorizedEvidencePaths: repairEvidence.authorizedEvidencePaths,
         evidenceGeneration: repairEvidence.evidenceFingerprint,
-        output: {
-          transaction: projectWorkspaceRepairTransactionForConsumer(result.transaction),
-          changedPaths: closed ? result.changedPaths : [],
-          fileChanges: result.fileChanges,
-          closureReady: closed,
-          nextAction: disposition.nextAction,
-          requiresUserDecision,
-          terminalReason,
-          decision: result.transaction.decision,
-          missingExecutables: disposition.missingExecutables,
-          ...(generalSourceRepair
-            ? {
-                recoveryPath: 'general-source-repair',
-                fallbackCapability: 'general-source-repair',
-                sourceCandidates,
-                exhaustedTools: [
-                  'recover-active-blocker',
-                  'execute-remediation-step',
-                  'repair-dependency-security',
-                  'upgrade-dependency-security',
-                  'complete-dependency-transaction',
-                ],
-                recommendedTools: [
-                  'discover-workspace-files',
-                  'inspect-source',
-                  'search-workspace',
-                  'inspect-workspace-diagnostics',
-                  'run-workspace-command',
-                  'apply-workspace-patch',
-                  'inspect-workspace-changes',
-                ],
-              }
-            : {}),
-        },
-        ...(closed
-          ? {}
-          : {
-              error:
-                result.transaction.decision?.reason ??
-                (rolledBackForAnotherSourceAttempt
-                  ? 'The attempted source change did not close the exact blocker and was rolled back. Inspect the refreshed cause and propose a different source change.'
-                  : `CLI repair ended in ${result.transaction.state}.`),
-            }),
-      };
+        proposalRejectedInstruction:
+          'Do not retry the rejected content. Inspect the exact producer evidence, map its finding to causal source, and submit a materially different bounded proposal.',
+        includeFallbackCapability: true,
+        exhaustedTools: [
+          'recover-active-blocker',
+          'execute-remediation-step',
+          'repair-dependency-security',
+          'upgrade-dependency-security',
+          'complete-dependency-transaction',
+        ],
+      });
     };
     const executeCanonicalRepair = async (request: {
       workspacePath: string;
@@ -4853,12 +4708,10 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     );
     const session = new StudioAgentSession(options, model, registry, store);
     if (persisted) {
-      persisted.events
-        .filter((event) => event.type !== 'session.created' && event.type !== 'session.status')
-        .slice(-120)
-        .forEach((event) => {
-          this._postInlineCreate('sidebarStudioAgentEvent', { event, replay: true });
-        });
+      await this._replayPersistedStudioAgentEvents({
+        workspacePath: input.workspacePath,
+        events: persisted.events,
+      });
     }
     session.onEvent((event) => {
       this._postInlineCreate('sidebarStudioAgentEvent', { event });
@@ -5009,6 +4862,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           ...(typeof terminalFailureData?.terminalReason === 'string'
             ? { terminalReason: terminalFailureData.terminalReason }
             : {}),
+          ...(typeof terminalFailureData?.repairTransactionState === 'string'
+            ? { repairTransactionState: terminalFailureData.repairTransactionState }
+            : {}),
           ...(typeof terminalFailureData?.error === 'string'
             ? { error: terminalFailureData.error }
             : {}),
@@ -5124,6 +4980,11 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             label: 'Allow force-based repair',
             detail: 'Create a fresh plan that may use the package manager force path.',
           },
+          replan: {
+            label: 'Let the model retry',
+            detail:
+              'Cancel this plan and let the model generate a fresh proposal for the same target.',
+          },
           'manual-repair': {
             label: 'Take over manually',
             detail: 'Cancel this transaction without mutation and release source ownership.',
@@ -5159,7 +5020,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               })),
               {
                 title: 'Workspai Repair Engine decision',
-                placeHolder: transaction.decision.reason,
+                placeHolder:
+                  deduplicateStudioMessage(transaction.decision.reason) ??
+                  'Review the bounded CLI repair decision.',
                 ignoreFocusOut: true,
               }
             );

@@ -484,10 +484,10 @@ describe('Workspai design system drift', () => {
       /\.ws-sidebar--secondary \.ws-sidebar__tabs\s*\{[\s\S]*?padding:\s*4px var\(--ws-sidebar-edge-inset\) 0;/
     );
     expect(sidebarSource).toMatch(
-      /\.ws-sidebar--secondary \.ws-sidebar__tabpanel--chat \.ws-sidebar__stream\s*\{[\s\S]*?padding:\s*8px var\(--ws-sidebar-edge-inset\) 6px;/
+      /\.ws-sidebar--secondary \.ws-sidebar__tabpanel--chat \.ws-sidebar__stream\s*\{[\s\S]*?padding:\s*8px var\(--ws-sidebar-edge-inset\) 16px;/
     );
     expect(sidebarSource).toMatch(
-      /\.ws-sidebar--secondary \.ws-session-bar\s*\{[\s\S]*?padding:\s*8px var\(--ws-sidebar-edge-inset\) 0;/
+      /\.ws-sidebar--secondary \.ws-session-bar\s*\{[\s\S]*?padding:\s*8px var\(--ws-sidebar-edge-inset\) 2px;/
     );
   });
 

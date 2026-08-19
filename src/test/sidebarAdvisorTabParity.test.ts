@@ -85,7 +85,6 @@ describe('React Advisor tab ↔ host protocol parity (roadmap 2.11e)', () => {
 
     expect(chatTab).toContain('ChatSessionBar');
     expect(chatTab).toContain('allowNewSession={!repairMode}');
-    expect(chatTab).toContain('New chat');
     expect(sessionBar).toContain('allowNewSession = true');
     expect(sessionBar).toContain('New chat');
     expect(sessionBar).toContain('Switch session or workspace context');

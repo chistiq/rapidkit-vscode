@@ -264,7 +264,7 @@ describe('Studio Agent session runtime', () => {
     );
   });
 
-  it('keeps producer-owned failures open without falling through to source mutation', async () => {
+  it('hands an unresolved producer refresh to governed source repair', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
       name: 'verify-blocker',
@@ -284,11 +284,18 @@ describe('Studio Agent session runtime', () => {
         repairPolicy: 'refresh-producer',
         permissionLevel: 'autopilot',
         workspaceTrusted: true,
+        maxTurns: 2,
       },
       {
-        async next() {
+        async next(context) {
           modelTurns += 1;
-          throw new Error('Producer refresh must not call the model.');
+          expect(context.sourceRepairDirective).toEqual(
+            expect.objectContaining({
+              nextAction: 'general-source-repair',
+              producerRefresh: 'completed-but-blocking',
+            })
+          );
+          return { type: 'complete', summary: 'Awaiting fixture verification.' };
         },
       },
       registry,
@@ -298,11 +305,11 @@ describe('Studio Agent session runtime', () => {
     const result = await session.run('Refresh Workspace Run');
 
     expect(result.status).toBe('failed');
-    expect(modelTurns).toBe(0);
+    expect(modelTurns).toBeGreaterThan(0);
     expect(result.events).toContainEqual(
       expect.objectContaining({
-        type: 'session.failed',
-        data: expect.objectContaining({ terminalReason: 'producer-refresh-unresolved' }),
+        type: 'model.checkpoint',
+        data: expect.objectContaining({ recovery: 'producer-to-source-repair' }),
       })
     );
   });
@@ -333,6 +340,17 @@ describe('Studio Agent session runtime', () => {
         return { ok: true, output: [{ path: 'src/app.ts', content: 'before', sha256: 'abc' }] };
       },
     });
+    for (const toolName of ['inspect-evidence', 'query-workspace-graph', 'apply-workspace-edits']) {
+      registry.register({
+        name: toolName,
+        title: toolName,
+        activity: toolName === 'apply-workspace-edits' ? 'change' : 'inspect',
+        risk: toolName === 'apply-workspace-edits' ? 'safe-write' : 'read',
+        async execute() {
+          throw new Error(`${toolName} is available but not selected by this fixture.`);
+        },
+      });
+    }
     registry.register({
       name: 'apply-workspace-patch',
       title: 'Apply source repair',
@@ -368,6 +386,13 @@ describe('Studio Agent session runtime', () => {
               'recover-active-blocker',
               'run-governed-command',
               'verify-blocker',
+            ])
+          );
+          expect(context.tools.map((tool) => tool.name)).toEqual(
+            expect.arrayContaining([
+              'inspect-evidence',
+              'query-workspace-graph',
+              'apply-workspace-edits',
             ])
           );
           return turn === 1
@@ -664,7 +689,7 @@ describe('Studio Agent session runtime', () => {
             requiresUserDecision: true,
             transaction: {
               transactionId: 'tx-decision',
-              decision: { options: ['allow-breaking', 'manual-repair', 'cancel'] },
+              decision: { options: ['allow-breaking', 'replan', 'manual-repair', 'cancel'] },
             },
           },
           error: 'No compatible non-breaking remediation is available.',
@@ -703,7 +728,7 @@ describe('Studio Agent session runtime', () => {
           terminalReason: 'safe-fix-unavailable',
           requiresUserDecision: true,
           transactionId: 'tx-decision',
-          decisionOptions: ['allow-breaking', 'manual-repair', 'cancel'],
+          decisionOptions: ['allow-breaking', 'replan', 'manual-repair', 'cancel'],
         }),
       })
     );
@@ -1566,6 +1591,400 @@ describe('Studio Agent session runtime', () => {
     });
   });
 
+  it('allows a fresh inspect of the same source after CLI rollback', async () => {
+    const registry = new StudioAgentToolRegistry();
+    const inspected: string[] = [];
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply source patch',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ok: false,
+          changed: true,
+          error: 'Canonical verification failed and the checkpoint was restored.',
+          output: {
+            nextAction: 'general-source-repair',
+            recoveryPath: 'general-source-repair',
+            requiresUserDecision: false,
+            transaction: {
+              transactionId: 'repair-rollback-epoch',
+              state: 'rolled-back',
+            },
+          },
+        };
+      },
+    });
+    registry.register({
+      name: 'inspect-source',
+      title: 'Inspect source',
+      activity: 'inspect',
+      risk: 'read',
+      async execute(raw) {
+        inspected.push(JSON.stringify(raw));
+        return { ok: true, output: [{ path: 'api/package.json', sha256: 'abc' }] };
+      },
+    });
+    let modelTurns = 0;
+    const session = new StudioAgentSession(
+      {
+        id: 'rollback-epoch-session',
+        workspacePath: '/workspace',
+        cardId: 'analyze',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      {
+        async next() {
+          modelTurns += 1;
+          if (modelTurns === 1 || modelTurns === 3) {
+            return {
+              type: 'tool' as const,
+              toolName: 'inspect-source',
+              input: { paths: ['api/package.json'] },
+              reason: 'Inspect the causal manifest.',
+            };
+          }
+          if (modelTurns === 2) {
+            return {
+              type: 'tool' as const,
+              toolName: 'apply-workspace-patch',
+              input: { patches: [] },
+              reason: 'Try the bounded repair',
+            };
+          }
+          return { type: 'complete' as const, summary: 'Inspected a different cause.' };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Repair the analyze blocker');
+    const duplicateInspect = result.events.find(
+      (event) =>
+        event.type === 'tool.failed' &&
+        (event.data as { toolName?: string; duplicate?: boolean }).toolName === 'inspect-source' &&
+        (event.data as { duplicate?: boolean }).duplicate === true
+    );
+
+    expect(inspected).toHaveLength(2);
+    expect(duplicateInspect).toBeUndefined();
+  });
+
+  it('inspects remaining source candidates after CLI rollback before the next model turn', async () => {
+    const registry = new StudioAgentToolRegistry();
+    const inspected: string[] = [];
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply source patch',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ok: false,
+          changed: true,
+          error: 'Canonical verification failed and the checkpoint was restored.',
+          output: {
+            nextAction: 'general-source-repair',
+            recoveryPath: 'general-source-repair',
+            sourceCandidates: ['.github/workflows/ci.yml', 'commerce-api/package.json'],
+            requiresUserDecision: false,
+            transaction: {
+              transactionId: 'repair-rollback-missing-ci',
+              state: 'rolled-back',
+            },
+          },
+        };
+      },
+    });
+    registry.register({
+      name: 'inspect-source',
+      title: 'Inspect source',
+      activity: 'inspect',
+      risk: 'read',
+      async execute(raw) {
+        inspected.push(JSON.stringify(raw));
+        const paths = Array.isArray((raw as { paths?: unknown }).paths)
+          ? (raw as { paths: string[] }).paths
+          : [];
+        return {
+          ok: true,
+          output: paths.map((candidate) =>
+            candidate.endsWith('ci.yml')
+              ? { path: candidate, exists: false, sha256: null, content: '' }
+              : { path: candidate, exists: true, sha256: 'abc', content: '{}' }
+          ),
+        };
+      },
+    });
+    let modelTurns = 0;
+    const session = new StudioAgentSession(
+      {
+        id: 'rollback-remaining-candidates-session',
+        workspacePath: '/workspace',
+        cardId: 'analyze',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: false,
+      },
+      {
+        async next(context) {
+          modelTurns += 1;
+          if (modelTurns === 1) {
+            return {
+              type: 'tool' as const,
+              toolName: 'apply-workspace-patch',
+              input: { patches: [] },
+              reason: 'Try the bounded repair',
+            };
+          }
+          expect(context.latestObservation?.output).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                path: '.github/workflows/ci.yml',
+                exists: false,
+                sha256: null,
+              }),
+            ])
+          );
+          return { type: 'complete' as const, summary: 'Create the missing Analyze CI workflow.' };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Repair the analyze blocker');
+
+    expect(inspected).toEqual([
+      JSON.stringify({ paths: ['.github/workflows/ci.yml', 'commerce-api/package.json'] }),
+    ]);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'model.checkpoint',
+        data: expect.objectContaining({
+          recovery: 'general-source-inspection',
+          sourceCandidates: ['.github/workflows/ci.yml', 'commerce-api/package.json'],
+        }),
+      })
+    );
+    expect(modelTurns).toBe(2);
+  });
+
+  it('keeps the rolled-back CLI receipt when the AI provider drops after a later inspect', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply source patch',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ok: false,
+          changed: true,
+          error: 'Canonical verification failed and the checkpoint was restored.',
+          output: {
+            nextAction: 'general-source-repair',
+            recoveryPath: 'general-source-repair',
+            requiresUserDecision: false,
+            transaction: {
+              transactionId: 'repair-rolled-back-provider',
+              state: 'rolled-back',
+            },
+          },
+        };
+      },
+    });
+    registry.register({
+      name: 'inspect-source',
+      title: 'Inspect source',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, output: { paths: ['api/src/index.ts'] } };
+      },
+    });
+    let modelTurns = 0;
+    const session = new StudioAgentSession(
+      {
+        id: 'provider-after-rollback-session',
+        workspacePath: '/workspace',
+        cardId: 'workspaceVerify',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      {
+        async next() {
+          modelTurns += 1;
+          if (modelTurns === 1) {
+            return {
+              type: 'tool' as const,
+              toolName: 'apply-workspace-patch',
+              input: { patches: [] },
+              reason: 'Try the bounded repair',
+            };
+          }
+          if (modelTurns === 2) {
+            return {
+              type: 'tool' as const,
+              toolName: 'inspect-source',
+              input: { paths: ['api/src/index.ts'] },
+              reason: 'Inspect a different causal file after rollback.',
+            };
+          }
+          throw new Error('Request Failed: 502 Bad Gateway');
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Repair the verification blocker');
+
+    expect(modelTurns).toBe(3);
+    expect(result.status).toBe('failed');
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'session.failed',
+        data: expect.objectContaining({
+          terminalReason: 'ai-provider-unavailable',
+          repairTransactionState: 'rolled-back',
+          error: expect.stringMatching(/Request Failed/i),
+        }),
+      })
+    );
+  });
+
+  it('reconnects after an AI provider outage without repeating recover-active-blocker', async () => {
+    const restoredSession: StudioAgentPersistedSession = {
+      schemaVersion: 'workspai.studio-agent-session.v1',
+      id: 'restored-provider-outage-session',
+      workspacePath: '/workspace',
+      cardId: 'readiness',
+      assistantMode: 'agent',
+      status: 'failed',
+      createdAt: '2026-07-20T00:00:00.000Z',
+      updatedAt: '2026-07-20T00:00:03.000Z',
+      sequence: 3,
+      events: [
+        {
+          schemaVersion: 'workspai.studio-agent-event.v1',
+          id: 'restored-provider-outage-session:1',
+          sessionId: 'restored-provider-outage-session',
+          sequence: 1,
+          timestamp: '2026-07-20T00:00:01.000Z',
+          type: 'tool.failed',
+          data: {
+            toolName: 'recover-active-blocker',
+            ok: false,
+            changed: false,
+            output: {
+              recoveryPath: 'general-source-repair',
+              nextAction: 'general-source-repair',
+              sourceCandidates: ['polyglot-app/package.json'],
+            },
+            error: 'Source repair required.',
+          },
+        },
+        {
+          schemaVersion: 'workspai.studio-agent-event.v1',
+          id: 'restored-provider-outage-session:2',
+          sessionId: 'restored-provider-outage-session',
+          sequence: 2,
+          timestamp: '2026-07-20T00:00:02.000Z',
+          type: 'tool.failed',
+          data: {
+            toolName: 'apply-workspace-patch',
+            ok: false,
+            changed: false,
+            output: {
+              transaction: {
+                transactionId: 'repair-restored-rollback',
+                state: 'rolled-back',
+              },
+            },
+            error: 'Canonical verification failed and the checkpoint was restored.',
+          },
+        },
+        {
+          schemaVersion: 'workspai.studio-agent-event.v1',
+          id: 'restored-provider-outage-session:3',
+          sessionId: 'restored-provider-outage-session',
+          sequence: 3,
+          timestamp: '2026-07-20T00:00:03.000Z',
+          type: 'session.failed',
+          data: {
+            error: 'Request Failed: 502 Bad Gateway',
+            terminalReason: 'ai-provider-unavailable',
+            repairTransactionState: 'rolled-back',
+          },
+        },
+      ],
+    };
+    const registry = new StudioAgentToolRegistry();
+    let recoveryCalls = 0;
+    registry.register({
+      name: 'recover-active-blocker',
+      title: 'Resolve active blocker',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        recoveryCalls += 1;
+        return {
+          ok: false,
+          changed: false,
+          error: 'Should not re-enter deterministic recovery after a provider outage.',
+        };
+      },
+    });
+    registry.register({
+      name: 'inspect-source',
+      title: 'Inspect source',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, output: { paths: ['polyglot-app/package.json'] } };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        id: restoredSession.id,
+        workspacePath: restoredSession.workspacePath,
+        cardId: restoredSession.cardId,
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        restoredSession,
+      },
+      {
+        async next() {
+          throw new Error('Request Failed: 502 Bad Gateway');
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Retry AI connection');
+
+    expect(recoveryCalls).toBe(0);
+    expect(result.status).toBe('failed');
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'session.failed',
+        data: expect.objectContaining({
+          terminalReason: 'ai-provider-unavailable',
+          repairTransactionState: 'rolled-back',
+        }),
+      })
+    );
+  });
+
   it('does not start a second closure plane after a dependency patch transaction closes', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
@@ -1898,7 +2317,7 @@ describe('Studio Agent session runtime', () => {
     );
   });
 
-  it('terminates a causal retry loop when deterministic recovery cannot advance evidence', async () => {
+  it('pauses an exhausted causal retry loop without fabricating a CLI decision', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
       name: 'inspect-evidence',
@@ -1948,7 +2367,10 @@ describe('Studio Agent session runtime', () => {
     expect(result.events).toContainEqual(
       expect.objectContaining({
         type: 'session.failed',
-        data: expect.objectContaining({ error: expect.stringContaining('causal retry loop') }),
+        data: expect.objectContaining({
+          terminalReason: 'causal-source-progress-exhausted',
+          requiresUserDecision: false,
+        }),
       })
     );
     expect(result.sequence).toBeLessThan(100);
@@ -2231,7 +2653,7 @@ describe('Studio Agent session runtime', () => {
     const result = await session.run('Clear readiness');
 
     expect(result.status).toBe('failed');
-    expect(modelTurns).toBe(4);
+    expect(modelTurns).toBeGreaterThan(4);
     expect(result.events).toContainEqual(
       expect.objectContaining({
         type: 'model.checkpoint',
@@ -2240,9 +2662,16 @@ describe('Studio Agent session runtime', () => {
     );
     expect(result.events).toContainEqual(
       expect.objectContaining({
+        type: 'model.checkpoint',
+        data: expect.objectContaining({ recovery: 'provider-to-source-repair' }),
+      })
+    );
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
         type: 'session.failed',
         data: expect.objectContaining({
-          error: expect.stringContaining('no additional model credit'),
+          terminalReason: 'model-source-progress-exhausted',
+          requiresUserDecision: false,
         }),
       })
     );
@@ -3329,6 +3758,118 @@ describe('Studio Agent session runtime', () => {
     expect(serialized).toContain('$LOCAL_PATH');
   });
 
+  it('recovers a rejected no-op through fresh causal evidence and source inspection', async () => {
+    const registry = new StudioAgentToolRegistry();
+    let patchCalls = 0;
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply governed source repair',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        patchCalls += 1;
+        return patchCalls === 1
+          ? {
+              ok: false,
+              changed: false,
+              error: 'commerce-api/package.json is a no-op and cannot prove source progress.',
+              output: {
+                nextAction: 'general-source-repair',
+                recoveryPath: 'general-source-repair',
+                proposalRejected: true,
+                sourceCandidates: ['commerce-api/package.json'],
+                evidenceCandidates: ['.workspai/reports/analyze-last-run.json'],
+              },
+            }
+          : closedCliRepairResult({ changedPaths: ['commerce-api/.github/workflows/ci.yml'] });
+      },
+    });
+    registry.register({
+      name: 'inspect-evidence',
+      title: 'Inspect governed evidence',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, output: { finding: 'Continuous integration is missing.' } };
+      },
+    });
+    registry.register({
+      name: 'inspect-source',
+      title: 'Inspect causal source',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return {
+          ok: true,
+          output: [{ path: 'commerce-api/package.json', sha256: 'a'.repeat(64) }],
+        };
+      },
+    });
+
+    let turn = 0;
+    const session = new StudioAgentSession(
+      {
+        id: 'proposal-recovery-session',
+        workspacePath: '/workspace',
+        cardId: 'readiness',
+        assistantMode: 'agent',
+        repairPolicy: 'diagnose-and-repair',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      {
+        async next(context) {
+          turn += 1;
+          if (turn === 1) {
+            return {
+              type: 'tool',
+              toolName: 'apply-workspace-patch',
+              input: { revision: 1 },
+              reason: 'Submit the initial proposal.',
+            };
+          }
+          if (turn === 2) {
+            expect(context.sourceRepairDirective).toMatchObject({ proposalRejected: true });
+            expect(context.tools.map((tool) => tool.name)).toContain('inspect-evidence');
+            expect(context.tools.map((tool) => tool.name)).not.toContain('apply-workspace-patch');
+            return {
+              type: 'tool',
+              toolName: 'inspect-evidence',
+              input: { paths: ['.workspai/reports/analyze-last-run.json'] },
+              reason: 'Read the exact causal finding.',
+            };
+          }
+          if (turn === 3) {
+            expect(context.tools.map((tool) => tool.name)).toContain('inspect-source');
+            expect(context.tools.map((tool) => tool.name)).not.toContain('apply-workspace-patch');
+            return {
+              type: 'tool',
+              toolName: 'inspect-source',
+              input: { paths: ['commerce-api/package.json'] },
+              reason: 'Inspect the source boundary before proposing a different change.',
+            };
+          }
+          expect(context.tools.map((tool) => tool.name)).toContain('apply-workspace-patch');
+          expect(context.tools.map((tool) => tool.name)).not.toContain('inspect-evidence');
+          return {
+            type: 'tool',
+            toolName: 'apply-workspace-patch',
+            input: { revision: 2 },
+            reason: 'Submit a materially different causal proposal.',
+          };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Repair the blocked readiness finding.');
+
+    expect(result.status).toBe('completed');
+    expect(patchCalls).toBe(2);
+    expect(turn).toBe(4);
+  });
+
   it('returns tool failures to the model and requires the latest verify to clear the card', async () => {
     const registry = new StudioAgentToolRegistry();
     let verifyCalls = 0;
@@ -3719,6 +4260,80 @@ describe('Studio Agent session runtime', () => {
     expect(JSON.stringify(durableEvent)).not.toContain('fileChanges');
   });
 
+  it('omits CLI fileChanges from durable events so reload can rehydrate from the transaction', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'apply-test-cli-observation',
+      title: 'Apply patch',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ok: true,
+          changed: true,
+          output: {
+            transaction: { transactionId: 'repair-closed-hydrate-1' },
+            changedPaths: ['src/service.ts'],
+            fileChanges: [
+              {
+                relativePath: 'src/service.ts',
+                status: 'modified',
+                diffLines: [
+                  { type: 'removed', content: 'export const mode = "before";' },
+                  { type: 'added', content: 'export const mode = "after";' },
+                ],
+              },
+            ],
+          },
+        };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'cli-live-diff-session',
+        workspacePath: '/workspace',
+        cardId: 'workspaceImpact',
+        assistantMode: 'ask',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: false,
+      },
+      sequenceModel([
+        {
+          type: 'tool',
+          toolName: 'apply-test-cli-observation',
+          input: { patches: [] },
+          reason: 'Apply the CLI-owned edit.',
+        },
+        { type: 'complete', summary: 'Applied.' },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+    const liveEvents: Array<Record<string, unknown>> = [];
+    session.onEvent((event) => {
+      if (event.type === 'tool.completed') {
+        liveEvents.push(event.data as Record<string, unknown>);
+      }
+    });
+
+    const result = await session.run('Apply an edit');
+    const liveOutput = liveEvents[0]?.output as Record<string, unknown>;
+    expect(liveOutput.fileChanges).toEqual([
+      expect.objectContaining({
+        relativePath: 'src/service.ts',
+        diffLines: [
+          { type: 'removed', content: 'export const mode = "before";' },
+          { type: 'added', content: 'export const mode = "after";' },
+        ],
+      }),
+    ]);
+    const durableEvent = result.events.find((event) => event.type === 'tool.completed');
+    expect(JSON.stringify(durableEvent)).not.toContain('export const mode');
+    expect(JSON.stringify(durableEvent)).not.toContain('fileChanges');
+    expect(JSON.stringify(durableEvent)).toContain('repair-closed-hydrate-1');
+  });
+
   it('preserves provider call ids through execution and causal observations', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
@@ -3774,7 +4389,7 @@ describe('Studio Agent session runtime', () => {
     expect(correlatedEvents.every((event) => event.toolCallId === 'provider-call-17')).toBe(true);
   });
 
-  it('stops a repeated controller-owned evidence command during general source repair', async () => {
+  it('keeps a repeated controller-owned evidence command inside the source-repair loop', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
       name: 'recover-active-blocker',
@@ -3812,6 +4427,18 @@ describe('Studio Agent session runtime', () => {
         throw new Error('The phase policy must reject this command before execution.');
       },
     });
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply workspace patch',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return closedCliRepairResult({
+          transactionId: 'repair-source-loop-recovery',
+          changedPaths: ['atlas-api/atlas-api.sln'],
+        });
+      },
+    });
     let modelTurns = 0;
     const session = new StudioAgentSession(
       {
@@ -3823,8 +4450,24 @@ describe('Studio Agent session runtime', () => {
         workspaceTrusted: true,
       },
       {
-        async next() {
+        async next(context) {
           modelTurns += 1;
+          if (context.sourceActionRequired) {
+            return {
+              type: 'tool',
+              toolName: 'apply-workspace-patch',
+              input: {
+                patches: [
+                  {
+                    relativePath: 'atlas-api/atlas-api.sln',
+                    baseSha256: 'fixture',
+                    patchedContent: 'fixed',
+                  },
+                ],
+              },
+              reason: 'Apply the causal source repair.',
+            };
+          }
           return {
             type: 'tool',
             toolName: 'run-workspace-command',
@@ -3844,27 +4487,21 @@ describe('Studio Agent session runtime', () => {
 
     const result = await session.run('Repair the Doctor blocker');
 
-    expect(result.status).toBe('failed');
-    expect(modelTurns).toBe(2);
+    expect(result.status).toBe('completed');
+    expect(modelTurns).toBe(3);
     expect(result.events).toContainEqual(
       expect.objectContaining({
         type: 'tool.failed',
         data: expect.objectContaining({
           policyRejected: true,
           repeatedPolicyRejection: true,
-          terminalReason: 'source-repair-policy-loop',
+          output: expect.objectContaining({
+            nextAction: 'causal-source-change-required',
+          }),
         }),
       })
     );
-    expect(result.events).toContainEqual(
-      expect.objectContaining({
-        type: 'session.failed',
-        data: expect.objectContaining({
-          requiresUserDecision: false,
-          terminalReason: 'source-repair-policy-loop',
-        }),
-      })
-    );
+    expect(result.events).not.toContainEqual(expect.objectContaining({ type: 'session.failed' }));
   });
 
   it('streams command-produced unified diffs without persisting source bodies', async () => {

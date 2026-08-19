@@ -18,19 +18,19 @@ const STATUS_COPY: Record<
 > = {
   running: {
     label: 'Working',
-    detail: 'I am applying the repair path and watching the result.',
+    detail: 'Applying the change and watching the result.',
   },
   review: {
     label: 'Approval needed',
-    detail: 'I found a guarded change. Approve it and I will continue.',
+    detail: 'A guarded change is waiting for approval.',
   },
   done: {
     label: 'Completed',
-    detail: 'This action completed. The incident closes only after canonical verification.',
+    detail: 'This step finished. Verification still has to close the incident.',
   },
   failed: {
-    label: 'Failed',
-    detail: 'This action failed. Studio preserved the transaction and its evidence.',
+    label: 'Stopped',
+    detail: 'This step did not finish. A recoverable checkpoint remains.',
   },
 };
 
@@ -88,11 +88,21 @@ export function StudioActionProgress({
   );
   const copy = historical
     ? progress.status === 'failed'
-      ? STATUS_COPY.failed
+      ? progress.transactionState === 'rolled-back'
+        ? {
+            label: 'Restored',
+            detail: 'The previous edit did not close the finding, so the files were put back.',
+          }
+        : STATUS_COPY.failed
       : { label: completedActivityLabel(progress), detail: progress.summary }
     : automaticContinuation
       ? { label: 'Continuing automatically', detail: 'The next safe repair phase is starting.' }
-      : STATUS_COPY[progress.status];
+      : progress.transactionState === 'rolled-back'
+        ? {
+            label: 'Restored',
+            detail: 'The previous edit did not close the finding, so the files were put back.',
+          }
+        : STATUS_COPY[progress.status];
   const summary = compactStudioPathText(progress.summary || copy.detail);
   const hasNextAction = Boolean(progress.nextAction);
   const showManualNextAction = Boolean(
@@ -127,7 +137,9 @@ export function StudioActionProgress({
               : copy.label}
           </small>
         </div>
-        {summary ? <p className="ws-sidebar__studio-action-summary">{summary}</p> : null}
+        {summary && (historical || progress.status !== 'running') ? (
+          <p className="ws-sidebar__studio-action-summary">{summary}</p>
+        ) : null}
         {progress.technicalDetail ? (
           <details className="ws-sidebar__studio-action-details">
             <summary>Technical details</summary>
@@ -137,9 +149,12 @@ export function StudioActionProgress({
           </details>
         ) : null}
         {progress.commandText && !progress.policyRejected ? (
-          <pre className="ws-sidebar__studio-patch-diff" aria-label="Executed command">
-            <span data-type="unchanged">$ {progress.commandText}</span>
-          </pre>
+          <details className="ws-sidebar__studio-action-details">
+            <summary>Command</summary>
+            <pre className="ws-sidebar__studio-patch-diff" aria-label="Executed command">
+              <span data-type="unchanged">$ {progress.commandText}</span>
+            </pre>
+          </details>
         ) : null}
         {progress.activityPaths?.length ? (
           <ul className="ws-sidebar__studio-changed-files" aria-label="Inspected files">
@@ -244,16 +259,16 @@ export function StudioActionProgress({
                           type="button"
                           className="ws-sidebar__studio-diff-button"
                           onClick={() => onOpenDiff!(file.relativePath, progress.transactionId!)}
-                          title={`Open exact before/after diff for ${file.relativePath}`}
+                          title={`Compare ${file.relativePath}`}
                         >
-                          Open diff
+                          Compare
                         </button>
                       ) : null}
                     </div>
                     {file.failReason ? <small>{file.failReason}</small> : null}
                     {file.stale !== true && file.diffLines?.length ? (
-                      <details className="ws-sidebar__studio-file-preview">
-                        <summary>Preview</summary>
+                      <details className="ws-sidebar__studio-file-preview" open={!historical && progress.status !== 'running'}>
+                        <summary>Diff</summary>
                         <pre
                           className="ws-sidebar__studio-patch-diff"
                           aria-label={`Diff for ${file.relativePath}`}

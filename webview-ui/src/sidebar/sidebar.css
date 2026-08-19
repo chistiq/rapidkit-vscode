@@ -147,14 +147,15 @@ body {
   box-shadow: inset 1px 0 0 color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 8%, transparent);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  --ws-sidebar-text-xs: 10.5px;
-  --ws-sidebar-text-sm: 11.5px;
-  --ws-sidebar-text-md: 12.5px;
-  --ws-sidebar-text-lg: 13px;
-  --ws-sidebar-text-xl: 13.5px;
+  --ws-sidebar-text-xxs: 10.5px;
+  --ws-sidebar-text-xs: 11px;
+  --ws-sidebar-text-sm: 12px;
+  --ws-sidebar-text-md: 13.5px;
+  --ws-sidebar-text-lg: 14px;
+  --ws-sidebar-text-xl: 14.5px;
   --ws-sidebar-leading-tight: 1.35;
   --ws-sidebar-leading-normal: 1.5;
-  --ws-sidebar-leading-relaxed: 1.55;
+  --ws-sidebar-leading-relaxed: 1.65;
   --ws-sidebar-row-gap: 6px;
   --ws-sidebar-section-gap: 14px;
   --ws-sidebar-item-py: 9px;
@@ -177,30 +178,71 @@ body {
   overflow: hidden;
 }
 
+.ws-sidebar__tabpanel--chat .ws-session-bar {
+  flex-shrink: 0;
+  padding: 8px var(--ws-sidebar-edge-inset) 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--vscode-panel-border) 50%, transparent);
+}
+
+.ws-sidebar__empty {
+  flex: 1;
+  min-height: 48px;
+}
+
+.ws-sidebar__empty-canvas {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+}
+
+.ws-sidebar__empty-hint {
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--ws-sidebar-text-sm, 12px);
+  opacity: 0.5;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  user-select: none;
+}
+
+.ws-sidebar__error-notice {
+  margin: 0 var(--ws-sidebar-edge-inset, 8px);
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--vscode-inputValidation-errorBackground, #5a1d1d) 25%, transparent);
+  border: 1px solid color-mix(in srgb, var(--vscode-inputValidation-errorBorder, #be1100) 30%, transparent);
+  color: var(--vscode-errorForeground, var(--vscode-foreground));
+  font-size: var(--ws-sidebar-text-sm, 12px);
+  line-height: var(--ws-sidebar-leading-normal, 1.5);
+}
+
 .ws-sidebar__chat-chrome {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
 }
 
 .ws-sidebar__tabpanel--chat .ws-sidebar__stream {
-  padding: 6px 4px 4px;
+  padding: 12px 0 8px;
   flex: 1;
+  gap: 16px;
 }
 
 .ws-sidebar__tabpanel--repair .ws-sidebar__chat-chrome {
   max-height: none;
   overflow: visible;
-  border-bottom: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
-  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  border-bottom: 0;
+  background: transparent;
 }
 
 .ws-sidebar__tabpanel--repair .ws-sidebar__stream {
   width: 100%;
   max-width: 720px;
   margin: 0 auto;
-  padding: 10px 12px 6px;
+  padding: 12px 0 8px;
   flex: 1 1 96px;
   min-height: 72px;
+  gap: 16px;
 }
 
 .ws-sidebar__tabs {
@@ -833,17 +875,19 @@ body {
 }
 
 .ws-session-bar__title {
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  letter-spacing: -0.01em;
 }
 
 .ws-session-bar__meta {
-  font-size: 9.5px;
+  font-size: 10px;
   color: var(--vscode-descriptionForeground);
   white-space: nowrap;
+  opacity: 0.8;
 }
 
 .ws-session-bar__actions {
@@ -857,17 +901,18 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: 1px solid var(--vscode-widget-border, transparent);
-  background: var(--vscode-button-secondaryBackground, var(--vscode-input-background));
-  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  border: none;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
   font-size: 10px;
-  padding: 3px 7px;
-  border-radius: 4px;
+  padding: 4px 6px;
+  border-radius: 6px;
   cursor: pointer;
 }
 
 .ws-session-bar__action:hover {
-  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground));
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-foreground);
 }
 
 .ws-session-bar--compact .ws-session-bar__title,
@@ -894,29 +939,19 @@ body {
 
 .ws-sidebar--secondary .ws-composer-dock {
   flex-shrink: 0;
-  margin: 6px var(--ws-sidebar-edge-inset) 8px;
+  margin: 6px var(--ws-sidebar-edge-inset) 12px;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 22%, var(--vscode-panel-border));
-  border-radius: 10px;
-  background: color-mix(
-    in srgb,
-    var(--vscode-input-background) 88%,
-    var(--vscode-editorWidget-background)
-  );
-  box-shadow:
-    0 1px 0 color-mix(in srgb, var(--vscode-foreground) 4%, transparent),
-    0 4px 14px color-mix(in srgb, var(--vscode-widget-shadow, #000) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 45%, var(--vscode-sideBar-background));
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--vscode-widget-shadow, #000) 6%, transparent);
   overflow: visible;
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .ws-sidebar--secondary .ws-composer-dock:has(.ws-composer__surface:focus-within) {
-  border-color: color-mix(in srgb, var(--vscode-focusBorder) 55%, var(--vscode-panel-border));
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder) 35%, transparent),
-    0 4px 16px color-mix(in srgb, var(--vscode-widget-shadow, #000) 12%, transparent);
+  border-color: color-mix(in srgb, var(--vscode-focusBorder) 42%, var(--vscode-panel-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder) 18%, transparent);
 }
 
 .ws-sidebar--secondary .ws-composer {
@@ -928,7 +963,7 @@ body {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  padding: 8px 6px 6px;
+  padding: 10px 8px 6px;
 }
 
 .ws-sidebar--secondary .ws-composer__surface:focus-within {
@@ -945,26 +980,18 @@ body {
   flex-direction: column;
   gap: 2px;
   padding: 8px 8px 6px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 22%, var(--vscode-panel-border));
-  background: color-mix(
-    in srgb,
-    var(--vscode-input-background) 88%,
-    var(--vscode-editorWidget-background)
-  );
-  box-shadow:
-    0 1px 0 color-mix(in srgb, var(--vscode-foreground) 4%, transparent),
-    0 4px 14px color-mix(in srgb, var(--vscode-widget-shadow, #000) 12%, transparent);
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 88%, transparent);
+  background: color-mix(in srgb, var(--vscode-editorWidget-background) 55%, var(--vscode-sideBar-background));
+  box-shadow: none;
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease;
 }
 
 .ws-composer__surface:focus-within {
-  border-color: color-mix(in srgb, var(--vscode-focusBorder) 55%, var(--vscode-panel-border));
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder) 35%, transparent),
-    0 4px 16px color-mix(in srgb, var(--vscode-widget-shadow, #000) 14%, transparent);
+  border-color: color-mix(in srgb, var(--vscode-focusBorder) 42%, var(--vscode-panel-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder) 18%, transparent);
 }
 
 .ws-composer__surface.is-disabled {
@@ -987,16 +1014,17 @@ body {
   width: 100%;
   box-sizing: border-box;
   min-height: 44px;
-  max-height: 140px;
-  padding: 2px 4px;
+  max-height: 160px;
+  padding: 2px 6px;
   border: none;
   background: transparent;
   color: var(--vscode-input-foreground, var(--vscode-foreground));
-  font-size: 12.5px;
+  font-size: 13px;
   font-family: inherit;
-  line-height: 1.45;
+  line-height: 1.5;
   resize: none;
   overflow-y: hidden;
+  letter-spacing: 0.005em;
 }
 
 .ws-composer__input:focus {
@@ -1005,7 +1033,7 @@ body {
 
 .ws-composer__input::placeholder {
   color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
-  opacity: 0.9;
+  opacity: 0.7;
 }
 
 .ws-composer__toolbar {
@@ -1029,17 +1057,18 @@ body {
   padding: 0;
   border-radius: 8px;
   border: 1px solid transparent;
-  background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
-  color: var(--vscode-foreground);
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
   cursor: pointer;
   transition:
     background 0.12s ease,
-    border-color 0.12s ease;
+    color 0.12s ease;
 }
 
 .ws-composer__icon-btn:hover {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
-  border-color: color-mix(in srgb, var(--vscode-focusBorder) 25%, transparent);
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-foreground);
+  border-color: transparent;
 }
 
 .ws-composer__send {
@@ -1054,15 +1083,12 @@ body {
   background: var(--vscode-button-background);
   color: var(--vscode-button-foreground);
   cursor: pointer;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--vscode-button-background) 45%, transparent);
-  transition:
-    transform 0.12s ease,
-    filter 0.12s ease;
+  box-shadow: none;
+  transition: filter 0.12s ease;
 }
 
 .ws-composer__send:hover:not(:disabled) {
-  filter: brightness(1.06);
-  transform: translateY(-1px);
+  filter: brightness(1.05);
 }
 
 .ws-composer__send:disabled {
@@ -1072,10 +1098,11 @@ body {
 }
 
 .ws-composer-dock .ws-sidebar__model-trigger {
-  padding: 3px 8px;
-  font-size: 10px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
+  padding: 3px 6px;
+  font-size: var(--ws-sidebar-text-xs);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
 }
 
 .ws-assistant-mode {
@@ -1088,13 +1115,13 @@ body {
   align-items: center;
   gap: 5px;
   min-height: 28px;
-  padding: 4px 7px;
+  padding: 2px 4px;
   border: 1px solid transparent;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
-  color: var(--vscode-foreground);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
   font: inherit;
-  font-size: 10.5px;
+  font-size: var(--ws-sidebar-text-xs);
   cursor: pointer;
 }
 
@@ -2061,18 +2088,78 @@ body {
 }
 
 .ws-sidebar--secondary .ws-sidebar__tabpanel--chat .ws-sidebar__stream {
-  padding: 8px var(--ws-sidebar-edge-inset) 6px;
-  gap: 10px;
+  padding: 8px var(--ws-sidebar-edge-inset) 16px;
+  gap: 18px;
 }
 
 .ws-sidebar--secondary .ws-sidebar__msg {
-  gap: 10px;
+  gap: 0;
+}
+
+.ws-sidebar--secondary .ws-sidebar__msg--user {
+  padding: 0 var(--ws-sidebar-edge-inset);
 }
 
 .ws-sidebar--secondary .ws-sidebar__bubble {
-  padding: 9px 11px;
+  padding: 8px 10px;
   font-size: var(--ws-sidebar-text-md);
   line-height: var(--ws-sidebar-leading-relaxed);
+}
+
+.ws-sidebar--secondary .ws-sidebar__msg--ai .ws-sidebar__bubble {
+  max-width: 100%;
+  padding: 0 var(--ws-sidebar-edge-inset);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.ws-sidebar--secondary .ws-sidebar__msg--ai .ws-sidebar__bubble > p:first-child,
+.ws-sidebar--secondary .ws-sidebar__msg--ai .md-body > *:first-child {
+  margin-top: 0;
+}
+
+.ws-sidebar--secondary .ws-sidebar__msg--ai .md-body {
+  font-size: var(--ws-sidebar-text-md);
+  line-height: 1.7;
+  letter-spacing: 0.005em;
+}
+
+.ws-sidebar--secondary .ws-sidebar__msg--ai .md-h1,
+.ws-sidebar--secondary .ws-sidebar__msg--ai .md-h2,
+.ws-sidebar--secondary .ws-sidebar__msg--ai .md-h3 {
+  border-bottom: 0;
+  padding-bottom: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ws-sidebar--secondary .ws-sidebar__msg--ai .md-code-block {
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 60%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 80%, transparent);
+  margin: 10px 0;
+}
+
+.ws-sidebar--secondary .ws-sidebar__msg--ai .md-code-block__head {
+  background: transparent;
+}
+
+.ws-sidebar--secondary .ws-sidebar__msg--ai .md-command-card {
+  border: 0;
+  padding: 6px 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.ws-sidebar--secondary .ws-sidebar__msg--user .ws-sidebar__bubble {
+  border: 0;
+  background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
+  padding: 8px 14px;
+  border-radius: 16px 16px 4px 16px;
+  max-width: min(85%, 640px);
+  font-size: var(--ws-sidebar-text-sm);
+  line-height: var(--ws-sidebar-leading-normal);
 }
 
 .ws-sidebar--secondary .ws-sidebar__bubble p {
@@ -2162,8 +2249,8 @@ body {
 
 .ws-sidebar--secondary .ws-session-bar {
   gap: 8px;
-  min-height: 32px;
-  padding: 8px var(--ws-sidebar-edge-inset) 0;
+  min-height: 28px;
+  padding: 8px var(--ws-sidebar-edge-inset) 2px;
 }
 
 .ws-sidebar--secondary .ws-session-bar__context {
@@ -2190,9 +2277,10 @@ body {
 }
 
 .ws-sidebar--secondary .ws-session-bar__action {
-  padding: 5px 9px;
-  font-size: var(--ws-sidebar-text-sm);
-  line-height: var(--ws-sidebar-leading-tight);
+  padding: 4px 6px;
+  font-size: var(--ws-sidebar-text-xs);
+  border: none;
+  background: transparent;
 }
 
 .ws-sidebar--secondary .ws-composer-dock {
@@ -2406,16 +2494,16 @@ body {
 .ws-sidebar__studio-chrome {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
-  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  gap: 4px;
+  padding: 0 var(--ws-sidebar-edge-inset) 6px;
+  border-bottom: 0;
+  background: transparent;
 }
 
 .ws-sidebar__tabpanel--repair .ws-sidebar__studio-chrome {
-  gap: 6px;
-  padding: 8px 12px;
-  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  gap: 4px;
+  padding: 0 var(--ws-sidebar-edge-inset) 6px;
+  background: transparent;
 }
 
 .ws-sidebar__studio-context {
@@ -2451,13 +2539,13 @@ body {
 .ws-sidebar__studio-scope-badge,
 .ws-sidebar__studio-state-badge {
   flex-shrink: 0;
-  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 13%, transparent);
-  border-radius: 999px;
-  padding: 2px 6px;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
   color: var(--vscode-descriptionForeground);
-  background: color-mix(in srgb, var(--vscode-foreground) 3%, transparent);
-  font-size: var(--ws-sidebar-text-xxs);
-  font-weight: 600;
+  background: transparent;
+  font-size: var(--ws-sidebar-text-xs);
+  font-weight: 500;
   line-height: 1.25;
   white-space: nowrap;
 }
@@ -2482,7 +2570,7 @@ body {
 .ws-sidebar__studio-incident-copy strong {
   overflow: hidden;
   font-size: var(--ws-sidebar-text-sm);
-  font-weight: 650;
+  font-weight: 500;
   line-height: var(--ws-sidebar-leading-tight);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2782,22 +2870,17 @@ body {
   align-items: center;
   gap: 7px;
   font-size: var(--ws-sidebar-text-sm);
+  font-weight: 500;
   line-height: var(--ws-sidebar-leading-tight);
 }
 
-.ws-sidebar__repair-copy p {
-  margin: 3px 0 0;
-  color: var(--vscode-descriptionForeground);
-  line-height: var(--ws-sidebar-leading-normal);
-}
-
 .ws-sidebar__repair-live {
-  width: 7px;
-  height: 7px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
-  background: var(--vscode-textLink-foreground);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--vscode-textLink-foreground) 35%, transparent);
-  opacity: 0.72;
+  background: var(--vscode-descriptionForeground);
+  box-shadow: none;
+  opacity: 0.7;
 }
 
 .ws-sidebar__repair-live[data-running='true'] {
@@ -2823,10 +2906,10 @@ body {
   grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
   gap: 6px;
   margin-top: 8px;
-  padding: 8px;
-  border: 1px solid var(--vscode-widget-border);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 5%, transparent);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .ws-sidebar__repair-decision-options .ws-sidebar__inline {
@@ -3149,9 +3232,9 @@ body {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 8px;
   align-items: flex-start;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
-  background: var(--vscode-inputValidation-warningBackground, var(--vscode-editor-background));
+  padding: 8px 0 10px;
+  border-bottom: 0;
+  background: transparent;
   color: var(--vscode-foreground);
   font-size: var(--ws-sidebar-text-xs);
 }
@@ -3284,17 +3367,18 @@ body {
   align-items: center;
   justify-content: flex-start;
   gap: 6px;
-  margin: 0 0 5px 26px;
+  margin: 0 0 4px;
   color: var(--vscode-descriptionForeground);
-  font-size: var(--ws-sidebar-text-xxs);
+  font-size: var(--ws-sidebar-text-xs);
 }
 
 .ws-sidebar__intelligence-pulse {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: var(--vscode-textLink-foreground);
+  background: var(--vscode-descriptionForeground);
+  opacity: 0.55;
 }
 
 .ws-sidebar__intelligence-rail[data-running='true'] .ws-sidebar__intelligence-pulse {
@@ -3302,9 +3386,9 @@ body {
 }
 
 .ws-sidebar__intelligence-rail-head strong {
-  color: var(--vscode-foreground);
+  color: var(--vscode-descriptionForeground);
   font-size: var(--ws-sidebar-text-xs);
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .ws-sidebar__intelligence-rail-head small {
@@ -3439,19 +3523,23 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  margin-top: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
   border-radius: 50%;
   background: transparent;
-  color: var(--vscode-textLink-foreground);
+  color: var(--vscode-descriptionForeground);
+}
+
+.ws-sidebar__studio-action-progress[data-status='running'] .ws-sidebar__studio-action-progress-icon svg {
+  animation: ws-sidebar-spin 0.9s linear infinite;
 }
 
 .ws-sidebar__studio-action-progress {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  gap: 7px;
-  padding: 6px 2px;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 8px;
+  padding: 2px 0;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -3483,7 +3571,7 @@ body {
   min-width: 0;
   color: var(--vscode-foreground);
   font-size: var(--ws-sidebar-text-sm);
-  font-weight: 650;
+  font-weight: 500;
   line-height: var(--ws-sidebar-leading-tight);
   overflow-wrap: anywhere;
 }
@@ -3516,7 +3604,9 @@ body {
 
 .ws-sidebar__studio-action-details > summary {
   cursor: pointer;
-  font-size: var(--ws-sidebar-text-xs);
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--ws-sidebar-text-xxs);
+  font-weight: 500;
   user-select: none;
 }
 
@@ -3733,15 +3823,15 @@ body {
 
 .ws-sidebar__studio-patch-review {
   font-size: var(--ws-sidebar-text-xs);
-  border-left: 2px solid color-mix(in srgb, var(--vscode-focusBorder) 45%, transparent);
-  padding-left: 8px;
+  border-left: 0;
+  padding-left: 0;
 }
 
 .ws-sidebar__studio-live-activity {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 0.35rem;
 }
 
 .ws-sidebar__studio-live-activity > * {
@@ -3752,8 +3842,8 @@ body {
   cursor: pointer;
   color: var(--vscode-descriptionForeground);
   font-size: var(--ws-sidebar-text-xs);
-  padding: 4px 0;
-  font-weight: 600;
+  padding: 2px 0;
+  font-weight: 500;
 }
 
 .ws-sidebar__studio-activity-history[open] {
@@ -3777,12 +3867,12 @@ body {
 
 .ws-sidebar__studio-patch-summary span {
   min-width: 0;
-  padding: 3px 5px;
-  border: 1px solid var(--ws-border-subtle, var(--vscode-panel-border));
-  border-radius: 5px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
   color: var(--vscode-descriptionForeground);
   line-height: var(--ws-sidebar-leading-tight);
-  text-align: center;
+  text-align: left;
 }
 
 .ws-sidebar__studio-patch-details {
@@ -3795,11 +3885,11 @@ body {
 }
 
 .ws-sidebar__studio-file-changes {
-  margin-top: 4px;
-  padding: 7px;
-  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 34%, var(--vscode-panel-border));
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--vscode-editor-background) 94%, var(--vscode-focusBorder) 6%);
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 72%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 82%, transparent);
 }
 
 .ws-sidebar__studio-file-changes > header {
@@ -3810,18 +3900,19 @@ body {
 }
 
 .ws-sidebar__studio-file-changes > header strong {
-  color: var(--vscode-foreground);
-  font-size: var(--ws-sidebar-text-xs);
-  font-weight: 650;
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--ws-sidebar-text-xxs);
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .ws-sidebar__studio-file-changes > header small {
-  min-width: 18px;
-  padding: 1px 5px;
-  border-radius: 10px;
-  background: var(--vscode-badge-background);
-  color: var(--vscode-badge-foreground);
-  text-align: center;
+  min-width: 16px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  text-align: right;
 }
 
 .ws-sidebar__studio-file-changes .ws-sidebar__studio-patch-list > li {
@@ -3862,17 +3953,17 @@ body {
 }
 
 .ws-sidebar__studio-diff-button {
-  padding: 2px 6px;
-  border: 1px solid var(--vscode-button-border, transparent);
-  border-radius: 4px;
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
   font-size: var(--ws-sidebar-text-xxs);
   cursor: pointer;
 }
 
 .ws-sidebar__studio-diff-button:hover {
-  background: var(--vscode-button-secondaryHoverBackground);
+  color: var(--vscode-foreground);
+  background: transparent;
 }
 
 .ws-sidebar__studio-file-preview {
@@ -3955,10 +4046,10 @@ body {
   flex-direction: column;
   gap: 0.35rem;
   margin-top: 0.5rem;
-  padding: 0.65rem 0.75rem;
-  border: 1px solid var(--vscode-inputValidation-warningBorder);
-  border-radius: var(--ws-sidebar-radius-sm);
-  background: var(--vscode-inputValidation-warningBackground);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   font-size: var(--ws-sidebar-text-xs);
 }
 
