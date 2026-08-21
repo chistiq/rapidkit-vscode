@@ -155,16 +155,25 @@ const BLOCKED_PACKAGE_MANAGER_ACTIONS = new Set([
 const SOURCE_MUTATING_ACTIONS = new Set([
   'add',
   'audit',
+  'create',
   'fix',
   'format',
+  'generate',
   'install',
+  'init',
+  'new',
   'remove',
   'rm',
+  'scaffold',
   'tidy',
   'uninstall',
   'update',
   'upgrade',
+  'wrapper',
 ]);
+
+const SOURCE_MUTATING_TASK_PATTERN =
+  /(?:^|[:_-])(?:add|create|fix|format|generate|init|migrate|new|remove|scaffold|sync|update|upgrade|wrapper)(?:$|[:_-])/i;
 
 function isInside(parent: string, candidate: string): boolean {
   const relative = path.relative(path.resolve(parent), path.resolve(candidate));
@@ -300,7 +309,30 @@ function commandMutatesSource(
   if (
     ['npm', 'pnpm', 'yarn', 'bun'].includes(executableName) &&
     ['run', 'exec'].includes(action) &&
-    /(?:fix|format|generate|migrate|update)/i.test(input.args[1] ?? '')
+    SOURCE_MUTATING_TASK_PATTERN.test(input.args[1] ?? '')
+  ) {
+    return true;
+  }
+  if (
+    [
+      'mvn',
+      'mvnw',
+      'gradle',
+      'gradlew',
+      'sbt',
+      'bazel',
+      'bazelisk',
+      'buck2',
+      'just',
+      'task',
+    ].includes(executableName) &&
+    input.args.some((arg) => SOURCE_MUTATING_TASK_PATTERN.test(arg))
+  ) {
+    return true;
+  }
+  if (
+    ['npx', 'pnpx', 'bunx'].includes(executableName) &&
+    input.args.some((arg) => SOURCE_MUTATING_TASK_PATTERN.test(arg))
   ) {
     return true;
   }

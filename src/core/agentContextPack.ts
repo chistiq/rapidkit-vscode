@@ -1,10 +1,10 @@
 import {
+  AGENT_REPORTS_INDEX_PATH,
   WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
-  AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
-  WORKSPACE_CONTRACT_VERIFY_REPORT_PATH,
+  WORKSPACE_SKILLS_INDEX_PATH,
+  WORKSPACE_VERIFY_REPORT_PATH,
+  WORKSPACE_IMPACT_REPORT_PATH,
   WORKSPACE_EXPLAIN_REPORT_PATH,
-  WORKSPACE_TRACE_REPORT_PATH,
-  WORKSPACE_WHY_REPORT_PATH,
 } from './workspaceIntelligencePaths';
 
 /** npm `workspace context --for-agent` without a slug → generic agent pack (Copilot-safe). */
@@ -43,22 +43,25 @@ export function buildCopilotChatContextPrompt(userQuestion?: string): string {
     userQuestion?.trim() || 'Summarize this workspace and list the safest next Workspai commands.';
   return [
     '@workspace',
+    `#file:${AGENT_REPORTS_INDEX_PATH}`,
+    '#file:.workspai/goals/index.json',
+    '#file:.workspai/reports/goal-pack-last-run.json',
     `#file:${WORKSPACE_CONTEXT_AGENT_REPORT_PATH}`,
-    `#file:${AGENT_CUSTOMIZATION_PACK_REPORT_PATH}`,
+    `#file:${WORKSPACE_SKILLS_INDEX_PATH}`,
+    `#file:${WORKSPACE_VERIFY_REPORT_PATH}`,
+    `#file:${WORKSPACE_IMPACT_REPORT_PATH}`,
     `#file:${WORKSPACE_EXPLAIN_REPORT_PATH}`,
-    `#file:${WORKSPACE_WHY_REPORT_PATH}`,
-    `#file:${WORKSPACE_TRACE_REPORT_PATH}`,
-    `#file:${WORKSPACE_CONTRACT_VERIFY_REPORT_PATH}`,
     '',
-    `With this workspace context, agent customization pack, explain/why/trace evidence, and contract verification, ${question}`,
+    `Follow the canonical read order above. Use bounded graph search from the context pack when more proof is needed; do not preload full Model or Graph exports. ${question}`,
   ].join('\n');
 }
 
 export function buildCopilotChatModelPrompt(): string {
   return [
-    '#file:.workspai/reports/workspace-model.json',
+    `#file:${AGENT_REPORTS_INDEX_PATH}`,
+    `#file:${WORKSPACE_CONTEXT_AGENT_REPORT_PATH}`,
     '',
-    'Use this workspace model graph as the source of truth for project layout and commands.',
+    'Use the bounded context as the source of truth. Query the proof-backed graph for the task before requesting a complete Model export.',
   ].join('\n');
 }
 

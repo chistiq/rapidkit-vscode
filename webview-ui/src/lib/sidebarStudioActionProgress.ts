@@ -1,6 +1,30 @@
 import type { StudioBlockerHandoffView } from './studioBlockerHandoff';
 import type { StudioIntelligencePhaseId } from './studioIntelligencePhaseRail';
 
+export type SidebarStudioDiffLineView = {
+  type: 'added' | 'removed' | 'unchanged';
+  content: string;
+  beforeLine?: number;
+  afterLine?: number;
+};
+
+export type SidebarStudioFileChangeView = {
+  relativePath: string;
+  status: string;
+  isNewFile?: boolean;
+  binary?: boolean;
+  stale?: boolean;
+  failReason?: string;
+  /**
+   * Authoritative changed-line totals from the host. They stay correct when the
+   * preview hunks below are truncated, so badges must prefer them over counting
+   * `diffLines`.
+   */
+  addedLines?: number;
+  removedLines?: number;
+  diffLines?: SidebarStudioDiffLineView[];
+};
+
 export type SidebarStudioActionProgressView = {
   sessionId?: string;
   action: string;
@@ -22,15 +46,7 @@ export type SidebarStudioActionProgressView = {
   changedPaths?: string[];
   activityPaths?: string[];
   outputText?: string;
-  fileChanges?: Array<{
-    relativePath: string;
-    status: string;
-    isNewFile?: boolean;
-    binary?: boolean;
-    stale?: boolean;
-    failReason?: string;
-    diffLines?: Array<{ type: 'added' | 'removed' | 'unchanged'; content: string }>;
-  }>;
+  fileChanges?: SidebarStudioFileChangeView[];
   invocationId?: string;
   transactionId?: string;
   transactionState?: string;
@@ -168,6 +184,10 @@ function optionalTrimmedString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+function countOrLineNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
 function stringList(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
@@ -195,6 +215,12 @@ function fileChangeList(value: unknown): SidebarStudioActionProgressView['fileCh
       ...(typeof entry.binary === 'boolean' ? { binary: entry.binary } : {}),
       ...(typeof entry.stale === 'boolean' ? { stale: entry.stale } : {}),
       ...(typeof entry.failReason === 'string' ? { failReason: entry.failReason } : {}),
+      ...(countOrLineNumber(entry.addedLines) !== undefined
+        ? { addedLines: countOrLineNumber(entry.addedLines) }
+        : {}),
+      ...(countOrLineNumber(entry.removedLines) !== undefined
+        ? { removedLines: countOrLineNumber(entry.removedLines) }
+        : {}),
       diffLines: Array.isArray(entry.diffLines)
         ? entry.diffLines
             .filter(
@@ -209,10 +235,32 @@ function fileChangeList(value: unknown): SidebarStudioActionProgressView['fileCh
             .map((line) => ({
               type: line.type as 'added' | 'removed' | 'unchanged',
               content: String(line.content),
+              ...(countOrLineNumber(line.beforeLine) !== undefined
+                ? { beforeLine: countOrLineNumber(line.beforeLine) }
+                : {}),
+              ...(countOrLineNumber(line.afterLine) !== undefined
+                ? { afterLine: countOrLineNumber(line.afterLine) }
+                : {}),
             }))
         : [],
     }));
   return entries.length > 0 ? entries : undefined;
+}
+
+/**
+ * Resolve the changed-line badge for one file. The host totals stay accurate
+ * when preview hunks are truncated; counting `diffLines` is only a fallback for
+ * an older host payload that predates the totals.
+ */
+export function studioFileChangeLineCounts(file: SidebarStudioFileChangeView): {
+  added: number;
+  removed: number;
+} {
+  return {
+    added: file.addedLines ?? file.diffLines?.filter((line) => line.type === 'added').length ?? 0,
+    removed:
+      file.removedLines ?? file.diffLines?.filter((line) => line.type === 'removed').length ?? 0,
+  };
 }
 
 function validationStageList(value: unknown): SidebarStudioActionProgressView['validationStages'] {

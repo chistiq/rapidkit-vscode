@@ -5,6 +5,7 @@ import fs from 'fs-extra';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  GovernedGoalSetupCancelledError,
   prepareGovernedGoalSession,
   restoreGovernedGoalSession,
   restoreOrRenewGovernedGoalSession,
@@ -115,6 +116,49 @@ function verifiedGoal(): VerifiedGoalContractPayload {
 }
 
 describe('governed Goal Assistant session', () => {
+  it('returns a typed quiet cancellation when scope selection is dismissed', async () => {
+    const needsScope: GoalPlanResult = {
+      schemaVersion: 'workspai.goal-plan-result.v1',
+      result: 'needs-confirmation',
+      resolution: { source: 'explicit', invocationScope: 'workspace' },
+      goalPack: {
+        schemaVersion: 'workspai.goal-pack.v1',
+        id: goalPackId,
+        fingerprint: 'a'.repeat(64),
+      },
+      agentHandoff: {
+        schemaVersion: 'workspai.goal-agent-handoff.v1',
+        goalId: goalPackId,
+        goalFingerprint: 'a'.repeat(64),
+      },
+      writtenArtifacts: [],
+      dryRun: false,
+      resumed: false,
+    };
+
+    const promise = prepareGovernedGoalSession({
+      workspacePath: '/workspace',
+      objective: 'Improve release confidence',
+      run: vi.fn().mockResolvedValue(result(needsScope)),
+      readPlanningDecision: async () => ({
+        reason: 'Scope is unresolved.',
+        question: 'Where should this Goal apply?',
+        prerequisites: [],
+        scopeProjects: ['api', 'web'],
+        scopeSelectionRequired: true,
+        runtimeChoices: [],
+      }),
+      selectScope: async () => null,
+    });
+
+    await expect(promise).rejects.toMatchObject({
+      name: 'GovernedGoalSetupCancelledError',
+      code: 'workspai.goal.setup-cancelled',
+      selection: 'scope',
+      message: 'Goal setup cancelled.',
+    } satisfies Partial<GovernedGoalSetupCancelledError>);
+  });
+
   it('plans, activates, prepares, and binds one project-scoped verified goal', async () => {
     const plan: GoalPlanResult = {
       schemaVersion: 'workspai.goal-plan-result.v1',

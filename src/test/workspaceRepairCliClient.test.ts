@@ -422,6 +422,7 @@ describe('CLI-owned Workspace Repair client', () => {
     expect(result.fileChanges[0]?.diffLines).toContainEqual({
       type: 'added',
       content: 'export const ready = true;',
+      afterLine: 1,
     });
     expect(await fs.readdir(path.join(workspacePath, '.workspai', 'repair', 'inbox'))).toEqual([]);
   });
@@ -960,10 +961,11 @@ describe('CLI-owned Workspace Repair client', () => {
     });
     expect(comparison.diffLines).toEqual(
       expect.arrayContaining([
-        { type: 'removed', content: 'export const mode = "before";' },
-        { type: 'added', content: 'export const mode = "after";' },
+        { type: 'removed', content: 'export const mode = "before";', beforeLine: 1 },
+        { type: 'added', content: 'export const mode = "after";', afterLine: 1 },
       ])
     );
+    expect(comparison).toMatchObject({ addedLines: 1, removedLines: 1 });
 
     await fs.writeFile(path.join(workspacePath, relativePath), 'export const mode = "later";\n');
     const stale = await readCliOwnedRepairFileComparison({
@@ -975,6 +977,45 @@ describe('CLI-owned Workspace Repair client', () => {
       stale: true,
       failReason: 'The file changed again after this repair transaction.',
     });
+  });
+
+  it('reports exact changed-line totals for a change larger than the bounded preview', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-repair-client-'));
+    const transactionId = 'receipt-transaction-large';
+    const relativePath = 'src/large.ts';
+    const before = `${Array.from({ length: 900 }, (_, index) => `const before${index} = ${index};`).join('\n')}\n`;
+    const after = `${Array.from({ length: 1200 }, (_, index) => `const after${index} = ${index};`).join('\n')}\n`;
+    const backupRef = 'checkpoint/0000.bin';
+    const artifact = transaction(transactionId, 'closed');
+    artifact.checkpoint = {
+      status: 'captured',
+      files: [
+        {
+          path: relativePath,
+          existed: true,
+          beforeHash: crypto.createHash('sha256').update(before).digest('hex'),
+          afterHash: crypto.createHash('sha256').update(after).digest('hex'),
+          backupRef,
+        },
+      ],
+    };
+    await fs.outputFile(
+      path.join(workspacePath, '.workspai', 'repair', 'transactions', transactionId, backupRef),
+      before
+    );
+    await fs.outputFile(path.join(workspacePath, relativePath), after);
+
+    const comparison = await readCliOwnedRepairFileComparison({
+      workspacePath,
+      transaction: artifact,
+      relativePath,
+    });
+
+    // The preview is bounded for transport, so counting it would understate the
+    // change. The reported totals must still describe the whole file.
+    expect(comparison.diffLines.length).toBeLessThan(1200);
+    expect(comparison.addedLines).toBe(1200);
+    expect(comparison.removedLines).toBe(900);
   });
 
   it('rebuilds bounded hunks from CLI transaction files without requiring durable source', async () => {
@@ -1022,10 +1063,11 @@ describe('CLI-owned Workspace Repair client', () => {
     ]);
     expect(fileChanges[0]?.diffLines).toEqual(
       expect.arrayContaining([
-        { type: 'removed', content: 'export const mode = "before";' },
-        { type: 'added', content: 'export const mode = "after";' },
+        { type: 'removed', content: 'export const mode = "before";', beforeLine: 1 },
+        { type: 'added', content: 'export const mode = "after";', afterLine: 1 },
       ])
     );
+    expect(fileChanges[0]).toMatchObject({ addedLines: 1, removedLines: 1 });
 
     const durableEvent = {
       type: 'tool.completed',

@@ -717,7 +717,7 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
   {
     contractPath: 'workspace-intelligence/verified-goal.v1.json',
     mode: 'runtime-consumed',
-    extensionSurface: 'Assistant and Studio measurable-goal planning',
+    extensionSurface: 'Assistant and Studio bounded-goal planning',
     usage:
       'Creates durable release-readiness, dependency-security, and test-coverage goals with explicit scope, constraints, baselines, and completion criteria.',
   },

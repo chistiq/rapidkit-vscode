@@ -121,7 +121,12 @@ export async function buildStudioBlockerHandoff(
   }
 
   const blockerSignature = computeBlockerSignature({
-    blockers,
+    blockers: [
+      ...blockers,
+      ...doctorFindings.map(
+        (finding) => `${finding.id}:${finding.causalKey ?? ''}:${finding.projectName ?? ''}`
+      ),
+    ],
     ...(affectedProjectNames.length ? { affectedProjectNames } : {}),
     exitCode: null,
   });

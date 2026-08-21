@@ -7,12 +7,12 @@ import {
   buildWorkspaceAgentSyncCliArgs,
 } from '../core/agentContextPack';
 import {
+  AGENT_REPORTS_INDEX_PATH,
   WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
-  AGENT_CUSTOMIZATION_PACK_REPORT_PATH,
-  WORKSPACE_CONTRACT_VERIFY_REPORT_PATH,
   WORKSPACE_EXPLAIN_REPORT_PATH,
-  WORKSPACE_TRACE_REPORT_PATH,
-  WORKSPACE_WHY_REPORT_PATH,
+  WORKSPACE_IMPACT_REPORT_PATH,
+  WORKSPACE_SKILLS_INDEX_PATH,
+  WORKSPACE_VERIFY_REPORT_PATH,
 } from '../core/workspaceIntelligencePaths';
 
 describe('agentContextPack', () => {
@@ -76,16 +76,19 @@ describe('agentContextPack', () => {
     expect(buildCopilotChatContextPrompt()).toContain(
       `#file:${WORKSPACE_CONTEXT_AGENT_REPORT_PATH}`
     );
+    expect(buildCopilotChatContextPrompt()).toContain(`#file:${AGENT_REPORTS_INDEX_PATH}`);
+    expect(buildCopilotChatContextPrompt()).toContain('#file:.workspai/goals/index.json');
     expect(buildCopilotChatContextPrompt()).toContain(
-      `#file:${AGENT_CUSTOMIZATION_PACK_REPORT_PATH}`
+      '#file:.workspai/reports/goal-pack-last-run.json'
     );
+    expect(buildCopilotChatContextPrompt()).toContain(`#file:${WORKSPACE_SKILLS_INDEX_PATH}`);
+    expect(buildCopilotChatContextPrompt()).toContain(`#file:${WORKSPACE_VERIFY_REPORT_PATH}`);
+    expect(buildCopilotChatContextPrompt()).toContain(`#file:${WORKSPACE_IMPACT_REPORT_PATH}`);
     expect(buildCopilotChatContextPrompt()).toContain(`#file:${WORKSPACE_EXPLAIN_REPORT_PATH}`);
-    expect(buildCopilotChatContextPrompt()).toContain(`#file:${WORKSPACE_WHY_REPORT_PATH}`);
-    expect(buildCopilotChatContextPrompt()).toContain(`#file:${WORKSPACE_TRACE_REPORT_PATH}`);
-    expect(buildCopilotChatContextPrompt()).toContain(
-      `#file:${WORKSPACE_CONTRACT_VERIFY_REPORT_PATH}`
-    );
     expect(buildCopilotChatContextPrompt('debug auth')).toContain('debug auth');
-    expect(buildCopilotChatModelPrompt()).toContain('#file:.workspai/reports/workspace-model.json');
+    expect(buildCopilotChatModelPrompt()).toContain(`#file:${AGENT_REPORTS_INDEX_PATH}`);
+    expect(buildCopilotChatModelPrompt()).not.toContain(
+      '#file:.workspai/reports/workspace-model.json'
+    );
   });
 });

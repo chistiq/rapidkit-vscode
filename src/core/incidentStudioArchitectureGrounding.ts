@@ -3,7 +3,14 @@ import * as path from 'path';
 import type { AIModalContext } from './aiService';
 import { scanProjectContext } from './aiService';
 import { buildArchitectureGroundingForPromptAsync } from './aiArchitectureGrounding';
-import { buildWorkspaceModelPromptSection, readWorkspaceModelReport } from './workspaceModelReader';
+import {
+  bootstrapProjectAgent,
+  buildProjectAgentBootstrapPromptSection,
+} from './projectAgentBootstrap.js';
+import {
+  buildWorkspaceAgentContextPromptSection,
+  readWorkspaceAgentContextReport,
+} from './workspaceAgentContextReader.js';
 
 export async function buildIncidentStudioArchitecturePromptSection(input: {
   workspacePath: string;
@@ -30,18 +37,30 @@ export async function buildIncidentStudioArchitecturePromptSection(input: {
         workspaceRootPath: workspacePath,
       };
 
-  const scanned = projectPath
-    ? await scanProjectContext(projectPath, input.projectFramework).catch(() => undefined)
-    : undefined;
-
-  const [architectureGrounding, workspaceModel] = await Promise.all([
-    buildArchitectureGroundingForPromptAsync(ctx, scanned),
-    readWorkspaceModelReport(workspacePath),
+  const [projectBootstrap, workspaceContext] = await Promise.all([
+    bootstrapProjectAgent({
+      projectPath,
+      workspacePath,
+      consumer: 'generic',
+    }),
+    readWorkspaceAgentContextReport(workspacePath),
   ]);
+  const canonicalProjectReady =
+    projectBootstrap.status === 'not-applicable' || projectBootstrap.status === 'ready';
+  const scanned =
+    projectPath && canonicalProjectReady
+      ? await scanProjectContext(projectPath, input.projectFramework).catch(() => undefined)
+      : undefined;
 
-  const sections = [buildWorkspaceModelPromptSection(workspaceModel), architectureGrounding].filter(
-    Boolean
-  );
+  const architectureGrounding = canonicalProjectReady
+    ? await buildArchitectureGroundingForPromptAsync(ctx, scanned)
+    : '';
+
+  const sections = [
+    buildProjectAgentBootstrapPromptSection(projectBootstrap),
+    buildWorkspaceAgentContextPromptSection(workspaceContext),
+    architectureGrounding,
+  ].filter(Boolean);
 
   return sections.join('\n\n');
 }

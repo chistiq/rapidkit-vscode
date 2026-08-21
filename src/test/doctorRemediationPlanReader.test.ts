@@ -803,6 +803,144 @@ describe('doctorRemediationPlanReader', () => {
     expect(readJsonSpy).toHaveBeenCalledTimes(2);
   });
 
+  it('never lets advisory artifact actions lead an aggregate blocking repair queue', async () => {
+    const workspacePath = makeRoot();
+    const reportsPath = path.join(workspacePath, '.workspai', 'reports');
+    await fs.outputJSON(path.join(reportsPath, 'release-readiness-last-run.json'), {
+      generatedAt: new Date().toISOString(),
+      status: 'blocked',
+    });
+    const action = (input: {
+      id: string;
+      order: number;
+      findingStatus: 'blocking' | 'advisory';
+      blocker: string;
+    }) => ({
+      ...input,
+      artifactKind: 'readiness',
+      cardId: 'readiness',
+      title: input.id,
+      phase: 'readiness',
+      scope: 'workspace',
+      findingId: input.id,
+      causalKey: `readiness|${input.id}`,
+      status: 'ready',
+      mode: 'run-command',
+      risk: 'safe',
+      requiresApproval: true,
+      summary: input.blocker,
+      command: 'npx workspai readiness --json',
+      verifyCommand: 'npx workspai readiness --json',
+      cwd: 'workspace',
+      files: [],
+      strategy: [],
+      notes: [],
+    });
+    await fs.outputJSON(path.join(reportsPath, 'artifact-remediation-plan-last-run.json'), {
+      schemaVersion: 'artifact-remediation-plan-v1',
+      generatedAt: new Date(Date.now() + 60_000).toISOString(),
+      actions: [
+        action({
+          id: 'readiness-advisory',
+          order: 1,
+          findingStatus: 'advisory',
+          blocker: 'Optional release metadata is incomplete.',
+        }),
+        action({
+          id: 'readiness-blocker',
+          order: 2,
+          findingStatus: 'blocking',
+          blocker: 'Release verification is blocked.',
+        }),
+      ],
+    });
+
+    const plan = await readDoctorRemediationPlanForStudio({
+      workspacePath,
+      maxSteps: 64,
+      handoff: handoff({
+        workspacePath,
+        cardId: 'readiness',
+        cardLabel: 'Readiness',
+        artifactPath: '.workspai/reports/release-readiness-last-run.json',
+        sourceCommand: 'npx workspai readiness --json',
+        verifyCommand: 'npx workspai readiness --json',
+        scope: 'workspace',
+        projectPath: undefined,
+        blockers: ['Release verification is blocked.'],
+      }),
+    });
+
+    expect(plan?.visibleSteps.map((step) => step.id)).toEqual(['readiness-blocker']);
+  });
+
+  it('keeps an actionable advisory queue usable and resolves portable external project references', async () => {
+    const workspacePath = makeRoot();
+    const projectPath = path.join(path.dirname(workspacePath), 'grpc');
+    const reportsPath = path.join(workspacePath, '.workspai', 'reports');
+    await fs.outputJSON(path.join(reportsPath, 'doctor-last-run.json'), {
+      generatedAt: new Date().toISOString(),
+      status: 'warn',
+    });
+    await fs.outputJSON(path.join(reportsPath, 'artifact-remediation-plan-last-run.json'), {
+      schemaVersion: 'artifact-remediation-plan-v1',
+      generatedAt: new Date(Date.now() + 60_000).toISOString(),
+      actions: [
+        {
+          id: 'doctor.grpc.coverage',
+          artifactKind: 'doctor',
+          cardId: 'doctor',
+          title: 'Measure project coverage',
+          phase: 'doctor',
+          order: 1,
+          scope: 'project',
+          projectName: 'grpc',
+          projectPath: 'external/grpc',
+          findingId: 'coverage',
+          findingStatus: 'advisory',
+          causalKey: 'doctor|grpc|coverage',
+          status: 'ready',
+          mode: 'run-command',
+          risk: 'safe',
+          requiresApproval: true,
+          summary: 'Measure the registered project coverage.',
+          command: 'npx workspai project coverage --run --json',
+          verifyCommand: 'npx workspai doctor project --json',
+          cwd: 'project',
+          files: ['external/grpc/.workspai/reports/project-test-coverage-last-run.json'],
+          strategy: [],
+          notes: [],
+        },
+      ],
+    });
+
+    const plan = await readDoctorRemediationPlanForStudio({
+      workspacePath,
+      maxSteps: 64,
+      handoff: handoff({
+        workspacePath,
+        cardId: 'doctor',
+        cardLabel: 'Workspace Doctor',
+        artifactPath: '.workspai/reports/doctor-last-run.json',
+        sourceCommand: 'npx workspai doctor workspace --json',
+        verifyCommand: 'npx workspai doctor workspace --json',
+        scope: 'project',
+        projectName: 'grpc',
+        projectPath,
+        blockers: ['Project coverage evidence is missing.'],
+      }),
+    });
+
+    expect(plan?.visibleSteps).toHaveLength(1);
+    expect(plan?.visibleSteps[0]).toMatchObject({
+      id: 'doctor.grpc.coverage',
+      projectName: 'grpc',
+      projectPath,
+      findingStatus: 'advisory',
+      studioState: 'ready',
+    });
+  });
+
   it('ignores unsupported or missing remediation plan artifacts', async () => {
     const workspacePath = makeRoot();
     await fs.outputJSON(

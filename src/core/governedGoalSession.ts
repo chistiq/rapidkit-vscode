@@ -41,6 +41,21 @@ export type GovernedGoalScopeSelection =
   | { kind: 'workspace' }
   | { kind: 'projects'; projects: string[] };
 
+export class GovernedGoalSetupCancelledError extends Error {
+  readonly code = 'workspai.goal.setup-cancelled';
+
+  constructor(readonly selection: 'scope' | 'runtime') {
+    super('Goal setup cancelled.');
+    this.name = 'GovernedGoalSetupCancelledError';
+  }
+}
+
+export function isGovernedGoalSetupCancelledError(
+  value: unknown
+): value is GovernedGoalSetupCancelledError {
+  return value instanceof GovernedGoalSetupCancelledError;
+}
+
 function commandFailure(result: GoalCommandResult, incompatibleMessage: string): Error {
   return new Error(result.ok ? incompatibleMessage : result.error);
 }
@@ -110,7 +125,7 @@ export async function prepareGovernedGoalSession(input: {
     if (decision?.scopeSelectionRequired && input.selectScope && !args.includes('--scope')) {
       const selection = await input.selectScope({ projects: decision.scopeProjects ?? [] });
       if (!selection) {
-        throw new Error('Goal scope selection was cancelled. No source was changed.');
+        throw new GovernedGoalSetupCancelledError('scope');
       }
       const scope =
         selection.kind === 'workspace'
@@ -132,7 +147,7 @@ export async function prepareGovernedGoalSession(input: {
         runtimes: decision.runtimeChoices ?? [],
       });
       if (!runtime) {
-        throw new Error('Goal runtime selection was cancelled. No source was changed.');
+        throw new GovernedGoalSetupCancelledError('runtime');
       }
       args.push('--runtime', runtime);
       input.onPhase?.('Binding the selected canonical runtime...');

@@ -25,22 +25,22 @@ const host = {
 describe('Workspai assistant mode contract', () => {
   it('keeps mode behavior independent from permission and presentation', () => {
     expect(resolveWorkspaiAssistantModeContract('agent')).toMatchObject({
-      intent: 'autonomous-repair',
+      executionKind: 'autonomous-repair',
       permissionLevel: 'autopilot',
       canMutateWorkspace: true,
       requiresVerifiedCompletion: true,
     });
     expect(resolveWorkspaiAssistantModeContract('ask')).toMatchObject({
-      intent: 'evidence-answer',
+      executionKind: 'evidence-answer',
       permissionLevel: 'default',
       canMutateWorkspace: false,
     });
     expect(resolveWorkspaiAssistantModeContract('plan')).toMatchObject({
-      intent: 'repair-plan',
+      executionKind: 'repair-plan',
       canMutateWorkspace: false,
     });
     expect(resolveWorkspaiAssistantModeContract('goal')).toMatchObject({
-      intent: 'governed-goal',
+      executionKind: 'governed-goal',
       permissionLevel: 'autopilot',
       canMutateWorkspace: true,
       requiresVerifiedCompletion: true,

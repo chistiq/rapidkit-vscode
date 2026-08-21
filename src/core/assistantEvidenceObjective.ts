@@ -26,7 +26,7 @@ export function buildAssistantEvidenceObjective(input: {
     '## Workspai governed evidence',
     `Freshness: ${input.freshness.verdict} — ${input.freshness.reason}`,
     ...input.evidence.summaryLines.map((line) => `- ${line}`),
-    `Available evidence artifacts: ${JSON.stringify(availablePaths)}`,
+    `Tool-readable evidence artifacts: ${JSON.stringify(availablePaths)}`,
     input.evidence.missingRequired.length > 0
       ? `Missing required evidence: ${JSON.stringify(input.evidence.missingRequired)}`
       : 'Required agent context is present.',
@@ -34,7 +34,7 @@ export function buildAssistantEvidenceObjective(input: {
       ? 'Refresh the governed producer before relying on stale or missing evidence.'
       : 'Use inspect-evidence for the smallest relevant artifact set; do not infer artifact contents from filenames.',
     isAutonomousWorkspaiAssistantMode(input.assistantMode)
-      ? 'You have full autonomy to resolve this request. Start by inspecting the workspace model and dependency graph via query-workspace-graph, then use existing intelligence evidence to understand project structure and health before diving into source. Apply changes through the CLI-owned repair transaction, verify the result, and complete — all within the intelligent loop.'
+      ? 'You have full autonomy to resolve this request. Follow the CLI-authored canonical read order: begin with INDEX, the active Goal and Goal Pack when present, bounded workspace context, and the most relevant generated operational Skill. Use query-workspace-graph only for the smallest missing proof set; do not preload full model or graph exports. Inspect source only after grounding, apply changes through the CLI-owned repair transaction, verify the exact target, and complete within the intelligent loop.'
       : undefined,
     !isAutonomousWorkspaiAssistantMode(input.assistantMode) && input.freshness.verdict !== 'fresh'
       ? 'Ask and Plan are read-only: report the freshness limitation instead of presenting stale evidence as current truth.'

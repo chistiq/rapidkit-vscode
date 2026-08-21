@@ -93,6 +93,26 @@ function receipt(status: AgentBootstrapReceipt['status'] = 'ready'): AgentBootst
   };
 }
 
+function boundedReceipt(status: AgentBootstrapReceipt['status'] = 'ready'): AgentBootstrapReceipt {
+  const value = receipt(status);
+  delete value.canonicalEvidence.workspaceModel;
+  delete value.canonicalEvidence.knowledgeGraph;
+  value.canonicalEvidence.workspaceSkillsIndex =
+    'workspace:.workspai/reports/workspace-skills-index.json';
+  value.canonicalEvidence.boundedGraphSearch =
+    'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json';
+  value.requiredReadOrder = [
+    '.workspai/agent-entry.v1.json',
+    '.workspai/PROJECT-GROUNDING.md',
+    '.workspai/reports/project-context-agent.json',
+    'workspace:.workspai/reports/INDEX.json',
+    'workspace:.workspai/reports/workspace-context-agent.json',
+    'workspace:.workspai/reports/workspace-skills-index.json',
+    'command:workspai workspace graph search <task-query> --scope project:api --limit 12 --json',
+  ];
+  return value;
+}
+
 function runner(value: unknown, exitCode = 0) {
   return vi.fn(async () => ({
     exitCode,
@@ -155,6 +175,20 @@ describe('project agent bootstrap', () => {
     );
     expect(buildProjectAgentBootstrapPromptSection(result)).toContain(
       'Canonical workspace identity: workspai (resolved privately at runtime)'
+    );
+    expect(() => requireReadyProjectAgentBootstrap(result)).not.toThrow();
+  });
+
+  it('accepts the CLI 0.62 bounded Skill and Graph bootstrap route', async () => {
+    const projectPath = await fixture();
+    await mkdir(path.join(projectPath, '.workspai'), { recursive: true });
+    await writeFile(path.join(projectPath, '.workspai', 'agent-entry.v1.json'), '{}\n');
+
+    const result = await bootstrapProjectAgent({ projectPath, run: runner(boundedReceipt()) });
+
+    expect(result.status).toBe('ready');
+    expect(buildProjectAgentBootstrapPromptSection(result)).toContain(
+      'Bounded graph retrieval: command:workspai workspace graph search'
     );
     expect(() => requireReadyProjectAgentBootstrap(result)).not.toThrow();
   });

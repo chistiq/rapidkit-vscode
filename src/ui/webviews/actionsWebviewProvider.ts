@@ -49,7 +49,6 @@ import {
   resolveStudioDependencySecurityTarget,
 } from '../../core/studioDependencySecurity.js';
 import {
-  inferVerifiedGoalIntent,
   assertVerifiedGoalCommandSafety,
   assertVerifiedGoalPackageManifestSafety,
   assertVerifiedGoalSourceMutationSafety,
@@ -57,12 +56,23 @@ import {
   verifiedGoalVerifyArgs,
   type VerifiedGoalContractPayload,
 } from '../../core/verifiedGoalIntent.js';
+import {
+  routeAssistantIntent,
+  type AssistantIntentRoute,
+} from '../../core/assistantIntentRouter.js';
+import {
+  assistantExecutionPolicyInstruction,
+  parseAssistantExecutionPolicy,
+  resolveAssistantExecutionPolicy,
+  type AssistantExecutionPolicy,
+} from '../../core/assistantExecutionPolicy.js';
 import { buildCoreRapidkitShellCommand, runCommandsInTerminal } from '../../utils/terminalExecutor';
 import { buildRapidkitCommand } from '../../utils/platformCapabilities';
 import { createWorkspaceCommand } from '../../commands/createWorkspace';
 import type { ScaffoldFramework } from '../../core/scaffoldKits';
 import {
   isStudioBlockerHandoff,
+  type StudioCausalRepairTarget,
   type StudioBlockerHandoff,
 } from '../../contracts/studio-blocker-handoff-contract.js';
 import { buildStudioBlockerHandoff } from '../../core/studioBlockerHandoffBuilder.js';
@@ -148,6 +158,7 @@ import {
   runGoalCommand,
 } from '../../core/workspaceGoals.js';
 import {
+  isGovernedGoalSetupCancelledError,
   prepareGovernedGoalSession,
   restoreOrRenewGovernedGoalSession,
 } from '../../core/governedGoalSession.js';
@@ -193,15 +204,15 @@ import {
   projectWorkspaceRepairTransactionForConsumer,
   hydrateStudioRepairEventFileChanges,
   readCliOwnedRepairById,
-  readCliOwnedRepairFileComparison,
-  resolveCliOwnedRepairFilePath,
   readLatestCliOwnedRepair,
   type WorkspaceRepairCliFileChange,
   type WorkspaceRepairDecision,
   type WorkspaceRepairProgress,
 } from '../../core/workspaceRepairCliClient.js';
+import { resolveStudioRepairComparisonUris } from '../../core/studioRepairDiffDocuments.js';
 import {
   authorizeStudioWorkspacePatchTargets,
+  compileInspectedStudioDeletePatches,
   compileInspectedStudioTextEdits,
 } from '../../core/studioWorkspaceFileTransactions.js';
 import { resolveStudioRepairProjectTarget } from '../../core/studioRepairProjectTarget.js';
@@ -900,6 +911,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       openDashboardSection: (data) => this._openDashboardSection(data),
       openWorkspaceFile: (data) => this._openSidebarWorkspaceFile(data),
       openWorkspaceDiff: (data) => this._openSidebarWorkspaceDiff(data),
+      reviewWorkspaceChanges: (data) => this._reviewSidebarWorkspaceChanges(data),
       undoAgentPatch: (data) => this._undoStudioAgentPatch(data),
       sendInlineScope: () => this._sendInlineScope(),
       sendInlineModels: () => this._sendInlineModels(),
@@ -999,54 +1011,97 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     if (!workspacePath || !relativePath || !transactionId || path.isAbsolute(relativePath)) {
       throw new Error('A workspace-relative path and repair transaction id are required.');
     }
-    const transaction = await readCliOwnedRepairById({ workspacePath, transactionId });
-    const comparison = await readCliOwnedRepairFileComparison({
+    const comparison = await resolveStudioRepairComparisonUris({
       workspacePath,
-      transaction,
+      transactionId,
       relativePath,
-    });
-    if (comparison.stale) {
-      throw new Error(
-        `Cannot open an exact transaction diff for ${relativePath}: the file changed again after ${transactionId}.`
-      );
-    }
-    if (
-      comparison.binary ||
-      comparison.originalContent === undefined ||
-      comparison.patchedContent === undefined
-    ) {
-      throw new Error(
-        `Native text diff is unavailable for binary or oversized file ${relativePath}.`
-      );
-    }
-    let languageId = 'plaintext';
-    try {
-      languageId = (
-        await vscode.workspace.openTextDocument(
-          vscode.Uri.file(
-            resolveCliOwnedRepairFilePath({ workspacePath, transaction, relativePath })
-          )
-        )
-      ).languageId;
-    } catch {
-      // Added/deleted files may not have a live document; plain text still
-      // preserves an exact native before/after comparison.
-    }
-    const beforeDocument = await vscode.workspace.openTextDocument({
-      language: languageId,
-      content: comparison.originalContent,
-    });
-    const afterDocument = await vscode.workspace.openTextDocument({
-      language: languageId,
-      content: comparison.patchedContent,
     });
     await vscode.commands.executeCommand(
       'vscode.diff',
-      beforeDocument.uri,
-      afterDocument.uri,
+      comparison.before,
+      comparison.after,
       `${relativePath} · Workspai repair ${transactionId.slice(0, 12)}`,
       { preview: true, preserveFocus: false }
     );
+  }
+
+  /**
+   * Open every comparable file of a repair change set in one native review.
+   *
+   * Files that cannot be compared exactly (stale, binary, or oversized) are
+   * skipped with an explicit report instead of silently shrinking the review,
+   * so the user always knows which changes the comparison covers.
+   */
+  private async _reviewSidebarWorkspaceChanges(data: unknown): Promise<void> {
+    const record =
+      data && typeof data === 'object' && !Array.isArray(data)
+        ? (data as Record<string, unknown>)
+        : {};
+    const requestedRoot =
+      typeof record.workspacePath === 'string' ? record.workspacePath.trim() : '';
+    const workspacePath =
+      requestedRoot || (await resolvePreferredAIModalContext()).workspaceRootPath || '';
+    const files = Array.isArray(record.files)
+      ? record.files
+          .filter(
+            (entry): entry is Record<string, unknown> =>
+              Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)
+          )
+          .map((entry) => ({
+            relativePath: typeof entry.relativePath === 'string' ? entry.relativePath.trim() : '',
+            transactionId:
+              typeof entry.transactionId === 'string' ? entry.transactionId.trim() : '',
+          }))
+          .filter((entry) => entry.relativePath && entry.transactionId)
+      : [];
+    if (!workspacePath || files.length === 0) {
+      throw new Error('A workspace path and at least one changed file are required for review.');
+    }
+    const comparable: {
+      relativePath: string;
+      resource: [vscode.Uri, vscode.Uri, vscode.Uri];
+    }[] = [];
+    const skipped: string[] = [];
+    for (const file of files) {
+      const comparison = await resolveStudioRepairComparisonUris({
+        workspacePath,
+        transactionId: file.transactionId,
+        relativePath: file.relativePath,
+      }).catch(() => undefined);
+      if (!comparison) {
+        skipped.push(file.relativePath);
+        continue;
+      }
+      comparable.push({
+        relativePath: file.relativePath,
+        resource: [comparison.label, comparison.before, comparison.after],
+      });
+    }
+    if (comparable.length === 0) {
+      throw new Error(
+        'No changed file in this set has an exact comparison. The files changed again after the repair, or they are binary.'
+      );
+    }
+    if (comparable.length === 1) {
+      await vscode.commands.executeCommand(
+        'vscode.diff',
+        comparable[0].resource[1],
+        comparable[0].resource[2],
+        `${comparable[0].relativePath} · Workspai repair`,
+        { preview: true, preserveFocus: false }
+      );
+    } else {
+      await vscode.commands.executeCommand(
+        'vscode.changes',
+        `Workspai repair · ${comparable.length} changed files`,
+        comparable.map((entry) => entry.resource)
+      );
+    }
+    if (skipped.length > 0) {
+      void vscode.window.showWarningMessage(
+        `Review skipped ${skipped.length} file(s) without an exact comparison: ${skipped.join(', ')}`
+      );
+    }
   }
 
   private async _undoStudioAgentPatch(data: unknown): Promise<void> {
@@ -2239,8 +2294,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         : undefined;
     const assistantMode = isWorkspaiAssistantMode(payloadRecord.assistantMode)
       ? payloadRecord.assistantMode
-      : 'agent';
-    const assistantModeContract = resolveWorkspaiAssistantModeContract(assistantMode);
+      : 'ask';
     const sessionId =
       typeof payloadRecord.sessionId === 'string' && payloadRecord.sessionId.trim().length > 0
         ? payloadRecord.sessionId.trim()
@@ -2295,12 +2349,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       });
       this._postInlineCreate('sidebarStudioThinking', {
         sessionId,
-        label:
-          assistantModeContract.intent === 'repair-plan'
-            ? 'Preparing an evidence-backed repair plan...'
-            : assistantModeContract.intent === 'governed-goal'
-              ? 'Defining a measurable CLI-governed goal...'
-              : 'Preparing the autonomous evidence repair...',
+        label: handoff
+          ? 'Preparing the evidence-backed blocker repair...'
+          : 'Understanding your request...',
       });
       const autonomousWorkspacePath = handoff?.workspacePath ?? aiContext.workspaceRootPath;
       if (autonomousWorkspacePath) {
@@ -2319,6 +2370,15 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       }
       throw new Error('Select a Workspai workspace before starting an Assistant session.');
     } catch (error) {
+      if (isGovernedGoalSetupCancelledError(error)) {
+        this._postInlineCreate('sidebarStudioDone', {
+          sessionId,
+          modelId: requestedModelId ?? 'auto',
+          assistantMode,
+          answer: 'Goal setup cancelled.',
+        });
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       this._postInlineCreate('sidebarStudioError', { sessionId, error: message });
     }
@@ -2353,7 +2413,125 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     handoff?: StudioBlockerHandoff;
     history?: AIConversationHistoryEntry[];
   }): Promise<void> {
-    const mode = resolveWorkspaiAssistantModeContract(input.assistantMode);
+    if (!this._context) {
+      throw new Error('Workspai Assistant requires extension context.');
+    }
+
+    const store = new VSCodeStudioAgentSessionStore(this._context);
+    const persistedCandidate = input.sessionId ? await store.load(input.sessionId) : undefined;
+    const persistedGoalProjectPath =
+      input.assistantMode === 'goal' && persistedCandidate?.goal?.scope.kind === 'project'
+        ? persistedCandidate.goal.scope.projectPath
+        : undefined;
+    const persisted =
+      persistedCandidate &&
+      studioAgentSessionScopeMatches(persistedCandidate, {
+        ...input,
+        projectPath: input.projectPath ?? persistedGoalProjectPath,
+      }) &&
+      persistedCandidate.assistantMode === input.assistantMode &&
+      persistedCandidate.status !== 'completed' &&
+      persistedCandidate.status !== 'cancelled'
+        ? persistedCandidate
+        : undefined;
+    let intentRoute: AssistantIntentRoute | undefined;
+    let executionPolicy: AssistantExecutionPolicy | undefined = persisted?.executionPolicy
+      ? (parseAssistantExecutionPolicy(persisted.executionPolicy, input.assistantMode) ?? undefined)
+      : undefined;
+    if (!executionPolicy && persisted) {
+      executionPolicy = resolveAssistantExecutionPolicy({
+        selectedMode: input.assistantMode,
+        requestIntent:
+          persisted.cardId === 'assistant:agent:question' ||
+          persisted.cardId === 'assistant:agent:evidence-answer'
+            ? 'question'
+            : input.assistantMode === 'goal'
+              ? 'goal'
+              : 'engineering-task',
+        routeConfidence: 'high',
+      });
+    }
+    if (!input.handoff && !persisted) {
+      intentRoute = await routeAssistantIntent({
+        task: input.task,
+        selectedMode: input.assistantMode,
+        hasProjectScope: Boolean(input.projectPath),
+        complete: async ({ prompt, toolName, toolSchema }) => {
+          const response = await askConfiguredAIProviderForToolAction(
+            this._context!,
+            [{ role: 'user', content: prompt }],
+            [
+              {
+                name: toolName,
+                description:
+                  'Classify the request before Workspai chooses conversation, Agent, or Goal orchestration.',
+                inputSchema: toolSchema as unknown as Record<string, unknown>,
+              },
+            ],
+            undefined,
+            input.requestedModelId,
+            [
+              { path: input.projectPath, token: '$PROJECT' },
+              { path: input.workspacePath, token: '$WORKSPACE' },
+            ]
+          );
+          return response.type === 'tool'
+            ? { type: 'tool', toolName: response.toolName, input: response.input }
+            : { type: 'text', text: response.text };
+        },
+      });
+      executionPolicy = resolveAssistantExecutionPolicy({
+        selectedMode: input.assistantMode,
+        requestIntent: intentRoute.intent,
+        routeConfidence: intentRoute.confidence,
+      });
+      if (executionPolicy.suggestion) {
+        this._postInlineCreate('sidebarStudioModeSuggestion', {
+          sessionId: input.sessionId,
+          fromMode: input.assistantMode,
+          toMode: executionPolicy.suggestion.mode,
+          label: executionPolicy.suggestion.label,
+          description: executionPolicy.suggestion.description,
+          request: intentRoute.normalizedRequest,
+        });
+      }
+      if (executionPolicy.profile === 'direct-response') {
+        const answer =
+          executionPolicy.directResponse ||
+          intentRoute.userResponse ||
+          (input.assistantMode === 'goal'
+            ? 'Describe the durable engineering outcome you want this Goal to achieve.'
+            : 'What would you like me to change, investigate, or explain?');
+        this._postInlineCreate('sidebarStudioDone', {
+          sessionId: input.sessionId,
+          modelId: input.requestedModelId ?? 'auto',
+          assistantMode: input.assistantMode,
+          answer,
+        });
+        return;
+      }
+      this._postInlineCreate('sidebarStudioThinking', {
+        sessionId: input.sessionId,
+        label:
+          executionPolicy.profile === 'governed-goal'
+            ? 'Defining the governed Goal...'
+            : executionPolicy.profile === 'evidence-answer'
+              ? 'Reading the relevant workspace evidence...'
+              : executionPolicy.profile === 'implementation-plan'
+                ? 'Preparing an evidence-backed plan...'
+                : intentRoute.intent === 'goal'
+                  ? 'Continuing as a one-shot Agent task...'
+                  : 'Preparing the evidence-backed Agent loop...',
+      });
+    }
+
+    executionPolicy ??= resolveAssistantExecutionPolicy({
+      selectedMode: input.assistantMode,
+      requestIntent: input.handoff ? 'engineering-task' : 'clarification',
+      routeConfidence: 'high',
+    });
+    const mode = resolveWorkspaiAssistantModeContract(executionPolicy.toolMode);
+
     let projectBootstrapPrompt = '';
     if (input.projectPath) {
       this._postInlineCreate('sidebarStudioThinking', {
@@ -2383,27 +2561,6 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       });
       return;
     }
-    if (!this._context) {
-      throw new Error('Workspai Assistant requires extension context.');
-    }
-
-    const store = new VSCodeStudioAgentSessionStore(this._context);
-    const persistedCandidate = input.sessionId ? await store.load(input.sessionId) : undefined;
-    const persistedGoalProjectPath =
-      input.assistantMode === 'goal' && persistedCandidate?.goal?.scope.kind === 'project'
-        ? persistedCandidate.goal.scope.projectPath
-        : undefined;
-    const persisted =
-      persistedCandidate &&
-      studioAgentSessionScopeMatches(persistedCandidate, {
-        ...input,
-        projectPath: input.projectPath ?? persistedGoalProjectPath,
-      }) &&
-      persistedCandidate.assistantMode === input.assistantMode &&
-      persistedCandidate.status !== 'completed' &&
-      persistedCandidate.status !== 'cancelled'
-        ? persistedCandidate
-        : undefined;
     let verifiedGoal: VerifiedGoalContractPayload | undefined = persisted?.goal;
     let governedGoal = persisted?.governedGoal;
     let governedGoalId: string | undefined;
@@ -2434,7 +2591,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       });
       const prepared = await prepareGovernedGoalSession({
         workspacePath: input.workspacePath,
-        objective: input.task,
+        objective: intentRoute?.normalizedRequest ?? input.task,
         ...(input.projectPath && projectName ? { projectName } : {}),
         selectScope: selectGovernedGoalScope,
         selectCoverageRuntime: selectGovernedGoalRuntime,
@@ -2449,36 +2606,6 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       verifiedGoal = prepared.verifiedGoal;
       goalMaxAttempts = prepared.maxAttempts;
       goalAttemptsUsed = prepared.attemptsUsed;
-    }
-    if (input.assistantMode === 'agent' && !verifiedGoal) {
-      const intent = inferVerifiedGoalIntent({
-        task: input.task,
-        hasProjectScope: Boolean(input.projectPath),
-      });
-      if (intent) {
-        const projectName = resolveStudioRepairProjectTarget({
-          explicitProjectName: input.projectName,
-          affectedProjectNames: input.handoff?.affectedProjectNames,
-          projectPath: input.projectPath,
-        });
-        const prepared = await prepareGovernedGoalSession({
-          workspacePath: input.workspacePath,
-          objective: input.task,
-          ...(input.projectPath && projectName ? { projectName } : {}),
-          selectScope: selectGovernedGoalScope,
-          selectCoverageRuntime: selectGovernedGoalRuntime,
-          onPhase: (label) =>
-            this._postInlineCreate('sidebarStudioThinking', {
-              sessionId: input.sessionId,
-              label,
-            }),
-        });
-        governedGoalId = prepared.goalPackId;
-        governedGoal = prepared.governedGoal;
-        verifiedGoal = prepared.verifiedGoal;
-        goalMaxAttempts = prepared.maxAttempts;
-        goalAttemptsUsed = prepared.attemptsUsed;
-      }
     }
     const verifiedGoalProject =
       verifiedGoal?.scope.kind === 'project'
@@ -2545,7 +2672,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       }
     }
     const baseAssistantObjective = buildAssistantEvidenceObjective({
-      task: input.task,
+      task: [input.task, assistantExecutionPolicyInstruction(executionPolicy)]
+        .filter((line): line is string => Boolean(line))
+        .join('\n\n'),
       assistantMode: input.assistantMode,
       evidence: assistantEvidence,
       freshness: evidenceFreshness,
@@ -2726,6 +2855,13 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         projectPath?: string;
         reportProgress?: (data: Record<string, unknown>) => Promise<void>;
       }) => {
+        if (input.handoff?.selectedTarget?.sourceMutation === 'forbidden') {
+          return {
+            ok: false,
+            error:
+              'The selected causal target is CLI-command-owned and forbids source mutation. Execute its canonical remediation action.',
+          };
+        }
         const normalized = normalizePatchesForWorkspaceScope({
           workspacePath: request.workspacePath,
           projectPath: request.projectPath,
@@ -2774,15 +2910,16 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         });
         const result = await executeCliOwnedPatchRepair({
           workspacePath: request.workspacePath,
-          projectPath: request.projectPath,
+          projectPath: request.projectPath ?? input.handoff?.selectedTarget?.projectPath,
           projectName: resolveStudioRepairProjectTarget({
-            explicitProjectName: input.projectName,
+            explicitProjectName: input.handoff?.selectedTarget?.projectName ?? input.projectName,
             affectedProjectNames: input.handoff?.affectedProjectNames,
-            projectPath: request.projectPath,
+            projectPath: request.projectPath ?? input.handoff?.selectedTarget?.projectPath,
           }),
           cardId: input.handoff?.cardId ?? verifiedGoal?.id ?? `assistant:${input.assistantMode}`,
           goalId: governedGoalId,
           blockerSignature: input.handoff?.blockerSignature,
+          targetActionIds: input.handoff?.selectedTarget?.actionIds,
           approvedBy: `vscode:${input.assistantMode}`,
           patches: normalized.map((patch) => ({
             relativePath: patch.relativePath,
@@ -2832,6 +2969,13 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         projectPath?: string;
         reportProgress?: (data: Record<string, unknown>) => Promise<void>;
       }) => {
+        if (input.handoff?.selectedTarget?.sourceMutation === 'forbidden') {
+          return {
+            ok: false,
+            error:
+              'The selected causal target is CLI-command-owned and forbids source deletion. Execute its canonical remediation action.',
+          };
+        }
         if (verifiedGoal) {
           assertVerifiedGoalSourceMutationSafety({
             goal: verifiedGoal,
@@ -2856,29 +3000,18 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               'The verified dependency goal forbids deleting manifests or lockfiles without breaking-change authorization.',
           };
         }
-        const normalized = normalizePatchesForWorkspaceScope({
-          workspacePath: request.workspacePath,
-          projectPath: request.projectPath,
-          patches: request.paths.map((relativePath) => ({
-            relativePath,
-            operation: 'delete',
-            isNewFile: false,
-            patchedContent: '',
-            hunks: [],
-            status: 'pending',
-            baseSha256: inspectedSource.get(relativePath),
-          })),
-        });
-        const unauthorized = await authorizeStudioWorkspacePatchTargets({
-          workspacePath: request.workspacePath,
-          projectPath: request.projectPath,
-          patches: normalized,
-          inspectedSource,
-        });
-        if (unauthorized.length > 0) {
+        let normalized: FilePatch[];
+        try {
+          normalized = await compileInspectedStudioDeletePatches({
+            workspacePath: request.workspacePath,
+            projectPath: request.projectPath,
+            paths: request.paths,
+            inspectedSource,
+          });
+        } catch (error) {
           return {
             ok: false,
-            error: `Inspect every target before deleting: ${unauthorized.map((entry) => entry.relativePath).join(', ')}`,
+            error: error instanceof Error ? error.message : String(error),
           };
         }
         await this._assertSidebarStudioMutationAllowed({
@@ -2890,15 +3023,16 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         try {
           const result = await executeCliOwnedPatchRepair({
             workspacePath: request.workspacePath,
-            projectPath: request.projectPath,
+            projectPath: request.projectPath ?? input.handoff?.selectedTarget?.projectPath,
             projectName: resolveStudioRepairProjectTarget({
-              explicitProjectName: input.projectName,
+              explicitProjectName: input.handoff?.selectedTarget?.projectName ?? input.projectName,
               affectedProjectNames: input.handoff?.affectedProjectNames,
-              projectPath: request.projectPath,
+              projectPath: request.projectPath ?? input.handoff?.selectedTarget?.projectPath,
             }),
             cardId: input.handoff?.cardId ?? verifiedGoal?.id ?? `assistant:${input.assistantMode}`,
             goalId: governedGoalId,
             blockerSignature: input.handoff?.blockerSignature,
+            targetActionIds: input.handoff?.selectedTarget?.actionIds,
             approvedBy: `vscode:${input.assistantMode}`,
             patches: normalized.map((patch) => ({
               relativePath: patch.relativePath,
@@ -3179,7 +3313,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             ...goalRemediationHandoff,
             ...(request.projectPath ? { projectPath: request.projectPath, scope: 'project' } : {}),
           },
-          maxSteps: 8,
+          maxSteps: 64,
         });
         if (!plan) {
           return {
@@ -3241,7 +3375,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             ...goalRemediationHandoff,
             ...(request.projectPath ? { projectPath: request.projectPath, scope: 'project' } : {}),
           },
-          maxSteps: 8,
+          maxSteps: 64,
         });
         const step = plan?.visibleSteps.find((candidate) => candidate.id === request.stepId);
         if (
@@ -3443,11 +3577,11 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       governedGoalId ??
       verifiedGoal?.id ??
       input.handoff?.cardId ??
-      `assistant:${input.assistantMode}`;
+      `assistant:${input.assistantMode}:${executionPolicy.profile}`;
     const registry = createStudioAgentWorkspaiToolRegistry({
       host,
       cardId: scopeId,
-      assistantMode: input.assistantMode,
+      assistantMode: mode.id,
       ...(governedGoalId || verifiedGoal ? { goalId: governedGoalId ?? verifiedGoal!.id } : {}),
       ...(governedGoal ? { goalCompletionMode: governedGoal.completionMode } : {}),
     });
@@ -3457,6 +3591,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       ...(effectiveProjectPath ? { projectPath: effectiveProjectPath } : {}),
       cardId: scopeId,
       assistantMode: input.assistantMode,
+      executionPolicy,
       ...(input.requestedModelId ? { selectedModelId: input.requestedModelId } : {}),
       permissionLevel: mode.permissionLevel,
       requiresVerifiedCompletion: mode.requiresVerifiedCompletion,
@@ -3488,16 +3623,6 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       persisted,
       input.history
     );
-    if (
-      input.assistantMode === 'agent' &&
-      !governedGoal &&
-      !verifiedGoal &&
-      !input.handoff &&
-      !persisted &&
-      scopeId.startsWith('assistant:')
-    ) {
-      model.freeFormPreflight = true;
-    }
     const session = new StudioAgentSession(options, model, registry, store);
     if (persisted) {
       await this._replayPersistedStudioAgentEvents({
@@ -3661,6 +3786,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       input.task,
       `Card: ${input.handoff.cardLabel ?? input.handoff.cardId}`,
       `Blockers: ${input.handoff.blockers.join('; ')}`,
+      `Selected causal target: ${JSON.stringify(input.handoff.selectedTarget ?? null)}`,
       `Verify command: ${input.handoff.verifyCommand ?? 'resolve from governed evidence'}`,
       'Use Studio inspect tools to load file bodies only when needed. Generated reports must be refreshed through their governed producers, never patched.',
       'Canonical .workspai/.rapidkit state, repair transactions, goals, registries, and evidence are control-plane inputs, never model-owned source targets.',
@@ -3681,6 +3807,32 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     const remediationStepAttempts = new Map<string, { blockerSignature?: string; count: number }>();
     const inspectedSource = new Map<string, string | null>();
     let activeBlockerSignature = activeHandoff.blockerSignature;
+    const bindSelectedTarget = (target: StudioCausalRepairTarget): void => {
+      activeHandoff = {
+        ...activeHandoff,
+        selectedTarget: {
+          ...target,
+          actionIds: [...new Set(target.actionIds)].sort(),
+        },
+        ...(target.projectPath ? { projectPath: target.projectPath } : {}),
+      };
+    };
+    const bindSelectedRemediationStep = (step: DoctorRemediationPlanStepView): void => {
+      const actionId = step.actionId ?? step.id;
+      bindSelectedTarget({
+        findingId: step.issueId ?? actionId,
+        ...(step.causalKey ? { causalKey: step.causalKey } : {}),
+        actionIds: [actionId],
+        ...(step.files.length > 0 ? { sourcePaths: step.files } : {}),
+        ...(step.projectName && step.projectName !== 'workspace'
+          ? { projectName: step.projectName }
+          : {}),
+        ...(step.projectPath ? { projectPath: step.projectPath } : {}),
+        repairMode: step.repairMode,
+        sourceMutation: step.sourceMutation,
+        ...(step.verifyCommand ? { verifyCommand: step.verifyCommand } : {}),
+      });
+    };
 
     const refreshDependencyDoctorEvidence = async (workspacePath: string) => {
       const plan = resolveDashboardCommandExecutionPlan('checkWorkspaceHealth');
@@ -3827,6 +3979,13 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         projectPath?: string;
         reportProgress?: (data: Record<string, unknown>) => Promise<void>;
       }) => {
+        if (activeHandoff.selectedTarget?.sourceMutation === 'forbidden') {
+          return {
+            ok: false,
+            error:
+              'The selected causal target is CLI-command-owned and forbids source mutation. Execute its canonical remediation action.',
+          };
+        }
         if (!studioCardSupportsGovernedSourceMutation(cardRepairCapability.cardId)) {
           return {
             ok: false,
@@ -3861,13 +4020,15 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         });
         const result = await executeCliOwnedPatchRepair({
           workspacePath: request.workspacePath,
-          projectPath: request.projectPath,
+          projectPath: request.projectPath ?? activeHandoff.selectedTarget?.projectPath,
           projectName: resolveStudioRepairProjectTarget({
+            explicitProjectName: activeHandoff.selectedTarget?.projectName,
             affectedProjectNames: activeHandoff.affectedProjectNames,
-            projectPath: request.projectPath,
+            projectPath: request.projectPath ?? activeHandoff.selectedTarget?.projectPath,
           }),
           cardId: activeHandoff.cardId,
           blockerSignature: activeBlockerSignature,
+          targetActionIds: activeHandoff.selectedTarget?.actionIds,
           approvedBy: 'vscode:studio-agent',
           patches: normalized.map((patch) => ({
             relativePath: patch.relativePath,
@@ -3917,12 +4078,30 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         projectPath?: string;
         reportProgress?: (data: Record<string, unknown>) => Promise<void>;
       }) => {
+        if (activeHandoff.selectedTarget?.sourceMutation === 'forbidden') {
+          return {
+            ok: false,
+            error:
+              'The selected causal target is CLI-command-owned and forbids source deletion. Execute its canonical remediation action.',
+          };
+        }
         if (!studioCardSupportsGovernedSourceMutation(cardRepairCapability.cardId)) {
           return {
             ok: false,
             error:
               'This card is producer-owned. Refresh its canonical producer; source deletion is not authorized.',
           };
+        }
+        let patches: FilePatch[];
+        try {
+          patches = await compileInspectedStudioDeletePatches({
+            workspacePath: request.workspacePath,
+            projectPath: request.projectPath,
+            paths: request.paths,
+            inspectedSource,
+          });
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
         }
         await this._assertSidebarStudioMutationAllowed({
           workspacePath: request.workspacePath,
@@ -3932,19 +4111,20 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         });
         const result = await executeCliOwnedPatchRepair({
           workspacePath: request.workspacePath,
-          projectPath: request.projectPath,
+          projectPath: request.projectPath ?? activeHandoff.selectedTarget?.projectPath,
           projectName: resolveStudioRepairProjectTarget({
+            explicitProjectName: activeHandoff.selectedTarget?.projectName,
             affectedProjectNames: activeHandoff.affectedProjectNames,
-            projectPath: request.projectPath,
+            projectPath: request.projectPath ?? activeHandoff.selectedTarget?.projectPath,
           }),
           cardId: activeHandoff.cardId,
           blockerSignature: activeBlockerSignature,
+          targetActionIds: activeHandoff.selectedTarget?.actionIds,
           approvedBy: 'vscode:studio-agent',
-          patches: request.paths.map((relativePath) => ({
-            relativePath,
+          patches: patches.map((patch) => ({
+            relativePath: patch.relativePath,
             operation: 'delete',
-            baseSha256:
-              inspectedSource.get(relativePath) ?? repairEvidence.expectedBaseSha256[relativePath],
+            baseSha256: patch.baseSha256,
           })),
           reportProgress: request.reportProgress
             ? (progress: WorkspaceRepairProgress) => request.reportProgress!({ repair: progress })
@@ -4462,7 +4642,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             ...activeHandoff,
             ...(request.projectPath ? { projectPath: request.projectPath } : {}),
           },
-          maxSteps: 8,
+          maxSteps: 64,
         });
         const step = plan?.visibleSteps.find(
           (candidate) =>
@@ -4471,26 +4651,22 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             (candidate.canApply || candidate.executable)
         );
         if (!step) {
-          return {
-            ok: false,
-            changed: false,
-            evidenceGeneration: repairEvidence.evidenceFingerprint,
-            output: {
-              recoveryPath: 'general-source-repair',
-              nextAction: 'general-source-repair',
-              sourceCandidates: repairEvidence.autonomousTargetPaths,
-              recommendedTools: [
-                'inspect-source',
-                'search-workspace',
-                'inspect-workspace-diagnostics',
-                'run-workspace-command',
-                'apply-workspace-patch',
-              ],
-            },
-            error:
-              'No exact executable action matches the active blocker. Continue with inspected source repair; do not create a card-wide transaction.',
-          };
+          // A persisted plan is an optimization, not the source of truth. The
+          // CLI builds the current canonical plan under lock and selects one
+          // causal family. Only its bounded result may delegate to source
+          // diagnosis; absence of an IDE-side plan must never authorize an
+          // arbitrary card-wide model patch.
+          const firstBlockingFinding = activeHandoff.doctorFindings?.find(
+            (finding) => finding.status === 'blocking'
+          );
+          return executeCanonicalRepair({
+            workspacePath: request.workspacePath,
+            projectPath: request.projectPath ?? firstBlockingFinding?.projectPath,
+            projectName: firstBlockingFinding?.projectName,
+            reportProgress: request.reportProgress,
+          });
         }
+        bindSelectedRemediationStep(step);
         return executeCanonicalRepair({
           workspacePath: request.workspacePath,
           projectPath: request.projectPath || step.projectPath,
@@ -4605,7 +4781,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         projectPath: input.projectPath,
         handoff: activeHandoff,
       });
-      return presentStudioCliOwnedRepairObservation({
+      const observation = presentStudioCliOwnedRepairObservation({
         result,
         sourceCandidates: selectStudioPostCliSourceCandidates({
           autonomousTargetPaths: repairEvidence.autonomousTargetPaths,
@@ -4624,6 +4800,56 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           'complete-dependency-transaction',
         ],
       });
+      if (activeHandoff.selectedTarget) {
+        observation.output.selectedTarget = activeHandoff.selectedTarget;
+      }
+      const targetClosed =
+        result.transaction.state === 'closed' &&
+        result.transaction.verification?.status === 'passed' &&
+        result.transaction.verification?.targetStatus === 'passed';
+      if (!targetClosed) {
+        return observation;
+      }
+      const evidenceBundle = await buildDashboardEvidenceBundle({
+        workspacePath: input.workspacePath,
+        projectPath: input.projectPath,
+      });
+      const refreshedCard = evidenceBundle.cards.find((card) => card.id === activeHandoff.cardId);
+      if (!refreshedCard || !dashboardEvidenceCardIsBlocking(refreshedCard)) {
+        return { ...observation, cardBlocking: false };
+      }
+      const previousSignature = activeBlockerSignature;
+      activeHandoff = await buildStudioBlockerHandoff({
+        card: refreshedCard,
+        workspacePath: input.workspacePath,
+        projectPath: input.projectPath,
+        handoffSource: 'dashboard',
+        extensionContext: this._context,
+      });
+      activeBlockerSignature = activeHandoff.blockerSignature;
+      repairEvidence = await collectSidebarStudioRepairEvidence({
+        workspacePath: input.workspacePath,
+        projectPath: input.projectPath,
+        handoff: activeHandoff,
+      });
+      return {
+        ...observation,
+        cardBlocking: true,
+        blockerSignature: activeBlockerSignature,
+        evidenceGeneration: repairEvidence.evidenceFingerprint,
+        output: {
+          ...observation.output,
+          nextAction: 'next-causal-target',
+          previousBlockerSignature: previousSignature,
+          activeHandoff: {
+            cardId: activeHandoff.cardId,
+            blockers: activeHandoff.blockers,
+            blockerSignature: activeHandoff.blockerSignature,
+            sourceCommand: activeHandoff.sourceCommand,
+            verifyCommand: activeHandoff.verifyCommand,
+          },
+        },
+      };
     };
     const executeCanonicalRepair = async (request: {
       workspacePath: string;
@@ -4638,20 +4864,33 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         actionLabel: 'Studio Agent CLI-owned repair transaction',
         governedRepair: { contractAuthorized: true, reversible: true },
       });
-      return presentCliRepairResult(
-        await executeCliOwnedCanonicalRepair({
-          workspacePath: request.workspacePath,
-          cardId: activeHandoff.cardId,
-          projectName: resolveStudioRepairProjectTarget({
-            explicitProjectName: request.projectName,
-            affectedProjectNames: activeHandoff.affectedProjectNames,
-            projectPath: request.projectPath,
-          }),
-          actionId: request.actionId,
-          approvedBy: 'vscode:studio-agent',
-          reportProgress: reportCliRepairProgress(request.reportProgress),
-        })
-      );
+      const result = await executeCliOwnedCanonicalRepair({
+        workspacePath: request.workspacePath,
+        cardId: activeHandoff.cardId,
+        projectName: resolveStudioRepairProjectTarget({
+          explicitProjectName: request.projectName,
+          affectedProjectNames: activeHandoff.affectedProjectNames,
+          projectPath: request.projectPath,
+        }),
+        actionId: request.actionId,
+        approvedBy: 'vscode:studio-agent',
+        reportProgress: reportCliRepairProgress(request.reportProgress),
+      });
+      const target = result.transaction.target;
+      if (target.actionIds.length > 0 && !activeHandoff.selectedTarget) {
+        bindSelectedTarget({
+          findingId: request.actionId ?? target.actionIds[0],
+          actionIds: target.actionIds,
+          ...(target.projectName ? { projectName: target.projectName } : {}),
+          ...(target.projectPath
+            ? { projectPath: path.resolve(request.workspacePath, target.projectPath) }
+            : {}),
+          repairMode: 'verify-before-fix',
+          sourceMutation: 'allowed',
+          ...(activeHandoff.verifyCommand ? { verifyCommand: activeHandoff.verifyCommand } : {}),
+        });
+      }
+      return presentCliRepairResult(result);
     };
 
     const registry = createStudioAgentWorkspaiToolRegistry({
@@ -5444,13 +5683,17 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         }
         const result = await executeCliOwnedPatchRepair({
           workspacePath,
-          projectPath: handoff.projectPath ?? scope.projectPath,
+          projectPath:
+            handoff.selectedTarget?.projectPath ?? handoff.projectPath ?? scope.projectPath,
           projectName: resolveStudioRepairProjectTarget({
+            explicitProjectName: handoff.selectedTarget?.projectName,
             affectedProjectNames: handoff.affectedProjectNames,
-            projectPath: handoff.projectPath ?? scope.projectPath,
+            projectPath:
+              handoff.selectedTarget?.projectPath ?? handoff.projectPath ?? scope.projectPath,
           }),
           cardId: handoff.cardId,
           blockerSignature: handoff.blockerSignature,
+          targetActionIds: handoff.selectedTarget?.actionIds,
           approvedBy: 'vscode:explicit-patch-review',
           patches: selectedPatches.map((patch) => ({
             relativePath: patch.relativePath,

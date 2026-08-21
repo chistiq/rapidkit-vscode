@@ -1,6 +1,10 @@
 import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
-import type { SidebarStudioActionProgressView } from '@/lib/sidebarStudioActionProgress';
+import {
+  studioFileChangeLineCounts,
+  type SidebarStudioActionProgressView,
+} from '@/lib/sidebarStudioActionProgress';
 import { compactStudioPathText } from '@/lib/studioDisplayText';
+import { StudioDiffView } from './StudioDiffView';
 
 type StudioActionProgressProps = {
   progress: SidebarStudioActionProgressView;
@@ -231,9 +235,7 @@ export function StudioActionProgress({
             </header>
             <ul className="ws-sidebar__studio-patch-list">
               {progress.fileChanges.map((file) => {
-                const added = file.diffLines?.filter((line) => line.type === 'added').length ?? 0;
-                const removed =
-                  file.diffLines?.filter((line) => line.type === 'removed').length ?? 0;
+                const { added, removed } = studioFileChangeLineCounts(file);
                 const exactDiffAvailable =
                   Boolean(progress.transactionId && onOpenDiff) &&
                   file.stale !== true &&
@@ -267,19 +269,15 @@ export function StudioActionProgress({
                     </div>
                     {file.failReason ? <small>{file.failReason}</small> : null}
                     {file.stale !== true && file.diffLines?.length ? (
-                      <details className="ws-sidebar__studio-file-preview" open={!historical && progress.status !== 'running'}>
+                      <details
+                        className="ws-sidebar__studio-file-preview"
+                        open={!historical && progress.status !== 'running'}
+                      >
                         <summary>Diff</summary>
-                        <pre
-                          className="ws-sidebar__studio-patch-diff"
-                          aria-label={`Diff for ${file.relativePath}`}
-                        >
-                          {file.diffLines.map((line, index) => (
-                            <span key={`${line.type}-${index}`} data-type={line.type}>
-                              {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
-                              {line.content}
-                            </span>
-                          ))}
-                        </pre>
+                        <StudioDiffView
+                          lines={file.diffLines}
+                          label={`Diff for ${file.relativePath}`}
+                        />
                       </details>
                     ) : null}
                   </li>

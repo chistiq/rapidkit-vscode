@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { FilePatch } from '../core/patchApplyEngine.js';
 import {
   authorizeStudioWorkspacePatchTargets,
+  compileInspectedStudioDeletePatches,
   compileInspectedStudioTextEdits,
   deleteInspectedStudioWorkspaceFiles,
 } from '../core/studioWorkspaceFileTransactions.js';
@@ -124,6 +125,70 @@ describe('Studio workspace file transactions', () => {
       originalContent: content,
       status: 'applied',
     });
+  });
+
+  it('compiles one identical guarded delete contract for every Agent surface', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-delete-contract-'));
+    roots.push(root);
+    const relativePath = 'src/obsolete.ts';
+    const content = 'export const obsolete = true;';
+    await fs.outputFile(path.join(root, relativePath), content);
+    const sha = crypto.createHash('sha256').update(content).digest('hex');
+
+    for (const surface of ['assistant', 'card-handoff', 'native-chat']) {
+      const patches = await compileInspectedStudioDeletePatches({
+        workspacePath: root,
+        paths: [relativePath],
+        inspectedSource: new Map([[relativePath, sha]]),
+      });
+      expect(patches, surface).toEqual([
+        expect.objectContaining({
+          relativePath,
+          operation: 'delete',
+          baseSha256: sha,
+        }),
+      ]);
+    }
+  });
+
+  it('refuses uninspected, stale, sensitive, escaping, missing, and symlinked delete patches', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-delete-policy-'));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-delete-outside-'));
+    roots.push(root, outside);
+    const sourcePath = 'src/a.ts';
+    await fs.outputFile(path.join(root, sourcePath), 'current');
+    await fs.outputFile(path.join(root, '.env'), 'secret');
+    const linkPath = 'src/link.ts';
+    await fs.symlink(path.join(root, sourcePath), path.join(root, linkPath));
+    await fs.outputFile(path.join(outside, 'escaped.ts'), 'outside');
+    await fs.symlink(outside, path.join(root, 'linked-outside'));
+    const currentSha = crypto.createHash('sha256').update('current').digest('hex');
+    const outsideSha = crypto.createHash('sha256').update('outside').digest('hex');
+
+    const compile = (target: string, inspectedSource: Map<string, string | null>) =>
+      compileInspectedStudioDeletePatches({
+        workspacePath: root,
+        paths: [target],
+        inspectedSource,
+      });
+
+    await expect(compile(sourcePath, new Map())).rejects.toThrow('Inspect every safe');
+    await expect(compile(sourcePath, new Map([[sourcePath, 'stale']]))).rejects.toThrow(
+      'Source changed'
+    );
+    await expect(compile('.env', new Map([['.env', currentSha]]))).rejects.toThrow(
+      'Inspect every safe'
+    );
+    await expect(compile('../outside', new Map())).rejects.toThrow('Inspect every safe');
+    await expect(
+      compile('src/missing.ts', new Map([['src/missing.ts', currentSha]]))
+    ).rejects.toThrow('regular file');
+    await expect(compile(linkPath, new Map([[linkPath, currentSha]]))).rejects.toThrow(
+      'regular file'
+    );
+    await expect(
+      compile('linked-outside/escaped.ts', new Map([['linked-outside/escaped.ts', outsideSha]]))
+    ).rejects.toThrow('outside the authorized source boundary');
   });
 
   it('compiles exact edits for an unchanged inspected linked-project file', async () => {

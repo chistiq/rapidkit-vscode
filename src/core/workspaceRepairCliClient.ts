@@ -165,7 +165,20 @@ export type WorkspaceRepairCliFileChange = {
   binary: boolean;
   stale: boolean;
   failReason?: string;
-  diffLines: Array<{ type: 'added' | 'removed' | 'unchanged'; content: string }>;
+  /**
+   * Authoritative changed-line totals for this file, counted before the
+   * preview hunks are bounded. Consumers must use these for `+N -M` badges;
+   * counting `diffLines` understates a large change because that array is
+   * truncated for transport.
+   */
+  addedLines?: number;
+  removedLines?: number;
+  diffLines: Array<{
+    type: 'added' | 'removed' | 'unchanged';
+    content: string;
+    beforeLine?: number;
+    afterLine?: number;
+  }>;
 };
 
 function transactionProjectRoot(
@@ -893,10 +906,22 @@ function textContent(content: Buffer | undefined): string | undefined {
   return content.toString('utf8');
 }
 
-function boundedDiffLines(
+/**
+ * Build bounded preview hunks plus authoritative changed-line totals.
+ *
+ * Line numbers are one-based and side-specific so a consumer can render a real
+ * gutter: a removed line only carries `beforeLine`, an added line only carries
+ * `afterLine`, and context carries both. Totals are captured before the preview
+ * is truncated, so a large change still reports exact `+N -M` counts.
+ */
+function boundedFileDiff(
   before: string,
   after: string
-): WorkspaceRepairCliFileChange['diffLines'] {
+): {
+  diffLines: WorkspaceRepairCliFileChange['diffLines'];
+  addedLines: number;
+  removedLines: number;
+} {
   const beforeLines = before.split(/\r?\n/);
   const afterLines = after.split(/\r?\n/);
   let prefix = 0;
@@ -919,31 +944,49 @@ function boundedDiffLines(
   const beforeMiddleEnd = beforeLines.length - suffix;
   const afterMiddleEnd = afterLines.length - suffix;
   const suffixEnd = Math.min(beforeLines.length, beforeMiddleEnd + 3);
+  const trailingOffset = afterMiddleEnd - beforeMiddleEnd;
   const lines: WorkspaceRepairCliFileChange['diffLines'] = [
-    ...beforeLines
-      .slice(contextStart, prefix)
-      .map((content) => ({ type: 'unchanged' as const, content })),
-    ...beforeLines
-      .slice(prefix, beforeMiddleEnd)
-      .map((content) => ({ type: 'removed' as const, content })),
-    ...afterLines
-      .slice(prefix, afterMiddleEnd)
-      .map((content) => ({ type: 'added' as const, content })),
-    ...beforeLines
-      .slice(beforeMiddleEnd, suffixEnd)
-      .map((content) => ({ type: 'unchanged' as const, content })),
+    ...beforeLines.slice(contextStart, prefix).map((content, index) => ({
+      type: 'unchanged' as const,
+      content,
+      beforeLine: contextStart + index + 1,
+      afterLine: contextStart + index + 1,
+    })),
+    ...beforeLines.slice(prefix, beforeMiddleEnd).map((content, index) => ({
+      type: 'removed' as const,
+      content,
+      beforeLine: prefix + index + 1,
+    })),
+    ...afterLines.slice(prefix, afterMiddleEnd).map((content, index) => ({
+      type: 'added' as const,
+      content,
+      afterLine: prefix + index + 1,
+    })),
+    ...beforeLines.slice(beforeMiddleEnd, suffixEnd).map((content, index) => ({
+      type: 'unchanged' as const,
+      content,
+      beforeLine: beforeMiddleEnd + index + 1,
+      afterLine: beforeMiddleEnd + index + 1 + trailingOffset,
+    })),
   ];
+  const totals = {
+    addedLines: Math.max(0, afterMiddleEnd - prefix),
+    removedLines: Math.max(0, beforeMiddleEnd - prefix),
+  };
   if (lines.length <= MAX_REVIEW_DIFF_LINES) {
-    return lines;
+    return { diffLines: lines, ...totals };
   }
-  return [
-    ...lines.slice(0, Math.floor(MAX_REVIEW_DIFF_LINES / 2)),
-    {
-      type: 'unchanged',
-      content: '… diff truncated; open the native comparison for the full file …',
-    },
-    ...lines.slice(-Math.floor(MAX_REVIEW_DIFF_LINES / 2)),
-  ];
+  return {
+    diffLines: [
+      ...lines.slice(0, Math.floor(MAX_REVIEW_DIFF_LINES / 2)),
+      {
+        type: 'unchanged',
+        content: '… diff truncated; open the native comparison for the full file …',
+      },
+      ...lines.slice(-Math.floor(MAX_REVIEW_DIFF_LINES / 2)),
+    ],
+    ...totals,
+  };
 }
 
 function repairTransactionDirectory(workspacePath: string, transactionId: string): string {
@@ -1033,6 +1076,9 @@ export async function readCliOwnedRepairFileComparison(input: {
     : checkpoint.afterHash === null
       ? 'deleted'
       : 'modified';
+  const diff = binary
+    ? { diffLines: [], addedLines: 0, removedLines: 0 }
+    : boundedFileDiff(beforeText, afterText);
   return {
     relativePath: presentRepairPath(workspacePath, input.transaction, checkpoint.path),
     status,
@@ -1046,7 +1092,9 @@ export async function readCliOwnedRepairFileComparison(input: {
       : binary
         ? { failReason: 'Binary or oversized files use hash-only review.' }
         : {}),
-    diffLines: binary ? [] : boundedDiffLines(beforeText, afterText),
+    diffLines: diff.diffLines,
+    addedLines: diff.addedLines,
+    removedLines: diff.removedLines,
     ...(beforeText !== undefined ? { originalContent: beforeText } : {}),
     ...(afterText !== undefined ? { patchedContent: afterText } : {}),
   };
@@ -1085,6 +1133,8 @@ async function repairExecutionResult(input: {
           binary: comparison.binary,
           stale: comparison.stale,
           ...(comparison.failReason ? { failReason: comparison.failReason } : {}),
+          addedLines: comparison.addedLines,
+          removedLines: comparison.removedLines,
           diffLines: comparison.diffLines,
         };
       } catch (error) {
@@ -1104,6 +1154,8 @@ async function repairExecutionResult(input: {
           binary: true,
           stale: true,
           failReason: error instanceof Error ? error.message : String(error),
+          addedLines: 0,
+          removedLines: 0,
           diffLines: [],
         };
       }

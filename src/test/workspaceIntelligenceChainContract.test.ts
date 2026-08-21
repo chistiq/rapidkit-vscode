@@ -46,13 +46,21 @@ describe('workspace intelligence chain contract consumer', () => {
   });
 
   it('exposes the canonical agent artifact read order', () => {
-    expect(getWorkspaceIntelligenceAgentReadOrder()).toEqual(
-      expect.arrayContaining([
-        '.workspai/reports/INDEX.json',
-        '.workspai/reports/workspace-context-agent.json',
-        '.workspai/reports/workspace-verify-last-run.json',
-        '.workspai/reports/workspace-model.json',
-      ])
+    expect(getWorkspaceIntelligenceAgentReadOrder()).toEqual([
+      '.workspai/reports/INDEX.json',
+      '.workspai/goals/index.json',
+      '.workspai/reports/goal-pack-last-run.json',
+      '.workspai/reports/workspace-context-agent.json',
+      '.workspai/reports/workspace-skills-index.json',
+      '.workspai/reports/workspace-verify-last-run.json',
+      '.workspai/reports/workspace-impact-last-run.json',
+      '.workspai/reports/workspace-explain-last-run.json',
+    ]);
+    expect(getWorkspaceIntelligenceAgentReadOrder()).not.toContain(
+      '.workspai/reports/workspace-model.json'
+    );
+    expect(getWorkspaceIntelligenceAgentReadOrder()).not.toContain(
+      '.workspai/reports/workspace-knowledge-graph.json'
     );
   });
 

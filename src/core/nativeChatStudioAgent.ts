@@ -34,6 +34,7 @@ import {
 } from './studioWorkspaceCommand.js';
 import {
   authorizeStudioWorkspacePatchTargets,
+  compileInspectedStudioDeletePatches,
   compileInspectedStudioTextEdits,
 } from './studioWorkspaceFileTransactions.js';
 import {
@@ -391,16 +392,17 @@ export async function runNativeChatStudioAgent(input: {
       });
     },
     deleteFiles: async (request) => {
-      const patches: FilePatch[] = request.paths.map((relativePath) => ({
-        relativePath,
-        operation: 'delete',
-        isNewFile: false,
-        patchedContent: '',
-        hunks: [],
-        status: 'pending',
-        baseSha256:
-          inspectedSource.get(relativePath) ?? repairEvidence.expectedBaseSha256[relativePath],
-      }));
+      let patches: FilePatch[];
+      try {
+        patches = await compileInspectedStudioDeletePatches({
+          workspacePath: request.workspacePath,
+          projectPath: request.projectPath,
+          paths: request.paths,
+          inspectedSource,
+        });
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
       return host.applyPatches({ ...request, patches });
     },
     runWorkspaceCommand: async (request: {

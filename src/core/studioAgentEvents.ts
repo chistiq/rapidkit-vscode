@@ -1,3 +1,5 @@
+import type { AssistantExecutionPolicy } from './assistantExecutionPolicy.js';
+
 export const STUDIO_AGENT_EVENT_SCHEMA_VERSION = 'workspai.studio-agent-event.v1' as const;
 
 export type StudioAgentSessionStatus =
@@ -46,6 +48,8 @@ export type StudioAgentPersistedSession = {
   projectPath?: string;
   cardId: string;
   assistantMode: 'agent' | 'ask' | 'plan' | 'goal';
+  /** Immutable per-request policy derived from selected mode and model-classified intent. */
+  executionPolicy?: AssistantExecutionPolicy;
   selectedModelId?: string;
   blockerSignature?: string;
   governedGoal?: {

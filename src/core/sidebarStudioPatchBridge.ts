@@ -401,20 +401,44 @@ export async function collectSidebarStudioRepairEvidence(input: {
         .filter((targetPath) => isStudioModelOwnedSourcePath(targetPath))
     )
   );
-  const repairProjectPath = input.projectPath ?? input.handoff.projectPath;
-  const contractTargetPaths = repairProjectPath
+  const repairProjectPath =
+    input.projectPath ?? input.handoff.selectedTarget?.projectPath ?? input.handoff.projectPath;
+  const selectedTargetPaths = Array.from(
+    new Set(
+      (input.handoff.selectedTarget?.sourcePaths ?? [])
+        .map((targetPath) =>
+          resolveRepairTargetRelativePath({
+            workspacePath: input.workspacePath,
+            projectPath: repairProjectPath,
+            scope: input.handoff.scope,
+            targetPath,
+          })
+        )
+        .filter((targetPath): targetPath is string => Boolean(targetPath))
+        .filter((targetPath) => isStudioModelOwnedSourcePath(targetPath))
+    )
+  );
+  const contractTargetPaths =
+    repairProjectPath || input.handoff.selectedTarget
+      ? []
+      : await discoverContractAuthoredRepairTargets({
+          workspacePath: input.workspacePath,
+          attachments: bundle.attachments,
+        });
+  const analyzeTargetPaths = input.handoff.selectedTarget
     ? []
-    : await discoverContractAuthoredRepairTargets({
+    : await discoverAnalyzeFindingRepairTargets({
         workspacePath: input.workspacePath,
+        projectPath: repairProjectPath,
         attachments: bundle.attachments,
       });
-  const analyzeTargetPaths = await discoverAnalyzeFindingRepairTargets({
-    workspacePath: input.workspacePath,
-    projectPath: repairProjectPath,
-    attachments: bundle.attachments,
-  });
   const exactTargetPaths = Array.from(
-    new Set([...hintedTargetPaths, ...analyzeTargetPaths, ...contractTargetPaths])
+    new Set([
+      ...selectedTargetPaths,
+      ...hintedTargetPaths,
+      ...analyzeTargetPaths,
+      ...contractTargetPaths,
+    ])
   );
 
   const expectedBaseSha256: Record<string, string | null> = {};
@@ -479,7 +503,11 @@ export async function collectSidebarStudioRepairEvidence(input: {
     );
   });
   for (const attachment of orderedAttachments) {
-    if (!attachment.exists || totalBytes >= MAX_REPAIR_EVIDENCE_BYTES) {
+    if (
+      !attachment.exists ||
+      attachment.promptEligible === false ||
+      totalBytes >= MAX_REPAIR_EVIDENCE_BYTES
+    ) {
       continue;
     }
     const absolutePath = path.resolve(input.workspacePath, attachment.relativePath);

@@ -10,6 +10,7 @@ import type {
 } from './studioAgentSession.js';
 import {
   getWorkspaceIntelligenceCanonicalStages,
+  getWorkspaceIntelligenceAgentReadOrder,
   getWorkspaceIntelligenceChainInvariant,
   getWorkspaceIntelligenceExecutionPreflights,
 } from './workspaceIntelligenceChainContract.js';
@@ -484,7 +485,8 @@ function promptForTurn(
     )
     .slice(budget === 'compact' ? -2 : -8)
     .map(conciseCausalEvent);
-  const mode = context.session.assistantMode;
+  const selectedMode = context.session.assistantMode;
+  const mode = context.session.executionPolicy?.toolMode ?? selectedMode;
   const intelligenceLoop = getWorkspaceIntelligenceCanonicalStages().map(
     ({ id, label, phase }) => ({ id, label, phase })
   );
@@ -516,6 +518,7 @@ function promptForTurn(
               ]
             : []),
           'Before starting any repair or feature work, inspect the existing Workspace Intelligence evidence (Doctor, Readiness, Analyze, Dependency Graph) through inspect-evidence and query-workspace-graph. Use these pre-generated artifacts to understand the workspace model, dependency structure, and health posture — they provide faster and more accurate context than raw source inspection alone.',
+          'Follow the CLI-authored canonical agent read order. Read INDEX first, then an active Goal Pack, bounded workspace context, and the relevant generated operational Skill. Use bounded graph search for missing proof; never preload full Model or Graph exports unless the task explicitly requires a complete export.',
           'When the session includes a verified goal, treat its scope, constraints, baseline, and criteria as the authoritative definition of done. Continue until verify-goal returns state=verified; a plausible patch, higher metric, or successful single command is not completion.',
           'Verified goals are resumable transactions. Never weaken their target, disable required build/tests, enable force, or permit breaking changes unless the durable goal contract already authorizes it.',
           'Never delegate a resolvable step to the operator. Never claim completion while governed verification is required and still blocking.',
@@ -558,7 +561,12 @@ function promptForTurn(
             'At least one relevant source, graph, diagnostic, change, or governed-evidence inspection is required before completion. Then answer directly and concisely.',
           ];
   return [
-    `You are Workspai Assistant operating in ${mode.toUpperCase()} mode inside one trusted workspace.`,
+    `You are Workspai Assistant operating under the ${mode.toUpperCase()} execution policy inside one trusted workspace.`,
+    ...(mode !== selectedMode
+      ? [
+          `The user selected ${selectedMode.toUpperCase()} mode, but this request was safely reduced to ${mode.toUpperCase()} authority. Do not exceed the provided tools or imply that the selector changed.`,
+        ]
+      : []),
     ...modeInstructions,
     mode === 'agent' && !context.session.goal && !context.session.governedGoal
       ? 'Select exactly one provided native tool per turn, or send a plain-text message if the user request requires clarification or is not an engineering task.'
@@ -581,6 +589,7 @@ function promptForTurn(
       5_000
     )}`,
     `Canonical Workspace Intelligence invariant: ${getWorkspaceIntelligenceChainInvariant()}`,
+    `Canonical agent read order: ${boundedJson(getWorkspaceIntelligenceAgentReadOrder(), 2_000)}`,
     `Execution prerequisites outside the canonical loop: ${boundedJson(
       intelligencePreflights,
       2_000
@@ -633,8 +642,6 @@ export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter 
   private pendingToolCall:
     | { callId: string; name: string; input: Record<string, unknown> }
     | undefined;
-  private preflightCompleted = false;
-  freeFormPreflight = false;
 
   constructor(
     private readonly objective: string,
@@ -711,40 +718,6 @@ export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter 
         { role: 'user' as const, content: prompt },
       ],
     });
-    if (this.freeFormPreflight && !this.preflightCompleted) {
-      this.preflightCompleted = true;
-      const preflightPrompt = [
-        standardPrompt,
-        '',
-        'IMPORTANT: This is the first turn. Analyze the user request before acting.',
-        'If the request is a clear, actionable engineering task, respond with exactly: PROCEED',
-        'If the request is vague, off-topic, or needs clarification, respond with a brief helpful message to the user.',
-        'Do NOT call any tools yet.',
-      ].join('\n');
-      const preflightResponse = await this.complete(preflightPrompt, {
-        ...request,
-        tools: [],
-        messages: [
-          ...this.conversationWindow(4),
-          { role: 'user' as const, content: preflightPrompt },
-        ],
-      });
-      if (typeof preflightResponse === 'string') {
-        const trimmed = preflightResponse.trim();
-        if (trimmed === 'PROCEED' || /^proceed$/i.test(trimmed)) {
-          this.conversation.push(
-            { role: 'user', content: standardPrompt },
-            { role: 'assistant', content: 'Understood. Starting the engineering task.' }
-          );
-        } else {
-          this.conversation.push(
-            { role: 'user', content: preflightPrompt },
-            { role: 'assistant', content: trimmed }
-          );
-          return { type: 'message' as const, text: trimmed };
-        }
-      }
-    }
     let response: Awaited<ReturnType<StudioAgentModelCompletion>>;
     let prompt = standardPrompt;
     try {

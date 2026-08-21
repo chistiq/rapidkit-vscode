@@ -25,6 +25,18 @@ describe('native Chat and Incident Studio orchestration parity', () => {
     expect(nativeAgent).not.toContain('workspace.fs.writeFile');
   });
 
+  it('routes Sidebar and native Chat deletion through one guarded compiler', () => {
+    const provider = read('src/ui/webviews/actionsWebviewProvider.ts');
+    const nativeAgent = read('src/core/nativeChatStudioAgent.ts');
+    const transactions = read('src/core/studioWorkspaceFileTransactions.ts');
+    expect(provider.match(/compileInspectedStudioDeletePatches\(/g)).toHaveLength(2);
+    expect(nativeAgent.match(/compileInspectedStudioDeletePatches\(/g)).toHaveLength(1);
+    expect(transactions).toContain('export async function compileInspectedStudioDeletePatches');
+    expect(transactions).toContain('authorizeStudioWorkspacePatchTargets({');
+    expect(transactions).toContain('stat.isSymbolicLink()');
+    expect(transactions).toContain('Source changed after inspection');
+  });
+
   it('projects shared tool events into native activity and binds cancellation', () => {
     const nativeAgent = read('src/core/nativeChatStudioAgent.ts');
     const renderer = read('src/core/nativeChatToolEventRenderer.ts');

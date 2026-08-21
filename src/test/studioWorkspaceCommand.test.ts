@@ -97,6 +97,24 @@ describe('Studio workspace command capability policy', () => {
   });
 
   it.each([
+    ['dotnet', ['new', 'webapi']],
+    ['go', ['generate', './...']],
+    ['npm', ['init', '-y']],
+    ['cargo', ['new', 'service']],
+    ['mvn', ['archetype:generate']],
+    ['./gradlew', ['wrapper']],
+    ['npx', ['--no-install', 'create-next-app', 'web']],
+    ['npm', ['run', 'db:migrate']],
+  ] as const)('classifies source-generating %s commands as mutations', (executable, args) => {
+    expect(
+      resolveStudioWorkspaceCommandPlan({
+        workspacePath: '/workspace',
+        request: { executable, args: [...args], purpose: 'diagnose' },
+      }).mutatesSource
+    ).toBe(true);
+  });
+
+  it.each([
     { executable: 'bash', args: ['-lc', 'echo unsafe'], purpose: 'diagnose' as const },
     { executable: 'python3', args: ['-c', 'print(1)'], purpose: 'diagnose' as const },
     { executable: 'node', args: ['--eval', 'process.exit()'], purpose: 'diagnose' as const },

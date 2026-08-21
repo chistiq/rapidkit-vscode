@@ -75,6 +75,14 @@ export interface ChatSessionEditorIssue {
   lastSeenAt: string;
 }
 
+export interface ChatModeSuggestion {
+  fromMode: ChatAssistantMode;
+  toMode: ChatAssistantMode;
+  label: string;
+  description: string;
+  request: string;
+}
+
 export interface ChatSession {
   sessionId: string;
   title: string;
@@ -88,6 +96,8 @@ export interface ChatSession {
   mode?: string;
   /** Immutable Assistant capability boundary for this conversation. */
   assistantMode?: ChatAssistantMode;
+  /** Explicit user-confirmed transition offered by the intent execution policy. */
+  modeSuggestion?: ChatModeSuggestion;
   /** Advisor/Studio: active workspace/project snapshot for ordinary scoped chats. */
   scope?: ChatSessionScopeSnapshot;
   /** Studio-only: card/artifact identity for dashboard-origin repair sessions. */

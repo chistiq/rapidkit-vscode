@@ -36,8 +36,10 @@ export type AgentBootstrapReceipt = {
     projectContext: '.workspai/reports/project-context-agent.json';
     workspaceIndex: 'workspace:.workspai/reports/INDEX.json';
     workspaceContext: 'workspace:.workspai/reports/workspace-context-agent.json';
-    workspaceModel: 'workspace:.workspai/reports/workspace-model.json';
-    knowledgeGraph: 'workspace:.workspai/reports/workspace-knowledge-graph.json';
+    workspaceModel?: 'workspace:.workspai/reports/workspace-model.json';
+    knowledgeGraph?: 'workspace:.workspai/reports/workspace-knowledge-graph.json';
+    workspaceSkillsIndex?: 'workspace:.workspai/reports/workspace-skills-index.json';
+    boundedGraphSearch?: 'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json';
     modelFreshness: 'fresh' | 'stale' | 'unknown' | 'missing';
     graphFreshness: 'fresh' | 'stale' | 'unknown' | 'missing';
     graphMatchesModel: boolean;
@@ -144,6 +146,15 @@ function parseReceipt(value: unknown): AgentBootstrapReceipt | undefined {
   const activeGoal = value.activeGoal;
   const claims = value.claims;
   const integrity = value.integrity;
+  const legacyEvidenceRoute =
+    isRecord(evidence) &&
+    evidence.workspaceModel === 'workspace:.workspai/reports/workspace-model.json' &&
+    evidence.knowledgeGraph === 'workspace:.workspai/reports/workspace-knowledge-graph.json';
+  const boundedEvidenceRoute =
+    isRecord(evidence) &&
+    evidence.workspaceSkillsIndex === 'workspace:.workspai/reports/workspace-skills-index.json' &&
+    evidence.boundedGraphSearch ===
+      'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json';
   if (
     value.schemaVersion !== 'workspai.agent-bootstrap-receipt.v1' ||
     typeof value.generatedAt !== 'string' ||
@@ -177,8 +188,7 @@ function parseReceipt(value: unknown): AgentBootstrapReceipt | undefined {
     evidence.projectContext !== '.workspai/reports/project-context-agent.json' ||
     evidence.workspaceIndex !== 'workspace:.workspai/reports/INDEX.json' ||
     evidence.workspaceContext !== 'workspace:.workspai/reports/workspace-context-agent.json' ||
-    evidence.workspaceModel !== 'workspace:.workspai/reports/workspace-model.json' ||
-    evidence.knowledgeGraph !== 'workspace:.workspai/reports/workspace-knowledge-graph.json' ||
+    (!legacyEvidenceRoute && !boundedEvidenceRoute) ||
     !FRESHNESS_STATUSES.has(String(evidence.modelFreshness)) ||
     !FRESHNESS_STATUSES.has(String(evidence.graphFreshness)) ||
     typeof evidence.graphMatchesModel !== 'boolean' ||
@@ -372,6 +382,9 @@ export function buildProjectAgentBootstrapPromptSection(
     `- Canonical workspace identity: ${receipt.workspace.name} (resolved privately at runtime)`,
     `- Model freshness: ${receipt.canonicalEvidence.modelFreshness}`,
     `- Graph freshness: ${receipt.canonicalEvidence.graphFreshness}`,
+    receipt.canonicalEvidence.boundedGraphSearch
+      ? `- Bounded graph retrieval: ${receipt.canonicalEvidence.boundedGraphSearch}`
+      : '- Evidence route: legacy canonical Model and Graph (load only when the task requires it)',
     `- Live inputs validated: ${receipt.canonicalEvidence.liveInputsValidated}`,
     `- Canonical blockers: ${receipt.canonicalEvidence.blockerCount}`,
     `- Architecture claims: ${receipt.claims.architecture}`,

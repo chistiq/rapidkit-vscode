@@ -566,6 +566,47 @@ describe('Studio Agent model protocol', () => {
     expect(prompt).not.toContain('TAIL-MUST-NOT-SURVIVE');
   });
 
+  it('uses the persisted execution policy instead of issuing conflicting selected-mode instructions', async () => {
+    let prompt = '';
+    const adapter = new ContractStudioAgentModelAdapter(
+      'Explain the dependency graph',
+      async (value) => {
+        prompt = value;
+        return { toolName: STUDIO_AGENT_COMPLETE_TOOL_NAME, input: { summary: 'Explained' } };
+      }
+    );
+    const context = {
+      session: {
+        schemaVersion: 'workspai.studio-agent-session.v1',
+        id: 'agent-question',
+        workspacePath: '/workspace',
+        cardId: 'assistant:agent:evidence-answer',
+        assistantMode: 'agent',
+        executionPolicy: {
+          schemaVersion: 'workspai.assistant-execution-policy.v1',
+          selectedMode: 'agent',
+          requestIntent: 'question',
+          routeConfidence: 'high',
+          profile: 'evidence-answer',
+          toolMode: 'ask',
+        },
+        status: 'running',
+        createdAt: '2026-08-20T00:00:00.000Z',
+        updatedAt: '2026-08-20T00:00:00.000Z',
+        sequence: 0,
+        events: [],
+      },
+      tools: [],
+      steering: [],
+    } satisfies StudioAgentModelContext;
+
+    await adapter.next(context);
+    expect(prompt).toContain('under the ASK execution policy');
+    expect(prompt).toContain('selected AGENT mode');
+    expect(prompt).toContain('Do not modify files');
+    expect(prompt).not.toContain('Own the task from evidence inspection through source change');
+  });
+
   it('excludes repeated request chatter from durable turn context', async () => {
     let prompt = '';
     const adapter = new ContractStudioAgentModelAdapter('Repair readiness', async (value) => {

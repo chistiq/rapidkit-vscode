@@ -239,7 +239,7 @@ export function registerWorkspaceGoalCommands(options: {
         (
           await vscode.window.showInputBox({
             title: `New Governed Goal — ${target.workspaceName}`,
-            prompt: 'Describe one measurable engineering outcome in plain language.',
+            prompt: 'Describe one bounded engineering outcome in plain language.',
             placeHolder: 'e.g. Raise test coverage to 85%',
             ignoreFocusOut: true,
             validateInput: (value) =>

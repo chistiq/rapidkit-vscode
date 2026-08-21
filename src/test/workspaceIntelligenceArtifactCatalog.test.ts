@@ -5,9 +5,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { buildEvidenceAgentContextBundle } from '../core/evidenceAgentContextBundle.js';
 import { resolveReportBinding } from '../core/dashboardReportRegistry.js';
+import { getWorkspaceIntelligenceAgentReadOrder } from '../core/workspaceIntelligenceChainContract.js';
 import {
   WORKSPAI_RUNTIME_ARTIFACT_CONTRACTS,
-  WORKSPAI_RUNTIME_REPORT_ARTIFACTS,
   WORKSPAI_RUNTIME_REPORT_PATHS,
   workspaceArtifactProducerCommand,
 } from '../core/workspaceIntelligenceArtifactCatalog.js';
@@ -40,16 +40,18 @@ describe('workspace intelligence artifact catalog', () => {
     ]);
   });
 
-  it('keeps every CLI-published report available when INDEX.json is missing', async () => {
+  it('uses the CLI-authored bounded read order when INDEX.json is missing', async () => {
     const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-artifact-catalog-'));
     tempDirs.push(workspacePath);
 
     const bundle = await buildEvidenceAgentContextBundle({ workspacePath });
     const attachmentPaths = new Set(bundle.attachments.map((entry) => entry.relativePath));
 
-    for (const artifact of WORKSPAI_RUNTIME_REPORT_ARTIFACTS) {
-      expect(attachmentPaths.has(artifact.artifactPath), artifact.artifactPath).toBe(true);
+    for (const artifactPath of getWorkspaceIntelligenceAgentReadOrder()) {
+      expect(attachmentPaths.has(artifactPath), artifactPath).toBe(true);
     }
+    expect(attachmentPaths.has('.workspai/reports/workspace-model.json')).toBe(false);
+    expect(attachmentPaths.has('.workspai/reports/workspace-knowledge-graph.json')).toBe(false);
     expect(bundle.missingRequired).toContain('.workspai/reports/workspace-context-agent.json');
   });
 

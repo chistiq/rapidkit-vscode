@@ -2,7 +2,7 @@
   "name": "rapidkit-vscode",
   "displayName": "Workspai – Workspace Intelligence",
   "description": "Workspace Intelligence for VS Code. Adopt, import, scaffold, diagnose, verify, and govern polyglot workspaces with shared evidence for developers, CI, and AI agents.",
-  "version": "0.41.0",
+  "version": "0.42.0",
   "packageManager": "npm@10.8.2",
   "publisher": "rapidkit",
   "icon": "media/icons/icon.png",

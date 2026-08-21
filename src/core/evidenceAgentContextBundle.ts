@@ -24,6 +24,8 @@ import {
   WORKSPAI_RUNTIME_REPORT_ARTIFACTS,
   workspaceArtifactLabel,
 } from './workspaceIntelligenceArtifactCatalog.js';
+import { getWorkspaceIntelligenceAgentReadOrder } from './workspaceIntelligenceChainContract.js';
+import { readWorkspaceSkillsIndexArtifact } from './workspaceSkillsIndexReader.js';
 
 export type EvidenceAgentAttachment = {
   relativePath: string;
@@ -32,6 +34,8 @@ export type EvidenceAgentAttachment = {
   exists: boolean;
   validity?: 'valid' | 'invalid' | 'uncontracted' | 'missing';
   validationError?: string;
+  /** False keeps an artifact tool-readable without preloading it into prompts. */
+  promptEligible?: boolean;
 };
 
 export type EvidenceAgentContextBundle = {
@@ -59,12 +63,24 @@ export type EvidenceAgentContextBundle = {
   copilotQuestion: string;
 };
 
+const CONTRACT_ARTIFACT_PATHS = new Set(
+  WORKSPAI_RUNTIME_REPORT_ARTIFACTS.map((artifact) => artifact.artifactPath)
+);
+
 const INTELLIGENCE_ATTACHMENTS: Array<{ relativePath: string; label: string; required: boolean }> =
   [
-    ...WORKSPAI_RUNTIME_REPORT_ARTIFACTS.map((artifact) => ({
-      relativePath: artifact.artifactPath,
-      label: workspaceArtifactLabel(artifact.artifactPath),
-      required: artifact.artifactPath === WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
+    ...getWorkspaceIntelligenceAgentReadOrder().map((relativePath) => ({
+      relativePath,
+      label: CONTRACT_ARTIFACT_PATHS.has(relativePath)
+        ? workspaceArtifactLabel(relativePath)
+        : relativePath === '.workspai/goals/index.json'
+          ? 'Active Goal index'
+          : relativePath === '.workspai/reports/goal-pack-last-run.json'
+            ? 'Latest Goal Pack'
+            : workspaceArtifactLabel(relativePath),
+      // Preserve the 0.61 compatibility floor. A live INDEX from newer CLIs
+      // can strengthen the required set below.
+      required: relativePath === WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
     })),
     {
       relativePath: AGENT_GROUNDING_DOC_PATH,
@@ -101,11 +117,27 @@ function relativeArtifactPath(workspacePath: string, artifactPath?: string): str
   return undefined;
 }
 
+function normalizedSearchTokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 3 && token !== 'workspai' && token !== 'workspace');
+}
+
+function operationalSkillScore(input: { skillId: string; title: string; query: string }): number {
+  const query = input.query.toLowerCase();
+  return [...new Set(normalizedSearchTokens(`${input.skillId} ${input.title}`))].reduce(
+    (score, token) => score + (query.includes(token) ? 1 : 0),
+    0
+  );
+}
+
 export async function buildEvidenceAgentContextBundle(
   input: EvidenceCardAgentContextInput
 ): Promise<EvidenceAgentContextBundle> {
   const attachments: EvidenceAgentAttachment[] = [];
   const missingRequired: string[] = [];
+  const matchedOperationalSkills: string[] = [];
 
   for (const entry of INTELLIGENCE_ATTACHMENTS) {
     const absolutePath = path.join(input.workspacePath, entry.relativePath);
@@ -144,6 +176,9 @@ export async function buildEvidenceAgentContextBundle(
         continue;
       }
       const relativePath = report.path.replace(/\\/g, '/').replace(/^\.\//, '');
+      if (reportReadOrder.length > 0 && !reportReadOrder.includes(relativePath)) {
+        continue;
+      }
       const absolutePath = path.resolve(input.workspacePath, relativePath);
       const workspaceRelative = path.relative(path.resolve(input.workspacePath), absolutePath);
       if (workspaceRelative.startsWith('..') || path.isAbsolute(workspaceRelative)) {
@@ -197,6 +232,72 @@ export async function buildEvidenceAgentContextBundle(
     // not generated the contract-backed reports index yet.
   }
 
+  // Operational Skills are generated from the live workspace model. Authorize
+  // every safe indexed Skill for on-demand inspection, but preload only the
+  // three most relevant Skills so a large polyglot workspace stays bounded.
+  try {
+    const skillsIndexResult = await readWorkspaceSkillsIndexArtifact(input.workspacePath);
+    const skillsIndex = skillsIndexResult.kind === 'valid' ? skillsIndexResult.index : null;
+    const query = [
+      input.userQuestion,
+      input.card?.label,
+      input.card?.summary,
+      ...(input.card?.blockers ?? []),
+    ]
+      .filter((entry): entry is string => typeof entry === 'string' && Boolean(entry.trim()))
+      .join(' ');
+    const skills = (skillsIndex?.skills ?? [])
+      .flatMap((value) => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+          return [];
+        }
+        const skill = value as Record<string, unknown>;
+        if (
+          typeof skill.skillId !== 'string' ||
+          typeof skill.path !== 'string' ||
+          typeof skill.title !== 'string' ||
+          !/^\.workspai\/skills\/[a-z0-9][a-z0-9-]*\.md$/.test(skill.path)
+        ) {
+          return [];
+        }
+        return [
+          {
+            skillId: skill.skillId,
+            relativePath: skill.path,
+            title: skill.title,
+            score: operationalSkillScore({
+              skillId: skill.skillId,
+              title: skill.title,
+              query,
+            }),
+          },
+        ];
+      })
+      .sort((left, right) => right.score - left.score || left.skillId.localeCompare(right.skillId));
+    const selected = new Set(
+      skills
+        .filter((skill) => skill.score > 0)
+        .slice(0, 3)
+        .map((skill) => skill.relativePath)
+    );
+    for (const skill of skills) {
+      const exists = await fs.pathExists(path.join(input.workspacePath, skill.relativePath));
+      attachments.push({
+        relativePath: skill.relativePath,
+        label: `Operational skill: ${skill.title}`,
+        required: false,
+        exists,
+        validity: exists ? 'valid' : 'missing',
+        promptEligible: selected.has(skill.relativePath),
+      });
+      if (exists && selected.has(skill.relativePath)) {
+        matchedOperationalSkills.push(`${skill.title} (${skill.relativePath})`);
+      }
+    }
+  } catch {
+    // Older CLI workspaces remain supported through the context artifact.
+  }
+
   if (reportReadOrder.length > 0) {
     const order = new Map(reportReadOrder.map((relativePath, index) => [relativePath, index]));
     attachments.sort(
@@ -236,6 +337,7 @@ export async function buildEvidenceAgentContextBundle(
       ? `Missing or invalid intelligence: ${Array.from(new Set(missingRequired)).join(', ')} (run workspace context/model first)`
       : undefined,
     ...buildAgentPackHandoffSummaryLines(agentPack, agentPackSummary),
+    ...matchedOperationalSkills.map((skill) => `Relevant operational skill: ${skill}`),
   ].filter((line): line is string => Boolean(line));
 
   return {
@@ -256,7 +358,7 @@ export async function buildEvidenceAgentContextBundle(
 export function buildSendToCopilotPrompt(bundle: EvidenceAgentContextBundle): string {
   const workspaceRoot = toPosixPath(bundle.workspacePath);
   const fileLines = bundle.attachments
-    .filter((attachment) => attachment.exists)
+    .filter((attachment) => attachment.exists && attachment.promptEligible !== false)
     .map((attachment) => attachmentFileRef(bundle.workspacePath, attachment.relativePath));
 
   const contextLines = [

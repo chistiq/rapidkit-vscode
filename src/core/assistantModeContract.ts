@@ -5,7 +5,7 @@ export type WorkspaiAssistantMode = 'agent' | 'ask' | 'plan' | 'goal';
 export type WorkspaiAssistantModeContract = {
   id: WorkspaiAssistantMode;
   label: string;
-  intent: 'autonomous-repair' | 'evidence-answer' | 'repair-plan' | 'governed-goal';
+  executionKind: 'autonomous-repair' | 'evidence-answer' | 'repair-plan' | 'governed-goal';
   permissionLevel: StudioAgentPermissionLevel;
   canMutateWorkspace: boolean;
   canRunGovernedMutations: boolean;
@@ -17,7 +17,7 @@ const CONTRACTS: Record<WorkspaiAssistantMode, WorkspaiAssistantModeContract> = 
   agent: {
     id: 'agent',
     label: 'Agent',
-    intent: 'autonomous-repair',
+    executionKind: 'autonomous-repair',
     permissionLevel: 'autopilot',
     canMutateWorkspace: true,
     canRunGovernedMutations: true,
@@ -46,7 +46,7 @@ const CONTRACTS: Record<WorkspaiAssistantMode, WorkspaiAssistantModeContract> = 
   ask: {
     id: 'ask',
     label: 'Ask',
-    intent: 'evidence-answer',
+    executionKind: 'evidence-answer',
     permissionLevel: 'default',
     canMutateWorkspace: false,
     canRunGovernedMutations: false,
@@ -64,7 +64,7 @@ const CONTRACTS: Record<WorkspaiAssistantMode, WorkspaiAssistantModeContract> = 
   plan: {
     id: 'plan',
     label: 'Plan',
-    intent: 'repair-plan',
+    executionKind: 'repair-plan',
     permissionLevel: 'default',
     canMutateWorkspace: false,
     canRunGovernedMutations: false,
@@ -83,7 +83,7 @@ const CONTRACTS: Record<WorkspaiAssistantMode, WorkspaiAssistantModeContract> = 
   goal: {
     id: 'goal',
     label: 'Goal',
-    intent: 'governed-goal',
+    executionKind: 'governed-goal',
     permissionLevel: 'autopilot',
     canMutateWorkspace: true,
     canRunGovernedMutations: true,

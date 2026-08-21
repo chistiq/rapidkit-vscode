@@ -75,7 +75,10 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(provider).toContain("approvedBy: 'vscode:explicit-user-undo'");
     expect(provider).toContain('applyStudioGovernedCommandReuse');
     expect(provider).toContain('hydrateStudioRepairEventFileChanges');
-    expect(provider).toContain('readCliOwnedRepairFileComparison');
+    expect(provider).toContain('resolveStudioRepairComparisonUris');
+    expect(read('src/core/studioRepairDiffDocuments.ts')).toContain(
+      'readCliOwnedRepairFileComparison'
+    );
     expect(cliClient).toContain('export async function hydrateStudioRepairEventFileChanges');
     expect(provider).toContain('await vscode.commands.executeCommand(');
     expect(provider).toContain("'vscode.diff'");
@@ -105,6 +108,76 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(secondary).toContain("'sidebarOpenWorkspaceDiff'");
     expect(actionProgress).toContain('exactDiffAvailable');
     expect(actionProgress).toContain('file.failReason');
+  });
+
+  it('surfaces one changed-file rollup with diff, review, and revert on the transaction plane', () => {
+    const changeset = read('webview-ui/src/sidebar/StudioChangedFilesSummary.tsx');
+    const diffView = read('webview-ui/src/sidebar/StudioDiffView.tsx');
+    const actionProgress = read('webview-ui/src/sidebar/StudioActionProgress.tsx');
+    const patchReview = read('webview-ui/src/sidebar/StudioPatchReview.tsx');
+    const diffDocuments = read('src/core/studioRepairDiffDocuments.ts');
+    const css = read('webview-ui/src/sidebar/sidebar.css');
+
+    // The rollup is derived from the durable timeline, so it cannot drift from
+    // the transactions the host actually reported.
+    expect(secondary).toContain('buildStudioChangedFilesSummary(activeStudioRepairTimeline)');
+    expect(secondary).toContain('<StudioChangedFilesSummary');
+    expect(secondary.match(/<StudioChangedFilesSummary/g)).toHaveLength(2);
+    expect(changeset).toContain('Edited {summary.files.length}');
+    expect(changeset).toContain('+{summary.addedLines}');
+    expect(changeset).toContain('-{summary.removedLines}');
+    expect(changeset).toContain('Show ${hiddenCount} more files');
+
+    // Review and Undo must both bind to a real CLI transaction.
+    expect(secondary).toContain("'sidebarReviewWorkspaceChanges'");
+    expect(dispatcher).toContain("command: 'sidebarReviewWorkspaceChanges'");
+    expect(provider).toContain('_reviewSidebarWorkspaceChanges');
+    expect(provider).toContain("'vscode.changes'");
+    expect(secondary).toContain('file.comparable');
+    expect(changeset).toContain('onUndo(summary.undoTransactionId!)');
+
+    // One shared gutter diff renderer keeps the free-form Agent transcript and
+    // the approval surface from drifting apart.
+    expect(diffView).toContain("line.type === 'removed' ? line.beforeLine : line.afterLine");
+    expect(actionProgress).toContain('<StudioDiffView');
+    expect(patchReview).toContain('<StudioDiffView');
+    expect(actionProgress).not.toContain("line.type === 'added' ? '+'");
+    expect(patchReview).not.toContain("line.type === 'added' ? '+'");
+    expect(css).toContain('.ws-sidebar__studio-diff-gutter');
+    expect(css).toContain('.ws-sidebar__studio-changeset-counts');
+
+    // Comparison content is served read-only from the transaction checkpoint.
+    expect(diffDocuments).toContain('registerTextDocumentContentProvider');
+    expect(diffDocuments).toContain("export const STUDIO_REPAIR_DIFF_SCHEME = 'workspai-repair'");
+    expect(read('src/extension.ts')).toContain('registerStudioRepairDiffContentProvider()');
+
+    // Badges must read the host totals, never the truncated preview.
+    expect(actionProgress).toContain('studioFileChangeLineCounts(file)');
+    expect(read('webview-ui/src/lib/sidebarStudioActionProgress.ts')).toContain(
+      'export function studioFileChangeLineCounts'
+    );
+  });
+
+  it('retires a rolled-back transaction across every session and incident surface', () => {
+    // A completed Undo has to reach the free-form Agent timeline too, otherwise
+    // the rollup keeps advertising reverted files and offers Undo again.
+    expect(secondary).toContain('const retireTransaction = (progress');
+    expect(secondary).toContain("...(data.ok === true ? { transactionState: 'rolled-back' } : {})");
+    for (const setter of [
+      'setStudioActionProgress',
+      'setStudioIncidentProgress',
+      'setStudioIncidentTimeline',
+      'setStudioSessionProgress',
+      'setStudioSessionTimeline',
+    ]) {
+      expect(
+        secondary.slice(secondary.indexOf("case 'sidebarStudioAgentPatchRollback'")),
+        `rollback must retire ${setter}`
+      ).toContain(setter);
+    }
+    expect(read('webview-ui/src/lib/studioChangedFilesSummary.ts')).toContain(
+      "entry.transactionState === 'rolled-back'"
+    );
   });
 
   it('handles every studio inbound command the host emits', () => {
@@ -388,9 +461,8 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(secondary).toContain('describeStudioCliRepairPhase');
     expect(secondary).toContain('isStudioUserFacingNarration');
     expect(secondary).toContain('appendChunk(eventSessionId');
-    expect(actionProgress).toContain(
-      '<details className="ws-sidebar__studio-file-preview" open={!historical && progress.status !== \'running\'}>'
-    );
+    expect(actionProgress).toContain('ws-sidebar__studio-file-preview');
+    expect(actionProgress).toContain("open={!historical && progress.status !== 'running'}");
     expect(secondary).toContain('terminalizeStudioTimeline');
     expect(secondary).toContain("action: 'open-setup'");
     expect(secondary).not.toContain('Studio exhausted the bounded repair strategies');

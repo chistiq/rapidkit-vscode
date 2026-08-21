@@ -30,6 +30,12 @@ export type WorkspaceSkillsIndexReadResult =
   | { kind: 'corrupt'; artifactPath: string; error: string }
   | { kind: 'incompatible'; artifactPath: string; error: string };
 
+const OPERATIONAL_SKILL_PATH = /^\.workspai\/skills\/[a-z0-9][a-z0-9-]*\.md$/;
+
+function isValidDateTime(value: string): boolean {
+  return !Number.isNaN(Date.parse(value));
+}
+
 export function isWorkspaceSkillsIndex(value: unknown): value is WorkspaceSkillsIndex {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return false;
@@ -38,19 +44,38 @@ export function isWorkspaceSkillsIndex(value: unknown): value is WorkspaceSkills
   if (record.schemaVersion !== WORKSPACE_SKILLS_INDEX_SCHEMA_VERSION) {
     return false;
   }
-  if (typeof record.generatedAt !== 'string' || !Array.isArray(record.skills)) {
+  if (
+    typeof record.generatedAt !== 'string' ||
+    !isValidDateTime(record.generatedAt) ||
+    typeof record.inputsHash !== 'string' ||
+    record.inputsHash.length < 8 ||
+    !Array.isArray(record.skills)
+  ) {
     return false;
   }
+  const skillIds = new Set<string>();
+  const paths = new Set<string>();
   return record.skills.every((entry) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
       return false;
     }
     const skill = entry as Record<string, unknown>;
-    return (
+    const valid =
       typeof skill.skillId === 'string' &&
+      skill.skillId.length > 0 &&
       typeof skill.path === 'string' &&
-      typeof skill.title === 'string'
-    );
+      OPERATIONAL_SKILL_PATH.test(skill.path) &&
+      typeof skill.schemaVersion === 'string' &&
+      skill.schemaVersion.length > 0 &&
+      typeof skill.title === 'string' &&
+      skill.title.length > 0 &&
+      !skillIds.has(skill.skillId) &&
+      !paths.has(skill.path);
+    if (valid) {
+      skillIds.add(skill.skillId as string);
+      paths.add(skill.path as string);
+    }
+    return valid;
   });
 }
 
@@ -74,7 +99,8 @@ export async function readWorkspaceSkillsIndexArtifact(
       artifactPath: result.artifactPath,
       expectedSchemaVersion: WORKSPACE_SKILLS_INDEX_SCHEMA_VERSION,
       actualSchemaVersion: result.raw.schemaVersion,
-      reason: 'Workspace skills index must include generatedAt and valid skills[].',
+      reason:
+        'Workspace skills index must include a valid timestamp, inputs hash, and unique safe operational skills.',
     });
   }
   return { kind: 'valid', artifactPath: result.artifactPath, index: result.raw };

@@ -29,12 +29,13 @@ import { resolveScopeFromPayload } from './sidebarTypes';
 import { StudioBlockerChrome, parseStudioBlockerHandoffView } from './StudioBlockerChrome';
 import { StudioPatchReview, type SidebarPatchReviewItem } from './StudioPatchReview';
 import { StudioActionProgress } from './StudioActionProgress';
+import { StudioChangedFilesSummary } from './StudioChangedFilesSummary';
 import { StudioRemediationPlan } from './StudioRemediationPlan';
 import { StudioRepairPrelude } from './StudioRepairPrelude';
 import { StudioRepairResult } from './StudioRepairResult';
 import { StudioShipLoopStepper } from './StudioShipLoopStepper';
 import { StudioIntelligencePhaseRail } from './StudioIntelligencePhaseRail';
-import type { ChatSession } from './sidebarSessions';
+import type { ChatModeSuggestion, ChatSession } from './sidebarSessions';
 import { chatSessionKind } from './sidebarSessions';
 import {
   mergeStudioFixAppliedIntoHandoff,
@@ -69,6 +70,7 @@ import {
   type SidebarStudioActionProgressView,
 } from '@/lib/sidebarStudioActionProgress';
 import { appendStudioRepairTimelineEntry } from '@/lib/studioRepairTimeline';
+import { buildStudioChangedFilesSummary } from '@/lib/studioChangedFilesSummary';
 import { resolveStudioIncidentRepairStatus } from '@/lib/studioIncidentRepairStatus';
 import {
   describeStudioCliRepairPhase,
@@ -1495,17 +1497,36 @@ export function SecondarySidebar() {
       case 'sidebarStudioAgentPatchRollback': {
         const transactionId =
           typeof data.transactionId === 'string' ? data.transactionId.trim() : '';
-        const disableUndo = (progress: SidebarStudioActionProgressView) =>
-          progress.transactionId === transactionId ? { ...progress, canUndo: false } : progress;
-        setStudioActionProgress((current) => (current ? disableUndo(current) : current));
+        // A completed rollback must retire the transaction everywhere it is
+        // visible: the per-step Undo control, and the changed-file rollup that
+        // reads `transactionState` to withdraw reverted files.
+        const retireTransaction = (progress: SidebarStudioActionProgressView) =>
+          progress.transactionId === transactionId
+            ? {
+                ...progress,
+                canUndo: false,
+                ...(data.ok === true ? { transactionState: 'rolled-back' } : {}),
+              }
+            : progress;
+        setStudioActionProgress((current) => (current ? retireTransaction(current) : current));
         setStudioIncidentProgress((current) =>
           Object.fromEntries(
-            Object.entries(current).map(([key, progress]) => [key, disableUndo(progress)])
+            Object.entries(current).map(([key, progress]) => [key, retireTransaction(progress)])
           )
         );
         setStudioIncidentTimeline((current) =>
           Object.fromEntries(
-            Object.entries(current).map(([key, timeline]) => [key, timeline.map(disableUndo)])
+            Object.entries(current).map(([key, timeline]) => [key, timeline.map(retireTransaction)])
+          )
+        );
+        setStudioSessionProgress((current) =>
+          Object.fromEntries(
+            Object.entries(current).map(([key, progress]) => [key, retireTransaction(progress)])
+          )
+        );
+        setStudioSessionTimeline((current) =>
+          Object.fromEntries(
+            Object.entries(current).map(([key, timeline]) => [key, timeline.map(retireTransaction)])
           )
         );
         const restoredPaths = Array.isArray(data.restoredPaths)
@@ -1710,6 +1731,31 @@ export function SecondarySidebar() {
           typeof data.label === 'string' ? data.label : 'Preparing the next safe step...'
         );
         break;
+      case 'sidebarStudioModeSuggestion': {
+        const sessionId = String(data.sessionId ?? '');
+        const fromMode = data.fromMode;
+        const toMode = data.toMode;
+        if (
+          sessionId &&
+          (fromMode === 'agent' ||
+            fromMode === 'ask' ||
+            fromMode === 'plan' ||
+            fromMode === 'goal') &&
+          (toMode === 'agent' || toMode === 'ask' || toMode === 'plan' || toMode === 'goal') &&
+          typeof data.label === 'string' &&
+          typeof data.description === 'string' &&
+          typeof data.request === 'string'
+        ) {
+          studio.setModeSuggestion(sessionId, {
+            fromMode,
+            toMode,
+            label: data.label,
+            description: data.description,
+            request: data.request,
+          });
+        }
+        break;
+      }
       case 'sidebarStudioChunk':
         studio.appendChunk(String(data.sessionId ?? ''), (data.text as string) || '');
         break;
@@ -2657,12 +2703,17 @@ export function SecondarySidebar() {
   };
 
   // ---- Studio handlers ----
-  const handleSubmitStudio = (task: string, options?: { forceNew?: boolean }) => {
+  const submitStudioWithMode = (
+    task: string,
+    requestedMode: AssistantMode,
+    options?: { forceNew?: boolean }
+  ) => {
     const activeStudioSession =
       studio.sessions.find((session) => session.sessionId === studio.activeId) ?? null;
-    const { sessionId, history } = studio.startQuery(task, studioMode, {
+    const requestedStudioMode = requestedMode === 'plan' ? 'prepare' : 'investigate';
+    const { sessionId, history } = studio.startQuery(task, requestedStudioMode, {
       ...options,
-      assistantMode,
+      assistantMode: requestedMode,
       scope: activeStudioSession?.editorIssue ? null : sessionScopeSnapshot,
     });
     const sessionForPayload =
@@ -2674,9 +2725,9 @@ export function SecondarySidebar() {
       {
         task,
         sessionId,
-        assistantMode,
-        mode: studioMode,
-        modelId: selectedModelId ?? undefined,
+        assistantMode: requestedMode,
+        mode: requestedStudioMode,
+        modelId: assistantModelsRef.current[requestedMode] ?? undefined,
         history,
         scope: scopePayloadForSession(sessionForPayload, scope),
         scopeMode: sessionScopeMode(sessionForPayload),
@@ -2685,6 +2736,31 @@ export function SecondarySidebar() {
       },
       META
     );
+  };
+
+  const handleSubmitStudio = (task: string, options?: { forceNew?: boolean }) => {
+    submitStudioWithMode(task, assistantMode, options);
+  };
+
+  const acceptModeSuggestion = (suggestion: ChatModeSuggestion) => {
+    const sessionId = studio.activeId;
+    const activeSession = studio.sessions.find((session) => session.sessionId === sessionId);
+    if (
+      !sessionId ||
+      !activeSession ||
+      activeSession.assistantMode !== suggestion.fromMode ||
+      (suggestion.toMode !== 'agent' &&
+        suggestion.toMode !== 'ask' &&
+        suggestion.toMode !== 'plan' &&
+        suggestion.toMode !== 'goal')
+    ) {
+      return;
+    }
+    studio.setModeSuggestion(sessionId, undefined);
+    setAssistantMode(suggestion.toMode);
+    setSelectedModelId(assistantModelsRef.current[suggestion.toMode] ?? null);
+    setStudioMode(suggestion.toMode === 'plan' ? 'prepare' : 'investigate');
+    submitStudioWithMode(suggestion.request, suggestion.toMode, { forceNew: true });
   };
 
   handleSubmitImpactRef.current = handleSubmitImpact;
@@ -2721,6 +2797,7 @@ export function SecondarySidebar() {
       : activeStudioActionProgress
         ? [activeStudioActionProgress]
         : [];
+  const activeStudioChangedFiles = buildStudioChangedFilesSummary(activeStudioRepairTimeline);
   const activeStudioVerifyFailure = visibleStudioIncidentKey
     ? (studioIncidentVerifyFailures[visibleStudioIncidentKey] ?? null)
     : studioVerifyFailure;
@@ -2928,6 +3005,21 @@ export function SecondarySidebar() {
     vscode.postMessage(
       'sidebarOpenWorkspaceDiff',
       { relativePath, transactionId, workspacePath: scope.workspacePath },
+      META
+    );
+  };
+  const reviewStudioChangedFiles = () => {
+    vscode.postMessage(
+      'sidebarReviewWorkspaceChanges',
+      {
+        workspacePath: scope.workspacePath,
+        files: activeStudioChangedFiles.files
+          .filter((file) => file.comparable)
+          .map((file) => ({
+            relativePath: file.relativePath,
+            transactionId: file.transactionId,
+          })),
+      },
       META
     );
   };
@@ -3337,6 +3429,12 @@ export function SecondarySidebar() {
         composerPrefill={impactPrefill}
         composerPrefillKey={impactPrefillKey}
         composerModeSelector={assistantModeSelector}
+        onAcceptModeSuggestion={acceptModeSuggestion}
+        onDismissModeSuggestion={() => {
+          if (studio.activeId) {
+            studio.setModeSuggestion(studio.activeId, undefined);
+          }
+        }}
         headerChrome={
           advisorActionFailure ? (
             <div className="ws-sidebar__advisor-alert" role="alert">
@@ -3401,7 +3499,7 @@ export function SecondarySidebar() {
             : activeBlockerHandoff
               ? 'Add context to continue'
               : assistantMode === 'goal'
-                ? 'Name a measurable outcome'
+                ? 'Describe the outcome you want to achieve'
                 : 'Describe the issue or task'
         }
         scope={scope}
@@ -3534,6 +3632,12 @@ export function SecondarySidebar() {
         composerPrefill={studioPrefill}
         composerPrefillKey={studioPrefillKey}
         composerModeSelector={assistantModeSelector}
+        onAcceptModeSuggestion={acceptModeSuggestion}
+        onDismissModeSuggestion={() => {
+          if (studio.activeId) {
+            studio.setModeSuggestion(studio.activeId, undefined);
+          }
+        }}
         onRunCommand={runStudioCommand}
         onCopyCommand={copyStudioCommand}
         chromeMode={activeBlockerHandoff ? 'repair' : 'default'}
@@ -3606,6 +3710,12 @@ export function SecondarySidebar() {
                     onOpenDiff={openStudioChangedFileDiff}
                     onUndo={undoStudioAgentPatch}
                   />
+                  <StudioChangedFilesSummary
+                    summary={activeStudioChangedFiles}
+                    onOpenDiff={openStudioChangedFileDiff}
+                    onReview={reviewStudioChangedFiles}
+                    onUndo={undoStudioAgentPatch}
+                  />
                 </div>
               ) : null}
               {activeStudioRemediationPlan ? (
@@ -3668,6 +3778,12 @@ export function SecondarySidebar() {
                 historical={false}
                 onOpenFile={openStudioChangedFile}
                 onOpenDiff={openStudioChangedFileDiff}
+                onUndo={undoStudioAgentPatch}
+              />
+              <StudioChangedFilesSummary
+                summary={activeStudioChangedFiles}
+                onOpenDiff={openStudioChangedFileDiff}
+                onReview={reviewStudioChangedFiles}
                 onUndo={undoStudioAgentPatch}
               />
             </div>

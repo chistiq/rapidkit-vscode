@@ -106,6 +106,54 @@ function closedCliRepairResult(input?: {
 }
 
 describe('Studio Agent session runtime', () => {
+  it('applies a reduced persisted execution policy across the complete session state machine', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'inspect-evidence',
+      title: 'Inspect evidence',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, output: { summary: 'Evidence inspected.' } };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'agent-question-policy',
+        workspacePath: '/workspace',
+        cardId: 'assistant:agent:evidence-answer',
+        assistantMode: 'agent',
+        executionPolicy: {
+          schemaVersion: 'workspai.assistant-execution-policy.v1',
+          selectedMode: 'agent',
+          requestIntent: 'question',
+          routeConfidence: 'high',
+          profile: 'evidence-answer',
+          toolMode: 'ask',
+        },
+        permissionLevel: 'default',
+        requiresVerifiedCompletion: false,
+        workspaceTrusted: true,
+      },
+      sequenceModel([
+        { type: 'tool', toolName: 'inspect-evidence', input: {}, reason: 'Read evidence.' },
+        { type: 'complete', summary: 'Here is the evidence-backed answer.' },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Explain the workspace architecture.');
+
+    expect(result.status).toBe('completed');
+    expect(result.assistantMode).toBe('agent');
+    expect(result.executionPolicy).toMatchObject({
+      profile: 'evidence-answer',
+      toolMode: 'ask',
+    });
+    expect(result.events.some((event) => event.type === 'verify.completed')).toBe(false);
+  });
+
   it('persists tool progress so canonical stage movement survives a webview reload', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({

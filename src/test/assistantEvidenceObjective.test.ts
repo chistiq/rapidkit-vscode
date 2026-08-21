@@ -52,6 +52,9 @@ describe('Assistant governed evidence objective', () => {
     expect(objective).toContain('doctor-receipt-last-run.json');
     expect(objective).not.toContain('workspace-impact-last-run.json');
     expect(objective).toContain('Refresh the governed producer');
+    expect(objective).toContain('CLI-authored canonical read order');
+    expect(objective).toContain('most relevant generated operational Skill');
+    expect(objective).toContain('do not preload full model or graph exports');
   });
 
   it('keeps Ask read-only and explicit about stale evidence', () => {

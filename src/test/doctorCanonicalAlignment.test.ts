@@ -93,6 +93,51 @@ describe('Doctor 0.56 canonical extension alignment', () => {
     expect(projection.verdict).toBe('attention');
     expect(projection.blockers).toEqual([]);
     expect(projection.advisories).toEqual(['web: Coverage evidence has not been generated.']);
+    expect(projection.affectedProjectNames).toEqual([]);
+  });
+
+  it('keeps advisory-only projects outside a workspace Doctor repair scope', () => {
+    const apiPath = '/workspace/api';
+    const webPath = '/workspace/web';
+    const projection = projectDoctorEvidence(
+      {
+        summary: { verdict: 'blocked' },
+        projects: [
+          project({
+            name: 'api',
+            projectPath: apiPath,
+            verdict: 'blocked',
+            findings: [
+              finding({
+                id: 'dependencies:api',
+                projectName: 'api',
+                projectPath: apiPath,
+                status: 'blocking',
+                symptom: 'Dependencies are not installed.',
+              }),
+            ],
+          }),
+          project({
+            name: 'web',
+            projectPath: webPath,
+            verdict: 'attention',
+            findings: [
+              finding({
+                id: 'coverage:web',
+                projectName: 'web',
+                projectPath: webPath,
+                status: 'advisory',
+                symptom: 'Coverage evidence is missing.',
+              }),
+            ],
+          }),
+        ],
+      },
+      { scope: 'workspace' }
+    );
+
+    expect(projection.affectedProjectNames).toEqual(['api']);
+    expect(projection.advisories).toHaveLength(1);
   });
 
   it('carries stable finding and capability ids into the Studio repair handoff', async () => {

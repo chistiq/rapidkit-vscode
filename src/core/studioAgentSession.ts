@@ -7,6 +7,7 @@ import {
   type StudioAgentPersistedSession,
   type StudioAgentSessionStatus,
 } from './studioAgentEvents.js';
+import type { AssistantExecutionPolicy } from './assistantExecutionPolicy.js';
 import {
   resolveStudioAgentToolPermission,
   type StudioAgentPermissionLevel,
@@ -644,6 +645,7 @@ export type StudioAgentSessionOptions = {
   projectPath?: string;
   cardId: string;
   assistantMode: WorkspaiAssistantMode;
+  executionPolicy?: AssistantExecutionPolicy;
   selectedModelId?: string;
   blockerSignature?: string;
   governedGoal?: NonNullable<StudioAgentPersistedSession['governedGoal']>;
@@ -713,6 +715,9 @@ export class StudioAgentSession {
           ...(options.projectPath ? { projectPath: options.projectPath } : {}),
           cardId: options.cardId,
           assistantMode: options.assistantMode,
+          ...(options.executionPolicy
+            ? { executionPolicy: structuredClone(options.executionPolicy) }
+            : {}),
           ...(options.selectedModelId ? { selectedModelId: options.selectedModelId } : {}),
           ...(options.blockerSignature ? { blockerSignature: options.blockerSignature } : {}),
           ...(options.governedGoal ? { governedGoal: structuredClone(options.governedGoal) } : {}),
@@ -734,6 +739,9 @@ export class StudioAgentSession {
     }
     if (options.restoredSession && options.selectedModelId) {
       this.state.selectedModelId = options.selectedModelId;
+    }
+    if (options.executionPolicy) {
+      this.state.executionPolicy = structuredClone(options.executionPolicy);
     }
     this.latestBlockerSignature =
       options.blockerSignature ?? options.restoredSession?.blockerSignature;
@@ -815,12 +823,14 @@ export class StudioAgentSession {
 
   private async execute(request: string): Promise<StudioAgentPersistedSession> {
     const requestId = crypto.randomUUID();
+    const executionMode = this.executionMode();
     await this.setStatus('running');
     await this.emit(
       'request.started',
       {
         request,
         assistantMode: this.state.assistantMode,
+        executionPolicy: this.state.executionPolicy,
         selectedModelId: this.state.selectedModelId,
         ...(this.state.governedGoal ? { governedGoal: this.state.governedGoal } : {}),
         ...(this.state.goal ? { goal: this.state.goal } : {}),
@@ -836,7 +846,7 @@ export class StudioAgentSession {
     let consecutiveModelDecisionsWithoutSemanticProgress = 0;
     const semanticProgress = new Set<string>();
     const resumedFailedAgentSession =
-      isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
+      isAutonomousWorkspaiAssistantMode(executionMode) &&
       this.options.restoredSession?.status === 'failed';
     const resumedProviderFailure =
       resumedFailedAgentSession &&
@@ -853,7 +863,7 @@ export class StudioAgentSession {
             )
         );
     let deterministicRecoveryPending =
-      isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
+      isAutonomousWorkspaiAssistantMode(executionMode) &&
       !this.isFreeFormAgentSession() &&
       this.options.repairPolicy !== 'refresh-producer' &&
       Boolean(this.registry.get('recover-active-blocker')) &&
@@ -873,7 +883,7 @@ export class StudioAgentSession {
     let deterministicSatisfiedGoalVerificationPending =
       this.state.goal?.baseline.status === 'satisfied' && Boolean(this.registry.get('verify-goal'));
     let deterministicProducerRefreshPending =
-      isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
+      isAutonomousWorkspaiAssistantMode(executionMode) &&
       this.options.repairPolicy === 'refresh-producer';
     try {
       if (deterministicProducerRefreshPending && !producerRefreshToolName) {
@@ -885,23 +895,21 @@ export class StudioAgentSession {
       while (!this.abortController.signal.aborted) {
         totalTurns += 1;
         const readOnlyTurnBudget =
-          this.state.assistantMode === 'ask' || this.state.assistantMode === 'plan'
-            ? 12
-            : undefined;
+          executionMode === 'ask' || executionMode === 'plan' ? 12 : undefined;
         const maxTurns = this.options.maxTurns ?? readOnlyTurnBudget;
         // Read-only modes have a finite provider-credit boundary. Mutation
         // modes are durable and checkpointed, so only an explicit host/test
         // maxTurns boundary may hand an unresolved session back safely.
         if (maxTurns !== undefined && totalTurns > maxTurns) {
           throw new Error(
-            this.state.assistantMode === 'ask' || this.state.assistantMode === 'plan'
-              ? `${this.state.assistantMode === 'ask' ? 'Ask' : 'Plan'} stopped after ${maxTurns} bounded model decisions without a contract-compliant answer. Refine the request or inspect the durable session evidence.`
+            executionMode === 'ask' || executionMode === 'plan'
+              ? `${executionMode === 'ask' ? 'Ask' : 'Plan'} stopped after ${maxTurns} bounded model decisions without a contract-compliant answer. Refine the request or inspect the durable session evidence.`
               : 'Assistant turn budget exhausted. The durable session can resume safely.'
           );
         }
         const modelDecisionLimit = this.options.maxModelDecisionsWithoutSourceProgress ?? 12;
         if (
-          isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
+          isAutonomousWorkspaiAssistantMode(executionMode) &&
           consecutiveModelDecisionsWithoutSemanticProgress >= modelDecisionLimit
         ) {
           const verificationToolName = this.verificationToolName();
@@ -1112,7 +1120,7 @@ export class StudioAgentSession {
                 summary: action.summary,
                 verificationAuthority: 'workspai-cli',
                 acceptanceReview:
-                  this.state.assistantMode === 'goal' && this.usesEvidenceReviewCompletion()
+                  executionMode === 'goal' && this.usesEvidenceReviewCompletion()
                     ? 'agent-reviewed-outcome-and-final-worktree'
                     : this.state.cardId.startsWith('assistant:')
                       ? 'final-worktree-inspected'
@@ -1141,7 +1149,7 @@ export class StudioAgentSession {
               'model.checkpoint',
               {
                 summary:
-                  this.state.assistantMode === 'goal' && this.usesEvidenceReviewCompletion()
+                  executionMode === 'goal' && this.usesEvidenceReviewCompletion()
                     ? 'The model requested completion. Studio is running canonical workspace verification before accepting the evidence-reviewed outcome.'
                     : 'The model requested completion. Studio is running the exact card verification contract before accepting it.',
                 recovery: 'completion-stop-gate',
@@ -1169,7 +1177,7 @@ export class StudioAgentSession {
                   summary: action.summary,
                   verificationAuthority: 'workspai-cli',
                   acceptanceReview:
-                    this.state.assistantMode === 'goal' && this.usesEvidenceReviewCompletion()
+                    executionMode === 'goal' && this.usesEvidenceReviewCompletion()
                       ? 'agent-reviewed-outcome-and-final-worktree'
                       : this.state.cardId.startsWith('assistant:')
                         ? 'final-worktree-inspected'
@@ -1332,6 +1340,31 @@ export class StudioAgentSession {
                   latestObservation.error ??
                   'The source repair closed, but the immutable Goal criteria remain unsatisfied.',
               };
+            } else if (
+              latestObservation.cardBlocking === true &&
+              toolOutputRecord(latestObservation)?.nextAction === 'next-causal-target'
+            ) {
+              deterministicRecoveryPending = true;
+              this.generalSourceRepairActive = false;
+              this.sourceRepairDirective = undefined;
+              this.sourceActionRequired = false;
+              this.proposalRecoveryInspectionRequired = false;
+              this.exhaustedTools.clear();
+              consecutiveModelDecisionsWithoutSemanticProgress = 0;
+              consecutiveCausalRejections = 0;
+              causalRecoveryAttempts = 0;
+              await this.emit(
+                'model.checkpoint',
+                {
+                  summary:
+                    'The selected causal target passed. Studio is continuing with the next blocking finding on the same aggregate card.',
+                  recovery: 'next-causal-target',
+                  transactionId: cliClosure.transactionId,
+                  blockerSignature: latestObservation.blockerSignature,
+                },
+                requestId
+              );
+              continue;
             } else if (this.usesEvidenceReviewCompletion()) {
               latestObservation = {
                 ...latestObservation,
@@ -1349,11 +1382,11 @@ export class StudioAgentSession {
                 'model.checkpoint',
                 {
                   summary:
-                    this.state.assistantMode === 'goal'
+                    executionMode === 'goal'
                       ? 'The source repair is safely closed. Review it against the complete Goal objective and inspect the final change, then request completion so Studio can verify workspace safety without claiming that an arbitrary semantic outcome was machine-proven.'
                       : 'The source repair is safely closed. Review the result against the user request, inspect the final change when needed, then request completion so Studio can run the final workspace verifier.',
                   recovery:
-                    this.state.assistantMode === 'goal'
+                    executionMode === 'goal'
                       ? 'general-goal-acceptance'
                       : 'general-task-acceptance',
                   transactionId: cliClosure.transactionId,
@@ -1440,7 +1473,7 @@ export class StudioAgentSession {
             this.proposalRecoveryInspectionRequired = false;
           }
           if (
-            isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
+            isAutonomousWorkspaiAssistantMode(executionMode) &&
             effectiveAction.toolName === 'recover-active-blocker' &&
             latestObservation.ok === true &&
             latestObservation.changed !== true &&
@@ -1477,7 +1510,7 @@ export class StudioAgentSession {
           }
           const sourceCandidates = sourceRepairInspectionCandidates(latestObservation);
           if (
-            isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
+            isAutonomousWorkspaiAssistantMode(executionMode) &&
             shouldInspectGeneralSourceCandidates(effectiveAction.toolName, latestObservation) &&
             sourceCandidates.length > 0 &&
             this.registry.get('inspect-source')
@@ -1518,7 +1551,7 @@ export class StudioAgentSession {
               this.latestActiveCardId !== activeCardBeforeAction);
           if (
             activeBlockerAdvanced &&
-            isAutonomousWorkspaiAssistantMode(this.state.assistantMode) &&
+            isAutonomousWorkspaiAssistantMode(executionMode) &&
             this.registry.get('recover-active-blocker')
           ) {
             this.generalSourceRepairActive = false;
@@ -1736,7 +1769,7 @@ export class StudioAgentSession {
     requestId: string
   ): Promise<StudioAgentToolResult | undefined> {
     if (
-      this.state.assistantMode !== 'goal' ||
+      this.executionMode() !== 'goal' ||
       this.generalSourceRepairActive ||
       !this.registry.get('inspect-remediation-plan') ||
       !this.registry.get('execute-remediation-step')
@@ -2193,7 +2226,8 @@ export class StudioAgentSession {
   }
 
   private completionPolicyViolation(requestId: string, summary: string): string | undefined {
-    if (this.state.assistantMode === 'ask' || this.state.assistantMode === 'plan') {
+    const executionMode = this.executionMode();
+    if (executionMode === 'ask' || executionMode === 'plan') {
       const inspected = this.state.events.some((event) => {
         if (event.requestId !== requestId || event.type !== 'tool.completed') {
           return false;
@@ -2209,10 +2243,10 @@ export class StudioAgentSession {
         ].includes(toolName);
       });
       if (!inspected) {
-        return `${this.state.assistantMode === 'ask' ? 'Ask' : 'Plan'} completion rejected: inspect relevant workspace source or governed evidence before answering.`;
+        return `${executionMode === 'ask' ? 'Ask' : 'Plan'} completion rejected: inspect relevant workspace source or governed evidence before answering.`;
       }
     }
-    if (this.state.assistantMode === 'plan') {
+    if (executionMode === 'plan') {
       const missing = [
         'scope',
         'evidence',
@@ -2252,17 +2286,21 @@ export class StudioAgentSession {
     });
   }
 
+  private executionMode(): WorkspaiAssistantMode {
+    return this.state.executionPolicy?.toolMode ?? this.state.assistantMode;
+  }
+
   private usesEvidenceReviewCompletion(): boolean {
     return (
-      (this.state.assistantMode === 'agent' && this.state.cardId.startsWith('assistant:')) ||
-      (this.state.assistantMode === 'goal' &&
+      (this.executionMode() === 'agent' && this.state.cardId.startsWith('assistant:')) ||
+      (this.executionMode() === 'goal' &&
         this.state.governedGoal?.completionMode === 'evidence-review')
     );
   }
 
   private isFreeFormAgentSession(): boolean {
     return (
-      this.state.assistantMode === 'agent' &&
+      this.executionMode() === 'agent' &&
       this.state.cardId.startsWith('assistant:') &&
       !this.state.goal &&
       !this.state.governedGoal

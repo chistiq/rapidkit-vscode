@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-08-21
+
+### Added
+
+- Added a session-level changed-file summary to the assistant transcript. One
+  card reports how many files the agent edited with cumulative `+added -removed`
+  totals, lists each file with its own counts, progressively discloses the
+  remainder, and offers Review and Undo bound to the owning CLI transaction.
+- Added `Review`, which opens every comparable file of a change set in one
+  native multi-file comparison and reports any file it had to skip.
+- Added a read-only `workspai-repair` document scheme so a native comparison
+  reads the transaction's own checkpoint content instead of an untitled copy.
+  The modified side is now the real file, so it can be edited from the diff.
+- Added line-number gutters to inline repair diffs, with original numbering on
+  removed lines and new numbering on added lines.
+
+### Fixed
+
+- Fixed understated `+added -removed` badges. Counts came from the diff preview,
+  which is truncated for transport, so any change larger than the preview
+  reported too few lines. The host now reports authoritative totals.
+- Fixed a completed Undo leaving reverted files listed as changed, and leaving
+  the per-step Undo control enabled in free-form Agent sessions. A rolled-back
+  transaction is now retired across every session and incident surface.
+
+### Changed
+
+- Aligned the extension runtime and published contract mirrors with Workspai
+  CLI 0.63.0. The extension now requires that release because aggregate repair
+  queues and immutable causal-finding handoffs are execution requirements, not
+  optional presentation metadata.
+- Unified aggregate-card repair around a deterministic sequential causal queue.
+  Studio repairs one blocking finding family in one canonical project per CLI
+  transaction, refreshes the exact owning producer, then advances using fresh
+  evidence. Advisory findings cannot widen mutation scope, and unrelated
+  workspace blockers do not reopen a resolved selected card.
+- Added structured causal finding targets to Doctor, Analyze, Readiness,
+  Workspace Verify, Workspace Run, and Workspace Intelligence handoffs so an
+  aggregate card is never mistaken for a source file or mutation target.
+- Added a model-driven, tool-free intent router before project bootstrap, Goal
+  planning, scope selection, or source mutation. Casual conversation and
+  clarification now complete as normal chat; explicit Goal mode binds any
+  clear bounded engineering task or durable outcome to governed planning.
+- Added an immutable execution policy derived from selected mode and classified
+  request intent. The policy is persisted across resume and controls the model
+  prompt, tool registry, mutation authority, and verification requirement from
+  one contract.
+- Added explicit, dismissible mode suggestions such as `Continue in Agent`,
+  `Run with Agent`, and `Track as Goal`. Read-only authority may be reduced
+  automatically, but increased authority always requires a user click.
+- Removed implicit Agent-to-Goal promotion. Goal-like requests submitted in
+  Agent mode remain one-shot governed Agent tasks, while card handoffs and
+  durable in-progress sessions retain their existing canonical route.
+- Replaced Goal cancellation errors with a quiet completed state and preserved
+  arbitrary bounded outcomes instead of presenting Goal as numeric-only.
+- Project bootstrap now accepts both the legacy Model/Graph evidence route and
+  the canonical bounded Skill/Graph route while requiring the CLI 0.63.0
+  causal-repair contract for mutating workflows.
+- Made Studio, native Chat, Copilot handoff, and Webview agent context follow
+  the CLI-authored canonical read order: report index, active Goal and Goal
+  Pack, bounded context, relevant operational Skill, then bounded Graph search.
+- Removed full Workspace Model and Knowledge Graph exports from default model
+  prompts; complete exports remain available for explicit audit workflows.
+- Added bounded dynamic operational-Skill selection. Every validated canonical
+  Skill remains tool-readable, while at most three task-relevant Skills are
+  preloaded into a model prompt.
+
+### Security
+
+- Unified file-deletion authorization across free-form Agent, Sidebar card
+  handoff, and native Chat. Every deletion now requires an explicitly inspected,
+  unchanged regular file and passes workspace/project normalization, protected
+  path policy, symlink refusal, SHA revalidation, and the CLI Repair Engine.
+- Expanded cross-runtime source-mutation detection for scaffold, initialization,
+  generation, migration, wrapper, and creation commands so project generators
+  cannot run through the non-mutating command capability plane.
+- Made intent-driven authority fail closed: only high-confidence engineering
+  classifications can enter Agent or Goal mutation loops, persisted execution
+  policies are canonically revalidated on resume, and invalid UI mode payloads
+  fall back to read-only Ask instead of Agent.
+- Strengthened operational-Skill index validation for timestamps, input hashes,
+  unique identifiers, canonical paths, and schema metadata before Studio can
+  expose generated Skill files to a model.
+- Kept portable workspace identity in Studio evidence and continued blocking
+  machine-local paths from source, tests, documentation, and packaged output.
+
 ## [0.41.0] - 2026-08-19
 
 ### Added

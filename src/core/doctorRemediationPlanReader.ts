@@ -32,9 +32,17 @@ export type DoctorRemediationPlanStepView = {
   projectName: string;
   projectPath: string;
   issueId?: string;
+  causalKey?: string;
   findingStatus?: 'blocking' | 'advisory' | 'informational' | 'unknown';
   originalCommand: string;
   kind: string;
+  repairMode:
+    | 'edit-file'
+    | 'run-command'
+    | 'refresh-evidence'
+    | 'verify-before-fix'
+    | 'manual-guidance';
+  sourceMutation: 'required' | 'allowed' | 'forbidden';
   risk: 'safe' | 'guarded' | 'invasive';
   executable: boolean;
   studioState: 'ready' | 'blocked' | 'review-required' | 'guidance-only';
@@ -583,6 +591,7 @@ function mapStep(step: Record<string, unknown>): DoctorRemediationPlanStepView {
   const diffPreview = isRecord(step.diffPreview) ? step.diffPreview : {};
 
   const operation = normalizeRepairOperation(step.operation);
+  const transaction = normalizeDependencyTransaction(step.transaction);
   const risk = normalizeRisk(step.risk);
   const studioState = normalizeStudioState(studioStatus.state);
   const rawId = readString(step.id, 'unknown');
@@ -595,6 +604,11 @@ function mapStep(step: Record<string, unknown>): DoctorRemediationPlanStepView {
     step.findingStatus === 'unknown'
       ? step.findingStatus
       : undefined;
+  const repairMode = operation
+    ? ('edit-file' as const)
+    : readBoolean(step.executable)
+      ? ('run-command' as const)
+      : ('manual-guidance' as const);
   return {
     id: rawId,
     actionId: canonicalId,
@@ -604,9 +618,12 @@ function mapStep(step: Record<string, unknown>): DoctorRemediationPlanStepView {
     projectName: readString(step.projectName, 'workspace'),
     projectPath: readString(step.projectPath),
     ...(issueId ? { issueId } : {}),
+    ...(readString(step.causalKey) ? { causalKey: readString(step.causalKey) } : {}),
     ...(findingStatus ? { findingStatus } : {}),
     originalCommand: readString(step.originalCommand),
     kind: readString(step.kind, 'manual-url'),
+    repairMode,
+    sourceMutation: repairMode === 'edit-file' ? 'required' : transaction ? 'forbidden' : 'allowed',
     risk,
     executable: readBoolean(step.executable),
     studioState,
@@ -626,7 +643,7 @@ function mapStep(step: Record<string, unknown>): DoctorRemediationPlanStepView {
     blockedReason: readString(step.blockedReason) || undefined,
     operation,
     strategy: normalizeRepairStrategy(step.strategy),
-    transaction: normalizeDependencyTransaction(step.transaction),
+    transaction,
     canApply: Boolean(
       operation &&
       risk !== 'invasive' &&
@@ -806,13 +823,16 @@ function mapArtifactActionToStep(input: {
 }): DoctorRemediationPlanStepView {
   const action = input.action;
   const declaredProjectPath = action.projectPath?.trim();
+  const handoffProjectPath = input.handoff.projectPath?.trim();
   const projectPath =
     action.cwd === 'project'
       ? declaredProjectPath
         ? path.isAbsolute(declaredProjectPath)
           ? declaredProjectPath
-          : path.resolve(input.workspacePath, declaredProjectPath)
-        : (input.handoff.projectPath?.trim() ?? '')
+          : declaredProjectPath.replaceAll('\\', '/').startsWith('external/') && handoffProjectPath
+            ? handoffProjectPath
+            : path.resolve(input.workspacePath, declaredProjectPath)
+        : (handoffProjectPath ?? '')
       : '';
   const projectName = projectPath
     ? action.projectName || path.basename(projectPath)
@@ -831,9 +851,17 @@ function mapArtifactActionToStep(input: {
     projectName,
     projectPath,
     issueId: action.findingId,
+    causalKey: action.causalKey,
     findingStatus: action.findingStatus,
     originalCommand: action.command ?? action.verifyCommand,
     kind: action.mode,
+    repairMode: action.mode,
+    sourceMutation:
+      action.mode === 'edit-file'
+        ? 'required'
+        : action.mode === 'run-command' && action.transaction
+          ? 'forbidden'
+          : 'allowed',
     risk: action.risk,
     executable: Boolean(action.command),
     studioState: action.status,
@@ -961,7 +989,12 @@ async function readArtifactRemediationPlanForStudio(input: {
     .filter((entry): entry is ArtifactRemediationAction => Boolean(entry))
     .filter((action) => artifactActionMatchesHandoff(action, input.handoff))
     .sort((a, b) => a.order - b.order);
-  const actions = selectBlockerFocusedActions(matchingActions, input.handoff);
+  const blockingActions = matchingActions.filter((action) => action.findingStatus === 'blocking');
+  const actionableActions =
+    blockingActions.length > 0
+      ? blockingActions
+      : matchingActions.filter((action) => action.findingStatus !== 'informational');
+  const actions = selectBlockerFocusedActions(actionableActions, input.handoff);
   if (actions.length === 0) {
     return null;
   }
@@ -1005,7 +1038,10 @@ export async function readDoctorRemediationPlanForStudio(input: {
   if (!workspacePath || !handoff) {
     return null;
   }
-  const maxSteps = Math.max(1, Math.min(8, input.maxSteps ?? 4));
+  // Agent orchestration must see the complete bounded blocker queue. UI callers
+  // may still request a smaller preview, while the repair host can inspect up
+  // to the contract maximum without silently hiding an executable target.
+  const maxSteps = Math.max(1, Math.min(64, input.maxSteps ?? 4));
   const cacheKey = doctorRemediationPlanCacheKey({ workspacePath, handoff, maxSteps });
   const cached = doctorRemediationPlanCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {

@@ -17,6 +17,7 @@ export type ActionsWebviewMessageDispatchHost = {
   openDashboardSection: (data: unknown) => Promise<void>;
   openWorkspaceFile: (data: unknown) => Promise<void>;
   openWorkspaceDiff: (data: unknown) => Promise<void>;
+  reviewWorkspaceChanges: (data: unknown) => Promise<void>;
   undoAgentPatch: (data: unknown) => Promise<void>;
   sendInlineScope: () => Promise<void>;
   sendInlineModels: () => Promise<void>;
@@ -84,6 +85,10 @@ const ACTIONS_WEBVIEW_MESSAGE_LANES: readonly ActionsWebviewMessageLane[] = [
   {
     command: 'sidebarOpenWorkspaceDiff',
     dispatch: (host, data) => host.openWorkspaceDiff(data),
+  },
+  {
+    command: 'sidebarReviewWorkspaceChanges',
+    dispatch: (host, data) => host.reviewWorkspaceChanges(data),
   },
   {
     command: 'sidebarStudioUndoPatch',

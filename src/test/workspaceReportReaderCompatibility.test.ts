@@ -71,8 +71,15 @@ describe('workspace report reader compatibility contracts', () => {
       [WORKSPACE_SKILLS_INDEX_PATH]: {
         schemaVersion: WORKSPACE_SKILLS_INDEX_SCHEMA_VERSION,
         generatedAt: '2026-06-28T00:00:00.000Z',
-        inputsHash: 'abc',
-        skills: [{ skillId: 'release', path: '.github/skills/release/SKILL.md', title: 'Release' }],
+        inputsHash: 'abcdefgh',
+        skills: [
+          {
+            skillId: 'release',
+            path: '.workspai/skills/release.md',
+            schemaVersion: 'workspai-operational-skill.v1',
+            title: 'Release',
+          },
+        ],
         futureField: 1,
       },
       [WORKSPACE_CONTEXT_AGENT_REPORT_PATH]: {
@@ -94,6 +101,29 @@ describe('workspace report reader compatibility contracts', () => {
     });
     await expect(readWorkspaceAgentContextReportArtifact(workspacePath)).resolves.toMatchObject({
       kind: 'valid',
+    });
+  });
+
+  it('rejects unsafe, incomplete, or duplicate operational skill entries', async () => {
+    const workspacePath = await makeWorkspace({
+      [WORKSPACE_SKILLS_INDEX_PATH]: {
+        schemaVersion: WORKSPACE_SKILLS_INDEX_SCHEMA_VERSION,
+        generatedAt: '2026-06-28T00:00:00.000Z',
+        inputsHash: 'abcdefgh',
+        skills: [
+          {
+            skillId: 'release',
+            path: '../outside.md',
+            schemaVersion: 'workspai-operational-skill.v1',
+            title: 'Release',
+          },
+        ],
+      },
+    });
+
+    await expect(readWorkspaceSkillsIndexArtifact(workspacePath)).resolves.toMatchObject({
+      kind: 'incompatible',
+      error: expect.stringContaining('unique safe operational skills'),
     });
   });
 

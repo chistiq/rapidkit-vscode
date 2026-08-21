@@ -90,6 +90,32 @@ describe('Phase 3 studio contracts parity', () => {
     expect(handoff.projectPath).toBeUndefined();
   });
 
+  it('accepts one transaction-scoped causal target on an aggregate handoff', () => {
+    expect(
+      isStudioBlockerHandoff({
+        schemaVersion: 'rapidkit-studio-blocker-handoff-v1',
+        cardId: 'doctor',
+        cardStatus: 'fail',
+        blockers: ['api: dependencies are missing'],
+        artifactPath: '.workspai/reports/doctor-last-run.json',
+        sourceCommand: 'npx workspai doctor workspace --json',
+        scope: 'workspace',
+        blockerSignature: '12345678',
+        selectedTarget: {
+          findingId: 'runtime-dependency-materialization:api',
+          causalKey: 'api:dependency:runtime-dependency-materialization',
+          actionIds: ['doctor.api.runtime-dependency-materialization.dependency-materialization'],
+          sourcePaths: ['api/package.json'],
+          projectName: 'api',
+          projectPath: '/workspace/api',
+          repairMode: 'run-command',
+          sourceMutation: 'forbidden',
+          verifyCommand: 'npx workspai doctor project --json',
+        },
+      })
+    ).toBe(true);
+  });
+
   it('carries command safety metadata for guarded Studio handoffs', async () => {
     const handoff = await buildStudioBlockerHandoff({
       workspacePath: '/tmp/workspai',

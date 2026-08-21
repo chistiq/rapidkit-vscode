@@ -116,7 +116,8 @@ describe('workspaceAgentContextReader', () => {
     expect(report?.agent).toBe('cursor');
     expect(section).toContain('WORKSPACE INTELLIGENCE');
     expect(section).toContain('workspai pipeline --json --strict');
-    expect(section).toContain('workspace model');
+    expect(section).toContain('bounded graph search');
+    expect(section).toContain('full Model or Graph exports');
   });
 });
 

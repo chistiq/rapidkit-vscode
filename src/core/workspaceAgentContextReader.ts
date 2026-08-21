@@ -29,6 +29,36 @@ export type WorkspaceAgentContextReport = {
   agent?: string;
   workspaceSummary?: string;
   humanSummary?: string;
+  modelRef?: string;
+  workspace?: {
+    name?: string;
+    root?: string;
+    type?: string;
+    profile?: string;
+  };
+  knowledgeGraph?: {
+    artifact?: string;
+    schemaVersion?: string;
+    available?: boolean;
+    entityCount?: number;
+    relationCount?: number;
+    proofCount?: number;
+    queryCommands?: string[];
+  };
+  intelligenceChain?: {
+    schemaVersion?: string;
+    contractPath?: string;
+    currentStep?: string;
+    canonicalReadOrder?: string[];
+  };
+  factFreshness?: {
+    status?: string;
+    totalFacts?: number;
+    staleFacts?: number;
+    unknownFacts?: number;
+    liveFacts?: number;
+    verifyBeforeUseFacts?: number;
+  };
   safeCommands?: Array<{
     id?: string;
     scope?: string;
@@ -53,6 +83,13 @@ export type WorkspaceAgentContextReport = {
     errors?: number;
     warnings?: number;
   };
+  impactSummary?: Record<string, unknown>;
+  doctorSummary?: Record<string, unknown>;
+  analyzeSummary?: Record<string, unknown>;
+  readinessSummary?: Record<string, unknown>;
+  verifySummary?: Record<string, unknown>;
+  explainSummary?: Record<string, unknown>;
+  diffSummary?: Record<string, unknown>;
 };
 
 export type WorkspaceAgentContextReportReadResult =
@@ -112,6 +149,36 @@ export function buildWorkspaceAgentContextPromptSection(
     );
   }
 
+  if (report.workspace?.root) {
+    lines.push(`- Workspace identity: ${report.workspace.root}`);
+  }
+
+  const readOrder = Array.isArray(report.intelligenceChain?.canonicalReadOrder)
+    ? report.intelligenceChain.canonicalReadOrder
+    : [];
+  if (readOrder.length > 0) {
+    lines.push('- Canonical read order (do not preload omitted Model/Graph exports):');
+    for (const artifact of readOrder.slice(0, 12)) {
+      lines.push(`  • ${artifact}`);
+    }
+  }
+
+  const graphCommands = Array.isArray(report.knowledgeGraph?.queryCommands)
+    ? report.knowledgeGraph.queryCommands
+    : [];
+  if (graphCommands.length > 0) {
+    lines.push('- Bounded proof-backed graph retrieval:');
+    for (const command of graphCommands.slice(0, 6)) {
+      lines.push(`  • ${command}`);
+    }
+  }
+
+  if (report.factFreshness?.status) {
+    lines.push(
+      `- Fact freshness: ${report.factFreshness.status}; stale=${report.factFreshness.staleFacts ?? 0}, unknown=${report.factFreshness.unknownFacts ?? 0}, verify-before-use=${report.factFreshness.verifyBeforeUseFacts ?? 0}`
+    );
+  }
+
   const safeCommands = Array.isArray(report.safeCommands) ? report.safeCommands : [];
   if (safeCommands.length > 0) {
     lines.push('- Safe commands (use only these unless user explicitly requests otherwise):');
@@ -156,7 +223,7 @@ export function buildWorkspaceAgentContextPromptSection(
   }
 
   lines.push(
-    '- Prefer deterministic workspace intelligence commands over heuristic guesses: `workspai workspace model`, `workspace snapshot`, `workspace diff`, `workspace impact`, `workspace context --for-agent`.'
+    '- Prefer the canonical context, relevant operational Skill, and bounded graph search over loading full Model or Graph exports. Load a complete export only when the task explicitly requires it.'
   );
 
   return lines.join('\n');

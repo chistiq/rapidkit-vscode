@@ -77,27 +77,15 @@ describe('evidenceAgentContextBundle', () => {
       `#file:${workspacePath.replace(/\\/g, '/')}/.workspai/reports/workspace-context-agent.json`
     );
     expect(prompt).toContain(
-      `#file:${workspacePath.replace(/\\/g, '/')}/.workspai/reports/agent-customization-pack.json`
-    );
-    expect(prompt).toContain(
       `#file:${workspacePath.replace(/\\/g, '/')}/${WORKSPACE_EXPLAIN_REPORT_PATH}`
     );
-    expect(prompt).toContain(
-      `#file:${workspacePath.replace(/\\/g, '/')}/${WORKSPACE_WHY_REPORT_PATH}`
-    );
-    expect(prompt).toContain(
-      `#file:${workspacePath.replace(/\\/g, '/')}/${WORKSPACE_TRACE_REPORT_PATH}`
-    );
-    expect(prompt).toContain(
-      `#file:${workspacePath.replace(/\\/g, '/')}/${WORKSPACE_CONTRACT_VERIFY_REPORT_PATH}`
-    );
-    expect(bundle.attachments.map((attachment) => attachment.relativePath)).toEqual(
-      expect.arrayContaining([
-        WORKSPACE_EXPLAIN_REPORT_PATH,
-        WORKSPACE_WHY_REPORT_PATH,
-        WORKSPACE_TRACE_REPORT_PATH,
-        WORKSPACE_CONTRACT_VERIFY_REPORT_PATH,
-      ])
+    expect(prompt).not.toContain('/workspace-model.json');
+    expect(prompt).not.toContain('/workspace-knowledge-graph.json');
+    expect(prompt).not.toContain(`/${WORKSPACE_WHY_REPORT_PATH}`);
+    expect(prompt).not.toContain(`/${WORKSPACE_TRACE_REPORT_PATH}`);
+    expect(prompt).not.toContain(`/${WORKSPACE_CONTRACT_VERIFY_REPORT_PATH}`);
+    expect(bundle.attachments.map((attachment) => attachment.relativePath)).toContain(
+      WORKSPACE_EXPLAIN_REPORT_PATH
     );
     expect(prompt).toContain('Agent pack preset: enterprise');
     expect(prompt).toContain('## Standard answer contract');
@@ -190,5 +178,50 @@ describe('evidenceAgentContextBundle', () => {
     expect(attachment?.validity).toBeUndefined();
     expect(bundle.missingRequired).toEqual([]);
     expect(bundle.summaryLines.join('\n')).not.toContain('Missing or invalid intelligence');
+  });
+
+  it('authorizes indexed operational Skills while preloading only bounded relevant guidance', async () => {
+    const workspacePath = await createWorkspace({
+      '.workspai/reports/workspace-context-agent.json': { schemaVersion: 'workspace-context.v1' },
+      '.workspai/reports/workspace-skills-index.json': {
+        schemaVersion: 'workspace-skills-index.v1',
+        generatedAt: '2026-08-20T00:00:00.000Z',
+        inputsHash: '12345678',
+        skills: [
+          {
+            skillId: 'dependency-repair',
+            path: '.workspai/skills/dependency-repair.md',
+            schemaVersion: 'workspai-operational-skill.v1',
+            title: 'Dependency repair',
+          },
+          {
+            skillId: 'release-readiness',
+            path: '.workspai/skills/release-readiness.md',
+            schemaVersion: 'workspai-operational-skill.v1',
+            title: 'Release readiness',
+          },
+        ],
+      },
+      '.workspai/skills/dependency-repair.md': '# Dependency repair',
+      '.workspai/skills/release-readiness.md': '# Release readiness',
+    });
+
+    const bundle = await buildEvidenceAgentContextBundle({
+      workspacePath,
+      userQuestion: 'Repair the broken dependency installation.',
+    });
+    const dependencySkill = bundle.attachments.find(
+      (entry) => entry.relativePath === '.workspai/skills/dependency-repair.md'
+    );
+    const releaseSkill = bundle.attachments.find(
+      (entry) => entry.relativePath === '.workspai/skills/release-readiness.md'
+    );
+    const prompt = buildSendToCopilotPrompt(bundle);
+
+    expect(dependencySkill).toMatchObject({ exists: true, promptEligible: true });
+    expect(releaseSkill).toMatchObject({ exists: true, promptEligible: false });
+    expect(prompt).toContain('/.workspai/skills/dependency-repair.md');
+    expect(prompt).not.toContain('/.workspai/skills/release-readiness.md');
+    expect(bundle.summaryLines.join('\n')).toContain('Relevant operational skill');
   });
 });

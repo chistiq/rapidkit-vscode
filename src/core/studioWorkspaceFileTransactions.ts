@@ -24,6 +24,46 @@ function isInside(parentPath: string, childPath: string): boolean {
   );
 }
 
+function normalizeStudioDeleteTargets(input: {
+  workspacePath: string;
+  projectPath?: string;
+  paths: string[];
+}): FilePatch[] {
+  const workspacePath = path.resolve(input.workspacePath);
+  const projectPath = input.projectPath?.trim() ? path.resolve(input.projectPath) : undefined;
+  const projectIsInsideWorkspace = Boolean(projectPath && isInside(workspacePath, projectPath));
+  const normalized = new Map<string, FilePatch>();
+
+  for (const requestedPath of input.paths) {
+    const rawPath = requestedPath.trim();
+    const absoluteFromWorkspace = path.isAbsolute(rawPath)
+      ? path.resolve(rawPath)
+      : path.resolve(workspacePath, rawPath);
+    let absolutePath = absoluteFromWorkspace;
+    if (
+      projectPath &&
+      (!projectIsInsideWorkspace || !isInside(projectPath, absoluteFromWorkspace))
+    ) {
+      const absoluteFromProject = path.isAbsolute(rawPath)
+        ? absoluteFromWorkspace
+        : path.resolve(projectPath, rawPath);
+      if (isInside(projectPath, absoluteFromProject)) {
+        absolutePath = absoluteFromProject;
+      }
+    }
+    const relativePath = path.relative(workspacePath, absolutePath).replace(/\\/g, '/');
+    normalized.set(relativePath || rawPath, {
+      relativePath: relativePath || rawPath,
+      operation: 'delete',
+      isNewFile: false,
+      patchedContent: '',
+      hunks: [],
+      status: 'pending',
+    });
+  }
+  return [...normalized.values()];
+}
+
 function normalizedAuthorizedPatchPath(input: {
   workspacePath: string;
   projectPath?: string;
@@ -155,6 +195,83 @@ export async function compileInspectedStudioTextEdits(input: {
       status: 'pending',
     });
   }
+  return patches;
+}
+
+/**
+ * Compile file deletions into the same guarded patch contract used for writes.
+ *
+ * This is the single deletion boundary for Sidebar, card handoff, and native
+ * Chat. Evidence hashes are useful for freshness reporting, but they never
+ * replace an explicit source inspection. The target is normalized against the
+ * selected workspace/project, checked against the protected-path policy,
+ * proven to be an unchanged regular file, and only then handed to the CLI
+ * Repair Engine for checkpointed deletion.
+ */
+export async function compileInspectedStudioDeletePatches(input: {
+  workspacePath: string;
+  projectPath?: string;
+  paths: string[];
+  inspectedSource: Map<string, string | null>;
+}): Promise<FilePatch[]> {
+  const patches = normalizeStudioDeleteTargets({
+    workspacePath: input.workspacePath,
+    projectPath: input.projectPath,
+    paths: input.paths,
+  });
+  const unauthorized = await authorizeStudioWorkspacePatchTargets({
+    workspacePath: input.workspacePath,
+    projectPath: input.projectPath,
+    patches,
+    inspectedSource: input.inspectedSource,
+  });
+  if (unauthorized.length > 0) {
+    throw new Error(
+      `Inspect every safe regular-file target before deleting: ${unauthorized
+        .map((entry) => entry.relativePath)
+        .join(', ')}`
+    );
+  }
+
+  for (const patch of patches) {
+    const expectedSha = input.inspectedSource.get(patch.relativePath);
+    if (typeof expectedSha !== 'string' || !expectedSha) {
+      throw new Error(`Inspect the exact file before deleting it: ${patch.relativePath}`);
+    }
+    const absolutePath = path.resolve(input.workspacePath, patch.relativePath);
+    const stat = await fs.lstat(absolutePath).catch(() => undefined);
+    if (!stat?.isFile() || stat.isSymbolicLink()) {
+      throw new Error(`Studio Agent delete target is not a regular file: ${patch.relativePath}`);
+    }
+    const realTarget = await fs.realpath(absolutePath);
+    const authorizedRoots = [input.workspacePath, input.projectPath]
+      .filter((entry): entry is string => Boolean(entry))
+      .map((entry) => path.resolve(entry));
+    let canonicalRelativePath: string | undefined;
+    for (const root of authorizedRoots) {
+      const realRoot = await fs.realpath(root).catch(() => undefined);
+      if (!realRoot || !isInside(realRoot, realTarget)) {
+        continue;
+      }
+      canonicalRelativePath = path.relative(realRoot, realTarget).replace(/\\/g, '/');
+      break;
+    }
+    if (
+      !canonicalRelativePath ||
+      studioSourcePathDenialReason(canonicalRelativePath) !== undefined
+    ) {
+      throw new Error(
+        `Studio Agent delete target resolves outside the authorized source boundary: ${patch.relativePath}`
+      );
+    }
+    const original = await fs.readFile(absolutePath);
+    const currentSha = crypto.createHash('sha256').update(original).digest('hex');
+    if (currentSha !== expectedSha) {
+      throw new Error(`Source changed after inspection: ${patch.relativePath}`);
+    }
+    patch.baseSha256 = currentSha;
+  }
+
   return patches;
 }
 

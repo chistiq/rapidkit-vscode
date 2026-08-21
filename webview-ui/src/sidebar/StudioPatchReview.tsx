@@ -1,15 +1,9 @@
 import { useMemo, useState } from 'react';
+import type { SidebarStudioFileChangeView } from '@/lib/sidebarStudioActionProgress';
 import { compactStudioPathText } from '@/lib/studioDisplayText';
+import { StudioDiffView } from './StudioDiffView';
 
-export type SidebarPatchReviewItem = {
-  relativePath: string;
-  status: string;
-  isNewFile?: boolean;
-  binary?: boolean;
-  stale?: boolean;
-  failReason?: string;
-  diffLines?: Array<{ type: 'added' | 'removed' | 'unchanged'; content: string }>;
-};
+export type SidebarPatchReviewItem = SidebarStudioFileChangeView;
 
 type StudioPatchReviewProps = {
   summary?: string;
@@ -111,17 +105,7 @@ export function StudioPatchReview({
                     {patch.failReason ? <span>{displayFailReason}</span> : null}
                   </label>
                   {patch.diffLines?.length ? (
-                    <pre
-                      className="ws-sidebar__studio-patch-diff"
-                      aria-label={`Diff for ${displayPath}`}
-                    >
-                      {patch.diffLines.map((line, index) => (
-                        <span key={`${line.type}-${index}`} data-type={line.type}>
-                          {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
-                          {line.content}
-                        </span>
-                      ))}
-                    </pre>
+                    <StudioDiffView lines={patch.diffLines} label={`Diff for ${displayPath}`} />
                   ) : null}
                 </li>
               );

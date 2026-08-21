@@ -11,6 +11,8 @@ export type StudioCardRepairCapability = {
   verifyArtifact: string;
   aggregateVerifyCommand: string;
   targetClosure: 'exact-producer-and-causal-action-set';
+  aggregateRepair: 'sequential-causal-queue';
+  transactionScope: 'one-causal-finding-family';
   workspacePosture: 'reported-separately';
   repairPolicy: 'diagnose-and-repair' | 'source-repair-then-produce' | 'refresh-producer';
   remediationArtifacts: string[];

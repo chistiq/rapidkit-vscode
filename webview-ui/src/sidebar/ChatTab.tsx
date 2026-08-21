@@ -5,7 +5,12 @@ import { ChatSessionBar } from './composer/ChatSessionBar';
 import { ChatToolsDrawer } from './drawers/ChatToolsDrawer';
 import { SidebarMessage } from './SidebarMessage';
 import type { SidebarModel } from './sidebarModels';
-import { basenameFromPath, chatSessionContextLabel, type ChatSession } from './sidebarSessions';
+import {
+  basenameFromPath,
+  chatSessionContextLabel,
+  type ChatModeSuggestion,
+  type ChatSession,
+} from './sidebarSessions';
 import type { SidebarScope } from './sidebarTypes';
 
 interface ChatTabProps {
@@ -37,6 +42,8 @@ interface ChatTabProps {
   composerModeSelector?: ReactNode;
   onSteer?: (message: string) => void;
   onCancel?: () => void;
+  onAcceptModeSuggestion?: (suggestion: ChatModeSuggestion) => void;
+  onDismissModeSuggestion?: () => void;
 }
 
 function scopeDisplayName(scope: SidebarScope): string {
@@ -163,9 +170,7 @@ export function ChatTab(props: ChatTabProps) {
         compact={repairMode}
         allowNewSession={!repairMode}
         contextText={
-          activeSession?.incident || activeSession?.editorIssue
-            ? composerScopeLabel
-            : null
+          activeSession?.incident || activeSession?.editorIssue ? composerScopeLabel : null
         }
         onNewSession={() => {
           props.onNewSession();
@@ -213,6 +218,33 @@ export function ChatTab(props: ChatTabProps) {
         ) : null}
         <div ref={streamEndRef} aria-hidden="true" />
       </div>
+
+      {!repairMode && activeSession?.modeSuggestion ? (
+        <div className="ws-sidebar__mode-suggestion" role="status">
+          <div>
+            <strong>{activeSession.modeSuggestion.label}</strong>
+            <span>{activeSession.modeSuggestion.description}</span>
+          </div>
+          <div className="ws-sidebar__mode-suggestion-actions">
+            <button
+              type="button"
+              className="ws-sidebar__inline"
+              disabled={activeSession.status === 'streaming'}
+              onClick={() => props.onAcceptModeSuggestion?.(activeSession.modeSuggestion!)}
+            >
+              {activeSession.modeSuggestion.label}
+            </button>
+            <button
+              type="button"
+              className="ws-sidebar__inline ws-sidebar__inline--quiet"
+              disabled={activeSession.status === 'streaming'}
+              onClick={props.onDismissModeSuggestion}
+            >
+              Not now
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <ComposerShell
         value={prompt}

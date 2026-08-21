@@ -10,7 +10,6 @@ import {
   readWorkspaceImpactReport,
 } from './workspaceImpactReader';
 import { readWorkspaceCompatibilityMatrix } from './workspaceCompatibilityMatrixReader';
-import { buildWorkspaceModelPromptSection, readWorkspaceModelReport } from './workspaceModelReader';
 import {
   buildWorkspaceVerifyPromptSection,
   readWorkspaceVerifyReport,
@@ -181,23 +180,15 @@ export async function buildIncidentStudioEvidenceContext(input: {
           project.name === explicitProjectPath.split(/[\\/]/).pop()
       )
     : undefined;
-  const [
-    registry,
-    diffStat,
-    agentContextReport,
-    impactReport,
-    verifyReport,
-    workspaceModelReport,
-    compatibilityMatrix,
-  ] = await Promise.all([
-    readAIActionRegistry(input.workspacePath),
-    getGitDiffStat(input.workspacePath, input.gitDiffTimeoutMs ?? 1500),
-    readWorkspaceAgentContextReport(input.workspacePath),
-    readWorkspaceImpactReport(input.workspacePath),
-    readWorkspaceVerifyReport(input.workspacePath),
-    readWorkspaceModelReport(input.workspacePath),
-    readWorkspaceCompatibilityMatrix(input.workspacePath),
-  ]);
+  const [registry, diffStat, agentContextReport, impactReport, verifyReport, compatibilityMatrix] =
+    await Promise.all([
+      readAIActionRegistry(input.workspacePath),
+      getGitDiffStat(input.workspacePath, input.gitDiffTimeoutMs ?? 1500),
+      readWorkspaceAgentContextReport(input.workspacePath),
+      readWorkspaceImpactReport(input.workspacePath),
+      readWorkspaceVerifyReport(input.workspacePath),
+      readWorkspaceCompatibilityMatrix(input.workspacePath),
+    ]);
   const affected = Array.isArray(impactReport?.affectedProjects)
     ? impactReport.affectedProjects
     : [];
@@ -208,7 +199,7 @@ export async function buildIncidentStudioEvidenceContext(input: {
   return {
     workspace: {
       name: input.workspaceName,
-      path: input.workspacePath,
+      path: '$WORKSPACE',
     },
     analyzeReport: {
       available: Boolean(report),
@@ -271,10 +262,10 @@ export async function buildIncidentStudioEvidenceContext(input: {
     },
     workspaceIntelligence: {
       model: {
-        available: Boolean(workspaceModelReport),
-        projectCount: workspaceModelReport?.summary?.projectCount,
-        validationStatus: workspaceModelReport?.validation?.status,
-        workspaceType: workspaceModelReport?.identity?.workspaceType,
+        available: Boolean(agentContextReport),
+        projectCount: agentContextReport?.projects?.length,
+        validationStatus: agentContextReport?.validation?.status,
+        workspaceType: agentContextReport?.workspace?.type,
       },
       agentContext: {
         available: Boolean(agentContextReport),
@@ -395,26 +386,20 @@ export async function buildIncidentStudioEvidencePrompt(input: {
   doctorSnapshot?: IncidentStudioDoctorSnapshot | null;
   gitDiffTimeoutMs?: number;
 }): Promise<string> {
-  const [context, architectureGrounding, workspaceModelReport, verifyReport, activeGoal] =
-    await Promise.all([
-      buildIncidentStudioEvidenceContext(input),
-      buildIncidentStudioArchitecturePromptSection({
-        workspacePath: input.workspacePath,
-        workspaceName: input.workspaceName,
-        projectPath: input.projectPath,
-        projectName: input.projectName,
-        projectFramework: input.projectFramework,
-      }),
-      readWorkspaceModelReport(input.workspacePath),
-      readWorkspaceVerifyReport(input.workspacePath),
-      readActiveGoalHandoff(input.workspacePath),
-    ]);
+  const [context, architectureGrounding, verifyReport, activeGoal] = await Promise.all([
+    buildIncidentStudioEvidenceContext(input),
+    buildIncidentStudioArchitecturePromptSection({
+      workspacePath: input.workspacePath,
+      workspaceName: input.workspaceName,
+      projectPath: input.projectPath,
+      projectName: input.projectName,
+      projectFramework: input.projectFramework,
+    }),
+    readWorkspaceVerifyReport(input.workspacePath),
+    readActiveGoalHandoff(input.workspacePath),
+  ]);
 
   const sections = [renderIncidentStudioEvidencePrompt(context)];
-  const modelSection = buildWorkspaceModelPromptSection(workspaceModelReport);
-  if (modelSection && !architectureGrounding.includes('WORKSPACE MODEL')) {
-    sections.push(modelSection);
-  }
   if (architectureGrounding) {
     sections.push(architectureGrounding);
   }

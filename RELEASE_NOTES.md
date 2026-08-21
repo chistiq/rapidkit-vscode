@@ -1,5 +1,46 @@
 # Release Notes
 
+## v0.42.0 (August 21, 2026)
+
+### Intent-aware modes, causal repair queues, and native change review
+
+Workspai for VS Code 0.42.0 is validated against Workspai CLI 0.63.0. This
+release makes Assistant mode selection intent-aware without silently escalating
+authority, gives aggregate workspace cards a deterministic causal repair queue,
+and turns agent changes into a native, transaction-bound review experience.
+
+Highlights:
+
+- Agent, Ask, Plan, and Goal now share one model-driven intent classification
+  and immutable execution policy. Read-only authority may be reduced
+  automatically; stronger mutation or durable Goal authority always requires an
+  explicit user action.
+- Aggregate Doctor, Analyze, Readiness, Verify, Run, and Intelligence cards are
+  decomposed into one causal finding family and one canonical project per repair
+  transaction, then advanced using freshly produced CLI evidence.
+- Sidebar Studio, native Chat, and card handoff share governed patch, deletion,
+  command, verification, rollback, and project-boundary controls.
+- Every completed change set has authoritative line totals, a compact file
+  summary, native multi-file Review, checkpoint-backed before/after diffs, and
+  transaction-bound Undo.
+- Agent context follows the CLI-authored bounded order: evidence index, active
+  Goal, relevant context and Skills, then proof-backed Graph retrieval. Full
+  model and graph exports stay outside ordinary prompts.
+- CLI 0.63.0 contract alignment covers causal finding targets, sequential
+  aggregate repair, canonical project entry, Skills, and agent context.
+
+Compatibility:
+
+- VS Code 1.106.0+
+- Workspai CLI 0.63.0+
+- RapidKit Core 0.6.0 only for Python-backed kits/modules
+
+[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.42.0/releases/RELEASE_NOTES_v0.42.0.md)
+
+Release posture: `intent-aware-governed-agent-and-causal-repair-queue`
+
+Publication status: pending.
+
 ## v0.41.0 (August 19, 2026)
 
 ### Intelligent Agent Preflight and Enriched Repair Loop

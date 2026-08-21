@@ -14,6 +14,7 @@ import { presentCliVersionGate, resolveLinkedCliVersion } from './core/cliVersio
 import { syncWalkthroughEvidenceContext } from './core/walkthroughEvidenceContext';
 import { ensureInstalledAt } from './core/ttfvBridge';
 import { registerModuleExplorerReload } from './core/moduleExplorerRuntime';
+import { registerStudioRepairDiffContentProvider } from './core/studioRepairDiffDocuments';
 import { ActionsWebviewProvider } from './ui/webviews/actionsWebviewProvider';
 import { WorkspaceExplorerProvider } from './ui/treeviews/workspaceExplorer';
 import {
@@ -1089,6 +1090,7 @@ export async function activate(context: vscode.ExtensionContext) {
         ActionsWebviewProvider.secondaryViewType,
         secondaryActionsWebviewProvider
       ),
+      registerStudioRepairDiffContentProvider(),
       vscode.window.registerTreeDataProvider('rapidkitWorkspaces', workspaceExplorer)
     );
     const projectsDropController: vscode.TreeDragAndDropController<ProjectTreeItem> = {

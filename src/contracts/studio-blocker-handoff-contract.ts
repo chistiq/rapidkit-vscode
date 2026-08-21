@@ -39,6 +39,26 @@ export type StudioIncidentSummary = {
   auditStatus: StudioIncidentAuditStatus;
 };
 
+export type StudioCausalRepairTarget = {
+  /** Stable canonical finding identity within the current evidence generation. */
+  findingId: string;
+  causalKey?: string;
+  /** Exact CLI remediation actions authorized for this one transaction. */
+  actionIds: string[];
+  /** Contract-authored source candidates for this finding only. */
+  sourcePaths?: string[];
+  projectName?: string;
+  projectPath?: string;
+  repairMode:
+    | 'edit-file'
+    | 'run-command'
+    | 'refresh-evidence'
+    | 'verify-before-fix'
+    | 'manual-guidance';
+  sourceMutation: 'required' | 'allowed' | 'forbidden';
+  verifyCommand?: string;
+};
+
 export type StudioBlockerHandoff = {
   schemaVersion: typeof STUDIO_BLOCKER_HANDOFF_SCHEMA_VERSION;
   cardId: string;
@@ -50,6 +70,8 @@ export type StudioBlockerHandoff = {
   affectedProjectNames?: string[];
   /** Exact causal findings emitted by the canonical Doctor diagnosis engine. */
   doctorFindings?: DoctorFindingTarget[];
+  /** One transaction-scoped target selected from the aggregate card queue. */
+  selectedTarget?: StudioCausalRepairTarget;
   artifactPath: string;
   sourceCommand: string;
   dashboardCommandId?: string;
@@ -190,6 +212,13 @@ export function isStudioBlockerHandoff(value: unknown): value is StudioBlockerHa
   ) {
     return false;
   }
+  if (
+    record.selectedTarget !== null &&
+    record.selectedTarget !== undefined &&
+    !isStudioCausalRepairTarget(record.selectedTarget)
+  ) {
+    return false;
+  }
   if (typeof record.artifactPath !== 'string') {
     return false;
   }
@@ -212,6 +241,38 @@ export function isStudioBlockerHandoff(value: unknown): value is StudioBlockerHa
     return false;
   }
   return true;
+}
+
+export function isStudioCausalRepairTarget(value: unknown): value is StudioCausalRepairTarget {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.findingId === 'string' &&
+    record.findingId.trim().length > 0 &&
+    Array.isArray(record.actionIds) &&
+    record.actionIds.length > 0 &&
+    record.actionIds.every((entry) => typeof entry === 'string' && entry.trim().length > 0) &&
+    new Set(record.actionIds).size === record.actionIds.length &&
+    (record.sourcePaths === undefined ||
+      (Array.isArray(record.sourcePaths) &&
+        record.sourcePaths.every(
+          (entry) => typeof entry === 'string' && entry.trim().length > 0
+        ))) &&
+    (record.repairMode === 'edit-file' ||
+      record.repairMode === 'run-command' ||
+      record.repairMode === 'refresh-evidence' ||
+      record.repairMode === 'verify-before-fix' ||
+      record.repairMode === 'manual-guidance') &&
+    (record.sourceMutation === 'required' ||
+      record.sourceMutation === 'allowed' ||
+      record.sourceMutation === 'forbidden') &&
+    (record.causalKey === undefined || typeof record.causalKey === 'string') &&
+    (record.projectName === undefined || typeof record.projectName === 'string') &&
+    (record.projectPath === undefined || typeof record.projectPath === 'string') &&
+    (record.verifyCommand === undefined || typeof record.verifyCommand === 'string')
+  );
 }
 
 export function isStudioIncidentSummary(value: unknown): value is StudioIncidentSummary {

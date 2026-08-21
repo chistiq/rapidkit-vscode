@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   type ChatSession,
   type ChatAssistantMode,
+  type ChatModeSuggestion,
   type ChatSessionEditorIssue,
   type ChatSessionIncident,
   type ChatSessionScopeSnapshot,
@@ -353,6 +354,7 @@ export function useChatSessions(key: StoreKey, idPrefix: string) {
                   error: undefined,
                   mode: mode ?? s.mode,
                   assistantMode: options?.assistantMode ?? s.assistantMode,
+                  modeSuggestion: undefined,
                   scope:
                     s.incident || s.editorIssue
                       ? s.scope
@@ -437,6 +439,13 @@ export function useChatSessions(key: StoreKey, idPrefix: string) {
     [update]
   );
 
+  const setModeSuggestion = useCallback(
+    (sessionId: string, suggestion: ChatModeSuggestion | undefined) => {
+      update(sessionId, (session) => ({ ...session, modeSuggestion: suggestion }));
+    },
+    [update]
+  );
+
   const finishStreaming = useCallback(
     (sessionId: string, modelId?: string, finalAnswer?: string) => {
       update(sessionId, (session) => {
@@ -492,6 +501,7 @@ export function useChatSessions(key: StoreKey, idPrefix: string) {
     setActivity,
     appendChunk,
     finishStreaming,
+    setModeSuggestion,
     failSession,
     steerSession,
   };

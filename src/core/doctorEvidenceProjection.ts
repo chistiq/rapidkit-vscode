@@ -274,7 +274,10 @@ export function projectDoctorEvidence(
   const affectedProjectNames = [
     ...new Set(
       findings
-        .filter((finding) => finding.status === 'blocking' || finding.status === 'advisory')
+        // Repair scope is a causal boundary, not a dashboard-attention count.
+        // Advisory projects remain visible in `advisories`, but must not widen
+        // a blocking transaction or prevent resolution of its owning project.
+        .filter((finding) => finding.status === 'blocking')
         .map((finding) => finding.projectName)
         .filter((name): name is string => Boolean(name))
     ),

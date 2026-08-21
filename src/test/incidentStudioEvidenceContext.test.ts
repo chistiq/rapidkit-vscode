@@ -238,23 +238,18 @@ describe('incidentStudioEvidenceContext', () => {
       })
     );
     await fs.writeFile(
-      path.join(reportsDir, 'workspace-model.json'),
+      path.join(reportsDir, 'workspace-context-agent.json'),
       JSON.stringify({
-        schemaVersion: 'workspace-model.v1',
+        schemaVersion: 'workspace-context.v1',
         generatedAt: '2026-06-11T00:00:00.000Z',
-        workspace: { name: 'workspace', type: 'polyglot' },
-        identity: { workspaceType: 'polyglot', runtimeFamilies: ['node', 'python'] },
-        summary: { projectCount: 2, frameworks: ['nestjs', 'fastapi'] },
+        workspace: { name: 'workspace', root: 'workspace:workspace', type: 'polyglot' },
         projects: [
           {
             name: 'api',
-            path: 'api',
-            kind: 'backend',
             runtime: 'node',
             framework: 'nestjs',
-            kit: 'nestjs.standard',
-            commands: { fleetStages: ['test', 'build'] },
           },
+          { name: 'worker', runtime: 'python', framework: 'fastapi' },
         ],
         validation: { status: 'passed', errors: 0, warnings: 0 },
       })
@@ -321,7 +316,8 @@ describe('incidentStudioEvidenceContext', () => {
       runtimes: ['node', 'python'],
     });
     expect(prompt).toContain('WORKSPACE VERIFY');
-    expect(prompt).toContain('WORKSPACE MODEL');
+    expect(prompt).toContain('WORKSPACE INTELLIGENCE');
+    expect(prompt).not.toContain('WORKSPACE MODEL (canonical npm structural model)');
     expect(prompt).toContain('Required analyze report missing');
     expect(prompt).toContain('compatibilityMatrix');
     expect(prompt).toContain('Enterprise compatibility baseline is available.');

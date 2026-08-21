@@ -104,8 +104,9 @@ function coverageTarget(task: string): number | null {
 
 /**
  * Deterministic intent recognition is intentionally narrow. A vague coding
- * request stays a normal Assistant task; only requests with an explicit,
- * measurable engineering outcome become durable verified goals.
+ * request stays a normal Assistant task. This helper identifies goal-like
+ * requests for advisory UX only; Agent mode must never activate a durable Goal
+ * without explicit Goal mode or direct user confirmation.
  */
 export function inferVerifiedGoalIntent(input: {
   task: string;
