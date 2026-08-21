@@ -30,7 +30,7 @@
 
 # Workspai VS Code v0.42.0
 
-Pending publication.
+Published.
 
 ## Intent-aware modes, causal repair queues, and native change review
 

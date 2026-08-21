@@ -39,7 +39,7 @@ Compatibility:
 
 Release posture: `intent-aware-governed-agent-and-causal-repair-queue`
 
-Publication status: pending.
+Publication status: published.
 
 ## v0.41.0 (August 19, 2026)
 
