@@ -130,7 +130,7 @@
         "src/core/studioCausalRecoveryBriefing.ts"
       ],
       "requiredSnippets": [
-        "constrains the next model turn to the exact fresh CLI remediation action",
+        "executes the exact fresh CLI remediation action without another model turn",
         "binds required remediation approval to the exact durable action and resumes after rejection",
         "required-causal-action-ready",
         "required-remediation-action-failed"

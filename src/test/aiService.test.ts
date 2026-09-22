@@ -606,6 +606,7 @@ describe('aiService', () => {
     ).resolves.toEqual({
       type: 'tool',
       modelId: 'copilot/auto',
+      attempts: 1,
       callId: 'call-1',
       toolName: 'inspect-remediation-plan',
       input: {},
