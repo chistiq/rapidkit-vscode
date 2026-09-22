@@ -232,6 +232,7 @@ import {
   createStudioAgentWorkspaiToolRegistry,
   type StudioAgentWorkspaiToolHost,
 } from '../../core/studioAgentWorkspaiTools.js';
+import { studioHostLanguageModelToolAdapters } from '../../core/studioHostLanguageModelTools.js';
 import { inspectStudioAgentFiles } from '../../core/sidebarStudioAgentRuntime.js';
 import {
   resolveStudioWorkspaceCommandPlan,
@@ -2329,6 +2330,12 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       'microsoft-agent-framework': 'microsoft-agent-framework',
       'agent-microsoft-python': 'microsoft-agent-framework',
       'agent-microsoft-dotnet': 'microsoft-agent-framework',
+      'openai-agents': 'openai-agents',
+      'agent-openai-python': 'openai-agents',
+      'agent-openai-typescript': 'openai-agents',
+      openrouter: 'openrouter',
+      'gateway-openrouter-typescript': 'openrouter',
+      'gateway-openrouter-python': 'openrouter',
     };
     // Compatibility aliases are accepted for older webview bundles. Canonical
     // UI payloads send the contract kit id directly.
@@ -2361,6 +2368,10 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       'extension-vscode': 'extension.vscode',
       'agent-microsoft-python': 'agent.microsoft.python',
       'agent-microsoft-dotnet': 'agent.microsoft.dotnet',
+      'agent-openai-python': 'agent.openai.python',
+      'agent-openai-typescript': 'agent.openai.typescript',
+      'gateway-openrouter-typescript': 'gateway.openrouter.typescript',
+      'gateway-openrouter-python': 'gateway.openrouter.python',
       nextjs: 'frontend.nextjs',
       remix: 'frontend.remix',
       'react-router': 'frontend.remix',
@@ -3346,6 +3357,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       });
     };
     const host: StudioAgentWorkspaiToolHost = {
+      ...studioHostLanguageModelToolAdapters(),
       // Only a real card handoff may select a deterministic remediation target.
       // An arbitrary Goal's synthetic Doctor scope is useful for later plan
       // inspection, but it is not exact enough to authorize a first-action
@@ -4399,9 +4411,24 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             { path: input.workspacePath, token: '$WORKSPACE' },
           ]
         );
+        const resolution = {
+          provider: response.provider,
+          modelId: response.modelId,
+          ...(response.requestedModelId ? { requestedModelId: response.requestedModelId } : {}),
+          fallback: response.fallback,
+          attempts: response.attempts,
+          ...(response.inputTokens !== undefined ? { inputTokens: response.inputTokens } : {}),
+          ...(response.outputTokens !== undefined ? { outputTokens: response.outputTokens } : {}),
+          ...(response.tokenUsageSource ? { tokenUsageSource: response.tokenUsageSource } : {}),
+        };
         return response.type === 'tool'
-          ? { toolName: response.toolName, input: response.input }
-          : response.text;
+          ? {
+              callId: response.callId,
+              toolName: response.toolName,
+              input: response.input,
+              resolution,
+            }
+          : { type: 'text' as const, text: response.text, resolution };
       },
       persisted,
       input.history
@@ -4441,7 +4468,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       }
       this._postInlineCreate('sidebarStudioDone', {
         sessionId: completed.id,
-        modelId: completed.selectedModelId ?? 'auto',
+        modelId: completed.lastResolvedModel?.modelId ?? completed.selectedModelId ?? 'auto',
         assistantMode: completed.assistantMode,
         answer: summary,
       });
@@ -4728,6 +4755,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     };
 
     const host: StudioAgentWorkspaiToolHost = {
+      ...studioHostLanguageModelToolAdapters(),
       discover: async (request: { workspacePath: string; glob?: string; limit?: number }) => ({
         ok: true,
         output: {
@@ -5922,9 +5950,24 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             { path: input.workspacePath, token: '$WORKSPACE' },
           ]
         );
+        const resolution = {
+          provider: response.provider,
+          modelId: response.modelId,
+          ...(response.requestedModelId ? { requestedModelId: response.requestedModelId } : {}),
+          fallback: response.fallback,
+          attempts: response.attempts,
+          ...(response.inputTokens !== undefined ? { inputTokens: response.inputTokens } : {}),
+          ...(response.outputTokens !== undefined ? { outputTokens: response.outputTokens } : {}),
+          ...(response.tokenUsageSource ? { tokenUsageSource: response.tokenUsageSource } : {}),
+        };
         return response.type === 'tool'
-          ? { callId: response.callId, toolName: response.toolName, input: response.input }
-          : response.text;
+          ? {
+              callId: response.callId,
+              toolName: response.toolName,
+              input: response.input,
+              resolution,
+            }
+          : { type: 'text' as const, text: response.text, resolution };
       },
       persisted,
       input.history
@@ -5949,7 +5992,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       const receipt = buildStudioVerifiedRepairReceipt(completed);
       this._postInlineCreate('sidebarStudioDone', {
         sessionId: completed.id,
-        modelId: completed.selectedModelId ?? 'auto',
+        modelId: completed.lastResolvedModel?.modelId ?? completed.selectedModelId ?? 'auto',
         assistantMode: completed.assistantMode,
         verified: true,
         answer: receipt.answer,

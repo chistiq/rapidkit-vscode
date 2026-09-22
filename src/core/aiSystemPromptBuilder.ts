@@ -35,6 +35,12 @@ function resolveFrameworkFamily(ctx: AIModalContext, scanned?: ScannedProjectCon
   if (fw.startsWith('agent.microsoft') || fw === 'microsoft-agent-framework') {
     return 'microsoft-agent-framework';
   }
+  if (fw.startsWith('agent.openai') || fw === 'openai-agents') {
+    return 'openai-agents';
+  }
+  if (fw.startsWith('gateway.openrouter') || fw === 'openrouter') {
+    return 'openrouter';
+  }
   return fw;
 }
 
@@ -192,6 +198,24 @@ function buildModuleSection(
   liveModules?: LiveModuleEntry[] | null
 ): string {
   const fw = resolveFrameworkFamily(ctx, scanned);
+  if (fw === 'openai-agents') {
+    return `WORKSPAI OPENAI AGENTS SDK KITS:
+- Supported governed kits: agent.openai.python and agent.openai.typescript.
+- These kits do not support the RapidKit module marketplace.
+- Workspai remains authoritative for bounded repository context, authorization, impact, and verification.
+- The OpenAI Agents SDK owns conversation and runtime state; it must not bypass Workspai evidence or mutation gates.
+- Keep provider credentials outside the repository and require explicit approval before network or mutating tool access.
+- Use the generated agents/primary/README.md commands and verify offline before the first provider call.`;
+  }
+  if (fw === 'openrouter') {
+    return `WORKSPAI OPENROUTER AI GATEWAY KITS:
+- Supported source-ready kits: gateway.openrouter.typescript and gateway.openrouter.python.
+- These kits are source-ready. Do not describe them as qualified, stable, or release-ready.
+- Attach is unsupported. Go is not a gateway runtime.
+- These kits do not support the RapidKit module marketplace.
+- Do not assign a synthetic HTTP port. The kit owns its runtime entrypoint.
+- Keep provider credentials outside the repository.`;
+  }
   if (fw === 'microsoft-agent-framework') {
     return `WORKSPAI MICROSOFT AGENT FRAMEWORK KITS:
 - Supported governed kits: agent.microsoft.python and agent.microsoft.dotnet.

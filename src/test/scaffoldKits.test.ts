@@ -21,13 +21,21 @@ describe('scaffold kits', () => {
       expect.arrayContaining(FRONTEND_SCAFFOLD_KITS.map((kit) => kit.kitId))
     );
     expect(FRONTEND_SCAFFOLD_KITS).toHaveLength(11);
-    expect(SCAFFOLD_KIT_IDS).toHaveLength(25);
+    expect(SCAFFOLD_KIT_IDS).toHaveLength(29);
   });
 
   it('keeps governed agent kits runtime-specific despite sharing one framework', () => {
     expect(AGENT_SCAFFOLD_KITS.map((kit) => kit.kitId)).toEqual([
       'agent.microsoft.python',
       'agent.microsoft.dotnet',
+      'agent.openai.python',
+      'agent.openai.typescript',
+    ]);
+    expect(AGENT_SCAFFOLD_KITS.map((kit) => kit.displayName)).toEqual([
+      'Microsoft Agent Framework · Python',
+      'Microsoft Agent Framework · .NET',
+      'OpenAI Agents SDK · Python',
+      'OpenAI Agents SDK · TypeScript',
     ]);
     expect(scaffoldRuntimeCandidatesForKit('agent.microsoft.python')).toEqual(['python']);
     expect(scaffoldRuntimeCandidatesForKit('agent.microsoft.dotnet')).toEqual(['dotnet']);

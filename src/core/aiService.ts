@@ -200,11 +200,12 @@ export type AIModelToolActionResponse =
   | {
       type: 'tool';
       modelId: string;
+      attempts: number;
       callId: string;
       toolName: string;
       input: Record<string, unknown>;
     }
-  | { type: 'text'; modelId: string; text: string };
+  | { type: 'text'; modelId: string; attempts: number; text: string };
 
 function isRetryableToolModelError(error: unknown): boolean {
   const raw = error instanceof Error ? `${error.name} ${error.message}` : String(error ?? '');
@@ -338,6 +339,7 @@ export async function requestAIModelToolAction(
             return {
               type: 'tool',
               modelId,
+              attempts: index + 1,
               callId:
                 typeof candidate.callId === 'string' && candidate.callId.trim()
                   ? candidate.callId
@@ -366,7 +368,7 @@ export async function requestAIModelToolAction(
         // model protocol. An empty response, however, proves this endpoint
         // cannot participate and should fall through to the next live model.
         if (text.trim()) {
-          return { type: 'text', modelId, text };
+          return { type: 'text', modelId, attempts: index + 1, text };
         }
         lastError = new Error(`Model ${modelId} returned no tool call or text.`);
       } catch (error) {
@@ -1992,8 +1994,9 @@ Required JSON schema (return EXACTLY this):
 
 Rules:
 - For fastapi/nestjs, ALWAYS include "free/essentials/settings" in suggestedModules
-- For go/springboot/dotnet/rust/laravel/frontend/desktop/agent/extension frameworks, set suggestedModules to []
-- AI agent requests use framework "microsoft-agent-framework" and an admitted "agent.microsoft.python" or "agent.microsoft.dotnet" kit
+- For go/springboot/dotnet/rust/laravel/frontend/desktop/agent/gateway/extension frameworks, set suggestedModules to []
+- AI agent requests use framework "microsoft-agent-framework" with "agent.microsoft.python" or "agent.microsoft.dotnet", or framework "openai-agents" with "agent.openai.python" or "agent.openai.typescript"
+- OpenRouter gateway requests use framework "openrouter" and "gateway.openrouter.typescript" or "gateway.openrouter.python". These kits are source-ready: do not call them qualified or stable. Attach is unsupported and Go is not available. Do not assign a synthetic HTTP port
 - Agent dependency versions are governed by Workspai release admission; never invent or upgrade them in the creation plan
 - Use fastapi.ddd kit when: DDD / clean-arch / domain / layered / complex mentioned
 - Full-stack topology does not automatically mean polyglot; Next.js + NestJS uses node-only

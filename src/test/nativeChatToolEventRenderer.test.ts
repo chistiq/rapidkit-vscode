@@ -89,7 +89,40 @@ describe('nativeChatToolEventRenderer', () => {
     expect(stream.progress).toHaveBeenCalledWith(
       'Restored the pre-command checkpoint (1 source path(s))'
     );
-    expect(stream.progress).toHaveBeenCalledWith('Mutation was rolled back.');
+    expect(stream.progress).toHaveBeenCalledWith('Failed: Mutation was rolled back.');
+  });
+
+  it('does not call remaining verify work completed', () => {
+    const stream = { markdown: vi.fn(), progress: vi.fn() };
+    renderNativeStudioAgentEvent(
+      stream as any,
+      event('tool.completed', { toolName: 'verify-blocker', ok: false, cardBlocking: true })
+    );
+    renderNativeStudioAgentEvent(
+      stream as any,
+      event('verify.completed', {
+        ok: false,
+        cardBlocking: true,
+        error: 'The blocker remains active.',
+      })
+    );
+    expect(stream.progress).toHaveBeenCalledTimes(1);
+    expect(stream.progress).toHaveBeenCalledWith('Verify found remaining work');
+  });
+
+  it('humanizes a command-only repair transaction failure', () => {
+    const stream = { markdown: vi.fn(), progress: vi.fn() };
+    renderNativeStudioAgentEvent(
+      stream as any,
+      event('tool.failed', {
+        toolName: 'execute-remediation-step',
+        error:
+          'Workspace repair transaction violates contract: /tmp/repair.json must NOT have fewer than 1 items',
+      })
+    );
+    expect(stream.progress).toHaveBeenCalledWith(
+      'Failed: The CLI repair transaction could not start because this command-only step has no file checkpoint.'
+    );
   });
 
   it('streams model narration without exposing internal event envelopes', () => {

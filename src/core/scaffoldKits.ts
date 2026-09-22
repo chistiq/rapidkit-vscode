@@ -29,14 +29,16 @@ export type FrontendScaffoldFramework =
 
 export type DesktopScaffoldFramework = 'tauri' | 'electron';
 export type ExtensionScaffoldFramework = 'vscode-extension';
-export type AgentScaffoldFramework = 'microsoft-agent-framework';
+export type AgentScaffoldFramework = 'microsoft-agent-framework' | 'openai-agents';
+export type GatewayScaffoldFramework = 'openrouter';
 
 export type ScaffoldFramework =
   | BackendScaffoldFramework
   | FrontendScaffoldFramework
   | DesktopScaffoldFramework
   | ExtensionScaffoldFramework
-  | AgentScaffoldFramework;
+  | AgentScaffoldFramework
+  | GatewayScaffoldFramework;
 
 export type ScaffoldRuntimeFamily = 'node' | 'python' | 'go' | 'java' | 'dotnet' | 'rust' | 'php';
 export type ScaffoldWorkspaceProfile =
@@ -276,24 +278,65 @@ export const EXTENSION_SCAFFOLD_KITS: Array<
   },
 ];
 
+const AGENT_KIT_PRESENTATION: Record<
+  string,
+  { framework: AgentScaffoldFramework; displayName: string; description: string }
+> = {
+  'agent.microsoft.python': {
+    framework: 'microsoft-agent-framework',
+    displayName: 'Microsoft Agent Framework · Python',
+    description:
+      'Governed Python agent with bounded Workspai context and deterministic verification.',
+  },
+  'agent.microsoft.dotnet': {
+    framework: 'microsoft-agent-framework',
+    displayName: 'Microsoft Agent Framework · .NET',
+    description:
+      'Governed .NET agent with bounded Workspai context and deterministic verification.',
+  },
+  'agent.openai.python': {
+    framework: 'openai-agents',
+    displayName: 'OpenAI Agents SDK · Python',
+    description: 'Governed Python agent on the admitted OpenAI Agents SDK baseline.',
+  },
+  'agent.openai.typescript': {
+    framework: 'openai-agents',
+    displayName: 'OpenAI Agents SDK · TypeScript',
+    description: 'Governed TypeScript agent on the admitted OpenAI Agents SDK baseline.',
+  },
+};
+
 export const AGENT_SCAFFOLD_KITS: Array<OfficialScaffoldKitDefinition<AgentScaffoldFramework>> =
   EXECUTABLE_CREATE_ENTRIES.filter(
     (entry) =>
       entry.category === 'agent' &&
       agentFrameworkContract.schemaVersion === 'workspai.agent-framework-capabilities.v1' &&
       agentFrameworkContract.protocolVersion === 'workspai.agent-framework-adapter-protocol.v1'
-  ).map((entry) => ({
+  ).map((entry) => {
+    const presentation = AGENT_KIT_PRESENTATION[entry.id] ?? {
+      framework: 'microsoft-agent-framework' as const,
+      displayName: entry.id,
+      description: 'Governed agent kit from the current Workspai CLI contract.',
+    };
+    return {
+      kitId: entry.id,
+      framework: presentation.framework,
+      displayName: presentation.displayName,
+      description: presentation.description,
+      tags: ['ai-agent', presentation.framework, entry.runtime, 'governed'],
+    };
+  });
+
+export const GATEWAY_SCAFFOLD_KITS: Array<OfficialScaffoldKitDefinition<GatewayScaffoldFramework>> =
+  EXECUTABLE_CREATE_ENTRIES.filter((entry) => entry.category === 'gateway').map((entry) => ({
     kitId: entry.id,
-    framework: 'microsoft-agent-framework',
+    framework: 'openrouter' as const,
     displayName:
-      entry.runtime === 'dotnet'
-        ? 'Microsoft Agent Framework · .NET'
-        : 'Microsoft Agent Framework · Python',
-    description:
-      entry.runtime === 'dotnet'
-        ? 'Governed .NET agent with bounded Workspai context and deterministic verification.'
-        : 'Governed Python agent with bounded Workspai context and deterministic verification.',
-    tags: ['ai-agent', 'microsoft-agent-framework', entry.runtime, 'governed'],
+      entry.runtime === 'python'
+        ? 'OpenRouter AI Gateway · Python'
+        : 'OpenRouter AI Gateway · TypeScript',
+    description: 'Source-ready OpenRouter gateway. Attach is unsupported, and Go is not included.',
+    tags: ['gateway', 'openrouter', entry.runtime, 'source-ready'],
   }));
 
 export const FRONTEND_SCAFFOLD_KITS: FrontendScaffoldKitDefinition[] = [
@@ -423,7 +466,13 @@ export function isExtensionScaffoldFramework(
 export function isAgentScaffoldFramework(
   framework: string | undefined
 ): framework is AgentScaffoldFramework {
-  return framework === 'microsoft-agent-framework';
+  return framework === 'microsoft-agent-framework' || framework === 'openai-agents';
+}
+
+export function isGatewayScaffoldFramework(
+  framework: string | undefined
+): framework is GatewayScaffoldFramework {
+  return framework === 'openrouter';
 }
 
 export function isScaffoldFramework(framework: string | undefined): framework is ScaffoldFramework {
@@ -432,7 +481,8 @@ export function isScaffoldFramework(framework: string | undefined): framework is
     isFrontendScaffoldFramework(framework) ||
     isDesktopScaffoldFramework(framework) ||
     isExtensionScaffoldFramework(framework) ||
-    isAgentScaffoldFramework(framework)
+    isAgentScaffoldFramework(framework) ||
+    isGatewayScaffoldFramework(framework)
   );
 }
 

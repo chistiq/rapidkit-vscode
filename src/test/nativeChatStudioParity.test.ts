@@ -12,6 +12,7 @@ describe('native Chat and Incident Studio orchestration parity', () => {
     expect(nativeAgent).toContain('new StudioAgentSession(');
     expect(nativeAgent).toContain('new ContractStudioAgentModelAdapter(');
     expect(nativeAgent).toContain('createStudioAgentWorkspaiToolRegistry({');
+    expect(nativeAgent).toContain('studioHostLanguageModelToolAdapters(input.token)');
     expect(nativeAgent).toContain('new VSCodeStudioAgentSessionStore(input.extensionContext)');
     expect(nativeAgent).not.toContain('while (');
   });
@@ -46,6 +47,7 @@ describe('native Chat and Incident Studio orchestration parity', () => {
     expect(renderer).toContain("event.type === 'tool.started'");
     expect(renderer).toContain("event.type === 'tool.progress'");
     expect(renderer).toContain("event.type === 'tool.completed'");
+    expect(renderer).toContain("event.type === 'verify.completed'");
   });
 
   it('turns a real toolchain boundary into an actionable native Chat handoff', () => {

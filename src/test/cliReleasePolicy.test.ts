@@ -16,6 +16,7 @@ function policyFixture(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-cli-policy-'));
   const files = [
     'contracts/extension-cli-release-policy.v1.json',
+    'contracts/official-cli-closure.v1.json',
     'docs/GETTING_STARTED.md',
     'releases/enterprise-validation-matrix.json',
     `releases/RELEASE_NOTES_v${releasePolicy.extensionVersion}.md`,

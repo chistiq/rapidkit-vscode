@@ -18,6 +18,8 @@ const FRAMEWORK_MONOGRAM: Record<string, string> = {
   electron: 'El',
   'vscode-extension': 'VS',
   'microsoft-agent-framework': 'AI',
+  'openai-agents': 'AI',
+  openrouter: 'GW',
   nextjs: 'Nx',
   remix: 'Rx',
   'vite-react': 'VR',

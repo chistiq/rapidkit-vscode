@@ -82,4 +82,27 @@ describe('welcomePanelStructuredIncidentPrompt', () => {
       rmSync(project, { recursive: true, force: true });
     }
   });
+
+  it('describes an OpenRouter gateway without a synthetic service port or RapidKit modules', async () => {
+    const project = mkdtempSync(path.join(os.tmpdir(), 'workspai-studio-gateway-'));
+    try {
+      const { buildProjectExecutionBlock } =
+        await import('../ui/panels/welcomePanelStructuredIncidentPrompt.js');
+      const block = await buildProjectExecutionBlock(
+        {
+          projectPath: project,
+          projectName: 'model-gateway',
+          projectType: 'gateway.openrouter.typescript',
+        },
+        async () => 'unknown'
+      );
+
+      expect(block).toContain('source-ready');
+      expect(block).toContain('Attach is unsupported');
+      expect(block).toContain('Do not treat this project as a RapidKit module host');
+      expect(block).not.toContain('path to a running service');
+    } finally {
+      rmSync(project, { recursive: true, force: true });
+    }
+  });
 });

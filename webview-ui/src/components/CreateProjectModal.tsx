@@ -165,6 +165,20 @@ const FRAMEWORK_INFO: Record<
       'Create a Python or .NET agent that consumes bounded Workspai context and enters the normal Goal, PCC, and verification loop.',
     placeholder: 'release-guardian',
   },
+  'openai-agents': {
+    title: 'OpenAI Agents SDK',
+    subtitle: 'Governed AI agent',
+    description:
+      'Create a Python or TypeScript agent on the admitted OpenAI Agents SDK baseline.',
+    placeholder: 'support-agent',
+  },
+  openrouter: {
+    title: 'OpenRouter AI Gateway',
+    subtitle: 'Source-ready gateway',
+    description:
+      'Create a TypeScript or Python OpenRouter gateway. This kit is source-ready. Attach is unsupported, and Go is not included.',
+    placeholder: 'model-gateway',
+  },
 };
 
 export function CreateProjectModal({
@@ -326,7 +340,9 @@ export function CreateProjectModal({
       icon={
         info.iconUrl ? (
           <img src={info.iconUrl} alt={framework} className="modal-framework-icon" />
-        ) : framework === 'microsoft-agent-framework' ? (
+        ) : framework === 'microsoft-agent-framework' ||
+          framework === 'openai-agents' ||
+          framework === 'openrouter' ? (
           <Bot size={16} />
         ) : (
           <Package size={16} />
@@ -344,6 +360,8 @@ export function CreateProjectModal({
               'springboot',
               'dotnet',
               'microsoft-agent-framework',
+              'openai-agents',
+              'openrouter',
             ].includes(framework) && (
               <button type="button" className="ws-btn ws-btn--ghost" onClick={onSwitchToAI}>
                 <Sparkles size={13} />
@@ -408,11 +426,19 @@ export function CreateProjectModal({
             </div>
           )}
 
-        {selectedKit === 'agent.microsoft.python' && toolStatus && !toolStatus.pythonAvailable && (
+        {(selectedKit === 'agent.microsoft.python' ||
+          selectedKit === 'agent.openai.python' ||
+          selectedKit === 'gateway.openrouter.python') &&
+          toolStatus &&
+          !toolStatus.pythonAvailable && (
           <div className="modal-field--wide">
             <EnterpriseModalNotice tone="warning">
               <AlertCircle size={14} />
-              <span>The Python agent kit requires Python 3.</span>
+              <span>
+                {selectedKit === 'gateway.openrouter.python'
+                  ? 'The Python gateway kit requires Python 3.'
+                  : 'The Python agent kit requires Python 3.'}
+              </span>
               <button
                 type="button"
                 className="modal-inline-link"
@@ -503,8 +529,10 @@ export function CreateProjectModal({
           </ul>
         </EnterpriseModalSection>
 
-        {framework === 'microsoft-agent-framework' && (
-          <EnterpriseModalSection title="Governance boundary" meta="Workspai 0.75">
+        {(framework === 'microsoft-agent-framework' ||
+          framework === 'openai-agents' ||
+          framework === 'openrouter') && (
+          <EnterpriseModalSection title="Governance boundary" meta="Workspai CLI">
             <ul className="modal-compact-list">
               <li>
                 No dependency install, credential request, or model call occurs during creation.

@@ -1,4 +1,5 @@
 import type { SidebarStudioActionProgressView } from './sidebarStudioActionProgress';
+import { isNoisyStudioInspectFailure, studioTimelineActivityKind } from './studioRepairTimeline';
 
 export type StudioTerminalFailurePresentation = {
   title: string;
@@ -98,6 +99,16 @@ export function describeStudioTerminalFailure(input: {
       connectionFailure: false,
     };
   }
+  if (terminalReason === 'model-tool-protocol-exhausted') {
+    return {
+      title: 'Model cannot drive tools',
+      summary:
+        'This model did not return a valid tool call. Switch to a tool-capable model and resume the same session. The task was not marked complete.',
+      ...(error ? { technicalDetail: error } : {}),
+      terminalReason,
+      connectionFailure: false,
+    };
+  }
   if (
     terminalReason === 'model-source-progress-exhausted' ||
     terminalReason === 'causal-source-progress-exhausted' ||
@@ -105,9 +116,9 @@ export function describeStudioTerminalFailure(input: {
     terminalReason === 'causal-progress-exhausted'
   ) {
     return {
-      title: 'Repair paused',
+      title: 'Verification still open',
       summary:
-        'Studio exhausted its bounded autonomous recovery path without verified causal closure. The durable session can resume with added context or a fresh model turn.',
+        'The task is not complete and nothing was marked verified. Studio paused so this attempt would not keep spending tokens. Resume continues the same session with another bounded attempt.',
       ...(error ? { technicalDetail: error } : {}),
       terminalReason,
       connectionFailure: false,
@@ -149,6 +160,87 @@ export function isStudioUserFacingNarration(text: string): boolean {
     return false;
   }
   return /[A-Za-z]/.test(trimmed);
+}
+
+export function describeStudioCausalFailure(
+  progress: SidebarStudioActionProgressView | undefined
+): string | undefined {
+  if (!progress) {
+    return undefined;
+  }
+  const text = `${progress.title ?? ''} ${progress.summary ?? ''} ${progress.technicalDetail ?? ''}`;
+  if (/repair transaction/i.test(text) && /fewer than 1 items/i.test(text)) {
+    return 'The approved CLI remediation step did not apply because the repair transaction had no file checkpoint.';
+  }
+  if (
+    progress.action === 'execute-remediation-step' ||
+    /did not apply|remediation step did not/i.test(text)
+  ) {
+    return 'The approved CLI remediation step did not apply.';
+  }
+  if (studioTimelineActivityKind(progress) === 'verify') {
+    return 'Canonical verify still reports remaining work.';
+  }
+  if (studioTimelineActivityKind(progress) === 'inspect' && (progress.occurrences ?? 0) >= 3) {
+    return `The model re-read the same evidence ${progress.occurrences} times instead of changing source.`;
+  }
+  if (progress.title?.trim()) {
+    return `Last blocked step: ${progress.title.trim()}.`;
+  }
+  return undefined;
+}
+
+export function findLastStudioCausalFailure(
+  timeline: SidebarStudioActionProgressView[]
+): SidebarStudioActionProgressView | undefined {
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    const entry = timeline[index];
+    if (entry.terminalReason || entry.phase === 'repair-stopped') {
+      continue;
+    }
+    if (entry.status !== 'failed' && entry.status !== 'review') {
+      continue;
+    }
+    if (studioTimelineActivityKind(entry) === 'inspect' && entry.policyRejected !== true) {
+      continue;
+    }
+    return entry;
+  }
+  const lastInspect = [...timeline]
+    .reverse()
+    .find((entry) => studioTimelineActivityKind(entry) === 'inspect');
+  if ((lastInspect?.occurrences ?? 0) >= 3) {
+    return lastInspect;
+  }
+  return undefined;
+}
+
+function withCausalPauseSummary(
+  summary: string,
+  timeline: SidebarStudioActionProgressView[]
+): string {
+  const last = findLastStudioCausalFailure(timeline);
+  const lastApply = [...timeline]
+    .reverse()
+    .find((entry) => entry.action === 'execute-remediation-step' && entry.status === 'failed');
+  const lastInspectLoop = [...timeline]
+    .reverse()
+    .find(
+      (entry) => studioTimelineActivityKind(entry) === 'inspect' && (entry.occurrences ?? 0) >= 3
+    );
+  const details = [
+    lastApply && lastApply !== last ? describeStudioCausalFailure(lastApply) : undefined,
+    lastInspectLoop && lastInspectLoop !== last
+      ? describeStudioCausalFailure(lastInspectLoop)
+      : undefined,
+    describeStudioCausalFailure(last),
+  ].filter((entry): entry is string => Boolean(entry));
+  const unique = [...new Set(details)];
+  const detail = unique.join(' ');
+  if (!detail || summary.includes(detail)) {
+    return summary;
+  }
+  return `${summary} ${detail}`;
 }
 
 export function describeStudioCliRepairPhase(input: {
@@ -228,32 +320,46 @@ export function terminalizeStudioTimeline(
   timeline: SidebarStudioActionProgressView[],
   input: Parameters<typeof terminalizeStudioProgress>[1]
 ): SidebarStudioActionProgressView[] {
+  const prior = timeline.slice(0, -1);
+  const settled = settleStudioTimeline(prior);
   const last = timeline[timeline.length - 1];
-  const terminal = terminalizeStudioProgress(last, input);
+  const pauseInput = {
+    ...input,
+    summary: withCausalPauseSummary(input.summary, settled),
+  };
+  const terminal = terminalizeStudioProgress(last, pauseInput);
   if (!terminal) {
     return [];
   }
   if (input.terminalReason === 'cli-repair-contract-mismatch') {
     return [terminal];
   }
-  const history = settleStudioTimeline(timeline.slice(0, -1))
-    .filter((entry) => entry.status !== 'failed')
-    .slice(-5);
+  const history = settled.filter((entry) => !isNoisyStudioInspectFailure(entry)).slice(-5);
   return [...history, terminal];
 }
 
 export function settleStudioTimeline(
   timeline: SidebarStudioActionProgressView[]
 ): SidebarStudioActionProgressView[] {
-  return timeline.map((entry) =>
-    entry.status === 'running'
-      ? {
-          ...entry,
-          status: 'done',
-          phase: entry.phase === 'observing-evidence' ? 'evidence-observed' : entry.phase,
-          nextAction: undefined,
-          nextActionLabel: undefined,
-        }
-      : entry
-  );
+  return timeline.map((entry) => {
+    if (entry.status !== 'running') {
+      return entry;
+    }
+    const kind = studioTimelineActivityKind(entry);
+    if (kind === 'fix' || kind === 'verify') {
+      return {
+        ...entry,
+        status: 'failed' as const,
+        nextAction: undefined,
+        nextActionLabel: undefined,
+      };
+    }
+    return {
+      ...entry,
+      status: 'done' as const,
+      phase: entry.phase === 'observing-evidence' ? 'evidence-observed' : entry.phase,
+      nextAction: undefined,
+      nextActionLabel: undefined,
+    };
+  });
 }

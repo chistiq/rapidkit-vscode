@@ -83,4 +83,15 @@ describe('creationPresets manual workspace helpers', () => {
     );
     expect(resolveCreatePlaceholder('balanced', 'project')).toContain('one project');
   });
+
+  it('offers OpenAI agent and source-ready OpenRouter gateway prompts on the agent lane', () => {
+    const prompts = quickStartsForCreateTarget('agent', 'project');
+    expect(prompts).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('OpenAI Agents SDK'),
+        expect.stringContaining('OpenRouter AI Gateway'),
+      ])
+    );
+    expect(prompts.some((prompt) => prompt.includes('source-ready'))).toBe(true);
+  });
 });

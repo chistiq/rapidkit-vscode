@@ -1,5 +1,6 @@
 import type * as vscode from 'vscode';
 
+import { redactLocalPathsForConsumer } from './consumerPathRedaction.js';
 import type { StudioAgentEvent } from './studioAgentEvents.js';
 import { deduplicateStudioMessage } from './studioRepairPresentation.js';
 
@@ -16,6 +17,18 @@ function displayToolName(value: unknown): string {
     .split('-')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function isVerifyTool(value: unknown): boolean {
+  return value === 'verify-blocker' || value === 'verify-goal';
+}
+
+function nativeToolFailureProgress(error: string | undefined, tool: string): string {
+  const text = error?.trim();
+  if (text && /repair transaction/i.test(text) && /fewer than 1 items/i.test(text)) {
+    return 'Failed: The CLI repair transaction could not start because this command-only step has no file checkpoint.';
+  }
+  return text ? `Failed: ${redactLocalPathsForConsumer(text)}` : `Failed: ${tool}`;
 }
 
 function fileChangeRecords(data: Record<string, unknown>): Array<Record<string, unknown>> {
@@ -138,6 +151,9 @@ export function renderNativeStudioAgentEvent(
     return;
   }
   if (event.type === 'tool.completed') {
+    if (isVerifyTool(data.toolName)) {
+      return;
+    }
     const files = fileChangeRecords(data);
     if (files.length > 0) {
       stream.markdown(renderNativeFileChangeMarkdown(files));
@@ -147,6 +163,9 @@ export function renderNativeStudioAgentEvent(
     return;
   }
   if (event.type === 'tool.failed') {
+    if (isVerifyTool(data.toolName)) {
+      return;
+    }
     const output = eventRecord(data.output);
     const rollback = eventRecord(output.rollback);
     if (typeof rollback.restoredFingerprint === 'string') {
@@ -164,7 +183,20 @@ export function renderNativeStudioAgentEvent(
       stream.markdown(renderNativeFileChangeMarkdown(files));
     }
     const error = typeof data.error === 'string' ? deduplicateStudioMessage(data.error) : undefined;
-    stream.progress(error ? error : `Needs attention: ${tool}`);
+    stream.progress(nativeToolFailureProgress(error, tool));
+    return;
+  }
+  if (event.type === 'verify.completed') {
+    const output = eventRecord(data.output);
+    const goal = eventRecord(output.status);
+    const card = eventRecord(output.cardVerification);
+    const resolved = data.ok === true && data.cardBlocking === false;
+    const targetResolved = resolved || card.resolved === true;
+    if (typeof goal.goalId === 'string') {
+      stream.progress(targetResolved ? 'Engineering goal verified' : 'Goal still has work');
+      return;
+    }
+    stream.progress(targetResolved ? 'Finding verified' : 'Verify found remaining work');
     return;
   }
   if (event.type === 'model.checkpoint') {

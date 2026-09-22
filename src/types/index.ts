@@ -29,6 +29,7 @@ export type WorkspaiProjectType =
   | 'electron'
   | 'vscode-extension'
   | 'agent'
+  | 'gateway'
   | 'nextjs'
   | 'react'
   | 'vite'

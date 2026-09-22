@@ -138,6 +138,9 @@ function frameworkLabel(type: string): string {
   if (type === 'agent') {
     return 'AI Agent';
   }
+  if (type === 'gateway') {
+    return 'AI Gateway';
+  }
   if (type === 'unknown') {
     return 'Generic';
   }
@@ -193,6 +196,9 @@ function inferKit(type: WorkspaiProject['type']): string {
   }
   if (type === 'agent') {
     return 'agent.microsoft.python';
+  }
+  if (type === 'gateway') {
+    return 'gateway.openrouter.typescript';
   }
   return 'generic.imported';
 }
@@ -306,8 +312,11 @@ function stackFromKitName(kitName?: string): WorkspaiProject['type'] {
   if (normalized.startsWith('extension.vscode') || normalized.startsWith('vscode-extension.')) {
     return 'vscode-extension';
   }
-  if (normalized.startsWith('agent.microsoft.')) {
+  if (normalized.startsWith('agent.')) {
     return 'agent';
+  }
+  if (normalized.startsWith('gateway.')) {
+    return 'gateway';
   }
 
   return 'unknown';
@@ -952,9 +961,9 @@ export class ProjectTreeItem extends vscode.TreeItem {
 
       // Use custom framework icons
       if (extensionPath) {
-        if (project.type === 'agent') {
+        if (project.type === 'agent' || project.type === 'gateway') {
           this.iconPath = new vscode.ThemeIcon(
-            'hubot',
+            project.type === 'gateway' ? 'radio-tower' : 'hubot',
             new vscode.ThemeColor(isSelected ? 'charts.blue' : 'charts.purple')
           );
         } else if (project.type === 'unknown') {
@@ -989,9 +998,11 @@ export class ProjectTreeItem extends vscode.TreeItem {
                             ? 'extensions'
                             : project.type === 'agent'
                               ? 'hubot'
-                              : project.managed
-                                ? 'shield'
-                                : 'package';
+                              : project.type === 'gateway'
+                                ? 'radio-tower'
+                                : project.managed
+                                  ? 'shield'
+                                  : 'package';
         const colorId = isSelected
           ? 'charts.blue'
           : project.type === 'fastapi'

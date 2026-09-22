@@ -1,4 +1,5 @@
 import type { AssistantExecutionPolicy } from './assistantExecutionPolicy.js';
+import type { AIProviderKind } from './aiProviderCatalog.js';
 
 export const STUDIO_AGENT_EVENT_SCHEMA_VERSION = 'workspai.studio-agent-event.v1' as const;
 
@@ -18,6 +19,7 @@ export type StudioAgentEventType =
   | 'request.started'
   | 'request.steered'
   | 'model.message'
+  | 'model.resolved'
   | 'model.checkpoint'
   | 'tool.requested'
   | 'tool.permission'
@@ -58,6 +60,65 @@ export type StudioAgentRequiredCausalAction = {
   blockerSignature?: string;
 };
 
+export type StudioAgentCompletionObligations = {
+  schemaVersion: 'workspai.studio-completion-obligations.v1';
+  /**
+   * Latest source mutation still relevant to completion. This sequence is
+   * durable so bounded event history and a resumed request cannot erase the
+   * safety work that must happen after a mutation.
+   */
+  latestSourceMutationSequence?: number;
+  /** Require a successful final workspace-diff inspection after this mutation. */
+  sourceReviewRequiredAfterSequence?: number;
+  /** Require canonical Workspace Intelligence closure after this mutation. */
+  canonicalClosureRequiredAfterSequence?: number;
+  /** Require a successful, non-blocking verifier result after this mutation. */
+  freshVerificationRequiredAfterSequence?: number;
+};
+
+export type StudioAgentModelResolution = {
+  provider: AIProviderKind;
+  modelId: string;
+  requestedModelId?: string;
+  fallback: boolean;
+  attempts: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  tokenUsageSource?: 'provider' | 'estimated';
+};
+
+export type StudioAgentResolvedModel = StudioAgentModelResolution & {
+  resolvedAt: string;
+};
+
+export type StudioAgentTaskLedger = {
+  schemaVersion: 'workspai.studio-task-ledger.v1';
+  objective: string;
+  currentStepId?: string;
+  steps: Array<{
+    id: string;
+    description: string;
+    status: 'pending' | 'in-progress' | 'completed' | 'blocked';
+    evidence?: string;
+  }>;
+  updatedAt: string;
+  updatedSequence: number;
+};
+
+export type StudioAgentBudgetLedger = {
+  schemaVersion: 'workspai.studio-budget-ledger.v1';
+  attemptsStarted: number;
+  totalModelDecisions: number;
+  totalProviderRequests: number;
+  totalToolExecutions: number;
+  totalProtocolMisses: number;
+  totalContinuationNudges: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  estimatedTokenMeasurements: number;
+  lastAttemptStartedAt: string;
+};
+
 export type StudioAgentPersistedSession = {
   schemaVersion: 'workspai.studio-agent-session.v1';
   id: string;
@@ -68,6 +129,8 @@ export type StudioAgentPersistedSession = {
   /** Immutable per-request policy derived from selected mode and model-classified intent. */
   executionPolicy?: AssistantExecutionPolicy;
   selectedModelId?: string;
+  /** Actual provider/model that served the latest model decision. */
+  lastResolvedModel?: StudioAgentResolvedModel;
   blockerSignature?: string;
   governedGoal?: {
     schemaVersion: 'workspai.studio-governed-goal.v1';
@@ -163,6 +226,16 @@ export type StudioAgentPersistedSession = {
    * execution remain owned by the controller and CLI Repair Engine.
    */
   pendingRequiredCausalAction?: StudioAgentRequiredCausalAction;
+  /**
+   * Durable completion stop-gate state. Unlike event-derived request-local
+   * checks, these obligations survive provider failure, Resume, and transcript
+   * compaction.
+   */
+  completionObligations?: StudioAgentCompletionObligations;
+  /** Model-maintained durable progress for multi-step autonomous work. */
+  taskLedger?: StudioAgentTaskLedger;
+  /** Durable request-count telemetry; Resume starts a new bounded attempt. */
+  budgetLedger?: StudioAgentBudgetLedger;
   createdAt: string;
   updatedAt: string;
   sequence: number;

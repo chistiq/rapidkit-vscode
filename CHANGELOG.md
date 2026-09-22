@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-09-22
+
+### Added
+
+- Create surfaces for the admitted OpenAI Agents SDK kits and the source-ready
+  OpenRouter AI Gateway kits from Workspai CLI 0.77.0. Gateway kits stay
+  source-ready: Attach is unsupported and Go is not included.
+- First-run download of the pinned official `workspai` package into extension
+  storage. The extension checks tarball integrity, executes that copy, and
+  reuses it offline. The published VSIX does not also embed the CLI.
+- Durable Studio task, completion-obligation, model-resolution, provider-request,
+  and token-usage ledgers.
+- Governed `fetch-public-web` for public HTTPS vendor docs, issues, and status
+  pages. Local, private, and credentialed URLs are blocked, and fetched text is
+  not treated as workspace proof.
+- `list-host-tools` and `invoke-host-tool` for Language Model tools registered
+  in the current VS Code window, including MCP servers the user enabled.
+  Read-like tools run without extra approval; other host tools require one-run
+  approval because they sit outside the CLI source checkpoint.
+
+### Changed
+
+- Doctor labels gateway and agent evidence without describing them as Ruff or
+  RapidKit modules.
+- Agent and gateway dev commands no longer reserve a synthetic HTTP port.
+- The optional global CLI setup command installs `workspai@0.77.0` only when
+  the user asks for a terminal copy.
+- Studio exposes the governed mode tool plane consistently while retaining
+  controller-owned permission, SHA, checkpoint, rollback, and CLI transaction
+  enforcement. Exact CLI remediation actions run without a redundant model
+  turn.
+- OpenAI-compatible and Anthropic Studio tool requests retry transient failures
+  up to three times with bounded backoff. Definitive authentication,
+  authorization, billing, and quota failures fail without retry.
+
+### Fixed
+
+- Routed every Studio success path through one completion authority. Provider
+  circuit breakers, producer refresh, CLI repair closure, Goal recovery, and
+  causal verification can no longer bypass pending effects, final source review,
+  canonical chain closure, fresh verification, or unfinished task steps.
+- Persisted completion obligations independently of request IDs and bounded
+  event history so Resume cannot forget work created by an earlier request.
+- Preserved CLI-selected required actions through no-progress recovery and
+  recorded the actual resolved provider/model after fallback.
+- Studio historical badges no longer label remaining verify work as Verified or a
+  failed apply as Inspected. Collapsed inspect loops keep their read count,
+  pause copy names the apply/verify/inspect cause, and native Chat no longer
+  reports a remaining verify as Completed.
+
 ## [0.47.1] - 2026-09-07
 
 ### Changed
@@ -3161,7 +3211,8 @@ Thank you for using RapidKit! 🚀
 
 ---
 
-[Unreleased]: https://github.com/chistiq/rapidkit-vscode/compare/v0.47.1...HEAD
+[Unreleased]: https://github.com/chistiq/rapidkit-vscode/compare/v0.48.0...HEAD
+[0.48.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.47.1...v0.48.0
 [0.47.1]: https://github.com/chistiq/rapidkit-vscode/compare/v0.47.0...v0.47.1
 [0.47.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.46.0...v0.47.0
 [0.46.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.45.0...v0.46.0

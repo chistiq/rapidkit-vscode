@@ -118,6 +118,16 @@ function resolveDefaultDevPort(projectType: string): number {
   return 3000;
 }
 
+function isPortlessLifecycleProject(projectType: string): boolean {
+  return (
+    projectType === 'microsoft-agent-framework' ||
+    projectType === 'openai-agents' ||
+    projectType === 'openrouter' ||
+    projectType.startsWith('agent.') ||
+    projectType.startsWith('gateway.')
+  );
+}
+
 function usesRapidkitDevCommand(projectType: string): boolean {
   return (
     projectType === 'fastapi' ||
@@ -378,6 +388,22 @@ export function registerProjectLifecycleCommands(options: {
         } else {
           return;
         }
+      }
+
+      if (isPortlessLifecycleProject(projectType)) {
+        const terminal = runRapidkitCommandsInTerminal({
+          name: `Workspai: ${projectName}`,
+          cwd: projectPath,
+          commands: [['dev']],
+        });
+        runningServers.set(projectPath, terminal);
+        getProjectExplorer()?.refresh();
+        if (WelcomePanel.currentPanel) {
+          WelcomePanel.updateWithProject(projectPath, projectName);
+        }
+        vscode.window.showInformationMessage(`▶️ Started ${projectName}`);
+        logger.info(`Running ${projectType} dev command for project: ${projectPath}`);
+        return;
       }
 
       const net = await import('net');

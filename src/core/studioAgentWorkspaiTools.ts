@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+
 import type { FilePatch } from './patchApplyEngine.js';
 import type { StudioEvidenceRefreshCommandId } from './sidebarStudioAgentRuntime.js';
 import { STUDIO_EVIDENCE_REFRESH_COMMAND_IDS } from './sidebarStudioAgentRuntime.js';
@@ -18,6 +20,7 @@ import type {
   StudioCodeIntelligenceOperation,
   StudioCodeIntelligenceResult,
 } from './studioCodeIntelligence.js';
+import { fetchStudioPublicWeb } from './studioPublicWebFetch.js';
 
 export type StudioAgentSearchMatch = {
   path: string;
@@ -162,6 +165,12 @@ export interface StudioAgentWorkspaiToolHost {
     blockerSignature?: string;
     goalId?: string;
   }): Promise<StudioAgentToolResult>;
+  listHostTools?(): Promise<StudioAgentToolResult> | StudioAgentToolResult;
+  invokeHostTool?(input: {
+    name: string;
+    arguments?: Record<string, unknown>;
+    signal?: AbortSignal;
+  }): Promise<StudioAgentToolResult>;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -224,6 +233,94 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
       registry.register(definition);
     }
   };
+
+  register({
+    name: 'update-task-ledger',
+    title: 'Update durable task progress',
+    description:
+      'Persist the objective and bounded step status for a multi-step task. Use it before substantial work and after meaningful milestones so Resume and compacted context retain unfinished obligations. Every step must be completed before final completion.',
+    inputSchema: {
+      type: 'object',
+      required: ['objective', 'steps'],
+      additionalProperties: false,
+      properties: {
+        objective: { type: 'string', minLength: 1, maxLength: 1_000 },
+        currentStepId: { type: 'string', minLength: 1, maxLength: 100 },
+        steps: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 24,
+          items: {
+            type: 'object',
+            required: ['id', 'description', 'status'],
+            additionalProperties: false,
+            properties: {
+              id: { type: 'string', minLength: 1, maxLength: 100 },
+              description: { type: 'string', minLength: 1, maxLength: 500 },
+              status: {
+                type: 'string',
+                enum: ['pending', 'in-progress', 'completed', 'blocked'],
+              },
+              evidence: { type: 'string', maxLength: 1_000 },
+            },
+          },
+        },
+      },
+    },
+    activity: 'inspect',
+    risk: 'read',
+    async execute(raw) {
+      const value = asRecord(raw);
+      const objective = typeof value.objective === 'string' ? value.objective.trim() : '';
+      if (!objective || objective.length > 1_000 || !Array.isArray(value.steps)) {
+        throw new Error('Studio task ledger objective or steps are invalid.');
+      }
+      const seen = new Set<string>();
+      const steps = value.steps.map((entry) => {
+        const step = asRecord(entry);
+        const id = typeof step.id === 'string' ? step.id.trim() : '';
+        const description = typeof step.description === 'string' ? step.description.trim() : '';
+        const status = step.status;
+        if (
+          !id ||
+          id.length > 100 ||
+          seen.has(id) ||
+          !description ||
+          description.length > 500 ||
+          !['pending', 'in-progress', 'completed', 'blocked'].includes(String(status))
+        ) {
+          throw new Error('Studio task ledger contains an invalid or duplicate step.');
+        }
+        seen.add(id);
+        const evidence =
+          typeof step.evidence === 'string' && step.evidence.trim()
+            ? step.evidence.trim().slice(0, 1_000)
+            : undefined;
+        return {
+          id,
+          description,
+          status: status as 'pending' | 'in-progress' | 'completed' | 'blocked',
+          ...(evidence ? { evidence } : {}),
+        };
+      });
+      const currentStepId =
+        typeof value.currentStepId === 'string' && value.currentStepId.trim()
+          ? value.currentStepId.trim()
+          : undefined;
+      if (currentStepId && !seen.has(currentStepId)) {
+        throw new Error('Studio task ledger currentStepId must identify a declared step.');
+      }
+      return {
+        ok: true,
+        output: {
+          schemaVersion: 'workspai.studio-task-ledger.v1',
+          objective,
+          ...(currentStepId ? { currentStepId } : {}),
+          steps,
+        },
+      };
+    },
+  });
 
   if (input.host.recoverActiveBlocker) {
     register({
@@ -518,7 +615,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
     name: 'inspect-workspace-batch',
     title: 'Inspect workspace in parallel',
     description:
-      'Run up to eight independent read-only source, search, Graph, diagnostics, or language-intelligence inspections concurrently. Results preserve request order; mutations and verification are never batched.',
+      'Run up to eight independent read-only source, search, Graph, diagnostics, language-intelligence, or public HTTPS inspections concurrently. Results preserve request order; mutations and verification are never batched.',
     inputSchema: {
       type: 'object',
       required: ['operations'],
@@ -536,7 +633,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
               id: { type: 'string', minLength: 1, maxLength: 80 },
               kind: {
                 type: 'string',
-                enum: ['source', 'search', 'graph', 'diagnostics', 'code-intelligence'],
+                enum: ['source', 'search', 'graph', 'diagnostics', 'code-intelligence', 'web'],
               },
             },
           },
@@ -634,6 +731,14 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
               workspacePath: context.workspacePath,
               ...optionalScope(context),
             });
+          } else if (kind === 'web') {
+            if (typeof operation.url !== 'string' || !operation.url.trim()) {
+              throw new Error(`Workspace inspection batch web operation ${id} requires a url.`);
+            }
+            result = await fetchStudioPublicWeb({
+              url: operation.url.trim(),
+              signal: context.signal,
+            });
           } else {
             throw new Error(`Workspace inspection batch operation kind is invalid: ${kind}`);
           }
@@ -650,6 +755,125 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
       };
     },
   });
+
+  register({
+    name: 'fetch-public-web',
+    title: 'Fetch public HTTPS content',
+    description:
+      'Read a public HTTPS page or document for errors that are not covered by Workspai blockers: vendor docs, GitHub issues, release notes, or status pages. Private, local, and credentialed URLs are blocked. This is not a substitute for inspect-source.',
+    inputSchema: {
+      type: 'object',
+      required: ['url'],
+      additionalProperties: false,
+      properties: {
+        url: { type: 'string', minLength: 12, maxLength: 2_000 },
+      },
+    },
+    activity: 'inspect',
+    risk: 'read',
+    async execute(raw, context) {
+      const value = asRecord(raw);
+      if (typeof value.url !== 'string' || !value.url.trim()) {
+        throw new Error('Public web fetch requires an HTTPS URL.');
+      }
+      return fetchStudioPublicWeb({
+        url: value.url.trim(),
+        signal: context.signal,
+      });
+    },
+  });
+
+  if (input.host.listHostTools) {
+    register({
+      name: 'list-host-tools',
+      title: 'List VS Code and MCP host tools',
+      description:
+        'List Language Model tools registered in this VS Code window, including MCP servers the user enabled. Use this when the task needs an editor, browser, or MCP capability that Studio does not own.',
+      inputSchema: { type: 'object', additionalProperties: false },
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return input.host.listHostTools!();
+      },
+    });
+  }
+
+  if (input.host.invokeHostTool) {
+    register({
+      name: 'invoke-host-tool',
+      title: 'Invoke a VS Code or MCP host tool',
+      description:
+        'Invoke one registered VS Code Language Model or MCP tool by exact name. Read-like tools run autonomously. Tools without a read/search/fetch tag require one-run approval because they are outside the CLI source checkpoint.',
+      inputSchema: {
+        type: 'object',
+        required: ['name'],
+        additionalProperties: false,
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 200 },
+          arguments: { type: 'object' },
+        },
+      },
+      activity: 'inspect',
+      risk: 'read',
+      async authorize(raw) {
+        const value = asRecord(raw);
+        const name = typeof value.name === 'string' ? value.name.trim() : '';
+        if (!name) {
+          throw new Error('Host tool name is required.');
+        }
+        const listed = input.host.listHostTools ? await input.host.listHostTools() : undefined;
+        const catalog =
+          listed?.output &&
+          typeof listed.output === 'object' &&
+          !Array.isArray(listed.output) &&
+          Array.isArray((listed.output as { tools?: unknown }).tools)
+            ? ((listed.output as { tools: Array<Record<string, unknown>> }).tools ?? [])
+            : [];
+        const match = catalog.find((entry) => entry.name === name);
+        if (match?.readLike === true) {
+          return { risk: 'read' };
+        }
+        const fingerprint = crypto
+          .createHash('sha256')
+          .update(
+            JSON.stringify({
+              toolName: 'invoke-host-tool',
+              name,
+              arguments: value.arguments ?? {},
+            })
+          )
+          .digest('hex');
+        return {
+          risk: 'invasive',
+          approval: {
+            fingerprint,
+            title: `Invoke host tool ${name}`,
+            summary: `Run the VS Code or MCP tool ${name}. Host tools are outside the Workspai CLI source checkpoint.`,
+            scope: 'workspace',
+            reasons: ['Host and MCP tools can have effects that Studio cannot roll back.'],
+            execution: 'once',
+            allowedExecutions: ['once'],
+          },
+        };
+      },
+      async execute(raw, context) {
+        const value = asRecord(raw);
+        const name = typeof value.name === 'string' ? value.name.trim() : '';
+        if (!name) {
+          throw new Error('Host tool name is required.');
+        }
+        return input.host.invokeHostTool!({
+          name,
+          ...(value.arguments &&
+          typeof value.arguments === 'object' &&
+          !Array.isArray(value.arguments)
+            ? { arguments: value.arguments as Record<string, unknown> }
+            : {}),
+          signal: context.signal,
+        });
+      },
+    });
+  }
 
   register({
     name: 'inspect-workspace-changes',

@@ -122,6 +122,12 @@ describe('creationStackIntent', () => {
     expect(defaultKitForFramework('microsoft-agent-framework', prompt.toLowerCase())).toBe(
       'agent.microsoft.dotnet'
     );
+    expect(defaultKitForFramework('openai-agents', 'typescript agent')).toBe(
+      'agent.openai.typescript'
+    );
+    expect(defaultKitForFramework('openrouter', 'python gateway')).toBe(
+      'gateway.openrouter.python'
+    );
     expect(
       inferWorkspaceProfileFromCreationPrompt(
         'microsoft-agent-framework',

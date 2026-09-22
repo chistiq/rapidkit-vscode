@@ -73,7 +73,11 @@ import {
   type SidebarStudioApprovalRequestView,
   type SidebarStudioActionProgressView,
 } from '@/lib/sidebarStudioActionProgress';
-import { appendStudioRepairTimelineEntry } from '@/lib/studioRepairTimeline';
+import {
+  appendStudioRepairTimelineEntry,
+  studioRepairHistoryDisclosureLabel,
+  studioVisibleRepairHistory,
+} from '@/lib/studioRepairTimeline';
 import { buildStudioChangedFilesSummary } from '@/lib/studioChangedFilesSummary';
 import { resolveStudioIncidentRepairStatus } from '@/lib/studioIncidentRepairStatus';
 import {
@@ -136,6 +140,9 @@ function humanizeStudioError(error: string): string {
   }
   if (text.startsWith('Request Failed:')) {
     return 'Studio could not reach the AI provider for this message. The evidence-backed repair actions above are still usable.';
+  }
+  if (/repair transaction/i.test(text) && /fewer than 1 items/i.test(text)) {
+    return 'The CLI repair transaction could not start because this command-only step has no file checkpoint.';
   }
   return text;
 }
@@ -1281,7 +1288,7 @@ export function SecondarySidebar() {
               : [];
             startStudioActionProgress({
               action: 'verify-goal',
-              status: resolved ? 'done' : 'review',
+              status: resolved ? 'done' : 'failed',
               phase: resolved ? 'goal-verified' : 'goal-progress',
               title: resolved ? 'Engineering goal verified' : 'Goal still has work',
               summary: resolved
@@ -1322,7 +1329,7 @@ export function SecondarySidebar() {
           const cliRepairVerified = verifyOutput?.closureAuthority === 'cli-repair-engine';
           startStudioActionProgress({
             action: 'verify-blocker',
-            status: targetResolved ? 'done' : 'review',
+            status: targetResolved ? 'done' : 'failed',
             phase: targetResolved ? 'verified' : 'verify-observation',
             title: targetResolved
               ? cliRepairVerified
@@ -4031,11 +4038,11 @@ export function SecondarySidebar() {
                   {activeStudioRepairTimeline.length > 1 ? (
                     <details className="ws-sidebar__studio-activity-history">
                       <summary>
-                        Worked on {Math.min(activeStudioRepairTimeline.length - 1, 6)} step
-                        {Math.min(activeStudioRepairTimeline.length - 1, 6) === 1 ? '' : 's'}
+                        {studioRepairHistoryDisclosureLabel(activeStudioRepairTimeline)}
                       </summary>
                       <div role="list" aria-label="Completed repair steps">
-                        {activeStudioRepairTimeline.slice(-7, -1).map((progress, index) => (
+                        {studioVisibleRepairHistory(activeStudioRepairTimeline).map(
+                          (progress, index) => (
                           <StudioActionProgress
                             key={`${progress.action}:${progress.phase ?? 'phase'}:${progress.status}:${index}`}
                             progress={progress}
@@ -4044,7 +4051,8 @@ export function SecondarySidebar() {
                             onNextAction={handleStudioProgressNextAction}
                             busy={activeStudioRepairRunning}
                           />
-                        ))}
+                          )
+                        )}
                       </div>
                     </details>
                   ) : null}
@@ -4096,11 +4104,11 @@ export function SecondarySidebar() {
               {activeStudioRepairTimeline.length > 1 ? (
                 <details className="ws-sidebar__studio-activity-history">
                   <summary>
-                    Worked on {Math.min(activeStudioRepairTimeline.length - 1, 6)} step
-                    {Math.min(activeStudioRepairTimeline.length - 1, 6) === 1 ? '' : 's'}
+                    {studioRepairHistoryDisclosureLabel(activeStudioRepairTimeline)}
                   </summary>
                   <div role="list" aria-label="Completed Assistant steps">
-                    {activeStudioRepairTimeline.slice(-7, -1).map((progress, index) => (
+                    {studioVisibleRepairHistory(activeStudioRepairTimeline).map(
+                      (progress, index) => (
                       <StudioActionProgress
                         key={`${progress.action}:${progress.phase ?? 'phase'}:${progress.status}:${index}`}
                         progress={progress}
@@ -4108,7 +4116,8 @@ export function SecondarySidebar() {
                         historical={true}
                         busy={activeStudioRepairRunning}
                       />
-                    ))}
+                      )
+                    )}
                   </div>
                 </details>
               ) : null}

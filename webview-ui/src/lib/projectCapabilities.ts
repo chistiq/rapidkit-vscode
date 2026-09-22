@@ -71,6 +71,22 @@ export function getDashboardLifecycleDisableReason(
   return getProjectLifecycleDisableReason(capabilities, lifecycleCommand);
 }
 
+export function isPortlessDashboardProject(
+  capabilities: ProjectCapabilitiesSnapshot | undefined,
+  projectType?: string
+): boolean {
+  const framework = capabilities?.framework || projectType || '';
+  return (
+    framework === 'agent' ||
+    framework === 'gateway' ||
+    framework === 'microsoft-agent-framework' ||
+    framework === 'openai-agents' ||
+    framework === 'openrouter' ||
+    framework.startsWith('agent.') ||
+    framework.startsWith('gateway.')
+  );
+}
+
 export function isModuleMutationSupportedFromCapabilities(
   capabilities?: ProjectCapabilitiesSnapshot
 ): boolean {

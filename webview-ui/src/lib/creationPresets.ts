@@ -44,7 +44,7 @@ export const STACK_LANES: Array<{
   {
     id: 'agent',
     label: 'AI Agent',
-    detail: 'Governed Python or .NET agent runtime',
+    detail: 'Governed Microsoft or OpenAI agent runtime',
     frameworkHint: 'microsoft-agent-framework',
   },
   { id: 'polyglot', label: 'Full-stack', detail: 'Frontend + API in one workspace' },
@@ -91,7 +91,7 @@ export function recommendedProfilesForStackLane(
     case 'backend':
       return ['python-only', 'node-only', 'go-only', 'java-only', 'dotnet-only'];
     case 'agent':
-      return ['python-only', 'dotnet-only'];
+      return ['python-only', 'node-only', 'dotnet-only'];
     case 'polyglot':
       return ['polyglot'];
     case 'enterprise':
@@ -108,7 +108,7 @@ export function stackLaneGuidance(lane: CreationStackLane): string {
     case 'backend':
       return 'Pick the runtime profile that matches your first API service. You can add other runtimes later with polyglot.';
     case 'agent':
-      return 'Choose Python or .NET for a governed Microsoft Agent Framework project with Workspai context and verification.';
+      return 'Choose a governed Microsoft Agent Framework or OpenAI Agents SDK project. OpenRouter gateway projects are a separate source-ready kit.';
     case 'polyglot':
       return 'Polyglot profile keeps frontend and backend projects under one governed workspace boundary.';
     case 'enterprise':
@@ -291,6 +291,32 @@ export const WORKSPACE_PRESET_CATEGORIES: PresetCategory[] = [
         text: '.NET AI agent with Microsoft Agent Framework and Workspai verification',
         tags: ['agent', 'ai', 'dotnet', 'microsoft-agent-framework', 'verification'],
       },
+      {
+        id: 'agent-openai-python',
+        text: 'Python AI agent with the OpenAI Agents SDK and Workspai verification',
+        tags: ['agent', 'ai', 'python', 'openai-agents', 'verification'],
+      },
+      {
+        id: 'agent-openai-typescript',
+        text: 'TypeScript AI agent with the OpenAI Agents SDK and Workspai verification',
+        tags: ['agent', 'ai', 'typescript', 'openai-agents', 'verification'],
+      },
+    ],
+  },
+  {
+    id: 'model-gateway',
+    label: 'AI gateway',
+    options: [
+      {
+        id: 'gateway-openrouter-typescript',
+        text: 'TypeScript OpenRouter AI Gateway, source-ready, with Attach unsupported',
+        tags: ['gateway', 'openrouter', 'typescript', 'source-ready'],
+      },
+      {
+        id: 'gateway-openrouter-python',
+        text: 'Python OpenRouter AI Gateway, source-ready, with Attach unsupported',
+        tags: ['gateway', 'openrouter', 'python', 'source-ready'],
+      },
     ],
   },
   {
@@ -313,7 +339,7 @@ export function resolveWorkspacePlaceholder(lane: CreationStackLane): string {
     case 'backend':
       return 'e.g. "NestJS REST API with JWT auth, PostgreSQL, and audit-ready modules"';
     case 'agent':
-      return 'e.g. "Python agent workspace for evidence-backed repository maintenance"';
+      return 'e.g. "Python or TypeScript agent workspace for evidence-backed repository maintenance"';
     case 'polyglot':
       return 'e.g. "Polyglot SaaS: Next.js web app + FastAPI services with shared governance"';
     case 'enterprise':
@@ -352,7 +378,7 @@ export function resolveCreatePlaceholder(
     case 'backend':
       return `Describe an API or backend service to add${scope} — Node, Python, Go, Java, .NET…`;
     case 'agent':
-      return `Describe an AI agent to add${scope} — choose Python or .NET and its responsibility…`;
+      return `Describe an AI agent to add${scope} — Microsoft or OpenAI, Python, TypeScript, or .NET…`;
     case 'polyglot':
       return `Describe one full-stack or cross-runtime project to add${scope}…`;
     case 'enterprise':
@@ -373,7 +399,7 @@ export function quickStartsForStackLane(lane: CreationStackLane): string[] {
     case 'backend':
       return [...pick('backend-services'), ...pick('systems-runtimes')].slice(0, 5);
     case 'agent':
-      return pick('agent-workflows');
+      return [...pick('agent-workflows'), ...pick('model-gateway')];
     case 'polyglot':
       return pick('full-stack');
     case 'enterprise':
@@ -415,7 +441,7 @@ export function quickStartsForCreateTarget(
     case 'backend':
       return [...pick('backend-services'), ...pick('systems-runtimes')].slice(0, 5);
     case 'agent':
-      return pick('agent-workflows');
+      return [...pick('agent-workflows'), ...pick('model-gateway')];
     case 'polyglot':
       return [
         'Next.js full-stack application with authenticated routes and server-side API handlers',

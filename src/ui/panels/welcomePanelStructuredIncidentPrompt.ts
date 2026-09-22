@@ -158,7 +158,13 @@ export async function buildProjectExecutionBlock(
     }
   }
 
-  const isAgentFramework = framework === 'agent' || framework === 'microsoft-agent-framework';
+  const isAgentFramework =
+    framework === 'agent' ||
+    framework === 'microsoft-agent-framework' ||
+    framework === 'openai-agents' ||
+    framework.startsWith('agent.');
+  const isGatewayFramework =
+    framework === 'gateway' || framework === 'openrouter' || framework.startsWith('gateway.');
   if (isAgentFramework) {
     const agentRoot = path.join(projectPath, 'agents', 'primary');
     const hasPythonManifest = await fs.pathExists(path.join(agentRoot, 'pyproject.toml'));
@@ -184,10 +190,20 @@ export async function buildProjectExecutionBlock(
     }
   }
 
+  if (isGatewayFramework) {
+    lines.push(
+      '- OpenRouter AI Gateway is source-ready. Attach is unsupported and Go is not a gateway runtime.',
+      '- Do not treat this project as a RapidKit module host or assign it a synthetic HTTP port.',
+      '- Lifecycle is init, test, build, and start. Do not scan for a dev port.'
+    );
+  }
+
   lines.push(
     isAgentFramework
       ? '- Optimize for a verified agent handoff, not merely a successful provider response.'
-      : '- Optimize for the path to a running service: install deps -> init -> dev -> verify.'
+      : isGatewayFramework
+        ? '- Optimize for a source-ready gateway handoff: install deps, run the kit checks, and keep credentials out of the repo.'
+        : '- Optimize for the path to a running service: install deps -> init -> dev -> verify.'
   );
   lines.push('- `Verify command` must be an actual shell command or file check, never prose.');
 

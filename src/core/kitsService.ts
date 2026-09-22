@@ -10,6 +10,7 @@ import { run } from '../utils/exec';
 import { buildNpxRapidkitArgs } from '../utils/platformCapabilities';
 import {
   AGENT_SCAFFOLD_KITS,
+  GATEWAY_SCAFFOLD_KITS,
   DESKTOP_SCAFFOLD_KITS,
   EXTENSION_SCAFFOLD_KITS,
   FRONTEND_SCAFFOLD_KITS,
@@ -306,6 +307,14 @@ export class KitsService {
         display_name: definition.displayName,
         category: definition.framework,
         version: 'tested-baseline',
+        tags: definition.tags,
+        description: definition.description,
+      })),
+      ...GATEWAY_SCAFFOLD_KITS.map((definition) => ({
+        name: definition.kitId,
+        display_name: definition.displayName,
+        category: definition.framework,
+        version: 'source-ready',
         tags: definition.tags,
         description: definition.description,
       })),

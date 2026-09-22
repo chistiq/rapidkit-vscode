@@ -52,7 +52,9 @@ export function StudioIntelligencePhaseRail({
         <small>
           {completed
             ? `Complete · ${phaseCount}/${phaseCount}`
-            : `${running ? 'Working' : 'Paused'} · ${activeIndex + 1}/${phaseCount}`}
+            : running
+              ? `Working · ${activeIndex + 1}/${phaseCount}`
+              : 'Paused'}
         </small>
       </div>
       <div className="ws-sidebar__intelligence-rail-track" key={activePhase}>

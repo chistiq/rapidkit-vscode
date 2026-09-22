@@ -293,6 +293,7 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(provider).toContain('_runAutonomousStudioAgent');
     expect(provider).toContain('new StudioAgentSession');
     expect(provider).toContain('createStudioAgentWorkspaiToolRegistry');
+    expect(provider).toContain('studioHostLanguageModelToolAdapters()');
     expect(provider).toContain("'sidebarStudioDone'");
     expect(provider).toContain('_runUnifiedAssistantSession');
     expect(provider).toContain("input.assistantMode === 'agent' && input.handoff");
@@ -404,6 +405,9 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(actionProgress).not.toContain('progress.capabilityGate');
     expect(actionProgress).not.toContain('ws-sidebar__studio-action-timeline');
     expect(actionProgress).not.toContain("span data-active={phase === 'Run'");
+    expect(actionProgress).toContain('studioHistoricalActivityLabel');
+    expect(actionProgress).toContain('studioTimelineOccurrenceLabel');
+    expect(actionProgress).toContain('studioHistoricalOutcomeStatus');
     const sidebarCss = read('webview-ui/src/sidebar/sidebar.css');
     expect(sidebarCss).not.toContain('.ws-sidebar__studio-action-timeline');
     const repairPrelude = read('webview-ui/src/sidebar/StudioRepairPrelude.tsx');
@@ -459,7 +463,7 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(secondary).toContain('isStudioRepairActivelyOwned');
     expect(secondary).toContain('terminalizeStudioProgress');
     expect(secondary).toContain('settleStudioTimeline');
-    expect(secondary).toContain("status: resolved ? 'done' : 'review'");
+    expect(secondary).toContain("status: resolved ? 'done' : 'failed'");
     expect(secondary).toContain("status: 'done',\n          phase: 'observing-evidence'");
     expect(secondary).toContain('visibleStudioVerifyFailureForResult');
     expect(secondary).toContain('visibleStudioReturnStateForResult');

@@ -25,6 +25,7 @@ import {
 import { resolveCoreUpgradePlan } from '../../core/coreUpgradePlan';
 import { findWorkspaceRootUp } from '../../core/workspacePaths';
 import { resolveBundledCliRuntime } from '../../core/bundledCliRuntime';
+import releasePolicy from '../../../contracts/extension-cli-release-policy.v1.json';
 
 const SETUP_PREFERENCES_KEY = 'workspai.setup.preferences';
 
@@ -445,7 +446,7 @@ export class SetupPanel {
       case 'installNpmGlobal': {
         runCommandsInTerminal({
           name: 'Install Workspai CLI',
-          commands: ['npm install -g workspai'],
+          commands: [`npm install -g workspai@${releasePolicy.verifiedCliVersion}`],
         });
         setTimeout(async () => {
           const newStatus = await this._checkInstallationStatus();
@@ -456,7 +457,7 @@ export class SetupPanel {
       case 'upgradeNpmGlobal': {
         runCommandsInTerminal({
           name: 'Upgrade Workspai CLI',
-          commands: ['npm install -g workspai'],
+          commands: [`npm install -g workspai@${releasePolicy.verifiedCliVersion}`],
         });
         setTimeout(async () => {
           const newStatus = await this._checkInstallationStatus();

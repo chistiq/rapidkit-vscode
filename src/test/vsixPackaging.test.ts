@@ -21,6 +21,7 @@ describe('VSIX packaging exclusions', () => {
       'scripts/**',
       'coverage/**',
       '.workspai-cli-local.json',
+      '.workspai-runtime-packaging-stash/**',
     ]) {
       expect(vscodeignore, pattern).toContain(pattern);
     }
@@ -53,6 +54,14 @@ describe('VSIX packaging exclusions', () => {
     expect(packager).toContain('restoreContractMirrors(snapshot)');
     expect(packager).toContain('packageRelease();');
     expect(packager).toContain('packageLocal();');
+    expect(packager).toContain("error.code === 'EXDEV'");
+    expect(packager).toContain('.workspai-runtime-packaging-stash');
+    expect(packager).toContain('restoreReleaseCliRuntime');
+    expect(packager).toContain("['scripts/build-bundled-cli-runtime.mjs', '--release']");
+    const prepublish = read('scripts/vscode-prepublish.mjs');
+    expect(prepublish).toContain("channel === 'release'");
+    expect(prepublish).toContain("path.join(repositoryRoot, 'dist', 'workspai-runtime')");
+    expect(prepublish).toContain('fs.rmSync');
     expect(packageJson.scripts?.['smoke:vsix-artifact']).toBe(
       'node scripts/inspect-vsix-artifact.mjs --artifact rapidkit-vscode-${npm_package_version}.vsix'
     );

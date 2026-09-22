@@ -96,7 +96,7 @@ export function resolveStudioIntelligencePhaseFromToolEvent(input: {
     const commandId = objectRecord(input.toolInput)?.commandId;
     return typeof commandId === 'string' ? canonicalPhase(COMMAND_PHASES[commandId]) : undefined;
   }
-  return toolName === 'verify-blocker' ? 'verify' : undefined;
+  return toolName === 'verify-blocker' || toolName === 'verify-goal' ? 'verify' : undefined;
 }
 
 export function resolveStudioIntelligencePhaseFromCard(cardId?: string): StudioIntelligencePhaseId {
@@ -135,6 +135,9 @@ export function resolveStudioIntelligencePhaseFromCard(cardId?: string): StudioI
   }
   if (/explain/i.test(cardId)) {
     return 'explain';
+  }
+  if (/pipeline|governance|autopilot/i.test(cardId)) {
+    return 'analyze-evidence';
   }
   return 'model';
 }

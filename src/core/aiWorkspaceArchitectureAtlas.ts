@@ -91,11 +91,15 @@ function detectEntryPoints(projectPath: string, kit: string): string[] {
           ? 'springboot'
           : kit.startsWith('dotnet')
             ? 'dotnet'
-            : kit === 'agent.microsoft.python'
+            : kit === 'agent.microsoft.python' || kit === 'agent.openai.python'
               ? 'agent-python'
               : kit === 'agent.microsoft.dotnet'
                 ? 'agent-dotnet'
-                : 'unknown';
+                : kit === 'agent.openai.typescript'
+                  ? 'agent-node'
+                  : kit.startsWith('gateway.openrouter')
+                    ? 'gateway'
+                    : 'unknown';
 
   const found: string[] = [];
   for (const candidate of candidates) {
@@ -172,6 +176,18 @@ function deriveRuntimeFromKit(kit: string): { runtime: string; framework: string
   }
   if (resolved === 'agent.microsoft.dotnet') {
     return { runtime: 'dotnet', framework: 'microsoft-agent-framework' };
+  }
+  if (resolved === 'agent.openai.python') {
+    return { runtime: 'python', framework: 'openai-agents' };
+  }
+  if (resolved === 'agent.openai.typescript') {
+    return { runtime: 'node', framework: 'openai-agents' };
+  }
+  if (resolved === 'gateway.openrouter.typescript') {
+    return { runtime: 'node', framework: 'openrouter' };
+  }
+  if (resolved === 'gateway.openrouter.python') {
+    return { runtime: 'python', framework: 'openrouter' };
   }
   if (resolved === 'frontend.nextjs') {
     return { runtime: 'node', framework: 'nextjs' };

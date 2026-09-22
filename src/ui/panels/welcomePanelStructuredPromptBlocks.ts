@@ -56,7 +56,11 @@ export function buildWorkspaceArchitectureBlock(
         typeof project.modulesHealthy === 'boolean'
           ? project.projectKind === 'frontend'
             ? ` | sourceTreeHealthy: ${project.modulesHealthy ? 'yes' : 'no'}`
-            : ` | modulesHealthy: ${project.modulesHealthy ? 'yes' : 'no'}`
+            : project.projectKind === 'gateway'
+              ? ` | gatewaySurfaceHealthy: ${project.modulesHealthy ? 'yes' : 'no'}`
+              : project.projectKind === 'agent'
+                ? ` | agentSurfaceHealthy: ${project.modulesHealthy ? 'yes' : 'no'}`
+                : ` | modulesHealthy: ${project.modulesHealthy ? 'yes' : 'no'}`
           : '';
       const qualitySignals = [
         project.hasTests === true ? 'tests:yes' : project.hasTests === false ? 'tests:no' : null,
@@ -96,7 +100,11 @@ export function buildWorkspaceArchitectureBlock(
   }
   if (
     snapshot.projects.some(
-      (project) => project.projectKind !== 'frontend' && project.modulesHealthy === true
+      (project) =>
+        project.projectKind !== 'frontend' &&
+        project.projectKind !== 'gateway' &&
+        project.projectKind !== 'agent' &&
+        project.modulesHealthy === true
     )
   ) {
     lines.push(

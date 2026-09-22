@@ -8,6 +8,7 @@ import { ProjectConfig } from '../../types';
 import type { ScaffoldFramework } from '../../core/scaffoldKits';
 import {
   AGENT_SCAFFOLD_KITS,
+  GATEWAY_SCAFFOLD_KITS,
   DESKTOP_SCAFFOLD_KITS,
   EXTENSION_SCAFFOLD_KITS,
   FRONTEND_SCAFFOLD_KITS,
@@ -130,17 +131,30 @@ export class ProjectWizard {
           framework: definition.framework,
           category: 'extension' as const,
         })),
-        ...(AGENT_SCAFFOLD_KITS.length > 0
-          ? [
-              {
-                label: '$(hubot) Microsoft Agent Framework',
-                description: 'Governed AI agent',
-                detail: 'Choose a release-admitted Python or .NET agent kit',
-                framework: 'microsoft-agent-framework' as const,
-                category: 'agent' as const,
-              },
-            ]
-          : []),
+        ...AGENT_SCAFFOLD_KITS.filter(
+          (definition, index, kits) =>
+            kits.findIndex((candidate) => candidate.framework === definition.framework) === index
+        ).map((definition) => ({
+          label: `$(hubot) ${
+            definition.framework === 'openai-agents'
+              ? 'OpenAI Agents SDK'
+              : 'Microsoft Agent Framework'
+          }`,
+          description: 'Governed AI agent',
+          detail: definition.description,
+          framework: definition.framework,
+          category: 'agent' as const,
+        })),
+        ...GATEWAY_SCAFFOLD_KITS.filter(
+          (definition, index, kits) =>
+            kits.findIndex((candidate) => candidate.framework === definition.framework) === index
+        ).map((definition) => ({
+          label: '$(radio-tower) OpenRouter AI Gateway',
+          description: 'Source-ready gateway',
+          detail: 'TypeScript or Python. Attach is unsupported, and Go is not included.',
+          framework: definition.framework,
+          category: 'gateway' as const,
+        })),
       ];
 
       const categoryItems = [
@@ -163,8 +177,17 @@ export class ProjectWizard {
           ? [
               {
                 label: '$(hubot) AI Agent',
-                detail: 'Governed agent-framework projects',
+                detail: 'Governed Microsoft and OpenAI agent projects',
                 category: 'agent' as const,
+              },
+            ]
+          : []),
+        ...(GATEWAY_SCAFFOLD_KITS.length > 0
+          ? [
+              {
+                label: '$(radio-tower) AI Gateway',
+                detail: 'Source-ready OpenRouter gateway projects',
+                category: 'gateway' as const,
               },
             ]
           : []),

@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   appendStudioRepairTimelineEntry,
+  studioHistoricalActivityLabel,
+  studioHistoricalOutcomeStatus,
+  studioRepairHistoryDisclosureLabel,
+  studioTimelineOccurrenceLabel,
   STUDIO_REPAIR_TIMELINE_LIMIT,
 } from '../../webview-ui/src/lib/studioRepairTimeline';
 
@@ -112,7 +116,12 @@ describe('Studio repair timeline', () => {
     timeline = appendStudioRepairTimelineEntry(timeline, readDiagnostics);
     timeline = appendStudioRepairTimelineEntry(timeline, repair);
 
-    expect(timeline).toEqual([readDiagnostics, repair]);
+    expect(timeline).toHaveLength(2);
+    expect(timeline[0]).toMatchObject({
+      action: 'inspect-workspace-diagnostics',
+      occurrences: 2,
+    });
+    expect(timeline[1]).toMatchObject({ action: 'apply-workspace-patch' });
   });
 
   it('combines repeated controller-owned command rejections across tool calls', () => {
@@ -143,5 +152,92 @@ describe('Studio repair timeline', () => {
       occurrences: 3,
       invocationId: 'tool-call-3',
     });
+  });
+
+  it('does not label remaining verify work or failed apply as success', () => {
+    expect(
+      studioHistoricalActivityLabel({
+        action: 'verify-blocker',
+        status: 'failed',
+        phase: 'verify-observation',
+        title: 'Verify found remaining work',
+        summary: 'The blocker remains active.',
+      })
+    ).toBe('Not verified');
+    expect(
+      studioHistoricalActivityLabel({
+        action: 'execute-remediation-step',
+        status: 'failed',
+        phase: 'execute-remediation-step',
+        title: 'Applying remediation',
+        summary: 'The CLI repair transaction could not start.',
+      })
+    ).toBe('Did not apply');
+    expect(
+      studioHistoricalActivityLabel({
+        action: 'inspect-evidence',
+        status: 'done',
+        phase: 'inspect-evidence',
+        title: 'Read evidence',
+        summary: 'Read doctor-last-run.json.',
+      })
+    ).toBe('Inspected');
+    expect(
+      studioHistoricalActivityLabel({
+        action: 'verify-blocker',
+        status: 'done',
+        phase: 'verified',
+        title: 'Repair verified',
+        summary: 'Fresh evidence passed.',
+      })
+    ).toBe('Verified');
+    expect(
+      studioHistoricalOutcomeStatus({
+        action: 'verify-blocker',
+        status: 'done',
+        phase: 'verify-observation',
+        title: 'Verify found remaining work',
+        summary: 'The blocker remains active.',
+      })
+    ).toBe('failed');
+  });
+
+  it('keeps coalesced inspect reads visible in compact history', () => {
+    const inspect = {
+      action: 'inspect-evidence',
+      status: 'failed' as const,
+      phase: 'inspect-evidence',
+      title: 'Read evidence',
+      summary: 'Read doctor-last-run.json.',
+      occurrences: 71,
+    };
+    expect(studioHistoricalActivityLabel(inspect)).toBe('Inspected');
+    expect(studioTimelineOccurrenceLabel(inspect)).toBe('Inspected · 71 reads');
+    expect(
+      studioRepairHistoryDisclosureLabel([
+        inspect,
+        {
+          action: 'execute-remediation-step',
+          status: 'failed',
+          phase: 'execute-remediation-step',
+          title: 'Applying remediation',
+          summary: 'The CLI repair transaction could not start.',
+        },
+        {
+          action: 'verify-blocker',
+          status: 'failed',
+          phase: 'verify-observation',
+          title: 'Verify found remaining work',
+          summary: 'The blocker remains active.',
+        },
+        {
+          action: 'repair-session',
+          status: 'failed',
+          phase: 'repair-stopped',
+          title: 'Verification still open',
+          summary: 'Studio paused.',
+        },
+      ])
+    ).toBe('Worked on 3 steps · 71 file reads');
   });
 });

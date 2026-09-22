@@ -13,6 +13,7 @@ const CATEGORY_ROWS: Array<{ id: CreateKitCategory; label: string }> = [
   { id: 'frontend', label: 'Frontend' },
   { id: 'desktop', label: 'Desktop' },
   { id: 'agent', label: 'AI Agent' },
+  { id: 'gateway', label: 'AI Gateway' },
   { id: 'extension', label: 'Extension' },
 ];
 
@@ -42,6 +43,9 @@ export function ManualProjectDrawer({
     }
     if (selected?.category === 'agent') {
       return 'my-agent';
+    }
+    if (selected?.category === 'gateway') {
+      return 'my-gateway';
     }
     return selected?.category === 'desktop' ? 'my-desktop-app' : 'my-api-service';
   }, [kit]);

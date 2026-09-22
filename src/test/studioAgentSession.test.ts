@@ -137,7 +137,7 @@ describe('Studio Agent session runtime', () => {
           fingerprint: 'a'.repeat(64),
           approvedBy: 'test:explicit-user',
         });
-        return { ok: true, changed: true, output: { exitCode: 0 } };
+        return { ok: true, changed: false, output: { exitCode: 0 } };
       },
     });
     const approvalRequests: string[] = [];
@@ -373,7 +373,7 @@ describe('Studio Agent session runtime', () => {
     );
   });
 
-  it('resumes a durable exact remediation continuation without rerunning discovery', async () => {
+  it('resumes a durable exact remediation continuation without rerunning discovery or the model', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
       name: 'execute-remediation-step',
@@ -420,16 +420,9 @@ describe('Studio Agent session runtime', () => {
         restoredSession,
       },
       {
-        async next(context) {
+        async next() {
           modelTurns += 1;
-          expect(context.tools.map((tool) => tool.name)).toEqual(['execute-remediation-step']);
-          expect(context.requiredCausalAction?.stepId).toBe('doctor.persisted-action');
-          return {
-            type: 'tool',
-            toolName: 'execute-remediation-step',
-            input: { stepId: 'doctor.persisted-action' },
-            reason: 'Resume the exact action.',
-          };
+          throw new Error('The controller must execute a durable exact action without the model.');
         },
       },
       registry,
@@ -439,7 +432,7 @@ describe('Studio Agent session runtime', () => {
     const result = await session.run('Resume the Doctor repair');
 
     expect(result.status).toBe('completed');
-    expect(modelTurns).toBe(1);
+    expect(modelTurns).toBe(0);
     expect(
       result.events
         .filter((event) => event.type === 'tool.requested')
@@ -817,7 +810,7 @@ describe('Studio Agent session runtime', () => {
     );
   });
 
-  it('constrains the next model turn to the exact fresh CLI remediation action', async () => {
+  it('executes the exact fresh CLI remediation action without another model turn', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
       name: 'recover-active-blocker',
@@ -879,19 +872,9 @@ describe('Studio Agent session runtime', () => {
         workspaceTrusted: true,
       },
       {
-        async next(context) {
+        async next() {
           modelTurns += 1;
-          expect(context.tools.map((tool) => tool.name)).toEqual(['execute-remediation-step']);
-          expect(context.requiredCausalAction).toMatchObject({
-            stepId: 'doctor.service.materialize-dependencies',
-            evidenceGeneration: 'doctor-plan-v3',
-          });
-          return {
-            type: 'tool',
-            toolName: 'execute-remediation-step',
-            input: { stepId: 'doctor.service.materialize-dependencies' },
-            reason: 'Execute the exact CLI-selected action.',
-          };
+          throw new Error('The controller must execute the exact CLI action directly.');
         },
       },
       registry,
@@ -901,7 +884,7 @@ describe('Studio Agent session runtime', () => {
     const result = await session.run('Fix the active Doctor blocker');
 
     expect(result.status).toBe('completed');
-    expect(modelTurns).toBe(1);
+    expect(modelTurns).toBe(0);
     expect(result.pendingRequiredCausalAction).toBeUndefined();
     expect(
       store.saved.some(
@@ -1038,7 +1021,7 @@ describe('Studio Agent session runtime', () => {
     expect(executions).toBe(1);
   });
 
-  it('rejects renewed inspection while an exact CLI action is pending', async () => {
+  it('does not give the model a chance to reopen inspection while an exact CLI action is pending', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
       name: 'recover-active-blocker',
@@ -1118,10 +1101,11 @@ describe('Studio Agent session runtime', () => {
 
     expect(result.status).toBe('completed');
     expect(inspections).toBe(0);
+    expect(turn).toBe(0);
     expect(result.events).toContainEqual(
       expect.objectContaining({
         type: 'model.checkpoint',
-        data: expect.objectContaining({ recovery: 'required-causal-action-enforced' }),
+        data: expect.objectContaining({ recovery: 'required-causal-action-execution' }),
       })
     );
   });
@@ -1183,15 +1167,6 @@ describe('Studio Agent session runtime', () => {
       {
         async next(context) {
           turn += 1;
-          if (turn === 1) {
-            expect(context.tools.map((tool) => tool.name)).toEqual(['execute-remediation-step']);
-            return {
-              type: 'tool',
-              toolName: 'execute-remediation-step',
-              input: { stepId: 'doctor.failed-action' },
-              reason: 'Execute the exact action.',
-            };
-          }
           expect(context.requiredCausalAction).toBeUndefined();
           expect(context.sourceRepairDirective).toMatchObject({
             recoveryPath: 'required-remediation-action-failed',
@@ -1213,7 +1188,7 @@ describe('Studio Agent session runtime', () => {
 
     expect(result.status).toBe('completed');
     expect(exactAttempts).toBe(1);
-    expect(turn).toBe(2);
+    expect(turn).toBe(1);
   });
 
   it('refreshes producer-owned cards through their exact producer without a model decision', async () => {
@@ -1376,15 +1351,11 @@ describe('Studio Agent session runtime', () => {
           expect(context.sourceRepairDirective).toMatchObject({
             nextAction: 'general-source-repair',
           });
-          expect(context.tools.map((tool) => tool.name)).not.toEqual(
+          expect(context.tools.map((tool) => tool.name)).toEqual(
             expect.arrayContaining([
               'recover-active-blocker',
               'run-governed-command',
               'verify-blocker',
-            ])
-          );
-          expect(context.tools.map((tool) => tool.name)).toEqual(
-            expect.arrayContaining([
               'inspect-evidence',
               'query-workspace-graph',
               'apply-workspace-edits',
@@ -2424,6 +2395,332 @@ describe('Studio Agent session runtime', () => {
     );
   });
 
+  it('does not let the provider circuit breaker bypass final source review', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply patch',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return closedCliRepairResult({ transactionId: 'repair-circuit-review' });
+      },
+    });
+    registry.register({
+      name: 'inspect-evidence',
+      title: 'Inspect evidence',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, output: { observed: true } };
+      },
+    });
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Verify workspace',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        return { ok: true, cardBlocking: false };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'circuit-review-gate-session',
+        workspacePath: '/workspace',
+        cardId: 'assistant:agent',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: true,
+        maxModelDecisionsWithoutSourceProgress: 1,
+        maxTurns: 8,
+      },
+      sequenceModel([
+        {
+          type: 'tool',
+          toolName: 'apply-workspace-patch',
+          input: { patches: [] },
+          reason: 'Apply the requested source change.',
+        },
+        {
+          type: 'tool',
+          toolName: 'inspect-evidence',
+          input: {},
+          reason: 'Read unchanged evidence.',
+        },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Implement and verify the source change');
+
+    expect(result.status).toBe('failed');
+    expect(result.events.some((event) => event.type === 'session.completed')).toBe(false);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'model.checkpoint',
+        data: expect.objectContaining({
+          recovery: 'completion-contract',
+          blocker: 'source-review',
+        }),
+      })
+    );
+  });
+
+  it('preserves final-review and fresh-verification obligations across Resume', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'apply-workspace-patch',
+      title: 'Apply patch',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return closedCliRepairResult({ transactionId: 'repair-before-provider-outage' });
+      },
+    });
+    registry.register({
+      name: 'inspect-workspace-changes',
+      title: 'Inspect changes',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, output: { status: 'M api/package.json' } };
+      },
+    });
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Verify workspace',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        return { ok: true, cardBlocking: false };
+      },
+    });
+    let firstTurn = true;
+    const first = new StudioAgentSession(
+      {
+        id: 'resume-completion-obligations',
+        workspacePath: '/workspace',
+        cardId: 'assistant:agent',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: true,
+      },
+      {
+        async next() {
+          if (firstTurn) {
+            firstTurn = false;
+            return {
+              type: 'tool',
+              toolName: 'apply-workspace-patch',
+              input: { patches: [] },
+              reason: 'Apply the requested change.',
+            };
+          }
+          throw new Error('AI provider request failed: temporary outage');
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+    const interrupted = await first.run('Implement the endpoint');
+    expect(interrupted.status).toBe('failed');
+    expect(interrupted.completionObligations).toMatchObject({
+      sourceReviewRequiredAfterSequence: expect.any(Number),
+      freshVerificationRequiredAfterSequence: expect.any(Number),
+    });
+
+    const resumed = new StudioAgentSession(
+      {
+        id: interrupted.id,
+        workspacePath: interrupted.workspacePath,
+        cardId: interrupted.cardId,
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: true,
+        restoredSession: interrupted,
+      },
+      sequenceModel([
+        { type: 'complete', summary: 'Done without reviewing the prior mutation.' },
+        {
+          type: 'tool',
+          toolName: 'inspect-workspace-changes',
+          input: {},
+          reason: 'Review the durable prior mutation.',
+        },
+        { type: 'complete', summary: 'Implemented, reviewed, and verified.' },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await resumed.run('Resume the same task');
+
+    expect(result.status).toBe('completed');
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'model.checkpoint',
+        data: expect.objectContaining({
+          recovery: 'completion-contract',
+          blocker: 'source-review',
+        }),
+      })
+    );
+    expect(result.completionObligations).toMatchObject({
+      latestSourceMutationSequence: expect.any(Number),
+    });
+    expect(result.completionObligations?.sourceReviewRequiredAfterSequence).toBeUndefined();
+    expect(result.completionObligations?.freshVerificationRequiredAfterSequence).toBeUndefined();
+  });
+
+  it('blocks completion while the durable task ledger has unfinished steps', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'update-task-ledger',
+      title: 'Update task ledger',
+      activity: 'inspect',
+      risk: 'read',
+      async execute(input) {
+        return {
+          ok: true,
+          output: {
+            schemaVersion: 'workspai.studio-task-ledger.v1',
+            ...(input as Record<string, unknown>),
+          },
+        };
+      },
+    });
+    const pendingLedger = {
+      objective: 'Implement and verify the endpoint.',
+      currentStepId: 'verify',
+      steps: [
+        { id: 'implement', description: 'Implement endpoint', status: 'completed' },
+        { id: 'verify', description: 'Run verification', status: 'in-progress' },
+      ],
+    };
+    const completedLedger = {
+      objective: pendingLedger.objective,
+      steps: [
+        {
+          id: 'implement',
+          description: 'Implement endpoint',
+          status: 'completed',
+          evidence: 'Source transaction closed.',
+        },
+        {
+          id: 'verify',
+          description: 'Run verification',
+          status: 'completed',
+          evidence: 'Verification passed.',
+        },
+      ],
+    };
+    const session = new StudioAgentSession(
+      {
+        id: 'task-ledger-stop-gate',
+        workspacePath: '/workspace',
+        cardId: 'assistant:agent',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: false,
+      },
+      sequenceModel([
+        {
+          type: 'tool',
+          toolName: 'update-task-ledger',
+          input: pendingLedger,
+          reason: 'Persist the active work plan.',
+        },
+        { type: 'complete', summary: 'Premature completion.' },
+        {
+          type: 'tool',
+          toolName: 'update-task-ledger',
+          input: completedLedger,
+          reason: 'Record verified completion evidence.',
+        },
+        { type: 'complete', summary: 'All durable task steps are complete.' },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Implement the endpoint');
+
+    expect(result.status).toBe('completed');
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'model.checkpoint',
+        data: expect.objectContaining({
+          recovery: 'completion-contract',
+          blocker: 'task-ledger',
+        }),
+      })
+    );
+    expect(result.taskLedger?.steps.every((step) => step.status === 'completed')).toBe(true);
+  });
+
+  it('persists the actual resolved provider model instead of only the requested model', async () => {
+    let resolutionAvailable = true;
+    const session = new StudioAgentSession(
+      {
+        id: 'resolved-model-identity',
+        workspacePath: '/workspace',
+        cardId: 'assistant:agent',
+        assistantMode: 'agent',
+        selectedModelId: 'preferred-model',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: false,
+      },
+      {
+        async next() {
+          return { type: 'complete', summary: 'Answered with the resolved model.' };
+        },
+        consumeResolution() {
+          if (!resolutionAvailable) {
+            return undefined;
+          }
+          resolutionAvailable = false;
+          return {
+            provider: 'openrouter',
+            modelId: 'fallback-model',
+            requestedModelId: 'preferred-model',
+            fallback: true,
+            attempts: 2,
+          };
+        },
+      },
+      new StudioAgentToolRegistry(),
+      new MemoryStore()
+    );
+
+    const result = await session.run('Answer the request');
+
+    expect(result.status).toBe('completed');
+    expect(result.lastResolvedModel).toMatchObject({
+      provider: 'openrouter',
+      modelId: 'fallback-model',
+      requestedModelId: 'preferred-model',
+      fallback: true,
+      attempts: 2,
+    });
+    expect(result.budgetLedger?.totalProviderRequests).toBe(2);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'model.resolved',
+        data: expect.objectContaining({
+          modelId: 'fallback-model',
+          fallback: true,
+        }),
+      })
+    );
+  });
+
   it('rejects a mutation receipt that is not closed by the CLI repair engine', async () => {
     const registry = new StudioAgentToolRegistry();
     const chain = vi.fn(async () => ({ ok: true, changed: false }));
@@ -3359,6 +3656,15 @@ describe('Studio Agent session runtime', () => {
     const result = await session.run('Clear readiness');
 
     expect(result.status).toBe('failed');
+    expect(
+      result.events.filter(
+        (event) =>
+          event.type === 'model.checkpoint' &&
+          event.data &&
+          typeof event.data === 'object' &&
+          (event.data as { recovery?: string }).recovery === 'unverified-continue-nudge'
+      )
+    ).toHaveLength(3);
     expect(result.events).toContainEqual(
       expect.objectContaining({
         type: 'session.failed',
@@ -3368,7 +3674,7 @@ describe('Studio Agent session runtime', () => {
         }),
       })
     );
-    expect(result.sequence).toBeLessThan(100);
+    expect(result.sequence).toBeLessThan(250);
   });
 
   it('recovers a governed Goal retry loop through the scoped CLI remediation plan', async () => {
@@ -3739,6 +4045,8 @@ describe('Studio Agent session runtime', () => {
       sequenceModel([
         repeatedNoOp,
         repeatedNoOp,
+        repeatedNoOp,
+        repeatedNoOp,
         {
           type: 'tool',
           toolName: 'apply-workspace-patch',
@@ -3753,7 +4061,7 @@ describe('Studio Agent session runtime', () => {
     const result = await session.run('Repair the blocker');
 
     expect(result.status).toBe('completed');
-    expect(noOpCalls).toBe(1);
+    expect(noOpCalls).toBe(3);
     expect(result.events).toContainEqual(
       expect.objectContaining({
         type: 'tool.failed',
@@ -3815,13 +4123,71 @@ describe('Studio Agent session runtime', () => {
     const result = await session.run('Fix Doctor');
 
     expect(result.status).toBe('failed');
-    expect(verifyCalls).toBe(1);
+    expect(verifyCalls).toBe(3);
     expect(result.events).toContainEqual(
       expect.objectContaining({
         type: 'tool.failed',
         data: expect.objectContaining({ toolName: 'verify-blocker', duplicate: true }),
       })
     );
+  });
+
+  it('allows the same verify after a different inspect because duplicate detection is consecutive', async () => {
+    const registry = new StudioAgentToolRegistry();
+    let verifyCalls = 0;
+    registry.register({
+      name: 'inspect-source',
+      title: 'Inspect source',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, output: [{ path: 'src/index.ts', sha256: 'abc' }] };
+      },
+    });
+    registry.register({
+      name: 'verify-blocker',
+      title: 'Verify blocker',
+      activity: 'verify',
+      risk: 'read',
+      async execute() {
+        verifyCalls += 1;
+        return {
+          ok: verifyCalls >= 4,
+          cardBlocking: verifyCalls < 4,
+          blockerSignature: 'same-doctor-blocker',
+        };
+      },
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'consecutive-duplicate-reset-session',
+        workspacePath: '/workspace',
+        cardId: 'doctor',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+      },
+      sequenceModel([
+        { type: 'tool', toolName: 'verify-blocker', input: {}, reason: 'First verify' },
+        { type: 'tool', toolName: 'verify-blocker', input: {}, reason: 'Second verify' },
+        {
+          type: 'tool',
+          toolName: 'inspect-source',
+          input: { paths: ['src/index.ts'] },
+          reason: 'Inspect',
+        },
+        { type: 'tool', toolName: 'verify-blocker', input: {}, reason: 'Verify after inspect' },
+        { type: 'tool', toolName: 'verify-blocker', input: {}, reason: 'Final verify' },
+        { type: 'complete', summary: 'Verified after a different inspection.' },
+      ]),
+      registry,
+      new MemoryStore()
+    );
+
+    const result = await session.run('Fix Doctor');
+
+    expect(result.status).toBe('completed');
+    expect(verifyCalls).toBe(4);
   });
 
   it('removes an exhausted accelerator until a general source capability advances evidence', async () => {
@@ -3890,9 +4256,9 @@ describe('Studio Agent session runtime', () => {
               reason: 'Use accelerator first',
             };
           }
-          expect(context.tools.map((tool) => tool.name)).not.toContain(
-            'inspect-dependency-security'
-          );
+          expect(
+            context.tools.find((tool) => tool.name === 'inspect-dependency-security')?.description
+          ).toContain('exhausted for the current causal generation');
           expect(context.tools.map((tool) => tool.name)).toContain('apply-workspace-patch');
           return {
             type: 'tool',
@@ -4133,7 +4499,7 @@ describe('Studio Agent session runtime', () => {
     );
   });
 
-  it('removes read-only tools after bounded source inspection and requires a repair action', async () => {
+  it('keeps tools visible after bounded source inspection while requiring a repair action', async () => {
     const registry = new StudioAgentToolRegistry();
     registry.register({
       name: 'recover-active-blocker',
@@ -4205,7 +4571,7 @@ describe('Studio Agent session runtime', () => {
           modelTurns += 1;
           if (context.sourceActionRequired) {
             expect(context.tools.map((tool) => tool.name)).toContain('apply-workspace-patch');
-            expect(context.tools.map((tool) => tool.name)).not.toContain('inspect-source');
+            expect(context.tools.map((tool) => tool.name)).toContain('inspect-source');
             return {
               type: 'tool',
               toolName: 'apply-workspace-patch',
@@ -4984,7 +5350,7 @@ describe('Studio Agent session runtime', () => {
           if (turn === 2) {
             expect(context.sourceRepairDirective).toMatchObject({ proposalRejected: true });
             expect(context.tools.map((tool) => tool.name)).toContain('inspect-evidence');
-            expect(context.tools.map((tool) => tool.name)).not.toContain('apply-workspace-patch');
+            expect(context.tools.map((tool) => tool.name)).toContain('apply-workspace-patch');
             return {
               type: 'tool',
               toolName: 'inspect-evidence',
@@ -4994,7 +5360,7 @@ describe('Studio Agent session runtime', () => {
           }
           if (turn === 3) {
             expect(context.tools.map((tool) => tool.name)).toContain('inspect-source');
-            expect(context.tools.map((tool) => tool.name)).not.toContain('apply-workspace-patch');
+            expect(context.tools.map((tool) => tool.name)).toContain('apply-workspace-patch');
             return {
               type: 'tool',
               toolName: 'inspect-source',
@@ -5003,7 +5369,7 @@ describe('Studio Agent session runtime', () => {
             };
           }
           expect(context.tools.map((tool) => tool.name)).toContain('apply-workspace-patch');
-          expect(context.tools.map((tool) => tool.name)).not.toContain('inspect-evidence');
+          expect(context.tools.map((tool) => tool.name)).toContain('inspect-evidence');
           return {
             type: 'tool',
             toolName: 'apply-workspace-patch',
@@ -5236,6 +5602,15 @@ describe('Studio Agent session runtime', () => {
       },
     });
     registry.register({
+      name: 'inspect-workspace-changes',
+      title: 'Inspect changes',
+      activity: 'inspect',
+      risk: 'read',
+      async execute() {
+        return { ok: true, output: { status: 'M package.json' } };
+      },
+    });
+    registry.register({
       name: 'verify-blocker',
       title: 'Verify',
       activity: 'verify',
@@ -5256,12 +5631,13 @@ describe('Studio Agent session runtime', () => {
       {
         id: 'semantic-churn-session',
         workspacePath: '/workspace',
-        cardId: 'readiness',
+        cardId: 'assistant:agent',
         assistantMode: 'agent',
         permissionLevel: 'autopilot',
         workspaceTrusted: true,
       },
       sequenceModel([
+        audit,
         audit,
         audit,
         audit,
@@ -5272,6 +5648,12 @@ describe('Studio Agent session runtime', () => {
           reason: 'Advance source evidence',
         },
         audit,
+        {
+          type: 'tool',
+          toolName: 'inspect-workspace-changes',
+          input: {},
+          reason: 'Review the final source change',
+        },
         { type: 'tool', toolName: 'verify-blocker', input: {}, reason: 'Verify' },
         { type: 'complete', summary: 'Resolved without audit churn' },
       ]),
@@ -5282,7 +5664,7 @@ describe('Studio Agent session runtime', () => {
     const result = await session.run('Repair dependency blocker');
 
     expect(result.status).toBe('completed');
-    expect(inspectCalls).toBe(1);
+    expect(inspectCalls).toBe(4);
     expect(result.events).toContainEqual(
       expect.objectContaining({
         type: 'tool.failed',

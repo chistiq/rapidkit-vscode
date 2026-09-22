@@ -34,6 +34,13 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
       'Preserves the cross-platform admission schema without allowing the extension to declare framework releases verified.',
   },
   {
+    contractPath: 'workspace-intelligence/agent-framework-admission-candidate.v2.json',
+    mode: 'mirrored-reserved',
+    extensionSurface: 'Agent framework release admission compatibility boundary',
+    usage:
+      'Preserves the current admission-candidate schema without allowing the extension to declare framework releases verified.',
+  },
+  {
     contractPath: 'workspace-intelligence/agent-framework-change-plan.v1.json',
     mode: 'schema-guarded',
     extensionSurface: 'Governed agent framework plan and approval boundary',
@@ -46,6 +53,13 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
     extensionSurface: 'Agent framework conformance evidence compatibility boundary',
     usage:
       'Preserves platform and runtime conformance evidence while keeping admission authority in the CLI release pipeline.',
+  },
+  {
+    contractPath: 'workspace-intelligence/agent-framework-conformance-report.v2.json',
+    mode: 'mirrored-reserved',
+    extensionSurface: 'Agent framework conformance evidence compatibility boundary',
+    usage:
+      'Preserves the current conformance-report schema while keeping admission authority in the CLI release pipeline.',
   },
   {
     contractPath: 'workspace-intelligence/agent-framework-ownership-receipt.v1.json',

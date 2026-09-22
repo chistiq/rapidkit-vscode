@@ -638,7 +638,13 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
     }
     if (typeof project.hasCodeQuality === 'boolean') {
       const label =
-        project.projectKind === 'frontend' ? 'Lint (ESLint)' : 'Code quality (Ruff/format)';
+        project.projectKind === 'frontend'
+          ? 'Lint (ESLint)'
+          : project.projectKind === 'gateway'
+            ? 'Gateway checks'
+            : project.projectKind === 'agent'
+              ? 'Agent checks'
+              : 'Code quality (Ruff/format)';
       const item = new DoctorEvidenceItem(
         `${project.hasCodeQuality ? '✅' : '⊘'}  ${label}`,
         'signal',
@@ -648,7 +654,14 @@ export class DoctorEvidenceProvider implements vscode.TreeDataProvider<DoctorEvi
       rows.push(item);
     }
     if (typeof project.modulesHealthy === 'boolean') {
-      const label = project.projectKind === 'frontend' ? 'Source tree' : 'RapidKit modules';
+      const label =
+        project.projectKind === 'frontend'
+          ? 'Source tree'
+          : project.projectKind === 'gateway'
+            ? 'Gateway surface'
+            : project.projectKind === 'agent'
+              ? 'Agent surface'
+              : 'RapidKit modules';
       const item = new DoctorEvidenceItem(
         `${project.modulesHealthy ? '✅' : '⚠️'}  ${label}`,
         'signal',

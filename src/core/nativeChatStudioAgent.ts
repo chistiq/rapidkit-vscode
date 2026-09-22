@@ -16,6 +16,7 @@ import {
   createStudioAgentWorkspaiToolRegistry,
   type StudioAgentWorkspaiToolHost,
 } from './studioAgentWorkspaiTools.js';
+import { studioHostLanguageModelToolAdapters } from './studioHostLanguageModelTools.js';
 import { renderNativeStudioAgentEvent } from './nativeChatToolEventRenderer.js';
 import { buildStudioIncidentGraph } from './studioIncidentGraph.js';
 import {
@@ -287,6 +288,7 @@ export async function runNativeChatStudioAgent(input: {
   };
 
   const host: StudioAgentWorkspaiToolHost = {
+    ...studioHostLanguageModelToolAdapters(input.token),
     recoverActiveBlocker: async (request) => {
       const producerRoute = resolveStudioCausalProducerRoute(activeHandoff);
       const recovery = await ensureStudioRemediationRecovery({
@@ -1039,13 +1041,24 @@ export async function runNativeChatStudioAgent(input: {
           { path: input.workspacePath, token: '$WORKSPACE' },
         ]
       );
+      const resolution = {
+        provider: response.provider,
+        modelId: response.modelId,
+        ...(response.requestedModelId ? { requestedModelId: response.requestedModelId } : {}),
+        fallback: response.fallback,
+        attempts: response.attempts,
+        ...(response.inputTokens !== undefined ? { inputTokens: response.inputTokens } : {}),
+        ...(response.outputTokens !== undefined ? { outputTokens: response.outputTokens } : {}),
+        ...(response.tokenUsageSource ? { tokenUsageSource: response.tokenUsageSource } : {}),
+      };
       return response.type === 'tool'
         ? {
             callId: response.callId,
             toolName: response.toolName,
             input: response.input,
+            resolution,
           }
-        : response.text;
+        : { type: 'text' as const, text: response.text, resolution };
     },
     undefined,
     input.initialConversation

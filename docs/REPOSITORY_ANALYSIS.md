@@ -105,6 +105,7 @@ results or missing proofs are explicit, not a clean verdict. Search relations
 are indexed structural evidence, not guaranteed runtime reachability or measured
 test coverage. Search uses no model and does not adopt or rebuild the repository.
 
-Repository analysis runs through the extension's pinned Workspai CLI 0.75.0
-runtime. The UI does not silently substitute sibling source or an unverified
-runtime for the released package.
+Repository analysis runs through the extension's pinned Workspai CLI 0.77.0
+runtime. The first production run downloads that exact package, checks its
+integrity, and reuses the cached copy. The UI does not silently substitute
+sibling source or an unverified runtime for the released package.

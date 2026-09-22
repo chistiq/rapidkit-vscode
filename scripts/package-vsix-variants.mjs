@@ -119,13 +119,63 @@ function packageArtifact({ channel, output, cliVersion }) {
   console.log(`Created ${channel} VSIX: ${output}`);
 }
 
+function moveDirectory(source, destination) {
+  fs.rmSync(destination, { recursive: true, force: true });
+  try {
+    fs.renameSync(source, destination);
+  } catch (error) {
+    // Packaging may stash across filesystems (/home vs /tmp). rename(2)
+    // cannot cross devices; copy+remove is the portable fallback.
+    if (error && typeof error === 'object' && error.code === 'EXDEV') {
+      fs.cpSync(source, destination, { recursive: true });
+      fs.rmSync(source, { recursive: true, force: true });
+      return;
+    }
+    throw error;
+  }
+}
+
+function withoutEmbeddedCliRuntime(action) {
+  const runtimeRoot = path.join(repositoryRoot, 'dist', 'workspai-runtime');
+  const stashRoot = path.join(repositoryRoot, '.workspai-runtime-packaging-stash');
+  const present = fs.existsSync(runtimeRoot);
+  if (present) {
+    moveDirectory(runtimeRoot, stashRoot);
+  }
+  try {
+    action();
+  } finally {
+    if (present && fs.existsSync(stashRoot)) {
+      fs.rmSync(runtimeRoot, { recursive: true, force: true });
+      moveDirectory(stashRoot, runtimeRoot);
+    }
+  }
+}
+
+function restoreReleaseCliRuntime() {
+  const runtimeRoot = path.join(repositoryRoot, 'dist', 'workspai-runtime');
+  if (fs.existsSync(runtimeRoot)) {
+    return;
+  }
+  // vscode:prepublish strips the embedded runtime before vsce packs the
+  // marketplace artifact. Restore it afterward so package:ci first-run smoke
+  // and a local F5 host still have a verified CLI runtime on disk.
+  runNode(['scripts/build-bundled-cli-runtime.mjs', '--release']);
+}
+
 function packageRelease() {
-  withPinnedReleaseContracts(() => {
-    packageArtifact({
-      channel: 'release',
-      output: `rapidkit-vscode-${extensionPackage.version}.vsix`,
+  try {
+    withPinnedReleaseContracts(() => {
+      withoutEmbeddedCliRuntime(() => {
+        packageArtifact({
+          channel: 'release',
+          output: `rapidkit-vscode-${extensionPackage.version}.vsix`,
+        });
+      });
     });
-  });
+  } finally {
+    restoreReleaseCliRuntime();
+  }
 }
 
 function packageLocal() {

@@ -47,15 +47,29 @@ export interface ConfiguredAIProviderTool {
   inputSchema?: Record<string, unknown>;
 }
 
+export type ConfiguredAIProviderResolution = {
+  provider: AIProviderKind;
+  modelId: string;
+  requestedModelId?: string;
+  fallback: boolean;
+  attempts: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  tokenUsageSource?: 'provider' | 'estimated';
+};
+
 export type ConfiguredAIProviderAction =
-  | {
+  | (ConfiguredAIProviderResolution & {
       type: 'tool';
-      provider: AIProviderKind;
       callId: string;
       toolName: string;
       input: Record<string, unknown>;
-    }
-  | { type: 'text'; provider: AIProviderKind; text: string };
+    })
+  | (ConfiguredAIProviderResolution & { type: 'text'; text: string });
+
+function estimatedTokenCount(value: unknown): number {
+  return Math.max(1, Math.ceil(JSON.stringify(value).length / 4));
+}
 
 function providerSecretKey(provider: AIProviderKind): string {
   return `${PROVIDER_SECRET_PREFIX}.${provider}`;
@@ -242,6 +256,58 @@ function extractAnthropicText(payload: unknown): string {
     .join('');
 }
 
+function finiteTokenCount(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.trunc(value)
+    : undefined;
+}
+
+function openAICompatibleTokenUsage(
+  payload: unknown
+): Pick<ConfiguredAIProviderResolution, 'inputTokens' | 'outputTokens' | 'tokenUsageSource'> {
+  const usage =
+    payload &&
+    typeof payload === 'object' &&
+    !Array.isArray(payload) &&
+    (payload as { usage?: unknown }).usage &&
+    typeof (payload as { usage?: unknown }).usage === 'object' &&
+    !Array.isArray((payload as { usage?: unknown }).usage)
+      ? (payload as { usage: Record<string, unknown> }).usage
+      : undefined;
+  const inputTokens = finiteTokenCount(usage?.prompt_tokens ?? usage?.input_tokens);
+  const outputTokens = finiteTokenCount(usage?.completion_tokens ?? usage?.output_tokens);
+  return inputTokens !== undefined || outputTokens !== undefined
+    ? {
+        ...(inputTokens !== undefined ? { inputTokens } : {}),
+        ...(outputTokens !== undefined ? { outputTokens } : {}),
+        tokenUsageSource: 'provider',
+      }
+    : {};
+}
+
+function anthropicTokenUsage(
+  payload: unknown
+): Pick<ConfiguredAIProviderResolution, 'inputTokens' | 'outputTokens' | 'tokenUsageSource'> {
+  const usage =
+    payload &&
+    typeof payload === 'object' &&
+    !Array.isArray(payload) &&
+    (payload as { usage?: unknown }).usage &&
+    typeof (payload as { usage?: unknown }).usage === 'object' &&
+    !Array.isArray((payload as { usage?: unknown }).usage)
+      ? (payload as { usage: Record<string, unknown> }).usage
+      : undefined;
+  const inputTokens = finiteTokenCount(usage?.input_tokens);
+  const outputTokens = finiteTokenCount(usage?.output_tokens);
+  return inputTokens !== undefined || outputTokens !== undefined
+    ? {
+        ...(inputTokens !== undefined ? { inputTokens } : {}),
+        ...(outputTokens !== undefined ? { outputTokens } : {}),
+        tokenUsageSource: 'provider',
+      }
+    : {};
+}
+
 function parseErrorPayload(raw: string): unknown {
   try {
     return raw ? JSON.parse(raw) : null;
@@ -276,6 +342,102 @@ function createRequestLifecycle(
       cancellation?.dispose();
     },
   };
+}
+
+const MAX_TRANSIENT_PROVIDER_ATTEMPTS = 3;
+
+function isDefinitiveProviderFailure(status: number, raw: string): boolean {
+  return (
+    status === 400 ||
+    status === 401 ||
+    status === 403 ||
+    /(?:invalid[_ -]?api[_ -]?key|incorrect api key|insufficient[_ -]?quota|billing|payment required|permission denied|forbidden|unsupported model)/i.test(
+      raw
+    )
+  );
+}
+
+function isRetryableProviderResponse(status: number, raw: string): boolean {
+  if (isDefinitiveProviderFailure(status, raw)) {
+    return false;
+  }
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function isRetryableProviderTransportError(error: unknown): boolean {
+  const raw = error instanceof Error ? `${error.name} ${error.message}` : String(error ?? '');
+  return /(?:fetch failed|network|econnreset|econnrefused|etimedout|socket|temporar(?:y|ily)|unavailable|overloaded)/i.test(
+    raw
+  );
+}
+
+async function waitForProviderRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    throw new Error('AI provider request was cancelled.');
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      clearTimeout(timeout);
+      signal.removeEventListener('abort', onAbort);
+      reject(new Error('AI provider request was cancelled.'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function providerRetryDelayMs(response: Response, attempt: number): number {
+  const fallback = 200 * 2 ** (attempt - 1);
+  const raw = response.headers?.get?.('retry-after')?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(5_000, Math.max(fallback, Math.round(seconds * 1_000)));
+  }
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? Math.min(5_000, Math.max(fallback, at - Date.now())) : fallback;
+}
+
+async function fetchProviderResponseWithRetry(input: {
+  url: string;
+  init: RequestInit;
+  signal: AbortSignal;
+}): Promise<{ response: Response; raw: string; attempts: number }> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_TRANSIENT_PROVIDER_ATTEMPTS; attempt += 1) {
+    let retryDelayMs = 200 * 2 ** (attempt - 1);
+    try {
+      const response = await fetch(input.url, { ...input.init, signal: input.signal });
+      const raw = await response.text();
+      if (
+        response.ok ||
+        attempt === MAX_TRANSIENT_PROVIDER_ATTEMPTS ||
+        !isRetryableProviderResponse(response.status, raw)
+      ) {
+        return { response, raw, attempts: attempt };
+      }
+      retryDelayMs = providerRetryDelayMs(response, attempt);
+    } catch (error) {
+      lastError = error;
+      if (input.signal.aborted || !isRetryableProviderTransportError(error)) {
+        throw error;
+      }
+      if (attempt === MAX_TRANSIENT_PROVIDER_ATTEMPTS) {
+        throw new Error(
+          `AI provider transport failed after ${attempt} bounded attempts: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
+    await waitForProviderRetry(retryDelayMs, input.signal);
+  }
+  throw lastError ?? new Error('AI provider request failed after bounded retries.');
 }
 
 function createOpenAIHeaders(provider: AIProviderKind, apiKey?: string): Record<string, string> {
@@ -481,31 +643,38 @@ async function askOpenAICompatibleToolAction(
 
   const lifecycle = createRequestLifecycle(settings.aiStreamTimeoutMs, token);
   try {
-    const response = await fetch(resolveOpenAIChatCompletionsUrl(settings.customAIBaseUrl), {
-      method: 'POST',
-      headers: createOpenAIHeaders(provider.id, apiKey),
-      body: JSON.stringify({
-        model: settings.customAIModel,
-        messages: toOpenAIMessages(messages),
-        temperature: 0.1,
-        stream: false,
-        tools: tools.map((tool) => ({
-          type: 'function',
-          function: {
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.inputSchema ?? { type: 'object' },
-          },
-        })),
-        tool_choice: 'required',
-      }),
+    const { response, raw, attempts } = await fetchProviderResponseWithRetry({
+      url: resolveOpenAIChatCompletionsUrl(settings.customAIBaseUrl),
+      init: {
+        method: 'POST',
+        headers: createOpenAIHeaders(provider.id, apiKey),
+        body: JSON.stringify({
+          model: settings.customAIModel,
+          messages: toOpenAIMessages(messages),
+          temperature: 0.1,
+          stream: false,
+          tools: tools.map((tool) => ({
+            type: 'function',
+            function: {
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.inputSchema ?? { type: 'object' },
+            },
+          })),
+          tool_choice: 'required',
+        }),
+      },
       signal: lifecycle.signal,
     });
-    const raw = await response.text();
     if (!response.ok) {
-      throw new Error(providerErrorMessage(provider.label, response.status, raw));
+      throw new Error(
+        `${providerErrorMessage(provider.label, response.status, raw)}${
+          attempts > 1 ? ` after ${attempts} bounded attempts` : ''
+        }`
+      );
     }
     const payload = (parseErrorPayload(raw) ?? {}) as Record<string, unknown>;
+    const tokenUsage = openAICompatibleTokenUsage(payload);
     const choice = Array.isArray(payload.choices)
       ? (payload.choices[0] as { message?: Record<string, unknown> } | undefined)
       : undefined;
@@ -527,6 +696,10 @@ async function askOpenAICompatibleToolAction(
       return {
         type: 'tool',
         provider: provider.id,
+        modelId: settings.customAIModel,
+        fallback: false,
+        attempts,
+        ...tokenUsage,
         callId: typeof first?.id === 'string' && first.id.trim() ? first.id : randomUUID(),
         toolName: name,
         input: parsed,
@@ -535,6 +708,10 @@ async function askOpenAICompatibleToolAction(
     return {
       type: 'text',
       provider: provider.id,
+      modelId: settings.customAIModel,
+      fallback: false,
+      attempts,
+      ...tokenUsage,
       text: extractOpenAICompatibleText(payload),
     };
   } finally {
@@ -558,31 +735,38 @@ async function askAnthropicToolAction(
 
   const lifecycle = createRequestLifecycle(settings.aiStreamTimeoutMs, token);
   try {
-    const response = await fetch(resolveAnthropicMessagesUrl(settings.customAIBaseUrl), {
-      method: 'POST',
-      headers: {
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-        'x-api-key': apiKey,
+    const { response, raw, attempts } = await fetchProviderResponseWithRetry({
+      url: resolveAnthropicMessagesUrl(settings.customAIBaseUrl),
+      init: {
+        method: 'POST',
+        headers: {
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+          'x-api-key': apiKey,
+        },
+        body: JSON.stringify({
+          model: settings.customAIModel,
+          max_tokens: 4096,
+          ...toAnthropicMessages(messages),
+          tools: tools.map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            input_schema: tool.inputSchema ?? { type: 'object' },
+          })),
+          tool_choice: { type: 'any' },
+        }),
       },
-      body: JSON.stringify({
-        model: settings.customAIModel,
-        max_tokens: 4096,
-        ...toAnthropicMessages(messages),
-        tools: tools.map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          input_schema: tool.inputSchema ?? { type: 'object' },
-        })),
-        tool_choice: { type: 'any' },
-      }),
       signal: lifecycle.signal,
     });
-    const raw = await response.text();
     if (!response.ok) {
-      throw new Error(providerErrorMessage(provider.label, response.status, raw));
+      throw new Error(
+        `${providerErrorMessage(provider.label, response.status, raw)}${
+          attempts > 1 ? ` after ${attempts} bounded attempts` : ''
+        }`
+      );
     }
-    const payload = (parseErrorPayload(raw) ?? {}) as { content?: unknown };
+    const payload = (parseErrorPayload(raw) ?? {}) as Record<string, unknown>;
+    const tokenUsage = anthropicTokenUsage(payload);
     const content = Array.isArray(payload.content) ? payload.content : [];
     const toolUse = content.find(
       (block) =>
@@ -592,6 +776,10 @@ async function askAnthropicToolAction(
       return {
         type: 'tool',
         provider: provider.id,
+        modelId: settings.customAIModel,
+        fallback: false,
+        attempts,
+        ...tokenUsage,
         callId: typeof toolUse.id === 'string' && toolUse.id.trim() ? toolUse.id : randomUUID(),
         toolName: toolUse.name,
         input:
@@ -603,6 +791,10 @@ async function askAnthropicToolAction(
     return {
       type: 'text',
       provider: provider.id,
+      modelId: settings.customAIModel,
+      fallback: false,
+      attempts,
+      ...tokenUsage,
       text: extractAnthropicText(payload),
     };
   } finally {
@@ -620,22 +812,66 @@ export async function askConfiguredAIProviderForToolAction(
 ): Promise<ConfiguredAIProviderAction> {
   const safeMessages = redactAIMessageRuntimePaths(messages, pathIdentities);
   const provider = getAIProviderDefinition(readWorkspaiSettings().aiProvider);
+  // The Studio model picker selects VS Code LM registrations. External
+  // providers use the explicitly configured endpoint model and must not report
+  // a false fallback from an unrelated VS Code model identifier.
+  const requestedModelId = provider.protocol === 'vscode-lm' ? preferredModelId?.trim() : undefined;
+  const withRequestedModel = (action: ConfiguredAIProviderAction): ConfiguredAIProviderAction => {
+    const explicitRequestedModel =
+      requestedModelId && requestedModelId.toLowerCase() !== 'auto' ? requestedModelId : undefined;
+    return {
+      ...action,
+      ...(explicitRequestedModel ? { requestedModelId: explicitRequestedModel } : {}),
+      inputTokens:
+        action.inputTokens ??
+        estimatedTokenCount({
+          messages: safeMessages,
+          tools,
+        }),
+      outputTokens:
+        action.outputTokens ??
+        estimatedTokenCount(
+          action.type === 'tool' ? { toolName: action.toolName, input: action.input } : action.text
+        ),
+      tokenUsageSource: action.tokenUsageSource ?? 'estimated',
+      fallback:
+        action.fallback ||
+        Boolean(
+          explicitRequestedModel &&
+          explicitRequestedModel.toLowerCase() !== action.modelId.toLowerCase()
+        ),
+    };
+  };
   if (provider.protocol === 'openai-compatible') {
-    return askOpenAICompatibleToolAction(context, safeMessages, tools, token);
+    return withRequestedModel(
+      await askOpenAICompatibleToolAction(context, safeMessages, tools, token)
+    );
   }
   if (provider.protocol === 'anthropic-messages') {
-    return askAnthropicToolAction(context, safeMessages, tools, token);
+    return withRequestedModel(await askAnthropicToolAction(context, safeMessages, tools, token));
   }
   const response = await requestAIModelToolAction(safeMessages, tools, token, preferredModelId);
-  return response.type === 'tool'
-    ? {
-        type: 'tool',
-        provider: 'vscode-lm',
-        callId: response.callId,
-        toolName: response.toolName,
-        input: response.input,
-      }
-    : { type: 'text', provider: 'vscode-lm', text: response.text };
+  return withRequestedModel(
+    response.type === 'tool'
+      ? {
+          type: 'tool',
+          provider: 'vscode-lm',
+          modelId: response.modelId,
+          fallback: false,
+          attempts: response.attempts ?? 1,
+          callId: response.callId,
+          toolName: response.toolName,
+          input: response.input,
+        }
+      : {
+          type: 'text',
+          provider: 'vscode-lm',
+          modelId: response.modelId,
+          fallback: false,
+          attempts: response.attempts ?? 1,
+          text: response.text,
+        }
+  );
 }
 
 export async function runConfiguredAIProviderHealthCheck(

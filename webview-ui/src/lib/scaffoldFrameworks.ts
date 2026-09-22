@@ -4,6 +4,7 @@ import type {
   DesktopScaffoldFramework,
   ExtensionScaffoldFramework,
   FrontendScaffoldFramework,
+  GatewayScaffoldFramework,
   ScaffoldFramework,
 } from '@/types';
 import createContract from '@workspai-contracts/create-planner-capabilities.v1.json';
@@ -58,12 +59,39 @@ export const AGENT_STARTERS: Array<{
   framework: AgentScaffoldFramework;
   title: string;
   detail: string;
-}> = EXECUTABLE_CREATE_ENTRIES.some((entry) => entry.category === 'agent')
+}> = [
+  ...(EXECUTABLE_CREATE_ENTRIES.some(
+    (entry) => entry.plannerFramework === 'microsoft-agent-framework'
+  )
+    ? [
+        {
+          framework: 'microsoft-agent-framework' as const,
+          title: 'Microsoft Agent Framework',
+          detail: 'Governed Python or .NET agent',
+        },
+      ]
+    : []),
+  ...(EXECUTABLE_CREATE_ENTRIES.some((entry) => entry.plannerFramework === 'openai-agents')
+    ? [
+        {
+          framework: 'openai-agents' as const,
+          title: 'OpenAI Agents SDK',
+          detail: 'Governed Python or TypeScript agent',
+        },
+      ]
+    : []),
+];
+
+export const GATEWAY_STARTERS: Array<{
+  framework: GatewayScaffoldFramework;
+  title: string;
+  detail: string;
+}> = EXECUTABLE_CREATE_ENTRIES.some((entry) => entry.category === 'gateway')
   ? [
       {
-        framework: 'microsoft-agent-framework',
-        title: 'Microsoft Agent Framework',
-        detail: 'Governed Python or .NET agent',
+        framework: 'openrouter',
+        title: 'OpenRouter AI Gateway',
+        detail: 'Source-ready TypeScript or Python gateway',
       },
     ]
   : [];
@@ -94,7 +122,13 @@ export const SCAFFOLD_STARTERS = [
   ...EXTENSION_STARTERS,
 ] as Array<{ framework: ScaffoldFramework; title: string; detail: string }>;
 
-export type ScaffoldCategory = 'backend' | 'frontend' | 'desktop' | 'agent' | 'extension';
+export type ScaffoldCategory =
+  | 'backend'
+  | 'frontend'
+  | 'desktop'
+  | 'agent'
+  | 'gateway'
+  | 'extension';
 
 export const SCAFFOLD_CATEGORY_LABELS: ReadonlyArray<{
   id: ScaffoldCategory;
@@ -104,6 +138,7 @@ export const SCAFFOLD_CATEGORY_LABELS: ReadonlyArray<{
   { id: 'frontend', label: 'Frontend' },
   { id: 'desktop', label: 'Desktop' },
   { id: 'agent', label: 'AI Agent' },
+  { id: 'gateway', label: 'AI Gateway' },
   { id: 'extension', label: 'Extension' },
 ];
 

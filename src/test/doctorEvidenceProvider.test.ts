@@ -299,4 +299,43 @@ describe('DoctorEvidenceProvider', () => {
     expect(violations[0].description?.toString()).toContain('dependency cycle');
     expect(violations.some((item) => item.label?.toString().includes('policy.naming'))).toBe(true);
   });
+
+  it('labels gateway projects without Ruff or RapidKit module wording', async () => {
+    const workspacePath = makeTempDir();
+    const projectPath = path.join(workspacePath, 'gateway');
+    await fs.ensureDir(path.join(projectPath, '.rapidkit', 'reports'));
+    await fs.writeJSON(
+      path.join(projectPath, '.rapidkit', 'reports', 'doctor-project-last-run.json'),
+      {
+        generatedAt: '2026-09-22T00:00:00.000Z',
+        projectPath,
+        healthScore: { total: 4, passed: 4, warnings: 0, errors: 0 },
+        project: {
+          name: 'gateway',
+          path: projectPath,
+          projectKind: 'gateway',
+          modulesHealthy: true,
+          hasTests: true,
+          hasCodeQuality: true,
+          issues: [],
+          probes: [],
+        },
+        system: {},
+      }
+    );
+
+    const provider = new DoctorEvidenceProvider(
+      () => workspacePath,
+      () => projectPath
+    );
+    const root = await provider.getChildren();
+    const projectSection = root.find((item) => item.label?.toString().startsWith('Projects'));
+    const projects = await provider.getChildren(projectSection!);
+    const labels = (await provider.getChildren(projects[0])).map((item) => item.label?.toString());
+    expect(labels.some((label) => label?.includes('Gateway checks'))).toBe(true);
+    expect(labels.some((label) => label?.includes('Gateway surface'))).toBe(true);
+    expect(
+      labels.some((label) => label?.includes('Ruff') || label?.includes('RapidKit modules'))
+    ).toBe(false);
+  });
 });

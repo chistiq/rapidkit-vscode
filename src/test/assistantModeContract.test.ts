@@ -24,6 +24,11 @@ const host = {
   upgradeDependencySecurity: async () => ({ ok: true }),
   completeDependencyTransaction: async () => ({ ok: true }),
   verify: async () => ({ ok: true, cardBlocking: false }),
+  listHostTools: async () => ({
+    ok: true,
+    output: { schemaVersion: 'workspai.studio-host-tool-catalog.v1', tools: [] },
+  }),
+  invokeHostTool: async () => ({ ok: true, output: { text: '' } }),
 };
 
 describe('Workspai assistant mode contract', () => {
@@ -62,7 +67,11 @@ describe('Workspai assistant mode contract', () => {
         .list()
         .map((tool) => tool.name);
 
-    expect(toolsFor('agent')).toContain('apply-workspace-patch');
+    expect(toolsFor('agent')).toContain('fetch-public-web');
+    expect(toolsFor('agent')).toContain('invoke-host-tool');
+    expect(toolsFor('ask')).not.toContain('invoke-host-tool');
+    expect(toolsFor('plan')).not.toContain('invoke-host-tool');
+    expect(toolsFor('goal')).toContain('fetch-public-web');
     expect(toolsFor('agent')).toContain('apply-workspace-edits');
     expect(toolsFor('agent')).toContain('query-workspace-graph');
     expect(toolsFor('agent')).toContain('delete-workspace-files');
@@ -83,6 +92,8 @@ describe('Workspai assistant mode contract', () => {
       'inspect-workspace-diagnostics',
       'inspect-code-intelligence',
       'inspect-workspace-batch',
+      'fetch-public-web',
+      'list-host-tools',
       'inspect-workspace-changes',
     ]);
     expect(toolsFor('plan')).not.toContain('apply-workspace-patch');

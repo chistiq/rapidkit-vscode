@@ -4,6 +4,7 @@ import {
   getDashboardLifecycleDisableReason,
   isDashboardLifecycleCommandSupported,
   isModuleMutationSupportedFromCapabilities,
+  isPortlessDashboardProject,
   isProjectLifecycleCommandSupported,
 } from '@/lib/projectCapabilities';
 
@@ -48,6 +49,13 @@ describe('projectCapabilities webview bridge', () => {
   it('falls back to permissive behavior when capabilities are unavailable', () => {
     expect(isProjectLifecycleCommandSupported(undefined, 'test')).toBe(true);
     expect(isDashboardLifecycleCommandSupported(undefined, 'projectTest')).toBe(true);
+  });
+
+  it('treats agent and gateway frameworks as portless dashboard projects', () => {
+    expect(isPortlessDashboardProject({ available: true, framework: 'openrouter' })).toBe(true);
+    expect(isPortlessDashboardProject({ available: true, framework: 'openai-agents' })).toBe(true);
+    expect(isPortlessDashboardProject(undefined, 'gateway.openrouter.python')).toBe(true);
+    expect(isPortlessDashboardProject(fastapiCapabilities)).toBe(false);
   });
 
   it('derives module mutation support from npm capability snapshot', () => {

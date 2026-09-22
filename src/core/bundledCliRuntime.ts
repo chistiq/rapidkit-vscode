@@ -52,8 +52,26 @@ export type BundledCliRuntime = {
 };
 
 let verifiedRuntime: BundledCliRuntime | null | undefined;
+let acquiredRuntime: BundledCliRuntime | undefined;
+let acquisitionFailure: BundledCliRuntimeError | undefined;
 let terminalStorageRoot: string | undefined;
 const stagedTerminalBins = new Set<string>();
+
+/**
+ * Remember a CLI runtime that was downloaded into extension storage.
+ * Later resolutions use this copy and do not fall back to another install.
+ */
+export function rememberAcquiredCliRuntime(runtime: BundledCliRuntime): void {
+  acquiredRuntime = runtime;
+  acquisitionFailure = undefined;
+  verifiedRuntime = runtime;
+}
+
+export function rememberAcquiredCliRuntimeFailure(error: BundledCliRuntimeError): void {
+  acquiredRuntime = undefined;
+  acquisitionFailure = error;
+  verifiedRuntime = undefined;
+}
 
 /**
  * Bind terminal launcher materialization to VS Code's extension-owned storage.
@@ -310,6 +328,12 @@ function verifyRuntime(root: string): BundledCliRuntime {
  * runtime fails closed and never silently changes execution authority.
  */
 export function resolveBundledCliRuntime(): BundledCliRuntime | null {
+  if (acquisitionFailure) {
+    throw acquisitionFailure;
+  }
+  if (acquiredRuntime) {
+    return acquiredRuntime;
+  }
   if (verifiedRuntime !== undefined) {
     return verifiedRuntime;
   }
@@ -336,6 +360,8 @@ export function resolveBundledCliRuntime(): BundledCliRuntime | null {
 
 export function resetBundledCliRuntimeForTests(): void {
   verifiedRuntime = undefined;
+  acquiredRuntime = undefined;
+  acquisitionFailure = undefined;
   terminalStorageRoot = undefined;
   for (const stagedBin of stagedTerminalBins) {
     fs.rmSync(stagedBin, { recursive: true, force: true });

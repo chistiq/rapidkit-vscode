@@ -2,7 +2,7 @@
 
 <!-- WORKSPAI:CLI-RELEASE-POLICY:START -->
 
-> Extension 0.47.1 · verified with Workspai CLI 0.75.0 · minimum compatible CLI 0.75.0
+> Extension 0.48.0 · verified with Workspai CLI 0.77.0 · minimum compatible CLI 0.77.0
 
 <!-- WORKSPAI:CLI-RELEASE-POLICY:END -->
 
@@ -14,10 +14,11 @@ using a shared model, graph, health evidence, and verification loop.
 - VS Code 1.106.0 or newer
 - Git when you want change, impact, or `--since` evidence
 
-The extension ships the integrity-checked Workspai CLI runtime selected by its
-canonical release policy. Internal operations use that verified runtime. A
-global CLI and a separate Node.js installation are not required
-for first-run Create, adopt, Doctor, Graph, Agent, or Goal flows.
+The extension executes the Workspai CLI selected by its canonical release
+policy. The first run downloads that exact npm package into extension storage,
+checks its integrity, and reuses the cached copy offline. A global CLI and a
+separate Node.js installation are not required for Create, adopt, Doctor,
+Graph, Agent, or Goal flows.
 
 Python is **not required** for the extension, Workspace Intelligence, or
 non-Python projects. RapidKit Core and Python 3.10+ are optional and only needed
@@ -34,12 +35,12 @@ for Python-backed kits or modules.
 3. Optional: install the CLI when you also want terminal access:
 
    ```bash
-   npm install -g workspai@latest
+   npm install -g workspai@0.77.0
    workspai --version
    ```
 
-The global install is never used as hidden execution authority by the
-extension. Extension commands remain bound to the packaged, verified runtime.
+The global install is a separate download for your terminal. Extension
+commands stay on the verified package cached in extension storage.
 
 ## Understand a public repository first
 

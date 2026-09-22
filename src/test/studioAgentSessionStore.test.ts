@@ -47,11 +47,19 @@ describe('VS Code Studio Agent session store', () => {
       },
     };
     const store = new VSCodeStudioAgentSessionStore(context as never);
-    await store.save(session('session-1', 520));
+    const pending = session('session-1', 520);
+    pending.completionObligations = {
+      schemaVersion: 'workspai.studio-completion-obligations.v1',
+      latestSourceMutationSequence: 12,
+      sourceReviewRequiredAfterSequence: 12,
+      freshVerificationRequiredAfterSequence: 12,
+    };
+    await store.save(pending);
     const loaded = await store.load('session-1');
 
     expect(loaded?.events).toHaveLength(500);
     expect(loaded?.events[0]?.sequence).toBe(21);
+    expect(loaded?.completionObligations).toEqual(pending.completionObligations);
     loaded!.status = 'failed';
     expect((await store.load('session-1'))?.status).toBe('running');
   });

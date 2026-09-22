@@ -146,7 +146,7 @@ describe('Studio session lifecycle', () => {
     });
   });
 
-  it('presents exhausted autonomous recovery as a resumable pause', () => {
+  it('presents exhausted autonomous recovery as an unverified continuation pause', () => {
     expect(
       describeStudioTerminalFailure({
         error: 'No causal progress was produced.',
@@ -154,10 +154,23 @@ describe('Studio session lifecycle', () => {
         requiresUserDecision: false,
       })
     ).toMatchObject({
-      title: 'Repair paused',
-      summary: expect.stringContaining('durable session can resume'),
+      title: 'Verification still open',
+      summary: expect.stringContaining('nothing was marked verified'),
       terminalReason: 'model-causal-progress-exhausted',
       connectionFailure: false,
+    });
+  });
+
+  it('presents a model that cannot call tools as a model switch, not a finished task', () => {
+    expect(
+      describeStudioTerminalFailure({
+        error: 'Selected model did not produce a valid native Studio tool call after 3 attempts.',
+        terminalReason: 'model-tool-protocol-exhausted',
+      })
+    ).toMatchObject({
+      title: 'Model cannot drive tools',
+      summary: expect.stringContaining('tool-capable model'),
+      terminalReason: 'model-tool-protocol-exhausted',
     });
   });
 
@@ -200,8 +213,112 @@ describe('Studio session lifecycle', () => {
         { ...runningProgress, action: 'live-evidence', phase: 'observing-evidence' },
       ])
     ).toEqual([
-      expect.objectContaining({ status: 'done', phase: 'verify-observation' }),
+      expect.objectContaining({ status: 'failed', phase: 'verify-observation' }),
       expect.objectContaining({ status: 'done', phase: 'evidence-observed' }),
     ]);
+  });
+
+  it('keeps a failed remediation in the paused timeline and names the cause', () => {
+    const timeline = terminalizeStudioTimeline(
+      [
+        {
+          action: 'execute-remediation-step',
+          status: 'failed' as const,
+          phase: 'execute-remediation-step',
+          title: 'Remediation step did not clear the blocker',
+          summary:
+            'Workspace repair transaction violates contract: $LOCAL_PATH must NOT have fewer than 1 items',
+        },
+        {
+          action: 'inspect-evidence',
+          status: 'failed' as const,
+          phase: 'inspect-evidence',
+          title: 'Evidence inspection needs another path',
+          summary: 'inspect-evidence repeated the same input 3 times',
+        },
+        {
+          action: 'verify-blocker',
+          status: 'failed' as const,
+          phase: 'verify-observation',
+          title: 'Verify found remaining work',
+          summary: 'The blocker remains active.',
+        },
+        {
+          action: 'repair-session',
+          status: 'running' as const,
+          phase: 'failed',
+          title: 'Verification still open',
+          summary: 'placeholder',
+        },
+      ],
+      {
+        title: 'Verification still open',
+        summary:
+          'The task is not complete and nothing was marked verified. Studio paused so this attempt would not keep spending tokens. Resume continues the same session with another bounded attempt.',
+        terminalReason: 'model-causal-progress-exhausted',
+      }
+    );
+
+    expect(timeline.map((entry) => entry.action)).toEqual([
+      'execute-remediation-step',
+      'verify-blocker',
+      'repair-session',
+    ]);
+    expect(timeline.at(-1)).toMatchObject({
+      title: 'Verification still open',
+      summary: expect.stringContaining('repair transaction had no file checkpoint'),
+    });
+    expect(timeline.at(-1)?.summary).toContain('Canonical verify still reports remaining work');
+  });
+
+  it('keeps a coalesced inspect loop in the paused timeline and names it', () => {
+    const timeline = terminalizeStudioTimeline(
+      [
+        {
+          action: 'inspect-evidence',
+          status: 'failed' as const,
+          phase: 'inspect-evidence',
+          title: 'Read evidence',
+          summary: 'Read doctor-last-run.json.',
+          occurrences: 71,
+        },
+        {
+          action: 'execute-remediation-step',
+          status: 'failed' as const,
+          phase: 'execute-remediation-step',
+          title: 'Remediation step did not clear the blocker',
+          summary:
+            'Workspace repair transaction violates contract: $LOCAL_PATH must NOT have fewer than 1 items',
+        },
+        {
+          action: 'verify-blocker',
+          status: 'failed' as const,
+          phase: 'verify-observation',
+          title: 'Verify found remaining work',
+          summary: 'The blocker remains active.',
+        },
+        {
+          action: 'repair-session',
+          status: 'running' as const,
+          phase: 'failed',
+          title: 'Verification still open',
+          summary: 'placeholder',
+        },
+      ],
+      {
+        title: 'Verification still open',
+        summary:
+          'The task is not complete and nothing was marked verified. Studio paused so this attempt would not keep spending tokens. Resume continues the same session with another bounded attempt.',
+        terminalReason: 'model-causal-progress-exhausted',
+      }
+    );
+
+    expect(timeline.map((entry) => entry.action)).toEqual([
+      'inspect-evidence',
+      'execute-remediation-step',
+      'verify-blocker',
+      'repair-session',
+    ]);
+    expect(timeline.at(-1)?.summary).toContain('re-read the same evidence 71 times');
   });
 });

@@ -436,6 +436,8 @@ const FRAMEWORK_META: Partial<
   Record<ScaffoldFramework, { icon: string; iconUri?: string; label: string }>
 > = {
   'microsoft-agent-framework': { icon: 'AI', label: 'Microsoft Agent Framework' },
+  'openai-agents': { icon: 'AI', label: 'OpenAI Agents SDK' },
+  openrouter: { icon: 'GW', label: 'OpenRouter AI Gateway' },
   fastapi: { icon: '⚡', label: 'FastAPI' },
   nestjs: { icon: '🔴', label: 'NestJS' },
   go: { icon: '🔵', label: 'Go' },

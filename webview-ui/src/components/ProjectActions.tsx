@@ -33,6 +33,7 @@ import { buildDashboardCommandActionContract } from '@/lib/dashboardCommandActio
 import {
   getDashboardLifecycleDisableReason,
   isDashboardLifecycleCommandSupported,
+  isPortlessDashboardProject,
 } from '@/lib/projectCapabilities';
 import { ActionTile, ActionTileGrid } from './ActionTile';
 import { ColumnHeader } from './SectionHeader';
@@ -126,6 +127,7 @@ export function ProjectActions({
 
   const isRunning = workspaceStatus.isRunning || false;
   const capabilities = workspaceStatus.projectCapabilities;
+  const portlessProject = isPortlessDashboardProject(capabilities, workspaceStatus.projectType);
   const projectScope =
     workspaceStatus.projectName || workspaceStatus.projectType || 'Selected project';
   const capabilitySubtitle = capabilities?.available
@@ -198,16 +200,23 @@ export function ProjectActions({
           <ActionTile
             icon={<Square size={15} />}
             label="Stop"
-            detail="Stop dev server"
+            detail={portlessProject ? 'Stop process' : 'Stop dev server'}
             variant="danger"
             onClick={onStop}
             actionContract={commandContract('projectStop')}
-            title="Stop Server"
+            title={portlessProject ? 'Stop process' : 'Stop Server'}
           />
         ) : (
-          lifecycleTile('projectDev', <Play size={15} />, 'Dev', 'Start server', onDev, {
-            variant: 'primary',
-          })
+          lifecycleTile(
+            'projectDev',
+            <Play size={15} />,
+            'Dev',
+            portlessProject ? 'Run project' : 'Start server',
+            onDev,
+            {
+              variant: 'primary',
+            }
+          )
         )}
         {lifecycleTile('projectTest', <TestTube size={15} />, 'Test', 'Run tests', onTest)}
         <article
@@ -293,22 +302,28 @@ export function ProjectActions({
           actionContract={commandContract('projectTerminal')}
           title="Open Terminal"
         />
-        <ActionTile
-          icon={<Globe size={15} />}
-          label="Browser"
-          detail={isRunning ? `Port ${workspaceStatus.runningPort || 8000}` : 'Start dev first'}
-          onClick={onBrowser}
-          disabled={!isRunning}
-          actionContract={commandContract(
-            'projectBrowser',
-            isRunning ? undefined : 'Start dev first'
-          )}
-          title={
-            isRunning
-              ? `Open in Browser (port ${workspaceStatus.runningPort || 8000})`
-              : 'Start server first'
-          }
-        />
+        {portlessProject ? null : (
+          <ActionTile
+            icon={<Globe size={15} />}
+            label="Browser"
+            detail={
+              isRunning
+                ? `Port ${workspaceStatus.runningPort || 8000}`
+                : 'Start dev first'
+            }
+            onClick={onBrowser}
+            disabled={!isRunning}
+            actionContract={commandContract(
+              'projectBrowser',
+              isRunning ? undefined : 'Start dev first'
+            )}
+            title={
+              isRunning
+                ? `Open in Browser (port ${workspaceStatus.runningPort || 8000})`
+                : 'Start server first'
+            }
+          />
+        )}
       </ActionTileGrid>
       <details
         className="enterprise-flow-accordion enterprise-flow-secondary project-actions__advanced"

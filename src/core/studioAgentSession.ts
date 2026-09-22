@@ -3,10 +3,13 @@ import path from 'node:path';
 
 import {
   createStudioAgentEvent,
+  type StudioAgentCompletionObligations,
   type StudioAgentEvent,
+  type StudioAgentModelResolution,
   type StudioAgentPersistedSession,
   type StudioAgentRequiredCausalAction,
   type StudioAgentSessionStatus,
+  type StudioAgentTaskLedger,
 } from './studioAgentEvents.js';
 import type { AssistantExecutionPolicy } from './assistantExecutionPolicy.js';
 import {
@@ -69,6 +72,7 @@ export type StudioAgentRecentObservation = {
 export interface StudioAgentModelAdapter {
   next(context: StudioAgentModelContext): Promise<StudioAgentModelAction>;
   compact?(context: StudioAgentModelContext): Promise<string>;
+  consumeResolution?(): StudioAgentModelResolution | undefined;
 }
 
 export interface StudioAgentSessionStore {
@@ -78,58 +82,6 @@ export interface StudioAgentSessionStore {
 
 const DURABLE_EVENT_STRING_LIMIT = 2_000;
 const DURABLE_EVENT_ARRAY_LIMIT = 50;
-const GENERAL_CAUSAL_RECOVERY_TOOL_NAMES = new Set([
-  'discover-workspace-files',
-  'inspect-source',
-  'inspect-evidence',
-  'search-workspace',
-  'query-workspace-graph',
-  'inspect-workspace-diagnostics',
-  'inspect-workspace-changes',
-  'inspect-remediation-plan',
-  'run-governed-command',
-  'run-workspace-command',
-  'execute-remediation-step',
-  'inspect-dependency-security',
-  'repair-dependency-security',
-  'upgrade-dependency-security',
-  'complete-dependency-transaction',
-  'apply-workspace-patch',
-  'apply-workspace-edits',
-  'delete-workspace-files',
-  'verify-blocker',
-  'verify-goal',
-]);
-
-const CAUSAL_INSPECTION_TOOL_NAMES = new Set([
-  'discover-workspace-files',
-  'inspect-source',
-  'inspect-evidence',
-  'search-workspace',
-  'query-workspace-graph',
-  'inspect-workspace-diagnostics',
-  'inspect-workspace-changes',
-  'inspect-remediation-plan',
-]);
-
-const CAUSAL_PROGRESS_TOOL_NAMES = new Set([
-  'run-governed-command',
-  'run-workspace-command',
-  'execute-remediation-step',
-  'repair-dependency-security',
-  'upgrade-dependency-security',
-  'complete-dependency-transaction',
-  'apply-workspace-patch',
-  'apply-workspace-edits',
-  'delete-workspace-files',
-]);
-
-const GOVERNED_SOURCE_MUTATION_TOOL_NAMES = new Set([
-  'apply-workspace-patch',
-  'apply-workspace-edits',
-  'delete-workspace-files',
-]);
-
 const CLI_REPAIR_MUTATION_TOOL_NAMES = new Set([
   'recover-active-blocker',
   'apply-workspace-patch',
@@ -687,6 +639,7 @@ function semanticProgressFingerprint(
     Array.isArray(output?.upgradeCandidates) ||
     Array.isArray(output?.files) ||
     Array.isArray(output?.diagnostics) ||
+    output?.schemaVersion === 'workspai.studio-task-ledger.v1' ||
     typeof output?.stdout === 'string' ||
     typeof output?.stderr === 'string' ||
     typeof output?.exitCode === 'number' ||
@@ -711,6 +664,7 @@ function semanticProgressFingerprint(
     nextAction: output?.nextAction,
     sourceCandidates: output?.sourceCandidates,
     upgradeCandidates: output?.upgradeCandidates,
+    taskLedger: output?.schemaVersion === 'workspai.studio-task-ledger.v1' ? output : undefined,
   });
 }
 
@@ -763,13 +717,25 @@ export class StudioAgentSession {
   private readonly recentObservations: StudioAgentRecentObservation[] = [];
   private readonly abortController = new AbortController();
   private pendingInputResolve: (() => void) | undefined;
-  private readonly toolAttemptsByEpoch = new Map<string, number>();
+  private lastIdenticalToolSignature: string | undefined;
+  private consecutiveIdenticalToolAttempts = 0;
   private readonly exhaustedTools = new Set<string>();
   private readonly pendingEffectVerificationScopes = new Set<string>();
   private causalEpoch = 0;
   private generalSourceRepairActive = false;
   private sourceRepairDirective: Record<string, unknown> | undefined;
   private sourceActionRequired = false;
+  /** One-turn openings of the full tool plane after a no-progress dead end. */
+  private unverifiedContinuationNudges = 0;
+  private freedomPlaneActive = false;
+  private skipProgressBreakerOnce = false;
+  private providerRequestsThisAttempt = 0;
+  private tokensThisAttempt = 0;
+  private static readonly MAX_UNVERIFIED_CONTINUATION_NUDGES = 3;
+  private static readonly MAX_IDENTICAL_TOOL_ATTEMPTS_PER_CAUSAL_STATE = 3;
+  private static readonly AUTONOMOUS_MODEL_TURN_BUDGET = 96;
+  private static readonly AUTONOMOUS_PROVIDER_REQUEST_BUDGET = 120;
+  private static readonly AUTONOMOUS_TOKEN_BUDGET = 1_000_000;
   private proposalRecoveryInspectionRequired = false;
   private latestActiveCardId: string;
   private latestEvidenceGeneration: string | undefined;
@@ -873,6 +839,8 @@ export class StudioAgentSession {
       this.goalVerificationAttempts,
       Math.max(0, Math.trunc(options.goalAttemptsUsed ?? 0))
     );
+    this.rebuildCompletionObligationsIfNeeded();
+    this.rebuildTaskLedgerFromEvents();
   }
 
   get id(): string {
@@ -881,6 +849,28 @@ export class StudioAgentSession {
 
   snapshot(): StudioAgentPersistedSession {
     return structuredClone(this.state);
+  }
+
+  private budgetLedger(): NonNullable<StudioAgentPersistedSession['budgetLedger']> {
+    if (!this.state.budgetLedger) {
+      this.state.budgetLedger = {
+        schemaVersion: 'workspai.studio-budget-ledger.v1',
+        attemptsStarted: 0,
+        totalModelDecisions: 0,
+        totalProviderRequests: 0,
+        totalToolExecutions: 0,
+        totalProtocolMisses: 0,
+        totalContinuationNudges: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        estimatedTokenMeasurements: 0,
+        lastAttemptStartedAt: this.now().toISOString(),
+      };
+    }
+    this.state.budgetLedger.totalInputTokens ??= 0;
+    this.state.budgetLedger.totalOutputTokens ??= 0;
+    this.state.budgetLedger.estimatedTokenMeasurements ??= 0;
+    return this.state.budgetLedger;
   }
 
   onEvent(listener: (event: StudioAgentEvent) => void): () => void {
@@ -919,6 +909,11 @@ export class StudioAgentSession {
   private async execute(request: string): Promise<StudioAgentPersistedSession> {
     const requestId = crypto.randomUUID();
     const executionMode = this.executionMode();
+    const budgetLedger = this.budgetLedger();
+    budgetLedger.attemptsStarted += 1;
+    budgetLedger.lastAttemptStartedAt = this.now().toISOString();
+    this.providerRequestsThisAttempt = 0;
+    this.tokensThisAttempt = 0;
     await this.setStatus('running');
     await this.emit(
       'request.started',
@@ -998,14 +993,37 @@ export class StudioAgentSession {
         );
       }
       while (!this.abortController.signal.aborted) {
+        if (
+          isAutonomousWorkspaiAssistantMode(executionMode) &&
+          (this.providerRequestsThisAttempt >=
+            StudioAgentSession.AUTONOMOUS_PROVIDER_REQUEST_BUDGET ||
+            this.tokensThisAttempt >= StudioAgentSession.AUTONOMOUS_TOKEN_BUDGET)
+        ) {
+          throw new StudioAgentTerminalError(
+            'Verification is still open. Studio paused at the bounded provider request/token budget. Resume continues the same durable session with a fresh attempt; nothing was marked complete.',
+            'model-causal-progress-exhausted'
+          );
+        }
         totalTurns += 1;
         const readOnlyTurnBudget =
           executionMode === 'ask' || executionMode === 'plan' ? 12 : undefined;
-        const maxTurns = this.options.maxTurns ?? readOnlyTurnBudget;
+        const autonomousTurnBudget = isAutonomousWorkspaiAssistantMode(executionMode)
+          ? StudioAgentSession.AUTONOMOUS_MODEL_TURN_BUDGET
+          : undefined;
+        const maxTurns = this.options.maxTurns ?? readOnlyTurnBudget ?? autonomousTurnBudget;
         // Read-only modes have a finite provider-credit boundary. Mutation
-        // modes are durable and checkpointed, so only an explicit host/test
-        // maxTurns boundary may hand an unresolved session back safely.
+        // modes keep a separate hard turn budget so a live repair cannot spend
+        // without a user continuation. An explicit host/test maxTurns still wins.
         if (maxTurns !== undefined && totalTurns > maxTurns) {
+          if (
+            isAutonomousWorkspaiAssistantMode(executionMode) &&
+            this.options.maxTurns === undefined
+          ) {
+            throw new StudioAgentTerminalError(
+              'Verification is still open. Studio paused this attempt so it would not keep spending tokens. Resume continues the same session with another bounded attempt. Nothing was marked complete.',
+              'model-causal-progress-exhausted'
+            );
+          }
           throw new Error(
             executionMode === 'ask' || executionMode === 'plan'
               ? `${executionMode === 'ask' ? 'Ask' : 'Plan'} stopped after ${maxTurns} bounded model decisions without a contract-compliant answer. Refine the request or inspect the durable session evidence.`
@@ -1013,7 +1031,9 @@ export class StudioAgentSession {
           );
         }
         const modelDecisionLimit = this.options.maxModelDecisionsWithoutSourceProgress ?? 12;
-        if (
+        if (this.skipProgressBreakerOnce) {
+          this.skipProgressBreakerOnce = false;
+        } else if (
           isAutonomousWorkspaiAssistantMode(executionMode) &&
           consecutiveModelDecisionsWithoutSemanticProgress >= modelDecisionLimit
         ) {
@@ -1040,13 +1060,29 @@ export class StudioAgentSession {
               requestId
             );
             if (latestObservation.ok === true && latestObservation.cardBlocking === false) {
+              const completion = await this.completeSessionIfAllowed({
+                requestId,
+                summary: 'Deterministic verification confirmed that the blocker is resolved.',
+              });
+              if (completion.completed) {
+                return completion.session;
+              }
+              latestObservation = {
+                ...latestObservation,
+                ok: false,
+                error: completion.blocker.reason,
+              };
               await this.emit(
-                'session.completed',
-                { summary: 'Deterministic verification confirmed that the blocker is resolved.' },
+                'model.checkpoint',
+                {
+                  summary: completion.blocker.reason,
+                  recovery: 'completion-contract',
+                  blocker: completion.blocker.kind,
+                },
                 requestId
               );
-              await this.setStatus('completed');
-              return this.snapshot();
+              consecutiveModelDecisionsWithoutSemanticProgress = 0;
+              continue;
             }
           }
           if (!this.generalSourceRepairActive) {
@@ -1084,15 +1120,18 @@ export class StudioAgentSession {
             );
             continue;
           }
-          throw new StudioAgentTerminalError(
-            `The model made ${modelDecisionLimit} additional decisions without a new causal action after deterministic verification and constrained recovery.`,
-            'model-causal-progress-exhausted'
-          );
+          if (await this.beginUnverifiedContinuationNudge(requestId)) {
+            consecutiveModelDecisionsWithoutSemanticProgress = 0;
+            continue;
+          }
+          this.pauseUnverifiedContinuation();
         }
+        const deterministicRequiredCausalAction = this.state.pendingRequiredCausalAction;
         const modelContextForTurn =
           deterministicSatisfiedGoalVerificationPending ||
           deterministicProducerRefreshPending ||
-          deterministicRecoveryPending
+          deterministicRecoveryPending ||
+          deterministicRequiredCausalAction
             ? undefined
             : this.modelContext(
                 latestObservation,
@@ -1100,8 +1139,15 @@ export class StudioAgentSession {
                   consecutiveModelDecisionsWithoutSemanticProgress >=
                     Math.min(4, Math.max(1, modelDecisionLimit - 1))
               );
-        const action: StudioAgentModelAction | undefined =
-          deterministicSatisfiedGoalVerificationPending
+        const action: StudioAgentModelAction | undefined = deterministicRequiredCausalAction
+          ? {
+              type: 'tool',
+              toolName: deterministicRequiredCausalAction.toolName,
+              input: structuredClone(deterministicRequiredCausalAction.input),
+              reason:
+                'Execute the exact CLI-authored remediation action without spending another model decision.',
+            }
+          : deterministicSatisfiedGoalVerificationPending
             ? {
                 type: 'tool',
                 toolName: 'verify-goal',
@@ -1124,14 +1170,25 @@ export class StudioAgentSession {
                     reason:
                       'Run the contract-first blocker recovery prelude before spending a model decision.',
                   }
-                : await this.nextModelAction(modelContextForTurn!);
+                : await this.nextModelAction(modelContextForTurn!, requestId);
         if (!action) {
           break;
         }
         const satisfiedGoalVerificationWasDeterministic =
           deterministicSatisfiedGoalVerificationPending;
         const producerRefreshWasDeterministic = deterministicProducerRefreshPending;
-        if (deterministicSatisfiedGoalVerificationPending) {
+        if (deterministicRequiredCausalAction) {
+          await this.emit(
+            'model.checkpoint',
+            {
+              summary:
+                'Studio is executing the exact CLI-authored remediation action without asking the model to restate it.',
+              recovery: 'required-causal-action-execution',
+              requiredAction: deterministicRequiredCausalAction,
+            },
+            requestId
+          );
+        } else if (deterministicSatisfiedGoalVerificationPending) {
           deterministicSatisfiedGoalVerificationPending = false;
           await this.emit(
             'model.checkpoint',
@@ -1166,6 +1223,7 @@ export class StudioAgentSession {
           );
         } else {
           consecutiveModelDecisionsWithoutSemanticProgress += 1;
+          this.budgetLedger().totalModelDecisions += 1;
         }
         turnsSinceCheckpoint += 1;
         const pendingRequiredAction = this.state.pendingRequiredCausalAction;
@@ -1260,10 +1318,12 @@ export class StudioAgentSession {
           };
         } else if (action.type === 'message') {
           consecutiveProtocolMisses += 1;
+          this.budgetLedger().totalProtocolMisses += 1;
           await this.emit('model.message', { text: action.text, protocolMiss: true }, requestId);
           if (consecutiveProtocolMisses >= 3) {
-            throw new Error(
-              'Selected model did not produce a valid native Studio tool call after 3 attempts.'
+            throw new StudioAgentTerminalError(
+              'Selected model did not produce a valid native Studio tool call after 3 attempts. Switch to a tool-capable model, then resume this session. The task was not marked complete.',
+              'model-tool-protocol-exhausted'
             );
           }
           latestObservation = {
@@ -1273,55 +1333,44 @@ export class StudioAgentSession {
           };
         } else if (action.type === 'complete') {
           consecutiveProtocolMisses = 0;
-          const completionPolicyViolation = this.completionPolicyViolation(
+          const completionData = {
+            verificationAuthority: isAutonomousWorkspaiAssistantMode(executionMode)
+              ? 'workspai-cli'
+              : 'workspace-evidence',
+            acceptanceReview:
+              executionMode === 'goal' && this.usesEvidenceReviewCompletion()
+                ? 'agent-reviewed-outcome-and-final-worktree'
+                : this.state.cardId.startsWith('assistant:')
+                  ? 'final-worktree-inspected'
+                  : 'exact-card-contract',
+            ...(this.state.governedGoal
+              ? {
+                  goalId: this.state.governedGoal.id,
+                  goalCompletionMode: this.state.governedGoal.completionMode,
+                }
+              : {}),
+          };
+          let completion = await this.completeSessionIfAllowed({
             requestId,
-            action.summary
-          );
-          if (completionPolicyViolation) {
-            latestObservation = { ok: false, error: completionPolicyViolation };
-            await this.emit(
-              'model.checkpoint',
-              { summary: completionPolicyViolation, recovery: 'completion-contract' },
-              requestId
-            );
-            continue;
+            summary: action.summary,
+            data: completionData,
+          });
+          if (completion.completed) {
+            return completion.session;
           }
           if (
-            this.options.requiresVerifiedCompletion === false ||
-            (this.hasVerifiedCompletion(requestId) &&
-              this.hasGeneralTaskAcceptanceReview(requestId))
+            completion.blocker.kind === 'verification' ||
+            completion.blocker.kind === 'fresh-verification'
           ) {
-            await this.emit(
-              'session.completed',
-              {
-                summary: action.summary,
-                verificationAuthority: 'workspai-cli',
-                acceptanceReview:
-                  executionMode === 'goal' && this.usesEvidenceReviewCompletion()
-                    ? 'agent-reviewed-outcome-and-final-worktree'
-                    : this.state.cardId.startsWith('assistant:')
-                      ? 'final-worktree-inspected'
-                      : 'exact-card-contract',
-                ...(this.state.governedGoal
-                  ? {
-                      goalId: this.state.governedGoal.id,
-                      goalCompletionMode: this.state.governedGoal.completionMode,
-                    }
-                  : {}),
-              },
-              requestId
-            );
-            await this.setStatus('completed');
-            return this.snapshot();
-          }
-          const verificationToolName = this.verificationToolName();
-          if (!verificationToolName) {
-            latestObservation = {
-              ok: false,
-              error:
-                'Completion rejected: no canonical verification tool is registered for this session.',
-            };
-          } else {
+            const verificationToolName = this.verificationToolName();
+            if (!verificationToolName) {
+              latestObservation = {
+                ok: false,
+                error:
+                  'Completion rejected: no canonical verification tool is registered for this session.',
+              };
+              continue;
+            }
             await this.emit(
               'model.checkpoint',
               {
@@ -1342,46 +1391,29 @@ export class StudioAgentSession {
               },
               requestId
             );
-            if (
-              latestObservation.ok === true &&
-              latestObservation.cardBlocking === false &&
-              this.hasCanonicalChainClosure(requestId) &&
-              this.hasGeneralTaskAcceptanceReview(requestId)
-            ) {
-              await this.emit(
-                'session.completed',
-                {
-                  summary: action.summary,
-                  verificationAuthority: 'workspai-cli',
-                  acceptanceReview:
-                    executionMode === 'goal' && this.usesEvidenceReviewCompletion()
-                      ? 'agent-reviewed-outcome-and-final-worktree'
-                      : this.state.cardId.startsWith('assistant:')
-                        ? 'final-worktree-inspected'
-                        : 'exact-card-contract',
-                  ...(this.state.governedGoal
-                    ? {
-                        goalId: this.state.governedGoal.id,
-                        goalCompletionMode: this.state.governedGoal.completionMode,
-                      }
-                    : {}),
-                },
-                requestId
-              );
-              await this.setStatus('completed');
-              return this.snapshot();
+            completion = await this.completeSessionIfAllowed({
+              requestId,
+              summary: action.summary,
+              data: completionData,
+            });
+            if (completion.completed) {
+              return completion.session;
             }
-            latestObservation = {
-              ...latestObservation,
-              ok: false,
-              error:
-                latestObservation.error ??
-                (this.usesEvidenceReviewCompletion() &&
-                !this.hasGeneralTaskAcceptanceReview(requestId)
-                  ? 'Completion rejected: inspect the final workspace changes after the closed repair transaction before claiming the user request is complete.'
-                  : 'Completion rejected: exact card verification still reports a blocker.'),
-            };
           }
+          latestObservation = {
+            ...(latestObservation ?? {}),
+            ok: false,
+            error: latestObservation?.error ?? completion.blocker.reason,
+          };
+          await this.emit(
+            'model.checkpoint',
+            {
+              summary: completion.blocker.reason,
+              recovery: 'completion-contract',
+              blocker: completion.blocker.kind,
+            },
+            requestId
+          );
         } else {
           consecutiveProtocolMisses = 0;
           const causalEpochBeforeTool = this.causalEpoch;
@@ -1462,31 +1494,59 @@ export class StudioAgentSession {
             latestObservation.ok === true &&
             latestObservation.cardBlocking === false
           ) {
-            await this.emit(
-              'session.completed',
-              {
-                summary: 'Goal verified by the CLI; no source change was required.',
+            const completion = await this.completeSessionIfAllowed({
+              requestId,
+              summary: 'Goal verified by the CLI; no source change was required.',
+              data: {
                 goalId: this.state.goal?.id,
                 goalStatus: toolOutputRecord(latestObservation)?.status,
                 verificationAuthority: 'workspai-cli',
               },
+            });
+            if (completion.completed) {
+              return completion.session;
+            }
+            latestObservation = {
+              ...latestObservation,
+              ok: false,
+              error: completion.blocker.reason,
+            };
+            await this.emit(
+              'model.checkpoint',
+              {
+                summary: completion.blocker.reason,
+                recovery: 'completion-contract',
+                blocker: completion.blocker.kind,
+              },
               requestId
             );
-            await this.setStatus('completed');
-            return this.snapshot();
+            continue;
           }
           if (producerRefreshWasDeterministic) {
             if (latestObservation.ok === true && latestObservation.cardBlocking === false) {
+              const completion = await this.completeSessionIfAllowed({
+                requestId,
+                summary:
+                  'The exact CLI producer refreshed successfully and the producer-owned card is no longer blocking.',
+              });
+              if (completion.completed) {
+                return completion.session;
+              }
+              latestObservation = {
+                ...latestObservation,
+                ok: false,
+                error: completion.blocker.reason,
+              };
               await this.emit(
-                'session.completed',
+                'model.checkpoint',
                 {
-                  summary:
-                    'The exact CLI producer refreshed successfully and the producer-owned card is no longer blocking.',
+                  summary: completion.blocker.reason,
+                  recovery: 'completion-contract',
+                  blocker: completion.blocker.kind,
                 },
                 requestId
               );
-              await this.setStatus('completed');
-              return this.snapshot();
+              continue;
             }
             this.generalSourceRepairActive = true;
             this.sourceRepairDirective = {
@@ -1546,18 +1606,32 @@ export class StudioAgentSession {
               requestId
             );
             if (latestObservation.ok === true && latestObservation.cardBlocking === false) {
-              await this.emit(
-                'session.completed',
-                {
-                  summary:
-                    'The model-selected project command completed and canonical verification confirmed the blocker is resolved.',
+              const completion = await this.completeSessionIfAllowed({
+                requestId,
+                summary:
+                  'The model-selected project command completed and canonical verification confirmed the blocker is resolved.',
+                data: {
                   verificationAuthority: 'workspai-cli',
                   causalCapability: 'run-workspace-command',
                 },
+              });
+              if (completion.completed) {
+                return completion.session;
+              }
+              latestObservation = {
+                ...latestObservation,
+                ok: false,
+                error: completion.blocker.reason,
+              };
+              await this.emit(
+                'model.checkpoint',
+                {
+                  summary: completion.blocker.reason,
+                  recovery: 'completion-contract',
+                  blocker: completion.blocker.kind,
+                },
                 requestId
               );
-              await this.setStatus('completed');
-              return this.snapshot();
             }
           }
           const cliClosure = verifiedCliRepairClosure(latestObservation);
@@ -1590,11 +1664,7 @@ export class StudioAgentSession {
                 },
                 requestId
               );
-              if (
-                latestObservation.ok === true &&
-                latestObservation.cardBlocking === false &&
-                this.hasCanonicalChainClosure(requestId)
-              ) {
+              if (latestObservation.ok === true && latestObservation.cardBlocking === false) {
                 const status = toolOutputRecord(latestObservation)?.status as
                   | Record<string, unknown>
                   | undefined;
@@ -1610,20 +1680,34 @@ export class StudioAgentSession {
                   typeof current === 'number'
                     ? ` Current: ${current}${progress?.unit === 'percent' ? '%' : ''}${typeof target === 'number' ? `; target: ${target}${progress?.unit === 'percent' ? '%' : ''}.` : '.'}`
                     : '';
-                await this.emit(
-                  'session.completed',
-                  {
-                    summary: `Goal verified by the CLI.${measurement}`,
+                const completion = await this.completeSessionIfAllowed({
+                  requestId,
+                  summary: `Goal verified by the CLI.${measurement}`,
+                  data: {
                     transactionId: cliClosure.transactionId,
                     goalId: this.state.goal.id,
                     goalStatus: status,
                     workspaceResolved: cliClosure.workspaceResolved,
                     remainingActionIds: cliClosure.remainingActionIds,
                   },
+                });
+                if (completion.completed) {
+                  return completion.session;
+                }
+                latestObservation = {
+                  ...latestObservation,
+                  ok: false,
+                  error: completion.blocker.reason,
+                };
+                await this.emit(
+                  'model.checkpoint',
+                  {
+                    summary: completion.blocker.reason,
+                    recovery: 'completion-contract',
+                    blocker: completion.blocker.kind,
+                  },
                   requestId
                 );
-                await this.setStatus('completed');
-                return this.snapshot();
               }
               latestObservation = {
                 ...latestObservation,
@@ -1687,41 +1771,53 @@ export class StudioAgentSession {
               );
             } else {
               const output = toolOutputRecord(latestObservation) ?? {};
-              await this.emit(
-                'verify.completed',
-                {
-                  ...latestObservation,
-                  ok: true,
-                  cardBlocking: false,
-                  output: {
-                    ...output,
-                    closureAuthority: 'cli-repair-engine',
-                    cardVerification: {
-                      cardId: this.latestActiveCardId,
-                      resolved: true,
-                      blocking: false,
-                    },
-                    workspaceVerification: {
-                      resolved: cliClosure.workspaceResolved,
-                      blocking: !cliClosure.workspaceResolved,
-                      remainingActionIds: cliClosure.remainingActionIds,
-                    },
+              const verificationResult: StudioAgentToolResult = {
+                ...latestObservation,
+                ok: true,
+                cardBlocking: false,
+                output: {
+                  ...output,
+                  closureAuthority: 'cli-repair-engine',
+                  cardVerification: {
+                    cardId: this.latestActiveCardId,
+                    resolved: true,
+                    blocking: false,
+                  },
+                  workspaceVerification: {
+                    resolved: cliClosure.workspaceResolved,
+                    blocking: !cliClosure.workspaceResolved,
+                    remainingActionIds: cliClosure.remainingActionIds,
                   },
                 },
-                requestId
-              );
-              await this.emit(
-                'session.completed',
-                {
-                  summary: cliClosure.summary,
+              };
+              this.rememberVerificationCompletion(verificationResult, this.state.sequence + 1);
+              await this.emit('verify.completed', verificationResult, requestId);
+              const completion = await this.completeSessionIfAllowed({
+                requestId,
+                summary: cliClosure.summary,
+                data: {
                   transactionId: cliClosure.transactionId,
                   workspaceResolved: cliClosure.workspaceResolved,
                   remainingActionIds: cliClosure.remainingActionIds,
                 },
+              });
+              if (completion.completed) {
+                return completion.session;
+              }
+              latestObservation = {
+                ...latestObservation,
+                ok: false,
+                error: completion.blocker.reason,
+              };
+              await this.emit(
+                'model.checkpoint',
+                {
+                  summary: completion.blocker.reason,
+                  recovery: 'completion-contract',
+                  blocker: completion.blocker.kind,
+                },
                 requestId
               );
-              await this.setStatus('completed');
-              return this.snapshot();
             }
           }
           const initialProgressFingerprint = semanticProgressFingerprint(
@@ -1731,6 +1827,7 @@ export class StudioAgentSession {
           if (initialProgressFingerprint && !semanticProgress.has(initialProgressFingerprint)) {
             semanticProgress.add(initialProgressFingerprint);
             consecutiveModelDecisionsWithoutSemanticProgress = 0;
+            this.noteProductiveContinuation();
           }
           if (requestsReviewDecision(latestObservation)) {
             const terminalReason = String(
@@ -1763,6 +1860,10 @@ export class StudioAgentSession {
             consecutiveModelDecisionsWithoutSemanticProgress = 0;
             this.sourceActionRequired = false;
             this.proposalRecoveryInspectionRequired = false;
+            this.noteProductiveContinuation();
+          }
+          if (this.freedomPlaneActive && consecutiveModelDecisionsWithoutSemanticProgress > 0) {
+            consecutiveModelDecisionsWithoutSemanticProgress = modelDecisionLimit;
           }
           if (
             isAutonomousWorkspaiAssistantMode(executionMode) &&
@@ -1791,13 +1892,27 @@ export class StudioAgentSession {
               requestId
             );
             if (latestObservation.ok === true && latestObservation.cardBlocking === false) {
+              const completion = await this.completeSessionIfAllowed({
+                requestId,
+                summary: 'Deterministic verification confirmed that the blocker is resolved.',
+              });
+              if (completion.completed) {
+                return completion.session;
+              }
+              latestObservation = {
+                ...latestObservation,
+                ok: false,
+                error: completion.blocker.reason,
+              };
               await this.emit(
-                'session.completed',
-                { summary: 'Deterministic verification confirmed that the blocker is resolved.' },
+                'model.checkpoint',
+                {
+                  summary: completion.blocker.reason,
+                  recovery: 'completion-contract',
+                  blocker: completion.blocker.kind,
+                },
                 requestId
               );
-              await this.setStatus('completed');
-              return this.snapshot();
             }
           }
           const sourceCandidates = sourceRepairInspectionCandidates(latestObservation);
@@ -1872,7 +1987,7 @@ export class StudioAgentSession {
           }
           const causalRejection =
             latestObservation.ok === false &&
-            /already produced|already ran|same semantic|unchanged generation/i.test(
+            /already produced|already ran|same semantic|unchanged generation|repeated the same input|without a causal state transition/i.test(
               latestObservation.error ?? ''
             );
           consecutiveCausalRejections = causalRejection ? consecutiveCausalRejections + 1 : 0;
@@ -1902,25 +2017,35 @@ export class StudioAgentSession {
                   },
                   requestId
                 );
-                if (
-                  latestObservation.ok === true &&
-                  latestObservation.cardBlocking === false &&
-                  this.hasCanonicalChainClosure(requestId)
-                ) {
-                  await this.emit(
-                    'session.completed',
-                    {
-                      summary: 'Goal verified by the CLI after its prerequisite repair.',
+                if (latestObservation.ok === true && latestObservation.cardBlocking === false) {
+                  const completion = await this.completeSessionIfAllowed({
+                    requestId,
+                    summary: 'Goal verified by the CLI after its prerequisite repair.',
+                    data: {
                       transactionId: remediationClosure.transactionId,
                       goalId: this.state.goal.id,
                       goalStatus: toolOutputRecord(latestObservation)?.status,
                       workspaceResolved: remediationClosure.workspaceResolved,
                       remainingActionIds: remediationClosure.remainingActionIds,
                     },
+                  });
+                  if (completion.completed) {
+                    return completion.session;
+                  }
+                  latestObservation = {
+                    ...latestObservation,
+                    ok: false,
+                    error: completion.blocker.reason,
+                  };
+                  await this.emit(
+                    'model.checkpoint',
+                    {
+                      summary: completion.blocker.reason,
+                      recovery: 'completion-contract',
+                      blocker: completion.blocker.kind,
+                    },
                     requestId
                   );
-                  await this.setStatus('completed');
-                  return this.snapshot();
                 }
               }
               causalRecoveryAttempts = 0;
@@ -1929,10 +2054,13 @@ export class StudioAgentSession {
               continue;
             }
             if (causalRecoveryAttempts >= 2) {
-              throw new StudioAgentTerminalError(
-                'Deterministic verification and two constrained recoveries produced no new causal workspace state or blocker evidence.',
-                'causal-progress-exhausted'
-              );
+              if (await this.beginUnverifiedContinuationNudge(requestId)) {
+                consecutiveCausalRejections = 0;
+                causalRecoveryAttempts = 0;
+                consecutiveModelDecisionsWithoutSemanticProgress = 0;
+                continue;
+              }
+              this.pauseUnverifiedContinuation();
             }
             if (causalRecoveryAttempts >= 1) {
               this.generalSourceRepairActive = true;
@@ -1984,13 +2112,27 @@ export class StudioAgentSession {
               causalRecoveryAttempts = 0;
             }
             if (latestObservation.ok === true && latestObservation.cardBlocking === false) {
+              const completion = await this.completeSessionIfAllowed({
+                requestId,
+                summary: 'Deterministic verification confirmed that the blocker is resolved.',
+              });
+              if (completion.completed) {
+                return completion.session;
+              }
+              latestObservation = {
+                ...latestObservation,
+                ok: false,
+                error: completion.blocker.reason,
+              };
               await this.emit(
-                'session.completed',
-                { summary: 'Deterministic verification confirmed that the blocker is resolved.' },
+                'model.checkpoint',
+                {
+                  summary: completion.blocker.reason,
+                  recovery: 'completion-contract',
+                  blocker: completion.blocker.kind,
+                },
                 requestId
               );
-              await this.setStatus('completed');
-              return this.snapshot();
             }
           }
         }
@@ -2062,7 +2204,8 @@ export class StudioAgentSession {
    * and cannot rewrite the already-cancelled durable session.
    */
   private async nextModelAction(
-    context: StudioAgentModelContext
+    context: StudioAgentModelContext,
+    requestId: string
   ): Promise<StudioAgentModelAction | undefined> {
     if (this.abortController.signal.aborted) {
       return undefined;
@@ -2073,7 +2216,37 @@ export class StudioAgentSession {
       this.abortController.signal.addEventListener('abort', onAbort, { once: true });
     });
     try {
-      return await Promise.race([this.model.next(context), cancelled]);
+      const action = await Promise.race([this.model.next(context), cancelled]);
+      if (!action) {
+        return undefined;
+      }
+      const resolution = this.model.consumeResolution?.();
+      if (resolution) {
+        const providerRequests = Math.max(1, Math.trunc(resolution.attempts));
+        const inputTokens = Math.max(0, Math.trunc(resolution.inputTokens ?? 0));
+        const outputTokens = Math.max(0, Math.trunc(resolution.outputTokens ?? 0));
+        const budgetLedger = this.budgetLedger();
+        this.providerRequestsThisAttempt += providerRequests;
+        this.tokensThisAttempt += inputTokens + outputTokens;
+        budgetLedger.totalProviderRequests += providerRequests;
+        budgetLedger.totalInputTokens += inputTokens;
+        budgetLedger.totalOutputTokens += outputTokens;
+        if (resolution.tokenUsageSource === 'estimated') {
+          budgetLedger.estimatedTokenMeasurements += 1;
+        }
+        const resolvedAt = this.now().toISOString();
+        this.state.lastResolvedModel = { ...resolution, resolvedAt };
+        await this.emit(
+          'model.resolved',
+          {
+            ...resolution,
+            resolvedAt,
+            selectedModelId: this.state.selectedModelId,
+          },
+          requestId
+        );
+      }
+      return action;
     } finally {
       if (onAbort) {
         this.abortController.signal.removeEventListener('abort', onAbort);
@@ -2156,6 +2329,8 @@ export class StudioAgentSession {
       // causal epoch so the duplicate-tool guard permits exactly one rebuild;
       // arbitrary model retries remain bounded by the normal guard.
       this.causalEpoch += 1;
+      this.lastIdenticalToolSignature = undefined;
+      this.consecutiveIdenticalToolAttempts = 0;
       this.exhaustedTools.clear();
       await this.emit(
         'model.checkpoint',
@@ -2299,16 +2474,20 @@ export class StudioAgentSession {
       return result;
     }
     const toolAttemptKey = `${this.causalEpoch}:${tool.name}:${canonicalJson(action.input)}`;
-    const attemptsInEpoch = this.toolAttemptsByEpoch.get(toolAttemptKey) ?? 0;
-    const maxAttemptsWithoutProgress = 1;
-    if (attemptsInEpoch >= maxAttemptsWithoutProgress) {
+    if (this.lastIdenticalToolSignature !== toolAttemptKey) {
+      this.lastIdenticalToolSignature = toolAttemptKey;
+      this.consecutiveIdenticalToolAttempts = 0;
+    }
+    const maxAttemptsWithoutProgress =
+      StudioAgentSession.MAX_IDENTICAL_TOOL_ATTEMPTS_PER_CAUSAL_STATE;
+    if (this.consecutiveIdenticalToolAttempts >= maxAttemptsWithoutProgress) {
       const result = {
         ok: false,
         evidenceGeneration: this.latestEvidenceGeneration,
         blockerSignature: this.latestBlockerSignature,
         error:
-          `${tool.name} already produced an observation in the current causal evidence generation. ` +
-          'Do not repeat it. Use the prior result, choose a different causal tool, or change source evidence before retrying.',
+          `${tool.name} repeated the same input ${this.consecutiveIdenticalToolAttempts} times without a causal state transition. ` +
+          'Reuse the prior results, choose a materially different capability, or change source, environment, or blocker evidence before retrying.',
       };
       await this.emit(
         'tool.failed',
@@ -2512,7 +2691,8 @@ export class StudioAgentSession {
     // A declined or cancelled approval is not an execution attempt. Record the
     // bounded attempt only after every policy boundary has admitted the tool,
     // so a durable session may be resumed and approve the same exact action.
-    this.toolAttemptsByEpoch.set(toolAttemptKey, attemptsInEpoch + 1);
+    this.consecutiveIdenticalToolAttempts += 1;
+    this.budgetLedger().totalToolExecutions += 1;
     await this.emit(
       'tool.started',
       {
@@ -2648,6 +2828,8 @@ export class StudioAgentSession {
     }
     if (causalStateAdvanced) {
       this.causalEpoch += 1;
+      this.lastIdenticalToolSignature = undefined;
+      this.consecutiveIdenticalToolAttempts = 0;
     }
     this.recentObservations.push({
       toolCallId,
@@ -2663,9 +2845,19 @@ export class StudioAgentSession {
     }
     const durableResult = durableToolResult(result);
     const transientResult = liveToolResult(result);
+    if (tool.name === 'update-task-ledger') {
+      this.rememberTaskLedger(result, this.state.sequence + 1);
+    }
     if (tool.name === 'run-workspace-command') {
       this.rememberWorkspaceCommandEffectVerification(result);
     }
+    this.rememberToolCompletionObligations({
+      toolName: tool.name,
+      activity: tool.activity,
+      toolInput: action.input,
+      result,
+      sequence: this.state.sequence + 1,
+    });
     await this.emit(
       result.ok ? 'tool.completed' : 'tool.failed',
       { toolName: tool.name, input: durableInput, reason: action.reason, ...durableResult },
@@ -2674,9 +2866,187 @@ export class StudioAgentSession {
       { toolName: tool.name, input: durableInput, reason: action.reason, ...transientResult }
     );
     if (tool.activity === 'verify') {
+      this.rememberVerificationCompletion(durableResult, this.state.sequence + 1);
       await this.emit('verify.completed', durableResult, requestId, toolCallId);
     }
     return result;
+  }
+
+  private completionObligations(): StudioAgentCompletionObligations {
+    if (
+      this.state.completionObligations?.schemaVersion ===
+      'workspai.studio-completion-obligations.v1'
+    ) {
+      return this.state.completionObligations;
+    }
+    const obligations: StudioAgentCompletionObligations = {
+      schemaVersion: 'workspai.studio-completion-obligations.v1',
+    };
+    this.state.completionObligations = obligations;
+    return obligations;
+  }
+
+  private pruneCompletionObligations(): void {
+    const obligations = this.state.completionObligations;
+    if (
+      obligations &&
+      obligations.latestSourceMutationSequence === undefined &&
+      obligations.sourceReviewRequiredAfterSequence === undefined &&
+      obligations.canonicalClosureRequiredAfterSequence === undefined &&
+      obligations.freshVerificationRequiredAfterSequence === undefined
+    ) {
+      delete this.state.completionObligations;
+    }
+  }
+
+  private rememberToolCompletionObligations(input: {
+    toolName: string;
+    activity: string;
+    toolInput: unknown;
+    result: StudioAgentToolResult;
+    sequence: number;
+  }): void {
+    const obligations = this.completionObligations();
+    const sourceMutation =
+      input.result.changed === true &&
+      input.activity === 'change' &&
+      input.toolName !== 'run-governed-command' &&
+      input.toolName !== 'verify-blocker' &&
+      input.toolName !== 'verify-goal';
+    const governedEvidenceMutation =
+      input.result.changed === true && input.toolName === 'run-governed-command';
+
+    if (sourceMutation) {
+      obligations.latestSourceMutationSequence = input.sequence;
+      obligations.freshVerificationRequiredAfterSequence = input.sequence;
+      if (this.usesEvidenceReviewCompletion()) {
+        obligations.sourceReviewRequiredAfterSequence = input.sequence;
+      }
+      if (verifiedCliRepairClosure(input.result)) {
+        delete obligations.canonicalClosureRequiredAfterSequence;
+      } else {
+        obligations.canonicalClosureRequiredAfterSequence = input.sequence;
+      }
+    }
+    if (governedEvidenceMutation) {
+      obligations.freshVerificationRequiredAfterSequence = input.sequence;
+    }
+
+    if (
+      input.toolName === 'inspect-workspace-changes' &&
+      input.result.ok === true &&
+      obligations.sourceReviewRequiredAfterSequence !== undefined &&
+      input.sequence > obligations.sourceReviewRequiredAfterSequence
+    ) {
+      delete obligations.sourceReviewRequiredAfterSequence;
+    }
+
+    const toolInput =
+      input.toolInput && typeof input.toolInput === 'object' && !Array.isArray(input.toolInput)
+        ? (input.toolInput as Record<string, unknown>)
+        : undefined;
+    if (
+      input.toolName === 'run-governed-command' &&
+      toolInput?.commandId === 'workspaceIntelligenceChain' &&
+      input.result.ok === true &&
+      obligations.canonicalClosureRequiredAfterSequence !== undefined &&
+      input.sequence > obligations.canonicalClosureRequiredAfterSequence
+    ) {
+      delete obligations.canonicalClosureRequiredAfterSequence;
+    }
+
+    if (
+      input.activity === 'verify' &&
+      input.result.ok === true &&
+      input.result.cardBlocking === false &&
+      (obligations.freshVerificationRequiredAfterSequence === undefined ||
+        input.sequence > obligations.freshVerificationRequiredAfterSequence)
+    ) {
+      delete obligations.freshVerificationRequiredAfterSequence;
+    }
+    this.pruneCompletionObligations();
+  }
+
+  private rememberVerificationCompletion(result: StudioAgentToolResult, sequence: number): void {
+    const obligations = this.state.completionObligations;
+    if (
+      obligations?.freshVerificationRequiredAfterSequence !== undefined &&
+      result.ok === true &&
+      result.cardBlocking === false &&
+      sequence > obligations.freshVerificationRequiredAfterSequence
+    ) {
+      delete obligations.freshVerificationRequiredAfterSequence;
+      this.pruneCompletionObligations();
+    }
+  }
+
+  private rebuildCompletionObligationsIfNeeded(): void {
+    const hadPersistedObligations = Boolean(this.state.completionObligations);
+    const events = this.state.events;
+    if (
+      !hadPersistedObligations &&
+      this.options.restoredSession &&
+      events.length > 0 &&
+      (events[0]?.sequence ?? 1) > 1 &&
+      isAutonomousWorkspaiAssistantMode(this.executionMode())
+    ) {
+      const unknownPriorSequence = Math.max(0, (events[0]?.sequence ?? 1) - 1);
+      const obligations = this.completionObligations();
+      obligations.latestSourceMutationSequence = unknownPriorSequence;
+      obligations.freshVerificationRequiredAfterSequence = unknownPriorSequence;
+      obligations.canonicalClosureRequiredAfterSequence = unknownPriorSequence;
+      if (this.usesEvidenceReviewCompletion()) {
+        obligations.sourceReviewRequiredAfterSequence = unknownPriorSequence;
+      }
+    }
+    for (const event of events) {
+      if (event.type === 'tool.completed' || event.type === 'tool.failed') {
+        const data =
+          event.data && typeof event.data === 'object' && !Array.isArray(event.data)
+            ? (event.data as Record<string, unknown>)
+            : {};
+        const toolName = typeof data.toolName === 'string' ? data.toolName : '';
+        if (!toolName) {
+          continue;
+        }
+        const definition = this.registry.get(toolName);
+        this.rememberToolCompletionObligations({
+          toolName,
+          activity:
+            definition?.activity ??
+            (toolName === 'verify-blocker' || toolName === 'verify-goal'
+              ? 'verify'
+              : data.changed === true
+                ? 'change'
+                : 'inspect'),
+          toolInput: data.input,
+          result: data as StudioAgentToolResult,
+          sequence: event.sequence,
+        });
+      } else if (event.type === 'verify.completed') {
+        this.rememberVerificationCompletion(event.data as StudioAgentToolResult, event.sequence);
+      }
+    }
+    this.pruneCompletionObligations();
+  }
+
+  private rebuildTaskLedgerFromEvents(): void {
+    const afterSequence = this.state.taskLedger?.updatedSequence ?? 0;
+    for (const event of this.state.events) {
+      if (
+        event.sequence <= afterSequence ||
+        event.type !== 'tool.completed' ||
+        !event.data ||
+        typeof event.data !== 'object' ||
+        Array.isArray(event.data)
+      ) {
+        continue;
+      }
+      const data = event.data as Record<string, unknown>;
+      if (data.toolName === 'update-task-ledger') {
+        this.rememberTaskLedger(data as StudioAgentToolResult, event.sequence);
+      }
+    }
   }
 
   private hasVerifiedCompletion(requestId: string): boolean {
@@ -2687,11 +3057,7 @@ export class StudioAgentSession {
       return false;
     }
     const result = latestVerify.data as StudioAgentToolResult;
-    return (
-      result.ok === true &&
-      result.cardBlocking === false &&
-      this.hasCanonicalChainClosure(requestId)
-    );
+    return result.ok === true && result.cardBlocking === false;
   }
 
   private verificationToolName(): 'verify-goal' | 'verify-blocker' | undefined {
@@ -2703,15 +3069,6 @@ export class StudioAgentSession {
 
   private completionPolicyViolation(requestId: string, summary: string): string | undefined {
     const executionMode = this.executionMode();
-    if (
-      isAutonomousWorkspaiAssistantMode(executionMode) &&
-      this.pendingEffectVerificationScopes.size > 0
-    ) {
-      return (
-        'Completion rejected: approved non-source effects still require a successful read-only ' +
-        `observation in these domains: ${[...this.pendingEffectVerificationScopes].sort().join(', ')}.`
-      );
-    }
     if (executionMode === 'ask' || executionMode === 'plan') {
       const inspected = this.state.events.some((event) => {
         if (event.requestId !== requestId || event.type !== 'tool.completed') {
@@ -2725,6 +3082,9 @@ export class StudioAgentSession {
           'search-workspace',
           'inspect-workspace-diagnostics',
           'inspect-workspace-changes',
+          'fetch-public-web',
+          'list-host-tools',
+          'invoke-host-tool',
         ].includes(toolName);
       });
       if (!inspected) {
@@ -2747,28 +3107,111 @@ export class StudioAgentSession {
     return undefined;
   }
 
-  private hasGeneralTaskAcceptanceReview(requestId: string): boolean {
-    if (!this.usesEvidenceReviewCompletion()) {
-      return true;
-    }
-    const requestEvents = this.state.events.filter((event) => event.requestId === requestId);
-    const latestMutation = [...requestEvents].reverse().find((event) => {
-      if (event.type !== 'tool.completed') {
-        return false;
+  private completionGateViolation(
+    requestId: string,
+    summary: string
+  ):
+    | {
+        kind:
+          | 'policy'
+          | 'required-causal-action'
+          | 'pending-effects'
+          | 'source-review'
+          | 'canonical-closure'
+          | 'fresh-verification'
+          | 'task-ledger'
+          | 'verification';
+        reason: string;
       }
-      const data = event.data as StudioAgentToolResult & { toolName?: string };
-      return data.changed === true && verifiedCliRepairClosure(data) !== undefined;
-    });
-    if (!latestMutation) {
-      return true;
+    | undefined {
+    const policyViolation = this.completionPolicyViolation(requestId, summary);
+    if (policyViolation) {
+      return { kind: 'policy', reason: policyViolation };
     }
-    return requestEvents.some((event) => {
-      if (event.sequence <= latestMutation.sequence || event.type !== 'tool.completed') {
-        return false;
+    if (this.state.pendingRequiredCausalAction) {
+      return {
+        kind: 'required-causal-action',
+        reason:
+          'Completion rejected: the exact CLI-authored causal action is still pending and cannot be bypassed.',
+      };
+    }
+    if (this.pendingEffectVerificationScopes.size > 0) {
+      return {
+        kind: 'pending-effects',
+        reason:
+          'Completion rejected: approved non-source effects still require a successful read-only ' +
+          `observation in these domains: ${[...this.pendingEffectVerificationScopes].sort().join(', ')}.`,
+      };
+    }
+    const unfinishedSteps = this.state.taskLedger?.steps.filter(
+      (step) => step.status !== 'completed'
+    );
+    if (unfinishedSteps && unfinishedSteps.length > 0) {
+      return {
+        kind: 'task-ledger',
+        reason:
+          'Completion rejected: the durable task ledger still contains unfinished steps: ' +
+          unfinishedSteps.map((step) => `${step.id} (${step.status})`).join(', '),
+      };
+    }
+    const obligations = this.state.completionObligations;
+    if (obligations?.sourceReviewRequiredAfterSequence !== undefined) {
+      return {
+        kind: 'source-review',
+        reason:
+          'Completion rejected: inspect the final workspace changes after the latest source mutation before claiming the user request is complete.',
+      };
+    }
+    if (obligations?.canonicalClosureRequiredAfterSequence !== undefined) {
+      return {
+        kind: 'canonical-closure',
+        reason:
+          'Completion rejected: the latest source mutation has not closed the canonical Workspace Intelligence chain.',
+      };
+    }
+    if (obligations?.freshVerificationRequiredAfterSequence !== undefined) {
+      return {
+        kind: 'fresh-verification',
+        reason:
+          'Completion rejected: canonical verification has not succeeded after the latest source mutation.',
+      };
+    }
+    if (
+      isAutonomousWorkspaiAssistantMode(this.executionMode()) &&
+      this.options.requiresVerifiedCompletion !== false &&
+      !this.hasVerifiedCompletion(requestId)
+    ) {
+      return {
+        kind: 'verification',
+        reason:
+          'Completion rejected: this attempt has no fresh successful canonical verification result.',
+      };
+    }
+    return undefined;
+  }
+
+  private async completeSessionIfAllowed(input: {
+    requestId: string;
+    summary: string;
+    data?: Record<string, unknown>;
+  }): Promise<
+    | { completed: true; session: StudioAgentPersistedSession }
+    | {
+        completed: false;
+        blocker: NonNullable<ReturnType<StudioAgentSession['completionGateViolation']>>;
       }
-      const data = event.data as Record<string, unknown>;
-      return data.toolName === 'inspect-workspace-changes' && data.ok === true;
-    });
+  > {
+    const blocker = this.completionGateViolation(input.requestId, input.summary);
+    if (blocker) {
+      return { completed: false, blocker };
+    }
+    await this.emit(
+      'session.completed',
+      { ...(input.data ?? {}), summary: input.summary },
+      input.requestId
+    );
+    await this.setStatus('completed');
+    return { completed: true, session: this.snapshot() };
   }
 
   private executionMode(): WorkspaiAssistantMode {
@@ -2793,18 +3236,10 @@ export class StudioAgentSession {
   }
 
   private hasMutated(): boolean {
+    if (this.state.completionObligations?.latestSourceMutationSequence !== undefined) {
+      return true;
+    }
     return this.state.events.some((event) => {
-      if (event.type !== 'tool.completed') {
-        return false;
-      }
-      const data = event.data as Record<string, unknown>;
-      return GOVERNED_SOURCE_MUTATION_TOOL_NAMES.has(String(data.toolName ?? ''));
-    });
-  }
-
-  private hasCanonicalChainClosure(requestId: string): boolean {
-    const requestEvents = this.state.events.filter((event) => event.requestId === requestId);
-    const latestSourceMutation = [...requestEvents].reverse().find((event) => {
       if (event.type !== 'tool.completed') {
         return false;
       }
@@ -2816,29 +3251,51 @@ export class StudioAgentSession {
         data.toolName !== 'verify-goal'
       );
     });
-    if (!latestSourceMutation) {
-      return true;
-    }
+  }
 
-    if (verifiedCliRepairClosure(latestSourceMutation.data as StudioAgentToolResult)) {
-      return true;
-    }
+  private noteProductiveContinuation(): void {
+    this.unverifiedContinuationNudges = 0;
+    this.freedomPlaneActive = false;
+  }
 
-    return requestEvents.some((event) => {
-      if (event.sequence <= latestSourceMutation.sequence || event.type !== 'tool.completed') {
-        return false;
-      }
-      const data = event.data as Record<string, unknown>;
-      const toolInput =
-        data.input && typeof data.input === 'object' && !Array.isArray(data.input)
-          ? (data.input as Record<string, unknown>)
-          : undefined;
-      return (
-        data.toolName === 'run-governed-command' &&
-        toolInput?.commandId === 'workspaceIntelligenceChain' &&
-        data.ok === true
-      );
-    });
+  private pauseUnverifiedContinuation(): never {
+    throw new StudioAgentTerminalError(
+      'Verification is still open. Studio paused after bounded attempts so this run would not keep spending tokens. Resume continues the same session. Nothing was marked complete.',
+      'model-causal-progress-exhausted'
+    );
+  }
+
+  private async beginUnverifiedContinuationNudge(requestId: string): Promise<boolean> {
+    if (this.state.pendingRequiredCausalAction) {
+      return false;
+    }
+    if (
+      this.unverifiedContinuationNudges >= StudioAgentSession.MAX_UNVERIFIED_CONTINUATION_NUDGES
+    ) {
+      return false;
+    }
+    this.unverifiedContinuationNudges += 1;
+    this.budgetLedger().totalContinuationNudges += 1;
+    this.freedomPlaneActive = true;
+    this.sourceRepairDirective = {
+      nextAction: 'continue-unverified',
+      recoveryPath: 'unverified-continue-nudge',
+      cardId: this.latestActiveCardId,
+      instruction:
+        'This path is closed and the task is not finished. Choose any other governed tool and continue until canonical verification reports the blocker closed. Do not repeat the previous observation and do not treat this pause as completion.',
+    };
+    this.skipProgressBreakerOnce = true;
+    await this.emit(
+      'model.checkpoint',
+      {
+        summary:
+          'The previous path made no verified progress. Studio is returning the full tool set for one more attempt. The task is not complete.',
+        recovery: 'unverified-continue-nudge',
+        nudge: this.unverifiedContinuationNudges,
+      },
+      requestId
+    );
+    return true;
   }
 
   private modelContext(
@@ -2847,35 +3304,16 @@ export class StudioAgentSession {
   ): StudioAgentModelContext {
     const mustTakeSourceAction = sourceActionRequired || this.sourceActionRequired;
     const requiredCausalAction = this.state.pendingRequiredCausalAction;
-    const hasCausalObservation = this.recentObservations.some(
-      (observation) =>
-        CAUSAL_INSPECTION_TOOL_NAMES.has(observation.toolName) && observation.result.ok === true
-    );
-    const tools = this.registry
-      .list()
-      .filter((tool) => !requiredCausalAction || tool.name === requiredCausalAction.toolName)
-      .filter((tool) => !this.exhaustedTools.has(tool.name))
-      .filter(
-        (tool) =>
-          !this.generalSourceRepairActive || GENERAL_CAUSAL_RECOVERY_TOOL_NAMES.has(tool.name)
-      )
-      .filter(
-        (tool) =>
-          !mustTakeSourceAction ||
-          (this.proposalRecoveryInspectionRequired
-            ? CAUSAL_INSPECTION_TOOL_NAMES.has(tool.name)
-            : hasCausalObservation
-              ? CAUSAL_PROGRESS_TOOL_NAMES.has(tool.name)
-              : CAUSAL_INSPECTION_TOOL_NAMES.has(tool.name))
-      )
-      .map((tool) => ({
-        name: tool.name,
-        title: tool.title,
-        description: tool.description,
-        inputSchema: tool.inputSchema,
-        activity: tool.activity,
-        risk: tool.risk,
-      }));
+    const tools = this.registry.list().map((tool) => ({
+      name: tool.name,
+      title: tool.title,
+      description: this.exhaustedTools.has(tool.name)
+        ? `${tool.description} This accelerator is exhausted for the current causal generation; choose a materially different capability until state advances.`
+        : tool.description,
+      inputSchema: tool.inputSchema,
+      activity: tool.activity,
+      risk: tool.risk,
+    }));
     return {
       session: this.snapshot(),
       tools,
@@ -2924,6 +3362,52 @@ export class StudioAgentSession {
     } else {
       delete this.state.pendingEffectVerificationScopes;
     }
+  }
+
+  private rememberTaskLedger(result: StudioAgentToolResult, sequence: number): void {
+    const output = toolOutputRecord(result);
+    if (
+      result.ok !== true ||
+      output?.schemaVersion !== 'workspai.studio-task-ledger.v1' ||
+      typeof output.objective !== 'string' ||
+      !Array.isArray(output.steps)
+    ) {
+      return;
+    }
+    const steps = output.steps
+      .filter((entry): entry is Record<string, unknown> =>
+        Boolean(entry && typeof entry === 'object' && !Array.isArray(entry))
+      )
+      .map((entry) => ({
+        id: String(entry.id ?? '').trim(),
+        description: String(entry.description ?? '').trim(),
+        status: String(entry.status ?? '') as StudioAgentTaskLedger['steps'][number]['status'],
+        ...(typeof entry.evidence === 'string' && entry.evidence.trim()
+          ? { evidence: entry.evidence.trim() }
+          : {}),
+      }))
+      .filter(
+        (entry) =>
+          entry.id &&
+          entry.description &&
+          ['pending', 'in-progress', 'completed', 'blocked'].includes(entry.status)
+      );
+    if (steps.length === 0) {
+      return;
+    }
+    const currentStepId =
+      typeof output.currentStepId === 'string' &&
+      steps.some((entry) => entry.id === output.currentStepId)
+        ? output.currentStepId
+        : undefined;
+    this.state.taskLedger = {
+      schemaVersion: 'workspai.studio-task-ledger.v1',
+      objective: output.objective.trim(),
+      ...(currentStepId ? { currentStepId } : {}),
+      steps,
+      updatedAt: this.now().toISOString(),
+      updatedSequence: sequence,
+    };
   }
 
   private rememberExhaustedTools(output: unknown): void {

@@ -34,7 +34,7 @@ describe('Studio Workspace Intelligence phase rail', () => {
     expect(railOffset).toBeGreaterThan(source.lastIndexOf('streamChrome={', railOffset));
     expect(railOffset).toBeGreaterThan(source.lastIndexOf('headerChrome={', railOffset));
     expect(source.match(/<StudioIntelligencePhaseRail/g)).toHaveLength(1);
-    expect(source).toContain('Worked on {Math.min(activeStudioRepairTimeline.length - 1, 6)} step');
+    expect(source).toContain('studioRepairHistoryDisclosureLabel(activeStudioRepairTimeline)');
     expect(source).not.toContain('Activity · {activeStudioRepairTimeline.length');
     expect(source).toContain("eventType === 'tool.progress'");
     expect(source).toContain("eventData.intelligenceMilestoneStatus === 'started'");
@@ -48,6 +48,8 @@ describe('Studio Workspace Intelligence phase rail', () => {
     expect(source).toContain('STUDIO_INTELLIGENCE_PHASES.map');
     expect(source).toContain('studioIntelligencePhaseLabel(activePhase)');
     expect(source).toContain('aria-valuetext');
+    expect(source).toContain('`Working · ${activeIndex + 1}/${phaseCount}`');
+    expect(source).toContain(": 'Paused'");
     expect(source).toContain('ws-sidebar__intelligence-phase-segment');
     expect(source).toContain("'--ws-phase-count': phaseCount");
     expect(source).not.toContain('ws-sidebar__sr-only');
@@ -117,6 +119,8 @@ describe('Studio Workspace Intelligence phase rail', () => {
     );
     expect(resolveStudioIntelligencePhaseFromCard('releaseReadiness')).toBe('readiness-evidence');
     expect(resolveStudioIntelligencePhaseFromCard('intelligenceSnapshot')).toBe('diff');
+    expect(resolveStudioIntelligencePhaseFromCard('pipeline')).toBe('analyze-evidence');
+    expect(resolveStudioIntelligencePhaseFromToolEvent({ toolName: 'verify-goal' })).toBe('verify');
   });
 
   it('prefers the runner-reported contract milestone over command-level inference', () => {

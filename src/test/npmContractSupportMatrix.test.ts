@@ -12,6 +12,7 @@ const repoRoot = path.resolve(__dirname, '../..');
 const extensionContractsRoot = path.resolve(repoRoot, 'contracts');
 const extensionOwnedContracts = new Set([
   'extension-cli-release-policy.v1.json',
+  'official-cli-closure.v1.json',
   'repository-analysis.v1.json',
   'workspace-intelligence/workspace-graph-recording.v1.json',
   'workspai-ai-narrative.v1.json',

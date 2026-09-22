@@ -39,7 +39,20 @@ describe('bundled CLI packaging contract', () => {
       path.join(repoRoot, 'scripts', 'build-bundled-cli-runtime.mjs'),
       'utf8'
     );
+    expect(packager).toContain('withoutEmbeddedCliRuntime');
+    expect(packager).toContain('moveDirectory');
+    expect(packager).toContain("error.code === 'EXDEV'");
+    expect(packager).toContain('.workspai-runtime-packaging-stash');
+    expect(packager).toContain('restoreReleaseCliRuntime');
+    expect(packager).toContain("['scripts/build-bundled-cli-runtime.mjs', '--release']");
     expect(packager).toContain('withPinnedReleaseContracts');
+    const prepublish = fs.readFileSync(
+      path.join(repoRoot, 'scripts', 'vscode-prepublish.mjs'),
+      'utf8'
+    );
+    expect(prepublish).toContain("channel === 'release'");
+    expect(prepublish).toContain("path.join(repositoryRoot, 'dist', 'workspai-runtime')");
+    expect(prepublish).toContain('fs.rmSync');
     expect(packager).toContain("'--release-package'");
     expect(packager).toContain('restoreContractMirrors(snapshot)');
     expect(packager).toContain("new AggregateError(failures, 'One or more VSIX variants failed");
@@ -64,6 +77,8 @@ describe('bundled CLI packaging contract', () => {
     expect(inspector).toContain('extension/dist/workspai-runtime/manifest.json');
     expect(inspector).toContain('extension/dist/workspai-runtime/launcher.cjs');
     expect(inspector).toContain('extension/dist/workspai-runtime/dist/index.mjs');
+    expect(inspector).toContain('workspai-vscode-official-cli-closure.v1');
+    expect(inspector).toContain('Release VSIX must not embed a second Workspai CLI runtime.');
     expect(inspector).toContain('workspai-vscode-bundled-cli-runtime.v1');
     expect(inspector).toContain('runtimeManifest.channel !== options.channel');
     expect(inspector).toContain("expectedDistribution = options.channel === 'release'");

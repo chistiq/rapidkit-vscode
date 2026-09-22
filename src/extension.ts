@@ -80,6 +80,8 @@ import {
 } from './utils/workspaceShareBundle';
 import { WorkspaiWorkspace } from './types';
 import { configureBundledCliRuntimeStorage } from './core/bundledCliRuntime';
+import { ensureOfficialCliRuntime } from './core/officialCliPackage';
+import releasePolicy from '../contracts/extension-cli-release-policy.v1.json';
 
 let statusBar: WorkspaiStatusBar;
 let actionsWebviewProvider: ActionsWebviewProvider;
@@ -623,6 +625,25 @@ function registerProjectRefreshWatchers(
 export async function activate(context: vscode.ExtensionContext) {
   configureBundledCliRuntimeStorage(context.globalStorageUri.fsPath);
   const logger = Logger.getInstance();
+  if (context.extensionMode === vscode.ExtensionMode.Production) {
+    try {
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Preparing Workspai CLI ${releasePolicy.verifiedCliVersion}`,
+          cancellable: false,
+        },
+        (progress) =>
+          ensureOfficialCliRuntime(context.globalStorageUri.fsPath, {
+            onProgress: (message) => progress.report({ message }),
+          })
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(`Workspai CLI acquisition failed: ${message}`);
+      void vscode.window.showErrorMessage(message);
+    }
+  }
   logger.info('Workspai extension is activating...');
 
   // Older builds persisted full workspace graphs in VS Code globalState,

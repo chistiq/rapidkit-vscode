@@ -1,6 +1,7 @@
 .vscode/**
 .vscode-test/**
 .workspai-cli-local.json
+.workspai-runtime-packaging-stash/**
 .gitignore
 .npmignore
 .yarnrc

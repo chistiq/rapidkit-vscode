@@ -2,6 +2,7 @@
 
 # Compiled output
 dist/
+.workspai-runtime-packaging-stash/
 out/
 *.vsix
 

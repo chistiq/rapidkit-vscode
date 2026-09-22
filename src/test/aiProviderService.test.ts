@@ -186,6 +186,13 @@ describe('aiProviderService', () => {
     ).resolves.toEqual({
       type: 'tool',
       provider: 'vscode-lm',
+      modelId: 'copilotcli/auto',
+      requestedModelId: 'copilotcli/auto',
+      fallback: false,
+      attempts: 1,
+      inputTokens: expect.any(Number),
+      outputTokens: expect.any(Number),
+      tokenUsageSource: 'estimated',
       callId: 'vscode-call-1',
       toolName: 'verify-blocker',
       input: {},
@@ -249,6 +256,12 @@ describe('aiProviderService', () => {
     ).resolves.toEqual({
       type: 'tool',
       provider: 'openai-compatible',
+      modelId: 'enterprise-model',
+      fallback: false,
+      attempts: 1,
+      inputTokens: expect.any(Number),
+      outputTokens: expect.any(Number),
+      tokenUsageSource: 'estimated',
       callId: 'call-1',
       toolName: 'inspect-remediation-plan',
       input: {},
@@ -281,6 +294,90 @@ describe('aiProviderService', () => {
         }),
       ])
     );
+  });
+
+  it('retries transient OpenAI-compatible failures with bounded backoff', async () => {
+    const context = createMockContext();
+    await setCustomAIAPIKey(context, 'sk-test');
+    let attempts = 0;
+    const fetchMock = vi.fn(async () => {
+      attempts += 1;
+      if (attempts < 3) {
+        return {
+          ok: false,
+          status: 503,
+          text: async () => JSON.stringify({ error: { message: 'temporarily unavailable' } }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            usage: { prompt_tokens: 120, completion_tokens: 18 },
+            choices: [
+              {
+                message: {
+                  tool_calls: [
+                    {
+                      id: 'call-retried',
+                      function: { name: 'verify-blocker', arguments: '{}' },
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      askConfiguredAIProviderForToolAction(
+        context,
+        [{ role: 'user', content: 'Verify after a transient outage' }],
+        [{ name: 'verify-blocker', description: 'Verify' }]
+      )
+    ).resolves.toMatchObject({
+      type: 'tool',
+      toolName: 'verify-blocker',
+      attempts: 3,
+      fallback: false,
+      inputTokens: 120,
+      outputTokens: 18,
+      tokenUsageSource: 'provider',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('reports the actual fallback model selected by VS Code LM', async () => {
+    mockGet.mockImplementation((key: string, defaultValue: unknown) =>
+      key === 'aiProvider' ? 'vscode-lm' : defaultValue
+    );
+    mockRequestAIModelToolAction.mockResolvedValueOnce({
+      type: 'tool',
+      modelId: 'copilot/fallback',
+      attempts: 2,
+      callId: 'fallback-call',
+      toolName: 'verify-blocker',
+      input: {},
+    });
+
+    await expect(
+      askConfiguredAIProviderForToolAction(
+        createMockContext(),
+        [{ role: 'user', content: 'Verify' }],
+        [{ name: 'verify-blocker', description: 'Verify' }],
+        undefined,
+        'copilot/preferred'
+      )
+    ).resolves.toMatchObject({
+      provider: 'vscode-lm',
+      modelId: 'copilot/fallback',
+      requestedModelId: 'copilot/preferred',
+      fallback: true,
+      attempts: 2,
+    });
   });
 
   it('runs a live health check against the configured provider', async () => {
@@ -418,6 +515,12 @@ describe('aiProviderService', () => {
     ).resolves.toEqual({
       type: 'tool',
       provider: 'anthropic',
+      modelId: 'claude-sonnet-4-6',
+      fallback: false,
+      attempts: 1,
+      inputTokens: expect.any(Number),
+      outputTokens: expect.any(Number),
+      tokenUsageSource: 'estimated',
       callId: 'tool-1',
       toolName: 'verify-blocker',
       input: { strict: true },

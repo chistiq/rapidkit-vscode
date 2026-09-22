@@ -5,6 +5,11 @@ import {
   type SidebarStudioActionProgressView,
 } from '@/lib/sidebarStudioActionProgress';
 import { compactStudioPathText } from '@/lib/studioDisplayText';
+import {
+  studioHistoricalActivityLabel,
+  studioHistoricalOutcomeStatus,
+  studioTimelineOccurrenceLabel,
+} from '@/lib/studioRepairTimeline';
 import { StudioDiffView } from './StudioDiffView';
 
 type StudioActionProgressProps = {
@@ -55,23 +60,7 @@ function statusIcon(status: SidebarStudioActionProgressView['status']) {
 }
 
 function completedActivityLabel(progress: SidebarStudioActionProgressView): string {
-  if (progress.transactionState === 'rolled-back') return 'Restored';
-  const phase = progress.phase ?? progress.action;
-  if (
-    progress.action === 'run-governed-command' ||
-    /evidence|agent-sync|intelligence-chain/i.test(phase)
-  ) {
-    return 'Evidence refreshed';
-  }
-  if (/verif|readiness|contract/i.test(phase)) return 'Verified';
-  if (
-    progress.changedPaths?.length ||
-    /appl(?:y|ied)|patch|source-change|dependency-(?:repair|upgrade)/i.test(phase)
-  ) {
-    return 'Changed';
-  }
-  if (/resolv|complete|done/i.test(phase)) return 'Resolved';
-  return 'Inspected';
+  return studioTimelineOccurrenceLabel(progress) ?? studioHistoricalActivityLabel(progress);
 }
 
 function validationStageLabel(stage: { id: string; kind: string }): string {
@@ -99,14 +88,7 @@ export function StudioActionProgress({
     !progress.requiresApproval
   );
   const copy = historical
-    ? progress.status === 'failed'
-      ? progress.transactionState === 'rolled-back'
-        ? {
-            label: 'Restored',
-            detail: 'The previous edit did not close the finding, so the files were put back.',
-          }
-        : STATUS_COPY.failed
-      : { label: completedActivityLabel(progress), detail: progress.summary }
+    ? { label: completedActivityLabel(progress), detail: progress.summary }
     : automaticContinuation
       ? { label: 'Continuing automatically', detail: 'The next safe repair phase is starting.' }
       : progress.transactionState === 'rolled-back'
@@ -114,7 +96,12 @@ export function StudioActionProgress({
             label: 'Restored',
             detail: 'The previous edit did not close the finding, so the files were put back.',
           }
-        : STATUS_COPY[progress.status];
+        : progress.status === 'running' || progress.terminalReason
+          ? STATUS_COPY[progress.status]
+          : {
+              label: completedActivityLabel(progress),
+              detail: progress.summary || STATUS_COPY[progress.status].detail,
+            };
   const summary = compactStudioPathText(progress.summary || copy.detail);
   const hasNextAction = Boolean(progress.nextAction);
   const showManualNextAction = Boolean(
@@ -124,11 +111,12 @@ export function StudioActionProgress({
     hasNextAction && repairBubble && !progress.requiresApproval && !historical
   );
   const transactionRestored = progress.transactionState === 'rolled-back';
+  const historicalStatus = studioHistoricalOutcomeStatus(progress);
 
   if (historical) {
     return (
-      <div className="ws-sidebar__studio-history-row" data-status={progress.status} role="listitem">
-        <span aria-hidden="true">{statusIcon(progress.status)}</span>
+      <div className="ws-sidebar__studio-history-row" data-status={historicalStatus} role="listitem">
+        <span aria-hidden="true">{statusIcon(historicalStatus)}</span>
         <strong>{progress.title}</strong>
         <small>{copy.label}</small>
       </div>
@@ -154,9 +142,7 @@ export function StudioActionProgress({
         <div className="ws-sidebar__studio-action-progress-head">
           <strong>{progress.title}</strong>
           <small data-status={progress.status}>
-            {progress.occurrences && progress.occurrences > 1
-              ? `${progress.occurrences} attempts combined`
-              : copy.label}
+            {studioTimelineOccurrenceLabel(progress) ?? copy.label}
           </small>
         </div>
         {summary && (historical || progress.status !== 'running') ? (

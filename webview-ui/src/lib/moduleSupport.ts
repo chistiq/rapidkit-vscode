@@ -84,6 +84,10 @@ export function getProjectFrameworkLabel(projectType?: string): string {
       return 'Spring Boot';
     case 'dotnet':
       return '.NET';
+    case 'agent':
+      return 'AI Agent';
+    case 'gateway':
+      return 'AI Gateway';
     case 'nextjs':
       return 'Next.js';
     case 'remix':

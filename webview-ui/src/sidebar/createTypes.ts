@@ -135,7 +135,13 @@ export const PROFILE_OPTIONS: { value: string; label: string }[] = [
   { value: 'enterprise', label: 'Enterprise' },
 ];
 
-export type CreateKitCategory = 'backend' | 'frontend' | 'desktop' | 'agent' | 'extension';
+export type CreateKitCategory =
+  | 'backend'
+  | 'frontend'
+  | 'desktop'
+  | 'agent'
+  | 'gateway'
+  | 'extension';
 
 type ContractCreateEntry = {
   id: string;
@@ -157,6 +163,10 @@ const KIT_LABELS: Record<string, string> = {
   'php.laravel': 'Laravel',
   'agent.microsoft.python': 'Microsoft Agent Framework · Python',
   'agent.microsoft.dotnet': 'Microsoft Agent Framework · .NET',
+  'agent.openai.python': 'OpenAI Agents SDK · Python',
+  'agent.openai.typescript': 'OpenAI Agents SDK · TypeScript',
+  'gateway.openrouter.typescript': 'OpenRouter AI Gateway · TypeScript',
+  'gateway.openrouter.python': 'OpenRouter AI Gateway · Python',
   'frontend.nextjs': 'Next.js',
   'frontend.remix': 'React Router',
   'frontend.vite-react': 'React + Vite',
@@ -181,7 +191,7 @@ const EXECUTABLE_CREATE_ENTRIES = [
 ];
 
 export const CREATE_KIT_OPTIONS = EXECUTABLE_CREATE_ENTRIES.filter((entry) =>
-  ['backend', 'frontend', 'desktop', 'agent', 'extension'].includes(entry.category)
+  ['backend', 'frontend', 'desktop', 'agent', 'gateway', 'extension'].includes(entry.category)
 ).map((entry) => ({
   value: entry.id,
   label: KIT_LABELS[entry.id] ?? entry.id,

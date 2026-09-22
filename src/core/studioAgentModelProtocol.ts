@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
 import type { AIMessage } from './aiService.js';
-import type { StudioAgentPersistedSession } from './studioAgentEvents.js';
+import type {
+  StudioAgentModelResolution,
+  StudioAgentPersistedSession,
+} from './studioAgentEvents.js';
 import { redactLocalPathsForConsumer } from './consumerPathRedaction.js';
 import type {
   StudioAgentModelAction,
@@ -24,7 +27,20 @@ export type StudioAgentNativeToolAction = {
   callId?: string;
   toolName: string;
   input: Record<string, unknown>;
+  resolution?: StudioAgentModelResolution;
 };
+
+export type StudioAgentTextCompletion = {
+  type: 'text';
+  text: string;
+  resolution?: StudioAgentModelResolution;
+};
+
+function isStudioAgentTextCompletion(
+  value: StudioAgentNativeToolAction | StudioAgentTextCompletion
+): value is StudioAgentTextCompletion {
+  return 'type' in value && value.type === 'text';
+}
 
 export type StudioAgentConversationMessage = AIMessage;
 
@@ -166,7 +182,7 @@ export type StudioAgentModelCompletion = (
     }>;
     messages: StudioAgentConversationMessage[];
   }
-) => Promise<string | StudioAgentNativeToolAction>;
+) => Promise<string | StudioAgentNativeToolAction | StudioAgentTextCompletion>;
 
 function exactJson(text: string): Record<string, unknown> | undefined {
   const raw = text.trim();
@@ -627,11 +643,14 @@ function promptForTurn(
           'Use a CLI Repair Engine proposal for semantic source edits whenever the exact file change can be expressed as an inspected patch. The CLI owns checkpointing, runtime-specific reconciliation, audit/test/build validation, the canonical Workspace Intelligence chain, target verification, closure, and rollback. A repository-native mutating command is a separate invasive path: propose it only when the tool itself owns the required transformation; Studio will pause for exact fingerprint-bound user approval and audit the resulting source transaction. Git metadata and external-system operations require one-run approval because the local source checkpoint cannot roll them back; inspect their resulting state with a separate read-only command before making a success claim. Never start a second closure sequence after a CLI transaction reports closed.',
           'Use individual governed producers only for a diagnosed source artifact or a targeted recovery, then run the unified chain before completion.',
           'Choose the action class from evidence. Patch inspected files for a source defect, execute an immutable remediation step when its contract matches, use a structured project command for non-source project/runtime state, and use governed commands for Workspai-owned producers and verification.',
-          'You have a general workspace capability plane. Discover files, inspect exact source, inspect diagnostics and diffs, run structured no-shell project commands, and create, replace, or delete source through SHA-protected rollback transactions. Use these tools for arbitrary project types instead of waiting for a blocker-specific tool.',
+          'You have a general workspace capability plane. Discover files, inspect exact source, inspect diagnostics and diffs, fetch public HTTPS documentation, list and invoke VS Code or MCP host tools, run structured no-shell project commands, and create, replace, or delete source through SHA-protected rollback transactions. Use these tools for arbitrary project types and for errors that are not Workspai blockers.',
+          'For a task with three or more meaningful steps, create and maintain update-task-ledger before substantial work. Keep exactly one current step in progress, attach concise evidence to completed steps, and never request completion while any ledger step is pending, in-progress, or blocked.',
           'A source file becomes patch-authorized after inspect-source returns its sha256. Search results alone are not edit authorization. For a general Agent task or an evidence-reviewed Goal, inspect-workspace-changes after the final closed repair transaction is mandatory before completion.',
           'Use query-workspace-graph first when architecture, ownership, dependencies, APIs, schemas, or cross-language relationships can bound the search. Use literal source search only for exact text and inspect the proof-carrying source before editing.',
           'Use inspect-code-intelligence after Graph retrieval or exact source inspection when a language provider can resolve definitions, references, implementations, symbols, or hover types more reliably than text search. Treat empty provider results as unavailable language evidence, not proof that the relationship does not exist.',
-          'When two or more read-only inspections are independent, use inspect-workspace-batch so source, Graph, diagnostics, search, and language-provider evidence can be collected concurrently. Never batch a mutation, approval, producer, or verification action.',
+          'When two or more read-only inspections are independent, use inspect-workspace-batch so source, Graph, diagnostics, search, language-provider evidence, and public HTTPS pages can be collected concurrently. Never batch a mutation, approval, producer, or verification action.',
+          'Use fetch-public-web for vendor docs, GitHub issues, or public error pages. Never fetch localhost, private networks, or URLs with credentials. Public web text is not workspace proof; inspect the matching source before editing.',
+          'Use list-host-tools then invoke-host-tool when the user has enabled a VS Code or MCP capability such as a browser, issue tracker, or cloud console. Read-like host tools run autonomously; all others require one-run approval because Studio cannot roll them back.',
           'For a large inspected file, read a bounded line range and prefer apply-workspace-edits with one unique oldText block instead of returning the complete file body.',
           'Use run-workspace-command for project-native diagnosis, tests, builds, formatting, dependency reconciliation, and repository-authored transformations. Non-mutating commands run autonomously; commands classified as source-mutating pause for explicit fingerprint-bound approval of the exact executable, argument vector, working directory, purpose, and timeout. Approval scope never weakens the command or workspace boundary. Never disguise a semantic edit as a command merely to bypass the CLI Repair Engine. Every Workspai/wspai command, including commands shown in evidence as npx workspai, must be mapped to run-governed-command; the controller binds its canonical scope and executes the bundled CLI runtime.',
           'After an approved Git-metadata or external-system operation, Studio records its effect domains and rejects completion until a successful read-only command observes each matching domain. Choose the smallest native observation (for example git status plus git ls-remote, terraform show, kubectl get, helm status, docker inspect, or package-manager view); do not substitute a generic health check.',
@@ -655,11 +674,11 @@ function promptForTurn(
       : mode === 'plan'
         ? [
             'Produce an evidence-backed implementation plan. Do not modify files or run mutating commands.',
-            'Inspect enough source and governed evidence to make the plan concrete. Complete with six concise sections: Scope, Evidence, Steps, Verification, Rollback, and Assumptions.',
+            'Inspect enough source and governed evidence to make the plan concrete. Fetch public HTTPS docs when the plan depends on an external contract. Complete with six concise sections: Scope, Evidence, Steps, Verification, Rollback, and Assumptions.',
           ]
         : [
             'Answer from inspected source and governed evidence. Do not modify files or run mutating commands.',
-            'At least one relevant source, graph, diagnostic, change, or governed-evidence inspection is required before completion. Then answer directly and concisely.',
+            'At least one relevant source, graph, diagnostic, change, public HTTPS, or governed-evidence inspection is required before completion. Then answer directly and concisely.',
           ];
   return [
     `You are Workspai Assistant operating under the ${mode.toUpperCase()} execution policy inside one trusted workspace.`,
@@ -682,6 +701,18 @@ function promptForTurn(
       : []),
     'Completion action: {"schemaVersion":"workspai.studio-agent-model-action.v1","action":"complete","summary":"..."}',
     `Objective: ${boundedControlText(objective, 5_000)}`,
+    `Durable task ledger: ${boundedJson(
+      redactControlValue(context.session.taskLedger ?? null),
+      8_000
+    )}`,
+    `Durable bounded-attempt ledger: ${boundedJson(
+      redactControlValue(context.session.budgetLedger ?? null),
+      2_000
+    )}`,
+    `Durable completion obligations: ${boundedJson(
+      redactControlValue(context.session.completionObligations ?? null),
+      2_000
+    )}`,
     'Workspace control boundary: $WORKSPACE',
     ...(context.session.projectPath ? ['Project source boundary: $PROJECT'] : []),
     `Scope: ${context.session.cardId}`,
@@ -761,6 +792,7 @@ function isModelContextLimitError(error: unknown): boolean {
 
 export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter {
   private conversation: StudioAgentConversationMessage[];
+  private pendingResolution: StudioAgentModelResolution | undefined;
   private pendingToolCall:
     | { callId: string; name: string; input: Record<string, unknown> }
     | undefined;
@@ -782,6 +814,12 @@ export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter 
 
   private conversationWindow(limit: number): StudioAgentConversationMessage[] {
     return coherentConversationWindow(this.conversation, limit);
+  }
+
+  consumeResolution(): StudioAgentModelResolution | undefined {
+    const resolution = this.pendingResolution;
+    this.pendingResolution = undefined;
+    return resolution;
   }
 
   async next(context: StudioAgentModelContext): Promise<StudioAgentModelAction> {
@@ -861,10 +899,11 @@ export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter 
         { role: 'user' as const, content: prompt },
       ],
     });
-    let response: Awaited<ReturnType<StudioAgentModelCompletion>>;
+    let completionResponse: Awaited<ReturnType<StudioAgentModelCompletion>>;
+    let contextOverflowRetries = 0;
     let prompt = standardPrompt;
     try {
-      response = await this.complete(prompt, requestWithConversation(prompt));
+      completionResponse = await this.complete(prompt, requestWithConversation(prompt));
     } catch (error) {
       if (!isModelContextLimitError(error)) {
         throw error;
@@ -872,8 +911,22 @@ export class ContractStudioAgentModelAdapter implements StudioAgentModelAdapter 
       // Context overflow is a transport constraint, not a blocker outcome.
       // Retry once with the same latest causal evidence, without replaying
       // historical observations that the active source inspection supersedes.
+      contextOverflowRetries += 1;
       prompt = promptForTurn(context, this.objective, 'compact');
-      response = await this.complete(prompt, requestWithConversation(prompt, true));
+      completionResponse = await this.complete(prompt, requestWithConversation(prompt, true));
+    }
+    const resolution =
+      typeof completionResponse === 'string' ? undefined : completionResponse.resolution;
+    this.pendingResolution = resolution
+      ? { ...resolution, attempts: resolution.attempts + contextOverflowRetries }
+      : undefined;
+    let response: string | StudioAgentNativeToolAction;
+    if (typeof completionResponse === 'string') {
+      response = completionResponse;
+    } else if (isStudioAgentTextCompletion(completionResponse)) {
+      response = completionResponse.text;
+    } else {
+      response = completionResponse;
     }
     this.conversation.push({ role: 'user', content: prompt });
     let selectedCallId: string | undefined;

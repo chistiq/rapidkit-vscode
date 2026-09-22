@@ -163,6 +163,35 @@ export function validateCliReleasePolicy(repoRoot = process.cwd()) {
 
   const gettingStarted = fs.readFileSync(path.join(repoRoot, GETTING_STARTED_PATH), 'utf8');
   requireIncludes(gettingStarted, managedGettingStartedBlock(policy), GETTING_STARTED_PATH, errors);
+  requireIncludes(
+    gettingStarted,
+    `npm install -g workspai@${policy.verifiedCliVersion}`,
+    GETTING_STARTED_PATH,
+    errors
+  );
+
+  const closurePath = 'contracts/official-cli-closure.v1.json';
+  const closure = readJson(repoRoot, closurePath);
+  const lockedWorkspai = lock.packages?.['node_modules/workspai'];
+  const closureWorkspai = Array.isArray(closure.packages)
+    ? closure.packages.find((entry) => entry.path === 'node_modules/workspai')
+    : undefined;
+  if (closure.schemaVersion !== 'workspai-vscode-official-cli-closure.v1') {
+    errors.push(`${closurePath} has an unexpected schema.`);
+  }
+  if (closure.cli?.name !== 'workspai' || closure.cli?.version !== policy.verifiedCliVersion) {
+    errors.push(`${closurePath} must pin workspai@${policy.verifiedCliVersion}.`);
+  }
+  if (
+    !closureWorkspai ||
+    closureWorkspai.version !== policy.verifiedCliVersion ||
+    closureWorkspai.integrity !== lockedWorkspai?.integrity ||
+    closureWorkspai.resolved !== lockedWorkspai?.resolved
+  ) {
+    errors.push(
+      `${closurePath} workspai tarball must match the package-lock integrity for ${policy.verifiedCliVersion}.`
+    );
+  }
 
   const aggregateNotes = fs.readFileSync(path.join(repoRoot, 'RELEASE_NOTES.md'), 'utf8');
   const currentNotes = currentReleaseSection(aggregateNotes);

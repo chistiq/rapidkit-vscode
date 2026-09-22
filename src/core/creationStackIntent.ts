@@ -32,6 +32,8 @@ export type CreationStackIntent =
   | 'enterprise';
 
 const FRAMEWORK_KEYWORDS: Record<ScaffoldFramework, string[]> = {
+  openrouter: ['openrouter', 'ai gateway', 'model gateway', 'llm gateway'],
+  'openai-agents': ['openai agents', 'openai agent', 'agents sdk'],
   'microsoft-agent-framework': [
     'microsoft agent framework',
     'ai agent',
@@ -158,6 +160,16 @@ export function defaultKitForFramework(framework: ScaffoldFramework, promptLower
       ? 'agent.microsoft.dotnet'
       : 'agent.microsoft.python';
   }
+  if (framework === 'openai-agents') {
+    return ['typescript', ' node', 'nodejs'].some((signal) => promptLower.includes(signal))
+      ? 'agent.openai.typescript'
+      : 'agent.openai.python';
+  }
+  if (framework === 'openrouter') {
+    return promptLower.includes('python')
+      ? 'gateway.openrouter.python'
+      : 'gateway.openrouter.typescript';
+  }
   if (framework === 'go') {
     return promptLower.includes('gin') ? 'gogin.standard' : 'gofiber.standard';
   }
@@ -239,6 +251,16 @@ export function inferFrameworkFromCreationPrompt(
 ): ScaffoldFramework {
   if (isScaffoldFrameworkHint(frameworkHint)) {
     return frameworkHint;
+  }
+  if (
+    promptLower.includes('openrouter') ||
+    promptLower.includes('ai gateway') ||
+    promptLower.includes('model gateway')
+  ) {
+    return 'openrouter';
+  }
+  if (promptLower.includes('openai agent') || promptLower.includes('openai agents')) {
+    return 'openai-agents';
   }
 
   let bestFramework: ScaffoldFramework = 'nestjs';

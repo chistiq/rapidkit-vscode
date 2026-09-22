@@ -1,5 +1,48 @@
 # Release Notes
 
+## v0.48.0 (September 22, 2026)
+
+### Workspai CLI 0.77.0 alignment
+
+Workspai for VS Code 0.48.0 is validated against Workspai CLI 0.77.0. Create
+can scaffold the admitted OpenAI Agents SDK kits and the source-ready
+OpenRouter AI Gateway kits. Gateway kits are not qualified or stable. Attach
+is unsupported, and Go is not a gateway runtime.
+
+The published extension no longer carries a second copy of the CLI. The first
+run downloads `workspai@0.77.0` and its pinned production dependencies into
+extension storage, checks every tarball integrity, and executes that copy.
+Later runs reuse the cache offline. A global install remains an explicit setup
+action and is not used as hidden execution authority.
+
+Highlights:
+
+- OpenAI Agents SDK kits for Python and TypeScript.
+- Source-ready OpenRouter AI Gateway kits for TypeScript and Python.
+- Doctor labels gateway and agent projects without calling them Ruff or RapidKit modules.
+- Agent and gateway dev commands do not reserve a synthetic HTTP port.
+- Studio uses one durable completion gate across model, verifier, recovery, and
+  Resume paths. Final change review, canonical closure, pending effects, and
+  fresh verification cannot be bypassed by a deterministic shortcut.
+- Exact CLI remediation actions execute under controller-owned policy; the
+  remaining governed tool plane stays visible with causal-state annotations.
+- Studio records the resolved provider/model, retries only transient external
+  provider failures with bounded backoff, records reported or estimated token
+  usage, and persists a multi-step task ledger.
+- Studio can fetch public HTTPS pages for errors outside Workspai evidence, and
+  can use VS Code or MCP host tools the user already enabled. Local, private,
+  and credentialed URLs stay blocked; non-read host tools require one-run
+  approval.
+
+Compatibility:
+
+- VS Code 1.106.0+
+- Workspai CLI 0.77.0+
+- Git for remote repository analysis
+- RapidKit Core 0.6.0 only for Python-backed kits/modules
+
+[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.48.0/releases/RELEASE_NOTES_v0.48.0.md)
+
 ## v0.47.1 (September 7, 2026)
 
 ### Deterministic startup and workspace synchronization
@@ -41,7 +84,7 @@ Compatibility:
 
 Release posture: `stability-patch`.
 
-Publication status: Prepared for release September 7, 2026.
+Publication status: Released September 7, 2026.
 
 ## v0.47.0 (September 6, 2026)
 

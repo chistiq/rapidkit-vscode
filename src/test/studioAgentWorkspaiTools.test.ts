@@ -96,12 +96,14 @@ describe('Studio Agent Workspai tool registry', () => {
       assistantMode: 'agent',
     });
     expect(registry.list().map((tool) => tool.name)).toEqual([
+      'update-task-ledger',
       'discover-workspace-files',
       'inspect-source',
       'inspect-evidence',
       'search-workspace',
       'inspect-workspace-diagnostics',
       'inspect-workspace-batch',
+      'fetch-public-web',
       'inspect-workspace-changes',
       'apply-workspace-patch',
       'run-governed-command',
@@ -136,6 +138,54 @@ describe('Studio Agent Workspai tool registry', () => {
         },
       },
     });
+  });
+
+  it('validates a bounded durable task ledger', async () => {
+    const registry = createStudioAgentWorkspaiToolRegistry({
+      host: {} as StudioAgentWorkspaiToolHost,
+      cardId: 'assistant:agent',
+      assistantMode: 'agent',
+    });
+    const tool = registry.get('update-task-ledger');
+    const context = {
+      sessionId: 'ledger-session',
+      requestId: 'ledger-request',
+      toolCallId: 'ledger-call',
+      workspacePath: '/workspace',
+      signal: new AbortController().signal,
+    };
+
+    await expect(
+      tool?.execute(
+        {
+          objective: 'Implement and verify the endpoint.',
+          currentStepId: 'verify',
+          steps: [
+            { id: 'implement', description: 'Implement endpoint', status: 'completed' },
+            { id: 'verify', description: 'Verify behavior', status: 'in-progress' },
+          ],
+        },
+        context
+      )
+    ).resolves.toMatchObject({
+      ok: true,
+      output: {
+        schemaVersion: 'workspai.studio-task-ledger.v1',
+        currentStepId: 'verify',
+      },
+    });
+    await expect(
+      tool?.execute(
+        {
+          objective: 'Invalid duplicate ledger.',
+          steps: [
+            { id: 'same', description: 'First', status: 'pending' },
+            { id: 'same', description: 'Second', status: 'pending' },
+          ],
+        },
+        context
+      )
+    ).rejects.toThrow('invalid or duplicate step');
   });
 
   it('runs independent read-only batch operations concurrently while preserving result order', async () => {
@@ -458,5 +508,46 @@ describe('Studio Agent Workspai tool registry', () => {
         }
       )
     ).rejects.toThrow('stepId is required');
+  });
+
+  it('exposes public web fetch and routes host/MCP tools through the host', async () => {
+    const listHostTools = vi.fn(async () => ({
+      ok: true,
+      output: {
+        schemaVersion: 'workspai.studio-host-tool-catalog.v1',
+        tools: [{ name: 'mcp_browser_snapshot', readLike: true }],
+      },
+    }));
+    const invokeHostTool = vi.fn(async () => ({
+      ok: true,
+      output: { text: 'Dashboard loaded' },
+    }));
+    const registry = createStudioAgentWorkspaiToolRegistry({
+      host: { listHostTools, invokeHostTool } as unknown as StudioAgentWorkspaiToolHost,
+      cardId: 'assistant:agent',
+      assistantMode: 'agent',
+    });
+    const context = {
+      sessionId: 'host-session',
+      requestId: 'host-request',
+      toolCallId: 'host-call',
+      workspacePath: '/workspace',
+      signal: new AbortController().signal,
+    };
+
+    expect(registry.get('fetch-public-web')).toBeDefined();
+    await expect(
+      registry.get('invoke-host-tool')?.authorize?.({ name: 'mcp_browser_snapshot' }, context)
+    ).resolves.toMatchObject({ risk: 'read' });
+    await expect(
+      registry
+        .get('invoke-host-tool')
+        ?.execute({ name: 'mcp_browser_snapshot', arguments: { fullPage: true } }, context)
+    ).resolves.toMatchObject({ ok: true, output: { text: 'Dashboard loaded' } });
+    expect(invokeHostTool).toHaveBeenCalledWith({
+      name: 'mcp_browser_snapshot',
+      arguments: { fullPage: true },
+      signal: context.signal,
+    });
   });
 });

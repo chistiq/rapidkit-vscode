@@ -263,6 +263,87 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
   • Verify offline before any provider call; never store credentials in generated files`,
     injectionPoints: [],
   },
+  'agent.openai.python': {
+    id: 'agent.openai.python',
+    owner: 'npm',
+    runtime: 'python',
+    framework: 'openai-agents',
+    moduleSupport: false,
+    stability: 'stable',
+    createCommand:
+      'npx workspai create project agent.openai.python <name> [--output <dir>] [--yes]',
+    layout: `  agents/primary/
+    main.py                 ← OpenAI Agents SDK entrypoint
+    pyproject.toml          ← isolated, admitted dependency baseline
+    tests/                  ← offline bounded-context verification
+    .env.example            ← variable names only; no credentials
+  .workspai/project.json    ← canonical agent kit identity`,
+    patterns: `  • Workspai owns repository context, authorization, impact, and verification
+  • The OpenAI Agents SDK owns model conversation and runtime state
+  • Dependencies stay isolated under agents/primary and use an admitted pinned baseline
+  • Verify offline before any provider call; never store credentials in generated files`,
+    injectionPoints: [],
+  },
+  'agent.openai.typescript': {
+    id: 'agent.openai.typescript',
+    owner: 'npm',
+    runtime: 'node',
+    framework: 'openai-agents',
+    moduleSupport: false,
+    stability: 'stable',
+    createCommand:
+      'npx workspai create project agent.openai.typescript <name> [--output <dir>] [--yes]',
+    layout: `  agents/primary/
+    src/index.ts            ← OpenAI Agents SDK entrypoint
+    package.json            ← isolated, admitted dependency baseline
+    tests/                  ← offline bounded-context verification
+    .env.example            ← variable names only; no credentials
+  .workspai/project.json    ← canonical agent kit identity`,
+    patterns: `  • Workspai owns repository context, authorization, impact, and verification
+  • The OpenAI Agents SDK owns model conversation and runtime state
+  • Dependencies stay isolated under agents/primary and use an admitted pinned baseline
+  • Verify offline before any provider call; never store credentials in generated files`,
+    injectionPoints: [],
+  },
+  'gateway.openrouter.typescript': {
+    id: 'gateway.openrouter.typescript',
+    owner: 'npm',
+    runtime: 'node',
+    framework: 'openrouter',
+    moduleSupport: false,
+    stability: 'preview',
+    createCommand:
+      'npx workspai create project gateway.openrouter.typescript <name> [--output <dir>] [--yes]',
+    layout: `  src/                        ← TypeScript OpenRouter gateway service
+  .env.example                ← variable names only; no credentials
+  .workspai/project.json      ← framework openrouter, kind gateway, archetype service`,
+    patterns: `  • Source-ready only. Do not describe this kit as qualified or stable
+  • Attach is unsupported
+  • Go is not a gateway runtime
+  • Do not assign a synthetic HTTP port
+  • No RapidKit module marketplace (module_support=false)`,
+    injectionPoints: [],
+  },
+  'gateway.openrouter.python': {
+    id: 'gateway.openrouter.python',
+    owner: 'npm',
+    runtime: 'python',
+    framework: 'openrouter',
+    moduleSupport: false,
+    stability: 'preview',
+    createCommand:
+      'npx workspai create project gateway.openrouter.python <name> [--output <dir>] [--yes]',
+    layout: `  src/                        ← Python OpenRouter gateway package
+  .env.example                ← variable names only; no credentials
+  .workspai/project.json      ← framework openrouter, kind gateway, archetype service`,
+    patterns: `  • Source-ready only. Do not describe this kit as qualified or stable
+  • Attach is unsupported
+  • Go is not a gateway runtime
+  • Nested src/<package>/__init__.py is valid; do not require a top-level src/__init__.py
+  • Do not assign a synthetic HTTP port
+  • No RapidKit module marketplace (module_support=false)`,
+    injectionPoints: [],
+  },
   'agent.microsoft.dotnet': {
     id: 'agent.microsoft.dotnet',
     owner: 'npm',
@@ -316,6 +397,12 @@ const KIT_ALIASES: Record<string, string> = {
   'agent-framework-python': 'agent.microsoft.python',
   'microsoft-agent-dotnet': 'agent.microsoft.dotnet',
   'agent-framework-dotnet': 'agent.microsoft.dotnet',
+  'openai-agents': 'agent.openai.python',
+  'agent.openai.python': 'agent.openai.python',
+  'agent.openai.typescript': 'agent.openai.typescript',
+  openrouter: 'gateway.openrouter.typescript',
+  'gateway.openrouter.typescript': 'gateway.openrouter.typescript',
+  'gateway.openrouter.python': 'gateway.openrouter.python',
   'go.fiber': 'gofiber.standard',
   'go.gin': 'gogin.standard',
   nextjs: 'frontend.nextjs',
@@ -385,6 +472,21 @@ export function resolveKitId(value?: string | null): string | null {
   }
   if (normalized.startsWith('agent.microsoft.dotnet')) {
     return 'agent.microsoft.dotnet';
+  }
+  if (
+    normalized.startsWith('agent.openai.typescript') ||
+    normalized.includes('openai-agents-typescript')
+  ) {
+    return 'agent.openai.typescript';
+  }
+  if (normalized.startsWith('agent.openai') || normalized.includes('openai-agents')) {
+    return 'agent.openai.python';
+  }
+  if (normalized.startsWith('gateway.openrouter.python')) {
+    return 'gateway.openrouter.python';
+  }
+  if (normalized.startsWith('gateway.openrouter') || normalized === 'openrouter') {
+    return 'gateway.openrouter.typescript';
   }
   return null;
 }
