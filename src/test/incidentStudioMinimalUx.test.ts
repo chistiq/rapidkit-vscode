@@ -45,7 +45,9 @@ describe('incident studio minimal UX guard', () => {
     expect(sidebar).not.toContain('Ask clarifying questions about the fix');
     expect(chatTab).toContain('composerScopeLabel');
     expect(chatTab).toContain('activeSession?.incident || activeSession?.editorIssue');
-    expect(chatTab).toContain('onOpenAdd={repairMode ? undefined');
+    expect(chatTab).toMatch(
+      /onOpenAdd=\{\s*repairMode\s*\|\|\s*\(!props\.toolbar\s*&&\s*!props\.footerActions\)\s*\?\s*undefined/
+    );
     expect(chatTab).toContain('addLabel={repairMode ? undefined');
     expect(composer).toContain('onOpenAdd?: () => void');
     expect(composer).toContain('{props.onOpenAdd ? (');

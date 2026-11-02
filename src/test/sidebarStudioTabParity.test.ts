@@ -321,7 +321,9 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(provider).toContain('_runAutonomousStudioAgent');
     expect(provider).toContain('new StudioAgentSession');
     expect(provider).toContain('createStudioAgentWorkspaiToolRegistry');
-    expect(provider).toContain('studioHostLanguageModelToolAdapters(undefined, undefined, { root:');
+    expect(provider).toMatch(
+      /studioHostLanguageModelToolAdapters\(\s*undefined,\s*undefined,\s*\{\s*root:/
+    );
     expect(provider).toContain(
       'this._context.storageUri?.fsPath ?? this._context.globalStorageUri.fsPath'
     );

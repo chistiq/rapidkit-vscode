@@ -9,6 +9,70 @@ import { ComposerShell } from '../../webview-ui/src/sidebar/composer/ComposerShe
 import { ChatTab } from '../../webview-ui/src/sidebar/ChatTab';
 
 describe('Composer cancellation', () => {
+  it.each([
+    { repair: false, tools: 'none', visible: false },
+    { repair: false, tools: 'toolbar', visible: true },
+    { repair: false, tools: 'footer', visible: true },
+    { repair: true, tools: 'toolbar', visible: false },
+  ])('shows chat tools only when useful: %j', async ({ repair, tools, visible }) => {
+    const dom = new JSDOM('<div id="root"></div>');
+    dom.window.HTMLElement.prototype.scrollIntoView = vi.fn();
+    vi.stubGlobal('window', dom.window);
+    vi.stubGlobal('document', dom.window.document);
+    vi.stubGlobal('requestAnimationFrame', (callback: () => void) => {
+      callback();
+      return 0;
+    });
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const container = dom.window.document.getElementById('root')!;
+    const root = createRoot(container);
+    const toolContent = createElement('button', null, 'Inspect workspace');
+    try {
+      await act(async () =>
+        root.render(
+          createElement(ChatTab, {
+            panelId: 'chat',
+            active: true,
+            contextLabel: 'Assistant',
+            placeholder: 'Task',
+            scope: {},
+            sessions: [],
+            activeSessionId: null,
+            onNewSession: vi.fn(),
+            onSelectSession: vi.fn(),
+            onDeleteSession: vi.fn(),
+            suggestions: [],
+            onSubmit: vi.fn(),
+            models: [],
+            selectedModelId: null,
+            onSelectModel: vi.fn(),
+            chromeMode: repair ? 'repair' : 'default',
+            toolbar: tools === 'toolbar' ? toolContent : undefined,
+            footerActions: tools === 'footer' ? toolContent : undefined,
+          })
+        )
+      );
+      const add = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Assistant tools"], .ws-composer-dock button[aria-label="Add"]'
+      );
+      expect(Boolean(add)).toBe(visible);
+      if (visible) {
+        await act(async () => add!.click());
+        const drawer = container.querySelector('[role="dialog"][aria-label="Chat actions"]');
+        expect(drawer).not.toBeNull();
+        expect(drawer?.textContent).toContain('Inspect workspace');
+        await act(async () =>
+          dom.window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape' }))
+        );
+        expect(container.querySelector('[role="dialog"][aria-label="Chat actions"]')).toBeNull();
+      }
+    } finally {
+      await act(async () => root.unmount());
+      dom.window.close();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each(['', 'npx workspai create'])(
     'keeps Stop accessible with draft %j and preserves sending steering text',
     async (value) => {

@@ -12,8 +12,8 @@ describe('native Chat and Incident Studio orchestration parity', () => {
     expect(nativeAgent).toContain('new StudioAgentSession(');
     expect(nativeAgent).toContain('createConfiguredStudioAgentModel({');
     expect(nativeAgent).toContain('createStudioAgentWorkspaiToolRegistry({');
-    expect(nativeAgent).toContain(
-      'studioHostLanguageModelToolAdapters(input.token, input.toolInvocationToken, { root:'
+    expect(nativeAgent).toMatch(
+      /studioHostLanguageModelToolAdapters\(\s*input\.token,\s*input\.toolInvocationToken,\s*\{\s*root:/
     );
     expect(nativeAgent).toContain(
       'input.extensionContext.storageUri?.fsPath ?? input.extensionContext.globalStorageUri.fsPath'

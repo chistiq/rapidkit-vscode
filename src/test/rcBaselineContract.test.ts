@@ -9,7 +9,6 @@ import {
 import releasePolicy from '../../contracts/extension-cli-release-policy.v1.json';
 
 const repoRoot = path.resolve(__dirname, '..', '..');
-const roadmapRoot = path.resolve(repoRoot, '..', 'Docs', 'workspai', 'new plan');
 
 function read(relPath: string): string {
   return fs.readFileSync(path.join(repoRoot, relPath), 'utf8');
@@ -19,31 +18,31 @@ function readJson<T>(relPath: string): T {
   return JSON.parse(read(relPath)) as T;
 }
 
-function readRoadmapFile(fileName: string): string {
-  return fs.readFileSync(path.join(roadmapRoot, fileName), 'utf8');
-}
-
-describe('RC baseline contract', () => {
-  it('pins the current release line while preserving the historical RC record', () => {
+describe('Release baseline contract', () => {
+  it('pins the current release line to the repository-owned CLI policy', () => {
     const packageJson = readJson<{ version: string }>('package.json');
     const matrix = readJson<Record<string, unknown>>('releases/enterprise-validation-matrix.json');
-    const baseline = readRoadmapFile('WORKSPAI_EXTENSION_RC_BASELINE_2026-06-28.md');
 
     expect(packageJson.version).toBe(releasePolicy.extensionVersion);
     expect(MIN_RAPIDKIT_CLI_VERSION).toBe(releasePolicy.minimumCliVersion);
     expect(VERIFIED_RAPIDKIT_CLI_VERSION).toBe(releasePolicy.verifiedCliVersion);
     expect(matrix).not.toHaveProperty('npmTruthBaseline');
-    expect(baseline).toContain('rapidkit@0.42.0');
-    expect(baseline).toContain('rapidkit-vscode@0.35.0');
+    expect(matrix.schemaVersion).toBe('workspai-enterprise-validation-matrix.v1');
+    expect(matrix.generatedFor).toBe('rapidkit-vscode');
   });
 
-  it('keeps the RC baseline note aligned with closed freeze and telemetry decisions', () => {
-    const baseline = readRoadmapFile('WORKSPAI_EXTENSION_RC_BASELINE_2026-06-28.md');
+  it('keeps shipped release documentation aligned with the current extension and CLI baseline', () => {
+    const { version } = readJson<{ version: string }>('package.json');
+    const notes = read('RELEASE_NOTES.md');
+    const detailedNotes = read(`releases/RELEASE_NOTES_v${version}.md`);
 
-    expect(baseline).toContain('Feature freeze decision: **accepted for RC**');
-    expect(baseline).toContain('CLI analytics decision: **local-only for RC**');
-    expect(baseline).toContain(
-      'UX copy decision: **lock `Run`, `Repair`, and `Artifacts` through RC**'
+    expect(read('CHANGELOG.md')).toContain(`## [${version}]`);
+    expect(notes).toContain(`## v${version}`);
+    expect(notes).toContain(`Workspai CLI ${VERIFIED_RAPIDKIT_CLI_VERSION}`);
+    expect(detailedNotes).toContain(`# Workspai VS Code v${version}`);
+    expect(detailedNotes).toContain(`workspai@${VERIFIED_RAPIDKIT_CLI_VERSION}`);
+    expect(detailedNotes).toContain(
+      `Workspai CLI ${MIN_RAPIDKIT_CLI_VERSION} or newer; verified runtime: ${VERIFIED_RAPIDKIT_CLI_VERSION}`
     );
   });
 });

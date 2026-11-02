@@ -240,9 +240,10 @@ describe('extension marketplace metadata contract', () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 
     expect(packageJson.displayName).toBe('Workspai – Workspace Intelligence');
-    expect(packageJson.description).toContain('Workspace Intelligence for VS Code.');
-    expect(packageJson.description).toContain('developers, CI, and AI agents');
-    expect(packageJson.description).not.toContain('Workspace intelligence for VS Code.');
+    expect(packageJson.description).toMatch(/AI coding assistant for VS Code/i);
+    expect(packageJson.description).toMatch(/workspace intelligence/i);
+    expect(packageJson.description).toMatch(/verified CLI tools/i);
+    expect(packageJson.description.length).toBeLessThanOrEqual(200);
   });
 });
 
