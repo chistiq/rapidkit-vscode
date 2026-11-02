@@ -14,6 +14,7 @@ export type KitBlueprint = {
   runtime: string;
   framework: string;
   moduleSupport: boolean;
+  /** Workspai kit/integration maturity, not the upstream framework's status. */
   stability: 'stable' | 'preview';
   createCommand: string;
   layout: string;
@@ -242,7 +243,7 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
     runtime: 'python',
     framework: 'microsoft-agent-framework',
     moduleSupport: false,
-    stability: 'stable',
+    stability: 'preview',
     createCommand:
       'npx workspai create project agent.microsoft.python <name> [--output <dir>] [--yes]',
     layout: `  agents/primary/
@@ -305,6 +306,48 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
   • Verify offline before any provider call; never store credentials in generated files`,
     injectionPoints: [],
   },
+  'agent.google-adk.python': {
+    id: 'agent.google-adk.python',
+    owner: 'npm',
+    runtime: 'python',
+    framework: 'google-adk',
+    moduleSupport: false,
+    stability: 'preview',
+    createCommand:
+      'npx workspai create project agent.google-adk.python <name> [--output <dir>] [--yes]',
+    layout: `  agents/primary/
+    main.py                 ← Google ADK entrypoint
+    pyproject.toml          ← isolated, admitted dependency baseline; Python 3.11+
+    tests/                  ← offline bounded-context verification
+    .env.example            ← variable names only; no credentials
+  .workspai/project.json    ← canonical agent kit identity`,
+    patterns: `  • Workspai owns repository context, authorization, impact, and verification
+  • Google ADK owns model conversation and runtime state
+  • Dependencies stay isolated under agents/primary and use an admitted pinned baseline
+  • Verify offline before any provider call; never store credentials in generated files`,
+    injectionPoints: [],
+  },
+  'agent.google-adk.typescript': {
+    id: 'agent.google-adk.typescript',
+    owner: 'npm',
+    runtime: 'node',
+    framework: 'google-adk',
+    moduleSupport: false,
+    stability: 'preview',
+    createCommand:
+      'npx workspai create project agent.google-adk.typescript <name> [--output <dir>] [--yes]',
+    layout: `  agents/primary/
+    src/index.ts            ← Google ADK entrypoint
+    package.json            ← isolated, admitted dependency baseline
+    tests/                  ← offline bounded-context verification
+    .env.example            ← variable names only; no credentials
+  .workspai/project.json    ← canonical agent kit identity`,
+    patterns: `  • Workspai owns repository context, authorization, impact, and verification
+  • Google ADK owns model conversation and runtime state
+  • Dependencies stay isolated under agents/primary and use an admitted pinned baseline
+  • Verify offline before any provider call; never store credentials in generated files`,
+    injectionPoints: [],
+  },
   'gateway.openrouter.typescript': {
     id: 'gateway.openrouter.typescript',
     owner: 'npm',
@@ -350,7 +393,7 @@ const KIT_BLUEPRINTS: Record<string, KitBlueprint> = {
     runtime: 'dotnet',
     framework: 'microsoft-agent-framework',
     moduleSupport: false,
-    stability: 'stable',
+    stability: 'preview',
     createCommand:
       'npx workspai create project agent.microsoft.dotnet <name> [--output <dir>] [--yes]',
     layout: `  agents/primary/
@@ -400,6 +443,9 @@ const KIT_ALIASES: Record<string, string> = {
   'openai-agents': 'agent.openai.python',
   'agent.openai.python': 'agent.openai.python',
   'agent.openai.typescript': 'agent.openai.typescript',
+  'google-adk': 'agent.google-adk.python',
+  'agent.google-adk.python': 'agent.google-adk.python',
+  'agent.google-adk.typescript': 'agent.google-adk.typescript',
   openrouter: 'gateway.openrouter.typescript',
   'gateway.openrouter.typescript': 'gateway.openrouter.typescript',
   'gateway.openrouter.python': 'gateway.openrouter.python',
@@ -481,6 +527,9 @@ export function resolveKitId(value?: string | null): string | null {
   }
   if (normalized.startsWith('agent.openai') || normalized.includes('openai-agents')) {
     return 'agent.openai.python';
+  }
+  if (normalized.startsWith('agent.google-adk')) {
+    return 'agent.google-adk.python';
   }
   if (normalized.startsWith('gateway.openrouter.python')) {
     return 'gateway.openrouter.python';

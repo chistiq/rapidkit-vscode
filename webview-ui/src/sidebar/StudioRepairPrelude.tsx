@@ -37,7 +37,8 @@ export function StudioRepairPrelude({
 }: StudioRepairPreludeProps) {
   const scopeLabel = handoff.scope === 'project' ? 'project evidence' : 'workspace evidence';
   const connectionFailure = terminalReason === 'cli-repair-contract-mismatch';
-  const providerFailure = terminalReason === 'ai-provider-unavailable';
+  const providerTimeout = terminalReason === 'ai-provider-timeout';
+  const providerFailure = terminalReason === 'ai-provider-unavailable' || providerTimeout;
   const toolchainFailure = terminalReason === 'repair-toolchain-unavailable';
   const status = completed
     ? 'Verified'
@@ -50,7 +51,9 @@ export function StudioRepairPrelude({
         : connectionFailure
           ? 'CLI connection needed'
           : providerFailure
-            ? 'AI connection needed'
+            ? providerTimeout
+              ? 'Model request timed out'
+              : 'AI connection needed'
             : resumable
               ? 'Repair paused'
               : 'Repair ready';

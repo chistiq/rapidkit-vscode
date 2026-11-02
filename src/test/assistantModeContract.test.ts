@@ -69,8 +69,8 @@ describe('Workspai assistant mode contract', () => {
 
     expect(toolsFor('agent')).toContain('fetch-public-web');
     expect(toolsFor('agent')).toContain('invoke-host-tool');
-    expect(toolsFor('ask')).not.toContain('invoke-host-tool');
-    expect(toolsFor('plan')).not.toContain('invoke-host-tool');
+    expect(toolsFor('ask')).toContain('invoke-host-tool');
+    expect(toolsFor('plan')).toContain('invoke-host-tool');
     expect(toolsFor('goal')).toContain('fetch-public-web');
     expect(toolsFor('agent')).toContain('apply-workspace-edits');
     expect(toolsFor('agent')).toContain('query-workspace-graph');
@@ -84,6 +84,12 @@ describe('Workspai assistant mode contract', () => {
     expect(toolsFor('agent')).toContain('upgrade-dependency-security');
     expect(toolsFor('agent')).toContain('complete-dependency-transaction');
     expect(toolsFor('ask')).toEqual([
+      'view-workspace-image',
+      'inspect-agent-instructions',
+      'inspect-project-docs',
+      'inspect-cli-commands',
+      'inspect-workspace',
+      'search-public-web',
       'discover-workspace-files',
       'inspect-source',
       'inspect-evidence',
@@ -94,6 +100,7 @@ describe('Workspai assistant mode contract', () => {
       'inspect-workspace-batch',
       'fetch-public-web',
       'list-host-tools',
+      'invoke-host-tool',
       'inspect-workspace-changes',
     ]);
     expect(toolsFor('plan')).not.toContain('apply-workspace-patch');

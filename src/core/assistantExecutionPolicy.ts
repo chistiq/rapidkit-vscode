@@ -22,6 +22,7 @@ export type AssistantExecutionPolicy = {
   profile: AssistantExecutionProfile;
   toolMode: WorkspaiAssistantMode;
   directResponse?: string;
+  workspaceIntent?: 'create-new' | 'use-current' | 'none';
   suggestion?: AssistantModeSuggestion;
 };
 
@@ -43,15 +44,25 @@ export function resolveAssistantExecutionPolicy(input: {
   selectedMode: WorkspaiAssistantMode;
   requestIntent: AssistantRequestIntent;
   routeConfidence?: 'high' | 'medium' | 'low';
+  workspaceIntent?: AssistantExecutionPolicy['workspaceIntent'];
 }): AssistantExecutionPolicy {
   const base = {
     schemaVersion: 'workspai.assistant-execution-policy.v1' as const,
     selectedMode: input.selectedMode,
     requestIntent: input.requestIntent,
     routeConfidence: input.routeConfidence ?? 'high',
+    ...(input.workspaceIntent ? { workspaceIntent: input.workspaceIntent } : {}),
   };
 
-  if (input.requestIntent === 'conversation' || input.requestIntent === 'clarification') {
+  if (input.requestIntent === 'research') {
+    return { ...base, profile: 'evidence-answer', toolMode: 'ask' };
+  }
+
+  if (
+    input.requestIntent === 'conversation' ||
+    input.requestIntent === 'general-question' ||
+    input.requestIntent === 'clarification'
+  ) {
     return {
       ...base,
       profile: 'direct-response',
@@ -77,13 +88,9 @@ export function resolveAssistantExecutionPolicy(input: {
       return {
         ...base,
         profile: 'evidence-answer',
-        // Agent is explicit user authority. Keep its complete capability host
-        // available for causal investigation, while the profile instruction
-        // keeps a genuinely read-only question non-mutating. The intent model
-        // classifies any explicit "fix/change/create" request as an
-        // engineering-task, so question-shaped repair commands do not lose
-        // mutation authority accidentally.
-        toolMode: 'agent',
+        // The selector is an authority ceiling, not a requirement to mutate or
+        // verify. Enforce a read-only capability set for this informational turn.
+        toolMode: 'ask',
       };
     }
     return {
@@ -149,15 +156,8 @@ export function resolveAssistantExecutionPolicy(input: {
   if (input.requestIntent === 'question') {
     return {
       ...base,
-      profile: 'direct-response',
-      toolMode: 'goal',
-      directResponse:
-        'Goal mode is for pursuing a bounded engineering outcome. This message is a question and will not create a Goal.',
-      suggestion: suggestion(
-        'ask',
-        'Continue in Ask',
-        'Answer from workspace evidence without changing files.'
-      ),
+      profile: 'evidence-answer',
+      toolMode: 'ask',
     };
   }
 
@@ -174,9 +174,7 @@ export function resolveAssistantExecutionPolicy(input: {
 export function assistantExecutionPolicyInstruction(policy: AssistantExecutionPolicy): string {
   switch (policy.profile) {
     case 'evidence-answer':
-      return policy.selectedMode === 'agent'
-        ? 'Execution policy: investigate with the full Agent capability host, but keep this genuinely informational request read-only. Do not mutate source unless the user explicitly asks to fix, change, create, remove, or implement something.'
-        : 'Execution policy: answer from read-only workspace evidence. Do not mutate source, create a Goal, or claim verified change completion.';
+      return 'Execution policy: answer the user question using only the smallest necessary read-only evidence. Answer directly when the supplied context suffices. Do not create or update a task ledger, repair missing reports, create a Goal, run verification, or mutate files. Prefer live workspace inventory for project names and current scope; reports can be partial or stale. Use public web search/fetch or host tools for research, and try another applicable capability if optional evidence is missing. Explain an unavailable capability only after observing its failure. Stop when the question is answered.';
     case 'implementation-plan':
       return 'Execution policy: produce an evidence-backed implementation plan without mutating source or running mutating commands.';
     case 'autonomous-change':
@@ -220,6 +218,8 @@ export function parseAssistantExecutionPolicy(
   const record = value as Record<string, unknown>;
   const intents = new Set<AssistantRequestIntent>([
     'conversation',
+    'general-question',
+    'research',
     'question',
     'engineering-task',
     'goal',
@@ -238,6 +238,11 @@ export function parseAssistantExecutionPolicy(
     selectedMode: expectedSelectedMode,
     requestIntent: record.requestIntent as AssistantRequestIntent,
     routeConfidence: record.routeConfidence as AssistantExecutionPolicy['routeConfidence'],
+    ...(record.workspaceIntent === 'create-new' ||
+    record.workspaceIntent === 'use-current' ||
+    record.workspaceIntent === 'none'
+      ? { workspaceIntent: record.workspaceIntent }
+      : {}),
   });
   return record.profile === canonical.profile && record.toolMode === canonical.toolMode
     ? canonical

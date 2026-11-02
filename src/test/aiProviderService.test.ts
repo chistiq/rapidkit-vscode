@@ -63,6 +63,33 @@ function createMockContext() {
 }
 
 describe('aiProviderService', () => {
+  it('uses the configured LM model when no per-turn picker override was supplied', async () => {
+    mockGet.mockImplementation((key: string, fallback: unknown) =>
+      key === 'aiProvider' ? 'vscode-lm' : key === 'preferredModel' ? 'copilot/auto' : fallback
+    );
+    mockRequestAIModelToolAction.mockResolvedValue({
+      type: 'text',
+      text: 'Hi',
+      modelId: 'copilot/auto',
+      attempts: 1,
+    });
+    const action = await askConfiguredAIProviderForToolAction(
+      createMockContext(),
+      [{ role: 'user', content: 'Hi' }],
+      []
+    );
+    expect(mockRequestAIModelToolAction).toHaveBeenLastCalledWith(
+      expect.any(Array),
+      [],
+      undefined,
+      'copilot/auto'
+    );
+    expect(action).toMatchObject({
+      requestedModelId: 'copilot/auto',
+      modelId: 'copilot/auto',
+      fallback: false,
+    });
+  });
   beforeEach(() => {
     vi.restoreAllMocks();
     mockRedactAIMessageRuntimePaths.mockImplementation((messages: unknown[]) => messages);
@@ -91,6 +118,76 @@ describe('aiProviderService', () => {
       toolName: 'verify-blocker',
       input: {},
     });
+  });
+
+  it.each([
+    ['openai-compatible', 'tool'],
+    ['anthropic', 'tool'],
+    ['openai-compatible', 'user'],
+    ['anthropic', 'user'],
+  ] as const)('sends %s %s images with the native multimodal format', async (provider, source) => {
+    const previous = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation((key: string, fallback: unknown) =>
+      key === 'aiProvider' ? provider : previous(key, fallback)
+    );
+    const context = createMockContext();
+    await setCustomAIAPIKey(context, 'image-test-key');
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      text: async () =>
+        JSON.stringify(
+          provider === 'anthropic'
+            ? { content: [{ type: 'text', text: 'The screenshot contains a button.' }] }
+            : { choices: [{ message: { content: 'The screenshot contains a button.' } }] }
+        ),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    await askConfiguredAIProviderForToolAction(
+      context,
+      source === 'user'
+        ? [
+            {
+              role: 'user',
+              content: 'Inspect this image.',
+              images: [{ mimeType: 'image/png', base64: 'iVBORw==' }],
+            },
+          ]
+        : [
+            {
+              role: 'assistant',
+              toolCall: {
+                callId: 'screenshot',
+                name: 'invoke-host-tool',
+                input: { name: 'screenshot' },
+              },
+            },
+            {
+              role: 'tool',
+              toolResult: {
+                callId: 'screenshot',
+                name: 'invoke-host-tool',
+                content: 'Screenshot captured.',
+                images: [{ mimeType: 'image/png', base64: 'iVBORw==' }],
+              },
+            },
+          ],
+      [{ name: 'workspai-complete', description: 'Answer', inputSchema: { type: 'object' } }]
+    );
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    if (provider === 'anthropic')
+      expect(
+        source === 'user' ? body.messages[0].content : body.messages[1].content[0].content
+      ).toContainEqual({
+        type: 'image',
+        source: { type: 'base64', media_type: 'image/png', data: 'iVBORw==' },
+      });
+    else
+      expect(
+        source === 'user' ? body.messages[0].content : body.messages[2].content
+      ).toContainEqual({
+        type: 'image_url',
+        image_url: { url: 'data:image/png;base64,iVBORw==' },
+      });
   });
 
   it('reports custom provider readiness from settings and Secret Storage', async () => {
@@ -460,6 +557,158 @@ describe('aiProviderService', () => {
     });
   });
 
+  it.each(['openai-compatible', 'anthropic'])(
+    'keeps the same %s model and all tool schemas when native tools are unsupported',
+    async (provider) => {
+      const defaults: Record<string, unknown> = {
+        aiProvider: provider,
+        aiProviderProfiles: {
+          [provider]: { model: 'json-only-model', baseUrl: 'https://api.example.test/v1' },
+        },
+        aiStreamTimeoutMs: 45000,
+      };
+      mockGet.mockImplementation((key: string, fallback: unknown) => defaults[key] ?? fallback);
+      const context = createMockContext();
+      await setCustomAIAPIKey(context, 'test-key');
+      const requests: Array<Record<string, any>> = [];
+      const fetchMock = vi.fn(async (_url, init) => {
+        const body = JSON.parse(init.body);
+        requests.push(body);
+        if (requests.length === 1)
+          return {
+            ok: false,
+            status: 400,
+            text: async () =>
+              JSON.stringify({ error: 'This model does not support tools or tool_choice' }),
+          };
+        const text = JSON.stringify({ toolName: 'inspect-source', input: { paths: ['file.rs'] } });
+        return {
+          ok: true,
+          status: 200,
+          text: async () =>
+            JSON.stringify(
+              provider === 'anthropic'
+                ? { content: [{ type: 'text', text }] }
+                : { choices: [{ message: { content: text } }] }
+            ),
+        };
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      const tools = [
+        { name: 'inspect-source', description: 'Read source', inputSchema: { type: 'object' } },
+        { name: 'run-workspace-command', description: 'Run an approved command' },
+      ];
+      const messages = [
+        { role: 'user' as const, content: 'Read file.rs' },
+        {
+          role: 'assistant' as const,
+          toolCall: { callId: 'old', name: 'inspect-source', input: {} },
+        },
+        {
+          role: 'tool' as const,
+          toolResult: { callId: 'old', name: 'inspect-source', content: 'previous observation' },
+        },
+      ];
+      const first = await askConfiguredAIProviderForToolAction(context, messages, tools);
+      expect(first).toMatchObject({
+        type: 'tool',
+        toolName: 'inspect-source',
+        input: { paths: ['file.rs'] },
+        modelId: 'json-only-model',
+        fallback: false,
+        toolTransport: 'json',
+        attempts: 2,
+      });
+      const second = await askConfiguredAIProviderForToolAction(context, messages, tools);
+      expect(second).toMatchObject({ attempts: 1, toolTransport: 'json' });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(requests[0].tools).toHaveLength(2);
+      expect(requests[1].tools).toBeUndefined();
+      expect(requests[1].tool_choice).toBeUndefined();
+      expect(JSON.stringify(requests[1].messages)).toContain('run-workspace-command');
+      expect(JSON.stringify(requests[1].messages)).toContain('previous observation');
+      expect(JSON.stringify(requests[1].messages)).not.toContain('"role":"tool"');
+    }
+  );
+
+  it('does not retry tools through another transport after an authorization failure or cancellation', async () => {
+    const context = createMockContext();
+    await setCustomAIAPIKey(context, 'test-key');
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 403,
+      text: async () => 'tools are not permitted',
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(
+      askConfiguredAIProviderForToolAction(
+        context,
+        [{ role: 'user', content: 'inspect' }],
+        [{ name: 'inspect-source', description: 'Inspect' }]
+      )
+    ).rejects.toThrow('403');
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const token = {
+      isCancellationRequested: true,
+      onCancellationRequested: () => ({ dispose() {} }),
+    };
+    await expect(
+      askConfiguredAIProviderForToolAction(
+        context,
+        [],
+        [{ name: 'inspect-source', description: 'Inspect' }],
+        token
+      )
+    ).rejects.toThrow('cancelled');
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it.each(['openai-compatible', 'anthropic'])(
+    'reports the tool deadline accurately for %s',
+    async (provider) => {
+      vi.useFakeTimers();
+      try {
+        mockGet.mockImplementation(
+          (key: string, fallback: unknown) =>
+            (
+              ({
+                aiProvider: provider,
+                customAIBaseUrl: 'https://api.example.test/v1',
+                customAIModel: 'enterprise-model',
+                aiToolRequestTimeoutMs: 8000,
+              }) as Record<string, unknown>
+            )[key] ?? fallback
+        );
+        const context = createMockContext();
+        await setCustomAIAPIKey(context, 'fixture-key');
+        const fetchMock = vi.fn(
+          (_url, options) =>
+            new Promise((_resolve, reject) => {
+              options.signal.addEventListener(
+                'abort',
+                () => reject(new Error('network request aborted')),
+                { once: true }
+              );
+            })
+        );
+        vi.stubGlobal('fetch', fetchMock);
+        const pending = askConfiguredAIProviderForToolAction(
+          context,
+          [],
+          [{ name: 'inspect-source', description: 'Read' }]
+        ).catch((error) => error);
+        await vi.advanceTimersByTimeAsync(8000);
+        const error = await pending;
+        expect(error.message).toContain('AI model request timed out after 8000ms');
+        expect(error.message).not.toContain('network request aborted');
+        expect(fetchMock).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
+      }
+    }
+  );
+
   it('uses Anthropic Messages tool calling for Claude', async () => {
     mockGet.mockImplementation((key: string, defaultValue: unknown) => {
       if (key === 'aiProvider') {
@@ -593,5 +842,85 @@ describe('aiProviderService', () => {
     expect(result.ok).toBe(false);
     expect(result.reason).toContain('Bearer [redacted]');
     expect(result.reason).not.toContain('sk-secret-value');
+  });
+  it('stores and clears only the provider named by the settings request', async () => {
+    const context = createMockContext();
+    await setCustomAIAPIKey(context, 'provider-a-key', 'openai');
+    await setCustomAIAPIKey(context, 'provider-b-key', 'gemini');
+    await clearCustomAIAPIKey(context, 'openai');
+    expect(await context.secrets.get('workspai.aiProvider.apiKey.openai')).toBeUndefined();
+    expect(await context.secrets.get('workspai.aiProvider.apiKey.gemini')).toBe('provider-b-key');
+    await expect(setCustomAIAPIKey(context, 'fixture', 'unknown-provider')).rejects.toThrow(
+      'Unknown AI provider'
+    );
+  });
+
+  it('keeps health-check credentials, endpoint and model on the captured provider when selection changes mid-read', async () => {
+    let provider = 'openai-compatible';
+    const previous = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation((key, fallback) =>
+      key === 'aiProvider' ? provider : previous(key, fallback)
+    );
+    const context = createMockContext();
+    await setCustomAIAPIKey(context, 'original-key', 'openai-compatible');
+    await setCustomAIAPIKey(context, 'other-key', 'gemini');
+    const originalGet = context.secrets.get.getMockImplementation()!;
+    context.secrets.get.mockImplementation(async (key: string) => {
+      provider = 'gemini';
+      return originalGet(key);
+    });
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      text: async () => JSON.stringify({ choices: [{ message: { content: 'OK' } }] }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await runConfiguredAIProviderHealthCheck(context)).toMatchObject({
+      provider: 'openai-compatible',
+      model: 'enterprise-model',
+      ok: true,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.example.test/v1/chat/completions',
+      expect.objectContaining({
+        redirect: 'error',
+        headers: expect.objectContaining({ authorization: 'Bearer original-key' }),
+      })
+    );
+  });
+
+  it('redacts an echoed key even when it has no recognizable vendor prefix', async () => {
+    const context = createMockContext();
+    await setCustomAIAPIKey(context, 'private-fixture-value');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: false,
+        status: 401,
+        text: async () => JSON.stringify({ error: { message: 'Rejected private-fixture-value' } }),
+      }))
+    );
+    const result = await runConfiguredAIProviderHealthCheck(context);
+    expect(result.ok).toBe(false);
+    expect(result.reason).not.toContain('private-fixture-value');
+    expect(result.reason).toContain('redacted');
+  });
+
+  it('rejects URL credentials and query tokens before making an authenticated request', async () => {
+    const previous = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation((key, fallback) =>
+      key === 'customAIBaseUrl'
+        ? 'https://example.test/v1?api_key=fixture'
+        : previous(key, fallback)
+    );
+    const context = createMockContext();
+    await setCustomAIAPIKey(context, 'fixture');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await runConfiguredAIProviderHealthCheck(context);
+    expect(result).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining('query parameters'),
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -64,6 +64,51 @@ describe('VS Code Studio Agent session store', () => {
     expect((await store.load('session-1'))?.status).toBe('running');
   });
 
+  it('retains public activity independently from the five-hundred-event evidence window', async () => {
+    let value: unknown;
+    const store = new VSCodeStudioAgentSessionStore({
+      workspaceState: {
+        get: () => value,
+        update: async (_key: string, next: unknown) => {
+          value = next;
+        },
+      },
+    } as never);
+    const original = session('activity-owner', 650);
+    await store.save(original);
+    const saved = (await store.load(original.id))!;
+    expect(saved.events).toHaveLength(500);
+    expect(saved.activityLog).toHaveLength(650);
+    expect(saved.activityLog?.[0].sequence).toBe(1);
+    await store.save({
+      ...saved,
+      events: [...saved.events, { ...original.events[0], id: 'activity-owner:651', sequence: 651 }],
+    });
+    expect((await store.load(original.id))?.activityLog).toHaveLength(651);
+  });
+  it('reports a bounded activity quota without counting the same omitted receipts twice', async () => {
+    let value: unknown;
+    const store = new VSCodeStudioAgentSessionStore({
+      workspaceState: {
+        get: () => value,
+        update: async (_key: string, next: unknown) => {
+          value = next;
+        },
+      },
+    } as never);
+    const original = session('quota-owner', 2000);
+    original.events = original.events.map((event) => ({
+      ...event,
+      data: { text: 'x'.repeat(800) },
+    }));
+    await store.save(original);
+    const saved = (await store.load(original.id))!;
+    expect(saved.activityLogOmitted).toBeGreaterThan(0);
+    expect(saved.activityLog!.length + saved.activityLogOmitted!).toBe(2000);
+    await store.save(original);
+    expect((await store.load(original.id))?.activityLogOmitted).toBe(saved.activityLogOmitted);
+  });
+
   it('compacts oversized event payloads instead of failing the agent session', async () => {
     let value: unknown;
     const context = {
@@ -111,6 +156,10 @@ describe('VS Code Studio Agent session store', () => {
     await store.save(session('legacy-2', 1));
     expect(value).toBeUndefined();
     expect(await fs.pathExists(path.join(storageRoot, 'studio-agent-sessions.v1.json'))).toBe(true);
+    if (process.platform !== 'win32')
+      expect(
+        (await fs.stat(path.join(storageRoot, 'studio-agent-sessions.v1.json'))).mode & 0o777
+      ).toBe(0o600);
 
     // Clear memento so subsequent reads prove file-backed persistence.
     value = undefined;

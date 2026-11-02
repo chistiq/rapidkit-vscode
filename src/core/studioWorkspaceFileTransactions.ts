@@ -1,4 +1,5 @@
 import * as crypto from 'node:crypto';
+import { readStudioWorkingBytes } from './studioNativeDocuments.js';
 import * as path from 'node:path';
 
 import fs from 'fs-extra';
@@ -160,7 +161,7 @@ export async function compileInspectedStudioTextEdits(input: {
     if (stat.size > STUDIO_EXACT_EDIT_MAX_FILE_BYTES) {
       throw new Error(`Exact edit target exceeds the 16 MiB safety boundary: ${relativePath}`);
     }
-    const original = await fs.readFile(absolutePath);
+    const original = await readStudioWorkingBytes(absolutePath);
     if (original.includes(0)) {
       throw new Error(`Exact edit target is not UTF-8 text: ${relativePath}`);
     }
@@ -264,7 +265,7 @@ export async function compileInspectedStudioDeletePatches(input: {
         `Studio Agent delete target resolves outside the authorized source boundary: ${patch.relativePath}`
       );
     }
-    const original = await fs.readFile(absolutePath);
+    const original = await readStudioWorkingBytes(absolutePath);
     const currentSha = crypto.createHash('sha256').update(original).digest('hex');
     if (currentSha !== expectedSha) {
       throw new Error(`Source changed after inspection: ${patch.relativePath}`);

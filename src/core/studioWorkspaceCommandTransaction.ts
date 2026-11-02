@@ -2,6 +2,7 @@ import type {
   StudioAgentToolApprovalGrant,
   StudioAgentToolResult,
 } from './studioAgentToolRegistry.js';
+import { requireStudioWorkspaceDirectory } from './studioWorkspaceAvailability.js';
 import {
   assertStudioWorkspaceCommandApproval,
   describeStudioWorkspaceCommandFailure,
@@ -17,6 +18,8 @@ import {
   inspectStudioWorkspaceSourceTransaction,
   rollbackStudioWorkspaceSourceTransaction,
   type StudioWorkspaceSourceRollback,
+  type StudioWorkspaceSourceTransaction,
+  type StudioWorkspaceSourceSnapshot,
 } from './studioWorkspaceSourceSnapshot.js';
 
 const workspaceCommandTails = new Map<string, Promise<void>>();
@@ -46,9 +49,12 @@ async function withWorkspaceCommandTransactionLock<T>(
 
 export type StudioWorkspaceCommandTransactionOutput = StudioWorkspaceCommandExecution & {
   transactionId: string;
+  /** Temporary execution checkpoint identity, distinct from a durable native review receipt. */
+  commandTransactionId?: string;
   changedPaths: string[];
   observedSourceChange: boolean;
-  sourceFingerprint: string;
+  sourceFingerprint?: string;
+  recoveryCheckpoint?: { transactionId: string; backupPath: string };
   observationScopes: string[];
   diagnosticOutcome?: 'clean' | 'findings';
   authorization?: {
@@ -60,12 +66,17 @@ export type StudioWorkspaceCommandTransactionOutput = StudioWorkspaceCommandExec
   rollback?: StudioWorkspaceSourceRollback & {
     reason: 'unapproved-mutation' | 'failed-command';
   };
+  sourceRecovery?: {
+    state: 'restored';
+    requiresMutationDeclaration: boolean;
+    instruction: string;
+  };
   effects: {
     source: boolean;
     repositoryMetadata: boolean;
     externalSystem: boolean;
     verificationScopes: string[];
-    sourceCheckpointCoverage: 'complete' | 'not-applicable';
+    sourceCheckpointCoverage: 'complete' | 'not-applicable' | 'unavailable';
     nonSourceRollbackCoverage: 'none';
   };
 };
@@ -84,6 +95,11 @@ export async function executeStudioWorkspaceCommandTransaction(input: {
     stdout: string;
     stderr: string;
   }): boolean;
+  retainSourceChanges?(input: {
+    transaction: StudioWorkspaceSourceTransaction;
+    after: StudioWorkspaceSourceSnapshot;
+    changedPaths: string[];
+  }): Promise<Record<string, unknown>>;
 }): Promise<StudioAgentToolResult<StudioWorkspaceCommandTransactionOutput>> {
   const plan = resolveStudioWorkspaceCommandPlan({
     workspacePath: input.workspacePath,
@@ -91,6 +107,7 @@ export async function executeStudioWorkspaceCommandTransaction(input: {
     request: input.request,
   });
   assertStudioWorkspaceCommandApproval({ plan, approval: input.approval });
+  await requireStudioWorkspaceDirectory(plan.cwd);
 
   // Linked projects may live outside the managed workspace. The command root
   // is therefore the selected project when present, not the registry root.
@@ -108,6 +125,11 @@ export async function executeStudioWorkspaceCommandTransaction(input: {
       };
     }
 
+    let disposeCheckpoint = true;
+    const recoveryCheckpoint = {
+      transactionId: transaction.id,
+      backupPath: transaction.backupPath,
+    };
     try {
       const execution = await runStudioWorkspaceCommand(plan, {
         signal: input.signal,
@@ -115,24 +137,33 @@ export async function executeStudioWorkspaceCommandTransaction(input: {
       });
       const inspected = await inspectStudioWorkspaceSourceTransaction(transaction);
       if (!inspected) {
-        let rollback: StudioWorkspaceSourceRollback | undefined;
-        try {
-          rollback = await rollbackStudioWorkspaceSourceTransaction(transaction);
-        } catch {
-          // The error below deliberately escalates to human review when exact
-          // restoration itself cannot be proven.
-        }
+        // Without a stable post-command snapshot we cannot distinguish command
+        // effects from concurrent work. Keep the private backup and execution
+        // receipt rather than overwriting user edits or silently losing recovery.
+        disposeCheckpoint = false;
         return {
           ok: false,
-          changed: !rollback,
-          requiresUserDecision: !rollback,
-          terminalReason: rollback
-            ? 'workspace-command-post-checkpoint-restored'
-            : 'workspace-command-post-checkpoint-unavailable',
-          error: rollback
-            ? 'Studio could not inspect command output state and restored the exact pre-command checkpoint.'
-            : 'Studio could not inspect or prove restoration of source state after the command.',
-          ...(input.evidenceGeneration ? { evidenceGeneration: input.evidenceGeneration } : {}),
+          changed: true,
+          requiresUserDecision: true,
+          terminalReason: 'workspace-command-post-checkpoint-unavailable',
+          error:
+            'The command ran, but source inspection was incomplete. Concurrent work was preserved and a private recovery checkpoint was retained. Inspect the recorded execution before continuing; do not blindly repeat the command.',
+          output: {
+            ...execution,
+            transactionId: transaction.id,
+            changedPaths: [],
+            observedSourceChange: false,
+            recoveryCheckpoint,
+            observationScopes: plan.observationScopes,
+            effects: {
+              source: true,
+              repositoryMetadata: plan.repositoryMetadataEffects,
+              externalSystem: plan.externalSideEffects,
+              verificationScopes: plan.effectScopes,
+              sourceCheckpointCoverage: 'unavailable',
+              nonSourceRollbackCoverage: 'none',
+            },
+          },
         };
       }
 
@@ -147,31 +178,39 @@ export async function executeStudioWorkspaceCommandTransaction(input: {
       );
       const commandObserved = execution.exitCode === 0 || diagnosticFindings;
       const rollbackReason =
-        sourceChanged && !plan.requiresExplicitApproval
+        sourceChanged && !plan.mutatesSource
           ? 'unapproved-mutation'
           : sourceChanged && !commandObserved
             ? 'failed-command'
             : undefined;
 
       if (rollbackReason) {
+        disposeCheckpoint = false;
         try {
           const rollback = await rollbackStudioWorkspaceSourceTransaction(
             transaction,
-            inspected.changedPaths
+            inspected.changedPaths,
+            inspected.after
           );
+          disposeCheckpoint = true;
+          const recoverable = !plan.externalSideEffects && !plan.repositoryMetadataEffects;
+          const recoveryInstruction =
+            'Inspect the recorded process result and changed paths. Source was restored to the pre-command checkpoint; earlier request edits remain. ' +
+            (rollbackReason === 'unapproved-mutation'
+              ? 'If these outputs are appropriate for the task, retry the same command with allowSourceChanges:true and obtain its exact approval. Keep the original purpose. Otherwise choose another tool or deliver the useful result with this limitation.'
+              : 'Diagnose the failed command and choose a corrected action. Do not repeat an unchanged failure or claim verification passed.');
           return {
             ok: false,
             changed: false,
             ...(input.evidenceGeneration ? { evidenceGeneration: input.evidenceGeneration } : {}),
-            terminalReason:
-              plan.externalSideEffects || plan.repositoryMetadataEffects
-                ? 'workspace-command-source-restored-non-source-effects-unverified'
-                : rollbackReason === 'unapproved-mutation'
-                  ? 'workspace-command-source-mutation-rolled-back'
-                  : 'workspace-command-failure-rolled-back',
+            ...(!recoverable
+              ? {
+                  terminalReason: 'workspace-command-source-restored-non-source-effects-unverified',
+                }
+              : {}),
             error:
               rollbackReason === 'unapproved-mutation'
-                ? 'The command changed project source without an approved mutation declaration. Studio restored the exact pre-command checkpoint.'
+                ? `The process exited with code ${String(execution.exitCode)}, but its source changes were not declared and approved. Studio restored the exact pre-command checkpoint. ${recoverable ? recoveryInstruction : 'Inspect non-source effects before continuing.'}`
                 : `${describeStudioWorkspaceCommandFailure(execution)}\nStudio restored the exact pre-command source checkpoint.${
                     plan.externalSideEffects || plan.repositoryMetadataEffects
                       ? ' Repository metadata or external-system effects are outside that checkpoint and must be inspected separately.'
@@ -184,6 +223,15 @@ export async function executeStudioWorkspaceCommandTransaction(input: {
               observedSourceChange: true,
               sourceFingerprint: rollback.restoredFingerprint,
               rollback: { ...rollback, reason: rollbackReason },
+              ...(recoverable
+                ? {
+                    sourceRecovery: {
+                      state: 'restored' as const,
+                      requiresMutationDeclaration: rollbackReason === 'unapproved-mutation',
+                      instruction: recoveryInstruction,
+                    },
+                  }
+                : {}),
               effects: {
                 source: sourceChanged,
                 repositoryMetadata: plan.repositoryMetadataEffects,
@@ -207,6 +255,7 @@ export async function executeStudioWorkspaceCommandTransaction(input: {
               (error instanceof Error ? error.message : String(error)),
             output: {
               ...execution,
+              recoveryCheckpoint,
               transactionId: transaction.id,
               changedPaths: inspected.changedPaths,
               observedSourceChange: true,
@@ -225,13 +274,79 @@ export async function executeStudioWorkspaceCommandTransaction(input: {
         }
       }
 
+      let retained: Record<string, unknown> = {};
+      if (sourceChanged && input.retainSourceChanges) {
+        try {
+          retained = await input.retainSourceChanges({
+            transaction,
+            after: inspected.after,
+            changedPaths: inspected.changedPaths,
+          });
+        } catch (error) {
+          disposeCheckpoint = false;
+          let rollback: StudioWorkspaceSourceRollback | undefined;
+          let rollbackError: unknown;
+          try {
+            rollback = await rollbackStudioWorkspaceSourceTransaction(
+              transaction,
+              inspected.changedPaths,
+              inspected.after
+            );
+            disposeCheckpoint = true;
+          } catch (failure) {
+            rollbackError = failure;
+          }
+          return {
+            ok: false,
+            changed: !rollback,
+            requiresUserDecision: !rollback,
+            terminalReason: rollback
+              ? 'workspace-command-retention-failed-source-restored'
+              : 'workspace-command-retention-failed-recovery-required',
+            error:
+              'The command ran, but its durable request checkpoint could not be retained. ' +
+              (rollback
+                ? 'Source changes were restored. '
+                : 'Automatic restoration was refused; a private recovery checkpoint was retained. ' +
+                  String(rollbackError) +
+                  ' ') +
+              'Inspect the recorded execution and external effects before continuing; do not blindly repeat the command. ' +
+              String(error),
+            output: {
+              ...execution,
+              transactionId: transaction.id,
+              changedPaths: inspected.changedPaths,
+              observedSourceChange: true,
+              sourceFingerprint: rollback?.restoredFingerprint ?? inspected.after.fingerprint,
+              ...(rollback
+                ? { rollback: { ...rollback, reason: 'failed-command' as const } }
+                : { recoveryCheckpoint }),
+              effects: {
+                source: true,
+                repositoryMetadata: plan.repositoryMetadataEffects,
+                externalSystem: plan.externalSideEffects,
+                verificationScopes: plan.effectScopes,
+                sourceCheckpointCoverage: 'complete',
+                nonSourceRollbackCoverage: 'none',
+              },
+              observationScopes: plan.observationScopes,
+            },
+          };
+        }
+      }
+
       return {
         ok: commandObserved,
         changed: sourceChanged,
         ...(input.evidenceGeneration ? { evidenceGeneration: input.evidenceGeneration } : {}),
         output: {
           ...execution,
-          transactionId: transaction.id,
+          ...retained,
+          transactionId:
+            typeof retained.nativeTransactionId === 'string'
+              ? retained.nativeTransactionId
+              : transaction.id,
+          commandTransactionId: transaction.id,
           changedPaths: inspected.changedPaths,
           observedSourceChange: sourceChanged,
           sourceFingerprint: inspected.after.fingerprint,
@@ -261,7 +376,9 @@ export async function executeStudioWorkspaceCommandTransaction(input: {
         ...(commandObserved ? {} : { error: describeStudioWorkspaceCommandFailure(execution) }),
       };
     } finally {
-      await disposeStudioWorkspaceSourceTransaction(transaction);
+      if (disposeCheckpoint) {
+        await disposeStudioWorkspaceSourceTransaction(transaction);
+      }
     }
   });
 }

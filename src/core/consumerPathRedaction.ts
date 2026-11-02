@@ -11,6 +11,62 @@ export function redactLocalPathsForConsumer(value: string): string {
     .replace(/(?:\.\.[\\/]){1,}[^\s"'`),;]+/g, '$EXTERNAL_PATH');
 }
 
+/** Paths actually supplied by the user, never inferred from tool output or attachments. */
+export function collectAssistantUserPaths(value: string): string[] {
+  const result = new Set<string>();
+  const add = (candidate: string) => {
+    if (candidate.length > 1 && candidate.length <= 4000 && !/[\0\r\n]/.test(candidate)) {
+      result.add(candidate);
+    }
+  };
+  const unquoted = value.replace(
+    /(["'`])((?:\/(?!\/)|[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[A-Za-z0-9_.-]+[\\/])[^"'`\r\n]+?)\1/g,
+    (_match, _quote: string, candidate: string) => {
+      add(candidate);
+      return ' ';
+    }
+  );
+  for (const match of unquoted.matchAll(
+    /(?:^|[\s(=])((?:\/(?!\/)|[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[A-Za-z0-9_.-]+[\\/])[^\s"'`<>),;]+)/g
+  )) {
+    add(match[1].replace(/[.!?:]+$/, ''));
+  }
+  return [...result].slice(0, 64);
+}
+
+/** Preserve explicit user destinations; other host paths retain fail-closed redaction. */
+export function redactAssistantRequestForConsumer(
+  value: string,
+  userPaths: readonly string[] = []
+): string {
+  let protectedValue = value;
+  const saved: Array<{ token: string; path: string }> = [];
+  let prefix = '__WORKSPAI_USER_PATH_';
+  while (value.includes(prefix)) {
+    prefix = `_${prefix}`;
+  }
+  for (const localPath of [...userPaths]
+    .filter((entry) => typeof entry === 'string' && entry.length > 1 && entry.length <= 4000)
+    .sort((a, b) => b.length - a.length)
+    .slice(0, 64)) {
+    const token = `${prefix}${saved.length}__`;
+    const matcher = new RegExp(`${escapeRegExp(localPath)}(?=$|[\\s"'\x60<>),;:/\\\\])`, 'g');
+    protectedValue = protectedValue.replace(matcher, () => token);
+    saved.push({ token, path: localPath });
+  }
+  let output = redactLocalPathsForConsumer(
+    protectedValue.replace(
+      /(?:~|[A-Za-z]:)?[\\/](?:[^\s"'`<>]*[\\/])?\.workspai[\\/]workspaces[\\/]([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?=[\\/\s"'`<>.,;:]|$)(?:[\\/]([^\s"'`<>.,;:]+))?/gi,
+      (_match, name: string, relative: string | undefined) =>
+        `managed workspace "${name}"${relative ? `, relative path "${relative.replace(/\\/g, '/')}"` : ''}`
+    )
+  );
+  for (const entry of saved) {
+    output = output.replaceAll(entry.token, entry.path);
+  }
+  return output;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

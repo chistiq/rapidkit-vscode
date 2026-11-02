@@ -17,6 +17,24 @@ export function describeStudioTerminalFailure(input: {
 }): StudioTerminalFailurePresentation {
   const error = input.error.trim();
   const terminalReason = input.terminalReason?.trim() || undefined;
+  if (terminalReason === 'question-incomplete') {
+    return {
+      title: 'Answer incomplete',
+      summary:
+        error || 'The assistant could not finish this answer. Review the findings and next steps.',
+      terminalReason,
+      connectionFailure: false,
+    };
+  }
+  if (terminalReason === 'incomplete-outcome') {
+    return {
+      title: 'Work remains',
+      summary:
+        'The assistant reported findings and next steps. Verification obligations remain open; you can continue this session.',
+      terminalReason,
+      connectionFailure: false,
+    };
+  }
   const connectionFailure =
     terminalReason === 'cli-repair-contract-mismatch' ||
     /repair protocol handshake failed|no installed executable is safe to use/i.test(error);
@@ -28,6 +46,16 @@ export function describeStudioTerminalFailure(input: {
       ...(error ? { technicalDetail: error } : {}),
       terminalReason: terminalReason ?? 'cli-repair-contract-mismatch',
       connectionFailure: true,
+    };
+  }
+  if (terminalReason === 'ai-provider-timeout') {
+    return {
+      title: 'Model request timed out',
+      summary:
+        'The model exceeded the request deadline. Recorded work is retained. Continue this session, select another model, or increase the AI tool request timeout in settings. Successful commands will not be automatically repeated.',
+      ...(error ? { technicalDetail: error } : {}),
+      terminalReason,
+      connectionFailure: false,
     };
   }
   if (terminalReason === 'ai-provider-unavailable') {
@@ -44,7 +72,7 @@ export function describeStudioTerminalFailure(input: {
     return {
       title: 'AI connection needed',
       summary:
-        'Studio could not reach the configured AI provider. The latest CLI repair outcome is retained; reconnect before requesting a new source proposal.',
+        'The AI connection was interrupted. Recorded work is retained; reconnect and continue this session. Completed commands must be reviewed before repeating them.',
       ...(error ? { technicalDetail: error } : {}),
       terminalReason,
       connectionFailure: false,
@@ -159,7 +187,7 @@ export function isStudioUserFacingNarration(text: string): boolean {
   if (/^[{[]/.test(trimmed) || /"toolName"\s*:/.test(trimmed)) {
     return false;
   }
-  return /[A-Za-z]/.test(trimmed);
+  return /\p{L}/u.test(trimmed);
 }
 
 export function describeStudioCausalFailure(
@@ -342,6 +370,12 @@ export function settleStudioTimeline(
   timeline: SidebarStudioActionProgressView[]
 ): SidebarStudioActionProgressView[] {
   return timeline.map((entry) => {
+    // Older persisted transcripts marked approved calls as running and later
+    // converted them to failed. Approval itself succeeded independently of
+    // whether the command or the enclosing task subsequently succeeded.
+    if (entry.phase === 'command-approved' && entry.eventType === 'tool.approval.approved') {
+      return { ...entry, status: 'done' as const, requiresApproval: false };
+    }
     if (entry.status !== 'running') {
       return entry;
     }

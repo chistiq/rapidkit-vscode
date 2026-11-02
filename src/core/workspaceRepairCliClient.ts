@@ -159,6 +159,11 @@ export type WorkspaceRepairCliTransaction = {
 
 export type WorkspaceRepairCliFileChange = {
   relativePath: string;
+  workspaceId?: string;
+  workspaceName?: string;
+  beforeBytes?: number;
+  afterBytes?: number;
+  byteComparison?: boolean;
   status: 'modified' | 'added' | 'deleted';
   isNewFile?: boolean;
   beforeHash: string | null;
@@ -1252,7 +1257,7 @@ export async function readCliOwnedRepairFileChanges(input: {
  * Callers must not write the returned fileChanges back into durable session JSON.
  */
 export async function hydrateStudioRepairEventFileChanges<
-  T extends { type: string; data?: unknown },
+  T extends { type: string; data?: unknown; sessionId?: string; requestId?: string },
 >(input: {
   workspacePath: string;
   event: T;
@@ -1270,6 +1275,53 @@ export async function hydrateStudioRepairEventFileChanges<
     repairTransactionIdFromUnknown(data?.transactionId);
   if (!transactionId) {
     return input.event;
+  }
+  if (transactionId.startsWith('scaffold-')) {
+    try {
+      const { readStudioScaffoldFileChanges } = await import('./studioScaffoldChanges.js');
+      const fileChanges = await readStudioScaffoldFileChanges(input.workspacePath, transactionId);
+      return {
+        ...input.event,
+        data: { ...(data ?? {}), output: { ...(output ?? {}), fileChanges } },
+      };
+    } catch {
+      return input.event;
+    }
+  }
+  if (transactionId.startsWith('native-')) {
+    try {
+      const {
+        readStudioNativeFileChanges,
+        readStudioNativeTransaction,
+        resolveStudioNativeTransactionWorkspace,
+      } = await import('./studioNativeWorkspace.js');
+      const root = input.event.sessionId
+        ? await resolveStudioNativeTransactionWorkspace(
+            input.event.sessionId,
+            transactionId,
+            input.event.requestId
+          )
+        : input.workspacePath;
+      const receipt = await readStudioNativeTransaction(root, transactionId);
+      const fileChanges = await readStudioNativeFileChanges(root, transactionId);
+      return {
+        ...input.event,
+        data: {
+          ...(data ?? {}),
+          output: {
+            ...(output ?? {}),
+            ...(typeof output?.transactionId === 'string' && output.transactionId !== transactionId
+              ? { commandTransactionId: output.transactionId }
+              : {}),
+            transactionId,
+            transaction: { ...(transaction ?? {}), transactionId, state: receipt.state },
+            fileChanges,
+          },
+        },
+      };
+    } catch {
+      return input.event;
+    }
   }
   const cache = input.fileChangeCache;
   let fileChanges = cache?.get(transactionId);

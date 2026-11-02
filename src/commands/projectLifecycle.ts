@@ -122,6 +122,7 @@ function isPortlessLifecycleProject(projectType: string): boolean {
   return (
     projectType === 'microsoft-agent-framework' ||
     projectType === 'openai-agents' ||
+    projectType === 'google-adk' ||
     projectType === 'openrouter' ||
     projectType.startsWith('agent.') ||
     projectType.startsWith('gateway.')

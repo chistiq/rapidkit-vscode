@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, Circle, Loader2, Minus } from 'lucide-react';
 import {
   studioFileChangeLineCounts,
+  studioFileChangeHasLineCounts,
   type SidebarStudioApprovalRequestView,
   type SidebarStudioActionProgressView,
 } from '@/lib/sidebarStudioActionProgress';
@@ -206,7 +207,7 @@ export function StudioActionProgress({
                 className="ws-sidebar__inline"
                 onClick={() => onApprovalDecision(progress.approvalRequest!, undefined)}
               >
-                Cancel
+                Decline
               </button>
             </div>
             <details className="ws-sidebar__studio-action-details">
@@ -334,7 +335,7 @@ export function StudioActionProgress({
                       </button>
                       {!transactionRestored ? (
                         <span>
-                          +{added} −{removed}
+                          {studioFileChangeHasLineCounts(file) ? `+${added} −${removed}` : 'Counts unavailable'}
                         </span>
                       ) : null}
                       {exactDiffAvailable ? (

@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { studioActivityReceipt, isStudioActivityReceipt } from '@workspai-contracts/studioActivity';
+import { studioEventProgress, studioReceiptProgress } from '@/lib/studioActivityView';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   AlertTriangle,
   Blocks,
@@ -29,6 +31,7 @@ import type { SidebarScope, SidebarTab } from './sidebarTypes';
 import { resolveScopeFromPayload } from './sidebarTypes';
 import { StudioBlockerChrome, parseStudioBlockerHandoffView } from './StudioBlockerChrome';
 import { StudioPatchReview, type SidebarPatchReviewItem } from './StudioPatchReview';
+import { StudioActivityTranscript } from './StudioActivityTranscript';
 import { StudioActionProgress } from './StudioActionProgress';
 import { StudioChangedFilesSummary } from './StudioChangedFilesSummary';
 import { StudioRemediationPlan } from './StudioRemediationPlan';
@@ -38,7 +41,7 @@ import { StudioRepairResult } from './StudioRepairResult';
 import { StudioShipLoopStepper } from './StudioShipLoopStepper';
 import { StudioIntelligencePhaseRail } from './StudioIntelligencePhaseRail';
 import type { ChatModeSuggestion, ChatSession } from './sidebarSessions';
-import { chatSessionKind } from './sidebarSessions';
+import { chatSessionKind, pendingChatApprovals } from './sidebarSessions';
 import {
   mergeStudioFixAppliedIntoHandoff,
   resolveStudioFixPhase,
@@ -70,6 +73,7 @@ import {
   parseSidebarStudioActionProgress,
   studioApprovalCommandLabel,
   studioAgentToolProgressCopy,
+  studioAgentObservationSummary,
   type SidebarStudioApprovalRequestView,
   type SidebarStudioActionProgressView,
 } from '@/lib/sidebarStudioActionProgress';
@@ -300,6 +304,16 @@ function parseSidebarPatchReviewItems(value: unknown): SidebarPatchReviewItem[] 
       binary: entry.binary === true,
       stale: entry.stale === true,
       failReason: typeof entry.failReason === 'string' ? entry.failReason : undefined,
+      ...(typeof entry.addedLines === 'number' &&
+      Number.isFinite(entry.addedLines) &&
+      entry.addedLines >= 0
+        ? { addedLines: entry.addedLines }
+        : {}),
+      ...(typeof entry.removedLines === 'number' &&
+      Number.isFinite(entry.removedLines) &&
+      entry.removedLines >= 0
+        ? { removedLines: entry.removedLines }
+        : {}),
       diffLines: Array.isArray(entry.diffLines)
         ? entry.diffLines
             .filter((line) => line && typeof line === 'object' && !Array.isArray(line))
@@ -399,8 +413,10 @@ export function SecondarySidebar() {
   const assistantModelsRef =
     useRef<Partial<Record<AssistantMode, string | null>>>(loadAssistantModels());
   const [activeTab, setActiveTab] = useState<SidebarTab>('create');
+  const [checkpointPending, setCheckpointPending] = useState<Record<string, boolean>>({});
   const [scope, setScope] = useState<SidebarScope>({});
   const [models, setModels] = useState<SidebarModel[]>([]);
+  const [modelsLoadError, setModelsLoadError] = useState<string | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(
     assistantModelsRef.current[loadAssistantMode()] ?? null
   );
@@ -416,6 +432,18 @@ export function SecondarySidebar() {
   const createMessages = create.activeSession?.messages ?? [];
   const impact = useChatSessions('workspaiImpact', 'impact');
   const studio = useChatSessions('workspaiStudio', 'studio');
+
+  useEffect(() => {
+    vscode.postMessage(
+      'sidebarReconcileStudioSessions',
+      {
+        sessionIds: studio.sessions
+          .filter((session) => session.status === 'streaming')
+          .map((session) => session.sessionId),
+      },
+      META
+    );
+  }, []);
   const [studioMode, setStudioMode] = useState<StudioMode>(() =>
     loadAssistantMode() === 'plan' ? 'prepare' : 'investigate'
   );
@@ -528,11 +556,17 @@ export function SecondarySidebar() {
   } | null>(null);
   const [shipLoopBusy, setShipLoopBusy] = useState(false);
   const handleSubmitImpactRef = useRef<
-    (question: string, options?: { forceNew?: boolean }) => void
+    (
+      question: string,
+      options?: { forceNew?: boolean; images?: Array<{ mimeType: string; base64: string }> }
+    ) => void
   >(() => undefined);
-  const handleSubmitStudioRef = useRef<(task: string, options?: { forceNew?: boolean }) => void>(
-    () => undefined
-  );
+  const handleSubmitStudioRef = useRef<
+    (
+      task: string,
+      options?: { forceNew?: boolean; images?: Array<{ mimeType: string; base64: string }> }
+    ) => void
+  >(() => undefined);
   const studioAttemptedRemediationStepsRef = useRef<Map<string, Set<string>>>(new Map());
   const studioMirroredHandoffKeysRef = useRef<Set<string>>(new Set());
   const pendingStudioIncidentSessionRef = useRef<string | null>(null);
@@ -725,8 +759,9 @@ export function SecondarySidebar() {
         }
         if (initialQuestion) {
           if (editorIssue) {
-            impact.openEditorSession({
+            studio.openEditorSession({
               title: editorIssueSessionTitle('Explain', editorIssue),
+              assistantMode: 'ask',
               editorIssue,
             });
           }
@@ -734,7 +769,7 @@ export function SecondarySidebar() {
             handleSubmitImpactRef.current(initialQuestion, { forceNew: !editorIssue });
           } else {
             if (!editorIssue) {
-              impact.newSession();
+              studio.newSession();
             }
             setImpactPrefill(initialQuestion);
             setImpactPrefillKey((key) => key + 1);
@@ -744,6 +779,7 @@ export function SecondarySidebar() {
           if (editorIssue) {
             studio.openEditorSession({
               title: editorIssueSessionTitle('Fix', editorIssue),
+              assistantMode: 'agent',
               mode:
                 data.studioMode === 'verify' || data.studioMode === 'prepare'
                   ? data.studioMode
@@ -766,7 +802,6 @@ export function SecondarySidebar() {
         }
         if (activatedHandoff) {
           const incidentScope = scopeFromHandoff(activatedHandoff, nextScope);
-          setScope(incidentScope);
           openStudioIncidentSession(activatedHandoff, incidentScope);
           const activatedSessionId = pendingStudioIncidentSessionRef.current;
           studioMirroredHandoffKeysRef.current.add(
@@ -800,6 +835,7 @@ export function SecondarySidebar() {
         break;
       case 'sidebarAiModelsList':
         setModels(normalizeModels(data.models));
+        setModelsLoadError(typeof data.error === 'string' && data.error.trim() ? data.error : null);
         if (Object.prototype.hasOwnProperty.call(assistantModelsRef.current, assistantMode)) {
           setSelectedModelId(assistantModelsRef.current[assistantMode] ?? null);
         } else {
@@ -823,14 +859,96 @@ export function SecondarySidebar() {
         const eventType = typeof event?.type === 'string' ? event.type : '';
         const eventSessionId = typeof event?.sessionId === 'string' ? event.sessionId : undefined;
         const invocationId = typeof event?.toolCallId === 'string' ? event.toolCallId : undefined;
+        const publicReceipt = studioActivityReceipt(event);
         const eventMeta = {
           ...(eventSessionId ? { sessionId: eventSessionId } : {}),
           eventType,
+          ...(publicReceipt ? { receipt: publicReceipt } : {}),
           ...(typeof event?.sequence === 'number' ? { eventSequence: event.sequence } : {}),
           ...(typeof event?.requestId === 'string' ? { requestId: event.requestId } : {}),
           ...(invocationId ? { invocationId } : {}),
         };
         const replay = data.replay === true;
+        const recordToolProgress = (progress: SidebarStudioActionProgressView) => {
+          if (replay) {
+            if (eventSessionId) {
+              studio.recordActivity(eventSessionId,
+                progress.status === 'running'
+                  ? {
+                      ...progress, status: 'review', phase: 'historical-process',
+                      title: 'Recorded process start',
+                      summary: 'This historical event recorded a process start, not its current state or successful completion.',
+                    }
+                  : progress, true);
+            }
+          } else {
+            startStudioActionProgress(progress);
+          }
+        };
+        if (replay && isStudioActivityReceipt(eventData.receiptReplay)) {
+          const receipt = eventData.receiptReplay;
+          if (receipt.sessionId === eventSessionId) {
+            const output = eventData.output && typeof eventData.output === 'object'
+              ? eventData.output as Record<string, unknown> : {};
+            const fileChanges = parseSidebarPatchReviewItems(output.fileChanges);
+            studio.recordActivity(receipt.sessionId, {
+              ...studioReceiptProgress(receipt, true),
+              ...(receipt.toolName ? {action: receipt.toolName} : {}),
+              ...(fileChanges.length ? {
+                fileChanges, changedPaths: fileChanges.map(file => file.relativePath),
+                title: `Changed ${fileChanges.length} file${fileChanges.length === 1 ? '' : 's'}`,
+                transactionId: receipt.transactionId,
+              } : {}),
+            }, true);
+          }
+          break;
+        }
+        // Replay hydrates history. It must never stop, narrate into, or select a
+        // destination for the new response currently being submitted.
+        if (replay && eventType !== 'request.started' && eventType !== 'tool.completed' && eventType !== 'tool.failed') {
+          const historical = studioEventProgress(event, true);
+          if (historical && eventSessionId) studio.recordActivity(eventSessionId, historical, true);
+          break;
+        }
+        if (!replay && !['request.started', 'tool.started', 'tool.completed', 'tool.failed', 'tool.approval.requested', 'tool.approval.approved', 'tool.approval.rejected', 'verify.completed', 'session.completed', 'session.failed', 'session.cancelled', 'model.request.started', 'model.request.finished', 'model.resolved'].includes(eventType)) {
+          const progress = studioEventProgress(event);
+          if (progress && eventSessionId) studio.recordActivity(eventSessionId, progress);
+        }
+        const eventSession = studio.sessions.find((session) => session.sessionId === eventSessionId);
+        const ownerIndex = typeof event?.requestId === 'string'
+          ? eventSession?.messages.map((turn) => Boolean(turn.requestIds?.includes(event.requestId as string))).lastIndexOf(true) ?? -1 : -1;
+        if (ownerIndex >= 0 && ownerIndex !== (eventSession?.messages.length ?? 0) - 1 &&
+          !['tool.completed', 'tool.failed', 'request.started'].includes(eventType)) {
+          const historical = studioEventProgress(event, true);
+          if (historical && eventSessionId) studio.recordActivity(eventSessionId, historical, true);
+          break;
+        }
+        if (
+          eventType === 'request.started' &&
+          eventSessionId &&
+          typeof event?.requestId === 'string'
+        ) {
+          studio.bindRequest(eventSessionId, event.requestId, replay);
+          const receipt = studioEventProgress(event, replay);
+          if (receipt) studio.recordActivity(eventSessionId, receipt, replay);
+          if (replay) break;
+          const target = eventData.executionTarget as { ref?: unknown; name?: unknown } | null;
+          if (!replay)
+            studio.setExecutionTarget(
+              eventSessionId,
+              target && typeof target.ref === 'string' && typeof target.name === 'string'
+                ? { ref: target.ref, name: target.name }
+                : undefined
+            );
+        }
+        if (
+          eventType === 'workspace.target.bound' &&
+          eventSessionId &&
+          typeof eventData.ref === 'string' &&
+          typeof eventData.name === 'string'
+        ) {
+          studio.setExecutionTarget(eventSessionId, { ref: eventData.ref, name: eventData.name });
+        }
         if (
           eventType === 'request.started' &&
           eventData.goal &&
@@ -854,6 +972,9 @@ export function SecondarySidebar() {
                 : 'Studio is executing a durable engineering goal.',
             ...eventMeta,
           });
+        } else if (eventType === 'model.request.started' || eventType === 'model.request.finished' || eventType === 'model.resolved') {
+          const progress = studioEventProgress(event);
+          if (progress && eventSessionId) {studio.recordActivity(eventSessionId, progress); studio.setActivity(eventSessionId, progress.title);}
         } else if (eventType === 'model.message') {
           const text = typeof eventData.text === 'string' ? eventData.text.trim() : '';
           if (text && eventSessionId) {
@@ -861,9 +982,15 @@ export function SecondarySidebar() {
               eventSessionId,
               eventData.clarification ? 'Waiting for your input…' : text
             );
-            if (isStudioUserFacingNarration(text)) {
+            if (eventData.inputRequired === true || isStudioUserFacingNarration(text)) {
               studio.appendChunk(eventSessionId, `${text}\n\n`);
             }
+          }
+        } else if (eventType === 'session.status' && eventSessionId) {
+          if (eventData.status === 'waiting-permission') {
+            studio.setActivity(eventSessionId, 'Waiting for command approval…');
+          } else if (eventData.status === 'waiting-input' || eventData.status === 'running') {
+            studio.setWaitingForInput(eventSessionId, eventData.status === 'waiting-input');
           }
         } else if (eventType === 'model.checkpoint') {
           const summary =
@@ -882,7 +1009,7 @@ export function SecondarySidebar() {
             action: 'agent-steering',
             status: 'done',
             phase: 'request-steered',
-            title: 'Repair instructions updated',
+            title: pendingChatApprovals(eventSession ?? null).length ? 'Instructions queued · approval pending' : 'Instructions updated',
             summary:
               typeof eventData.message === 'string'
                 ? eventData.message
@@ -912,6 +1039,7 @@ export function SecondarySidebar() {
             ...eventMeta,
           });
         } else if (eventType === 'tool.approval.requested') {
+          if (eventSessionId) studio.setActivity(eventSessionId, 'Waiting for command approval…');
           const exactApprovalCommand =
             typeof eventData.displayCommand === 'string' && eventData.displayCommand.trim()
               ? eventData.displayCommand.trim()
@@ -971,7 +1099,7 @@ export function SecondarySidebar() {
         } else if (eventType === 'tool.approval.approved') {
           startStudioActionProgress({
             action: String(eventData.toolName ?? 'studio-agent'),
-            status: 'running',
+            status: 'done',
             phase: 'command-approved',
             title: `Approved for ${String(eventData.execution ?? 'once')}`,
             summary:
@@ -981,11 +1109,13 @@ export function SecondarySidebar() {
         } else if (eventType === 'tool.approval.rejected') {
           startStudioActionProgress({
             action: String(eventData.toolName ?? 'studio-agent'),
-            status: 'failed',
+            status: eventData.optional === true ? 'done' : 'failed',
             phase: 'command-rejected',
-            title: 'Command not approved',
+            title: eventData.optional === true ? 'Optional onboarding skipped' : 'Command not approved',
             summary:
-              typeof eventData.error === 'string'
+              eventData.optional === true
+                ? 'Continuing your original task in the source project.'
+                : typeof eventData.error === 'string'
                 ? eventData.error
                 : 'The exact invasive command was declined.',
             ...eventMeta,
@@ -1028,7 +1158,7 @@ export function SecondarySidebar() {
                 : `${processId} · ${String(process.elapsedMs ?? 0)} ms · ${String(process.stdoutBytes ?? 0)}B stdout · ${String(process.stderrBytes ?? 0)}B stderr`;
           startStudioActionProgress({
             action: String(eventData.toolName ?? 'run-workspace-command'),
-            status: processPhase === 'completed' ? 'done' : 'running',
+            status: processPhase === 'completed' ? process.exitCode === 0 ? 'done' : typeof process.exitCode === 'number' ? 'failed' : 'review' : 'running',
             phase: `process-${processPhase}`,
             title: processPhase === 'completed' ? 'Process completed' : 'Process running',
             summary,
@@ -1105,6 +1235,8 @@ export function SecondarySidebar() {
         } else if (eventType === 'tool.completed' || eventType === 'tool.failed') {
           const toolName = String(eventData.toolName ?? 'studio-agent');
           if (eventData.duplicate === true || toolName === 'verify-blocker') {
+            const progress = studioEventProgress(event, replay);
+            if (progress && eventSessionId) studio.recordActivity(eventSessionId, progress, replay);
             break;
           }
           const copy = studioAgentToolProgressCopy(
@@ -1149,6 +1281,19 @@ export function SecondarySidebar() {
             )
             .map((entry) => entry.relativePath)
             .filter((entry): entry is string => typeof entry === 'string');
+          if (!replay && eventSessionId && Array.isArray(eventData.images)) {
+            const images = eventData.images.filter(
+              (entry): entry is { mimeType: string; base64: string } =>
+                Boolean(entry) &&
+                typeof entry === 'object' &&
+                ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(entry.mimeType) &&
+                typeof entry.base64 === 'string' &&
+                entry.base64.length <= 7_000_000
+            );
+            if (images.length) {
+              studio.appendToolImages(eventSessionId, images.slice(0, 4));
+            }
+          }
           const reportedChangedPaths = Array.isArray(toolOutput?.changedPaths)
             ? toolOutput.changedPaths.filter(
                 (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
@@ -1187,16 +1332,18 @@ export function SecondarySidebar() {
               ? toolOutput.displayCommand
               : typeof toolOutput?.command === 'string'
                 ? toolOutput.command
-                : typeof toolInput?.executable === 'string'
-                  ? [
-                      toolInput.executable,
-                      ...(Array.isArray(toolInput.args)
-                        ? toolInput.args.filter(
-                            (entry): entry is string => typeof entry === 'string'
-                          )
-                        : []),
-                    ].join(' ')
-                  : undefined;
+                : typeof toolInput?.command === 'string'
+                  ? toolInput.command
+                  : typeof toolInput?.executable === 'string'
+                    ? [
+                        toolInput.executable,
+                        ...(Array.isArray(toolInput.args)
+                          ? toolInput.args.filter(
+                              (entry): entry is string => typeof entry === 'string'
+                            )
+                          : []),
+                      ].join(' ')
+                    : undefined;
           const activityPaths = Array.isArray(toolOutput?.files)
             ? toolOutput.files
                 .map((entry) =>
@@ -1207,7 +1354,7 @@ export function SecondarySidebar() {
                 .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
                 .slice(0, 12)
             : [];
-          const outputText = [toolOutput?.stdout, toolOutput?.stderr]
+          const outputText = [toolOutput?.stdout, toolOutput?.stderr, toolOutput?.output, toolOutput?.text]
             .filter(
               (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
             )
@@ -1220,7 +1367,7 @@ export function SecondarySidebar() {
             Boolean(transactionId);
           const transactionClosed = transaction?.state === 'closed';
           const policyRejected = eventData.policyRejected === true;
-          startStudioActionProgress({
+          recordToolProgress({
             action: toolName,
             status: policyRejected ? 'done' : eventType === 'tool.completed' ? 'done' : 'failed',
             phase: copy.phase,
@@ -1229,7 +1376,7 @@ export function SecondarySidebar() {
               : transactionRestored
                 ? 'Repair attempt restored'
                 : changedFiles
-                  ? `Changed ${changedPaths.length} file${changedPaths.length === 1 ? '' : 's'}`
+                  ? `${transactionId?.startsWith('scaffold-') ? 'Created' : 'Changed'} ${changedPaths.length} file${changedPaths.length === 1 ? '' : 's'}${(toolOutput?.scaffoldSummary as { truncated?: boolean } | undefined)?.truncated ? ' (partial scan)' : ''}`
                   : replay && eventType === 'tool.failed'
                     ? `Observed: ${copy.title}`
                     : copy.title,
@@ -1240,13 +1387,17 @@ export function SecondarySidebar() {
                 : typeof eventData.error === 'string'
                   ? humanizeStudioError(eventData.error)
                   : changedFiles
-                    ? transactionClosed
-                      ? 'The CLI verified and closed this source transaction.'
-                      : 'The edit transaction was applied with rollback metadata. Studio is verifying the result.'
-                    : 'The result was returned to the model; Studio is choosing the next step.',
+                    ? transactionId?.startsWith('scaffold-')
+                      ? 'Generated source files were counted on disk. Dependency, build, cache, workspace metadata and environment files are excluded. Scaffold observation does not imply tests passed or provide an undo checkpoint.'
+                      : transactionClosed
+                        ? 'The CLI verified and closed this source transaction.'
+                        : 'The edit transaction was applied with rollback metadata. Studio is verifying the result.'
+                    : studioAgentObservationSummary(toolName, toolOutput),
             changedPaths,
             fileChanges,
             activityPaths,
+            ...(Array.isArray(toolOutput?.contentParts) ? {contentParts: toolOutput.contentParts.filter((part): part is {kind: string; mimeType?: string; supported: boolean} => Boolean(part && typeof part === 'object' && typeof (part as Record<string, unknown>).kind === 'string' && typeof (part as Record<string, unknown>).supported === 'boolean'))} : {}),
+            ...(toolOutput?.imageError || toolOutput?.retentionError ? {outputWarning: String(toolOutput.imageError || toolOutput.retentionError).slice(0, 800)} : {}),
             commandText,
             ...(outputText ? { outputText } : {}),
             intelligencePhase,
@@ -1260,6 +1411,34 @@ export function SecondarySidebar() {
               ? { technicalDetail: eventData.error }
               : {}),
           });
+          // Completing the tool call only means an observation was delivered.
+          // The owned process has its own identity and observed exit status.
+          if (typeof toolOutput?.terminalId === 'string') {
+            const exited = toolOutput.state === 'exited';
+            const running = toolOutput.state === 'running';
+            const succeeded = exited && toolOutput.exitCode === 0;
+            recordToolProgress({
+              action: 'terminal-command',
+              phase: running ? 'terminal-running' : exited ? 'terminal-exited' : 'terminal-closed',
+              status: running ? 'running' : succeeded ? 'done' : exited ? 'failed' : 'review',
+              title: running
+                ? 'Command running'
+                : succeeded
+                  ? 'Command finished'
+                  : exited
+                    ? 'Command failed'
+                    : 'Terminal closed',
+              summary: exited
+                ? `Observed exit code: ${String(toolOutput.exitCode)}.`
+                : running
+                  ? 'The process is still running. Its result has not been recorded yet.'
+                  : 'No process exit code was recorded.',
+              ...(commandText ? { commandText } : {}),
+              ...(outputText ? { outputText } : {}),
+              ...eventMeta,
+              invocationId: `terminal:${toolOutput.terminalId}`,
+            });
+          }
         } else if (eventType === 'verify.completed') {
           const resolved = eventData.ok === true && eventData.cardBlocking === false;
           const verifyOutput =
@@ -1301,6 +1480,20 @@ export function SecondarySidebar() {
                       eventData.error ??
                       'The goal remains active. Studio is continuing from current evidence.'
                   ),
+              ...eventMeta,
+              intelligencePhase: 'verify',
+            });
+            break;
+          }
+          if (verifyOutput?.authority === 'workspace-evidence') {
+            startStudioActionProgress({
+              action: 'verify-blocker',
+              status: resolved ? 'done' : 'failed',
+              phase: resolved ? 'verified' : 'verify-observation',
+              title: resolved ? 'No new editor errors' : 'New editor errors remain',
+              summary: resolved
+                ? 'No new editor errors were found; the current changes were inspected.'
+                : 'The workspace check found new editor errors. Review those diagnostics before completion.',
               ...eventMeta,
               intelligencePhase: 'verify',
             });
@@ -1361,7 +1554,7 @@ export function SecondarySidebar() {
               status: 'done',
               phase: 'completed',
               title: 'Completed',
-              summary: String(eventData.summary ?? 'Assistant completed this request.'),
+              summary: 'The response is available below.',
               ...eventMeta,
             });
           }
@@ -1433,7 +1626,13 @@ export function SecondarySidebar() {
             const failedIncidentKey = resolveStudioIncidentKeyForSession(eventSessionId);
             const requiresUserDecision = eventRequiresDecision;
             const failureMessage = terminalPresentation.summary;
-            studio.failSession(eventSessionId, failureMessage);
+            studio.failSession(
+              eventSessionId,
+              failureMessage,
+              typeof eventData.answer === 'string' ? eventData.answer : undefined,
+              typeof event?.requestId === 'string' ? event.requestId : undefined,
+              eventTerminalReason
+            );
             if (failedIncidentKey) {
               const terminalTitle = terminalPresentation.title;
               setStudioIncidentProgress((previous) => {
@@ -1487,9 +1686,14 @@ export function SecondarySidebar() {
         break;
       }
       case 'sidebarStudioToolApprovalUnavailable': {
+        const sessionId = typeof data.sessionId === 'string' ? data.sessionId : undefined;
+        const previous = studio.sessions.find((session) => session.sessionId === sessionId)?.messages
+          .flatMap((turn) => turn.activity ?? [])
+          .find((entry) => entry.approvalRequest && entry.approvalRequest.toolCallId === data.toolCallId && entry.approvalRequest.fingerprint === data.fingerprint);
         startStudioActionProgress({
-          sessionId: typeof data.sessionId === 'string' ? data.sessionId : undefined,
-          action: 'studio-agent',
+          ...previous,
+          sessionId,
+          action: previous?.action ?? 'studio-agent',
           status: 'review',
           phase: 'command-approval-expired',
           title: 'Fresh approval required',
@@ -1497,8 +1701,10 @@ export function SecondarySidebar() {
             typeof data.summary === 'string'
               ? data.summary
               : 'Resume the session to obtain a fresh exact approval request.',
-          requiresApproval: true,
+          requiresApproval: false,
+          approvalRequest: undefined,
         });
+        if (sessionId) vscode.postMessage('sidebarStudioAction', { action: 'agent-status', sessionId }, META);
         break;
       }
       case 'sidebarStudioSessionState': {
@@ -1508,7 +1714,8 @@ export function SecondarySidebar() {
         }
         if (data.active === true) {
           setStudioAutoFixBusy(true);
-          studio.setActivity(statusSessionId, 'Continuing the active repair...');
+          if (data.status === 'waiting-input') studio.setWaitingForInput(statusSessionId, true);
+          else studio.setActivity(statusSessionId, data.status === 'waiting-permission' ? 'Waiting for command approval…' : 'Continuing the active request…');
           break;
         }
         setStudioAutoFixBusy(false);
@@ -1623,7 +1830,14 @@ export function SecondarySidebar() {
         if (hydratedSession?.status === 'streaming') {
           studio.failSession(
             statusSessionId,
-            'This repair is paused. Review the latest evidence, then press Resume repair when you are ready.'
+            typeof data.error === 'string' && data.error.trim()
+              ? data.error
+              : data.terminalReason === 'cancelled'
+                ? 'This request was stopped.'
+                : 'This repair is paused. Review the latest evidence, then press Resume repair when you are ready.',
+            typeof data.answer === 'string' ? data.answer : undefined,
+            undefined,
+            typeof data.terminalReason === 'string' ? data.terminalReason : undefined
           );
           if (hydratedIncidentKey) {
             updateStudioIncidentRepairState(hydratedIncidentKey, {
@@ -1918,7 +2132,10 @@ export function SecondarySidebar() {
       // ---- Workspace Advisor ----
       case 'sidebarImpactScope':
         if (data.scopeMode !== 'none') {
-          setScope(resolveScopeFromPayload(data));
+          const sessionId = typeof data.sessionId === 'string' ? data.sessionId : '';
+          if (sessionId) {
+            impact.setSessionScope(sessionId, resolveScopeFromPayload(data));
+          }
         }
         break;
       case 'sidebarImpactThinking':
@@ -1934,7 +2151,8 @@ export function SecondarySidebar() {
         impact.finishStreaming(
           String(data.sessionId ?? ''),
           data.modelId as string | undefined,
-          data.answer as string | undefined
+          data.answer as string | undefined,
+          typeof data.requestId === 'string' ? data.requestId : undefined
         );
         break;
       case 'sidebarImpactError':
@@ -1944,9 +2162,72 @@ export function SecondarySidebar() {
       // ---- Studio ----
       case 'sidebarStudioScope':
         if (data.scopeMode !== 'none') {
-          setScope(resolveScopeFromPayload(data));
+          const sessionId = typeof data.sessionId === 'string' ? data.sessionId : '';
+          if (sessionId) {
+            studio.setSessionScope(sessionId, resolveScopeFromPayload(data));
+          }
         }
         break;
+      case 'sidebarStudioSessionReconciliation': {
+        const activeSessionIds = new Set(
+          Array.isArray(data.activeSessionIds)
+            ? data.activeSessionIds.filter(
+                (sessionId): sessionId is string => typeof sessionId === 'string'
+              )
+            : []
+        );
+        const waitingInputSessionIds = new Set(
+          Array.isArray(data.waitingInputSessionIds) ? data.waitingInputSessionIds : []
+        );
+        for (const sessionId of activeSessionIds) {
+          studio.setWaitingForInput(sessionId, waitingInputSessionIds.has(sessionId));
+        }
+        const terminalSessionIds = new Set<string>();
+        if (Array.isArray(data.terminalSessions)) {
+          for (const entry of data.terminalSessions) {
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+              continue;
+            }
+            const terminal = entry as Record<string, unknown>;
+            const sessionId = typeof terminal.sessionId === 'string' ? terminal.sessionId : '';
+            if (!sessionId) {
+              continue;
+            }
+            terminalSessionIds.add(sessionId);
+            if (terminal.status === 'completed') {
+              studio.finishStreaming(
+                sessionId,
+                typeof terminal.modelId === 'string' ? terminal.modelId : undefined,
+                typeof terminal.answer === 'string' ? terminal.answer : undefined,
+                typeof terminal.requestId === 'string' ? terminal.requestId : undefined
+              );
+            } else if (terminal.status === 'failed' || terminal.status === 'cancelled') {
+              studio.failSession(
+                sessionId,
+                typeof terminal.error === 'string' && terminal.error.trim()
+                  ? terminal.error
+                  : 'This request ended before the sidebar reloaded.',
+                typeof terminal.answer === 'string' ? terminal.answer : undefined,
+                typeof terminal.requestId === 'string' ? terminal.requestId : undefined,
+                typeof terminal.terminalReason === 'string' ? terminal.terminalReason : undefined
+              );
+            }
+          }
+        }
+        for (const session of studio.sessions) {
+          if (
+            session.status === 'streaming' &&
+            !activeSessionIds.has(session.sessionId) &&
+            !terminalSessionIds.has(session.sessionId)
+          ) {
+            studio.failSession(
+              session.sessionId,
+              'This request was interrupted before the sidebar reloaded. You can resend it.'
+            );
+          }
+        }
+        break;
+      }
       case 'sidebarStudioThinking':
         studio.setActivity(
           String(data.sessionId ?? ''),
@@ -1975,6 +2256,31 @@ export function SecondarySidebar() {
             description: data.description,
             request: data.request,
           });
+        }
+        break;
+      }
+      case 'sidebarStudioCheckpoint': {
+        if (typeof data.sessionId === 'string' && Array.isArray(data.requestIds) && Array.isArray(data.transactionIds)) {
+          const checkpointRequestIds = data.requestIds.filter((id): id is string => typeof id === 'string');
+          setCheckpointPending((pending) => ({ ...pending, [JSON.stringify([data.sessionId, ...checkpointRequestIds])]: false }));
+          studio.reviewCheckpoint(data.sessionId, checkpointRequestIds,
+            data.transactionIds.filter((id): id is string => typeof id === 'string'),
+            data.state === 'kept' || data.state === 'restored' || data.state === 'reapplied' ? data.state : undefined,
+            typeof data.error === 'string' ? data.error : undefined);
+        }
+        break;
+      }
+      case 'sidebarStudioAttachments': {
+        if (typeof data.sessionId === 'string' && typeof data.turnId === 'string') {
+          studio.restoreAttachments(
+            data.sessionId,
+            data.turnId,
+            data.stored === true,
+            Array.isArray(data.images)
+              ? (data.images as Array<{ mimeType: string; base64: string }>)
+              : undefined,
+            typeof data.text === 'string' ? data.text : undefined,
+            typeof data.error === 'string' ? data.error : undefined);
         }
         break;
       }
@@ -2064,7 +2370,13 @@ export function SecondarySidebar() {
         });
         const failureMessage = terminalPresentation.summary;
         const failedIncidentKey = resolveStudioIncidentKeyForSession(failedSessionId);
-        studio.failSession(failedSessionId, failureMessage);
+        studio.failSession(
+          failedSessionId,
+          failureMessage,
+          typeof data.answer === 'string' ? data.answer : undefined,
+          typeof data.requestId === 'string' ? data.requestId : undefined,
+          terminalReason
+        );
         if (failedIncidentKey) {
           const terminalTitle = terminalPresentation.title;
           if (requiresUserDecision) {
@@ -2146,7 +2458,6 @@ export function SecondarySidebar() {
             break;
           }
           const incidentScope = scopeFromHandoff(nextHandoff, scope);
-          setScope(incidentScope);
           const incidentKey = openStudioIncidentSession(nextHandoff, incidentScope);
           setStudioIncidentTimeline((prev) => ({ ...prev, [incidentKey]: [] }));
           setBlockerHandoff(nextHandoff);
@@ -2170,6 +2481,7 @@ export function SecondarySidebar() {
           if (editorIssue) {
             studio.openEditorSession({
               title: editorIssueSessionTitle('Fix', editorIssue),
+              assistantMode: 'agent',
               mode: 'investigate',
               editorIssue,
             });
@@ -2186,7 +2498,6 @@ export function SecondarySidebar() {
         setAssistantMode('agent');
         if (advisorHandoff) {
           const incidentScope = scopeFromHandoff(advisorHandoff, scope);
-          setScope(incidentScope);
           const incidentKey = openStudioIncidentSession(advisorHandoff, incidentScope);
           studioMirroredHandoffKeysRef.current.add(
             `${advisorHandoff.cardId}:${advisorHandoff.blockerSignature}`
@@ -2903,30 +3214,32 @@ export function SecondarySidebar() {
     studio.sessions,
   ]);
 
-  const handleSubmitImpact = (question: string, options?: { forceNew?: boolean }) => {
+  const handleSubmitImpact = (
+    question: string,
+    options?: { forceNew?: boolean; images?: Array<{ mimeType: string; base64: string }> }
+  ) => {
     const activeAskSession =
       studio.sessions.find((session) => session.sessionId === studio.activeId) ?? null;
-    const { sessionId, history } = studio.startQuery(question, 'investigate', {
+    const { sessionId, history, session } = studio.startQuery(question, 'investigate', {
       ...options,
       assistantMode: 'ask',
       scope: activeAskSession?.editorIssue ? null : sessionScopeSnapshot,
     });
-    const sessionForPayload =
-      activeAskSession ??
-      studio.sessions.find((session) => session.sessionId === sessionId) ??
-      null;
     vscode.postMessage(
       'sidebarStudioQuery',
       {
         task: question,
+        images: options?.images,
+        turnId: session.messages.at(-2)?.id,
+        hasAttachments: Boolean(options?.images?.length || question.includes('<attachment>')),
         sessionId,
         assistantMode: 'ask',
         mode: 'investigate',
         modelId: selectedModelId ?? undefined,
         history,
-        scope: scopePayloadForSession(sessionForPayload, scope),
-        scopeMode: sessionScopeMode(sessionForPayload),
-        ...(sessionForPayload?.editorIssue ? { editorIssue: sessionForPayload.editorIssue } : {}),
+        scope: scopePayloadForSession(session, scope),
+        scopeMode: sessionScopeMode(session),
+        ...(session.editorIssue ? { editorIssue: session.editorIssue } : {}),
       },
       META
     );
@@ -2949,6 +3262,7 @@ export function SecondarySidebar() {
         } = activeImpact.editorIssue;
         studio.openEditorSession({
           title: editorIssueSessionTitle('Fix', editorIssue),
+          assistantMode: 'agent',
           mode: 'investigate',
           editorIssue,
         });
@@ -3003,39 +3317,61 @@ export function SecondarySidebar() {
   const submitStudioWithMode = (
     task: string,
     requestedMode: AssistantMode,
-    options?: { forceNew?: boolean }
+    options?: { forceNew?: boolean; images?: Array<{ mimeType: string; base64: string }> }
   ) => {
     const activeStudioSession =
       studio.sessions.find((session) => session.sessionId === studio.activeId) ?? null;
     const requestedStudioMode = requestedMode === 'plan' ? 'prepare' : 'investigate';
-    const { sessionId, history } = studio.startQuery(task, requestedStudioMode, {
+    const { sessionId, history, session } = studio.startQuery(task, requestedStudioMode, {
       ...options,
       assistantMode: requestedMode,
       scope: activeStudioSession?.editorIssue ? null : sessionScopeSnapshot,
     });
-    const sessionForPayload =
-      activeStudioSession ??
-      studio.sessions.find((session) => session.sessionId === sessionId) ??
-      null;
     vscode.postMessage(
       'sidebarStudioQuery',
       {
         task,
+        images: options?.images,
+        turnId: session.messages.at(-2)?.id,
+        hasAttachments: Boolean(options?.images?.length || task.includes('<attachment>')),
         sessionId,
         assistantMode: requestedMode,
         mode: requestedStudioMode,
         modelId: assistantModelsRef.current[requestedMode] ?? undefined,
         history,
-        scope: scopePayloadForSession(sessionForPayload, scope),
-        scopeMode: sessionScopeMode(sessionForPayload),
-        ...(sessionForPayload?.editorIssue ? { editorIssue: sessionForPayload.editorIssue } : {}),
+        scope: scopePayloadForSession(session, scope),
+        scopeMode: sessionScopeMode(session),
+        ...(session.editorIssue ? { editorIssue: session.editorIssue } : {}),
         ...(activeBlockerHandoff ? { blockerHandoff: activeBlockerHandoff } : {}),
       },
       META
     );
   };
 
-  const handleSubmitStudio = (task: string, options?: { forceNew?: boolean }) => {
+  const steerStudio = (message: string, images?: Array<{ mimeType: string; base64: string }>) => {
+    const sessionId = studio.activeId;
+    if (!sessionId) {
+      return;
+    }
+    const turnId = studio.steerSession(sessionId, message, images);
+    vscode.postMessage(
+      'sidebarStudioAction',
+      {
+        action: 'agent-steer',
+        turnId,
+        sessionId,
+        message,
+        images,
+        ...(activeBlockerHandoff ? { blockerHandoff: activeBlockerHandoff } : {}),
+      },
+      META
+    );
+  };
+
+  const handleSubmitStudio = (
+    task: string,
+    options?: { forceNew?: boolean; images?: Array<{ mimeType: string; base64: string }> }
+  ) => {
     submitStudioWithMode(task, assistantMode, options);
   };
 
@@ -3102,7 +3438,15 @@ export function SecondarySidebar() {
       : activeStudioActionProgress
         ? [activeStudioActionProgress]
         : [];
-  const activeStudioChangedFiles = buildStudioChangedFilesSummary(activeStudioRepairTimeline);
+  const studioReviewTurn = [...(activeStudio?.messages ?? [])]
+    .reverse()
+    .find(
+      (turn) =>
+        turn.role === 'assistant' && turn.activity?.some((entry) => entry.fileChanges?.length)
+    );
+  const activeStudioChangedFiles = buildStudioChangedFilesSummary(
+    visibleStudioIncidentKey ? activeStudioRepairTimeline : (studioReviewTurn?.activity ?? [])
+  );
   const activeStudioVerifyFailure = visibleStudioIncidentKey
     ? (studioIncidentVerifyFailures[visibleStudioIncidentKey] ?? null)
     : studioVerifyFailure;
@@ -3144,7 +3488,7 @@ export function SecondarySidebar() {
   const hideContinuingRepairResult =
     activeStudioRepairRunning ||
     activeStudioActionProgress?.status === 'failed' ||
-    activeStudioTerminalReason === 'ai-provider-unavailable';
+    (activeStudioTerminalReason === 'ai-provider-unavailable' || activeStudioTerminalReason === 'ai-provider-timeout');
   const visibleStudioVerifyFailureForResult = hideContinuingRepairResult
     ? null
     : activeStudioVerifyFailure;
@@ -3202,6 +3546,7 @@ export function SecondarySidebar() {
     setStudioActionProgress(normalizedProgress);
     const progressSessionId = normalizedProgress.sessionId ?? studio.activeId;
     if (progressSessionId) {
+      studio.recordActivity(progressSessionId, normalizedProgress);
       setStudioSessionProgress((previous) => ({
         ...previous,
         [progressSessionId]: normalizedProgress,
@@ -3302,17 +3647,43 @@ export function SecondarySidebar() {
   const openDashboardRepairFlow = () => {
     vscode.postMessage('sidebarOpenDashboard', { section: 'repair' }, META);
   };
-  const openStudioChangedFile = (relativePath: string) => {
+  const studioReviewTarget = (target: { ref: string; name: string } | null | undefined = activeStudio?.executionTarget) => ({
+    sessionId: studio.activeId ?? undefined,
+    ...(target ? { targetRef: target.ref } : {}),
+  });
+  const openStudioChangedFile = (
+    relativePath: string,
+    target?: { ref: string; name: string } | null,
+    requestId?: string,
+    transactionId?: string
+  ) => {
     vscode.postMessage(
       'sidebarOpenWorkspaceFile',
-      { relativePath, workspacePath: scope.workspacePath },
+      {
+        relativePath,
+        workspacePath: scope.workspacePath,
+        ...studioReviewTarget(target),
+        requestId,
+        transactionId,
+      },
       META
     );
   };
-  const openStudioChangedFileDiff = (relativePath: string, transactionId: string) => {
+  const openStudioChangedFileDiff = (
+    relativePath: string,
+    transactionId: string,
+    target?: { ref: string; name: string } | null,
+    requestId?: string
+  ) => {
     vscode.postMessage(
       'sidebarOpenWorkspaceDiff',
-      { relativePath, transactionId, workspacePath: scope.workspacePath },
+      {
+        relativePath,
+        transactionId,
+        workspacePath: scope.workspacePath,
+        ...studioReviewTarget(target),
+        requestId,
+      },
       META
     );
   };
@@ -3321,6 +3692,8 @@ export function SecondarySidebar() {
       'sidebarReviewWorkspaceChanges',
       {
         workspacePath: scope.workspacePath,
+        ...studioReviewTarget(studioReviewTurn?.executionTarget ?? null),
+        requestId: studioReviewTurn?.requestIds?.at(-1),
         files: activeStudioChangedFiles.files
           .filter((file) => file.comparable)
           .map((file) => ({
@@ -3337,7 +3710,8 @@ export function SecondarySidebar() {
       {
         transactionId,
         workspacePath: scope.workspacePath,
-        sessionId: studio.activeId ?? undefined,
+        ...studioReviewTarget(studioReviewTurn?.executionTarget ?? null),
+        requestId: studioReviewTurn?.requestIds?.at(-1),
       },
       META
     );
@@ -3434,19 +3808,174 @@ export function SecondarySidebar() {
       META
     );
   };
-  const stopStudioAgent = () => {
-    if (!studio.activeId) {
-      return;
-    }
+  const cancelStudioSession = (sessionId: string) => {
     vscode.postMessage(
       'sidebarStudioAction',
       {
         action: 'agent-cancel',
-        sessionId: studio.activeId,
-        ...(activeBlockerHandoff ? { blockerHandoff: activeBlockerHandoff } : {}),
+        sessionId,
+        silentIfNotRunning: true,
       },
       META
     );
+  };
+  const stopStudioAgent = () => {
+    if (studio.activeId) {
+      cancelStudioSession(studio.activeId);
+    }
+  };
+  const renderStudioTurnActions = (turn: import('./sidebarSessions').ChatTurn) => {
+    const requestIds = turn.requestIds ?? [];
+    const related = activeStudio?.messages.filter((message) => message.role === 'assistant' && message.requestIds?.some((id) => requestIds.includes(id))) ?? [];
+    if (!requestIds.length || related.at(-1) !== turn) return null;
+    const transactionIds = [...new Set(related.flatMap((message) => message.activity ?? []).map((entry) => entry.transactionId).filter((id): id is string => Boolean(id?.startsWith('native-'))))];
+    if (!transactionIds.length) return null;
+    const pendingKey = JSON.stringify([studio.activeId, ...requestIds]);
+    const busy = checkpointPending[pendingKey] === true;
+    const submit = (action: string) => {
+      if (busy) return;
+      setCheckpointPending((pending) => ({ ...pending, [pendingKey]: true }));
+      vscode.postMessage('sidebarStudioAction', { action, sessionId: studio.activeId, requestIds, transactionIds }, META);
+    };
+    return (
+      <div
+        className="ws-sidebar__checkpoint"
+        role="group"
+        aria-label="Request file checkpoint"
+        aria-busy={busy}
+      >
+        <span>
+          {busy
+            ? 'Updating file checkpoint…'
+            : turn.checkpointReview === 'restored'
+              ? 'Files restored. Earlier verification describes the previous files.'
+              : turn.checkpointReview === 'reapplied'
+                ? 'Changes reapplied. Run checks again before claiming completion.'
+                : turn.checkpointReview === 'kept'
+                  ? 'Changes kept'
+                  : 'Review file changes'}
+        </span>
+        {turn.checkpointReview === 'restored' && (
+          <button
+            type="button"
+            disabled={activeStudioRepairRunning || busy}
+            onClick={() => submit('checkpoint-redo')}
+          >
+            Redo changes
+          </button>
+        )}
+        {turn.checkpointReview !== 'restored' && (
+          <>
+            <button
+              type="button"
+              disabled={activeStudioRepairRunning || busy || turn.checkpointReview === 'kept'}
+              onClick={() => submit('checkpoint-keep')}
+            >
+              Keep changes
+            </button>
+            <button
+              type="button"
+              disabled={activeStudioRepairRunning || busy}
+              onClick={() => submit('checkpoint-restore')}
+            >
+              Restore checkpoint
+            </button>
+          </>
+        )}
+        {turn.checkpointError && <span role="alert">{turn.checkpointError}</span>}
+      </div>
+    );
+  };
+
+  const studioReviewDock = studioReviewTurn ? (
+    <>
+      <StudioChangedFilesSummary
+        key={`${studio.activeId}:${studioReviewTurn.requestIds?.join(':')}`}
+        summary={activeStudioChangedFiles}
+        onOpenFile={(file, transaction) =>
+          openStudioChangedFile(
+            file,
+            studioReviewTurn.executionTarget ?? null,
+            studioReviewTurn.requestIds?.at(-1),
+            transaction
+          )
+        }
+        onOpenDiff={(file, transaction) =>
+          openStudioChangedFileDiff(
+            file,
+            transaction,
+            studioReviewTurn.executionTarget ?? null,
+            studioReviewTurn.requestIds?.at(-1)
+          )
+        }
+        onReview={reviewStudioChangedFiles}
+        onUndo={activeStudioChangedFiles.undoTransactionId?.startsWith('native-') ? undefined : undoStudioAgentPatch}
+        busy={activeStudioRepairRunning}
+      />
+      {renderStudioTurnActions(studioReviewTurn)}
+    </>
+  ) : null;
+
+  const deleteStudioSession = (sessionId: string) => {
+    const deletingSession = studio.sessions.find((session) => session.sessionId === sessionId);
+    const incidentKey = deletingSession?.incident?.key;
+    if (deletingSession?.status === 'streaming') {
+      cancelStudioSession(sessionId);
+    }
+    vscode.postMessage('sidebarStudioAction', { action: 'attachments-delete', sessionId }, META);
+    studio.deleteSession(sessionId);
+    setStudioSessionProgress((previous) => {
+      const next = { ...previous };
+      delete next[sessionId];
+      return next;
+    });
+    setStudioSessionTimeline((previous) => {
+      const next = { ...previous };
+      delete next[sessionId];
+      return next;
+    });
+    if (incidentKey) {
+      setStudioIncidentHandoffs((previous) => {
+        const next = { ...previous };
+        delete next[incidentKey];
+        return next;
+      });
+      setStudioIncidentPlans((previous) => {
+        const next = { ...previous };
+        delete next[incidentKey];
+        return next;
+      });
+      setStudioIncidentProgress((previous) => {
+        const next = { ...previous };
+        delete next[incidentKey];
+        return next;
+      });
+      setStudioIncidentTimeline((previous) => {
+        const next = { ...previous };
+        delete next[incidentKey];
+        return next;
+      });
+      setStudioIncidentVerifyFailures((previous) => {
+        const next = { ...previous };
+        delete next[incidentKey];
+        return next;
+      });
+      setStudioIncidentReturnStates((previous) => {
+        const next = { ...previous };
+        delete next[incidentKey];
+        return next;
+      });
+      setStudioIncidentRollbackCommands((previous) => {
+        const next = { ...previous };
+        delete next[incidentKey];
+        return next;
+      });
+      setStudioIncidentPatchReviews((previous) => {
+        const next = { ...previous };
+        delete next[incidentKey];
+        return next;
+      });
+    }
   };
   const decideStudioToolApproval = (
     request: SidebarStudioApprovalRequestView,
@@ -3626,6 +4155,7 @@ export function SecondarySidebar() {
   };
 
   const refreshModels = () => {
+    setModelsLoadError(null);
     vscode.postMessage('sidebarRefreshModels', {}, META);
   };
 
@@ -3668,9 +4198,37 @@ export function SecondarySidebar() {
     />
   );
 
+  const handleModeTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+      return;
+    }
+    const tabs = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+    );
+    const currentIndex = tabs.findIndex((tab) => tab === document.activeElement);
+    if (currentIndex < 0 || tabs.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    const nextIndex =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? tabs.length - 1
+          : (currentIndex + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length;
+    const nextTab = tabs[nextIndex];
+    nextTab.focus();
+    nextTab.click();
+  };
+
   return (
     <div className="ws-sidebar ws-sidebar--secondary" data-variant="secondary-sidebar">
-      <div className="ws-sidebar__tabs" role="tablist" aria-label="Workspai AI modes">
+      <div
+        className="ws-sidebar__tabs"
+        role="tablist"
+        aria-label="Workspai AI modes"
+        onKeyDown={handleModeTabKeyDown}
+      >
         {TABS.map((tab) => {
           const Icon = tab.icon;
           const selected = activeTab === tab.id;
@@ -3678,9 +4236,16 @@ export function SecondarySidebar() {
             <button
               key={tab.id}
               type="button"
+              id={`workspai-sidebar-tab-${tab.id}`}
               role="tab"
               className="ws-sidebar__tab"
               aria-selected={selected}
+              aria-controls={
+                tab.id === 'create'
+                  ? 'workspai-sidebar-panel-create'
+                  : 'workspai-sidebar-panel-studio-ask workspai-sidebar-panel-studio-assistant'
+              }
+              tabIndex={selected ? 0 : -1}
               aria-label={tab.label}
               title={tab.title}
               onClick={() => setActiveTab(tab.id)}
@@ -3721,6 +4286,7 @@ export function SecondarySidebar() {
         onSelectSession={create.selectSession}
         onDeleteSession={create.deleteSession}
         models={models}
+        modelLoadError={modelsLoadError}
         selectedModelId={selectedModelId}
         onSelectModel={handleSelectModel}
         onRefreshModels={refreshModels}
@@ -3742,6 +4308,7 @@ export function SecondarySidebar() {
       />
 
       <ChatTab
+        panelId="workspai-sidebar-panel-studio-ask"
         active={activeTab === 'studio' && assistantMode === 'ask'}
         contextLabel="Workspai Ask"
         placeholder="Ask anything about this workspace"
@@ -3754,10 +4321,52 @@ export function SecondarySidebar() {
           const selected = studio.sessions.find((session) => session.sessionId === id);
           setAssistantMode(selected?.assistantMode ?? 'ask');
         }}
-        onDeleteSession={studio.deleteSession}
+        onDeleteSession={deleteStudioSession}
         suggestions={advisorSuggestions(scope)}
-        onSubmit={handleSubmitImpact}
+        onSubmit={(question, images) => handleSubmitImpact(question, { images })}
+        renderTurnActions={(turn) =>
+          turn === studioReviewTurn ? null : renderStudioTurnActions(turn)
+        }
+        composerReview={studioReviewDock}
+        renderTurnActivity={(turn, isLatest, isCurrentPart) =>
+          turn.activity?.length ? (
+            <StudioActivityTranscript
+              entries={turn.activity}
+              onOpenSubagentActivity={(requestId, toolCallId) =>
+                vscode.postMessage(
+                  'sidebarStudioAction',
+                  { action: 'subagent-history', sessionId: studio.activeId, requestId, toolCallId },
+                  META
+                )
+              }
+              active={
+                isCurrentPart && activeStudio?.status === 'streaming' && !activeStudio?.waitingForInput
+              }
+              onOpenFile={(file, transaction) =>
+                openStudioChangedFile(
+                  file,
+                  turn.executionTarget ?? (isLatest ? activeStudio?.executionTarget : null),
+                  turn.requestIds?.at(-1),
+                  transaction
+                )
+              }
+              onOpenDiff={(file, transaction) =>
+                openStudioChangedFileDiff(
+                  file,
+                  transaction,
+                  turn.executionTarget ?? (isLatest ? activeStudio?.executionTarget : null),
+                  turn.requestIds?.at(-1)
+                )
+              }
+            />
+          ) : null
+        }
+        onSteer={steerStudio}
+        onCancel={stopStudioAgent}
+        onApprovalDecision={decideStudioToolApproval}
+        onRestoreAttachment={(turnId) => vscode.postMessage('sidebarStudioAction', { action: 'attachments-read', sessionId: studio.activeId, turnId }, META)}
         models={models}
+        modelLoadError={modelsLoadError}
         selectedModelId={selectedModelId}
         onSelectModel={handleSelectModel}
         onRefreshModels={refreshModels}
@@ -3781,15 +4390,6 @@ export function SecondarySidebar() {
                   <small>{advisorActionFailure.nextAction}</small>
                 ) : null}
               </div>
-            </div>
-          ) : activeStudioRepairTimeline.length > 0 ? (
-            <div className="ws-sidebar__studio-repair-timeline" aria-label="Assistant activity">
-              <StudioActionProgress
-                progress={activeStudioRepairTimeline[activeStudioRepairTimeline.length - 1]}
-                repairBubble={true}
-                historical={false}
-                onApprovalDecision={decideStudioToolApproval}
-              />
             </div>
           ) : null
         }
@@ -3821,6 +4421,7 @@ export function SecondarySidebar() {
       />
 
       <ChatTab
+        panelId="workspai-sidebar-panel-studio-assistant"
         active={activeTab === 'studio' && assistantMode !== 'ask'}
         contextLabel={
           assistantMode === 'plan'
@@ -3876,63 +4477,7 @@ export function SecondarySidebar() {
             setStudioPatchReview(null);
           }
         }}
-        onDeleteSession={(id) => {
-          const incidentKey = studio.sessions.find((session) => session.sessionId === id)?.incident
-            ?.key;
-          studio.deleteSession(id);
-          setStudioSessionProgress((previous) => {
-            const next = { ...previous };
-            delete next[id];
-            return next;
-          });
-          setStudioSessionTimeline((previous) => {
-            const next = { ...previous };
-            delete next[id];
-            return next;
-          });
-          if (incidentKey) {
-            setStudioIncidentHandoffs((prev) => {
-              const next = { ...prev };
-              delete next[incidentKey];
-              return next;
-            });
-            setStudioIncidentPlans((prev) => {
-              const next = { ...prev };
-              delete next[incidentKey];
-              return next;
-            });
-            setStudioIncidentProgress((prev) => {
-              const next = { ...prev };
-              delete next[incidentKey];
-              return next;
-            });
-            setStudioIncidentTimeline((prev) => {
-              const next = { ...prev };
-              delete next[incidentKey];
-              return next;
-            });
-            setStudioIncidentVerifyFailures((prev) => {
-              const next = { ...prev };
-              delete next[incidentKey];
-              return next;
-            });
-            setStudioIncidentReturnStates((prev) => {
-              const next = { ...prev };
-              delete next[incidentKey];
-              return next;
-            });
-            setStudioIncidentRollbackCommands((prev) => {
-              const next = { ...prev };
-              delete next[incidentKey];
-              return next;
-            });
-            setStudioIncidentPatchReviews((prev) => {
-              const next = { ...prev };
-              delete next[incidentKey];
-              return next;
-            });
-          }
-        }}
+        onDeleteSession={deleteStudioSession}
         suggestions={
           assistantMode === 'goal'
             ? [
@@ -3942,26 +4487,48 @@ export function SecondarySidebar() {
               ]
             : studioSuggestions(studioMode, scope)
         }
-        onSubmit={handleSubmitStudio}
-        onSteer={(message) => {
-          const sessionId = studio.activeId;
-          if (!sessionId) {
-            return;
-          }
-          studio.steerSession(sessionId, message);
-          vscode.postMessage(
-            'sidebarStudioAction',
-            {
-              action: 'agent-steer',
-              sessionId,
-              message,
-              ...(activeBlockerHandoff ? { blockerHandoff: activeBlockerHandoff } : {}),
-            },
-            META
-          );
-        }}
+        onSubmit={(question, images) => handleSubmitStudio(question, { images })}
+        renderTurnActions={(turn) =>
+          turn === studioReviewTurn ? null : renderStudioTurnActions(turn)
+        }
+        composerReview={studioReviewDock}
+        renderTurnActivity={(turn, isLatest, isCurrentPart) =>
+          turn.activity?.length ? (
+            <StudioActivityTranscript
+              entries={turn.activity}
+              onOpenSubagentActivity={(requestId, toolCallId) =>
+                vscode.postMessage(
+                  'sidebarStudioAction',
+                  { action: 'subagent-history', sessionId: studio.activeId, requestId, toolCallId },
+                  META
+                )
+              }
+              active={isCurrentPart && activeStudioRepairRunning && !activeStudio?.waitingForInput}
+              onOpenFile={(file, transaction) =>
+                openStudioChangedFile(
+                  file,
+                  turn.executionTarget ?? (isLatest ? activeStudio?.executionTarget : null),
+                  turn.requestIds?.at(-1),
+                  transaction
+                )
+              }
+              onOpenDiff={(file, transaction) =>
+                openStudioChangedFileDiff(
+                  file,
+                  transaction,
+                  turn.executionTarget ?? (isLatest ? activeStudio?.executionTarget : null),
+                  turn.requestIds?.at(-1)
+                )
+              }
+            />
+          ) : null
+        }
+        onSteer={steerStudio}
         onCancel={stopStudioAgent}
+        onApprovalDecision={decideStudioToolApproval}
+        onRestoreAttachment={(turnId) => vscode.postMessage('sidebarStudioAction', { action: 'attachments-read', sessionId: studio.activeId, turnId }, META)}
         models={models}
+        modelLoadError={modelsLoadError}
         selectedModelId={selectedModelId}
         onSelectModel={handleSelectModel}
         onRefreshModels={refreshModels}
@@ -4010,54 +4577,6 @@ export function SecondarySidebar() {
                   onReject={studioRejectPatches}
                 />
               ) : null}
-              {activeStudioRepairTimeline.length > 0 ? (
-                <div
-                  className="ws-sidebar__studio-repair-timeline"
-                  aria-label="Live repair timeline"
-                >
-                  <StudioActionProgress
-                    progress={activeStudioRepairTimeline[activeStudioRepairTimeline.length - 1]}
-                    repairBubble={true}
-                    historical={false}
-                    onApprovalDecision={decideStudioToolApproval}
-                    onNextAction={handleStudioProgressNextAction}
-                    onOpenFile={openStudioChangedFile}
-                    onOpenDiff={openStudioChangedFileDiff}
-                    onUndo={
-                      activeStudioChangedFiles.files.length === 0 ? undoStudioAgentPatch : undefined
-                    }
-                    busy={activeStudioRepairRunning}
-                  />
-                  <StudioChangedFilesSummary
-                    summary={activeStudioChangedFiles}
-                    onOpenDiff={openStudioChangedFileDiff}
-                    onReview={reviewStudioChangedFiles}
-                    onUndo={undoStudioAgentPatch}
-                    busy={activeStudioRepairRunning}
-                  />
-                  {activeStudioRepairTimeline.length > 1 ? (
-                    <details className="ws-sidebar__studio-activity-history">
-                      <summary>
-                        {studioRepairHistoryDisclosureLabel(activeStudioRepairTimeline)}
-                      </summary>
-                      <div role="list" aria-label="Completed repair steps">
-                        {studioVisibleRepairHistory(activeStudioRepairTimeline).map(
-                          (progress, index) => (
-                          <StudioActionProgress
-                            key={`${progress.action}:${progress.phase ?? 'phase'}:${progress.status}:${index}`}
-                            progress={progress}
-                            repairBubble={true}
-                            historical={true}
-                            onNextAction={handleStudioProgressNextAction}
-                            busy={activeStudioRepairRunning}
-                          />
-                          )
-                        )}
-                      </div>
-                    </details>
-                  ) : null}
-                </div>
-              ) : null}
               {activeStudioRemediationPlan ? (
                 <StudioRemediationPlan
                   plan={activeStudioRemediationPlan}
@@ -4077,51 +4596,6 @@ export function SecondarySidebar() {
                 onBackToDashboard={openDashboardRepairFlow}
               />
             </>
-          ) : activeStudioRepairTimeline.length > 0 ? (
-            <div
-              className="ws-sidebar__studio-repair-timeline"
-              aria-label="Live Assistant activity"
-            >
-              <StudioActionProgress
-                progress={activeStudioRepairTimeline[activeStudioRepairTimeline.length - 1]}
-                repairBubble={true}
-                historical={false}
-                onApprovalDecision={decideStudioToolApproval}
-                onOpenFile={openStudioChangedFile}
-                onOpenDiff={openStudioChangedFileDiff}
-                onUndo={
-                  activeStudioChangedFiles.files.length === 0 ? undoStudioAgentPatch : undefined
-                }
-                busy={activeStudioRepairRunning}
-              />
-              <StudioChangedFilesSummary
-                summary={activeStudioChangedFiles}
-                onOpenDiff={openStudioChangedFileDiff}
-                onReview={reviewStudioChangedFiles}
-                onUndo={undoStudioAgentPatch}
-                busy={activeStudioRepairRunning}
-              />
-              {activeStudioRepairTimeline.length > 1 ? (
-                <details className="ws-sidebar__studio-activity-history">
-                  <summary>
-                    {studioRepairHistoryDisclosureLabel(activeStudioRepairTimeline)}
-                  </summary>
-                  <div role="list" aria-label="Completed Assistant steps">
-                    {studioVisibleRepairHistory(activeStudioRepairTimeline).map(
-                      (progress, index) => (
-                      <StudioActionProgress
-                        key={`${progress.action}:${progress.phase ?? 'phase'}:${progress.status}:${index}`}
-                        progress={progress}
-                        repairBubble={true}
-                        historical={true}
-                        busy={activeStudioRepairRunning}
-                      />
-                      )
-                    )}
-                  </div>
-                </details>
-              ) : null}
-            </div>
           ) : null
         }
         composerBanner={

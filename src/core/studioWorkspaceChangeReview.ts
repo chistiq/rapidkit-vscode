@@ -1,5 +1,33 @@
 import fs from 'fs-extra';
 import path from 'node:path';
+import { isStudioModelOwnedSourcePath } from './studioWorkspacePathPolicy.js';
+
+/** Only source-owned paths may contribute bodies to model-facing Git diffs. */
+export function filterStudioSourceDiff(diff: string): string {
+  return diff
+    .split(/(?=^diff --git )/m)
+    .filter((chunk) => {
+      const headers = [...chunk.matchAll(/^(?:---|\+\+\+) (.+)$/gm)].map((match) => match[1]);
+      if (headers.length === 0) {
+        return false;
+      }
+      return headers.every((header) => {
+        if (header === '/dev/null') {
+          return true;
+        }
+        let decoded = header;
+        if (header.startsWith('"')) {
+          try {
+            decoded = JSON.parse(header);
+          } catch {
+            return false;
+          }
+        }
+        return /^[ab]\//.test(decoded) && isStudioModelOwnedSourcePath(decoded.slice(2));
+      });
+    })
+    .join('');
+}
 
 const MAX_LIVE_DIFF_FILE_BYTES = 128 * 1024;
 const MAX_LIVE_DIFF_LINES = 400;
@@ -44,7 +72,11 @@ export async function buildStudioUntrackedFileDiffs(input: {
       break;
     }
     const relativePath = normalizedRelativePath(input.workspacePath, requestedPath);
-    if (!relativePath || (included && !included.has(relativePath))) {
+    if (
+      !relativePath ||
+      !isStudioModelOwnedSourcePath(relativePath) ||
+      (included && !included.has(relativePath))
+    ) {
       continue;
     }
     const absolutePath = path.resolve(input.workspacePath, relativePath);

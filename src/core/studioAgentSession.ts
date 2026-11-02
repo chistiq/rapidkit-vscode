@@ -1,5 +1,13 @@
+import {
+  parseStudioImplementationPlan,
+  renderStudioImplementationPlan,
+  type StudioImplementationPlan,
+} from './studioImplementationPlan.js';
+import { parseAttachedImages, type AIImageContent } from './aiImageContent.js';
 import crypto from 'node:crypto';
 import path from 'node:path';
+import { validateStudioCreatedWorkspaceTarget } from './studioWorkspaceCreation.js';
+import { validateStudioExecutionTarget } from './studioProjectTarget.js';
 
 import {
   createStudioAgentEvent,
@@ -27,14 +35,16 @@ import {
   isAutonomousWorkspaiAssistantMode,
   type WorkspaiAssistantMode,
 } from './assistantModeContract.js';
-import { redactLocalPathsForConsumer } from './consumerPathRedaction.js';
+import { collectAssistantUserPaths, redactLocalPathsForConsumer } from './consumerPathRedaction.js';
 import { selectStudioSourceRepairCandidates } from './studioRepairReceipt.js';
+import { buildStudioIncompleteAnswer } from './studioAgentOutcome.js';
 
 export type StudioAgentModelAction =
   | { type: 'tool'; callId?: string; toolName: string; input: unknown; reason: string }
   | { type: 'input'; question: string; reason: string }
   | { type: 'message'; text: string }
-  | { type: 'complete'; summary: string };
+  | { type: 'report'; summary: string; nextSteps: string[] }
+  | { type: 'complete'; summary: string; plan?: StudioImplementationPlan };
 
 export type StudioAgentModelContext = {
   session: StudioAgentPersistedSession;
@@ -47,6 +57,12 @@ export type StudioAgentModelContext = {
     risk: string;
   }>;
   latestObservation?: StudioAgentToolResult;
+  /** Model-facing schema discovery; the execution registry remains complete. */
+  deferredToolNames?: string[];
+  /** Reserve the final read-only decision for an answer from collected evidence. */
+  finalAnswerOnly?: boolean;
+  /** One final evidence-based report when a protected execution budget ends. */
+  finalOutcomeOnly?: boolean;
   /**
    * Bounded in-memory observations for the active causal epoch.
    *
@@ -60,6 +76,7 @@ export type StudioAgentModelContext = {
   requiredCausalAction?: StudioAgentRequiredCausalAction;
   pendingEffectVerificationScopes?: string[];
   steering: string[];
+  steeringAttachment?: { content: string; images: AIImageContent[] };
 };
 
 export type StudioAgentRecentObservation = {
@@ -78,6 +95,7 @@ export interface StudioAgentModelAdapter {
 export interface StudioAgentSessionStore {
   save(session: StudioAgentPersistedSession): Promise<void>;
   load?(sessionId: string): Promise<StudioAgentPersistedSession | undefined>;
+  track?(session: StudioAgentSession): () => void;
 }
 
 const DURABLE_EVENT_STRING_LIMIT = 2_000;
@@ -334,8 +352,19 @@ function shouldInspectGeneralSourceCandidates(
 }
 
 function requestsReviewDecision(result: StudioAgentToolResult): boolean {
+  // A rejected approval is already a user decision. Let the model acknowledge
+  // it or choose an authorized alternative; cancellation belongs to Stop.
+  if (
+    result.terminalReason === 'approval-rejected' ||
+    result.terminalReason === 'approval-cancelled'
+  ) {
+    return false;
+  }
   const output = toolOutputRecord(result);
-  return output?.nextAction === 'review-required' && output?.requiresUserDecision === true;
+  return (
+    result.requiresUserDecision === true ||
+    (output?.nextAction === 'review-required' && output?.requiresUserDecision === true)
+  );
 }
 
 type VerifiedCliRepairClosure = {
@@ -461,7 +490,7 @@ function durableEventValue(value: unknown, depth = 0): unknown {
   }
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
-      .filter(([key]) => !/^(?:fileChanges|diffLines)$/i.test(key))
+      .filter(([key]) => !/^(?:fileChanges|diffLines|images)$/i.test(key))
       .slice(0, 80)
       .map(([key, entry]) => [
         key,
@@ -492,7 +521,7 @@ function redactLiveEventValue(value: unknown, depth = 0): unknown {
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
       key,
-      redactLiveEventValue(entry, depth + 1),
+      key === 'base64' ? entry : redactLiveEventValue(entry, depth + 1),
     ])
   );
 }
@@ -501,6 +530,10 @@ type LiveFileChange = {
   relativePath: string;
   status: string;
   isNewFile?: boolean;
+  addedLines?: number;
+  removedLines?: number;
+  stale?: boolean;
+  binary?: boolean;
   failReason?: string;
   diffLines: Array<{ type: 'added' | 'removed' | 'unchanged'; content: string }>;
 };
@@ -552,6 +585,15 @@ function unifiedDiffFileChanges(diff: string): LiveFileChange[] {
 
 function liveFileChanges(result: StudioAgentToolResult): LiveFileChange[] {
   const output = toolOutputRecord(result);
+  if (Array.isArray(output?.fileChanges)) {
+    return output.fileChanges.filter(
+      (file): file is LiveFileChange =>
+        !!file &&
+        typeof file === 'object' &&
+        typeof file.relativePath === 'string' &&
+        Array.isArray(file.diffLines)
+    );
+  }
   const patchResult =
     output?.patchResult &&
     typeof output.patchResult === 'object' &&
@@ -621,6 +663,25 @@ function semanticProgressFingerprint(
   result: StudioAgentToolResult
 ): string | undefined {
   const output = toolOutputRecord(result);
+  if (action.toolName === 'read-terminal') {
+    if (
+      result.ok !== true ||
+      typeof output?.terminalId !== 'string' ||
+      typeof output.offset !== 'number' ||
+      !Number.isFinite(output.offset)
+    ) {
+      return undefined;
+    }
+    // Progress comes from the observed stream cursor/state, never the requested
+    // offset or time spent waiting. Fresh output must not trigger a stuck loop.
+    return canonicalJson({
+      toolName: action.toolName,
+      terminalId: output.terminalId,
+      offset: output.offset,
+      state: output.state,
+      exitCode: output.exitCode,
+    });
+  }
   const inspectedSource =
     Array.isArray(result.output) &&
     result.output.some(
@@ -672,8 +733,10 @@ export type StudioAgentSessionOptions = {
   id?: string;
   workspacePath: string;
   projectPath?: string;
+  parent?: StudioAgentPersistedSession['parent'];
   cardId: string;
   assistantMode: WorkspaiAssistantMode;
+  executionAuthority?: 'workspace' | 'workspai-cli';
   executionPolicy?: AssistantExecutionPolicy;
   selectedModelId?: string;
   blockerSignature?: string;
@@ -684,6 +747,13 @@ export type StudioAgentSessionOptions = {
   requiresVerifiedCompletion?: boolean;
   checkpointEvery?: number;
   maxTurns?: number;
+  /** Host-controlled child allowance; cannot increase the normal session ceiling. */
+  providerRequestBudget?: number;
+  tokenBudget?: number;
+  /** Persist image observations outside events so Resume can recover without rerunning effects. */
+  retainToolImages?(sessionId: string, images: AIImageContent[]): Promise<string>;
+  /** Only for proxy-only execution children: the parent records and verifies all effects. */
+  effectsManagedByParent?: boolean;
   maxModelDecisionsWithoutSourceProgress?: number;
   /** Maximum exact Goal verification attempts from the immutable Goal Pack policy. */
   goalMaxAttempts?: number;
@@ -692,6 +762,10 @@ export type StudioAgentSessionOptions = {
   repairPolicy?: 'diagnose-and-repair' | 'source-repair-then-produce' | 'refresh-producer';
   initialSourceRepairDirective?: Record<string, unknown>;
   restoredSession?: StudioAgentPersistedSession;
+  /** Transports that end the response while awaiting a new user turn can return a durable suspension. */
+  returnOnInput?: boolean;
+  executionTarget?: NonNullable<StudioAgentPersistedSession['executionTarget']>;
+  validateExecutionTarget?: typeof validateStudioCreatedWorkspaceTarget;
   requestToolApproval?(
     request: StudioAgentToolApprovalRequest
   ): Promise<StudioAgentToolApprovalDecision>;
@@ -714,6 +788,10 @@ export class StudioAgentSession {
   private static readonly MAX_RECENT_OBSERVATIONS = 8;
   private readonly listeners = new Set<(event: StudioAgentEvent) => void>();
   private readonly steering: string[] = [];
+  private readonly delegationSteering = new Set<
+    (message: string, images?: AIImageContent[]) => void
+  >();
+  private steeringAttachment?: { content: string; images: AIImageContent[] };
   private readonly recentObservations: StudioAgentRecentObservation[] = [];
   private readonly abortController = new AbortController();
   private pendingInputResolve: (() => void) | undefined;
@@ -731,6 +809,8 @@ export class StudioAgentSession {
   private skipProgressBreakerOnce = false;
   private providerRequestsThisAttempt = 0;
   private tokensThisAttempt = 0;
+  private readonly providerRequestBudget: number;
+  private readonly tokenBudget: number;
   private static readonly MAX_UNVERIFIED_CONTINUATION_NUDGES = 3;
   private static readonly MAX_IDENTICAL_TOOL_ATTEMPTS_PER_CAUSAL_STATE = 3;
   private static readonly AUTONOMOUS_MODEL_TURN_BUDGET = 96;
@@ -751,6 +831,17 @@ export class StudioAgentSession {
     private readonly store: StudioAgentSessionStore,
     private readonly now: () => Date = () => new Date()
   ) {
+    const allowance = (value: number | undefined, ceiling: number): number => {
+      if (value !== undefined && (!Number.isSafeInteger(value) || value < 1 || value > ceiling)) {
+        throw new Error('Invalid host session allowance.');
+      }
+      return value ?? ceiling;
+    };
+    this.providerRequestBudget = allowance(
+      options.providerRequestBudget,
+      StudioAgentSession.AUTONOMOUS_PROVIDER_REQUEST_BUDGET
+    );
+    this.tokenBudget = allowance(options.tokenBudget, StudioAgentSession.AUTONOMOUS_TOKEN_BUDGET);
     const createdAt = this.now().toISOString();
     this.state = options.restoredSession
       ? structuredClone(options.restoredSession)
@@ -758,9 +849,11 @@ export class StudioAgentSession {
           schemaVersion: 'workspai.studio-agent-session.v1',
           id: options.id ?? crypto.randomUUID(),
           workspacePath: options.workspacePath,
+          ...(options.parent ? { parent: structuredClone(options.parent) } : {}),
           ...(options.projectPath ? { projectPath: options.projectPath } : {}),
           cardId: options.cardId,
           assistantMode: options.assistantMode,
+          executionAuthority: options.executionAuthority,
           ...(options.executionPolicy
             ? { executionPolicy: structuredClone(options.executionPolicy) }
             : {}),
@@ -777,6 +870,9 @@ export class StudioAgentSession {
     if (options.restoredSession && options.blockerSignature) {
       this.state.blockerSignature = options.blockerSignature;
     }
+    if (options.executionTarget) {
+      this.state.executionTarget = structuredClone(options.executionTarget);
+    }
     if (options.goal) {
       this.state.goal = structuredClone(options.goal);
     }
@@ -785,6 +881,16 @@ export class StudioAgentSession {
     }
     if (options.restoredSession && options.selectedModelId) {
       this.state.selectedModelId = options.selectedModelId;
+    }
+    // Execution authority is selected by the host, never by a persisted model/session field.
+    this.state.executionAuthority = options.executionAuthority;
+    if (
+      this.state.executionAuthority === 'workspace' &&
+      (this.state.goal || this.state.governedGoal)
+    ) {
+      throw new Error(
+        'A CLI-bound Goal cannot be resumed under workspace-native verification authority.'
+      );
     }
     if (options.executionPolicy) {
       this.state.executionPolicy = structuredClone(options.executionPolicy);
@@ -810,10 +916,7 @@ export class StudioAgentSession {
         this.exhaustedTools.clear();
       }
       this.rememberExhaustedTools(data?.output);
-      if (
-        (event.type === 'tool.completed' || event.type === 'tool.failed') &&
-        data?.toolName === 'run-workspace-command'
-      ) {
+      if ((event.type === 'tool.completed' || event.type === 'tool.failed') && data) {
         this.rememberWorkspaceCommandEffectVerification(data as StudioAgentToolResult);
       }
       const result = data as StudioAgentToolResult | undefined;
@@ -878,15 +981,40 @@ export class StudioAgentSession {
     return () => this.listeners.delete(listener);
   }
 
-  steer(message: string): void {
+  private rememberUserPaths(message: string): void {
+    this.state.userRequestedPaths = [
+      ...new Set([
+        ...collectAssistantUserPaths(message),
+        ...(this.state.userRequestedPaths ?? []).filter(
+          (value) => typeof value === 'string' && value.length <= 4000
+        ),
+      ]),
+    ].slice(0, 64);
+  }
+
+  steer(message: string, images?: AIImageContent[]): void {
+    this.rememberUserPaths(message);
     const normalized = message.trim();
     if (!normalized) {
       return;
     }
+    const attachments = parseAttachedImages(images);
+    if (attachments.length) {
+      this.steeringAttachment = {
+        content: normalized,
+        images: parseAttachedImages([...(this.steeringAttachment?.images ?? []), ...attachments]),
+      };
+    }
     this.steering.push(normalized);
+    for (const listener of this.delegationSteering) {
+      listener(normalized, attachments);
+    }
     this.pendingInputResolve?.();
     this.pendingInputResolve = undefined;
-    void this.emit('request.steered', { message: normalized });
+    void this.emit('request.steered', {
+      message: normalized,
+      ...(attachments.length ? { imageCount: attachments.length } : {}),
+    });
   }
 
   cancel(): void {
@@ -895,18 +1023,25 @@ export class StudioAgentSession {
     this.pendingInputResolve = undefined;
   }
 
-  run(request: string): Promise<StudioAgentPersistedSession> {
+  /** Enriched internal objectives must supply the original user text separately. */
+  run(request: string, input?: { userRequest: string }): Promise<StudioAgentPersistedSession> {
     if (this.running) {
-      this.steer(request);
+      this.steer(input?.userRequest ?? request);
       return this.running;
     }
-    this.running = this.execute(request).finally(() => {
+    const stopTracking = this.store.track?.(this);
+    this.running = this.execute(request, input?.userRequest ?? request).finally(() => {
       this.running = undefined;
+      stopTracking?.();
     });
     return this.running;
   }
 
-  private async execute(request: string): Promise<StudioAgentPersistedSession> {
+  private async execute(
+    request: string,
+    userRequest: string
+  ): Promise<StudioAgentPersistedSession> {
+    this.rememberUserPaths(userRequest);
     const requestId = crypto.randomUUID();
     const executionMode = this.executionMode();
     const budgetLedger = this.budgetLedger();
@@ -922,6 +1057,9 @@ export class StudioAgentSession {
         assistantMode: this.state.assistantMode,
         executionPolicy: this.state.executionPolicy,
         selectedModelId: this.state.selectedModelId,
+        executionTarget: this.state.executionTarget
+          ? { ref: this.state.executionTarget.ref, name: this.state.executionTarget.name }
+          : null,
         ...(this.state.governedGoal ? { governedGoal: this.state.governedGoal } : {}),
         ...(this.state.goal ? { goal: this.state.goal } : {}),
       },
@@ -949,7 +1087,9 @@ export class StudioAgentSession {
               event.data &&
               typeof event.data === 'object' &&
               !Array.isArray(event.data) &&
-              (event.data as Record<string, unknown>).terminalReason === 'ai-provider-unavailable'
+              ['ai-provider-unavailable', 'ai-provider-timeout'].includes(
+                String((event.data as Record<string, unknown>).terminalReason)
+              )
             )
         );
     let deterministicRecoveryPending =
@@ -994,11 +1134,37 @@ export class StudioAgentSession {
       }
       while (!this.abortController.signal.aborted) {
         if (
-          isAutonomousWorkspaiAssistantMode(executionMode) &&
-          (this.providerRequestsThisAttempt >=
-            StudioAgentSession.AUTONOMOUS_PROVIDER_REQUEST_BUDGET ||
-            this.tokensThisAttempt >= StudioAgentSession.AUTONOMOUS_TOKEN_BUDGET)
+          (isAutonomousWorkspaiAssistantMode(executionMode) ||
+            this.options.providerRequestBudget !== undefined ||
+            this.options.tokenBudget !== undefined) &&
+          (this.providerRequestsThisAttempt >= this.providerRequestBudget ||
+            this.tokensThisAttempt >= this.tokenBudget)
         ) {
+          const finalContext = this.modelContext(latestObservation);
+          finalContext.tools = [];
+          finalContext.finalOutcomeOnly = true;
+          const outcome = await this.nextModelAction(finalContext, requestId);
+          if (!outcome) {
+            break;
+          }
+          this.budgetLedger().totalModelDecisions += 1;
+          if (outcome.type === 'report') {
+            await this.emit(
+              'session.failed',
+              {
+                error: 'The execution allowance ended before the requested outcome was completed.',
+                terminalReason: 'incomplete-outcome',
+                answer: buildStudioIncompleteAnswer(this.state, {
+                  reason: 'Execution allowance ended.',
+                  summary: outcome.summary,
+                  nextSteps: outcome.nextSteps,
+                }),
+              },
+              requestId
+            );
+            await this.setStatus('failed');
+            return this.snapshot();
+          }
           throw new StudioAgentTerminalError(
             'Verification is still open. Studio paused at the bounded provider request/token budget. Resume continues the same durable session with a fresh attempt; nothing was marked complete.',
             'model-causal-progress-exhausted'
@@ -1026,7 +1192,7 @@ export class StudioAgentSession {
           }
           throw new Error(
             executionMode === 'ask' || executionMode === 'plan'
-              ? `${executionMode === 'ask' ? 'Ask' : 'Plan'} stopped after ${maxTurns} bounded model decisions without a contract-compliant answer. Refine the request or inspect the durable session evidence.`
+              ? 'The available research did not produce a final answer. Try a narrower question or provide an authoritative source.'
               : 'Assistant turn budget exhausted. The durable session can resume safely.'
           );
         }
@@ -1139,6 +1305,15 @@ export class StudioAgentSession {
                   consecutiveModelDecisionsWithoutSemanticProgress >=
                     Math.min(4, Math.max(1, modelDecisionLimit - 1))
               );
+        if (
+          modelContextForTurn &&
+          readOnlyTurnBudget !== undefined &&
+          this.options.maxTurns === undefined &&
+          totalTurns === readOnlyTurnBudget
+        ) {
+          modelContextForTurn.finalAnswerOnly = true;
+          modelContextForTurn.tools = [];
+        }
         const action: StudioAgentModelAction | undefined = deterministicRequiredCausalAction
           ? {
               type: 'tool',
@@ -1227,6 +1402,28 @@ export class StudioAgentSession {
         }
         turnsSinceCheckpoint += 1;
         const pendingRequiredAction = this.state.pendingRequiredCausalAction;
+        // Reporting an incomplete outcome never discharges a mutation or verification obligation.
+        if (action.type === 'report') {
+          await this.emit(
+            'session.failed',
+            {
+              error:
+                'Some work remains. Review the assistant response for findings and next steps.',
+              terminalReason:
+                executionMode === 'ask' || executionMode === 'plan'
+                  ? 'question-incomplete'
+                  : 'incomplete-outcome',
+              answer: buildStudioIncompleteAnswer(this.state, {
+                reason: 'The assistant could not finish this attempt.',
+                summary: action.summary,
+                nextSteps: action.nextSteps,
+              }),
+            },
+            requestId
+          );
+          await this.setStatus('failed');
+          return this.snapshot();
+        }
         if (
           modelContextForTurn &&
           !pendingRequiredAction &&
@@ -1275,14 +1472,6 @@ export class StudioAgentSession {
           continue;
         }
         if (action.type === 'input') {
-          if (!isAutonomousWorkspaiAssistantMode(executionMode) || this.hasMutated()) {
-            latestObservation = {
-              ok: false,
-              error:
-                'User input can only be requested before mutation in Agent or Goal mode. Continue with the available evidence or complete the governed verification path.',
-            };
-            continue;
-          }
           await this.emit(
             'model.message',
             {
@@ -1295,6 +1484,9 @@ export class StudioAgentSession {
           );
           const steeringBefore = this.steering.length;
           await this.setStatus('waiting-input');
+          if (this.options.returnOnInput) {
+            return this.snapshot();
+          }
           if (this.steering.length === steeringBefore && !this.abortController.signal.aborted) {
             await new Promise<void>((resolve) => {
               this.pendingInputResolve = resolve;
@@ -1332,17 +1524,28 @@ export class StudioAgentSession {
               'The session is still active. Select a governed tool, request user input through the structured input action, or complete only after the mode contract is satisfied.',
           };
         } else if (action.type === 'complete') {
+          const plan =
+            executionMode === 'plan' ? parseStudioImplementationPlan(action.plan) : undefined;
+          if (plan) {
+            action.summary = renderStudioImplementationPlan(plan);
+          }
           consecutiveProtocolMisses = 0;
           const completionData = {
-            verificationAuthority: isAutonomousWorkspaiAssistantMode(executionMode)
-              ? 'workspai-cli'
-              : 'workspace-evidence',
+            ...(plan ? { plan } : {}),
+            verificationAuthority:
+              this.state.executionAuthority === 'workspace'
+                ? 'workspace-evidence'
+                : isAutonomousWorkspaiAssistantMode(executionMode)
+                  ? 'workspai-cli'
+                  : 'workspace-evidence',
             acceptanceReview:
-              executionMode === 'goal' && this.usesEvidenceReviewCompletion()
-                ? 'agent-reviewed-outcome-and-final-worktree'
-                : this.state.cardId.startsWith('assistant:')
-                  ? 'final-worktree-inspected'
-                  : 'exact-card-contract',
+              executionMode === 'ask'
+                ? 'read-only-answer'
+                : executionMode === 'goal' && this.usesEvidenceReviewCompletion()
+                  ? 'agent-reviewed-outcome-and-final-worktree'
+                  : this.state.cardId.startsWith('assistant:')
+                    ? 'final-worktree-inspected'
+                    : 'exact-card-contract',
             ...(this.state.governedGoal
               ? {
                   goalId: this.state.governedGoal.id,
@@ -1375,9 +1578,11 @@ export class StudioAgentSession {
               'model.checkpoint',
               {
                 summary:
-                  executionMode === 'goal' && this.usesEvidenceReviewCompletion()
-                    ? 'The model requested completion. Studio is running canonical workspace verification before accepting the evidence-reviewed outcome.'
-                    : 'The model requested completion. Studio is running the exact card verification contract before accepting it.',
+                  this.state.executionAuthority === 'workspace'
+                    ? 'The model requested completion. Studio is checking current workspace diagnostics and native change review.'
+                    : executionMode === 'goal' && this.usesEvidenceReviewCompletion()
+                      ? 'The model requested completion. Studio is running canonical workspace verification before accepting the evidence-reviewed outcome.'
+                      : 'The model requested completion. Studio is running the exact card verification contract before accepting it.',
                 recovery: 'completion-stop-gate',
               },
               requestId
@@ -1423,6 +1628,19 @@ export class StudioAgentSession {
           const causalRecoveryWasActive = this.generalSourceRepairActive;
           const requiredActionBeforeExecution = this.state.pendingRequiredCausalAction;
           latestObservation = await this.executeTool(effectiveAction, requestId);
+          // Stop owns the terminal outcome even when the tool was awaiting approval.
+          if (this.abortController.signal.aborted) {
+            break;
+          }
+          if (
+            ['read-terminal', 'editor-task', 'editor-notebook'].includes(
+              effectiveAction.toolName
+            ) &&
+            ['running', 'pending'].includes(String(toolOutputRecord(latestObservation)?.state)) &&
+            Number(toolOutputRecord(latestObservation)?.waitedMs) >= 1_000
+          ) {
+            consecutiveModelDecisionsWithoutSemanticProgress = 0;
+          }
           if (effectiveAction.toolName === 'recover-active-blocker') {
             const requiredAction = requiredCausalActionFromResult(latestObservation);
             if (requiredAction) {
@@ -2150,11 +2368,34 @@ export class StudioAgentSession {
           turnsSinceCheckpoint = 0;
         }
       }
-      await this.emit('session.cancelled', { reason: 'cancelled' }, requestId);
+      await this.emit(
+        'session.cancelled',
+        {
+          reason: 'cancelled',
+          answer: buildStudioIncompleteAnswer(this.state, { reason: 'cancelled', cancelled: true }),
+        },
+        requestId
+      );
       await this.setStatus('cancelled');
       return this.snapshot();
     } catch (error) {
+      if (this.abortController.signal.aborted) {
+        await this.emit(
+          'session.cancelled',
+          {
+            reason: 'cancelled',
+            answer: buildStudioIncompleteAnswer(this.state, {
+              reason: 'cancelled',
+              cancelled: true,
+            }),
+          },
+          requestId
+        );
+        await this.setStatus('cancelled');
+        return this.snapshot();
+      }
       const message = error instanceof Error ? error.message : String(error);
+      const providerTimeout = /AI model request timed out|AI tool request timed out/i.test(message);
       const providerFailure = isAiProviderFailure(message);
       const terminalObservationOutput = latestObservation
         ? toolOutputRecord(latestObservation)
@@ -2172,7 +2413,12 @@ export class StudioAgentSession {
         'session.failed',
         {
           error: message,
+          answer: buildStudioIncompleteAnswer(this.state, { reason: message }),
+          ...(executionMode === 'ask' || executionMode === 'plan'
+            ? { terminalReason: 'question-incomplete' }
+            : {}),
           ...(providerFailure ? { terminalReason: 'ai-provider-unavailable' } : {}),
+          ...(providerTimeout ? { terminalReason: 'ai-provider-timeout' } : {}),
           ...(missingExecutable ? { missingExecutable } : {}),
           ...(repairTransactionState ? { repairTransactionState } : {}),
           ...(error instanceof StudioAgentReviewRequiredError ||
@@ -2216,8 +2462,106 @@ export class StudioAgentSession {
       this.abortController.signal.addEventListener('abort', onAbort, { once: true });
     });
     try {
-      const action = await Promise.race([this.model.next(context), cancelled]);
+      let observedDecision: { decisionId: string; durationMs: number } | undefined;
+      let decisionStartedAt = 0;
+      let decisionFinished = false;
+      const invokeModel = async () => {
+        const decisionId = crypto.randomUUID();
+        const startedAt = Date.now();
+        decisionStartedAt = startedAt;
+        decisionFinished = false;
+        observedDecision = { decisionId, durationMs: 0 };
+        await this.emit('model.request.started', { decisionId }, requestId);
+        try {
+          if (this.abortController.signal.aborted) {
+            throw new Error('Model request cancelled before execution.');
+          }
+          const result = await this.model.next(context);
+          observedDecision = { decisionId, durationMs: Date.now() - startedAt };
+          if (!this.abortController.signal.aborted) {
+            decisionFinished = true;
+            await this.emit(
+              'model.request.finished',
+              {
+                ...observedDecision,
+                outcome: 'responded',
+                actionType: result.type,
+              },
+              requestId
+            );
+          }
+          return result;
+        } catch (error) {
+          if (!this.abortController.signal.aborted) {
+            decisionFinished = true;
+            await this.emit(
+              'model.request.finished',
+              {
+                decisionId,
+                durationMs: Date.now() - startedAt,
+                outcome: 'failed',
+              },
+              requestId
+            );
+          }
+          throw error;
+        }
+      };
+      const requestAction = async () => {
+        try {
+          return await invokeModel();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (
+            this.abortController.signal.aborted ||
+            !/network request aborted|fetch failed|econnreset|etimedout|socket hang up/i.test(
+              message
+            ) ||
+            this.providerRequestsThisAttempt >= this.providerRequestBudget
+          ) {
+            throw error;
+          }
+          // The failed model decision returned no action. Retrying it cannot
+          // replay an already executed tool, terminal command, or source edit.
+          this.providerRequestsThisAttempt += 1;
+          this.budgetLedger().totalProviderRequests += 1;
+          await this.emit(
+            'model.checkpoint',
+            {
+              summary:
+                'The model connection was interrupted. Retrying this model decision once; completed tools will not be repeated.',
+              recovery: 'model-connection-retry',
+            },
+            requestId
+          );
+          if (this.abortController.signal.aborted) {
+            return undefined;
+          }
+          try {
+            return await invokeModel();
+          } catch (retryError) {
+            if (this.abortController.signal.aborted) {
+              throw retryError;
+            }
+            this.providerRequestsThisAttempt += 1;
+            this.budgetLedger().totalProviderRequests += 1;
+            throw retryError;
+          }
+        }
+      };
+      const action = await Promise.race([requestAction(), cancelled]);
       if (!action) {
+        if (observedDecision && !decisionFinished && this.abortController.signal.aborted) {
+          await this.emit(
+            'model.request.finished',
+            {
+              decisionId: observedDecision.decisionId,
+              durationMs: Date.now() - decisionStartedAt,
+              outcome: 'cancelled',
+            },
+            requestId
+          );
+        }
         return undefined;
       }
       const resolution = this.model.consumeResolution?.();
@@ -2240,11 +2584,16 @@ export class StudioAgentSession {
           'model.resolved',
           {
             ...resolution,
+            ...(observedDecision ?? {}),
             resolvedAt,
             selectedModelId: this.state.selectedModelId,
           },
           requestId
         );
+      } else {
+        // Adapters without provider telemetry still consumed one model request.
+        this.providerRequestsThisAttempt += 1;
+        this.budgetLedger().totalProviderRequests += 1;
       }
       return action;
     } finally {
@@ -2440,11 +2789,14 @@ export class StudioAgentSession {
         await this.emit('tool.failed', result, requestId, action.callId?.trim());
         return result;
       }
-      this.goalVerificationAttempts += 1;
     }
     const tool = this.registry.get(action.toolName);
     const toolCallId = action.callId?.trim() || crypto.randomUUID();
-    const durableInput = durableEventValue(action.input);
+    const durableInput = durableEventValue(
+      action.toolName === 'send-terminal-input' && action.input && typeof action.input === 'object'
+        ? { ...action.input, text: '[terminal input omitted from durable history]' }
+        : action.input
+    );
     await this.emit(
       'tool.requested',
       { toolName: action.toolName, reason: action.reason, input: durableInput },
@@ -2480,7 +2832,17 @@ export class StudioAgentSession {
     }
     const maxAttemptsWithoutProgress =
       StudioAgentSession.MAX_IDENTICAL_TOOL_ATTEMPTS_PER_CAUSAL_STATE;
-    if (this.consecutiveIdenticalToolAttempts >= maxAttemptsWithoutProgress) {
+    if (
+      tool.name !== 'read-terminal' &&
+      !(
+        ['editor-task', 'editor-notebook'].includes(tool.name) &&
+        action.input &&
+        typeof action.input === 'object' &&
+        (action.input as Record<string, unknown>).operation === 'status' &&
+        Number((action.input as Record<string, unknown>).waitMs) >= 1_000
+      ) &&
+      this.consecutiveIdenticalToolAttempts >= maxAttemptsWithoutProgress
+    ) {
       const result = {
         ok: false,
         evidenceGeneration: this.latestEvidenceGeneration,
@@ -2504,12 +2866,41 @@ export class StudioAgentSession {
       sessionId: this.id,
       requestId,
       toolCallId,
-      workspacePath: this.options.workspacePath,
-      ...(this.options.projectPath ? { projectPath: this.options.projectPath } : {}),
+      workspacePath: this.state.executionTarget?.workspacePath ?? this.options.workspacePath,
+      userRequestedPaths: this.state.userRequestedPaths,
+      declinedProjectOnboarding: this.state.declinedProjectOnboarding?.map(
+        (entry) => entry.projectPath
+      ),
+      ...(!this.state.executionTarget && this.options.projectPath
+        ? { projectPath: this.options.projectPath }
+        : {}),
       signal: this.abortController.signal,
     };
     let authorization;
     try {
+      if (
+        tool.selectsExecutionTarget &&
+        (this.state.executionAuthority !== 'workspace' ||
+          this.state.goal ||
+          this.state.governedGoal)
+      ) {
+        throw new Error(
+          'A governed scope cannot be replaced by another execution target. Continue within the pinned Goal scope.'
+        );
+      }
+      if (this.state.executionTarget && !tool.scopeIndependent) {
+        if (
+          this.state.executionAuthority !== 'workspace' ||
+          this.state.goal ||
+          this.state.governedGoal
+        ) {
+          throw new Error('A governed scope cannot be replaced by another workspace.');
+        }
+        await validateStudioExecutionTarget(
+          this.state.executionTarget,
+          this.options.validateExecutionTarget
+        );
+      }
       authorization = tool.authorize
         ? await tool.authorize(action.input, authorizationContext)
         : { risk: tool.risk };
@@ -2612,19 +3003,84 @@ export class StudioAgentSession {
       );
       await this.setStatus('waiting-permission');
       let decision: StudioAgentToolApprovalDecision;
+      const signal = this.abortController.signal;
+      let onAbort: (() => void) | undefined;
+      const cancelledApproval = new Promise<StudioAgentToolApprovalDecision>((resolve) => {
+        onAbort = () =>
+          resolve({
+            approved: false,
+            fingerprint: descriptor.fingerprint,
+            approvedBy: 'user:cancelled',
+          });
+        if (signal.aborted) {
+          onAbort();
+        } else {
+          signal.addEventListener('abort', onAbort, { once: true });
+        }
+      });
       try {
-        decision = await this.options.requestToolApproval(approvalRequest);
+        decision = await Promise.race([
+          signal.aborted ? cancelledApproval : this.options.requestToolApproval(approvalRequest),
+          cancelledApproval,
+        ]);
       } catch (error) {
         decision = {
           approved: false,
           fingerprint: descriptor.fingerprint,
           approvedBy: `approval-error:${error instanceof Error ? error.message : String(error)}`,
         };
+      } finally {
+        if (onAbort) {
+          signal.removeEventListener('abort', onAbort);
+        }
       }
       if (!this.abortController.signal.aborted) {
         await this.setStatus('running');
       }
       const exactApproval = decision.fingerprint === descriptor.fingerprint;
+      if (
+        !decision.approved &&
+        exactApproval &&
+        !this.abortController.signal.aborted &&
+        tool.name === 'onboard-project' &&
+        descriptor.optionalProjectOnboarding
+      ) {
+        const projectPath = descriptor.optionalProjectOnboarding.projectPath;
+        this.state.declinedProjectOnboarding = [
+          ...(this.state.declinedProjectOnboarding ?? []).filter(
+            (entry) => entry.requestId !== requestId || entry.projectPath !== projectPath
+          ),
+          { requestId, projectPath },
+        ].slice(-64);
+        const result = {
+          ok: true,
+          changed: false,
+          output: {
+            status: 'declined',
+            projectPath,
+            instruction:
+              'The user declined optional Workspai onboarding. No adoption/import command ran. Continue the original task in the source project with general tools; do not offer onboarding again in this request.',
+          },
+        };
+        await this.emit(
+          'tool.approval.rejected',
+          {
+            toolName: tool.name,
+            fingerprint: descriptor.fingerprint,
+            approved: false,
+            optional: true,
+          },
+          requestId,
+          toolCallId
+        );
+        await this.emit(
+          'tool.completed',
+          { toolName: tool.name, input: durableInput, ...result },
+          requestId,
+          toolCallId
+        );
+        return result;
+      }
       if (!decision.approved || !exactApproval || this.abortController.signal.aborted) {
         const result = {
           ok: false,
@@ -2692,6 +3148,9 @@ export class StudioAgentSession {
     // bounded attempt only after every policy boundary has admitted the tool,
     // so a durable session may be resumed and approve the same exact action.
     this.consecutiveIdenticalToolAttempts += 1;
+    if (tool.name === 'verify-goal') {
+      this.goalVerificationAttempts += 1;
+    }
     this.budgetLedger().totalToolExecutions += 1;
     await this.emit(
       'tool.started',
@@ -2712,11 +3171,14 @@ export class StudioAgentSession {
       toolCallId
     );
     const context: StudioAgentToolContext = {
+      ...authorizationContext,
       sessionId: this.id,
       requestId,
       toolCallId,
-      workspacePath: this.options.workspacePath,
-      ...(this.options.projectPath ? { projectPath: this.options.projectPath } : {}),
+      workspacePath: authorizationContext.workspacePath,
+      ...(authorizationContext.projectPath
+        ? { projectPath: authorizationContext.projectPath }
+        : {}),
       ...(approval ? { approval } : {}),
       signal: this.abortController.signal,
       reportProgress: async (data) => {
@@ -2729,6 +3191,111 @@ export class StudioAgentSession {
         );
       },
     };
+    let delegatedEffects = false;
+    let delegatedControl: StudioAgentToolResult | undefined;
+    if (
+      tool.name === 'delegate-research' ||
+      (tool.name === 'delegate-task' &&
+        isAutonomousWorkspaiAssistantMode(
+          this.state.executionPolicy?.toolMode ?? this.state.assistantMode
+        ))
+    ) {
+      const excluded = new Set([
+        'delegate-task',
+        'delegate-research',
+        'create-workspace',
+        'bind-workspace',
+        'select-project',
+        'onboard-project',
+        'update-task-ledger',
+        'recover-active-blocker',
+      ]);
+      const allowed =
+        tool.name === 'delegate-task'
+          ? this.registry.list().filter((entry) => !excluded.has(entry.name))
+          : [];
+      let executing = false;
+      context.delegate = {
+        tools: allowed.map(({ name, title, description, inputSchema }) => ({
+          name,
+          title,
+          description,
+          inputSchema,
+        })),
+        // Keep an allowance for the parent to inspect, verify and deliver the answer.
+        remainingProviderRequests: Math.max(
+          0,
+          this.providerRequestBudget - this.providerRequestsThisAttempt - 4
+        ),
+        remainingTokens: Math.max(0, this.tokenBudget - this.tokensThisAttempt - 32_000),
+        parentContext: JSON.stringify({
+          request: String(
+            [...this.state.events].reverse().find((event) => event.type === 'request.started')?.data
+              .request ?? ''
+          ).slice(0, 12_000),
+          governedGoal: this.state.governedGoal,
+          selectedMode: this.state.assistantMode,
+        }),
+        subscribeToSteering: (listener) => {
+          this.delegationSteering.add(listener);
+          return () => this.delegationSteering.delete(listener);
+        },
+        invoke: async (name, input, reason) => {
+          const entry = allowed.find((candidate) => candidate.name === name);
+          const nested: Extract<StudioAgentModelAction, { type: 'tool' }> = {
+            type: 'tool',
+            toolName: name,
+            input,
+            reason,
+          };
+          if (
+            this.abortController.signal.aborted ||
+            executing ||
+            delegatedControl ||
+            !entry ||
+            (this.state.pendingRequiredCausalAction &&
+              !matchesRequiredCausalAction(nested, this.state.pendingRequiredCausalAction))
+          ) {
+            return {
+              ok: false,
+              error:
+                'Delegated action is cancelled, unavailable, concurrent, or conflicts with the current CLI-required action. Return control to the parent.',
+            };
+          }
+          if (
+            context.workspacePath !==
+              (this.state.executionTarget?.workspacePath ?? this.options.workspacePath) ||
+            context.projectPath !==
+              (this.state.executionTarget ? undefined : this.options.projectPath)
+          ) {
+            return {
+              ok: false,
+              error:
+                'The parent execution scope changed. Return control to the parent before further actions.',
+            };
+          }
+          executing = true;
+          try {
+            const nestedResult = await this.executeTool(nested, requestId);
+            delegatedEffects ||=
+              nestedResult.changed === true ||
+              entry.activity === 'change' ||
+              Boolean(toolOutputRecord(nestedResult)?.effects) ||
+              (
+                toolOutputRecord(nestedResult)?.hostToolExecution as
+                  | { effectful?: boolean }
+                  | undefined
+              )?.effectful === true;
+            if (nestedResult.terminalReason || nestedResult.requiresUserDecision === true) {
+              delegatedControl = nestedResult;
+            }
+            return nestedResult;
+          } finally {
+            executing = false;
+          }
+        },
+      };
+    }
     let result: StudioAgentToolResult;
     try {
       result = await tool.execute(action.input, context);
@@ -2744,7 +3311,90 @@ export class StudioAgentSession {
         : { ok: false, error: message };
     }
     if (
+      result.images?.length &&
+      this.options.retainToolImages &&
+      tool.name !== 'read-host-tool-output' &&
+      !(toolOutputRecord(result)?.outputRef && toolOutputRecord(result)?.imageCount)
+    ) {
+      const imageOutput = toolOutputRecord(result) ?? { originalOutput: result.output };
+      try {
+        const outputRef = await this.options.retainToolImages(this.id, result.images);
+        result = {
+          ...result,
+          output: {
+            ...imageOutput,
+            retainedImages: {
+              outputRef,
+              imageCount: result.images.length,
+              instruction:
+                'Recover images with read-host-tool-output at offset 0. Do not rerun an operation merely to retrieve its image.',
+            },
+          },
+        };
+      } catch (error) {
+        result = {
+          ...result,
+          output: { ...imageOutput, imageRetentionError: String(error) },
+        };
+      }
+    }
+    if (delegatedEffects) {
+      result = { ...result, output: { ...toolOutputRecord(result), delegatedEffects: true } };
+    }
+    if (delegatedControl) {
+      result = {
+        ...result,
+        output: {
+          ...toolOutputRecord(result),
+          ...(toolOutputRecord(delegatedControl)?.transaction
+            ? { transaction: toolOutputRecord(delegatedControl)?.transaction }
+            : {}),
+        },
+        ok: false,
+        error: delegatedControl.error,
+        terminalReason: delegatedControl.terminalReason,
+        requiresUserDecision: delegatedControl.requiresUserDecision,
+      };
+    }
+    const terminalOutput = toolOutputRecord(result);
+    if (tool.name === 'delegate-research' || tool.name === 'delegate-task') {
+      const usage = terminalOutput?.budgetUsage as Record<string, unknown> | undefined;
+      const measure = (name: string) =>
+        typeof usage?.[name] === 'number' && Number.isFinite(usage[name])
+          ? Math.max(0, Math.trunc(usage[name] as number))
+          : 0;
+      const providerRequests = measure('providerRequests');
+      const inputTokens = measure('inputTokens');
+      const outputTokens = measure('outputTokens');
+      const ledger = this.budgetLedger();
+      ledger.totalProviderRequests += providerRequests;
+      ledger.totalInputTokens += inputTokens;
+      ledger.totalOutputTokens += outputTokens;
+      ledger.estimatedTokenMeasurements += measure('estimatedTokenMeasurements');
+      this.providerRequestsThisAttempt += providerRequests;
+      this.tokensThisAttempt += inputTokens + outputTokens;
+    }
+    if (tool.name.includes('terminal') && typeof terminalOutput?.terminalId === 'string') {
+      const scope = `terminal:${terminalOutput.terminalId}`;
+      result = {
+        ...result,
+        output: {
+          ...terminalOutput,
+          ...(['start-terminal', 'send-terminal-input'].includes(tool.name)
+            ? { effects: { verificationScopes: [scope] } }
+            : {}),
+          ...(['exited', 'closed'].includes(String(terminalOutput.state)) ||
+          (tool.name === 'read-terminal' &&
+            terminalOutput.background === true &&
+            terminalOutput.state === 'running')
+            ? { observationScopes: [scope] }
+            : {}),
+        },
+      };
+    }
+    if (
       result.changed === true &&
+      this.state.executionAuthority !== 'workspace' &&
       CLI_REPAIR_MUTATION_TOOL_NAMES.has(tool.name) &&
       !verifiedCliRepairClosure(result)
     ) {
@@ -2838,9 +3488,54 @@ export class StudioAgentSession {
       result,
     });
     if (this.recentObservations.length > StudioAgentSession.MAX_RECENT_OBSERVATIONS) {
+      const mode = this.executionMode();
+      const failedObservation =
+        mode === 'ask' || mode === 'plan'
+          ? this.recentObservations.findIndex(
+              (observation, index) =>
+                !observation.result.ok && index < this.recentObservations.length - 1
+            )
+          : -1;
       this.recentObservations.splice(
-        0,
+        failedObservation >= 0 ? failedObservation : 0,
         this.recentObservations.length - StudioAgentSession.MAX_RECENT_OBSERVATIONS
+      );
+    }
+    if (result.executionTarget) {
+      if (
+        this.state.executionAuthority !== 'workspace' ||
+        this.state.goal ||
+        this.state.governedGoal
+      ) {
+        throw new Error('Workspace selection cannot replace a governed scope.');
+      }
+      await validateStudioExecutionTarget(
+        result.executionTarget,
+        this.options.validateExecutionTarget
+      );
+      const previousTarget = this.state.executionTarget;
+      const previousRoot = previousTarget?.workspacePath ?? this.options.workspacePath;
+      const projectIdentityChanged =
+        previousTarget &&
+        'identity' in previousTarget &&
+        'identity' in result.executionTarget &&
+        JSON.stringify(previousTarget.identity) !== JSON.stringify(result.executionTarget.identity);
+      if (previousRoot !== result.executionTarget.workspacePath || projectIdentityChanged) {
+        this.state.nativeTransactionIds = [];
+      }
+      this.state.executionTarget = structuredClone(result.executionTarget);
+      await this.emit(
+        'workspace.target.bound',
+        {
+          ref: result.executionTarget.ref,
+          name: result.executionTarget.name,
+          kind:
+            'kind' in result.executionTarget && result.executionTarget.kind === 'project'
+              ? 'project'
+              : 'workspace',
+        },
+        requestId,
+        toolCallId
       );
     }
     const durableResult = durableToolResult(result);
@@ -2848,9 +3543,7 @@ export class StudioAgentSession {
     if (tool.name === 'update-task-ledger') {
       this.rememberTaskLedger(result, this.state.sequence + 1);
     }
-    if (tool.name === 'run-workspace-command') {
-      this.rememberWorkspaceCommandEffectVerification(result);
-    }
+    this.rememberWorkspaceCommandEffectVerification(result);
     this.rememberToolCompletionObligations({
       toolName: tool.name,
       activity: tool.activity,
@@ -2906,7 +3599,29 @@ export class StudioAgentSession {
     result: StudioAgentToolResult;
     sequence: number;
   }): void {
+    if (this.options.effectsManagedByParent) {
+      return;
+    }
     const obligations = this.completionObligations();
+    const hostExecution = toolOutputRecord(input.result)?.hostToolExecution as
+      | { effectful?: boolean }
+      | undefined;
+    if (input.toolName === 'invoke-host-tool' && hostExecution?.effectful === true) {
+      obligations.freshVerificationRequiredAfterSequence = input.sequence;
+      if (this.usesEvidenceReviewCompletion()) {
+        obligations.sourceReviewRequiredAfterSequence = input.sequence;
+      }
+    }
+    if (
+      input.toolName === 'delegate-task' &&
+      toolOutputRecord(input.result)?.delegatedEffects === true
+    ) {
+      // Child verification cannot discharge the parent's review of the combined outcome.
+      obligations.freshVerificationRequiredAfterSequence = input.sequence;
+      if (this.usesEvidenceReviewCompletion()) {
+        obligations.sourceReviewRequiredAfterSequence = input.sequence;
+      }
+    }
     const sourceMutation =
       input.result.changed === true &&
       input.activity === 'change' &&
@@ -2915,14 +3630,43 @@ export class StudioAgentSession {
       input.toolName !== 'verify-goal';
     const governedEvidenceMutation =
       input.result.changed === true && input.toolName === 'run-governed-command';
+    const externalEffects = toolOutputRecord(input.result)?.effects;
+    if (
+      [
+        'start-terminal',
+        'send-terminal-input',
+        'editor-task',
+        'editor-debug',
+        'editor-notebook',
+      ].includes(input.toolName) &&
+      externalEffects &&
+      typeof externalEffects === 'object' &&
+      stringValues((externalEffects as Record<string, unknown>).verificationScopes).length
+    ) {
+      obligations.freshVerificationRequiredAfterSequence = input.sequence;
+      if (this.usesEvidenceReviewCompletion()) {
+        obligations.sourceReviewRequiredAfterSequence = input.sequence;
+      }
+    }
 
+    if (this.state.executionAuthority === 'workspace' && sourceMutation) {
+      const output = toolOutputRecord(input.result);
+      const transaction = output?.transaction as { transactionId?: unknown } | undefined;
+      const transactionId =
+        output?.nativeTransactionId ?? transaction?.transactionId ?? output?.transactionId;
+      if (typeof transactionId === 'string' && /^native-[a-f0-9-]{36}$/.test(transactionId)) {
+        this.state.nativeTransactionIds = [
+          ...new Set([...(this.state.nativeTransactionIds ?? []), transactionId]),
+        ];
+      }
+    }
     if (sourceMutation) {
       obligations.latestSourceMutationSequence = input.sequence;
       obligations.freshVerificationRequiredAfterSequence = input.sequence;
       if (this.usesEvidenceReviewCompletion()) {
         obligations.sourceReviewRequiredAfterSequence = input.sequence;
       }
-      if (verifiedCliRepairClosure(input.result)) {
+      if (this.state.executionAuthority === 'workspace' || verifiedCliRepairClosure(input.result)) {
         delete obligations.canonicalClosureRequiredAfterSequence;
       } else {
         obligations.canonicalClosureRequiredAfterSequence = input.sequence;
@@ -2994,7 +3738,9 @@ export class StudioAgentSession {
       const obligations = this.completionObligations();
       obligations.latestSourceMutationSequence = unknownPriorSequence;
       obligations.freshVerificationRequiredAfterSequence = unknownPriorSequence;
-      obligations.canonicalClosureRequiredAfterSequence = unknownPriorSequence;
+      if (this.state.executionAuthority !== 'workspace') {
+        obligations.canonicalClosureRequiredAfterSequence = unknownPriorSequence;
+      }
       if (this.usesEvidenceReviewCompletion()) {
         obligations.sourceReviewRequiredAfterSequence = unknownPriorSequence;
       }
@@ -3067,49 +3813,37 @@ export class StudioAgentSession {
     return this.registry.get('verify-blocker') ? 'verify-blocker' : undefined;
   }
 
-  private completionPolicyViolation(requestId: string, summary: string): string | undefined {
+  private completionPolicyViolation(requestId: string, plan?: unknown): string | undefined {
     const executionMode = this.executionMode();
-    if (executionMode === 'ask' || executionMode === 'plan') {
+    if (
+      (executionMode === 'ask' || executionMode === 'plan') &&
+      this.state.executionPolicy?.profile !== 'evidence-answer'
+    ) {
       const inspected = this.state.events.some((event) => {
         if (event.requestId !== requestId || event.type !== 'tool.completed') {
           return false;
         }
         const toolName = String((event.data as Record<string, unknown>).toolName ?? '');
-        return [
-          'inspect-source',
-          'inspect-evidence',
-          'query-workspace-graph',
-          'search-workspace',
-          'inspect-workspace-diagnostics',
-          'inspect-workspace-changes',
-          'fetch-public-web',
-          'list-host-tools',
-          'invoke-host-tool',
-        ].includes(toolName);
+        // Grounding is a capability property, not a fixed vocabulary of tool names.
+        // New host/MCP readers must remain usable without changing this controller.
+        return (
+          (event.data as Record<string, unknown>).ok === true &&
+          this.registry.get(toolName)?.activity === 'inspect'
+        );
       });
       if (!inspected) {
         return `${executionMode === 'ask' ? 'Ask' : 'Plan'} completion rejected: inspect relevant workspace source or governed evidence before answering.`;
       }
     }
-    if (executionMode === 'plan') {
-      const missing = [
-        'scope',
-        'evidence',
-        'steps',
-        'verification',
-        'rollback',
-        'assumptions',
-      ].filter((section) => !new RegExp(`(?:^|\\n)#{0,3}\\s*${section}\\b`, 'i').test(summary));
-      if (missing.length > 0) {
-        return `Plan completion rejected: the concise implementation plan is missing ${missing.join(', ')}.`;
-      }
+    if (executionMode === 'plan' && !parseStudioImplementationPlan(plan)) {
+      return 'Plan completion rejected: provide structured plan sections (scope, evidence, steps, verification, rollback, assumptions), with headings and bodies in the user language.';
     }
     return undefined;
   }
 
   private completionGateViolation(
     requestId: string,
-    summary: string
+    plan?: unknown
   ):
     | {
         kind:
@@ -3124,7 +3858,7 @@ export class StudioAgentSession {
         reason: string;
       }
     | undefined {
-    const policyViolation = this.completionPolicyViolation(requestId, summary);
+    const policyViolation = this.completionPolicyViolation(requestId, plan);
     if (policyViolation) {
       return { kind: 'policy', reason: policyViolation };
     }
@@ -3201,7 +3935,7 @@ export class StudioAgentSession {
         blocker: NonNullable<ReturnType<StudioAgentSession['completionGateViolation']>>;
       }
   > {
-    const blocker = this.completionGateViolation(input.requestId, input.summary);
+    const blocker = this.completionGateViolation(input.requestId, input.data?.plan);
     if (blocker) {
       return { completed: false, blocker };
     }
@@ -3235,24 +3969,6 @@ export class StudioAgentSession {
     );
   }
 
-  private hasMutated(): boolean {
-    if (this.state.completionObligations?.latestSourceMutationSequence !== undefined) {
-      return true;
-    }
-    return this.state.events.some((event) => {
-      if (event.type !== 'tool.completed') {
-        return false;
-      }
-      const data = event.data as Record<string, unknown>;
-      return (
-        data.changed === true &&
-        data.toolName !== 'run-governed-command' &&
-        data.toolName !== 'verify-blocker' &&
-        data.toolName !== 'verify-goal'
-      );
-    });
-  }
-
   private noteProductiveContinuation(): void {
     this.unverifiedContinuationNudges = 0;
     this.freedomPlaneActive = false;
@@ -3282,7 +3998,9 @@ export class StudioAgentSession {
       recoveryPath: 'unverified-continue-nudge',
       cardId: this.latestActiveCardId,
       instruction:
-        'This path is closed and the task is not finished. Choose any other governed tool and continue until canonical verification reports the blocker closed. Do not repeat the previous observation and do not treat this pause as completion.',
+        this.state.executionAuthority === 'workspace'
+          ? 'This path is exhausted. Choose another applicable workspace, terminal, web or host tool. Reassess the concrete failure, run relevant checks, and review the final changes. If unable to finish, report findings, blockers and next steps honestly.'
+          : 'This path is closed and the task is not finished. Choose any other governed tool and continue until canonical verification reports the blocker closed. Do not repeat the previous observation and do not treat this pause as completion.',
     };
     this.skipProgressBreakerOnce = true;
     await this.emit(
@@ -3314,7 +4032,10 @@ export class StudioAgentSession {
       activity: tool.activity,
       risk: tool.risk,
     }));
+    const steeringAttachment = this.steeringAttachment;
+    this.steeringAttachment = undefined;
     return {
+      ...(steeringAttachment ? { steeringAttachment } : {}),
       session: this.snapshot(),
       tools,
       latestObservation,
@@ -3341,6 +4062,9 @@ export class StudioAgentSession {
   }
 
   private rememberWorkspaceCommandEffectVerification(result: StudioAgentToolResult): void {
+    if (this.options.effectsManagedByParent) {
+      return;
+    }
     const output = toolOutputRecord(result);
     if (!output) {
       return;

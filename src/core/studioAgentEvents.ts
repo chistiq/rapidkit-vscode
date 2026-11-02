@@ -1,3 +1,7 @@
+import type {
+  StudioActivityEventType,
+  StudioActivityReceipt,
+} from '../contracts/studioActivity.js';
 import type { AssistantExecutionPolicy } from './assistantExecutionPolicy.js';
 import type { AIProviderKind } from './aiProviderCatalog.js';
 
@@ -13,27 +17,17 @@ export type StudioAgentSessionStatus =
   | 'failed'
   | 'cancelled';
 
-export type StudioAgentEventType =
-  | 'session.created'
-  | 'session.status'
-  | 'request.started'
-  | 'request.steered'
-  | 'model.message'
-  | 'model.resolved'
-  | 'model.checkpoint'
-  | 'tool.requested'
-  | 'tool.permission'
-  | 'tool.approval.requested'
-  | 'tool.approval.approved'
-  | 'tool.approval.rejected'
-  | 'tool.started'
-  | 'tool.progress'
-  | 'tool.completed'
-  | 'tool.failed'
-  | 'verify.completed'
-  | 'session.completed'
-  | 'session.failed'
-  | 'session.cancelled';
+/** A live owner keeps Stop and decisions available while it awaits input or verifies. */
+export function isStudioAgentSessionActive(status: StudioAgentSessionStatus | undefined): boolean {
+  return (
+    status === 'running' ||
+    status === 'waiting-input' ||
+    status === 'waiting-permission' ||
+    status === 'verifying'
+  );
+}
+
+export type StudioAgentEventType = StudioActivityEventType;
 
 export type StudioAgentEvent<T = Record<string, unknown>> = {
   schemaVersion: typeof STUDIO_AGENT_EVENT_SCHEMA_VERSION;
@@ -85,6 +79,7 @@ export type StudioAgentModelResolution = {
   inputTokens?: number;
   outputTokens?: number;
   tokenUsageSource?: 'provider' | 'estimated';
+  toolTransport?: 'json';
 };
 
 export type StudioAgentResolvedModel = StudioAgentModelResolution & {
@@ -124,8 +119,24 @@ export type StudioAgentPersistedSession = {
   id: string;
   workspacePath: string;
   projectPath?: string;
+  /** Assigned by the host when delegating; never grants workspace authority. */
+  parent?: {
+    sessionId: string;
+    requestId: string;
+    toolCallId: string;
+    kind: 'research' | 'execution';
+    objective: string;
+  };
   cardId: string;
   assistantMode: 'agent' | 'ask' | 'plan' | 'goal';
+  executionAuthority?: 'workspace' | 'workspai-cli';
+  executionTarget?: import('./studioProjectTarget.js').StudioExecutionTarget;
+  /** Optional onboarding declined for a source; Resume must preserve that choice. */
+  declinedProjectOnboarding?: { requestId: string; projectPath: string }[];
+  /** User-authored path requests; host-private context, never inferred from tool observations. */
+  userRequestedPaths?: string[];
+  /** Native receipts needed for final review after event compaction or Resume. */
+  nativeTransactionIds?: string[];
   /** Immutable per-request policy derived from selected mode and model-classified intent. */
   executionPolicy?: AssistantExecutionPolicy;
   selectedModelId?: string;
@@ -239,6 +250,9 @@ export type StudioAgentPersistedSession = {
   createdAt: string;
   updatedAt: string;
   sequence: number;
+  /** Non-authoritative public activity survives bounded model/evidence windows. */
+  activityLog?: StudioActivityReceipt[];
+  activityLogOmitted?: number;
   events: StudioAgentEvent[];
 };
 

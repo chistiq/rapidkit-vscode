@@ -1,3 +1,4 @@
+import * as vscode from 'vscode';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -8,6 +9,7 @@ const {
   streamAIResponseMock,
   trackCommandEventMock,
   runNativeChatRepairMock,
+  runNativeAssistantQuestionMock,
 } = vi.hoisted(() => ({
   createChatParticipantMock: vi.fn(),
   collectDebugPrefillQuestionMock: vi.fn(),
@@ -16,6 +18,7 @@ const {
   streamAIResponseMock: vi.fn(),
   trackCommandEventMock: vi.fn(),
   runNativeChatRepairMock: vi.fn(),
+  runNativeAssistantQuestionMock: vi.fn(),
 }));
 
 vi.mock('vscode', () => {
@@ -42,7 +45,11 @@ vi.mock('vscode', () => {
 
   class ChatResponseTurn {
     response: unknown[];
-    constructor(response: unknown[]) {
+    constructor(
+      response: unknown[],
+      readonly result: { metadata?: Record<string, unknown> } = {},
+      readonly participant = 'workspai.assistant'
+    ) {
       this.response = response;
     }
   }
@@ -96,11 +103,19 @@ vi.mock('../core/nativeChatRepair', () => ({
   runNativeChatRepair: runNativeChatRepairMock,
 }));
 
+vi.mock('../core/nativeAssistantQuestion', () => ({
+  runNativeAssistantQuestion: runNativeAssistantQuestionMock,
+}));
+
 import { registerWorkspaiChatParticipant } from '../commands/chatParticipant';
 
 describe('chatParticipant', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    runNativeAssistantQuestionMock.mockResolvedValue({
+      status: 'completed',
+      sessionId: 'native-question',
+    });
 
     createChatParticipantMock.mockImplementation((_id: string, handler: unknown) => ({
       handler,
@@ -254,19 +269,37 @@ describe('chatParticipant', () => {
       { isCancellationRequested: false }
     );
 
-    expect(prepareAIConversationMock).toHaveBeenCalledWith(
-      'debug',
-      expect.stringContaining(
-        'why failing?\n\n<editor_context>\nError: db connection refused\n</editor_context>'
-      ),
-      expect.objectContaining({ type: 'workspace', name: 'demo-workspace' }),
-      []
+    expect(runNativeAssistantQuestionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: expect.stringContaining(
+          'why failing?\n\n<editor_context>\nError: db connection refused\n</editor_context>'
+        ),
+        scope: expect.objectContaining({ type: 'workspace', name: 'demo-workspace' }),
+      })
     );
-    expect(stream.button).toHaveBeenCalledWith(
-      expect.objectContaining({ command: 'workspai.debugWithAI' })
+    expect(prepareAIConversationMock).not.toHaveBeenCalled();
+  });
+
+  it('takes continuation identity only from this participant response metadata', async () => {
+    const context = { subscriptions: [] as { dispose(): void }[] };
+    registerWorkspaiChatParticipant(context as any);
+    const participant = context.subscriptions[0] as unknown as { handler: Function };
+    const own = new vscode.ChatResponseTurn([], {
+      metadata: { command: 'ask', sessionId: 'own-chat' },
+    } as any);
+    const foreign = new vscode.ChatResponseTurn(
+      [],
+      { metadata: { command: 'ask', sessionId: 'foreign-chat' } } as any,
+      'another.participant'
     );
-    expect(stream.button).toHaveBeenCalledWith(
-      expect.objectContaining({ command: 'workspai.workspaceBrain' })
+    await participant.handler(
+      { prompt: 'Continue', command: 'ask' },
+      { history: [own, foreign] },
+      { markdown: vi.fn(), progress: vi.fn(), button: vi.fn() },
+      { isCancellationRequested: false }
+    );
+    expect(runNativeAssistantQuestionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ previousSessionId: 'own-chat' })
     );
   });
 
@@ -298,103 +331,26 @@ describe('chatParticipant', () => {
     expect(askFollowups.some((f: { label: string }) => f.label === 'Suggest a module')).toBe(true);
   });
 
-  it('short-circuits on no-evidence clarification and never starts model streaming', async () => {
-    prepareAIConversationMock.mockResolvedValueOnce({
-      messages: [{ role: 'user', content: 'test' }],
-      scanned: undefined,
-      projectBootstrap: { status: 'not-applicable', adopted: false },
-      contract: {
-        contract_version: 1,
-        persona: 'amateur',
-        evidence_confidence: 'none',
-        workspace: {
-          path: undefined,
-          name: undefined,
-          doctorLastRunAt: undefined,
-          healthPercent: undefined,
-          projectCount: undefined,
-          knownProjects: [],
-        },
-        project: undefined,
-        commandScope: 'unknown',
-        safetyFlags: {
-          projectAlreadyExists: false,
-          moduleSupportDisabled: false,
-          doctorEvidenceStale: true,
-          safeActionsOnly: true,
-        },
-      },
-      validation: {
-        valid: false,
-        missing: ['workspace.path'],
-        clarificationNeeded: true,
-        clarificationReason:
-          'No workspace or project evidence is available. Please select a workspace and run `npx workspai doctor workspace` to generate evidence.',
-      },
-    });
-
-    const context = { subscriptions: [] as { dispose: () => void }[] };
-    registerWorkspaiChatParticipant(context as any);
-
-    const participant = context.subscriptions[0] as unknown as {
-      handler: Function;
-    };
-
-    const stream = {
-      markdown: vi.fn(),
-      progress: vi.fn(),
-      button: vi.fn(),
-    };
-
-    await participant.handler(
-      { prompt: 'Diagnose this workspace', command: 'ask' },
-      { history: [] },
-      stream,
-      { isCancellationRequested: false }
-    );
-
-    expect(streamAIResponseMock).not.toHaveBeenCalled();
-    expect(stream.markdown).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'Please select the workspace/project and run `npx workspai doctor workspace`'
-      )
-    );
-    expect(trackCommandEventMock).toHaveBeenCalledWith(
-      'workspai.chat.clarification_gate',
-      '/tmp/demo-workspace',
-      expect.objectContaining({ source: 'chat-participant', mode: 'ask' })
-    );
-  });
-
-  it('surfaces a blocked canonical entry before model streaming', async () => {
-    const prepared = await prepareAIConversationMock();
-    prepareAIConversationMock.mockResolvedValueOnce({
-      ...prepared,
-      scanned: undefined,
-      projectBootstrap: {
-        status: 'blocked',
-        adopted: true,
-        reason: 'The portable agent entry contract is stale.',
-      },
-    });
+  it('routes questions through the shared runtime without forcing CLI bootstrap or evidence generation', async () => {
     const context = { subscriptions: [] as { dispose: () => void }[] };
     registerWorkspaiChatParticipant(context as any);
     const participant = context.subscriptions[0] as unknown as { handler: Function };
     const stream = { markdown: vi.fn(), progress: vi.fn(), button: vi.fn() };
-
+    const ownership = { opaque: true };
     await participant.handler(
-      { prompt: 'Explain the architecture', command: 'ask' },
+      { prompt: 'Explain the architecture', command: 'ask', toolInvocationToken: ownership },
       { history: [] },
       stream,
       { isCancellationRequested: false }
     );
-
+    expect(runNativeAssistantQuestionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: 'Explain the architecture',
+        toolInvocationToken: ownership,
+        stream,
+      })
+    );
+    expect(prepareAIConversationMock).not.toHaveBeenCalled();
     expect(streamAIResponseMock).not.toHaveBeenCalled();
-    expect(stream.markdown).toHaveBeenCalledWith(
-      expect.stringContaining('Project grounding required')
-    );
-    expect(stream.button).toHaveBeenCalledWith(
-      expect.objectContaining({ command: 'workspai.workspaceIntelligenceChain' })
-    );
   });
 });

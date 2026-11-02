@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { LayoutDashboard, ScanSearch, GitCompareArrows, Wrench, Settings2 } from 'lucide-react';
 import { vscode } from '@/vscode';
+import { useAIProviderSettingsActions } from '@/lib/useAIProviderSettingsActions';
 import { normalizeExtensionWebviewMessage } from '@workspai-contracts/webviewProtocol';
 import type {
   ModuleData,
@@ -100,7 +101,9 @@ import { createDashboardEvidenceRefreshScheduler } from '@/lib/dashboardEvidence
 import {
   applyDashboardEvidenceMessage,
   emptyEvidencePayloadForWorkspace,
+  filterEvidencePatchToLatestCardRequests,
   nextEvidenceRequestId,
+  preserveNewerEvidenceCardRequests,
 } from '@/lib/dashboardEvidenceSession';
 import { isUnsupportedModuleProjectType } from '@/lib/moduleSupport';
 import {
@@ -170,6 +173,9 @@ declare global {
   }
 }
 
+// Temporarily hide the dashboard change-review surface, including background mounts.
+const DASHBOARD_REVIEW_CHANGES_ENABLED = false;
+
 type WorkspaiActiveView =
   | 'dashboard'
   | 'analyze-repository'
@@ -206,14 +212,7 @@ export function App() {
     reason?: string;
     hasApiKey?: boolean;
   } | null>(null);
-  const [aiProviderHealthCheck, setAIProviderHealthCheck] = useState<{
-    ok: boolean;
-    label: string;
-    latencyMs?: number;
-    model?: string;
-    reason?: string;
-  } | null>(null);
-  const [providerHealthChecking, setProviderHealthChecking] = useState(false);
+  const providerSettingsActions = useAIProviderSettingsActions(aiProvider, JSON.stringify([customAIBaseUrl, customAIModel, preferredModelId]));
   const [aiModelsLoading, setAiModelsLoading] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>('auto');
   // AI Create state
@@ -240,11 +239,17 @@ export function App() {
     null
   );
   const [selectedFramework, setSelectedFramework] = useState<ScaffoldFramework>('fastapi');
+  const [projectCreationError, setProjectCreationError] = useState<string | null>(null);
   const [selectedModule, setSelectedModule] = useState<ModuleData | null>(null);
   const [moduleDetails, setModuleDetails] = useState<ModuleData | null>(null);
   const [recentWorkspaces, setRecentWorkspaces] = useState<Workspace[]>([]);
   const [exampleWorkspaces, setExampleWorkspaces] = useState<ExampleWorkspace[]>([]);
   const [availableKits, setAvailableKits] = useState<Kit[]>([]);
+  const [availableKitsLoading, setAvailableKitsLoading] = useState(false);
+  const [availableKitsError, setAvailableKitsError] = useState<string | null>(null);
+  const availableKitsRequestIdRef = useRef<string | null>(null);
+  const hasRequestedCorrelatedKitsRef = useRef(false);
+  const availableKitsRequestSequenceRef = useRef(0);
   const [cloningExample, setCloningExample] = useState<string | null>(null);
   const [updatingExample, setUpdatingExample] = useState<string | null>(null);
   const [modulesCatalog, setModulesCatalog] = useState<ModuleData[]>([]);
@@ -276,7 +281,10 @@ export function App() {
   const [isEvidenceFullRefreshPending, setIsEvidenceFullRefreshPending] = useState(false);
   const dashboardEvidenceRefreshSchedulerRef = useRef(createDashboardEvidenceRefreshScheduler());
   const dashboardEvidenceRequestIdRef = useRef(0);
-  const lastAppliedEvidenceRequestIdRef = useRef(0);
+  const latestDashboardEvidenceFullRequestIdRef = useRef(0);
+  const latestDashboardEvidenceCardRequestIdsRef = useRef(
+    new Map<DashboardEvidenceCardId, number>()
+  );
   const [requestedOperateZone, setRequestedOperateZone] = useState<DashboardOperateZone | null>(
     null
   );
@@ -572,6 +580,14 @@ export function App() {
     (context?: Record<string, unknown>) => {
       const nextRequestId = nextEvidenceRequestId(dashboardEvidenceRequestIdRef.current);
       dashboardEvidenceRequestIdRef.current = nextRequestId;
+      latestDashboardEvidenceFullRequestIdRef.current = nextRequestId;
+      const coveredCardIds = new Set([
+        ...latestDashboardEvidenceCardRequestIdsRef.current.keys(),
+        ...(dashboardEvidenceRef.current?.cards.map((card) => card.id) ?? []),
+      ]);
+      for (const cardId of coveredCardIds) {
+        latestDashboardEvidenceCardRequestIdsRef.current.set(cardId, nextRequestId);
+      }
       vscode.postMessage('requestDashboardEvidence', {
         ...buildEvidenceRequestContext(context),
         refreshMode: 'full',
@@ -587,6 +603,9 @@ export function App() {
       }
       const nextRequestId = nextEvidenceRequestId(dashboardEvidenceRequestIdRef.current);
       dashboardEvidenceRequestIdRef.current = nextRequestId;
+      for (const cardId of cardIds) {
+        latestDashboardEvidenceCardRequestIdsRef.current.set(cardId, nextRequestId);
+      }
       vscode.postMessage('refreshDashboardEvidenceCard', {
         ...buildEvidenceRequestContext(context),
         cardIds,
@@ -632,7 +651,8 @@ export function App() {
       setDashboardCommandFailures({});
       const nextRequestId = nextEvidenceRequestId(dashboardEvidenceRequestIdRef.current);
       dashboardEvidenceRequestIdRef.current = nextRequestId;
-      lastAppliedEvidenceRequestIdRef.current = 0;
+      latestDashboardEvidenceFullRequestIdRef.current = nextRequestId;
+      latestDashboardEvidenceCardRequestIdsRef.current.clear();
       setDashboardEvidence(emptyEvidencePayloadForWorkspace(workspacePath, nextRequestId));
     },
     [clearDashboardEvidenceRefreshTimers]
@@ -1030,11 +1050,13 @@ export function App() {
             ) {
               const inboundProject = resolveSidebarProjectSelection(message.data);
               if (inboundProject) {
+                selectedProjectForAnalysisRef.current = inboundProject;
                 setSelectedProjectForAnalysis((current) =>
                   current?.path === inboundProject.path ? current : inboundProject
                 );
               }
-            } else if (message.data?.hasProjectSelected === false && workspaceChanged) {
+            } else if (message.data?.hasProjectSelected === false) {
+              selectedProjectForAnalysisRef.current = null;
               setSelectedProjectForAnalysis(null);
             }
           }
@@ -1046,6 +1068,9 @@ export function App() {
           break;
         case 'dashboardEvidence': {
           const incoming = (message.data ?? null) as DashboardEvidencePayload | null;
+          if (!incoming) {
+            break;
+          }
           const activeWorkspacePath = workspaceStatusRef.current.workspacePath;
           const activeProjectPath =
             typeof workspaceStatusRef.current.projectPath === 'string' &&
@@ -1056,22 +1081,38 @@ export function App() {
                 : undefined;
 
           if (
-            incoming?.workspacePath &&
+            incoming.workspacePath &&
             activeWorkspacePath &&
             incoming.workspacePath !== activeWorkspacePath
           ) {
             break;
           }
 
-          if (incoming?.refreshMode === 'patch') {
+          if (
+            incoming.projectPath &&
+            activeProjectPath &&
+            incoming.projectPath !== activeProjectPath
+          ) {
+            break;
+          }
+
+          if (incoming.refreshMode === 'patch') {
             setDashboardEvidence((current) => {
+              const patch = filterEvidencePatchToLatestCardRequests(
+                incoming,
+                latestDashboardEvidenceCardRequestIdsRef.current
+              );
+              if (!patch) {
+                return current;
+              }
               const merged = current
-                ? applyDashboardEvidenceMessage(current, incoming, {
+                ? applyDashboardEvidenceMessage(current, patch, {
+                    expectedRequestId: patch.requestId,
                     activeWorkspacePath,
                     activeProjectPath,
                     allowMissingRequestId: true,
                   })
-                : incoming;
+                : patch;
               reconcilePendingEvidenceCards(merged);
               return merged;
             });
@@ -1079,32 +1120,33 @@ export function App() {
           }
 
           if (
-            incoming?.requestId !== null &&
-            incoming?.requestId !== undefined &&
-            incoming.requestId < lastAppliedEvidenceRequestIdRef.current
-          ) {
-            break;
-          }
-
-          if (
-            incoming?.requestId !== null &&
-            incoming?.requestId !== undefined &&
-            incoming.requestId > dashboardEvidenceRequestIdRef.current
+            incoming.requestId !== null &&
+            incoming.requestId !== undefined &&
+            incoming.requestId !== latestDashboardEvidenceFullRequestIdRef.current
           ) {
             break;
           }
 
           setDashboardEvidence((current) => {
+            if (
+              incoming.requestId !== null &&
+              incoming.requestId !== undefined &&
+              incoming.requestId !== latestDashboardEvidenceFullRequestIdRef.current
+            ) {
+              return current;
+            }
+            const orderedIncoming = preserveNewerEvidenceCardRequests(
+              current,
+              incoming,
+              latestDashboardEvidenceCardRequestIdsRef.current
+            );
             const next =
-              applyDashboardEvidenceMessage(current, incoming, {
-                expectedRequestId: incoming?.requestId,
+              applyDashboardEvidenceMessage(current, orderedIncoming, {
+                expectedRequestId: orderedIncoming?.requestId,
                 activeWorkspacePath,
                 activeProjectPath,
                 allowMissingRequestId: true,
-              }) ?? incoming;
-            if (incoming?.requestId !== null && incoming?.requestId !== undefined) {
-              lastAppliedEvidenceRequestIdRef.current = incoming.requestId;
-            }
+              }) ?? orderedIncoming;
             reconcilePendingEvidenceCards(next);
             return next;
           });
@@ -1241,7 +1283,52 @@ export function App() {
           break;
         case 'updateAvailableKits':
           console.log('[React Webview] Updating available kits:', message.data);
-          setAvailableKits(Array.isArray(message.data) ? message.data : []);
+          {
+            const responseRequestId =
+              typeof message.data?.requestId === 'string' ? message.data.requestId : undefined;
+            if (
+              (responseRequestId && responseRequestId !== availableKitsRequestIdRef.current) ||
+              (!responseRequestId &&
+                (availableKitsRequestIdRef.current !== null ||
+                  hasRequestedCorrelatedKitsRef.current))
+            ) {
+              break;
+            }
+            const kits = Array.isArray(message.data)
+              ? message.data
+              : Array.isArray(message.data?.kits)
+                ? message.data.kits
+                : [];
+            setAvailableKits(kits);
+            setAvailableKitsLoading(false);
+            setAvailableKitsError(
+              typeof message.data?.loadError === 'string' && message.data.loadError.trim()
+                ? message.data.loadError.trim()
+                : null
+            );
+            availableKitsRequestIdRef.current = null;
+          }
+          break;
+        case 'availableKitsLoadError':
+          {
+            const responseRequestId =
+              typeof message.data?.requestId === 'string' ? message.data.requestId : undefined;
+            if (
+              (responseRequestId && responseRequestId !== availableKitsRequestIdRef.current) ||
+              (!responseRequestId &&
+                (availableKitsRequestIdRef.current !== null ||
+                  hasRequestedCorrelatedKitsRef.current))
+            ) {
+              break;
+            }
+          }
+          setAvailableKitsLoading(false);
+          setAvailableKitsError(
+            typeof message.data?.error === 'string' && message.data.error.trim()
+              ? message.data.error.trim()
+              : 'Unable to load project kits.'
+          );
+          availableKitsRequestIdRef.current = null;
           break;
         case 'setCloning':
           console.log('[React Webview] Setting cloning state:', message.data);
@@ -1314,8 +1401,16 @@ export function App() {
           console.log('[React Webview] openProjectModal:', message.data?.framework);
           if (message.data?.framework) {
             setSelectedFramework(message.data.framework);
+            setProjectCreationError(null);
             setShowProjectModal(true);
           }
+          break;
+        case 'projectCreationError':
+          setProjectCreationError(
+            typeof message.data?.error === 'string' && message.data.error.trim()
+              ? message.data.error.trim()
+              : 'Unable to create the requested project.'
+          );
           break;
         case 'closeProjectModal':
           setShowProjectModal(false);
@@ -1384,13 +1479,6 @@ export function App() {
           setAIAvailableModels(normalizedModels);
           setAiModelsLoading(false);
           setThemeMode(normalizeThemeMode(message.data?.themeMode));
-          break;
-        }
-        case 'aiProviderHealthCheck': {
-          setProviderHealthChecking(false);
-          setAIProviderHealthCheck(
-            message.data && typeof message.data === 'object' ? message.data : null
-          );
           break;
         }
         // ── AI Create events ────────────────────────────────────────
@@ -1519,9 +1607,18 @@ export function App() {
     }
   }, [showCreateModal]);
 
+  const refreshAvailableKits = useCallback((forceRefresh = false) => {
+    const requestId = `available-kits-${++availableKitsRequestSequenceRef.current}`;
+    availableKitsRequestIdRef.current = requestId;
+    hasRequestedCorrelatedKitsRef.current = true;
+    setAvailableKitsLoading(true);
+    setAvailableKitsError(null);
+    vscode.postMessage('requestAvailableKits', { requestId, forceRefresh });
+  }, []);
+
   useEffect(() => {
     const workspacePath = workspaceStatus.workspacePath;
-    if (dashboardSection !== 'graph' || !workspacePath) {
+    if (activeView !== 'dashboard' || dashboardSection !== 'graph' || !workspacePath) {
       workspaceGraphLiveCursorRef.current = null;
       setLiveWorkspaceGraph(null);
       vscode.postMessage('stopWorkspaceGraphStream');
@@ -1531,16 +1628,14 @@ export function App() {
     setLiveWorkspaceGraph(null);
     vscode.postMessage('startWorkspaceGraphStream', { workspacePath });
     return () => vscode.postMessage('stopWorkspaceGraphStream');
-  }, [dashboardSection, workspaceStatus.workspacePath]);
+  }, [activeView, dashboardSection, workspaceStatus.workspacePath]);
 
   useEffect(() => {
     if (showProjectModal) {
       vscode.postMessage('requestWorkspaceToolStatus');
-      // On-demand refresh: prevents first-open race where project modal appears
-      // before initial kits payload has arrived.
-      vscode.postMessage('requestAvailableKits');
+      refreshAvailableKits();
     }
-  }, [showProjectModal]);
+  }, [refreshAvailableKits, showProjectModal]);
 
   const handleCreateWorkspace = (config: WorkspaceCreationConfig) => {
     console.log('[React Webview] Creating workspace:', config.name);
@@ -1563,6 +1658,7 @@ export function App() {
 
   const handleOpenManualProjectModal = (framework: ScaffoldFramework) => {
     setSelectedFramework(framework);
+    setProjectCreationError(null);
     setShowProjectModal(true);
   };
 
@@ -1609,6 +1705,7 @@ export function App() {
     framework: ScaffoldFramework,
     kitName: string
   ) => {
+    setProjectCreationError(null);
     console.log('[React Webview] Creating project:', projectName, framework, kitName);
     vscode.postMessage('createProjectWithKit', { name: projectName, framework, kit: kitName });
   };
@@ -1771,14 +1868,45 @@ export function App() {
     workspaceStatus.hasProjectSelected,
   ]);
 
+  const handleWorkspaiViewTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+      return;
+    }
+    const tabs = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+    );
+    const currentIndex = tabs.indexOf(document.activeElement as HTMLButtonElement);
+    if (currentIndex < 0 || tabs.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    const nextIndex =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? tabs.length - 1
+          : (currentIndex + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length;
+    const nextTab = tabs[nextIndex];
+    nextTab.focus();
+    nextTab.click();
+  };
+
   const workspaiViewTabs = (
-    <div className="workspai-view-tabs" role="tablist" aria-label="Workspai views">
+    <div className="workspai-view-tabs">
       <Header version={version} variant="inline" />
-      <div className="workspai-view-tabs__group workspai-view-tabs__group--primary">
+      <div
+        className="workspai-view-tabs__group workspai-view-tabs__group--primary"
+        role="tablist"
+        aria-label="Workspai views"
+        onKeyDown={handleWorkspaiViewTabKeyDown}
+      >
         <button
           type="button"
+          id="workspai-view-tab-dashboard"
           role="tab"
           aria-selected={activeView === 'dashboard'}
+          aria-controls="workspai-main-view-panel"
+          tabIndex={activeView === 'dashboard' ? 0 : -1}
           className={`workspai-view-tab ${activeView === 'dashboard' ? 'is-active' : ''}`}
           title="Workspai — Home, Run, Repair, Artifacts, Graph, Live, Project, Library"
           onClick={() => setActiveView('dashboard')}
@@ -1790,8 +1918,11 @@ export function App() {
         </button>
         <button
           type="button"
+          id="workspai-view-tab-analyze-repository"
           role="tab"
           aria-selected={activeView === 'analyze-repository'}
+          aria-controls="workspai-main-view-panel"
+          tabIndex={activeView === 'analyze-repository' ? 0 : -1}
           className={`workspai-view-tab ${activeView === 'analyze-repository' ? 'is-active' : ''}`}
           title="Analyze a public repository locally"
           onClick={() => {
@@ -1803,23 +1934,31 @@ export function App() {
             <span className="workspai-view-tab-label">Analyze Repo</span>
           </span>
         </button>
+        {DASHBOARD_REVIEW_CHANGES_ENABLED ? (
+          <button
+            type="button"
+            id="workspai-view-tab-review-changes"
+            role="tab"
+            aria-selected={activeView === 'review-changes'}
+            aria-controls="workspai-main-view-panel"
+            tabIndex={activeView === 'review-changes' ? 0 : -1}
+            title="Review local changes, impact evidence and suggested checks"
+            className={`workspai-view-tab ${activeView === 'review-changes' ? 'is-active' : ''}`}
+            onClick={() => setActiveView('review-changes')}
+          >
+            <span className="workspai-view-tab-content">
+              <GitCompareArrows size={13} aria-hidden="true" />
+              <span className="workspai-view-tab-label">Review Changes</span>
+            </span>
+          </button>
+        ) : null}
         <button
           type="button"
-          role="tab"
-          aria-selected={activeView === 'review-changes'}
-          title="Review local changes, impact evidence and suggested checks"
-          className={`workspai-view-tab ${activeView === 'review-changes' ? 'is-active' : ''}`}
-          onClick={() => setActiveView('review-changes')}
-        >
-          <span className="workspai-view-tab-content">
-            <GitCompareArrows size={13} aria-hidden="true" />
-            <span className="workspai-view-tab-label">Review Changes</span>
-          </span>
-        </button>
-        <button
-          type="button"
+          id="workspai-view-tab-settings"
           role="tab"
           aria-selected={activeView === 'settings'}
+          aria-controls="workspai-main-view-panel"
+          tabIndex={activeView === 'settings' ? 0 : -1}
           className={`workspai-view-tab ${activeView === 'settings' ? 'is-active' : ''}`}
           onClick={() => {
             setActiveView('settings');
@@ -1833,8 +1972,11 @@ export function App() {
         </button>
         <button
           type="button"
+          id="workspai-view-tab-setup"
           role="tab"
           aria-selected={activeView === 'setup'}
+          aria-controls="workspai-main-view-panel"
+          tabIndex={activeView === 'setup' ? 0 : -1}
           className={`workspai-view-tab ${activeView === 'setup' ? 'is-active' : ''}`}
           onClick={openSetupInDashboard}
         >
@@ -1850,6 +1992,7 @@ export function App() {
   return (
     <WorkspaiThemeProvider themeMode={themeMode}>
       <div
+        id="workspai-main-view-panel"
         className={[
           'container',
           activeView === 'dashboard'
@@ -1863,8 +2006,31 @@ export function App() {
         ]
           .filter(Boolean)
           .join(' ')}
+        role="tabpanel"
+        aria-labelledby={`workspai-view-tab-${activeView}`}
+        tabIndex={0}
         data-active-view={activeView}
       >
+        <div
+          hidden={activeView !== 'analyze-repository'}
+          className="ws-embedded-host ws-embedded-host--full"
+        >
+          {activeView === 'analyze-repository' ? (
+            <div className="workspai-view-tabs-sticky">{workspaiViewTabs}</div>
+          ) : null}
+          <RepositoryAnalysisPanel />
+        </div>
+        {DASHBOARD_REVIEW_CHANGES_ENABLED ? (
+          <div
+            hidden={activeView !== 'review-changes'}
+            className="ws-embedded-host ws-embedded-host--full"
+          >
+            {activeView === 'review-changes' ? (
+              <div className="workspai-view-tabs-sticky">{workspaiViewTabs}</div>
+            ) : null}
+            <ChangeReviewPanel />
+          </div>
+        ) : null}
         {activeView === 'dashboard' ? (
           <div className="ws-dashboard-shell">
             <div className="ws-dashboard-shell__main">
@@ -2441,19 +2607,11 @@ export function App() {
               ) : null}
             </div>
           </div>
-        ) : activeView === 'analyze-repository' ? (
-          <div className="ws-embedded-host ws-embedded-host--full">
-            <div className="workspai-view-tabs-sticky">{workspaiViewTabs}</div>
-            <RepositoryAnalysisPanel />
-          </div>
-        ) : activeView === 'review-changes' ? (
-          <div className="ws-embedded-host ws-embedded-host--full">
-            <div className="workspai-view-tabs-sticky">{workspaiViewTabs}</div>
-            <ChangeReviewPanel />
-          </div>
         ) : activeView === 'settings' ? (
           <div className="ws-embedded-host ws-embedded-host--full">
-            <div className="workspai-view-tabs-sticky">{workspaiViewTabs}</div>
+            {activeView === 'settings' ? (
+              <div className="workspai-view-tabs-sticky">{workspaiViewTabs}</div>
+            ) : null}
             <WorkspaiSettingsPanel
               availableModels={aiAvailableModels}
               preferredModelId={preferredModelId}
@@ -2462,22 +2620,17 @@ export function App() {
               customAIBaseUrl={customAIBaseUrl}
               customAIModel={customAIModel}
               aiProviderStatus={aiProviderStatus}
-              aiProviderHealthCheck={aiProviderHealthCheck}
-              providerHealthChecking={providerHealthChecking}
+              aiProviderHealthCheck={providerSettingsActions.healthCheck}
+              providerHealthChecking={providerSettingsActions.pending === 'testAIProvider'}
+              providerSettingsPending={providerSettingsActions.pending}
+              providerSettingsNotice={providerSettingsActions.notice}
               modelsLoading={aiModelsLoading}
-              onPreferredModelChange={handlePreferredModelChange}
-              onProviderChange={(provider) => {
-                setAIProviderHealthCheck(null);
-                vscode.postMessage('setAIProvider', { provider });
-              }}
-              onCustomAIConfigSave={(input) => vscode.postMessage('setCustomAIConfig', input)}
-              onCustomAIAPIKeySave={(apiKey) => vscode.postMessage('setCustomAIAPIKey', { apiKey })}
-              onCustomAIAPIKeyClear={() => vscode.postMessage('clearCustomAIAPIKey')}
-              onTestAIProvider={() => {
-                setProviderHealthChecking(true);
-                setAIProviderHealthCheck(null);
-                vscode.postMessage('testAIProvider');
-              }}
+              onPreferredModelChange={(modelId) => providerSettingsActions.dispatch('setPreferredModel', { modelId })}
+              onProviderChange={(provider) => providerSettingsActions.dispatch('setAIProvider', { provider })}
+              onCustomAIConfigSave={(input) => providerSettingsActions.dispatch('setCustomAIConfig', input)}
+              onCustomAIAPIKeySave={(apiKey) => providerSettingsActions.dispatch('setCustomAIAPIKey', { apiKey })}
+              onCustomAIAPIKeyClear={() => providerSettingsActions.dispatch('clearCustomAIAPIKey')}
+              onTestAIProvider={() => providerSettingsActions.dispatch('testAIProvider', { baseUrl: customAIBaseUrl, model: customAIModel, preferredModel: preferredModelId })}
               onRefreshModels={refreshWorkspaiSettings}
               themeMode={themeMode}
               onThemeModeChange={handleThemeModeChange}
@@ -2485,7 +2638,9 @@ export function App() {
           </div>
         ) : activeView === 'setup' ? (
           <div className="ws-embedded-host ws-embedded-host--full">
-            <div className="workspai-view-tabs-sticky">{workspaiViewTabs}</div>
+            {activeView === 'setup' ? (
+              <div className="workspai-view-tabs-sticky">{workspaiViewTabs}</div>
+            ) : null}
             <SetupExperience embedded />
           </div>
         ) : null}
@@ -2504,6 +2659,10 @@ export function App() {
           isOpen={showProjectModal}
           framework={selectedFramework}
           availableKits={availableKits}
+          availableKitsLoading={availableKitsLoading}
+          availableKitsError={availableKitsError}
+          onRetryKits={() => refreshAvailableKits(true)}
+          creationError={projectCreationError}
           onClose={() => setShowProjectModal(false)}
           onCreate={handleCreateProject}
           onSwitchToAI={() => {

@@ -1,5 +1,6 @@
 import fs from 'fs-extra';
 import path from 'path';
+import { isStudioCommandText } from '../contracts/studioCommandText';
 
 import {
   buildRapidkitExecutionSpec,
@@ -124,7 +125,10 @@ function parseTrustedEcosystemCommand(
       return args[0] === 'restore';
     }
     if (executable === 'npm') {
-      return ['install', 'ci', 'audit'].includes(args[0] ?? '');
+      return (
+        ['install', 'ci', 'audit'].includes(args[0] ?? '') ||
+        (args[0] === 'run' && /^[\w:.-]+$/.test(args[1] ?? ''))
+      );
     }
     if (executable === 'pnpm') {
       return ['install', 'add', 'audit'].includes(args[0] ?? '');
@@ -159,6 +163,12 @@ export function parseRapidkitInlineCommand(
   const trimmed = command.trim();
   if (!trimmed) {
     return { error: 'No command provided to run.' };
+  }
+  if (!isStudioCommandText(trimmed)) {
+    return {
+      error:
+        'Expected one command without explanatory text. Run commands separately and select the target project.',
+    };
   }
   const cdPrefix = trimmed.match(/^cd\s+(['"])(.*?)\1\s*&&\s*(.+)$/);
   const cwdHint = cdPrefix?.[2]?.trim();
@@ -282,6 +292,22 @@ export async function resolveRapidkitExecutionPlan(
   }
 
   if (parsed.executable) {
+    if (parsed.executable === 'npm') {
+      if (!(await fs.pathExists(path.join(effectiveCwd, 'package.json')))) {
+        return {
+          error: `No package.json in command directory "${effectiveCwd}". Select the target project in the chat scope before running this npm command.`,
+        };
+      }
+      if (
+        parsed.args?.[0] === 'ci' &&
+        !(await fs.pathExists(path.join(effectiveCwd, 'package-lock.json'))) &&
+        !(await fs.pathExists(path.join(effectiveCwd, 'npm-shrinkwrap.json')))
+      ) {
+        return {
+          error: `npm ci requires a lockfile in "${effectiveCwd}". Select the project containing the lockfile, or use npm install for a project without one.`,
+        };
+      }
+    }
     return {
       executable: parsed.executable,
       args: parsed.args ?? [],

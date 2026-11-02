@@ -2,6 +2,8 @@ import * as fs from 'node:fs';
 import crypto from 'node:crypto';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { resolveStudioScopePath } from './studioScopePath.js';
+import { requireStudioWorkspaceDirectory } from './studioWorkspaceAvailability.js';
 
 import {
   buildPackageRunnerInvocationEnv,
@@ -33,6 +35,8 @@ export type StudioWorkspaceCommandRequest = {
   cwd?: string;
   purpose: StudioWorkspaceCommandPurpose;
   timeoutMs?: number;
+  /** Declare source-producing behavior without mislabelling a build/test as formatting. */
+  allowSourceChanges?: boolean;
 };
 
 export type StudioWorkspaceCommandPlan = {
@@ -71,6 +75,7 @@ export type StudioWorkspaceCommandExecution = StudioWorkspaceCommandPlan & {
   stderr: string;
   timedOut: boolean;
   terminationSignal?: string;
+  startupError?: { code?: string; message: string };
 };
 
 export type StudioWorkspaceProcessEvent =
@@ -108,6 +113,9 @@ export type StudioWorkspaceCommandRunOptions = {
 export function describeStudioWorkspaceCommandFailure(
   execution: StudioWorkspaceCommandExecution
 ): string {
+  if (execution.startupError) {
+    return `Workspace command could not start${execution.startupError.code ? ` (${execution.startupError.code})` : ''}: ${execution.startupError.message}`;
+  }
   if (execution.stderr.trim()) {
     return execution.stderr;
   }
@@ -436,6 +444,9 @@ function commandMutatesSource(
   input: StudioWorkspaceCommandRequest,
   executableName: string
 ): boolean {
+  if (input.allowSourceChanges === true) {
+    return true;
+  }
   if (input.purpose === 'dependency' || input.purpose === 'format') {
     return true;
   }
@@ -502,6 +513,7 @@ function commandAuthorizationFingerprint(input: {
   cwd: string;
   purpose: StudioWorkspaceCommandPurpose;
   timeoutMs: number;
+  allowSourceChanges?: boolean;
 }): string {
   return crypto
     .createHash('sha256')
@@ -513,6 +525,7 @@ function commandAuthorizationFingerprint(input: {
         cwd: path.resolve(input.cwd),
         purpose: input.purpose,
         timeoutMs: input.timeoutMs,
+        ...(input.allowSourceChanges === true ? { allowSourceChanges: true } : {}),
       })
     )
     .digest('hex');
@@ -549,6 +562,9 @@ export function resolveStudioWorkspaceCommandPlan(input: {
   request: StudioWorkspaceCommandRequest;
 }): StudioWorkspaceCommandPlan {
   const { request } = input;
+  if (request.allowSourceChanges !== undefined && typeof request.allowSourceChanges !== 'boolean') {
+    throw new Error('Studio workspace command allowSourceChanges must be a boolean.');
+  }
   validateToken(request.executable, 'executable');
   if (!Array.isArray(request.args) || request.args.length > 100) {
     throw new Error('Studio workspace command args must contain at most 100 entries.');
@@ -558,7 +574,7 @@ export function resolveStudioWorkspaceCommandPlan(input: {
   const commandRoot = input.projectPath?.trim()
     ? path.resolve(input.projectPath)
     : path.resolve(input.workspacePath);
-  const cwd = path.resolve(commandRoot, request.cwd ?? '.');
+  const cwd = resolveStudioScopePath(input, request.cwd ?? '.');
   if (!isInside(commandRoot, cwd)) {
     throw new Error('Studio workspace command cwd escapes the selected workspace/project.');
   }
@@ -566,7 +582,7 @@ export function resolveStudioWorkspaceCommandPlan(input: {
   const executableName = normalizedExecutableName(request.executable);
   if (invokesWorkspaiCli(executableName, request.args)) {
     throw new Error(
-      'Workspai commands are not allowed through run-workspace-command. Use run-governed-command so the registered command, selected scope, bundled CLI runtime, evidence refresh, and verification remain controller-owned.'
+      'Workspai commands are not allowed through run-workspace-command. For agent bootstrap use inspect-project-agent-entry with the registered project identity. Use run-governed-command for its enumerated registered producers and verification. For another CLI operation inspect installed help and use a dedicated capability or exact-approved start-terminal when appropriate. Do not treat a missing CLI route as a reason to stop unrelated source work.'
     );
   }
   const projectLocalExecutable = /^\.{1,2}[\\/]/.test(request.executable);
@@ -668,6 +684,7 @@ export function resolveStudioWorkspaceCommandPlan(input: {
       cwd,
       purpose: request.purpose,
       timeoutMs,
+      allowSourceChanges: request.allowSourceChanges,
     }),
     requiresExplicitApproval,
     approvalReasons,
@@ -693,6 +710,7 @@ export async function runStudioWorkspaceCommand(
   plan: StudioWorkspaceCommandPlan,
   options: StudioWorkspaceCommandRunOptions = {}
 ): Promise<StudioWorkspaceCommandExecution> {
+  await requireStudioWorkspaceDirectory(plan.cwd);
   const { execa } = await import('execa');
   let protectedEnvironment = Object.fromEntries(
     Object.entries(process.env).filter(
@@ -741,7 +759,7 @@ export async function runStudioWorkspaceCommand(
       // Telemetry is never allowed to change command execution semantics.
     }
   };
-  await emit({
+  void emit({
     phase: 'started',
     ...(processId ? { processId } : {}),
     startedAt: startedAt.toISOString(),
@@ -788,9 +806,38 @@ export async function runStudioWorkspaceCommand(
 
   try {
     const result = await subprocess;
+    const startupFailure = result as unknown as {
+      failed?: boolean;
+      code?: string;
+      shortMessage?: string;
+    };
+    const startupError =
+      startupFailure.failed && result.exitCode === undefined && !result.signal && !result.timedOut
+        ? {
+            ...(startupFailure.code ? { code: startupFailure.code } : {}),
+            message: startupFailure.shortMessage ?? 'The executable could not be started.',
+          }
+        : undefined;
+    sampleCapturedBytes();
+    clearInterval(captureMonitor);
+    clearInterval(heartbeat);
     closeDescriptors();
     const completedAt = new Date();
     const durationMs = Math.max(0, completedAt.getTime() - startedAt.getTime());
+    // Report the observed exit before output reading or transaction inspection.
+    // Those operations may be slow even though the process has already exited.
+    void emit({
+      phase: 'completed',
+      ...(processId ? { processId } : {}),
+      completedAt: completedAt.toISOString(),
+      durationMs,
+      exitCode: result.exitCode ?? null,
+      timedOut: Boolean(result.timedOut),
+      ...(startupError ? { startupError } : {}),
+      ...(result.signal ? { terminationSignal: String(result.signal) } : {}),
+      stdoutBytes,
+      stderrBytes,
+    });
     const [resultStdout, resultStderr] = await Promise.all([
       readCapturedOutput(stdoutPath),
       readCapturedOutput(stderrPath),
@@ -810,19 +857,9 @@ export async function runStudioWorkspaceCommand(
       stdout: boundedOutput(resultStdout),
       stderr: boundedOutput([resultStderr, captureError].filter(Boolean).join('\n')),
       timedOut: Boolean(result.timedOut),
+      ...(startupError ? { startupError } : {}),
       ...(result.signal ? { terminationSignal: String(result.signal) } : {}),
     };
-    await emit({
-      phase: 'completed',
-      ...(processId ? { processId } : {}),
-      completedAt: execution.completedAt,
-      durationMs,
-      exitCode: execution.exitCode,
-      timedOut: execution.timedOut,
-      ...(execution.terminationSignal ? { terminationSignal: execution.terminationSignal } : {}),
-      stdoutBytes,
-      stderrBytes,
-    });
     return execution;
   } finally {
     clearInterval(captureMonitor);

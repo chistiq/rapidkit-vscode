@@ -6,10 +6,34 @@ import {
   parseSidebarStudioActionProgress,
   studioApprovalCommandLabel,
   studioAgentToolProgressCopy,
+  studioAgentObservationSummary,
 } from '../../webview-ui/src/lib/sidebarStudioActionProgress';
 import { parseStudioActionFailure } from '../../webview-ui/src/lib/studioVerifyFailure';
 
 describe('sidebarStudioActionProgress', () => {
+  it('reports delegated outcomes without marking the parent verified or adding generic result noise', () => {
+    expect(studioAgentToolProgressCopy('delegate-task', 'completed').title).toBe(
+      'Subtask result ready for review'
+    );
+    expect(
+      studioAgentObservationSummary('delegate-task', {
+        status: 'completed',
+        answer: 'Updated the requested source.',
+      })
+    ).toContain('parent must review');
+    expect(
+      studioAgentObservationSummary('delegate-task', {
+        status: 'waiting-input',
+        answer: 'Which account?',
+      })
+    ).toContain('Which account?');
+    expect(
+      studioAgentObservationSummary('update-task-ledger', {
+        steps: [{ status: 'completed' }, { status: 'pending' }],
+      })
+    ).toBe('Task progress: 1 of 2 steps completed.');
+    expect(studioAgentObservationSummary('unknown-read', {})).toBe('');
+  });
   it('shortens only the display label for an exact governed remediation identity', () => {
     const exact =
       'Workspai remediation action: doctor.opensearch.runtime-dependency-materialization.dependency-materialization';

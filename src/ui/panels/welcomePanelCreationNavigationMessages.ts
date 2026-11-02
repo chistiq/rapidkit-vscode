@@ -103,7 +103,6 @@ export async function tryDispatchCreationNavigationWebviewMessage(
         payload.kit
       ) {
         console.log('[WelcomePanel] Creating project with kit:', payload);
-        host.postWebviewMessage('closeProjectModal');
         const workspacePath = host.getSelectedWorkspacePath();
         const framework = payload.framework;
         const projectName = payload.name as string;
@@ -118,10 +117,15 @@ export async function tryDispatchCreationNavigationWebviewMessage(
           });
           break;
         }
+        host.postWebviewMessage('closeProjectModal');
         void (async () => {
           const { createProjectCommand } = await import('../../commands/createProject.js');
           await createProjectCommand(workspacePath, framework, projectName, kitName);
         })();
+      } else {
+        host.postWebviewMessage('projectCreationError', {
+          error: 'Project name, framework, and kit are required to create a project.',
+        });
       }
       break;
     case 'openSetup':

@@ -54,6 +54,7 @@ describe('projectCapabilities webview bridge', () => {
   it('treats agent and gateway frameworks as portless dashboard projects', () => {
     expect(isPortlessDashboardProject({ available: true, framework: 'openrouter' })).toBe(true);
     expect(isPortlessDashboardProject({ available: true, framework: 'openai-agents' })).toBe(true);
+    expect(isPortlessDashboardProject({ available: true, framework: 'google-adk' })).toBe(true);
     expect(isPortlessDashboardProject(undefined, 'gateway.openrouter.python')).toBe(true);
     expect(isPortlessDashboardProject(fastapiCapabilities)).toBe(false);
   });

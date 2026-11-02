@@ -1,15 +1,15 @@
 import crypto from 'node:crypto';
-import { execFile } from 'node:child_process';
 import { constants as fsConstants } from 'node:fs';
 import os from 'node:os';
 import fs from 'fs-extra';
 import path from 'node:path';
-import { promisify } from 'node:util';
+import { inspectStudioWorkspaceAvailability } from './studioWorkspaceAvailability.js';
 
 export type StudioWorkspaceSourceSnapshot = {
   fingerprint: string;
   files: Record<string, string>;
   symlinks: Record<string, string>;
+  modes?: Record<string, number>;
 };
 
 export type StudioWorkspaceSourceTransaction = {
@@ -52,7 +52,7 @@ const EXCLUDED_DIRECTORY_NAMES = new Set([
 
 const MAX_SOURCE_FILES = 30_000;
 const MAX_SOURCE_FILE_BYTES = 16 * 1024 * 1024;
-const execFileAsync = promisify(execFile);
+const MAX_SOURCE_TOTAL_BYTES = 128 * 1024 * 1024;
 
 function isInside(root: string, candidate: string): boolean {
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
@@ -71,44 +71,16 @@ function isGeneratedAgentSurface(relativePath: string): boolean {
   );
 }
 
-async function gitSnapshotCandidates(scopePath: string): Promise<string[] | undefined> {
-  try {
-    const rootResult = await execFileAsync(
-      'git',
-      ['-C', scopePath, 'rev-parse', '--show-toplevel'],
-      {
-        encoding: 'utf8',
-        maxBuffer: 1024 * 1024,
-        windowsHide: true,
-      }
-    );
-    const gitRoot = path.resolve(rootResult.stdout.trim());
-    const listing = await execFileAsync(
-      'git',
-      ['-C', gitRoot, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
-      {
-        encoding: 'utf8',
-        maxBuffer: 32 * 1024 * 1024,
-        windowsHide: true,
-      }
-    );
-    return listing.stdout
-      .split('\0')
-      .filter(Boolean)
-      .map((entry) => path.resolve(gitRoot, entry))
-      .filter((candidate) => isInside(scopePath, candidate));
-  } catch {
-    return undefined;
-  }
-}
-
 async function traversalSnapshotCandidates(scopePath: string): Promise<string[] | undefined> {
   const candidates: string[] = [];
   const pending = [scopePath];
   let visitedFiles = 0;
   while (pending.length > 0) {
     const current = pending.pop()!;
-    const entries = await fs.readdir(current, { withFileTypes: true }).catch(() => []);
+    const entries = await fs.readdir(current, { withFileTypes: true }).catch(() => undefined);
+    if (!entries) {
+      return undefined;
+    }
     for (const entry of entries) {
       if (entry.isDirectory() && EXCLUDED_DIRECTORY_NAMES.has(entry.name)) {
         continue;
@@ -140,37 +112,59 @@ export async function captureStudioWorkspaceSourceSnapshot(input: {
   if (!isInside(workspacePath, scopePath)) {
     return undefined;
   }
+  if ((await inspectStudioWorkspaceAvailability(scopePath)).status !== 'available') {
+    return undefined;
+  }
 
-  const candidates =
-    (await gitSnapshotCandidates(scopePath)) ?? (await traversalSnapshotCandidates(scopePath));
+  // Git-ignored source (for example a local .env) still belongs to the
+  // checkpoint. Traverse bounded source rather than silently omitting it.
+  const candidates = await traversalSnapshotCandidates(scopePath);
   if (!candidates || candidates.length > MAX_SOURCE_FILES) {
     return undefined;
   }
   const files: Record<string, string> = {};
   const symlinks: Record<string, string> = {};
+  let totalBytes = 0;
+  const modes: Record<string, number> = {};
   for (const absolutePath of candidates) {
     const relativePath = path.relative(workspacePath, absolutePath).replace(/\\/g, '/');
     if (isGeneratedAgentSurface(relativePath)) {
       continue;
     }
-    const stat = await fs.lstat(absolutePath).catch(() => undefined);
+    const stat = await fs.lstat(absolutePath).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return undefined;
+      }
+      throw error;
+    });
+    // Deleted tracked files are absent; unreadable or oversized source is not
+    // a complete checkpoint and must not silently disappear from coverage.
+    if (!stat) {
+      continue;
+    }
     if (stat?.isSymbolicLink()) {
       const target = await fs.readlink(absolutePath).catch(() => undefined);
       if (target === undefined) {
-        continue;
+        return undefined;
       }
       symlinks[relativePath] = target;
       files[relativePath] = crypto.createHash('sha256').update(`symlink\0${target}`).digest('hex');
       continue;
     }
-    if (!stat?.isFile() || stat.size > MAX_SOURCE_FILE_BYTES) {
-      continue;
+    totalBytes += stat.size;
+    if (
+      !stat.isFile() ||
+      stat.size > MAX_SOURCE_FILE_BYTES ||
+      totalBytes > MAX_SOURCE_TOTAL_BYTES
+    ) {
+      return undefined;
     }
     const content = await fs.readFile(absolutePath).catch(() => undefined);
-    if (!content) {
-      continue;
+    if (!content || content.length !== stat.size) {
+      return undefined;
     }
     files[relativePath] = crypto.createHash('sha256').update(content).digest('hex');
+    modes[relativePath] = stat.mode & 0o7777;
   }
 
   const fingerprint = crypto
@@ -178,11 +172,14 @@ export async function captureStudioWorkspaceSourceSnapshot(input: {
     .update(
       Object.entries(files)
         .sort(([left], [right]) => left.localeCompare(right))
-        .map(([relativePath, sha256]) => `${relativePath}\0${sha256}`)
+        .map(
+          ([relativePath, sha256]) =>
+            `${relativePath}\0${sha256}\0${modes[relativePath] ?? 'symlink'}`
+        )
         .join('\n')
     )
     .digest('hex');
-  return { fingerprint, files, symlinks };
+  return { fingerprint, files, symlinks, modes };
 }
 
 export function diffStudioWorkspaceSourceSnapshots(
@@ -194,7 +191,11 @@ export function diffStudioWorkspaceSourceSnapshots(
   }
   const paths = new Set([...Object.keys(before.files), ...Object.keys(after.files)]);
   return [...paths]
-    .filter((relativePath) => before.files[relativePath] !== after.files[relativePath])
+    .filter(
+      (relativePath) =>
+        before.files[relativePath] !== after.files[relativePath] ||
+        before.modes?.[relativePath] !== after.modes?.[relativePath]
+    )
     .sort();
 }
 
@@ -243,6 +244,22 @@ export async function beginStudioWorkspaceSourceTransaction(input: {
       }
       await fs.ensureDir(path.dirname(targetPath));
       await fs.copyFile(sourcePath, targetPath, fsConstants.COPYFILE_FICLONE);
+      if (
+        crypto
+          .createHash('sha256')
+          .update(await fs.readFile(targetPath))
+          .digest('hex') !== before.files[relativePath]
+      ) {
+        throw new Error(
+          'Source changed while its checkpoint was being prepared; the command was not started.'
+        );
+      }
+    }
+    const confirmed = await captureStudioWorkspaceSourceSnapshot({ workspacePath, scopePath });
+    if (!confirmed || confirmed.fingerprint !== before.fingerprint) {
+      throw new Error(
+        'Source changed while its checkpoint was being prepared; the command was not started.'
+      );
     }
     return {
       id: crypto.randomUUID(),
@@ -276,8 +293,17 @@ export async function inspectStudioWorkspaceSourceTransaction(
 
 export async function rollbackStudioWorkspaceSourceTransaction(
   transaction: StudioWorkspaceSourceTransaction,
-  changedPaths?: readonly string[]
+  changedPaths?: readonly string[],
+  expectedAfter?: StudioWorkspaceSourceSnapshot
 ): Promise<StudioWorkspaceSourceRollback> {
+  if (expectedAfter) {
+    const current = await captureStudioWorkspaceSourceSnapshot(transaction);
+    if (!current || current.fingerprint !== expectedAfter.fingerprint) {
+      throw new Error(
+        'Source changed after command inspection. Concurrent edits were preserved; automatic rollback was refused.'
+      );
+    }
+  }
   const inspected = changedPaths
     ? undefined
     : await inspectStudioWorkspaceSourceTransaction(transaction);

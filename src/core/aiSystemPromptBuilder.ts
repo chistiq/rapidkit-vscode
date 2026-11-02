@@ -38,6 +38,9 @@ function resolveFrameworkFamily(ctx: AIModalContext, scanned?: ScannedProjectCon
   if (fw.startsWith('agent.openai') || fw === 'openai-agents') {
     return 'openai-agents';
   }
+  if (fw.startsWith('agent.google-adk') || fw === 'google-adk') {
+    return 'google-adk';
+  }
   if (fw.startsWith('gateway.openrouter') || fw === 'openrouter') {
     return 'openrouter';
   }
@@ -204,6 +207,16 @@ function buildModuleSection(
 - These kits do not support the RapidKit module marketplace.
 - Workspai remains authoritative for bounded repository context, authorization, impact, and verification.
 - The OpenAI Agents SDK owns conversation and runtime state; it must not bypass Workspai evidence or mutation gates.
+- Keep provider credentials outside the repository and require explicit approval before network or mutating tool access.
+- Use the generated agents/primary/README.md commands and verify offline before the first provider call.`;
+  }
+  if (fw === 'google-adk') {
+    return `WORKSPAI GOOGLE ADK KITS:
+- Supported governed kits: agent.google-adk.python and agent.google-adk.typescript.
+- The Python kit requires Python 3.11 or newer; use the generated project manifest as the source of truth.
+- These kits do not support the RapidKit module marketplace.
+- Workspai remains authoritative for bounded repository context, authorization, impact, and verification.
+- Google ADK owns conversation and runtime state; it must not bypass Workspai evidence or mutation gates.
 - Keep provider credentials outside the repository and require explicit approval before network or mutating tool access.
 - Use the generated agents/primary/README.md commands and verify offline before the first provider call.`;
   }

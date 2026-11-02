@@ -169,10 +169,25 @@ export type RecentWorkspacesHostData = unknown[];
 
 export type ExampleWorkspacesHostData = unknown[];
 
-export type AvailableKitsHostData = unknown[];
+export type AvailableKitsHostData =
+  | unknown[]
+  | {
+      kits: unknown[];
+      requestId?: string;
+      loadError?: string;
+    };
+
+export type AvailableKitsLoadErrorHostData = {
+  error: string;
+  requestId?: string;
+};
 
 export type OpenProjectModalHostData = {
   framework: string;
+};
+
+export type ProjectCreationErrorHostData = {
+  error: string;
 };
 
 export type OpenAICreateModalHostData = {
@@ -234,6 +249,7 @@ export type AIProviderHealthCheckHostData = Record<string, unknown>;
 
 export type AIModuleSuggestionsHostData = {
   loading: boolean;
+  requestId?: string;
   modelId?: string;
   suggestions?: unknown[];
   error?: string;
@@ -323,7 +339,9 @@ export type DashboardHostWebviewMessage =
   | WebviewFromExtensionMessage<'updateRecentWorkspaces', RecentWorkspacesHostData>
   | WebviewFromExtensionMessage<'updateExampleWorkspaces', ExampleWorkspacesHostData>
   | WebviewFromExtensionMessage<'updateAvailableKits', AvailableKitsHostData>
+  | WebviewFromExtensionMessage<'availableKitsLoadError', AvailableKitsLoadErrorHostData>
   | WebviewFromExtensionMessage<'openProjectModal', OpenProjectModalHostData>
+  | WebviewFromExtensionMessage<'projectCreationError', ProjectCreationErrorHostData>
   | WebviewFromExtensionMessage<'openWorkspaceModal'>
   | WebviewFromExtensionMessage<'openAICreateModal', OpenAICreateModalHostData>
   | WebviewFromExtensionMessage<'openModuleInstallModal', ModuleHostData>
@@ -346,6 +364,7 @@ export type DashboardHostWebviewMessage =
   | WebviewFromExtensionMessage<'aiCreationError', AICreationErrorHostData>
   | WebviewFromExtensionMessage<'aiCreationThinking', { thinking: boolean }>
   | WebviewFromExtensionMessage<'aiProviderHealthCheck', AIProviderHealthCheckHostData>
+  | WebviewFromExtensionMessage<'aiProviderSettingsResult', Record<string, unknown>>
   | WebviewFromExtensionMessage<'aiModuleSuggestions', AIModuleSuggestionsHostData>
   | WebviewFromExtensionMessage<'aiChunkUpdate', AIChunkUpdateHostData>
   | WebviewFromExtensionMessage<'studioAssistantMessage', StudioAssistantMessageHostData>

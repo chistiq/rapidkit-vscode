@@ -57,6 +57,32 @@ describe('Assistant governed evidence objective', () => {
     expect(objective).toContain('do not preload full model or graph exports');
   });
 
+  it('keeps ordinary scaffolding independent of stale governed reports and allows delegated defaults', () => {
+    const objective = buildAssistantEvidenceObjective({
+      task: 'Create a sample project; choose the defaults.',
+      assistantMode: 'agent',
+      executionAuthority: 'workspace',
+      evidence: evidence(),
+      freshness: {
+        verdict: 'missing',
+        reason: 'No reports',
+        oldestAgeMs: null,
+        verifyVerdict: null,
+        missingReports: [],
+      },
+    });
+    expect(objective.startsWith('Create a sample project')).toBe(true);
+    expect(objective).toContain('choose reasonable defaults');
+    expect(objective).toContain('Use the Workspai CLI');
+    expect(objective).toContain('Optional existing intelligence:');
+    expect(objective).toContain('query-workspace-graph');
+    expect(objective).toContain('workspace-context-agent.json');
+    expect(objective).not.toContain('workspace-impact-last-run.json');
+    expect(objective).not.toContain('Refresh the governed producer');
+    expect(objective).not.toContain('CLI-authored canonical read order');
+    expect(objective).not.toContain('apply changes through the CLI-owned repair transaction');
+  });
+
   it('keeps Ask read-only and explicit about stale evidence', () => {
     const objective = buildAssistantEvidenceObjective({
       task: 'Explain the release posture.',

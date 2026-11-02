@@ -5,6 +5,7 @@ import path from 'path';
 import crypto from 'node:crypto';
 import AdmZip from 'adm-zip';
 import { findLocalPathViolations, looksBinary } from './local-path-guard.mjs';
+import { findReleaseContentViolations, isPrivateReleaseFile } from './release-content-guard.mjs';
 
 const REQUIRED_FILES = [
   'extension/package.json',
@@ -36,6 +37,7 @@ const DENIED_PATTERNS = [
   /^extension\/artifacts\//,
   /^extension\/coverage\//,
   /^extension\/releases\//,
+  /^extension\/docs\//,
   /^extension\/webview-ui\//,
   /\.map$/,
   /\.test\.(js|ts|tsx)$/,
@@ -156,6 +158,7 @@ function inspectVsix(options) {
   const denied = entries
     .map((entry) => entry.entryName)
     .filter((name) => {
+      if (isPrivateReleaseFile(name)) return true;
       if (name.startsWith('extension/node_modules/')) {
         return !ALLOWED_NODE_MODULE_METADATA.test(name);
       }
@@ -180,6 +183,21 @@ function inspectVsix(options) {
   if (localPathViolations.length > 0) {
     throw new Error(
       `VSIX contains machine-local paths: ${localPathViolations
+        .slice(0, 20)
+        .map((entry) => `${entry.file}:${entry.line} [${entry.kind}]`)
+        .join(', ')}`
+    );
+  }
+
+  const sensitiveContent = entries.flatMap((entry) => {
+    const data = entry.getData();
+    return looksBinary(data)
+      ? []
+      : findReleaseContentViolations(data.toString('utf8'), entry.entryName);
+  });
+  if (sensitiveContent.length > 0) {
+    throw new Error(
+      `VSIX contains potential credentials: ${sensitiveContent
         .slice(0, 20)
         .map((entry) => `${entry.file}:${entry.line} [${entry.kind}]`)
         .join(', ')}`

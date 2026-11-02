@@ -106,6 +106,77 @@ function closedCliRepairResult(input?: {
 }
 
 describe('Studio Agent session runtime', () => {
+  it('does not start the provider when Stop arrives while the start receipt is being saved', async () => {
+    let calls = 0;
+    const session = new StudioAgentSession(
+      {
+        id: 'stop-during-receipt',
+        workspacePath: '/workspace',
+        cardId: 'assistant:agent',
+        assistantMode: 'agent',
+        permissionLevel: 'default',
+        workspaceTrusted: true,
+      },
+      {
+        next: async () => {
+          calls++;
+          return { type: 'complete', summary: 'Late answer' };
+        },
+      },
+      new StudioAgentToolRegistry(),
+      new MemoryStore()
+    );
+    session.onEvent((event) => {
+      if (event.type === 'model.request.started') session.cancel();
+    });
+    expect((await session.run('Inspect the module')).status).toBe('cancelled');
+    expect(calls).toBe(0);
+  });
+  it('records a real pending model decision and its correlated elapsed result before the answer', async () => {
+    let finish!: (action: StudioAgentModelAction) => void;
+    const session = new StudioAgentSession(
+      {
+        id: 'model-receipts',
+        workspacePath: '/workspace',
+        cardId: 'assistant:agent',
+        assistantMode: 'agent',
+        permissionLevel: 'default',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: false,
+      },
+      {
+        next: () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      },
+      new StudioAgentToolRegistry(),
+      new MemoryStore()
+    );
+    const pending = new Promise<void>((resolve) =>
+      session.onEvent((event) => {
+        if (event.type === 'model.request.started') resolve();
+      })
+    );
+    const running = session.run('hi');
+    await pending;
+    // emit notifies before awaiting persistence; allow next() to start.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      session.snapshot().events.filter((event) => event.type === 'model.request.finished')
+    ).toHaveLength(0);
+    finish({ type: 'complete', summary: 'Hi!' });
+    const result = await running;
+    const start = result.events.find((event) => event.type === 'model.request.started')!;
+    const end = result.events.find((event) => event.type === 'model.request.finished')!;
+    expect(end.data).toMatchObject({
+      decisionId: start.data.decisionId,
+      durationMs: expect.any(Number),
+      outcome: 'responded',
+    });
+    expect(end.sequence).toBeGreaterThan(start.sequence);
+    expect(result.status).toBe('completed');
+  });
   it('pauses for one-time approval and executes only the exact invasive tool proposal', async () => {
     const registry = new StudioAgentToolRegistry();
     let executions = 0;
@@ -505,6 +576,78 @@ describe('Studio Agent session runtime', () => {
     );
   });
 
+  it('delivers images attached during active work to the next model decision without persisting their bytes', async () => {
+    const images = [{ mimeType: 'image/png', base64: 'aW1hZ2U=' }];
+    const registry = new StudioAgentToolRegistry();
+    let session!: StudioAgentSession;
+    registry.register({
+      name: 'inspect',
+      title: 'Inspect',
+      description: '',
+      inputSchema: {},
+      activity: 'inspect',
+      risk: 'read',
+      execute: async () => {
+        session.steer('Inspect the attached design', images);
+        return { ok: true };
+      },
+    });
+    let call = 0;
+    session = new StudioAgentSession(
+      {
+        workspacePath: '/workspace',
+        cardId: 'assistant:ask',
+        assistantMode: 'ask',
+        requiresVerifiedCompletion: false,
+        workspaceTrusted: true,
+      },
+      {
+        next: async (context) => {
+          if (call++ === 0)
+            return { type: 'tool', toolName: 'inspect', input: {}, reason: 'Inspect' };
+          expect(context.steeringAttachment).toEqual({
+            content: 'Inspect the attached design',
+            images,
+          });
+          expect(context.steering).toContain('Inspect the attached design');
+          return { type: 'complete', summary: 'The design was inspected.' };
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+    const result = await session.run('Inspect the current design');
+    expect(result.status).toBe('completed');
+    expect(JSON.stringify(result)).not.toContain('aW1hZ2U=');
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'request.steered',
+        data: expect.objectContaining({ imageCount: 1 }),
+      })
+    );
+  });
+
+  it('returns a durable input suspension when the transport cannot keep a response open', async () => {
+    const session = new StudioAgentSession(
+      {
+        workspacePath: '/workspace',
+        cardId: 'assistant:ask',
+        assistantMode: 'ask',
+        permissionLevel: 'default',
+        requiresVerifiedCompletion: false,
+        returnOnInput: true,
+      },
+      sequenceModel([
+        { type: 'input', question: 'Which project?', reason: 'Choose the intended target.' },
+      ]),
+      new StudioAgentToolRegistry(),
+      new MemoryStore()
+    );
+    const result = await session.run('Explain the project');
+    expect(result.status).toBe('waiting-input');
+    expect(result.events.some((event) => event.type === 'session.failed')).toBe(false);
+  });
+
   it('waits on an explicit input action and resumes from user steering', async () => {
     const session = new StudioAgentSession(
       {
@@ -584,6 +727,18 @@ describe('Studio Agent session runtime', () => {
 
     expect(result.status).toBe('cancelled');
     expect(result.events.some((event) => event.type === 'session.cancelled')).toBe(true);
+    const pendingRequest = result.events.find((event) => event.type === 'model.request.started');
+    if (pendingRequest) {
+      expect(result.events).toContainEqual(
+        expect.objectContaining({
+          type: 'model.request.finished',
+          data: expect.objectContaining({
+            decisionId: pendingRequest.data.decisionId,
+            outcome: 'cancelled',
+          }),
+        })
+      );
+    }
   });
 
   it('applies a reduced persisted execution policy across the complete session state machine', async () => {
@@ -898,6 +1053,92 @@ describe('Studio Agent session runtime', () => {
         .map((event) => (event.data as { toolName?: string }).toolName)
     ).toEqual(['recover-active-blocker', 'execute-remediation-step']);
   });
+
+  it('stops an exact remediation waiting on an unresponsive approval host without executing a late approval', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'recover-active-blocker',
+      title: 'Prepare blocker recovery',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        return {
+          ok: true,
+          output: {
+            requiredAction: {
+              schemaVersion: 'workspai.studio-required-causal-action.v1',
+              authority: 'workspai-cli-remediation-plan',
+              toolName: 'execute-remediation-step',
+              input: { stepId: 'doctor.web.materialize' },
+              stepId: 'doctor.web.materialize',
+              executionKind: 'contract-command',
+              requiresApproval: true,
+              reason: 'Install project dependencies with explicit approval.',
+            },
+          },
+        };
+      },
+    });
+    let executions = 0;
+    let modelCalls = 0;
+    registry.register({
+      name: 'execute-remediation-step',
+      title: 'Install dependencies',
+      activity: 'change',
+      risk: 'guarded-write',
+      async execute() {
+        executions++;
+        return closedCliRepairResult();
+      },
+    });
+    let approveLate!: () => void;
+    let notifyWaiting!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      notifyWaiting = resolve;
+    });
+    const session = new StudioAgentSession(
+      {
+        id: 'cancel-pending-repair',
+        workspacePath: '/workspace',
+        projectPath: '/workspace/web',
+        cardId: 'doctor',
+        assistantMode: 'agent',
+        permissionLevel: 'autopilot',
+        workspaceTrusted: true,
+        requestToolApproval(request) {
+          notifyWaiting();
+          return new Promise((resolve) => {
+            approveLate = () =>
+              resolve({
+                approved: true,
+                fingerprint: request.fingerprint,
+                approvedBy: 'test:late',
+              });
+          });
+        },
+      },
+      {
+        async next() {
+          modelCalls++;
+          throw new Error('Approval must precede model execution.');
+        },
+      },
+      registry,
+      new MemoryStore()
+    );
+    const running = session.run('Fix Doctor');
+    await waiting;
+    session.cancel();
+    const result = await running;
+    expect(result.status).toBe('cancelled');
+    expect(result.pendingRequiredCausalAction?.stepId).toBe('doctor.web.materialize');
+    expect(result.events.some((event) => event.type === 'session.cancelled')).toBe(true);
+    expect(result.events.some((event) => event.type === 'session.failed')).toBe(false);
+    approveLate();
+    await Promise.resolve();
+    expect(executions).toBe(0);
+    expect(modelCalls).toBe(0);
+  }, 2000);
 
   it('binds required remediation approval to the exact durable action and resumes after rejection', async () => {
     const registry = new StudioAgentToolRegistry();
@@ -5042,7 +5283,22 @@ describe('Studio Agent session runtime', () => {
             input: {},
             reason: 'Ground the response.',
           },
-          { type: 'complete', summary },
+          {
+            type: 'complete',
+            summary,
+            ...(assistantMode === 'plan'
+              ? {
+                  plan: {
+                    scope: { heading: 'Scope', body: 'Workspace' },
+                    evidence: { heading: 'Evidence', body: 'Current' },
+                    steps: { heading: 'Steps', body: '1. Change' },
+                    verification: { heading: 'Verification', body: 'Run tests' },
+                    rollback: { heading: 'Rollback', body: 'Revert' },
+                    assumptions: { heading: 'Assumptions', body: 'None' },
+                  },
+                }
+              : {}),
+          },
         ]),
         registry,
         new MemoryStore()
@@ -5053,7 +5309,11 @@ describe('Studio Agent session runtime', () => {
       expect(result.events).toContainEqual(
         expect.objectContaining({
           type: 'session.completed',
-          data: expect.objectContaining({ summary }),
+          data: expect.objectContaining(
+            assistantMode === 'plan'
+              ? { plan: expect.any(Object), summary: expect.stringContaining('## Scope') }
+              : { summary }
+          ),
         })
       );
       expect(result.events.some((event) => event.type === 'verify.completed')).toBe(false);

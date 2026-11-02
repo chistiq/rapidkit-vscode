@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Bot, Loader2, Package, Sparkles } from 'lucide-react';
 import { vscode } from '@/vscode';
 import type { Kit, ScaffoldFramework, WorkspaceToolStatus } from '@/types';
@@ -11,6 +11,10 @@ interface CreateProjectModalProps {
   isOpen: boolean;
   framework: ProjectFramework;
   availableKits: Kit[];
+  availableKitsLoading: boolean;
+  availableKitsError: string | null;
+  onRetryKits: () => void;
+  creationError: string | null;
   onClose: () => void;
   onCreate: (name: string, framework: ProjectFramework, kitName: string) => void;
   onSwitchToAI?: () => void;
@@ -162,15 +166,21 @@ const FRAMEWORK_INFO: Record<
     title: 'Microsoft Agent Framework',
     subtitle: 'Governed AI agent',
     description:
-      'Create a Python or .NET agent that consumes bounded Workspai context and enters the normal Goal, PCC, and verification loop.',
+      'Preview Workspai integration; Microsoft Agent Framework itself is stable. Create a Python or .NET agent with bounded context and deterministic verification.',
     placeholder: 'release-guardian',
   },
   'openai-agents': {
     title: 'OpenAI Agents SDK',
     subtitle: 'Governed AI agent',
-    description:
-      'Create a Python or TypeScript agent on the admitted OpenAI Agents SDK baseline.',
+    description: 'Create a Python or TypeScript agent on the admitted OpenAI Agents SDK baseline.',
     placeholder: 'support-agent',
+  },
+  'google-adk': {
+    title: 'Google ADK',
+    subtitle: 'Governed AI agent',
+    description:
+      'Preview Workspai integration; Google ADK itself is stable. Create a Python 3.11+ or TypeScript agent on the admitted baseline.',
+    placeholder: 'research-agent',
   },
   openrouter: {
     title: 'OpenRouter AI Gateway',
@@ -185,6 +195,10 @@ export function CreateProjectModal({
   isOpen,
   framework,
   availableKits,
+  availableKitsLoading,
+  availableKitsError,
+  onRetryKits,
+  creationError,
   onClose,
   onCreate,
   onSwitchToAI,
@@ -198,8 +212,13 @@ export function CreateProjectModal({
   const [aiSuggestError, setAiSuggestError] = useState('');
   const suggestListenerRef = useRef<((event: MessageEvent) => void) | null>(null);
   const suggestTimeoutRef = useRef<number | null>(null);
+  const suggestRequestIdRef = useRef(0);
+  const activeSuggestRequestIdRef = useRef<string | null>(null);
 
-  const frameworkKits = availableKits.filter((kit) => kit.category === framework);
+  const frameworkKits = useMemo(
+    () => availableKits.filter((kit) => kit.category === framework),
+    [availableKits, framework]
+  );
   const isFrontendFramework = isFrontendScaffoldFramework(framework);
   const resolvedKit = isFrontendFramework ? `frontend.${framework}` : selectedKit;
   const selectedKitData = frameworkKits.find((kit) => kit.name === selectedKit);
@@ -208,23 +227,50 @@ export function CreateProjectModal({
   const canCreate = projectName.trim() && !error && resolvedKit;
 
   useEffect(() => {
-    if (isOpen) {
-      setProjectName('');
-      setError('');
-      setAiSuggestions([]);
-      setAiSuggestError('');
-      setAiSuggestLoading(false);
-      const kits = availableKits.filter((kit) => kit.category === framework);
-      if (isFrontendScaffoldFramework(framework)) {
-        setSelectedKit(`frontend.${framework}`);
-      } else {
-        setSelectedKit(kits.length > 0 ? kits[0].name : '');
-      }
+    const requestId = activeSuggestRequestIdRef.current;
+    if (requestId) {
+      vscode.postMessage('aiCancelModuleSuggestions', { requestId });
+      activeSuggestRequestIdRef.current = null;
     }
-  }, [isOpen, framework, availableKits]);
+    if (suggestListenerRef.current) {
+      window.removeEventListener('message', suggestListenerRef.current);
+      suggestListenerRef.current = null;
+    }
+    if (suggestTimeoutRef.current != null) {
+      window.clearTimeout(suggestTimeoutRef.current);
+      suggestTimeoutRef.current = null;
+    }
+    setAiSuggestLoading(false);
+
+    if (!isOpen) {
+      return;
+    }
+    setProjectName('');
+    setError('');
+    setAiSuggestions([]);
+    setAiSuggestError('');
+    setSelectedKit('');
+  }, [isOpen, framework]);
+
+  useEffect(() => {
+    if (!isOpen || isFrontendFramework) {
+      return;
+    }
+
+    setSelectedKit((current) => {
+      if (frameworkKits.some((kit) => kit.name === current)) {
+        return current;
+      }
+      return frameworkKits[0]?.name ?? '';
+    });
+  }, [isOpen, isFrontendFramework, frameworkKits, framework]);
 
   useEffect(() => {
     return () => {
+      const requestId = activeSuggestRequestIdRef.current;
+      if (requestId) {
+        vscode.postMessage('aiCancelModuleSuggestions', { requestId });
+      }
       if (suggestListenerRef.current) {
         window.removeEventListener('message', suggestListenerRef.current);
         suggestListenerRef.current = null;
@@ -259,7 +305,6 @@ export function CreateProjectModal({
   const handleCreate = () => {
     if (validateName(projectName) && resolvedKit) {
       onCreate(projectName, framework, resolvedKit);
-      onClose();
     }
   };
 
@@ -268,18 +313,33 @@ export function CreateProjectModal({
       return;
     }
 
+    const previousRequestId = activeSuggestRequestIdRef.current;
+    if (previousRequestId) {
+      vscode.postMessage('aiCancelModuleSuggestions', { requestId: previousRequestId });
+    }
+    if (suggestListenerRef.current) {
+      window.removeEventListener('message', suggestListenerRef.current);
+      suggestListenerRef.current = null;
+    }
+    if (suggestTimeoutRef.current != null) {
+      window.clearTimeout(suggestTimeoutRef.current);
+      suggestTimeoutRef.current = null;
+    }
+
+    const requestId = `project-kits-${Date.now()}-${++suggestRequestIdRef.current}`;
+    activeSuggestRequestIdRef.current = requestId;
     setAiSuggestLoading(true);
     setAiSuggestions([]);
     setAiSuggestError('');
-
-    if (suggestListenerRef.current) {
-      window.removeEventListener('message', suggestListenerRef.current);
-    }
 
     const finishSuggest = (
       errorMessage?: string,
       suggestions?: { slug: string; reason: string }[]
     ) => {
+      if (activeSuggestRequestIdRef.current !== requestId) {
+        return;
+      }
+      activeSuggestRequestIdRef.current = null;
       setAiSuggestLoading(false);
       if (suggestTimeoutRef.current != null) {
         window.clearTimeout(suggestTimeoutRef.current);
@@ -299,6 +359,12 @@ export function CreateProjectModal({
         return;
       }
       const payload = event.data?.data ?? event.data ?? {};
+      if (!payload || typeof payload !== 'object') {
+        return;
+      }
+      if (payload.requestId !== requestId) {
+        return;
+      }
       const {
         loading,
         suggestions,
@@ -316,19 +382,16 @@ export function CreateProjectModal({
     suggestListenerRef.current = listener;
     window.addEventListener('message', listener);
     suggestTimeoutRef.current = window.setTimeout(() => {
+      vscode.postMessage('aiCancelModuleSuggestions', { requestId });
       finishSuggest('Module suggestion timed out. Check AI entitlement and retry.');
     }, 30_000);
-    vscode.postMessage('aiSuggestModules', { framework, projectName });
+    vscode.postMessage('aiSuggestModules', { framework, projectName, requestId });
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'Enter') {
       handleCreate();
     }
-  };
-
-  const handleRetryKits = () => {
-    vscode.postMessage('requestAvailableKits');
   };
 
   return (
@@ -342,6 +405,7 @@ export function CreateProjectModal({
           <img src={info.iconUrl} alt={framework} className="modal-framework-icon" />
         ) : framework === 'microsoft-agent-framework' ||
           framework === 'openai-agents' ||
+          framework === 'google-adk' ||
           framework === 'openrouter' ? (
           <Bot size={16} />
         ) : (
@@ -361,6 +425,7 @@ export function CreateProjectModal({
               'dotnet',
               'microsoft-agent-framework',
               'openai-agents',
+              'google-adk',
               'openrouter',
             ].includes(framework) && (
               <button type="button" className="ws-btn ws-btn--ghost" onClick={onSwitchToAI}>
@@ -391,6 +456,14 @@ export function CreateProjectModal({
             <span>{info.description}</span>
           </EnterpriseModalNotice>
         </div>
+        {creationError ? (
+          <div className="modal-field--wide" role="alert">
+            <EnterpriseModalNotice tone="danger">
+              <AlertCircle size={14} />
+              <span>{creationError}</span>
+            </EnterpriseModalNotice>
+          </div>
+        ) : null}
 
         {framework === 'springboot' && toolStatus && !toolStatus.javaAvailable && (
           <div className="modal-field--wide">
@@ -428,27 +501,30 @@ export function CreateProjectModal({
 
         {(selectedKit === 'agent.microsoft.python' ||
           selectedKit === 'agent.openai.python' ||
+          selectedKit === 'agent.google-adk.python' ||
           selectedKit === 'gateway.openrouter.python') &&
           toolStatus &&
           !toolStatus.pythonAvailable && (
-          <div className="modal-field--wide">
-            <EnterpriseModalNotice tone="warning">
-              <AlertCircle size={14} />
-              <span>
-                {selectedKit === 'gateway.openrouter.python'
-                  ? 'The Python gateway kit requires Python 3.'
-                  : 'The Python agent kit requires Python 3.'}
-              </span>
-              <button
-                type="button"
-                className="modal-inline-link"
-                onClick={() => vscode.postMessage('openSetup')}
-              >
-                Open Setup
-              </button>
-            </EnterpriseModalNotice>
-          </div>
-        )}
+            <div className="modal-field--wide">
+              <EnterpriseModalNotice tone="warning">
+                <AlertCircle size={14} />
+                <span>
+                  {selectedKit === 'gateway.openrouter.python'
+                    ? 'The Python gateway kit requires Python 3.'
+                    : selectedKit === 'agent.google-adk.python'
+                      ? 'The Google ADK Python kit requires Python 3.11 or newer.'
+                      : 'The Python agent kit requires Python 3.'}
+                </span>
+                <button
+                  type="button"
+                  className="modal-inline-link"
+                  onClick={() => vscode.postMessage('openSetup')}
+                >
+                  Open Setup
+                </button>
+              </EnterpriseModalNotice>
+            </div>
+          )}
 
         <label className="modal-field modal-field--wide">
           <span>Project name</span>
@@ -490,7 +566,11 @@ export function CreateProjectModal({
                 value={selectedKit}
                 onChange={(event) => setSelectedKit(event.target.value)}
               >
-                {frameworkKits.length === 0 && <option value="">Loading kits...</option>}
+                {frameworkKits.length === 0 && (
+                  <option value="">
+                    {availableKitsLoading ? 'Loading kits...' : 'No kits available'}
+                  </option>
+                )}
                 {frameworkKits.map((kit) => (
                   <option key={kit.name} value={kit.name}>
                     {kit.display_name}{' '}
@@ -498,10 +578,28 @@ export function CreateProjectModal({
                   </option>
                 ))}
               </select>
-              {frameworkKits.length === 0 ? (
+              {availableKitsError ? (
+                <span className="modal-field__hint" role="alert">
+                  Could not load project kits: {availableKitsError}{' '}
+                  <button type="button" className="modal-inline-link" onClick={onRetryKits}>
+                    Retry
+                  </button>
+                </span>
+              ) : frameworkKits.length === 0 && availableKitsLoading ? (
                 <span className="modal-field__hint">
                   Fetching kits for {framework}.{' '}
-                  <button type="button" className="modal-inline-link" onClick={handleRetryKits}>
+                  <button type="button" className="modal-inline-link" onClick={onRetryKits}>
+                    Retry
+                  </button>
+                </span>
+              ) : availableKitsLoading ? (
+                <span className="modal-field__hint" role="status">
+                  Refreshing project kit catalog...
+                </span>
+              ) : frameworkKits.length === 0 ? (
+                <span className="modal-field__hint" role="status">
+                  No executable kits are currently available for {framework}.{' '}
+                  <button type="button" className="modal-inline-link" onClick={onRetryKits}>
                     Retry
                   </button>
                 </span>
@@ -531,6 +629,7 @@ export function CreateProjectModal({
 
         {(framework === 'microsoft-agent-framework' ||
           framework === 'openai-agents' ||
+          framework === 'google-adk' ||
           framework === 'openrouter') && (
           <EnterpriseModalSection title="Governance boundary" meta="Workspai CLI">
             <ul className="modal-compact-list">

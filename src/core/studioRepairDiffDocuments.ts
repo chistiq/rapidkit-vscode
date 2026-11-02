@@ -1,3 +1,6 @@
+import { readStudioNativeComparison } from './studioNativeWorkspace.js';
+import { studioNativeSnapshotUri } from './studioNativeBinaryDocuments.js';
+import { readStudioScaffoldComparison } from './studioScaffoldChanges.js';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import {
@@ -63,6 +66,22 @@ export function registerStudioRepairDiffContentProvider(): vscode.Disposable {
   return vscode.workspace.registerTextDocumentContentProvider(STUDIO_REPAIR_DIFF_SCHEME, {
     provideTextDocumentContent: async (uri) => {
       const target = parseStudioRepairDiffUri(uri);
+      if (target.transactionId.startsWith('scaffold-')) {
+        const comparison = await readStudioScaffoldComparison(
+          target.workspacePath,
+          target.transactionId,
+          target.relativePath
+        );
+        return target.side === 'before' ? comparison.before : comparison.after;
+      }
+      if (target.transactionId.startsWith('native-')) {
+        const comparison = await readStudioNativeComparison(
+          target.workspacePath,
+          target.transactionId,
+          target.relativePath
+        );
+        return (target.side === 'before' ? comparison.before : comparison.after) ?? '';
+      }
       const transaction = await readCliOwnedRepairById({
         workspacePath: target.workspacePath,
         transactionId: target.transactionId,
@@ -96,6 +115,40 @@ export async function resolveStudioRepairComparisonUris(input: {
   transactionId: string;
   relativePath: string;
 }): Promise<{ label: vscode.Uri; before: vscode.Uri; after: vscode.Uri }> {
+  if (input.transactionId.startsWith('scaffold-')) {
+    const comparison = await readStudioScaffoldComparison(
+      input.workspacePath,
+      input.transactionId,
+      input.relativePath
+    );
+    return {
+      label: vscode.Uri.file(comparison.absolutePath),
+      before: buildStudioRepairDiffUri({ ...input, side: 'before' }),
+      after: vscode.Uri.file(comparison.absolutePath),
+    };
+  }
+  if (input.transactionId.startsWith('native-')) {
+    const comparison = await readStudioNativeComparison(
+      input.workspacePath,
+      input.transactionId,
+      input.relativePath
+    );
+    if (comparison.binary) {
+      return {
+        label: vscode.Uri.file(comparison.absolutePath),
+        before: studioNativeSnapshotUri({ ...input, side: 'before' }),
+        after: studioNativeSnapshotUri({ ...input, side: 'after' }),
+      };
+    }
+    return {
+      label: vscode.Uri.file(comparison.absolutePath),
+      before: buildStudioRepairDiffUri({ ...input, side: 'before' }),
+      after:
+        comparison.after !== null && comparison.state === 'applied'
+          ? vscode.Uri.file(comparison.absolutePath)
+          : buildStudioRepairDiffUri({ ...input, side: 'after' }),
+    };
+  }
   const transaction = await readCliOwnedRepairById({
     workspacePath: input.workspacePath,
     transactionId: input.transactionId,

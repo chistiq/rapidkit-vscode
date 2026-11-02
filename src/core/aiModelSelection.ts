@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
-import { languageModelSupportsExtensionRequests } from './aiModelIdentity.js';
+import {
+  languageModelSelectionIdentifier,
+  languageModelSupportsExtensionRequests,
+} from './aiModelIdentity.js';
 
 interface ModelSelectionCacheEntry {
   preference: string;
@@ -25,15 +28,12 @@ async function selectModelByPreference(pref: string): Promise<{
     Date.now() - modelSelectionCache.cachedAt < MODEL_SELECTION_TTL_MS
   ) {
     const cachedModel = modelSelectionCache.result.model;
-    const cachedId = normalizeModelKey(cachedModel.id);
-    const cachedName = normalizeModelKey(cachedModel.name ?? '');
+    const cachedIdentity = normalizeModelKey(languageModelSelectionIdentifier(cachedModel));
     const liveModels = (await vscode.lm.selectChatModels()).filter(
       languageModelSupportsExtensionRequests
     );
     const stillAvailable = liveModels.find((model) => {
-      const modelId = normalizeModelKey(model.id);
-      const modelName = normalizeModelKey(model.name ?? '');
-      return modelId === cachedId || modelName === cachedName;
+      return normalizeModelKey(languageModelSelectionIdentifier(model)) === cachedIdentity;
     });
 
     if (stillAvailable) {
@@ -100,7 +100,10 @@ async function selectModelByPreference(pref: string): Promise<{
   const findModelByAlias = (alias: string): vscode.LanguageModelChat | undefined => {
     const target = normalizeModelKey(alias);
     const exact = allModels.find(
-      (m) => normalizeModelKey(m.id) === target || normalizeModelKey(m.name ?? '') === target
+      (m) =>
+        normalizeModelKey(languageModelSelectionIdentifier(m)) === target ||
+        normalizeModelKey(m.id) === target ||
+        normalizeModelKey(m.name ?? '') === target
     );
     if (exact) {
       return exact;
@@ -134,6 +137,13 @@ async function selectModelByPreference(pref: string): Promise<{
     if (preferred) {
       return preferred;
     }
+  }
+
+  // Provider Auto resolves the current supported endpoint without a frozen
+  // list of product model generations or an arbitrary registry-order choice.
+  const providerAuto = tryModelAliases(['copilot/auto']);
+  if (providerAuto) {
+    return providerAuto;
   }
 
   const autoOrder = [

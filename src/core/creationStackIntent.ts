@@ -34,6 +34,7 @@ export type CreationStackIntent =
 const FRAMEWORK_KEYWORDS: Record<ScaffoldFramework, string[]> = {
   openrouter: ['openrouter', 'ai gateway', 'model gateway', 'llm gateway'],
   'openai-agents': ['openai agents', 'openai agent', 'agents sdk'],
+  'google-adk': ['google adk', 'google agent development kit'],
   'microsoft-agent-framework': [
     'microsoft agent framework',
     'ai agent',
@@ -115,6 +116,7 @@ const GENERIC_AGENT_SIGNALS = [
   'agent automation',
   'multi-agent',
   'multi agent',
+  'google adk',
   'microsoft agent framework',
 ];
 
@@ -164,6 +166,13 @@ export function defaultKitForFramework(framework: ScaffoldFramework, promptLower
     return ['typescript', ' node', 'nodejs'].some((signal) => promptLower.includes(signal))
       ? 'agent.openai.typescript'
       : 'agent.openai.python';
+  }
+  if (framework === 'google-adk') {
+    return ['typescript', 'javascript', ' node', 'nodejs'].some((signal) =>
+      promptLower.includes(signal)
+    )
+      ? 'agent.google-adk.typescript'
+      : 'agent.google-adk.python';
   }
   if (framework === 'openrouter') {
     return promptLower.includes('python')
@@ -261,6 +270,9 @@ export function inferFrameworkFromCreationPrompt(
   }
   if (promptLower.includes('openai agent') || promptLower.includes('openai agents')) {
     return 'openai-agents';
+  }
+  if (promptLower.includes('google adk') || promptLower.includes('google agent development kit')) {
+    return 'google-adk';
   }
 
   let bestFramework: ScaffoldFramework = 'nestjs';

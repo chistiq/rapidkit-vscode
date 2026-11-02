@@ -18,6 +18,8 @@ describe('aiKitArchitectureCatalog', () => {
     expect(resolveKitId('fastapi.ddd')).toBe('fastapi.ddd');
     expect(resolveKitId('gin')).toBe('gogin.standard');
     expect(resolveKitId('microsoft-agent-python')).toBe('agent.microsoft.python');
+    expect(resolveKitId('agent.google-adk.typescript')).toBe('agent.google-adk.typescript');
+    expect(resolveKitId('google-adk')).toBe('agent.google-adk.python');
   });
 
   it('builds blueprint section for nestjs.standard without engine repo paths', () => {

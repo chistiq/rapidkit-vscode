@@ -19,6 +19,7 @@ export type TerminalExecutionOptions = {
 
 export type TerminalOpenOptions = {
   name: string;
+  preserveFocus?: boolean;
   cwd?: string;
   env?: Record<string, string>;
 };
@@ -30,7 +31,11 @@ export function openTerminal(options: TerminalOpenOptions): vscode.Terminal {
     env: options.env,
   });
 
-  terminal.show();
+  if (options.preserveFocus === undefined) {
+    terminal.show();
+  } else {
+    terminal.show(options.preserveFocus);
+  }
   return terminal;
 }
 
@@ -46,8 +51,18 @@ export function runCommandsInTerminal(options: TerminalExecutionOptions): vscode
 
 export function appendCommandsToTerminal(terminal: vscode.Terminal, commands: string[]): void {
   for (const command of commands) {
-    terminal.sendText(command);
+    sendTerminalInput(terminal, command);
   }
+}
+
+/** Send stdin without treating it as another shell command. */
+export function sendTerminalInput(
+  terminal: vscode.Terminal,
+  text: string,
+  addNewLine?: boolean
+): void {
+  const input: [string, boolean?] = addNewLine === undefined ? [text] : [text, addNewLine];
+  terminal.sendText(...input);
 }
 
 export function interruptTerminal(terminal: vscode.Terminal): void {

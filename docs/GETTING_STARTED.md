@@ -2,7 +2,7 @@
 
 <!-- WORKSPAI:CLI-RELEASE-POLICY:START -->
 
-> Extension 0.48.0 · verified with Workspai CLI 0.77.0 · minimum compatible CLI 0.77.0
+> Extension 0.49.0 · verified with Workspai CLI 0.80.0 · minimum compatible CLI 0.80.0
 
 <!-- WORKSPAI:CLI-RELEASE-POLICY:END -->
 
@@ -18,11 +18,85 @@ The extension executes the Workspai CLI selected by its canonical release
 policy. The first run downloads that exact npm package into extension storage,
 checks its integrity, and reuses the cached copy offline. A global CLI and a
 separate Node.js installation are not required for Create, adopt, Doctor,
-Graph, Agent, or Goal flows.
+Graph, or governed Goal flows. Ordinary Agent tasks also work directly in an
+open folder without CLI setup or an implicit Goal Pack.
 
 Python is **not required** for the extension, Workspace Intelligence, or
 non-Python projects. RapidKit Core and Python 3.10+ are optional and only needed
 for Python-backed kits or modules.
+
+## Configure an AI provider
+
+Open **Dashboard > Settings > AI & Models** and choose a provider. For VS Code
+models, refresh the available models and choose a default or Auto. The list
+reflects models currently exposed to extensions by your installed providers.
+
+For an API provider, choose the exact model ID and save the provider config when
+you change it. Official provider URLs are fixed; use **Custom OpenAI-compatible
+API** for another endpoint. HTTPS is required except for localhost HTTP endpoints,
+including IPv6 loopback. Base URLs must not contain credentials or query tokens.
+
+Save the API key separately in VS Code Secret Storage, then select **Test
+provider**. The test uses the saved configuration and makes a minimal live model
+request; provider charges may apply. **Configured** means required settings are
+present; a successful test confirms the connection for that request. It does not
+certify every model capability or future request. Unsaved config or key changes
+must be saved before testing. Save errors remain visible and keep your key draft.
+Settings with an existing workspace override are updated at that same scope.
+
+## Assistant conversations and coding
+
+Greetings and general questions answer directly. Questions about current project
+names use local workspace contracts and registries rather than cached health
+reports. Documentation and explicit web research can use public search/fetch,
+installed CLI help, and enabled VS Code/MCP tools without selecting a workspace.
+Search sites may challenge automated requests; the Assistant can fetch official
+pages or try an enabled host tool instead, and must explain actual failures.
+
+Ordinary Agent tasks use the open folder's source, project commands, diagnostics,
+and final change review. Inspected source edits keep durable before/after data
+in extension storage, support exact diffs and Undo, and reject stale replacements.
+Existing diagnostics are reported separately from newly introduced errors. Native
+workspace checks do not claim Workspai CLI canonical verification. Explicit Goal
+and dashboard repair sessions retain their CLI contracts and verification rules.
+
+### Existing projects and file review
+
+You can work on an existing repository across the folders open in VS Code without
+registering it with Workspai. Give its path when the selected workspace differs;
+ambiguous destinations need a choice. Project source and canonical Workspai
+workspace ownership are separate and remain attached to the request on Resume.
+
+For an unmanaged project, the Assistant can offer adoption in place or import of
+a copy into the managed default or a custom workspace. This requires your
+approval. Declining onboarding keeps ordinary work available at the source path.
+
+Changed files appear in a review panel above the composer. Open a file or its
+comparison, then Keep changes or Restore the request checkpoint. Restoration
+checks for newer user edits and reports conflicts rather than overwriting them.
+Attachments show image thumbnails in the composer and sent messages; select a
+thumbnail for a full-size preview. Saved chats are in the searchable header picker.
+
+Interactive commands run in visible VS Code terminals with exact one-run approval,
+output and exit-status reads, stdin, and cancellation. Shell integration must be
+available to observe execution; otherwise no command is sent and the Assistant
+can use bounded commands or another enabled tool. Enter secrets directly in the
+visible terminal rather than chat.
+
+Image-producing host tools can supply bounded PNG/JPEG/GIF/WebP observations to
+vision-capable models. Owned attachments and output images are stored privately
+with bounded retention and can be recovered after reload without re-executing the
+original tool. Binary image bytes are omitted from synchronous sidebar state and
+durable event logs. Storage or recovery failures are reported separately from the
+result of the operation that already ran.
+
+In a source editor, use **Workspai: Suggest Next Edit (Preview)** from the context
+menu to request a focused continuation using the configured model. The model sees
+bounded source around the cursor and recent editor changes, and may return no
+suggestion. Review the diff, then use **Accept Workspai edit** or **Discard**.
+Acceptance rejects changed documents and ambiguous source matches. This is a
+user-triggered preview, not automatic next-edit completion or verified code;
+run the relevant checks after accepting. Ordinary editor Undo remains available.
 
 ## Install
 
@@ -35,7 +109,7 @@ for Python-backed kits or modules.
 3. Optional: install the CLI when you also want terminal access:
 
    ```bash
-   npm install -g workspai@0.77.0
+   npm install -g workspai@0.80.0
    workspai --version
    ```
 
@@ -52,10 +126,10 @@ retrieval evidence without installing dependencies or running repository code.
 See [Analyze Repo](./REPOSITORY_ANALYSIS.md) for the evidence, cache, and safety
 boundaries.
 
-To assess a local working tree before handing it to an agent, open **Review
-Changes**. It combines the Git comparison with CLI-authored impact, freshness,
-and verification evidence without running project scripts automatically. See
-[Review Changes](./REVIEW_CHANGES.md) for its scope and evidence boundaries.
+The separate Dashboard **Review Changes** tab is temporarily hidden in 0.49.0.
+Its retained working-tree comparison and CLI evidence workflow is documented in
+[Review Changes](./REVIEW_CHANGES.md). File review inside Assistant chats,
+including Keep/Restore controls, remains available.
 
 ## Start with a workspace
 

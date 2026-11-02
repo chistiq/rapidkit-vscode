@@ -6,6 +6,152 @@ import {
 } from '../core/studioAgentWorkspaiTools.js';
 
 describe('Studio Agent Workspai tool registry', () => {
+  it('discovers partially matching host tools and ranks exact names ahead of description matches', async () => {
+    const registry = createStudioAgentWorkspaiToolRegistry({
+      host: {
+        listHostTools: () => ({
+          ok: true,
+          output: {
+            tools: [
+              {
+                name: 'open_issue',
+                description: 'Create a GitHub issue',
+                tags: ['write'],
+                readLike: false,
+              },
+              {
+                name: 'github_search',
+                description: 'Search issues',
+                tags: ['search'],
+                readLike: true,
+              },
+              {
+                name: 'notes',
+                description: 'Archive github_search findings',
+                tags: ['write'],
+                readLike: false,
+              },
+            ],
+          },
+        }),
+      } as unknown as StudioAgentWorkspaiToolHost,
+      cardId: 'assistant:agent',
+      assistantMode: 'agent',
+    });
+    const context = {
+      sessionId: 's',
+      requestId: 'r',
+      toolCallId: 't',
+      workspacePath: '/workspace',
+      signal: new AbortController().signal,
+    };
+    const tool = registry.get('list-host-tools')!;
+    const partial = await tool.execute({ query: 'create GitHub issue tracker', limit: 1 }, context);
+    expect(partial).toMatchObject({
+      output: { count: 3, nextOffset: 1, tools: [{ name: 'open_issue' }] },
+    });
+    expect(
+      await tool.execute({ query: 'create GitHub issue tracker', queryMode: 'all' }, context)
+    ).toMatchObject({ output: { count: 0 } });
+    expect(await tool.execute({ query: 'github_search', limit: 1 }, context)).toMatchObject({
+      output: { tools: [{ name: 'github_search' }] },
+    });
+  });
+
+  it.each(['ask', 'plan', 'agent', 'goal'] as const)(
+    'makes retained host output readable in %s mode',
+    async (assistantMode) => {
+      const readHostToolOutput = vi.fn(() => ({ ok: true, output: { text: 'Next page' } }));
+      const listRetainedHostToolOutputs = vi.fn(async () => ({
+        ok: true,
+        output: { outputs: [] },
+      }));
+      const registry = createStudioAgentWorkspaiToolRegistry({
+        host: {
+          readHostToolOutput,
+          listRetainedHostToolOutputs,
+        } as unknown as StudioAgentWorkspaiToolHost,
+        cardId: 'assistant:test',
+        assistantMode,
+      });
+      await registry.get('list-host-tool-outputs')!.execute(
+        {},
+        {
+          sessionId: 'owner',
+          requestId: 'request',
+          toolCallId: 'list',
+          workspacePath: '/workspace',
+          signal: new AbortController().signal,
+        }
+      );
+      expect(listRetainedHostToolOutputs).toHaveBeenCalledWith({ sessionId: 'owner' });
+      const tool = registry.get('read-host-tool-output')!;
+      expect(tool.risk).toBe('read');
+      expect(
+        await tool.execute(
+          { outputRef: 'retained' },
+          {
+            sessionId: 's',
+            requestId: 'r',
+            toolCallId: 't',
+            workspacePath: '/workspace',
+            signal: new AbortController().signal,
+          }
+        )
+      ).toMatchObject({ output: { text: 'Next page' } });
+    }
+  );
+  it.each(['ask', 'plan'] as const)(
+    'lets %s invoke read-only host tools but rejects effects and catalog changes',
+    async (assistantMode) => {
+      let readLike = true;
+      const invokeHostTool = vi.fn(async () => ({ ok: true }));
+      const host = {
+        listHostTools: async () => ({
+          ok: true,
+          output: {
+            tools: [
+              { name: 'mcp.read', readLike },
+              { name: 'mcp.write', readLike: false },
+            ],
+          },
+        }),
+        invokeHostTool,
+      } as unknown as StudioAgentWorkspaiToolHost;
+      const registry = createStudioAgentWorkspaiToolRegistry({
+        host,
+        cardId: 'assistant:test',
+        assistantMode,
+      });
+      const tool = registry.get('invoke-host-tool')!;
+      const context = {
+        sessionId: 's',
+        requestId: 'r',
+        toolCallId: 't',
+        workspacePath: '/workspace',
+        signal: new AbortController().signal,
+      };
+      await expect(tool.authorize!({ name: 'mcp.read' }, context)).resolves.toEqual({
+        risk: 'read',
+      });
+      await expect(tool.execute({ name: 'mcp.read' }, context)).resolves.toEqual({ ok: true });
+      await expect(tool.authorize!({ name: 'mcp.write' }, context)).rejects.toThrow(
+        'read-only host tool'
+      );
+      await expect(tool.execute({ name: 'mcp.write' }, context)).rejects.toThrow(
+        'read-only host tool'
+      );
+      await expect(tool.execute({ name: 'missing' }, context)).rejects.toThrow(
+        'read-only host tool'
+      );
+      readLike = false;
+      await expect(tool.execute({ name: 'mcp.read' }, context)).rejects.toThrow(
+        'read-only host tool'
+      );
+      expect(invokeHostTool).toHaveBeenCalledOnce();
+    }
+  );
+
   it('classifies mutating project commands as exact one-time approval requests', async () => {
     const runWorkspaceCommand = vi.fn(async () => ({ ok: true, changed: true }));
     const host = { runWorkspaceCommand } as unknown as StudioAgentWorkspaiToolHost;
@@ -96,6 +242,12 @@ describe('Studio Agent Workspai tool registry', () => {
       assistantMode: 'agent',
     });
     expect(registry.list().map((tool) => tool.name)).toEqual([
+      'view-workspace-image',
+      'inspect-agent-instructions',
+      'inspect-project-docs',
+      'inspect-cli-commands',
+      'inspect-workspace',
+      'search-public-web',
       'update-task-ledger',
       'discover-workspace-files',
       'inspect-source',
@@ -186,6 +338,59 @@ describe('Studio Agent Workspai tool registry', () => {
         context
       )
     ).rejects.toThrow('invalid or duplicate step');
+  });
+
+  it('retains allowed source and independent search results when one batched source path is protected', async () => {
+    const host = {
+      inspect: vi.fn(async ({ paths }: { paths: string[] }) => {
+        if (paths[0].startsWith('.workspai/'))
+          throw new Error('Studio agent path is not authorized');
+        return { ok: true, output: [{ path: paths[0], content: 'Repository rules' }] };
+      }),
+      search: vi.fn(async () => ({ ok: true, output: ['matching source'] })),
+    } as unknown as StudioAgentWorkspaiToolHost;
+    const registry = createStudioAgentWorkspaiToolRegistry({
+      host,
+      cardId: 'assistant:agent',
+      assistantMode: 'agent',
+    });
+    const result = await registry.get('inspect-workspace-batch')!.execute(
+      {
+        operations: [
+          {
+            id: 'files',
+            kind: 'source',
+            paths: ['AGENTS.md', '.workspai/workspace.contract.json'],
+          },
+          { id: 'search', kind: 'search', query: 'project' },
+          { id: 'invalid', kind: 'unsupported' },
+        ],
+      },
+      {
+        workspacePath: '/workspace',
+        sessionId: 's',
+        requestId: 'r',
+        toolCallId: 't',
+        signal: new AbortController().signal,
+      }
+    );
+    expect(result.ok).toBe(false);
+    expect(result.output).toMatchObject({
+      results: [
+        {
+          id: 'files',
+          result: {
+            ok: false,
+            output: {
+              files: [{ path: 'AGENTS.md', content: 'Repository rules' }],
+              failures: [{ path: '.workspai/workspace.contract.json' }],
+            },
+          },
+        },
+        { id: 'search', result: { ok: true, output: ['matching source'] } },
+        { id: 'invalid', result: { ok: false } },
+      ],
+    });
   });
 
   it('runs independent read-only batch operations concurrently while preserving result order', async () => {
@@ -357,6 +562,8 @@ describe('Studio Agent Workspai tool registry', () => {
       })
     );
     expect(host.deleteFiles).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      requestId: 'request-1',
       paths: ['src/obsolete.ts'],
       transactionId: 'tool-1',
       workspacePath: '/workspace',
@@ -465,6 +672,7 @@ describe('Studio Agent Workspai tool registry', () => {
       limit: 8,
       workspacePath: '/workspace',
       projectPath: '/workspace/api',
+      signal: context.signal,
     });
     expect(inspect).toHaveBeenCalledWith({
       paths: ['src/large.ts'],
@@ -475,6 +683,8 @@ describe('Studio Agent Workspai tool registry', () => {
       projectPath: '/workspace/api',
     });
     expect(applyTextEdits).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      requestId: 'request-1',
       edits: [
         {
           relativePath: 'src/large.ts',
@@ -546,6 +756,7 @@ describe('Studio Agent Workspai tool registry', () => {
     ).resolves.toMatchObject({ ok: true, output: { text: 'Dashboard loaded' } });
     expect(invokeHostTool).toHaveBeenCalledWith({
       name: 'mcp_browser_snapshot',
+      sessionId: context.sessionId,
       arguments: { fullPage: true },
       signal: context.signal,
     });

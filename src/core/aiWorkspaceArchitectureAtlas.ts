@@ -78,6 +78,7 @@ function detectEntryPoints(projectPath: string, kit: string): string[] {
     { rel: 'build.gradle', kits: ['springboot'] },
     { rel: 'build.gradle.kts', kits: ['springboot'] },
     { rel: 'agents/primary/main.py', kits: ['agent-python'] },
+    { rel: 'agents/primary/src/index.ts', kits: ['agent-node'] },
     { rel: 'agents/primary/Program.cs', kits: ['agent-dotnet'] },
   ];
 
@@ -91,11 +92,13 @@ function detectEntryPoints(projectPath: string, kit: string): string[] {
           ? 'springboot'
           : kit.startsWith('dotnet')
             ? 'dotnet'
-            : kit === 'agent.microsoft.python' || kit === 'agent.openai.python'
+            : kit === 'agent.microsoft.python' ||
+                kit === 'agent.openai.python' ||
+                kit === 'agent.google-adk.python'
               ? 'agent-python'
               : kit === 'agent.microsoft.dotnet'
                 ? 'agent-dotnet'
-                : kit === 'agent.openai.typescript'
+                : kit === 'agent.openai.typescript' || kit === 'agent.google-adk.typescript'
                   ? 'agent-node'
                   : kit.startsWith('gateway.openrouter')
                     ? 'gateway'
@@ -182,6 +185,12 @@ function deriveRuntimeFromKit(kit: string): { runtime: string; framework: string
   }
   if (resolved === 'agent.openai.typescript') {
     return { runtime: 'node', framework: 'openai-agents' };
+  }
+  if (resolved === 'agent.google-adk.python') {
+    return { runtime: 'python', framework: 'google-adk' };
+  }
+  if (resolved === 'agent.google-adk.typescript') {
+    return { runtime: 'node', framework: 'google-adk' };
   }
   if (resolved === 'gateway.openrouter.typescript') {
     return { runtime: 'node', framework: 'openrouter' };

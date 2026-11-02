@@ -1,8 +1,49 @@
+import {
+  correlateStudioActivityReceipts,
+  studioActivityReceipt,
+  type StudioActivityReceipt,
+} from '../../contracts/studioActivity.js';
+import { resolveStudioCliInspectionCwd } from '../../core/studioWorkspaceAvailability.js';
+import { studioSessionHistoryTool } from '../../core/studioSessionHistoryTool.js';
+import {
+  StudioHostToolOutputStore,
+  studioToolImageRetention,
+} from '../../core/studioHostToolOutputStore.js';
+import { showStudioSubagentActivity } from '../../core/studioSubagentDocuments.js';
+import { resolveStudioReviewWorkspace } from '../../core/studioReviewWorkspace.js';
+import { studioAssistantIdeCapabilities } from '../../core/studioAssistantIdeCapabilities.js';
+import { createConfiguredStudioAgentModel } from '../../core/configuredStudioAgentModel.js';
+import { StudioAttachmentStore } from '../../core/studioAttachmentStore.js';
+import { StudioEditorTools } from '../../core/studioEditorTools.js';
+import { StudioBrowserTools } from '../../core/studioBrowserTools.js';
+import { registerStudioResearchCapability } from '../../core/studioResearchCapabilities.js';
+import type { StudioAgentToolRegistry } from '../../core/studioAgentToolRegistry.js';
+import { parseAttachedImages } from '../../core/aiImageContent.js';
 /**
  * Actions Webview Provider
  * Sidebar action surface aligned with Workspai dashboard tile vocabulary.
  */
 
+import { inspectStudioWorkspaceInventory } from '../../core/studioWorkspaceInventory.js';
+import { randomUUID } from 'node:crypto';
+import {
+  studioProjectSelectionTool,
+  validateStudioExecutionTarget,
+  type StudioExecutionTarget,
+} from '../../core/studioProjectTarget.js';
+import { studioProjectOnboardingTool } from '../../core/studioProjectOnboarding.js';
+import {
+  studioWorkspaceCreationTool,
+  studioWorkspaceBindingTool,
+} from '../../core/studioWorkspaceCreation.js';
+import {
+  configureStudioNativeStorage,
+  createStudioNativeWorkspaceCapabilities,
+  rollbackStudioNativeTransaction,
+  reviewStudioNativeCheckpoint,
+  resolveStudioNativeTransactionWorkspace,
+} from '../../core/studioNativeWorkspace.js';
+import { StudioInteractiveTerminalManager } from '../../core/studioInteractiveTerminal.js';
 import * as vscode from 'vscode';
 import * as fs from 'fs-extra';
 import * as path from 'path';
@@ -59,10 +100,8 @@ import {
   verifiedGoalVerifyArgs,
   type VerifiedGoalContractPayload,
 } from '../../core/verifiedGoalIntent.js';
-import {
-  routeAssistantIntent,
-  type AssistantIntentRoute,
-} from '../../core/assistantIntentRouter.js';
+import { type AssistantIntentRoute } from '../../core/assistantIntentRouter.js';
+import { dispatchAssistantTurn } from '../../core/assistantTurn.js';
 import { routeCreateIntent } from '../../core/createIntentRouter.js';
 import {
   runCreateCapabilityPlanning,
@@ -82,7 +121,6 @@ import {
   buildAssistantPlanAgentHandoff,
   assistantExecutionPolicyInstruction,
   parseAssistantExecutionPolicy,
-  resolveAssistantExecutionPolicy,
   type AssistantExecutionPolicy,
 } from '../../core/assistantExecutionPolicy.js';
 import { buildAssistantEditorFocus } from '../../core/assistantEditorFocus.js';
@@ -107,7 +145,7 @@ import { buildStudioBlockerHandoff } from '../../core/studioBlockerHandoffBuilde
 import { isRegisteredWorkspaceProjectPath } from '../../core/workspaceModelReader.js';
 import { recordStudioBlockerCommandRun } from '../../core/studioBlockerCommandLedger.js';
 import { runRapidkitStreaming } from '../../core/streamingRapidkitRunner.js';
-import { buildWorkspaceGraphSearchCommand } from '../../core/workspaceGraphSearchCommand.js';
+import { studioWorkspaceIntelligenceReaders } from '../../core/studioWorkspaceIntelligenceReads.js';
 import {
   studioProofEffectClassesForCommand,
   StudioProofCarryingChangeSession,
@@ -221,12 +259,13 @@ import {
   selectStudioPostCliSourceCandidates,
 } from '../../core/studioRepairReceipt.js';
 import { VSCodeStudioAgentSessionStore } from '../../core/studioAgentSessionStore.js';
-import { ContractStudioAgentModelAdapter } from '../../core/studioAgentModelProtocol.js';
+import { isStudioAgentSessionActive } from '../../core/studioAgentEvents.js';
 import type {
   StudioAgentApprovalExecution,
   StudioAgentToolApprovalGrant,
   StudioAgentToolApprovalDecision,
   StudioAgentToolApprovalRequest,
+  StudioAgentToolResult,
 } from '../../core/studioAgentToolRegistry.js';
 import {
   createStudioAgentWorkspaiToolRegistry,
@@ -954,6 +993,12 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
   private _studioEvidenceGeneration = 0;
   private _studioEvidenceChangedPaths = new Set<string>();
   private readonly _activeStudioAgentSessions = new Map<string, StudioAgentSession>();
+  private readonly _pendingInlineStudioSessionIds = new Set<string>();
+  private readonly _cancelledInlineStudioSessionIds = new Set<string>();
+  private readonly _inlineStudioCancellationTokens = new Map<
+    string,
+    vscode.CancellationTokenSource
+  >();
   private readonly _activeStudioAgentRepairRuns = new Map<string, Promise<void>>();
   private readonly _pendingStudioToolApprovals = new Map<
     string,
@@ -966,11 +1011,20 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
   private readonly _createPlanApprovals = new CreatePlanApprovalStore<AICreationPlan>();
   private readonly _activeCreatePlanningTokens = new Map<string, vscode.CancellationTokenSource>();
 
+  private _interactiveTerminals?: StudioInteractiveTerminalManager;
+  private _editorTools?: StudioEditorTools;
+  private _browserTools?: StudioBrowserTools;
+
   constructor(
     private readonly _extensionUri: vscode.Uri,
     private readonly _variant: 'activitybar' | 'secondary-sidebar' = 'activitybar',
     private readonly _context?: vscode.ExtensionContext
-  ) {}
+  ) {
+    const storage = _context?.storageUri ?? _context?.globalStorageUri;
+    if (storage) {
+      configureStudioNativeStorage(storage.fsPath);
+    }
+  }
 
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -1017,6 +1071,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       runInlineImpactQuery: (data) => this._runInlineImpactQuery(data),
       runSidebarAdvisorAction: (data) => this._runSidebarAdvisorAction(data),
       runInlineStudioQuery: (data) => this._runInlineStudioQuery(data),
+      reconcileSidebarStudioSessions: (data) => this._reconcileSidebarStudioSessions(data),
       runSidebarStudioAction: (data) => this._runSidebarStudioAction(data),
       resolveStudioToolApproval: (data) => this._resolveStudioToolApproval(data),
       focusPrimarySidebarView: (data) => this._focusPrimarySidebarView(data),
@@ -1099,10 +1154,49 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
   private async _sendSidebarInitialState(): Promise<void> {
     this._viewReady = true;
     this._sendInlineThemeSettings();
+    // The live host owns approval lifetime. A webview reload must recover the
+    // pending decision even when its original event is no longer in the UI.
+    for (const { request } of this._pendingStudioToolApprovals.values()) {
+      this._publishPendingStudioToolApproval(request);
+    }
     if (this._pendingSecondaryTab) {
       this._postSecondaryTabActivation(this._pendingSecondaryTab, this._pendingSecondaryTabPayload);
     }
     await Promise.allSettled([this._sendInlineModels(), this._sendInlineScope()]);
+  }
+
+  private async _sidebarReviewWorkspace(record: Record<string, unknown>): Promise<string> {
+    return resolveStudioReviewWorkspace({
+      record,
+      loadTransactionWorkspace: async (sessionId, transactionId, requestId) => {
+        if (
+          !this._context ||
+          !(await new VSCodeStudioAgentSessionStore(this._context).load(sessionId))
+        ) {
+          throw new Error('This file belongs to an unavailable chat.');
+        }
+        return resolveStudioNativeTransactionWorkspace(sessionId, transactionId, requestId);
+      },
+      loadTarget: async (sessionId, ref) =>
+        this._context
+          ? await new VSCodeStudioAgentSessionStore(this._context).resolveExecutionTarget(
+              sessionId,
+              ref
+            )
+          : undefined,
+      validateTarget: validateStudioExecutionTarget,
+      loadRequestWorkspace: async (sessionId, requestId) => {
+        if (!this._context) {
+          return undefined;
+        }
+        const store = new VSCodeStudioAgentSessionStore(this._context);
+        const session = requestId
+          ? await store.loadRequest(sessionId, requestId)
+          : await store.load(sessionId);
+        return session?.executionTarget?.workspacePath ?? session?.workspacePath;
+      },
+      fallback: async () => (await resolvePreferredAIModalContext()).workspaceRootPath ?? '',
+    });
   }
 
   private async _openSidebarWorkspaceFile(data: unknown): Promise<void> {
@@ -1111,10 +1205,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         ? (data as Record<string, unknown>)
         : {};
     const relativePath = typeof record.relativePath === 'string' ? record.relativePath.trim() : '';
-    const requestedRoot =
-      typeof record.workspacePath === 'string' ? record.workspacePath.trim() : '';
-    const workspacePath =
-      requestedRoot || (await resolvePreferredAIModalContext()).workspaceRootPath || '';
+    const workspacePath = await this._sidebarReviewWorkspace(record);
     if (!workspacePath || !relativePath || path.isAbsolute(relativePath)) {
       throw new Error('A workspace-relative file path is required.');
     }
@@ -1126,8 +1217,10 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       }
       throw new Error('The requested file is outside the active workspace.');
     }
-    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(absolutePath));
-    await vscode.window.showTextDocument(document, { preview: true, preserveFocus: false });
+    await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(absolutePath), {
+      preview: true,
+      preserveFocus: false,
+    });
   }
 
   private async _openSidebarWorkspaceDiff(data: unknown): Promise<void> {
@@ -1138,10 +1231,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     const relativePath = typeof record.relativePath === 'string' ? record.relativePath.trim() : '';
     const transactionId =
       typeof record.transactionId === 'string' ? record.transactionId.trim() : '';
-    const requestedRoot =
-      typeof record.workspacePath === 'string' ? record.workspacePath.trim() : '';
-    const workspacePath =
-      requestedRoot || (await resolvePreferredAIModalContext()).workspaceRootPath || '';
+    const workspacePath = await this._sidebarReviewWorkspace(record);
     if (!workspacePath || !relativePath || !transactionId || path.isAbsolute(relativePath)) {
       throw new Error('A workspace-relative path and repair transaction id are required.');
     }
@@ -1171,10 +1261,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       data && typeof data === 'object' && !Array.isArray(data)
         ? (data as Record<string, unknown>)
         : {};
-    const requestedRoot =
-      typeof record.workspacePath === 'string' ? record.workspacePath.trim() : '';
-    const workspacePath =
-      requestedRoot || (await resolvePreferredAIModalContext()).workspaceRootPath || '';
+    const workspacePath = await this._sidebarReviewWorkspace(record);
     const files = Array.isArray(record.files)
       ? record.files
           .filter(
@@ -1197,11 +1284,15 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     }[] = [];
     const skipped: string[] = [];
     for (const file of files) {
-      const comparison = await resolveStudioRepairComparisonUris({
-        workspacePath,
-        transactionId: file.transactionId,
-        relativePath: file.relativePath,
-      }).catch(() => undefined);
+      const comparison = await (async () =>
+        resolveStudioRepairComparisonUris({
+          workspacePath: await this._sidebarReviewWorkspace({
+            ...record,
+            transactionId: file.transactionId,
+          }),
+          transactionId: file.transactionId,
+          relativePath: file.relativePath,
+        }))().catch(() => undefined);
       if (!comparison) {
         skipped.push(file.relativePath);
         continue;
@@ -1246,15 +1337,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     const transactionId =
       typeof record.transactionId === 'string' ? record.transactionId.trim() : '';
     const sessionId = typeof record.sessionId === 'string' ? record.sessionId.trim() : '';
-    const requestedWorkspacePath =
-      typeof record.workspacePath === 'string' ? record.workspacePath.trim() : '';
-    const preferredWorkspacePath = requestedWorkspacePath
-      ? ''
-      : ((await resolvePreferredAIModalContext()).workspaceRootPath ?? '');
-    // Never let a stale card handoff silently redirect a free-form Undo. The
-    // explicit webview scope is authoritative; the current editor/workspace
-    // context is the only safe fallback.
-    const workspacePath = requestedWorkspacePath || preferredWorkspacePath;
+    const workspacePath = await this._sidebarReviewWorkspace(record);
     if (!transactionId || !workspacePath) {
       this._postInlineCreate('sidebarStudioAgentPatchRollback', {
         transactionId,
@@ -1262,6 +1345,29 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         ok: false,
         error: 'The durable CLI transaction id and workspace path are required for Undo.',
       });
+      return;
+    }
+    if (transactionId.startsWith('native-')) {
+      try {
+        if (!vscode.workspace.isTrusted) {
+          throw new Error('Trust the workspace before undoing source changes.');
+        }
+        const result = await rollbackStudioNativeTransaction(workspacePath, transactionId);
+        this._postInlineCreate('sidebarStudioAgentPatchRollback', {
+          transactionId,
+          sessionId,
+          ok: true,
+          restoredPaths: result.files.map((file) => file.relativePath),
+          summary: 'Restored the native source transaction.',
+        });
+      } catch (error) {
+        this._postInlineCreate('sidebarStudioAgentPatchRollback', {
+          transactionId,
+          sessionId,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       return;
     }
     try {
@@ -1385,6 +1491,18 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     return `${request.sessionId}:${request.toolCallId}:${request.fingerprint}`;
   }
 
+  private _publishPendingStudioToolApproval(request: StudioAgentToolApprovalRequest): void {
+    this._postInlineCreate('sidebarStudioAgentEvent', {
+      event: {
+        type: 'tool.approval.requested',
+        sessionId: request.sessionId,
+        requestId: request.requestId,
+        toolCallId: request.toolCallId,
+        data: request,
+      },
+    });
+  }
+
   private _cancelPendingStudioToolApprovals(sessionId?: string): void {
     for (const [key, pending] of this._pendingStudioToolApprovals) {
       if (sessionId && pending.request.sessionId !== sessionId) {
@@ -1410,6 +1528,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           const existing = this._pendingStudioToolApprovals.get(key);
           existing?.resolve(undefined);
           this._pendingStudioToolApprovals.set(key, { id, request: approvalRequest, resolve });
+          this._publishPendingStudioToolApproval(approvalRequest);
         }).finally(() => {
           if (this._pendingStudioToolApprovals.get(key)?.id === id) {
             this._pendingStudioToolApprovals.delete(key);
@@ -1599,10 +1718,12 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         models,
         preferredModel: settings.preferredModel,
       });
-    } catch {
+    } catch (error: unknown) {
+      console.error('[Workspai] Failed to load language models for the sidebar:', error);
       this._postInlineCreate('sidebarAiModelsList', {
         models: [],
         preferredModel: 'auto',
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -2333,6 +2454,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       'openai-agents': 'openai-agents',
       'agent-openai-python': 'openai-agents',
       'agent-openai-typescript': 'openai-agents',
+      'google-adk': 'google-adk',
+      'agent-google-adk-python': 'google-adk',
+      'agent-google-adk-typescript': 'google-adk',
       openrouter: 'openrouter',
       'gateway-openrouter-typescript': 'openrouter',
       'gateway-openrouter-python': 'openrouter',
@@ -2839,9 +2963,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           record.content.trim().length > 0
         );
       })
-      .slice(-8);
-    const handoff =
-      parseStudioBlockerHandoffPayload(payloadRecord.blockerHandoff) ?? this._activeBlockerHandoff;
+      .slice(-8)
+      .map((entry) => ({ role: entry.role, content: entry.content }));
+    const handoff = parseStudioBlockerHandoffPayload(payloadRecord.blockerHandoff);
     if (handoff) {
       this._activeBlockerHandoff = handoff;
     }
@@ -2856,47 +2980,208 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    if (sessionId) {
+      this._pendingInlineStudioSessionIds.add(sessionId);
+      this._cancelledInlineStudioSessionIds.delete(sessionId);
+      this._inlineStudioCancellationTokens.set(sessionId, new vscode.CancellationTokenSource());
+    }
     try {
-      const aiContext = await enrichAIModalContextWithProjectMarker(
-        await resolveSidebarChatContext(payloadRecord)
+      const attachedImages = parseAttachedImages(payloadRecord.images);
+      const attachments = new StudioAttachmentStore(
+        (this._context.storageUri ?? this._context.globalStorageUri).fsPath
       );
-      this._postInlineCreate('sidebarStudioScope', {
-        sessionId,
-        scopeMode: payloadRecord.scopeMode,
-        workspace: aiContext.workspaceRootPath
-          ? { name: aiContext.name, path: aiContext.workspaceRootPath }
-          : null,
-        project: aiContext.projectRootPath
-          ? {
-              name: aiContext.type === 'project' ? aiContext.name : undefined,
-              path: aiContext.projectRootPath,
-              type: aiContext.framework,
-            }
-          : null,
-      });
-      this._postInlineCreate('sidebarStudioThinking', {
-        sessionId,
-        label: handoff
-          ? 'Preparing the evidence-backed blocker repair...'
-          : 'Understanding your request...',
-      });
-      const autonomousWorkspacePath = handoff?.workspacePath ?? aiContext.workspaceRootPath;
-      if (autonomousWorkspacePath) {
-        await this._runUnifiedAssistantSession({
-          task,
-          sessionId,
-          requestedModelId,
-          assistantMode,
-          history,
-          workspacePath: autonomousWorkspacePath,
-          projectName: aiContext.type === 'project' ? aiContext.name : undefined,
-          projectPath: handoff?.projectPath ?? aiContext.projectRootPath,
-          handoff,
+      if (
+        sessionId &&
+        typeof payloadRecord.turnId === 'string' &&
+        (attachedImages.length || task.includes('<attachment>'))
+      ) {
+        try {
+          await attachments.save(sessionId, payloadRecord.turnId, task, attachedImages);
+          this._postInlineCreate('sidebarStudioAttachments', {
+            sessionId,
+            turnId: payloadRecord.turnId,
+            stored: true,
+          });
+        } catch (error) {
+          this._postInlineCreate('sidebarStudioAttachments', {
+            sessionId,
+            turnId: payloadRecord.turnId,
+            stored: false,
+            error: `Attachments remain available for this run but could not be saved: ${String(error)}`,
+          });
+        }
+      }
+      const storedImageTurn = [...rawHistory]
+        .reverse()
+        .find(
+          (entry) =>
+            entry &&
+            typeof entry === 'object' &&
+            entry.attachmentStored === true &&
+            typeof entry.id === 'string'
+        ) as Record<string, unknown> | undefined;
+      if (sessionId && storedImageTurn) {
+        try {
+          const restored = await attachments.read(sessionId, String(storedImageTurn.id));
+          storedImageTurn.images = restored.images;
+          history.push({ role: 'user', content: restored.text, images: restored.images });
+        } catch {
+          history.push({
+            role: 'user',
+            content:
+              'A saved earlier attachment is unavailable. Do not claim to have inspected it; request reattachment if required.',
+          });
+        }
+      }
+      const earlierImageTurn = [...rawHistory]
+        .reverse()
+        .find(
+          (entry) =>
+            entry &&
+            typeof entry === 'object' &&
+            Array.isArray((entry as Record<string, unknown>).images) &&
+            ((entry as Record<string, unknown>).images as unknown[]).length > 0
+        ) as Record<string, unknown> | undefined;
+      const earlierImages = parseAttachedImages(earlierImageTurn?.images);
+      const imageContext = [...earlierImages, ...attachedImages].slice(-4);
+      while (
+        imageContext.reduce((sum, image) => sum + Buffer.byteLength(image.base64, 'base64'), 0) >
+        8 * 1024 * 1024
+      ) {
+        imageContext.shift();
+      }
+      const omittedImages = earlierImages.length + attachedImages.length > imageContext.length;
+      if (imageContext.length || payloadRecord.hasAttachments === true) {
+        history.push({
+          role: 'user',
+          content: `Current request and available file/image context:\n${task}${omittedImages ? '\nSome earlier images were omitted to fit the image budget. Do not claim to inspect missing images.' : ''}`,
+          images: imageContext,
         });
+      }
+      await dispatchAssistantTurn({
+        task,
+        selectedMode: assistantMode,
+        hasProjectScope: Boolean(resolveImpactScopeContext(payloadRecord.scope)?.projectRootPath),
+        history,
+        complete: async ({ prompt, toolName, toolSchema }) => {
+          const response = await askConfiguredAIProviderForToolAction(
+            this._context!,
+            [{ role: 'user', content: prompt, images: imageContext }],
+            [
+              {
+                name: toolName,
+                description:
+                  'Understand the latest request before selecting any workspace workflow.',
+                inputSchema: toolSchema as unknown as Record<string, unknown>,
+              },
+            ],
+            sessionId ? this._inlineStudioCancellationTokens.get(sessionId)?.token : undefined,
+            requestedModelId
+          );
+          return response.type === 'tool'
+            ? { type: 'tool', toolName: response.toolName, input: response.input }
+            : { type: 'text', text: response.text };
+        },
+        isCancelled: () =>
+          Boolean(sessionId && this._cancelledInlineStudioSessionIds.has(sessionId)),
+        suggest: (intentRoute, executionPolicy) => {
+          const suggestion = executionPolicy.suggestion!;
+          this._postInlineCreate('sidebarStudioModeSuggestion', {
+            sessionId,
+            fromMode: assistantMode,
+            toMode: suggestion.mode,
+            label: suggestion.label,
+            description: suggestion.description,
+            request: intentRoute.normalizedRequest,
+          });
+        },
+        respond: (answer) =>
+          this._postInlineCreate('sidebarStudioDone', {
+            sessionId,
+            modelId: requestedModelId ?? 'auto',
+            assistantMode,
+            answer,
+          }),
+        execute: async (intentRoute, executionPolicy) => {
+          if (intentRoute.intent === 'research') {
+            await this._runExternalResearchSession({
+              task: intentRoute.normalizedRequest,
+              sessionId,
+              requestedModelId,
+              assistantMode,
+              executionPolicy,
+              history,
+            });
+            return;
+          }
+          const aiContext = await enrichAIModalContextWithProjectMarker(
+            await resolveSidebarChatContext(payloadRecord)
+          );
+          if (sessionId && this._cancelledInlineStudioSessionIds.has(sessionId)) {
+            return;
+          }
+          const autonomousWorkspacePath =
+            handoff?.workspacePath ??
+            aiContext.workspaceRootPath ??
+            vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+          this._postInlineCreate('sidebarStudioScope', {
+            sessionId,
+            scopeMode: payloadRecord.scopeMode,
+            workspace: autonomousWorkspacePath
+              ? {
+                  name: aiContext.workspaceRootPath
+                    ? aiContext.name
+                    : (vscode.workspace.workspaceFolders?.find(
+                        (folder) => folder.uri.fsPath === autonomousWorkspacePath
+                      )?.name ?? path.basename(autonomousWorkspacePath)),
+                  path: autonomousWorkspacePath,
+                }
+              : null,
+            project: aiContext.projectRootPath
+              ? {
+                  name: aiContext.type === 'project' ? aiContext.name : undefined,
+                  path: aiContext.projectRootPath,
+                  type: aiContext.framework,
+                }
+              : null,
+          });
+          this._postInlineCreate('sidebarStudioThinking', {
+            sessionId,
+            label:
+              executionPolicy.profile === 'evidence-answer'
+                ? 'Reading the relevant context...'
+                : handoff
+                  ? 'Preparing the evidence-backed blocker repair...'
+                  : 'Understanding your request...',
+          });
+          if (autonomousWorkspacePath) {
+            await this._runUnifiedAssistantSession({
+              task,
+              sessionId,
+              requestedModelId,
+              assistantMode,
+              history,
+              intentRoute,
+              executionPolicy,
+              workspacePath: autonomousWorkspacePath,
+              projectName: aiContext.type === 'project' ? aiContext.name : undefined,
+              projectPath: handoff?.projectPath ?? aiContext.projectRootPath,
+              handoff,
+              cancellationToken: sessionId
+                ? this._inlineStudioCancellationTokens.get(sessionId)?.token
+                : undefined,
+            });
+            return;
+          }
+          throw new Error(
+            'Open a folder or select a workspace before inspecting or changing local files. Public web research does not require a workspace.'
+          );
+        },
+      });
+    } catch (error) {
+      if (sessionId && this._cancelledInlineStudioSessionIds.has(sessionId)) {
         return;
       }
-      throw new Error('Select a Workspai workspace before starting an Assistant session.');
-    } catch (error) {
       if (isGovernedGoalSetupCancelledError(error)) {
         this._postInlineCreate('sidebarStudioDone', {
           sessionId,
@@ -2908,17 +3193,178 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       }
       const message = error instanceof Error ? error.message : String(error);
       this._postInlineCreate('sidebarStudioError', { sessionId, error: message });
+    } finally {
+      if (sessionId) {
+        if (this._cancelledInlineStudioSessionIds.has(sessionId)) {
+          this._postInlineCreate('sidebarStudioDone', {
+            sessionId,
+            modelId: requestedModelId ?? 'auto',
+            assistantMode,
+            answer: 'Request cancelled.',
+          });
+        }
+        this._pendingInlineStudioSessionIds.delete(sessionId);
+        this._cancelledInlineStudioSessionIds.delete(sessionId);
+        this._inlineStudioCancellationTokens.get(sessionId)?.dispose();
+        this._inlineStudioCancellationTokens.delete(sessionId);
+      }
     }
+  }
+
+  private async _reconcileSidebarStudioSessions(payload: unknown): Promise<void> {
+    const payloadRecord =
+      payload && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>)
+        : {};
+    const sessionIds = Array.isArray(payloadRecord.sessionIds)
+      ? payloadRecord.sessionIds.filter(
+          (sessionId): sessionId is string =>
+            typeof sessionId === 'string' && sessionId.trim().length > 0
+        )
+      : [];
+    const activeSessionIds = sessionIds.filter(
+      (sessionId) =>
+        this._activeStudioAgentSessions.has(sessionId) ||
+        this._pendingInlineStudioSessionIds.has(sessionId)
+    );
+    const activeSessionIdSet = new Set(activeSessionIds);
+    const terminalSessions: Array<{
+      sessionId: string;
+      requestId?: string;
+      terminalReason?: string;
+      status: 'completed' | 'failed' | 'cancelled';
+      answer?: string;
+      modelId?: string;
+      error?: string;
+    }> = [];
+    if (this._context) {
+      const store = new VSCodeStudioAgentSessionStore(this._context);
+      for (const sessionId of sessionIds) {
+        const persisted = await store.load(sessionId);
+        if (!persisted) {
+          continue;
+        }
+        await this._replayPersistedStudioAgentEvents({
+          workspacePath: persisted.executionTarget?.workspacePath ?? persisted.workspacePath,
+          events: persisted.events,
+          activityLog: persisted.activityLog,
+          activityLogOmitted: persisted.activityLogOmitted,
+        });
+        if (activeSessionIdSet.has(sessionId)) {
+          continue;
+        }
+        const completionEvent = [...persisted.events]
+          .reverse()
+          .find((event) => event.type === 'session.completed');
+        const completionData =
+          completionEvent?.data && typeof completionEvent.data === 'object'
+            ? (completionEvent.data as Record<string, unknown>)
+            : undefined;
+        if (
+          persisted.status === 'completed' &&
+          typeof completionData?.summary === 'string' &&
+          completionData.summary.trim()
+        ) {
+          terminalSessions.push({
+            sessionId,
+            status: 'completed',
+            requestId: completionEvent?.requestId,
+            answer: completionData.summary,
+            modelId: persisted.lastResolvedModel?.modelId,
+          });
+          continue;
+        }
+        if (persisted.status === 'failed' || persisted.status === 'cancelled') {
+          const terminalEvent = [...persisted.events]
+            .reverse()
+            .find((event) => event.type === 'session.failed' || event.type === 'session.cancelled');
+          const terminalData =
+            terminalEvent?.data && typeof terminalEvent.data === 'object'
+              ? (terminalEvent.data as Record<string, unknown>)
+              : undefined;
+          terminalSessions.push({
+            sessionId,
+            status: persisted.status,
+            requestId: terminalEvent?.requestId,
+            ...(typeof terminalData?.terminalReason === 'string'
+              ? { terminalReason: terminalData.terminalReason }
+              : {}),
+            ...(typeof terminalData?.answer === 'string' ? { answer: terminalData.answer } : {}),
+            error:
+              typeof terminalData?.error === 'string' && terminalData.error.trim()
+                ? terminalData.error
+                : persisted.status === 'cancelled'
+                  ? 'This request was cancelled while the sidebar was unavailable.'
+                  : 'This request failed while the sidebar was unavailable.',
+          });
+        }
+      }
+    }
+    this._postInlineCreate('sidebarStudioSessionReconciliation', {
+      activeSessionIds,
+      waitingInputSessionIds: activeSessionIds.filter(
+        (sessionId) =>
+          this._activeStudioAgentSessions.get(sessionId)?.snapshot().status === 'waiting-input'
+      ),
+      terminalSessions,
+    });
   }
 
   private async _replayPersistedStudioAgentEvents(input: {
     workspacePath: string;
-    events: Array<{ type: string; data?: unknown }>;
+    events: Array<{ id?: string; sequence?: number; type: string; data?: unknown }>;
+    activityLog?: StudioActivityReceipt[];
+    activityLogOmitted?: number;
   }): Promise<void> {
     const fileChangeCache = new Map<string, WorkspaceRepairCliFileChange[]>();
-    const replay = input.events
-      .filter((event) => event.type !== 'session.created' && event.type !== 'session.status')
-      .slice(-120);
+    const present = new Set(input.events.map((event) => event.id));
+    const activityLog = correlateStudioActivityReceipts(
+      [
+        ...new Map(
+          [
+            ...(input.activityLog ?? []),
+            ...input.events.flatMap((event) => {
+              const receipt = studioActivityReceipt(event);
+              return receipt ? [receipt] : [];
+            }),
+          ].map((receipt) => [receipt.eventId, receipt])
+        ).values(),
+      ].sort((a, b) => a.sequence - b.sequence)
+    );
+    const byId = new Map(activityLog.map((receipt) => [receipt.eventId, receipt]));
+    const replay = [
+      ...activityLog
+        .filter((receipt) => !present.has(receipt.eventId))
+        .map((receipt) => ({
+          id: receipt.eventId,
+          type: receipt.eventType,
+          sessionId: receipt.sessionId,
+          sequence: receipt.sequence,
+          timestamp: receipt.timestamp,
+          requestId: receipt.requestId,
+          data: {
+            receiptReplay: receipt,
+            ...(receipt.transactionId ? { output: { transactionId: receipt.transactionId } } : {}),
+          },
+        })),
+      ...input.events.map((event) => ({
+        ...event,
+        requestId: event.id ? byId.get(event.id)?.requestId : undefined,
+      })),
+    ].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+    if (input.activityLogOmitted && activityLog.length) {
+      const owner = activityLog.find((receipt) => receipt.requestId) ?? activityLog[0];
+      replay.unshift({
+        id: `${owner.sessionId}:retention`,
+        type: 'model.checkpoint',
+        sequence: Math.max(0, owner.sequence - 1),
+        data: {
+          retention: true,
+          summary: `${input.activityLogOmitted} earlier event receipts are unavailable because the activity retention limit was reached.`,
+        },
+        ...{ sessionId: owner.sessionId, requestId: owner.requestId, timestamp: owner.timestamp },
+      });
+    }
     for (const event of replay) {
       const hydrated = await hydrateStudioRepairEventFileChanges({
         workspacePath: input.workspacePath,
@@ -2929,8 +3375,187 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private _registerAssistantCapabilities(
+    registry: StudioAgentToolRegistry,
+    host: StudioAgentWorkspaiToolHost,
+    readOnly: boolean,
+    token?: vscode.CancellationToken,
+    modelId?: string
+  ): void {
+    if (!this._context) {
+      return;
+    }
+    const ide = studioAssistantIdeCapabilities(this._context);
+    this._editorTools = ide.editor;
+    this._browserTools = ide.browser;
+    this._interactiveTerminals = ide.terminals;
+    ide.register(registry, readOnly);
+    registry.register(studioSessionHistoryTool(this._context));
+    registerStudioResearchCapability({ context: this._context, registry, host, token, modelId });
+  }
+
+  private async _inspectAssistantCliCommands(input: {
+    workspacePath: string;
+    signal: AbortSignal;
+  }): Promise<StudioAgentToolResult> {
+    if (input.signal.aborted) {
+      return { ok: false, error: 'CLI inventory was cancelled.' };
+    }
+    let onCancel: (() => void) | undefined;
+    try {
+      const execution = await runRapidkitStreaming({
+        command: ['commands', '--json'],
+        cwd: await resolveStudioCliInspectionCwd([
+          input.workspacePath,
+          this._extensionUri.fsPath,
+          process.cwd(),
+        ]),
+        featureLabel: 'Inspect Workspai CLI commands',
+        timeoutMs: 30_000,
+        signal: {
+          onCancelled: (listener) => {
+            onCancel = listener;
+            input.signal.addEventListener('abort', listener, { once: true });
+            if (input.signal.aborted) {
+              listener();
+            }
+          },
+        },
+      });
+      if (input.signal.aborted) {
+        return { ok: false, error: 'CLI inventory was cancelled.' };
+      }
+      return execution.exitCode === 0 && !execution.failed && execution.result
+        ? { ok: true, output: execution.result }
+        : {
+            ok: false,
+            error:
+              execution.stderr ||
+              'Installed CLI inventory is unavailable. Use the bundled command catalog.',
+          };
+    } finally {
+      if (onCancel) {
+        input.signal.removeEventListener('abort', onCancel);
+      }
+    }
+  }
+
+  private async _inspectAssistantCliHelp(command: string[]): Promise<StudioAgentToolResult> {
+    if (command.length > 5 || command.some((part) => !/^[a-z][a-z0-9-]*$/.test(part))) {
+      throw new Error('Invalid CLI help command.');
+    }
+    const execution = await runRapidkitStreaming({
+      command: [...command, '--help'],
+      cwd: await resolveStudioCliInspectionCwd([
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+        this._extensionUri.fsPath,
+        process.cwd(),
+      ]),
+      featureLabel: 'Read Workspai CLI help',
+      timeoutMs: 30_000,
+    });
+    const ok = execution.exitCode === 0 && !execution.failed;
+    return {
+      ok,
+      output: {
+        command: [...command, '--help'],
+        stdout: execution.stdout,
+        stderr: execution.stderr,
+        exitCode: execution.exitCode,
+      },
+      ...(ok
+        ? {}
+        : {
+            error:
+              execution.stderr ||
+              'Installed CLI help is unavailable. Fetch official documentation instead.',
+          }),
+    };
+  }
+
+  private async _runExternalResearchSession(input: {
+    task: string;
+    sessionId?: string;
+    requestedModelId?: string;
+    assistantMode: WorkspaiAssistantMode;
+    executionPolicy: import('../../core/assistantExecutionPolicy.js').AssistantExecutionPolicy;
+    history: AIConversationHistoryEntry[];
+  }): Promise<void> {
+    if (!this._context) {
+      throw new Error('Assistant context is unavailable.');
+    }
+    const registry = createStudioAgentWorkspaiToolRegistry({
+      host: {
+        ...studioHostLanguageModelToolAdapters(undefined, undefined, {
+          root: this._context.storageUri?.fsPath ?? this._context.globalStorageUri.fsPath,
+        }),
+        inspectCliCommands: (request: { workspacePath: string; signal: AbortSignal }) =>
+          this._inspectAssistantCliCommands(request),
+        inspectCliHelp: (command: string[]) => this._inspectAssistantCliHelp(command),
+      } as unknown as StudioAgentWorkspaiToolHost,
+      cardId: 'assistant:research',
+      assistantMode: 'ask',
+      externalResearch: true,
+    });
+    registry.register(studioSessionHistoryTool(this._context));
+    const model = createConfiguredStudioAgentModel({
+      context: this._context,
+      objective: `${input.task}\nResearch this question using available search, fetch, or host tools. For Workspai CLI, official references include https://github.com/chistiq/workspai and https://www.npmjs.com/package/workspai; the README is available at https://raw.githubusercontent.com/chistiq/workspai/main/README.md. You may also inspect installed CLI help. Use official sources for exact CLI commands. Cite the actual fetched page URLs. If one tool fails, try another applicable route. Answer in the user's language.`,
+      token: input.sessionId
+        ? this._inlineStudioCancellationTokens.get(input.sessionId)?.token
+        : undefined,
+      modelId: input.requestedModelId,
+      history: input.history,
+      reviewAnswerDelivery: true,
+    });
+    const session = new StudioAgentSession(
+      {
+        id: input.sessionId,
+        retainToolImages: studioToolImageRetention(
+          this._context.storageUri?.fsPath ?? this._context.globalStorageUri.fsPath
+        ),
+        workspacePath: this._context.globalStorageUri.fsPath,
+        cardId: 'assistant:research',
+        assistantMode: input.assistantMode,
+        executionPolicy: input.executionPolicy,
+        permissionLevel: 'default',
+        workspaceTrusted: vscode.workspace.isTrusted,
+        requiresVerifiedCompletion: false,
+      },
+      model,
+      registry,
+      new VSCodeStudioAgentSessionStore(this._context)
+    );
+    session.onEvent((event) => this._postInlineCreate('sidebarStudioAgentEvent', { event }));
+    this._activeStudioAgentSessions.set(session.id, session);
+    const result = await session
+      .run(input.task)
+      .finally(() => this._activeStudioAgentSessions.delete(session.id));
+    const terminal = [...result.events]
+      .reverse()
+      .find((event) =>
+        ['session.completed', 'session.failed', 'session.cancelled'].includes(event.type)
+      );
+    if (result.status === 'completed') {
+      this._postInlineCreate('sidebarStudioDone', {
+        sessionId: session.id,
+        answer: terminal?.data.summary,
+        modelId: result.lastResolvedModel?.modelId,
+      });
+    } else {
+      this._postInlineCreate('sidebarStudioError', {
+        sessionId: session.id,
+        error: terminal?.data.error ?? 'Research did not finish.',
+        answer: terminal?.data.answer,
+        terminalReason: terminal?.data.terminalReason,
+      });
+    }
+  }
+
   private async _runUnifiedAssistantSession(input: {
     task: string;
+    intentRoute: AssistantIntentRoute;
+    executionPolicy: AssistantExecutionPolicy;
     sessionId?: string;
     requestedModelId?: string;
     assistantMode: WorkspaiAssistantMode;
@@ -2939,6 +3564,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     projectPath?: string;
     handoff?: StudioBlockerHandoff;
     history?: AIConversationHistoryEntry[];
+    cancellationToken?: vscode.CancellationToken;
   }): Promise<void> {
     if (!this._context) {
       throw new Error('Workspai Assistant requires extension context.');
@@ -2946,12 +3572,24 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
 
     const store = new VSCodeStudioAgentSessionStore(this._context);
     const persistedCandidate = input.sessionId ? await store.load(input.sessionId) : undefined;
+    if (input.sessionId && this._cancelledInlineStudioSessionIds.has(input.sessionId)) {
+      return;
+    }
     const persistedGoalProjectPath =
       input.assistantMode === 'goal' && persistedCandidate?.goal?.scope.kind === 'project'
         ? persistedCandidate.goal.scope.projectPath
         : undefined;
     const persisted =
+      input.intentRoute.continuesPreviousTask === true &&
+      !(
+        input.executionPolicy.workspaceIntent === 'use-current' &&
+        persistedCandidate?.executionTarget
+      ) &&
+      (input.executionPolicy.profile === 'autonomous-change' ||
+        input.executionPolicy.profile === 'governed-goal') &&
       persistedCandidate &&
+      parseAssistantExecutionPolicy(persistedCandidate.executionPolicy, input.assistantMode)
+        ?.profile === input.executionPolicy.profile &&
       studioAgentSessionScopeMatches(persistedCandidate, {
         ...input,
         projectPath: input.projectPath ?? persistedGoalProjectPath,
@@ -2961,103 +3599,40 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       persistedCandidate.status !== 'cancelled'
         ? persistedCandidate
         : undefined;
-    let intentRoute: AssistantIntentRoute | undefined;
-    let executionPolicy: AssistantExecutionPolicy | undefined = persisted?.executionPolicy
-      ? (parseAssistantExecutionPolicy(persisted.executionPolicy, input.assistantMode) ?? undefined)
-      : undefined;
-    if (!executionPolicy && persisted) {
-      executionPolicy = resolveAssistantExecutionPolicy({
-        selectedMode: input.assistantMode,
-        requestIntent:
-          persisted.cardId === 'assistant:agent:question' ||
-          persisted.cardId === 'assistant:agent:evidence-answer'
-            ? 'question'
-            : input.assistantMode === 'goal'
-              ? 'goal'
-              : 'engineering-task',
-        routeConfidence: 'high',
-      });
-    }
-    if (!input.handoff && !persisted) {
-      intentRoute = await routeAssistantIntent({
-        task: input.task,
-        selectedMode: input.assistantMode,
-        hasProjectScope: Boolean(input.projectPath),
-        complete: async ({ prompt, toolName, toolSchema }) => {
-          const response = await askConfiguredAIProviderForToolAction(
-            this._context!,
-            [{ role: 'user', content: prompt }],
-            [
-              {
-                name: toolName,
-                description:
-                  'Classify the request before Workspai chooses conversation, Agent, or Goal orchestration.',
-                inputSchema: toolSchema as unknown as Record<string, unknown>,
-              },
-            ],
-            undefined,
-            input.requestedModelId,
-            [
-              { path: input.projectPath, token: '$PROJECT' },
-              { path: input.workspacePath, token: '$WORKSPACE' },
-            ]
-          );
-          return response.type === 'tool'
-            ? { type: 'tool', toolName: response.toolName, input: response.input }
-            : { type: 'text', text: response.text };
-        },
-      });
-      executionPolicy = resolveAssistantExecutionPolicy({
-        selectedMode: input.assistantMode,
-        requestIntent: intentRoute.intent,
-        routeConfidence: intentRoute.confidence,
-      });
-      if (executionPolicy.suggestion) {
-        this._postInlineCreate('sidebarStudioModeSuggestion', {
-          sessionId: input.sessionId,
-          fromMode: input.assistantMode,
-          toMode: executionPolicy.suggestion.mode,
-          label: executionPolicy.suggestion.label,
-          description: executionPolicy.suggestion.description,
-          request: intentRoute.normalizedRequest,
-        });
-      }
-      if (executionPolicy.profile === 'direct-response') {
-        const answer =
-          executionPolicy.directResponse ||
-          intentRoute.userResponse ||
-          (input.assistantMode === 'goal'
-            ? 'Describe the durable engineering outcome you want this Goal to achieve.'
-            : 'What would you like me to change, investigate, or explain?');
-        this._postInlineCreate('sidebarStudioDone', {
-          sessionId: input.sessionId,
-          modelId: input.requestedModelId ?? 'auto',
-          assistantMode: input.assistantMode,
-          answer,
-        });
-        return;
-      }
-      this._postInlineCreate('sidebarStudioThinking', {
-        sessionId: input.sessionId,
-        label:
-          executionPolicy.profile === 'governed-goal'
-            ? 'Defining the governed Goal...'
-            : executionPolicy.profile === 'evidence-answer'
-              ? 'Reading the relevant workspace evidence...'
-              : executionPolicy.profile === 'implementation-plan'
-                ? 'Preparing an evidence-backed plan...'
-                : intentRoute.intent === 'goal'
-                  ? 'Continuing as a one-shot Agent task...'
-                  : 'Preparing the evidence-backed Agent loop...',
-      });
-    }
-
-    executionPolicy ??= resolveAssistantExecutionPolicy({
-      selectedMode: input.assistantMode,
-      requestIntent: input.handoff ? 'engineering-task' : 'clarification',
-      routeConfidence: 'high',
-    });
+    const { intentRoute, executionPolicy } = input;
     const mode = resolveWorkspaiAssistantModeContract(executionPolicy.toolMode);
+    const ownedTarget =
+      !input.handoff &&
+      input.assistantMode !== 'goal' &&
+      executionPolicy.workspaceIntent !== 'use-current' &&
+      (executionPolicy.workspaceIntent !== 'create-new' ||
+        intentRoute.continuesPreviousTask === true) &&
+      persistedCandidate?.executionAuthority === 'workspace' &&
+      studioAgentSessionScopeMatches(persistedCandidate, input)
+        ? persistedCandidate.executionTarget
+        : undefined;
+    let ownedTargetUnavailable = '';
+    if (ownedTarget) {
+      try {
+        await validateStudioExecutionTarget(ownedTarget);
+      } catch (error) {
+        if (
+          !('kind' in ownedTarget && ownedTarget.kind === 'project') &&
+          !['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')
+        ) {
+          throw error;
+        }
+        ownedTargetUnavailable = `The previous execution target ${ownedTarget.name} is unavailable or changed identity. Scoped tools must not mutate it or substitute the open workspace. select-project can resolve the intended source again; independent CLI/catalog, create-workspace and bind-workspace capabilities remain available for an appropriate destination.`;
+      }
+    }
+    const contextWorkspacePath = ownedTarget?.workspacePath ?? input.workspacePath;
+    const nativeAgent =
+      mode.canMutateWorkspace &&
+      input.assistantMode === 'agent' &&
+      !input.handoff &&
+      !persisted?.goal &&
+      !persisted?.governedGoal;
+    const executionSessionId = input.sessionId ?? randomUUID();
     if (mode.canMutateWorkspace) {
       this._ensureStudioEvidenceWatcher(
         {
@@ -3071,7 +3646,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     let projectBootstrapPrompt = '';
-    if (input.projectPath) {
+    if (input.projectPath && !nativeAgent && mode.canMutateWorkspace) {
       this._postInlineCreate('sidebarStudioThinking', {
         sessionId: input.sessionId,
         label: 'Resolving the canonical project entry contract...',
@@ -3081,13 +3656,13 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         workspacePath: input.workspacePath,
         consumer: 'generic',
       });
-      requireUsableProjectAgentBootstrap(projectBootstrap);
       if (mode.canMutateWorkspace) {
+        requireUsableProjectAgentBootstrap(projectBootstrap);
         requireReadyProjectAgentBootstrap(projectBootstrap);
       }
       projectBootstrapPrompt = buildProjectAgentBootstrapPromptSection(projectBootstrap);
     }
-    if (input.assistantMode === 'agent' && input.handoff) {
+    if (mode.canMutateWorkspace && input.assistantMode === 'agent' && input.handoff) {
       await this._runAutonomousStudioAgent({
         task: input.task,
         sessionId: input.sessionId,
@@ -3121,7 +3696,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       goalMaxAttempts = restored.maxAttempts;
       goalAttemptsUsed = restored.attemptsUsed;
     }
-    if ((input.assistantMode === 'goal' || input.assistantMode === 'agent') && !governedGoal) {
+    if (mode.canMutateWorkspace && !nativeAgent && !governedGoal) {
       const projectName = resolveStudioRepairProjectTarget({
         explicitProjectName: input.projectName,
         affectedProjectNames: input.handoff?.affectedProjectNames,
@@ -3157,9 +3732,13 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             path: verifiedGoal.scope.projectPath,
           }
         : undefined;
-    const effectiveProjectPath = input.projectPath ?? verifiedGoalProject?.path;
-    const effectiveProjectName = input.projectName ?? verifiedGoalProject?.name;
-    if (mode.canMutateWorkspace && !governedGoalId) {
+    const effectiveProjectPath = ownedTarget
+      ? undefined
+      : (input.projectPath ?? verifiedGoalProject?.path);
+    const effectiveProjectName = ownedTarget
+      ? undefined
+      : (input.projectName ?? verifiedGoalProject?.name);
+    if (mode.canMutateWorkspace && !nativeAgent && !governedGoalId) {
       throw new Error(
         'Mutation-capable Studio sessions require an active CLI Goal Pack before tools are exposed.'
       );
@@ -3172,14 +3751,14 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           requestResume: requestVSCodeProofCarryingChangeResume,
         })
       : undefined;
-    if (effectiveProjectPath && !input.projectPath) {
+    if (effectiveProjectPath && !input.projectPath && !nativeAgent && mode.canMutateWorkspace) {
       const projectBootstrap = await bootstrapProjectAgent({
         projectPath: effectiveProjectPath,
         workspacePath: input.workspacePath,
         consumer: 'generic',
       });
-      requireUsableProjectAgentBootstrap(projectBootstrap);
       if (mode.canMutateWorkspace) {
+        requireUsableProjectAgentBootstrap(projectBootstrap);
         requireReadyProjectAgentBootstrap(projectBootstrap);
       }
       projectBootstrapPrompt = buildProjectAgentBootstrapPromptSection(projectBootstrap);
@@ -3192,17 +3771,17 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       { blockerSignature?: string; evidenceGeneration: string; count: number }
     >();
     const evidenceUris = await vscode.workspace.findFiles(
-      new vscode.RelativePattern(input.workspacePath, '.workspai/**/*'),
+      new vscode.RelativePattern(contextWorkspacePath, '.workspai/**/*'),
       '{**/.workspai/cache/**,**/.workspai/snapshots/**,**/*.tmp}',
       160
     );
     const authorizedEvidencePaths = evidenceUris.map((uri) =>
-      path.relative(input.workspacePath, uri.fsPath).replace(/\\/g, '/')
+      path.relative(contextWorkspacePath, uri.fsPath).replace(/\\/g, '/')
     );
-    const [assistantEvidence, evidenceFreshness] = await Promise.all([
+    const [assistantEvidence, evidenceFreshness, currentInventory] = await Promise.all([
       buildEvidenceAgentContextBundle({
-        workspacePath: input.workspacePath,
-        workspaceName: path.basename(input.workspacePath),
+        workspacePath: contextWorkspacePath,
+        workspaceName: path.basename(contextWorkspacePath),
         projectPath: effectiveProjectPath,
         projectName: effectiveProjectName,
         ...(input.handoff
@@ -3220,7 +3799,10 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             }
           : {}),
       }),
-      resolveWorkspaceEvidenceFreshness(input.workspacePath),
+      resolveWorkspaceEvidenceFreshness(contextWorkspacePath),
+      inspectStudioWorkspaceInventory(contextWorkspacePath).catch((error) => ({
+        error: String(error),
+      })),
     ]);
     for (const attachment of assistantEvidence.attachments) {
       const locator =
@@ -3232,10 +3814,17 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       }
     }
     const baseAssistantObjective = buildAssistantEvidenceObjective({
-      task: [input.task, assistantExecutionPolicyInstruction(executionPolicy)]
+      task: [
+        input.task,
+        intentRoute.normalizedRequest !== input.task
+          ? `Resolved request: ${intentRoute.normalizedRequest}`
+          : '',
+        assistantExecutionPolicyInstruction(executionPolicy),
+      ]
         .filter((line): line is string => Boolean(line))
         .join('\n\n'),
-      assistantMode: input.assistantMode,
+      assistantMode: mode.id,
+      ...(nativeAgent ? { executionAuthority: 'workspace' as const } : {}),
       evidence: assistantEvidence,
       freshness: evidenceFreshness,
     });
@@ -3243,7 +3832,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     let activeEditorFocus = '';
     if (activeEditor?.document.uri.scheme === 'file') {
       try {
-        const focusRoot = effectiveProjectPath ?? input.workspacePath;
+        const focusRoot = effectiveProjectPath ?? contextWorkspacePath;
         const [canonicalFocusRoot, canonicalEditorPath] = await Promise.all([
           fs.realpath(focusRoot),
           fs.realpath(activeEditor.document.uri.fsPath),
@@ -3288,8 +3877,10 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         ? buildActiveGoalPromptSection(await readActiveGoalHandoff(input.workspacePath))
         : '';
     const assistantObjective = [
-      projectBootstrapPrompt,
       baseAssistantObjective,
+      ownedTargetUnavailable,
+      projectBootstrapPrompt,
+      `Current workspace inventory (read directly from local contracts/registries; use for names instead of summarized health reports): ${JSON.stringify(currentInventory).slice(0, 6_000)}`,
       activeEditorFocus,
       activeGoalPrompt,
     ]
@@ -3357,7 +3948,12 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       });
     };
     const host: StudioAgentWorkspaiToolHost = {
-      ...studioHostLanguageModelToolAdapters(),
+      ...studioHostLanguageModelToolAdapters(undefined, undefined, {
+        root: this._context.storageUri?.fsPath ?? this._context.globalStorageUri.fsPath,
+      }),
+      inspectCliCommands: (request: { workspacePath: string; signal: AbortSignal }) =>
+        this._inspectAssistantCliCommands(request),
+      inspectCliHelp: (command: string[]) => this._inspectAssistantCliHelp(command),
       // Only a real card handoff may select a deterministic remediation target.
       // An arbitrary Goal's synthetic Doctor scope is useful for later plan
       // inspection, but it is not exact enough to authorize a first-action
@@ -3476,44 +4072,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       }) => {
         return { ok: true, output: await searchStudioWorkspaceSource(request) };
       },
-      graphSearch: async (request: {
-        query: string;
-        limit?: number;
-        workspacePath: string;
-        projectPath?: string;
-      }) => {
-        const limit = Math.min(Math.max(Math.trunc(request.limit ?? 12), 1), 50);
-        const execution = await runRapidkitStreaming<unknown>({
-          command: buildWorkspaceGraphSearchCommand({
-            query: request.query,
-            limit,
-            ...(request.projectPath
-              ? { scope: `project:${path.basename(request.projectPath)}` }
-              : {}),
-          }),
-          cwd: request.workspacePath,
-          featureLabel: 'Workspace graph retrieval',
-          timeoutMs: 2 * 60_000,
-        });
-        const ok = execution.failed === false && execution.exitCode === 0;
-        return {
-          ok,
-          output: {
-            query: request.query,
-            limit,
-            result: execution.result,
-            exitCode: execution.exitCode,
-          },
-          ...(ok
-            ? {}
-            : {
-                error:
-                  execution.stderr ||
-                  execution.stdout ||
-                  `Workspace graph search exited with ${execution.exitCode}.`,
-              }),
-        };
-      },
+      ...studioWorkspaceIntelligenceReaders(),
       diagnostics: async (request: {
         paths?: string[];
         severities?: Array<'error' | 'warning' | 'information' | 'hint'>;
@@ -4366,6 +4925,26 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         };
       }
     };
+    const nativeDiagnostics = host.diagnostics.bind(host);
+    const nativeInspectChanges = host.inspectChanges.bind(host);
+    if (nativeAgent) {
+      this._interactiveTerminals ??= studioAssistantIdeCapabilities(this._context!).terminals;
+      if (!this._context.subscriptions.includes(this._interactiveTerminals)) {
+        this._context.subscriptions.push(this._interactiveTerminals);
+      }
+      Object.assign(
+        host,
+        createStudioNativeWorkspaceCapabilities({
+          workspacePath: contextWorkspacePath,
+          projectPath: persisted?.executionTarget ? undefined : effectiveProjectPath,
+          transactionIds: persisted?.nativeTransactionIds,
+          inspectedSource,
+          diagnostics: nativeDiagnostics,
+          inspectChanges: nativeInspectChanges,
+          hasRunningTerminal: () => this._interactiveTerminals!.hasRunning(executionSessionId),
+        })
+      );
+    }
     const scopeId =
       governedGoalId ??
       verifiedGoal?.id ??
@@ -4373,14 +4952,106 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       `assistant:${input.assistantMode}:${executionPolicy.profile}`;
     const registry = createStudioAgentWorkspaiToolRegistry({
       host,
+      ...(nativeAgent ? { executionAuthority: 'workspace' as const } : {}),
       cardId: scopeId,
       assistantMode: mode.id,
       ...(governedGoalId || verifiedGoal ? { goalId: governedGoalId ?? verifiedGoal!.id } : {}),
       ...(governedGoal ? { goalCompletionMode: governedGoal.completionMode } : {}),
     });
+    this._registerAssistantCapabilities(
+      registry,
+      host,
+      !mode.canMutateWorkspace,
+      input.cancellationToken,
+      input.requestedModelId
+    );
+    if (nativeAgent) {
+      let activeNativeRoot = contextWorkspacePath;
+      let activeNativeIdentity =
+        ownedTarget && 'identity' in ownedTarget ? JSON.stringify(ownedTarget.identity) : undefined;
+      const onWorkspaceReady = (target: StudioExecutionTarget) => {
+        const identity = 'identity' in target ? JSON.stringify(target.identity) : undefined;
+        if (
+          target.workspacePath === activeNativeRoot &&
+          (!activeNativeIdentity || activeNativeIdentity === identity)
+        ) {
+          activeNativeIdentity = identity;
+          return;
+        }
+        activeNativeRoot = target.workspacePath;
+        activeNativeIdentity = identity;
+        inspectedSource.clear();
+        Object.assign(
+          host,
+          createStudioNativeWorkspaceCapabilities({
+            workspacePath: target.workspacePath,
+            inspectedSource,
+            diagnostics: nativeDiagnostics,
+            inspectChanges: nativeInspectChanges,
+            hasRunningTerminal: () => this._interactiveTerminals!.hasRunning(executionSessionId),
+          })
+        );
+      };
+      const runOnboardingCli: import('../../core/studioWorkspaceCreation.js').StudioCreationRunner =
+        async ({ args, cwd, signal }) => {
+          let onAbort: (() => void) | undefined;
+          try {
+            const execution = await runRapidkitStreaming({
+              command: args,
+              cwd,
+              featureLabel: 'Assistant workspace creation',
+              timeoutMs: 600_000,
+              signal: {
+                onCancelled(listener) {
+                  onAbort = listener;
+                  if (signal.aborted) {
+                    listener();
+                  } else {
+                    signal.addEventListener('abort', listener, { once: true });
+                  }
+                },
+              },
+            });
+            return {
+              ...execution,
+              exitCode: execution.failed ? execution.exitCode || 1 : execution.exitCode,
+            };
+          } finally {
+            if (onAbort) {
+              signal.removeEventListener('abort', onAbort);
+            }
+          }
+        };
+      registry.register(
+        studioProjectSelectionTool({
+          ideRoots: vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [],
+          onTargetReady: onWorkspaceReady,
+        })
+      );
+      registry.register(
+        studioProjectOnboardingTool({
+          run: runOnboardingCli,
+          onTargetReady: onWorkspaceReady,
+        })
+      );
+      registry.register(studioWorkspaceBindingTool({ onWorkspaceReady }));
+      registry.register(studioWorkspaceCreationTool({ run: runOnboardingCli, onWorkspaceReady }));
+    }
+    const independentSource = !input.handoff && !persisted?.goal && !persisted?.governedGoal;
+    if (!nativeAgent && independentSource && !mode.canMutateWorkspace) {
+      registry.register(
+        studioProjectSelectionTool({
+          ideRoots: vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [],
+        })
+      );
+    }
     const options = {
-      id: input.sessionId,
+      id: executionSessionId,
+      ...(independentSource ? { executionAuthority: 'workspace' as const } : {}),
       workspacePath: input.workspacePath,
+      ...(ownedTarget
+        ? { executionAuthority: 'workspace' as const, executionTarget: ownedTarget }
+        : {}),
       ...(effectiveProjectPath ? { projectPath: effectiveProjectPath } : {}),
       cardId: scopeId,
       assistantMode: input.assistantMode,
@@ -4397,48 +5068,40 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       ...(goalAttemptsUsed !== undefined ? { goalAttemptsUsed } : {}),
       ...(persisted ? { restoredSession: persisted } : {}),
     };
-    const model = new ContractStudioAgentModelAdapter(
-      assistantObjective,
-      async (_prompt, request) => {
-        const response = await askConfiguredAIProviderForToolAction(
-          this._context!,
-          request.messages,
-          request.tools,
-          undefined,
-          input.requestedModelId,
-          [
-            { path: effectiveProjectPath, token: '$PROJECT' },
-            { path: input.workspacePath, token: '$WORKSPACE' },
-          ]
-        );
-        const resolution = {
-          provider: response.provider,
-          modelId: response.modelId,
-          ...(response.requestedModelId ? { requestedModelId: response.requestedModelId } : {}),
-          fallback: response.fallback,
-          attempts: response.attempts,
-          ...(response.inputTokens !== undefined ? { inputTokens: response.inputTokens } : {}),
-          ...(response.outputTokens !== undefined ? { outputTokens: response.outputTokens } : {}),
-          ...(response.tokenUsageSource ? { tokenUsageSource: response.tokenUsageSource } : {}),
-        };
-        return response.type === 'tool'
-          ? {
-              callId: response.callId,
-              toolName: response.toolName,
-              input: response.input,
-              resolution,
-            }
-          : { type: 'text' as const, text: response.text, resolution };
+    const model = createConfiguredStudioAgentModel({
+      context: this._context!,
+      objective: assistantObjective,
+      token: input.cancellationToken,
+      modelId: input.requestedModelId,
+      pathIdentities: [
+        { path: effectiveProjectPath, token: '$PROJECT' },
+        { path: input.workspacePath, token: '$WORKSPACE' },
+      ],
+      restoredSession: persisted,
+      history: input.history,
+      reviewAnswerDelivery: true,
+    });
+    const session = new StudioAgentSession(
+      {
+        ...options,
+        retainToolImages: studioToolImageRetention(
+          this._context!.storageUri?.fsPath ?? this._context!.globalStorageUri.fsPath
+        ),
       },
-      persisted,
-      input.history
+      model,
+      registry,
+      store
     );
-    const session = new StudioAgentSession(options, model, registry, store);
     if (persisted) {
       await this._replayPersistedStudioAgentEvents({
-        workspacePath: input.workspacePath,
+        workspacePath: persisted.executionTarget?.workspacePath ?? input.workspacePath,
         events: persisted.events,
+        activityLog: persisted.activityLog,
+        activityLogOmitted: persisted.activityLogOmitted,
       });
+    }
+    if (input.sessionId && this._cancelledInlineStudioSessionIds.has(input.sessionId)) {
+      return;
     }
     session.onEvent((event) => this._postInlineCreate('sidebarStudioAgentEvent', { event }));
     this._activeStudioAgentSessions.set(session.id, session);
@@ -4468,6 +5131,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       }
       this._postInlineCreate('sidebarStudioDone', {
         sessionId: completed.id,
+        requestId: completion?.requestId,
         modelId: completed.lastResolvedModel?.modelId ?? completed.selectedModelId ?? 'auto',
         assistantMode: completed.assistantMode,
         answer: summary,
@@ -4476,7 +5140,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     }
     const failure = [...completed.events]
       .reverse()
-      .find((event) => event.type === 'session.failed');
+      .find((event) => event.type === 'session.failed' || event.type === 'session.cancelled');
     const failureData =
       failure && failure.data && typeof failure.data === 'object' && !Array.isArray(failure.data)
         ? (failure.data as Record<string, unknown>)
@@ -4485,6 +5149,8 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       typeof failureData?.error === 'string' ? String(failureData.error) : undefined;
     this._postInlineCreate('sidebarStudioError', {
       sessionId: completed.id,
+      requestId: failure?.requestId,
+      ...(typeof failureData?.answer === 'string' ? { answer: failureData.answer } : {}),
       ...(typeof failureData?.terminalReason === 'string'
         ? { terminalReason: failureData.terminalReason }
         : {}),
@@ -4547,7 +5213,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       const activeSession = [...this._activeStudioAgentSessions.values()].find((session) => {
         const snapshot = session.snapshot();
         return (
-          snapshot.status === 'running' &&
+          isStudioAgentSessionActive(snapshot.status) &&
           studioAgentSessionScopeMatches(snapshot, executionInput) &&
           snapshot.cardId === executionInput.handoff.cardId
         );
@@ -4755,7 +5421,12 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     };
 
     const host: StudioAgentWorkspaiToolHost = {
-      ...studioHostLanguageModelToolAdapters(),
+      ...studioHostLanguageModelToolAdapters(undefined, undefined, {
+        root: this._context.storageUri?.fsPath ?? this._context.globalStorageUri.fsPath,
+      }),
+      inspectCliCommands: (request: { workspacePath: string; signal: AbortSignal }) =>
+        this._inspectAssistantCliCommands(request),
+      inspectCliHelp: (command: string[]) => this._inspectAssistantCliHelp(command),
       discover: async (request: { workspacePath: string; glob?: string; limit?: number }) => ({
         ok: true,
         output: {
@@ -4812,44 +5483,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       }) => {
         return { ok: true, output: await searchStudioWorkspaceSource(request) };
       },
-      graphSearch: async (request: {
-        query: string;
-        limit?: number;
-        workspacePath: string;
-        projectPath?: string;
-      }) => {
-        const limit = Math.min(Math.max(Math.trunc(request.limit ?? 12), 1), 50);
-        const execution = await runRapidkitStreaming<unknown>({
-          command: buildWorkspaceGraphSearchCommand({
-            query: request.query,
-            limit,
-            ...(request.projectPath
-              ? { scope: `project:${path.basename(request.projectPath)}` }
-              : {}),
-          }),
-          cwd: request.workspacePath,
-          featureLabel: 'Workspace graph retrieval',
-          timeoutMs: 2 * 60_000,
-        });
-        const ok = execution.failed === false && execution.exitCode === 0;
-        return {
-          ok,
-          output: {
-            query: request.query,
-            limit,
-            result: execution.result,
-            exitCode: execution.exitCode,
-          },
-          ...(ok
-            ? {}
-            : {
-                error:
-                  execution.stderr ||
-                  execution.stdout ||
-                  `Workspace graph search exited with ${execution.exitCode}.`,
-              }),
-        };
-      },
+      ...studioWorkspaceIntelligenceReaders(),
       diagnostics: async (request: {
         paths?: string[];
         severities?: Array<'error' | 'warning' | 'information' | 'hint'>;
@@ -5916,6 +6550,15 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       goalId: governedChangeGoal.goalPackId,
       goalCompletionMode: governedChangeGoal.governedGoal.completionMode,
     });
+    this._registerAssistantCapabilities(
+      registry,
+      host,
+      false,
+      input.sessionId
+        ? this._inlineStudioCancellationTokens.get(input.sessionId)?.token
+        : undefined,
+      input.requestedModelId
+    );
     const options = {
       id: input.sessionId,
       workspacePath: input.workspacePath,
@@ -5936,54 +6579,45 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       goalAttemptsUsed: governedChangeGoal.attemptsUsed,
       ...(persisted ? { restoredSession: persisted } : {}),
     };
-    const model = new ContractStudioAgentModelAdapter(
+    const model = createConfiguredStudioAgentModel({
+      context: this._context!,
       objective,
-      async (_prompt, request) => {
-        const response = await askConfiguredAIProviderForToolAction(
-          this._context!,
-          request.messages,
-          request.tools,
-          undefined,
-          input.requestedModelId,
-          [
-            { path: input.projectPath, token: '$PROJECT' },
-            { path: input.workspacePath, token: '$WORKSPACE' },
-          ]
-        );
-        const resolution = {
-          provider: response.provider,
-          modelId: response.modelId,
-          ...(response.requestedModelId ? { requestedModelId: response.requestedModelId } : {}),
-          fallback: response.fallback,
-          attempts: response.attempts,
-          ...(response.inputTokens !== undefined ? { inputTokens: response.inputTokens } : {}),
-          ...(response.outputTokens !== undefined ? { outputTokens: response.outputTokens } : {}),
-          ...(response.tokenUsageSource ? { tokenUsageSource: response.tokenUsageSource } : {}),
-        };
-        return response.type === 'tool'
-          ? {
-              callId: response.callId,
-              toolName: response.toolName,
-              input: response.input,
-              resolution,
-            }
-          : { type: 'text' as const, text: response.text, resolution };
+      modelId: input.requestedModelId,
+      token: input.sessionId
+        ? this._inlineStudioCancellationTokens.get(input.sessionId)?.token
+        : undefined,
+      pathIdentities: [
+        { path: input.projectPath, token: '$PROJECT' },
+        { path: input.workspacePath, token: '$WORKSPACE' },
+      ],
+      restoredSession: persisted,
+      history: input.history,
+      reviewAnswerDelivery: true,
+    });
+    const session = new StudioAgentSession(
+      {
+        ...options,
+        retainToolImages: studioToolImageRetention(
+          this._context!.storageUri?.fsPath ?? this._context!.globalStorageUri.fsPath
+        ),
       },
-      persisted,
-      input.history
+      model,
+      registry,
+      store
     );
-    const session = new StudioAgentSession(options, model, registry, store);
     if (persisted) {
       await this._replayPersistedStudioAgentEvents({
         workspacePath: input.workspacePath,
         events: persisted.events,
+        activityLog: persisted.activityLog,
+        activityLogOmitted: persisted.activityLogOmitted,
       });
     }
     session.onEvent((event) => {
       this._postInlineCreate('sidebarStudioAgentEvent', { event });
     });
     this._activeStudioAgentSessions.set(session.id, session);
-    const completed = await session.run(objective).finally(() => {
+    const completed = await session.run(objective, { userRequest: input.task }).finally(() => {
       if (this._activeStudioAgentSessions.get(session.id) === session) {
         this._activeStudioAgentSessions.delete(session.id);
       }
@@ -6002,7 +6636,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     }
     const failure = [...completed.events]
       .reverse()
-      .find((event) => event.type === 'session.failed');
+      .find((event) => event.type === 'session.failed' || event.type === 'session.cancelled');
     const failureData =
       failure && failure.data && typeof failure.data === 'object' && !Array.isArray(failure.data)
         ? (failure.data as Record<string, unknown>)
@@ -6011,6 +6645,8 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       typeof failureData?.error === 'string' ? String(failureData.error) : undefined;
     this._postInlineCreate('sidebarStudioError', {
       sessionId: completed.id,
+      requestId: failure?.requestId,
+      ...(typeof failureData?.answer === 'string' ? { answer: failureData.answer } : {}),
       ...(typeof failureData?.terminalReason === 'string'
         ? { terminalReason: failureData.terminalReason }
         : {}),
@@ -6043,6 +6679,101 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       studioHost.getActiveBlockerHandoff(),
       parseStudioBlockerHandoffPayload
     );
+    if (action === 'subagent-history') {
+      if (!sessionId) {
+        throw new Error('A parent chat is required.');
+      }
+      await showStudioSubagentActivity({
+        sessionId,
+        requestId: String(payloadRecord.requestId ?? ''),
+        toolCallId: String(payloadRecord.toolCallId ?? ''),
+      });
+      return;
+    }
+    if (['attachments-read', 'attachments-delete'].includes(action)) {
+      if (!this._context || !sessionId) {
+        throw new Error('Attachment session is unavailable.');
+      }
+      const attachments = new StudioAttachmentStore(
+        (this._context.storageUri ?? this._context.globalStorageUri).fsPath
+      );
+      if (action === 'attachments-delete') {
+        this._activeStudioAgentSessions.get(sessionId)?.cancel();
+        this._inlineStudioCancellationTokens.get(sessionId)?.cancel();
+        this._cancelPendingStudioToolApprovals(sessionId);
+        this._interactiveTerminals?.cancelSession(sessionId);
+        this._editorTools?.cancelSession(sessionId);
+        this._browserTools?.cancelSession(sessionId);
+        await new VSCodeStudioAgentSessionStore(this._context).delete(sessionId);
+        await attachments.delete(sessionId);
+        await new StudioHostToolOutputStore(
+          this._context.storageUri?.fsPath ?? this._context.globalStorageUri.fsPath
+        ).delete(sessionId);
+      } else {
+        const turnId = String(payloadRecord.turnId ?? '');
+        try {
+          const restored = await attachments.read(sessionId, turnId);
+          this._postInlineCreate('sidebarStudioAttachments', {
+            sessionId,
+            turnId,
+            stored: true,
+            ...restored,
+          });
+        } catch (error) {
+          this._postInlineCreate('sidebarStudioAttachments', {
+            sessionId,
+            turnId,
+            stored: false,
+            error: `Saved attachment could not be restored: ${String(error)}`,
+          });
+        }
+      }
+      return;
+    }
+    if (
+      action === 'checkpoint-keep' ||
+      action === 'checkpoint-restore' ||
+      action === 'checkpoint-redo'
+    ) {
+      if (!sessionId) {
+        throw new Error('A checkpoint session is required.');
+      }
+      const transactionIds = Array.isArray(payloadRecord.transactionIds)
+        ? payloadRecord.transactionIds.filter((id): id is string => typeof id === 'string')
+        : [];
+      const requestIds = Array.isArray(payloadRecord.requestIds)
+        ? payloadRecord.requestIds.filter((id): id is string => typeof id === 'string')
+        : [];
+      try {
+        if (this._activeStudioAgentSessions.has(sessionId)) {
+          throw new Error('Stop the running request before reviewing its checkpoint.');
+        }
+        if (!vscode.workspace.isTrusted && action !== 'checkpoint-keep') {
+          throw new Error('Trust the workspace before changing checkpoint files.');
+        }
+        const result = await reviewStudioNativeCheckpoint({
+          workspaceTrusted: vscode.workspace.isTrusted,
+          sessionId,
+          requestIds,
+          transactionIds,
+          action:
+            action === 'checkpoint-keep'
+              ? 'keep'
+              : action === 'checkpoint-redo'
+                ? 'redo'
+                : 'restore',
+        });
+        this._postInlineCreate('sidebarStudioCheckpoint', { sessionId, requestIds, ...result });
+      } catch (error) {
+        this._postInlineCreate('sidebarStudioCheckpoint', {
+          sessionId,
+          requestIds,
+          transactionIds,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
     const publishCliOwnedRepairOutcome = async (input: {
       workspacePath: string;
       projectPath?: string;
@@ -6084,6 +6815,11 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     };
     try {
       if (action === 'agent-status') {
+        for (const { request } of this._pendingStudioToolApprovals.values()) {
+          if (request.sessionId === sessionId) {
+            this._publishPendingStudioToolApproval(request);
+          }
+        }
         const session = sessionId ? this._activeStudioAgentSessions.get(sessionId) : undefined;
         const snapshot = session?.snapshot();
         const persistedSession =
@@ -6093,7 +6829,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         const durableSession = snapshot ?? persistedSession;
         const terminalFailure = [...(durableSession?.events ?? [])]
           .reverse()
-          .find((event) => event.type === 'session.failed');
+          .find((event) => event.type === 'session.failed' || event.type === 'session.cancelled');
         const terminalFailureData =
           terminalFailure?.data &&
           typeof terminalFailure.data === 'object' &&
@@ -6123,13 +6859,16 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         studioHost.postInlineCreate('sidebarStudioSessionState', {
           sessionId,
           cardId: handoff?.cardId,
-          active: snapshot?.status === 'running',
+          active: isStudioAgentSessionActive(snapshot?.status),
           status: durableSession?.status ?? 'paused',
           ...(typeof terminalFailureData?.terminalReason === 'string'
             ? { terminalReason: terminalFailureData.terminalReason }
             : {}),
           ...(typeof terminalFailureData?.repairTransactionState === 'string'
             ? { repairTransactionState: terminalFailureData.repairTransactionState }
+            : {}),
+          ...(typeof terminalFailureData?.answer === 'string'
+            ? { answer: terminalFailureData.answer }
             : {}),
           ...(typeof terminalFailureData?.error === 'string'
             ? { error: terminalFailureData.error }
@@ -6185,7 +6924,32 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         if (!session) {
           throw new Error('The Studio Agent session is not currently running.');
         }
-        session.steer(message);
+        const images = parseAttachedImages(payloadRecord.images);
+        session.steer(message, images);
+        if (
+          this._context &&
+          typeof payloadRecord.turnId === 'string' &&
+          (images.length || message.includes('<attachment>'))
+        ) {
+          const attachments = new StudioAttachmentStore(
+            (this._context.storageUri ?? this._context.globalStorageUri).fsPath
+          );
+          try {
+            await attachments.save(sessionId, payloadRecord.turnId, message, images);
+            this._postInlineCreate('sidebarStudioAttachments', {
+              sessionId,
+              turnId: payloadRecord.turnId,
+              stored: true,
+            });
+          } catch (error) {
+            this._postInlineCreate('sidebarStudioAttachments', {
+              sessionId,
+              turnId: payloadRecord.turnId,
+              stored: false,
+              error: `Attachments could not be saved: ${String(error)}`,
+            });
+          }
+        }
         studioHost.postInlineCreate('sidebarStudioActionResult', {
           sessionId,
           cardId: handoff?.cardId,
@@ -6201,12 +6965,28 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         if (!sessionId) {
           throw new Error('An active session is required for cancellation.');
         }
-        const session = this._activeStudioAgentSessions.get(sessionId);
-        if (!session) {
-          throw new Error('The Studio Agent session is not currently running.');
-        }
         this._cancelPendingStudioToolApprovals(sessionId);
-        session.cancel();
+        this._inlineStudioCancellationTokens.get(sessionId)?.cancel();
+        this._interactiveTerminals?.cancelSession(sessionId);
+        this._editorTools?.cancelSession(sessionId);
+        this._browserTools?.cancelSession(sessionId);
+        const session = this._activeStudioAgentSessions.get(sessionId);
+        if (session) {
+          session.cancel();
+          return;
+        }
+        if (this._pendingInlineStudioSessionIds.has(sessionId)) {
+          this._cancelledInlineStudioSessionIds.add(sessionId);
+        }
+        // A stale/restored UI still needs an acknowledgement when no live
+        // controller owns the request. Silence leaves the composer on Stop.
+        this._postInlineCreate('sidebarStudioSessionState', {
+          sessionId,
+          active: false,
+          status: 'cancelled',
+          terminalReason: 'cancelled',
+          error: 'This request was stopped. No live Assistant process owns this session.',
+        });
         return;
       }
       if (action === 'retry-audit') {

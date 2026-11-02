@@ -11,6 +11,48 @@ import { resolveDashboardCommandExecutionPlan } from '../core/dashboardCommandEx
 import { buildRapidkitCommand } from '../utils/platformCapabilities';
 
 describe('incidentInlineCommandRunner', () => {
+  it('rejects explanatory text and multiline payloads even from stale command cards', () => {
+    for (const command of [
+      'npm ci \u0646\u0635\u0628 \u06a9\u0646\u06cc\u062f\u060c \u0633\u067e\u0633 npm run lint',
+      'npm ci then run npm run lint',
+      'npm ci\nnpm run build',
+      'npm install "unfinished',
+    ]) {
+      expect(parseRapidkitInlineCommand(command)).toMatchObject({
+        error: expect.stringContaining('without explanatory text'),
+      });
+    }
+  });
+
+  it('requires npm package and lockfile in the execution directory and honors project scope', async () => {
+    const workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-command-cwd-'));
+    const projectPath = path.join(workspacePath, 'starter-web');
+    const input = { command: 'npm ci', workspacePath, projectBelongsToWorkspace: false };
+    try {
+      await fs.ensureDir(projectPath);
+      await fs.writeJson(path.join(projectPath, 'package.json'), { name: 'starter-web' });
+      expect(await resolveRapidkitExecutionPlan(input)).toMatchObject({
+        error: expect.stringContaining('Select the target project'),
+      });
+      const scoped = { ...input, projectPath, projectBelongsToWorkspace: true };
+      expect(await resolveRapidkitExecutionPlan(scoped)).toMatchObject({
+        error: expect.stringContaining('requires a lockfile'),
+      });
+      await fs.writeJson(path.join(projectPath, 'package-lock.json'), { lockfileVersion: 3 });
+      expect(await resolveRapidkitExecutionPlan(scoped)).toMatchObject({
+        executable: 'npm',
+        args: ['ci'],
+        cwd: projectPath,
+      });
+      for (const script of ['lint', 'build']) {
+        expect(
+          await resolveRapidkitExecutionPlan({ ...scoped, command: `npm run ${script}` })
+        ).toMatchObject({ executable: 'npm', args: ['run', script], cwd: projectPath });
+      }
+    } finally {
+      await fs.remove(workspacePath);
+    }
+  });
   it('accepts legacy rapidkit commands but normalizes display to Workspai', () => {
     expect(parseRapidkitInlineCommand('npx rapidkit doctor workspace --json')).toEqual({
       rapidkitArgs: ['doctor', 'workspace', '--json'],

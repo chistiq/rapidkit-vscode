@@ -21,7 +21,7 @@ describe('scaffold kits', () => {
       expect.arrayContaining(FRONTEND_SCAFFOLD_KITS.map((kit) => kit.kitId))
     );
     expect(FRONTEND_SCAFFOLD_KITS).toHaveLength(11);
-    expect(SCAFFOLD_KIT_IDS).toHaveLength(29);
+    expect(SCAFFOLD_KIT_IDS).toHaveLength(31);
   });
 
   it('keeps governed agent kits runtime-specific despite sharing one framework', () => {
@@ -30,15 +30,42 @@ describe('scaffold kits', () => {
       'agent.microsoft.dotnet',
       'agent.openai.python',
       'agent.openai.typescript',
+      'agent.google-adk.python',
+      'agent.google-adk.typescript',
     ]);
     expect(AGENT_SCAFFOLD_KITS.map((kit) => kit.displayName)).toEqual([
       'Microsoft Agent Framework · Python',
       'Microsoft Agent Framework · .NET',
       'OpenAI Agents SDK · Python',
       'OpenAI Agents SDK · TypeScript',
+      'Google ADK · Python',
+      'Google ADK · TypeScript',
     ]);
     expect(scaffoldRuntimeCandidatesForKit('agent.microsoft.python')).toEqual(['python']);
     expect(scaffoldRuntimeCandidatesForKit('agent.microsoft.dotnet')).toEqual(['dotnet']);
+    expect(scaffoldRuntimeCandidatesForKit('agent.google-adk.python')).toEqual(['python']);
+    expect(scaffoldRuntimeCandidatesForKit('agent.google-adk.typescript')).toEqual(['node']);
+  });
+
+  it('distinguishes Workspai integration maturity from upstream framework status', () => {
+    const descriptions = Object.fromEntries(
+      AGENT_SCAFFOLD_KITS.map((kit) => [kit.kitId, kit.description])
+    );
+
+    expect(descriptions['agent.microsoft.python']).toContain(
+      'Preview Workspai integration; Microsoft Agent Framework itself is stable.'
+    );
+    expect(descriptions['agent.microsoft.dotnet']).toContain(
+      'Preview Workspai integration; Microsoft Agent Framework itself is stable.'
+    );
+    expect(descriptions['agent.google-adk.python']).toContain(
+      'Preview Workspai integration; Google ADK itself is stable.'
+    );
+    expect(descriptions['agent.google-adk.typescript']).toContain(
+      'Preview Workspai integration; Google ADK itself is stable.'
+    );
+    expect(descriptions['agent.openai.python']).toContain('Stable Workspai integration.');
+    expect(descriptions['agent.openai.typescript']).toContain('Stable Workspai integration.');
   });
 
   it('resolves frontend kits by kit id and framework alias', () => {

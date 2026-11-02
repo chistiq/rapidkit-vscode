@@ -38,13 +38,15 @@ describe('Studio workspace command transaction', () => {
     expect(result).toMatchObject({
       ok: false,
       changed: false,
-      terminalReason: 'workspace-command-source-mutation-rolled-back',
       output: {
         observedSourceChange: true,
         changedPaths: ['target.txt'],
         rollback: { reason: 'unapproved-mutation' },
+        sourceRecovery: { state: 'restored', requiresMutationDeclaration: true },
       },
     });
+    expect(result.terminalReason).toBeUndefined();
+    expect(result.output?.sourceRecovery?.instruction).toContain('allowSourceChanges:true');
     expect(await fs.readFile(path.join(root, 'target.txt'), 'utf8')).toBe('before\n');
   });
 
@@ -78,9 +80,12 @@ describe('Studio workspace command transaction', () => {
     expect(result).toMatchObject({
       ok: false,
       changed: false,
-      terminalReason: 'workspace-command-failure-rolled-back',
-      output: { rollback: { reason: 'failed-command' } },
+      output: {
+        rollback: { reason: 'failed-command' },
+        sourceRecovery: { state: 'restored', requiresMutationDeclaration: false },
+      },
     });
+    expect(result.terminalReason).toBeUndefined();
     expect(await fs.readFile(path.join(root, 'target.txt'), 'utf8')).toBe('before\n');
   });
 

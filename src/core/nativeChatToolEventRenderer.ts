@@ -1,4 +1,5 @@
 import type * as vscode from 'vscode';
+import { studioActivityReceipt } from '../contracts/studioActivity.js';
 
 import { redactLocalPathsForConsumer } from './consumerPathRedaction.js';
 import type { StudioAgentEvent } from './studioAgentEvents.js';
@@ -118,7 +119,11 @@ export function renderNativeStudioAgentEvent(
     return;
   }
   if (event.type === 'tool.approval.rejected') {
-    stream.progress('Exact command was not approved');
+    stream.progress(
+      data.optional === true
+        ? 'Optional onboarding skipped; continuing the original task'
+        : 'Exact command was not approved'
+    );
     return;
   }
   if (event.type === 'tool.progress') {
@@ -147,12 +152,30 @@ export function renderNativeStudioAgentEvent(
       (typeof repair.message === 'string' && repair.message);
     if (message) {
       stream.progress(deduplicateStudioMessage(message) ?? message);
+    } else {
+      const receipt = studioActivityReceipt(event);
+      if (receipt) {
+        stream.progress(receipt.summary || receipt.title);
+      }
     }
     return;
   }
   if (event.type === 'tool.completed') {
     if (isVerifyTool(data.toolName)) {
       return;
+    }
+    const output = eventRecord(data.output);
+    const unsupported = Array.isArray(output.contentParts)
+      ? output.contentParts.map(eventRecord).filter((part) => part.supported === false)
+      : [];
+    if (unsupported.length) {
+      stream.progress(
+        `Output without a dedicated renderer: ${unsupported.map((part) => String(part.mimeType ?? part.kind ?? 'unknown')).join(', ')}`
+      );
+    }
+    const warning = output.imageError || output.retentionError;
+    if (typeof warning === 'string') {
+      stream.progress(`Output availability: ${warning}`);
     }
     const files = fileChangeRecords(data);
     if (files.length > 0) {
@@ -203,14 +226,25 @@ export function renderNativeStudioAgentEvent(
     const summary = typeof data.summary === 'string' ? data.summary : undefined;
     if (summary) {
       stream.progress(summary);
+    } else {
+      stream.progress('Progress checkpoint');
     }
     return;
   }
   if (event.type === 'model.message' && typeof data.text === 'string' && data.text.trim()) {
     const text = data.text.trim();
-    if (text.length < 12 || /^[{[]/.test(text) || /"toolName"\s*:/.test(text)) {
+    if (/^[{[]/.test(text) || /"toolName"\s*:/.test(text)) {
       return;
     }
     stream.markdown(`${text}\n\n`);
+    return;
+  }
+  // A new event type must be visible even before it has a specialized native
+  // renderer. Only the public allowlisted receipt is projected, never payloads.
+  const receipt = studioActivityReceipt(event);
+  if (receipt) {
+    const elapsed =
+      receipt.durationMs === undefined ? '' : ` (${Math.round(receipt.durationMs / 1000)}s)`;
+    stream.progress(`${receipt.title}${elapsed}${receipt.summary ? `: ${receipt.summary}` : ''}`);
   }
 }

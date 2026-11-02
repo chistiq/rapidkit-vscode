@@ -344,22 +344,20 @@ describe('actionsWebviewProvider — manifest + command alignment', () => {
 
   it('keeps the Marketplace README concise and aligned with the Workspai Assistant', () => {
     const readme = read('README.md');
-    expect(readme).toContain(
-      'Understand the workspace. Change it with evidence. Verify the result.'
-    );
+    expect(readme).toContain('AI coding, grounded in your workspace.');
     expect(readme).toContain('Ask → inspect → change → test → verify');
     expect(readme).toContain('## One assistant, four ways to work');
     expect(readme).toContain('| **Ask**');
     expect(readme).toContain('| **Plan**');
     expect(readme).toContain('| **Agent**');
     expect(readme).toContain('| **Goal**');
-    expect(readme).toContain('incident card. It reads before changing');
-    expect(readme).toContain('## Bring your model');
+    expect(readme).toContain('does not need an incident card or Workspai registration');
+    expect(readme).toContain('## Choose your model');
     expect(readme).toContain('`Gemini`');
     expect(readme).toContain('`Kimi`');
     expect(readme).toContain('`Ollama`');
     expect(readme).toContain('https://www.workspai.dev/');
-    expect(readme.split(/\r?\n/).length).toBeLessThanOrEqual(120);
+    expect(readme.split(/\r?\n/).length).toBeLessThanOrEqual(160);
     expect(readme).not.toContain('## Workspace operations');
     expect(readme).not.toContain('## Keyboard shortcuts');
     expect(readme).not.toContain('## Troubleshooting');

@@ -1,3 +1,7 @@
+import { StudioInlineEdit } from './core/studioInlineEdit';
+import { registerStudioNativeDocuments } from './core/studioVSCodeDocuments';
+import { registerStudioNativeBinaryDocuments } from './core/studioNativeBinaryDocuments';
+import { registerStudioSubagentDocuments } from './core/studioSubagentDocuments';
 /**
  * Workspai VS Code Extension
  * Main extension entry point
@@ -623,8 +627,13 @@ function registerProjectRefreshWatchers(
 }
 
 export async function activate(context: vscode.ExtensionContext) {
+  context.subscriptions.push(registerStudioNativeDocuments());
+  context.subscriptions.push(registerStudioNativeBinaryDocuments());
   configureBundledCliRuntimeStorage(context.globalStorageUri.fsPath);
   const logger = Logger.getInstance();
+  void runOptionalActivationLane(logger, 'inline-edit', async () => {
+    context.subscriptions.push(new StudioInlineEdit(context));
+  });
   if (context.extensionMode === vscode.ExtensionMode.Production) {
     try {
       await vscode.window.withProgress(
@@ -1152,7 +1161,8 @@ export async function activate(context: vscode.ExtensionContext) {
         ActionsWebviewProvider.secondaryViewType,
         secondaryActionsWebviewProvider
       ),
-      registerStudioRepairDiffContentProvider()
+      registerStudioRepairDiffContentProvider(),
+      registerStudioSubagentDocuments(context)
     );
     const workspacesTreeView = vscode.window.createTreeView('rapidkitWorkspaces', {
       treeDataProvider: workspaceExplorer,

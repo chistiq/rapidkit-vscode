@@ -44,7 +44,7 @@ describe('Workspai chat session contract', () => {
   it('stores scoped chat snapshots so active workspace switches do not rewrite old sessions', () => {
     expect(sessions).toContain('scope?: ChatSessionScopeSnapshot');
     expect(sessionHook).toContain('type StartQueryOptions');
-    expect(sessionHook).toContain('scope?: Omit<ChatSessionScopeSnapshot');
+    expect(sessionHook).toContain('type SessionScope = Omit<ChatSessionScopeSnapshot');
     expect(sessionHook).toContain('firstSeenAt: now');
     expect(sessionHook).toContain('lastSeenAt: now');
     expect(secondary).toContain('const sessionScopeSnapshot = useMemo');
@@ -54,6 +54,8 @@ describe('Workspai chat session contract', () => {
     expect(secondary).toContain(
       'scope: activeStudioSession?.editorIssue ? null : sessionScopeSnapshot'
     );
+    expect(sessionHook).toContain('existing.incident || existing.editorIssue || existing.scope');
+    expect(secondary).toContain('scope: scopePayloadForSession(session, scope)');
     expect(chatTab).toContain('chatSessionContextLabel(session)');
   });
 
@@ -71,8 +73,10 @@ describe('Workspai chat session contract', () => {
     expect(interactionScope).toContain('export function resolveInteractionScope');
     expect(interactionScope).toContain("scopeMode: 'none'");
     expect(interactionScope).toContain('payload: { workspace: null, project: null }');
-    expect(secondary).toContain('scopeMode: sessionScopeMode(sessionForPayload)');
-    expect(secondary).toContain('editorIssue: sessionForPayload.editorIssue');
+    expect(secondary).toContain('scopeMode: sessionScopeMode(activeImpact)');
+    expect(secondary).toContain(
+      '...(activeImpact?.editorIssue ? { editorIssue: activeImpact.editorIssue } : {})'
+    );
   });
 
   it('uses workspace explorer as the selected workspace source of truth', () => {
@@ -94,8 +98,8 @@ describe('Workspai chat session contract', () => {
     expect(provider).toContain("payloadRecord.scopeMode === 'none'");
     expect(provider).toContain('resolveEditorIssueContext(payloadRecord.editorIssue)');
     expect(provider).toContain('scopeMode: payloadRecord.scopeMode');
-    expect(provider).toContain(
-      'const autonomousWorkspacePath = handoff?.workspacePath ?? aiContext.workspaceRootPath'
+    expect(provider).toMatch(
+      /const autonomousWorkspacePath =\s*handoff\?\.workspacePath \?\?\s*aiContext\.workspaceRootPath \?\?\s*vscode\.workspace\.workspaceFolders/
     );
     expect(secondary).toContain("if (data.scopeMode !== 'none')");
     expect(provider).toContain('const isEditorIssueHandoff');
@@ -106,20 +110,11 @@ describe('Workspai chat session contract', () => {
     expect(secondary).not.toContain('...(blockerHandoff ? { blockerHandoff } : {})');
   });
 
-  it('groups saved sessions minimally by contract category in both chat surfaces', () => {
-    expect(drawer).toContain('groupedSessions');
-    expect(drawer).toContain('basenameFromPath');
-    expect(drawer).toContain('chatSessionGroupLabel(kind)');
-    expect(drawer).toContain("['editor-issue', 'artifact', 'scope', 'global']");
-    expect(drawer).toContain("type DrawerMainTab = 'sessions' | 'questions'");
-    expect(drawer).toContain('const [mainTab, setMainTab]');
-    expect(drawer).toContain("title={mainTab === 'sessions' ? 'Chats' : 'Questions'}");
-    expect(drawer).toContain('ws-drawer-tabs');
-    expect(drawer).toContain('ws-drawer-category-tabs');
-    expect(drawer).toContain('ws-drawer-session-group');
-    expect(drawer).toContain('groupSessionsByWorkspace');
-    expect(drawer).toContain('ws-drawer-session-workspace__head');
-    expect(drawer).toContain('props.toolbar');
+  it('opens history from the header and keeps it out of the composer drawer', () => {
+    expect(chatTab).toContain('className="ws-chat-header"');
+    expect(drawer).toContain('aria-label="Chat history"');
+    expect(drawer).not.toContain('DrawerMainTab');
+    expect(drawer).not.toContain('Questions');
   });
 
   it('keeps active workspace and project identity visible throughout Studio', () => {

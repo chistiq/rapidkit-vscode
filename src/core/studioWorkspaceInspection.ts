@@ -1,13 +1,17 @@
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 import fs from 'fs-extra';
+import { requireStudioWorkspaceDirectory } from './studioWorkspaceAvailability.js';
 import * as vscode from 'vscode';
 
 import {
   resolveStudioWorkspaceCommandPlan,
   runStudioWorkspaceCommand,
 } from './studioWorkspaceCommand.js';
-import { buildStudioUntrackedFileDiffs } from './studioWorkspaceChangeReview.js';
+import {
+  buildStudioUntrackedFileDiffs,
+  filterStudioSourceDiff,
+} from './studioWorkspaceChangeReview.js';
 import { isStudioModelOwnedSourcePath } from './studioWorkspacePathPolicy.js';
 
 const STUDIO_WORKSPACE_FILE_EXCLUDE =
@@ -35,6 +39,7 @@ export async function discoverStudioWorkspaceFiles(input: {
     throw new Error('Studio workspace discovery glob must stay inside the selected workspace.');
   }
   const sourceRoot = input.projectPath?.trim() || input.workspacePath;
+  await requireStudioWorkspaceDirectory(sourceRoot);
   const uris = await vscode.workspace.findFiles(
     new vscode.RelativePattern(sourceRoot, requestedGlob),
     STUDIO_WORKSPACE_FILE_EXCLUDE,
@@ -158,7 +163,9 @@ export async function inspectStudioWorkspaceChanges(input: {
     statusPorcelainZ: status.stdout,
     includedPaths: input.paths,
   });
-  const combinedDiff = [diff.stdout.trim(), untrackedDiff.trim()].filter(Boolean).join('\n');
+  const combinedDiff = [filterStudioSourceDiff(diff.stdout).trim(), untrackedDiff.trim()]
+    .filter(Boolean)
+    .join('\n');
   return {
     status: status.stdout.split('\0').filter(Boolean).join('\n'),
     diff: combinedDiff,
@@ -337,6 +344,7 @@ export async function searchStudioWorkspaceSource(input: {
   projectPath?: string;
 }): Promise<StudioWorkspaceSearchMatch[]> {
   const query = input.query.trim();
+  await requireStudioWorkspaceDirectory(input.projectPath?.trim() || input.workspacePath);
   if (query.length < 2) {
     return [];
   }

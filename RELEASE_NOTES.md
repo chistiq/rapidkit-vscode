@@ -1,5 +1,34 @@
 # Release Notes
 
+## v0.49.0 (November 2, 2026)
+
+### A more capable, reviewable Assistant
+
+This release is validated against Workspai CLI 0.80.0.
+
+Workspai 0.49.0 brings shared conversational workflows to sidebar and native chat,
+with scoped code tools, interactive terminals, Workspai Intelligence and Graph
+reads, web research, and optional host tools. Ordinary questions answer directly;
+changing code reports the checks performed and any remaining work.
+
+- Work on existing projects without mandatory registration. Adopt in place or import
+  a copy into a managed or custom workspace only with approval.
+- Review request-owned file changes above the composer, inspect exact diffs, and
+  Keep or Restore changes with protection against concurrent edits.
+- See activity for each response, real file/line totals, image previews, a compact
+  searchable chat picker, and usable Stop and approval controls.
+- Resume recorded work after interruptions without silently repeating successful
+  commands. Long histories and model context use bounded retrieval.
+- Create the admitted Google ADK, Microsoft Agent Framework, and OpenAI Agents SDK
+  projects with Workspai CLI 0.80.0 contracts.
+
+The extension downloads and integrity-checks the pinned official
+`workspai@0.80.0` runtime on first use and reuses its cache offline.
+VS Code 1.106.0 or newer and Workspai CLI 0.80.0+ are required. Model, tool, language-runtime, and host
+availability affect individual capabilities. Next Edit is a user-triggered preview.
+
+[Full release notes](https://github.com/chistiq/rapidkit-vscode/blob/main/releases/RELEASE_NOTES_v0.49.0.md)
+
 ## v0.48.0 (September 22, 2026)
 
 ### Workspai CLI 0.77.0 alignment
@@ -1426,6 +1455,7 @@ Improved readability of Maximize and Lite/Full view toggle buttons in header:
 
 | Version                                      | Release Date | Highlights                                                                                                             |
 | -------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| [v0.49.0](releases/RELEASE_NOTES_v0.49.0.md) | Nov 2, 2026 | Conversational Assistant, project scope, durable file review, compact history, and CLI 0.80.0 |
 | [v0.28.0](releases/RELEASE_NOTES_v0.28.0.md) | May 13, 2026 | ✦ E1/E2 enterprise stabilization (E2.1-E2.5), memory-policy boundaries, audit timeline linkage, release-gate hardening |
 | [v0.27.3](releases/RELEASE_NOTES_v0.27.3.md) | May 12, 2026 | ✦ Incident Studio trust hardening, deterministic verify/release gating, parity snapshot and CI guardrails              |
 | [v0.27.2](releases/RELEASE_NOTES_v0.27.2.md) | May 10, 2026 | ✦ Setup panel disposal safety, guarded postMessage flow, webview lifecycle stability                                   |

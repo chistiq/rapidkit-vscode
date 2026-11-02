@@ -1,5 +1,10 @@
 import { History, MessageSquarePlus } from 'lucide-react';
-import { chatSessionContextLabel, type ChatSession } from '../sidebarSessions';
+import {
+  chatSessionContextLabel,
+  chatSessionFailureLabel,
+  pendingChatApprovals,
+  type ChatSession,
+} from '../sidebarSessions';
 
 interface ChatSessionBarProps {
   activeSession: ChatSession | null;
@@ -10,6 +15,7 @@ interface ChatSessionBarProps {
   contextText?: string | null;
   onNewSession: () => void;
   onOpenHistory: () => void;
+  historyOpen?: boolean;
 }
 
 function sessionStatusLabel(session: ChatSession | null): string | null {
@@ -17,7 +23,10 @@ function sessionStatusLabel(session: ChatSession | null): string | null {
     return null;
   }
   if (session.status === 'streaming') {
-    return session.activityLabel || 'Working…';
+    if (pendingChatApprovals(session).length) return 'Waiting for command approval…';
+    return session.waitingForInput
+      ? 'Waiting for your input…'
+      : session.activityLabel || 'Working…';
   }
   if (session.incident?.repairStatus) {
     const statusLabels: Record<string, string> = {
@@ -33,7 +42,7 @@ function sessionStatusLabel(session: ChatSession | null): string | null {
       : label;
   }
   if (session.status === 'error') {
-    return 'Stopped';
+    return chatSessionFailureLabel(session);
   }
   const turns = session.messages.filter((m) => m.content.trim().length > 0).length;
   if (turns > 0) {
@@ -52,11 +61,13 @@ export function ChatSessionBar({
   contextText,
   onNewSession,
   onOpenHistory,
+  historyOpen = false,
 }: ChatSessionBarProps) {
   const title = activeSession?.title ?? 'New conversation';
   const status = statusText === undefined ? sessionStatusLabel(activeSession) : statusText;
-  const context =
-    contextText === undefined
+  const context = activeSession?.executionTarget
+    ? `${activeSession.executionTarget.name} · Selected workspace`
+    : contextText === undefined
       ? activeSession?.incident || activeSession?.scope || activeSession?.editorIssue
         ? chatSessionContextLabel(activeSession)
         : null
@@ -72,15 +83,15 @@ export function ChatSessionBar({
         type="button"
         className="ws-session-bar__context"
         onClick={onOpenHistory}
-        title="Browse saved sessions"
+        title={`Browse saved sessions (${sessionCount})`}
+        aria-haspopup="dialog"
+        aria-expanded={historyOpen}
+        aria-controls={historyOpen ? 'workspai-chat-history' : undefined}
       >
         {context ? <small className="ws-session-bar__scope">{context}</small> : null}
         <span className="ws-session-bar__summary">
           <span className="ws-session-bar__title">{title}</span>
           {status ? <small className="ws-session-bar__meta">{status}</small> : null}
-          {sessionCount > 1 ? (
-            <small className="ws-session-bar__meta">{sessionCount} saved</small>
-          ) : null}
         </span>
       </button>
       <div className="ws-session-bar__actions">
@@ -88,11 +99,12 @@ export function ChatSessionBar({
           <button
             type="button"
             className="ws-session-bar__action"
+            aria-label="New chat"
             onClick={onNewSession}
             title="Start a new chat for a different topic"
           >
             <MessageSquarePlus size={13} aria-hidden={true} />
-            <span>{compact ? 'New' : 'New chat'}</span>
+            <span className="ws-session-bar__new-label">{compact ? 'New' : 'New chat'}</span>
           </button>
         ) : null}
         <button
@@ -100,6 +112,9 @@ export function ChatSessionBar({
           className="ws-session-bar__action ws-session-bar__action--icon"
           onClick={onOpenHistory}
           aria-label="Switch session or workspace context"
+          aria-haspopup="dialog"
+          aria-expanded={historyOpen}
+          aria-controls={historyOpen ? 'workspai-chat-history' : undefined}
           title="Switch session or workspace context"
         >
           <History size={13} aria-hidden={true} />

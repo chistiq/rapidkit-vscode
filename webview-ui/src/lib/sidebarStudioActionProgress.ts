@@ -1,3 +1,4 @@
+import type { StudioActivityReceipt } from '@workspai-contracts/studioActivity';
 import type { StudioBlockerHandoffView } from './studioBlockerHandoff';
 import type { StudioIntelligencePhaseId } from './studioIntelligencePhaseRail';
 
@@ -10,6 +11,11 @@ export type SidebarStudioDiffLineView = {
 
 export type SidebarStudioFileChangeView = {
   relativePath: string;
+  workspaceId?: string;
+  workspaceName?: string;
+  beforeBytes?: number;
+  afterBytes?: number;
+  byteComparison?: boolean;
   status: string;
   isNewFile?: boolean;
   binary?: boolean;
@@ -62,6 +68,12 @@ export function studioApprovalCommandLabel(command: string): string {
 }
 
 export type SidebarStudioActionProgressView = {
+  /** Stable identity in the ordered response; independent of changing tool labels. */
+  transcriptId?: string;
+  receipt?: StudioActivityReceipt;
+  phaseHistory?: StudioActivityReceipt[];
+  contentParts?: Array<{ kind: string; mimeType?: string; supported: boolean }>;
+  outputWarning?: string;
   sessionId?: string;
   action: string;
   status: 'running' | 'review' | 'done' | 'failed';
@@ -109,6 +121,76 @@ const STUDIO_AGENT_TOOL_LABELS: Record<
   string,
   { running: string; completed: string; failed: string }
 > = {
+  'inspect-project-agent-entry': {
+    running: 'Checking project grounding',
+    completed: 'Read project grounding',
+    failed: 'Project grounding unavailable',
+  },
+  'create-workspace': {
+    running: 'Creating the workspace and projects',
+    completed: 'Created workspace and projects',
+    failed: 'Workspace creation needs attention',
+  },
+  'start-terminal': {
+    running: 'Starting command',
+    completed: 'Command started',
+    failed: 'Command could not start',
+  },
+  'read-terminal': {
+    running: 'Reading command output',
+    completed: 'Read command output',
+    failed: 'Command output unavailable',
+  },
+  'inspect-cli-help': {
+    running: 'Reading CLI help',
+    completed: 'Read CLI help',
+    failed: 'CLI help unavailable',
+  },
+  'delegate-research': {
+    running: 'Investigating in parallel',
+    completed: 'Research findings ready',
+    failed: 'Research needs another approach',
+  },
+  'delegate-task': {
+    running: 'Working on delegated task',
+    completed: 'Subtask result ready for review',
+    failed: 'Subtask needs attention',
+  },
+  'editor-task': {
+    running: 'Working with project tasks',
+    completed: 'Task status received',
+    failed: 'Task needs attention',
+  },
+  'editor-debug': {
+    running: 'Working with the debugger',
+    completed: 'Debugger status received',
+    failed: 'Debugger needs attention',
+  },
+  'editor-notebook': {
+    running: 'Working with notebook cells',
+    completed: 'Notebook status received',
+    failed: 'Notebook needs attention',
+  },
+  'browser-page': {
+    running: 'Working with the browser',
+    completed: 'Browser result received',
+    failed: 'Browser action needs attention',
+  },
+  'inspect-cli-commands': {
+    running: 'Reading CLI command catalog',
+    completed: 'Read CLI command catalog',
+    failed: 'CLI catalog unavailable',
+  },
+  'view-workspace-image': {
+    running: 'Inspecting image',
+    completed: 'Inspected image',
+    failed: 'Image could not be inspected',
+  },
+  'inspect-agent-instructions': {
+    running: 'Reading repository instructions',
+    completed: 'Read repository instructions',
+    failed: 'Instructions need review',
+  },
   'recover-active-blocker': {
     running: 'Preparing the repair path',
     completed: 'Repair path ready',
@@ -206,6 +288,35 @@ const STUDIO_AGENT_TOOL_LABELS: Record<
   },
 };
 
+/** A public observation receipt, separate from the assistant's final answer. */
+export function studioAgentObservationSummary(
+  toolName: string,
+  output: Record<string, unknown> | null
+): string {
+  if (toolName === 'delegate-task') {
+    const prefix =
+      output?.status === 'waiting-input'
+        ? 'The subtask needs information.'
+        : output?.status === 'completed'
+          ? 'The subtask finished; the parent must review the combined result.'
+          : 'The subtask returned with unfinished work.';
+    return typeof output?.answer === 'string'
+      ? `${prefix}\n${output.answer.slice(0, 800)}`
+      : prefix;
+  }
+  if (toolName === 'delegate-research' && Array.isArray(output?.results)) {
+    return `${output.results.length} research result(s) returned for synthesis. Research alone does not verify changes.`;
+  }
+  if (toolName === 'update-task-ledger' && Array.isArray(output?.steps)) {
+    const completed = output.steps.filter(
+      (step) =>
+        step && typeof step === 'object' && (step as Record<string, unknown>).status === 'completed'
+    ).length;
+    return `Task progress: ${completed} of ${output.steps.length} steps completed.`;
+  }
+  return typeof output?.summary === 'string' ? output.summary.slice(0, 800) : '';
+}
+
 export function studioAgentToolProgressCopy(
   toolName: string,
   state: 'running' | 'completed' | 'failed'
@@ -248,9 +359,22 @@ function fileChangeList(value: unknown): SidebarStudioActionProgressView['fileCh
     .filter((entry) => typeof entry.relativePath === 'string')
     .map((entry) => ({
       relativePath: String(entry.relativePath),
+      ...(typeof entry.workspaceId === 'string' && /^[a-f0-9]{64}$/.test(entry.workspaceId)
+        ? { workspaceId: entry.workspaceId }
+        : {}),
+      ...(typeof entry.workspaceName === 'string'
+        ? { workspaceName: entry.workspaceName.slice(0, 200) }
+        : {}),
       status: typeof entry.status === 'string' ? entry.status : 'modified',
       ...(entry.isNewFile === true ? { isNewFile: true } : {}),
       ...(typeof entry.binary === 'boolean' ? { binary: entry.binary } : {}),
+      ...(entry.byteComparison === true ? { byteComparison: true } : {}),
+      ...(countOrLineNumber(entry.beforeBytes) !== undefined
+        ? { beforeBytes: countOrLineNumber(entry.beforeBytes) }
+        : {}),
+      ...(countOrLineNumber(entry.afterBytes) !== undefined
+        ? { afterBytes: countOrLineNumber(entry.afterBytes) }
+        : {}),
       ...(typeof entry.stale === 'boolean' ? { stale: entry.stale } : {}),
       ...(typeof entry.failReason === 'string' ? { failReason: entry.failReason } : {}),
       ...(countOrLineNumber(entry.addedLines) !== undefined
@@ -290,6 +414,14 @@ function fileChangeList(value: unknown): SidebarStudioActionProgressView['fileCh
  * when preview hunks are truncated; counting `diffLines` is only a fallback for
  * an older host payload that predates the totals.
  */
+export function studioFileChangeHasLineCounts(file: SidebarStudioFileChangeView): boolean {
+  return (
+    file.addedLines !== undefined ||
+    file.removedLines !== undefined ||
+    Boolean(file.diffLines?.length)
+  );
+}
+
 export function studioFileChangeLineCounts(file: SidebarStudioFileChangeView): {
   added: number;
   removed: number;

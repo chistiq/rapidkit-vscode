@@ -16,6 +16,7 @@ import { run } from '../../utils/exec';
 import { isPoetryInstalledCached } from '../../utils/poetryHelper';
 import { checkPythonEnvironmentCached } from '../../utils/pythonChecker';
 import type { RecentWorkspaceEntry } from './welcomePanelRecentWorkspaces';
+import type { WelcomePanelProjectType } from './welcomePanelProjectTypeDetection';
 
 export type BootstrapPayloadHost = {
   context: vscode.ExtensionContext;
@@ -47,9 +48,7 @@ export type BootstrapPayloadHost = {
   readInstalledModules: (
     projectPath: string
   ) => Promise<{ slug: string; version: string; display_name: string }[]>;
-  detectProjectType: (
-    projectPath: string
-  ) => Promise<'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet' | null>;
+  detectProjectType: (projectPath: string) => Promise<WelcomePanelProjectType>;
 };
 
 export function sendWelcomePanelInitialData(host: BootstrapPayloadHost): void {
@@ -281,7 +280,7 @@ export async function sendWorkspaceStatus(
   const hasWorkspace = effectiveWorkspace !== null;
   let hasProjectSelected = false;
   let installedModules: { slug: string; version: string; display_name: string }[] = [];
-  let projectType: 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet' | undefined;
+  let projectType: string | undefined;
   let projectCapabilities: WebviewProjectCapabilitiesPayload = { available: false };
   let isRunning = false;
   let runningPort: number | undefined;

@@ -13,6 +13,7 @@ export type ActionsWebviewMessageDispatchHost = {
   runInlineImpactQuery: (data: unknown) => Promise<void>;
   runSidebarAdvisorAction: (data: unknown) => Promise<void>;
   runInlineStudioQuery: (data: unknown) => Promise<void>;
+  reconcileSidebarStudioSessions: (data: unknown) => Promise<void>;
   runSidebarStudioAction: (data: unknown) => Promise<void>;
   resolveStudioToolApproval: (data: unknown) => Promise<void>;
   focusPrimarySidebarView: (data: unknown) => Promise<void>;
@@ -77,6 +78,10 @@ const ACTIONS_WEBVIEW_MESSAGE_LANES: readonly ActionsWebviewMessageLane[] = [
   {
     command: 'sidebarStudioQuery',
     dispatch: (host, data) => host.runInlineStudioQuery(data),
+  },
+  {
+    command: 'sidebarReconcileStudioSessions',
+    dispatch: (host, data) => host.reconcileSidebarStudioSessions(data),
   },
   {
     command: 'sidebarStudioAction',

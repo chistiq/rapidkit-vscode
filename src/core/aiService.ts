@@ -1,3 +1,5 @@
+import { AIModelRequestTimeoutError, getAIToolRequestTimeoutMs } from './aiRequestTimeout.js';
+import type { AIImageContent } from './aiImageContent.js';
 /**
  * Workspai AI Service
  * Thin wrapper over VS Code Language Model API (vscode.lm).
@@ -5,6 +7,11 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import {
+  jsonToolMessages,
+  parseJsonToolEnvelope,
+  isNativeToolTransportUnsupported,
+} from './aiToolTransport.js';
 import * as vscode from 'vscode';
 import { Logger } from '../utils/logger';
 import {
@@ -82,6 +89,7 @@ export type AIMessage =
   | {
       role: 'user' | 'assistant';
       content: string;
+      images?: AIImageContent[];
     }
   | {
       role: 'assistant';
@@ -97,6 +105,7 @@ export type AIMessage =
         callId: string;
         name: string;
         content: string;
+        images?: AIImageContent[];
       };
     };
 
@@ -174,6 +183,7 @@ export type AIConversationMode = 'debug' | 'ask';
 export interface AIConversationHistoryEntry {
   role: 'user' | 'assistant';
   content: string;
+  images?: AIImageContent[];
 }
 
 export interface PreparedAIConversation {
@@ -196,7 +206,7 @@ export interface AIModelToolDefinition {
   inputSchema?: Record<string, unknown>;
 }
 
-export type AIModelToolActionResponse =
+export type AIModelToolActionResponse = { toolTransport?: 'json' } & (
   | {
       type: 'tool';
       modelId: string;
@@ -205,11 +215,14 @@ export type AIModelToolActionResponse =
       toolName: string;
       input: Record<string, unknown>;
     }
-  | { type: 'text'; modelId: string; attempts: number; text: string };
+  | { type: 'text'; modelId: string; attempts: number; text: string }
+);
+
+const jsonOnlyLanguageModels = new WeakSet<vscode.LanguageModelChat>();
 
 function isRetryableToolModelError(error: unknown): boolean {
   const raw = error instanceof Error ? `${error.name} ${error.message}` : String(error ?? '');
-  return /(?:\b(429|rate\s*limit|quota|resource\s*exhausted|temporar(?:y|ily)|unavailable|overloaded|busy|too\s*many\s*requests|service\s*unavailable|model\s*not\s*available|model\s*unavailable|requested\s*model\s*is\s*not\s*supported)\b|model_not_supported)/i.test(
+  return /(?:\b(429|rate\s*limit|quota|resource\s*exhausted|temporar(?:y|ily)|unavailable|overloaded|busy|too\s*many\s*requests|service\s*unavailable|model\s*not\s*available|model\s*unavailable|requested\s*model\s*is\s*not\s*supported)\b|model_not_supported|only available to VS Code core)/i.test(
     raw
   );
 }
@@ -251,42 +264,75 @@ export async function requestAIModelToolAction(
       )
     : undefined;
   if (!model) {
-    model = (await selectModelAuto()).model;
+    model = (await selectModelWithPreferenceInternal()).model;
   }
 
   const safeMessages = redactAIMessageRuntimePaths(messages, pathIdentities);
-  const lmMessages = safeMessages.map((message) => {
-    if ('toolCall' in message) {
-      return vscode.LanguageModelChatMessage.Assistant([
-        new vscode.LanguageModelToolCallPart(
-          message.toolCall.callId,
-          message.toolCall.name,
-          message.toolCall.input
-        ),
-      ]);
-    }
-    if ('toolResult' in message) {
-      return vscode.LanguageModelChatMessage.User([
-        new vscode.LanguageModelToolResultPart(message.toolResult.callId, [
-          new vscode.LanguageModelTextPart(
-            sanitizePromptText(message.toolResult.content, 96 * 1024)
+  const toLmMessages = (source: AIMessage[]) =>
+    source.map((message) => {
+      if ('toolCall' in message) {
+        return vscode.LanguageModelChatMessage.Assistant([
+          new vscode.LanguageModelToolCallPart(
+            message.toolCall.callId,
+            message.toolCall.name,
+            message.toolCall.input
           ),
-        ]),
-      ]);
-    }
-    return message.role === 'user'
-      ? vscode.LanguageModelChatMessage.User(sanitizePromptText(message.content, 96 * 1024))
-      : vscode.LanguageModelChatMessage.Assistant(sanitizePromptText(message.content, 96 * 1024));
-  });
+        ]);
+      }
+      if ('toolResult' in message) {
+        return vscode.LanguageModelChatMessage.User([
+          new vscode.LanguageModelToolResultPart(message.toolResult.callId, [
+            new vscode.LanguageModelTextPart(
+              sanitizePromptText(message.toolResult.content, 96 * 1024)
+            ),
+            ...(message.toolResult.images ?? []).map((image) =>
+              vscode.LanguageModelDataPart.image(
+                Buffer.from(image.base64, 'base64'),
+                image.mimeType
+              )
+            ),
+          ]),
+        ]);
+      }
+      return message.role === 'user'
+        ? vscode.LanguageModelChatMessage.User([
+            new vscode.LanguageModelTextPart(sanitizePromptText(message.content, 96 * 1024)),
+            ...(message.images ?? []).map((image) =>
+              vscode.LanguageModelDataPart.image(
+                Buffer.from(image.base64, 'base64'),
+                image.mimeType
+              )
+            ),
+          ])
+        : vscode.LanguageModelChatMessage.Assistant(sanitizePromptText(message.content, 96 * 1024));
+    });
+  const lmMessages = toLmMessages(safeMessages);
   const requestTokenSource = new vscode.CancellationTokenSource();
+  if (token?.isCancellationRequested) {
+    requestTokenSource.cancel();
+  }
   const cancellation = token?.onCancellationRequested(() => requestTokenSource.cancel());
-  const timeoutMs = getAIStreamTimeoutMs();
-  const timeout = setTimeout(() => requestTokenSource.cancel(), timeoutMs);
+  const timeoutMs = getAIToolRequestTimeoutMs();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    requestTokenSource.cancel();
+  }, timeoutMs);
   const fallbackModels = all.filter(
     (candidate) =>
       languageModelSelectionIdentifier(candidate) !== languageModelSelectionIdentifier(model)
   );
-  const candidates = [model, ...fallbackModels];
+  const needsImages = safeMessages.some((message) =>
+    'toolResult' in message
+      ? message.toolResult.images?.length
+      : 'content' in message && message.images?.length
+  );
+  const candidates = [model, ...fallbackModels].filter(
+    (candidate) =>
+      !needsImages ||
+      (candidate as vscode.LanguageModelChat & { capabilities?: { imageInput?: boolean } })
+        .capabilities?.imageInput !== false
+  );
 
   // VS Code only permits Required when exactly one tool is exposed. Studio
   // intentionally gives the model a governed toolset, so multi-tool turns
@@ -299,24 +345,66 @@ export async function requestAIModelToolAction(
       : vscode.LanguageModelChatToolMode.Auto;
 
   try {
+    if (!candidates.length) {
+      throw new Error(
+        'The registered language models do not support image input. Select a vision-capable model to inspect this tool result.'
+      );
+    }
     let lastError: unknown;
+    let attempts = 0;
     for (const [index, candidateModel] of candidates.entries()) {
       const modelId = languageModelSelectionIdentifier(candidateModel);
       let text = '';
       try {
-        const response = await candidateModel.sendRequest(
-          lmMessages,
-          {
-            justification: 'Resolve the selected Workspai incident through governed Studio tools.',
-            tools: tools.map((tool) => ({
-              name: tool.name,
-              description: tool.description,
-              ...(tool.inputSchema ? { inputSchema: tool.inputSchema } : {}),
-            })),
-            toolMode,
-          },
-          requestTokenSource.token
-        );
+        if (requestTokenSource.token.isCancellationRequested) {
+          throw new Error('AI tool request was cancelled.');
+        }
+        const capability = (
+          candidateModel as vscode.LanguageModelChat & {
+            capabilities?: { toolCalling?: boolean | number };
+          }
+        ).capabilities?.toolCalling;
+        let jsonTransport =
+          capability === false ||
+          (typeof capability === 'number' && tools.length > capability) ||
+          jsonOnlyLanguageModels.has(candidateModel);
+        const send = (json: boolean) => {
+          attempts++;
+          return candidateModel.sendRequest(
+            json ? toLmMessages(jsonToolMessages(safeMessages, tools)) : lmMessages,
+            json
+              ? {}
+              : {
+                  justification: 'Resolve the Workspai user request through governed tools.',
+                  tools: tools.map((tool) => ({
+                    name: tool.name,
+                    description: tool.description,
+                    ...(tool.inputSchema ? { inputSchema: tool.inputSchema } : {}),
+                  })),
+                  toolMode,
+                },
+            requestTokenSource.token
+          );
+        };
+        let response: vscode.LanguageModelChatResponse;
+        try {
+          response = await send(jsonTransport);
+        } catch (error) {
+          if (
+            jsonTransport ||
+            requestTokenSource.token.isCancellationRequested ||
+            !isNativeToolTransportUnsupported(
+              error instanceof Error ? error.message : String(error)
+            )
+          ) {
+            throw error;
+          }
+          jsonTransport = true;
+          response = await send(true);
+        }
+        if (jsonTransport) {
+          jsonOnlyLanguageModels.add(candidateModel);
+        }
 
         for await (const part of response.stream) {
           if (requestTokenSource.token.isCancellationRequested) {
@@ -339,7 +427,8 @@ export async function requestAIModelToolAction(
             return {
               type: 'tool',
               modelId,
-              attempts: index + 1,
+              attempts,
+              ...(jsonTransport ? { toolTransport: 'json' as const } : {}),
               callId:
                 typeof candidate.callId === 'string' && candidate.callId.trim()
                   ? candidate.callId
@@ -360,23 +449,49 @@ export async function requestAIModelToolAction(
           }
         }
         if (requestTokenSource.token.isCancellationRequested && !token?.isCancellationRequested) {
-          throw new Error(
-            `AI tool request timed out after ${timeoutMs}ms for model ${candidateModel.id}.`
-          );
+          throw new AIModelRequestTimeoutError(timeoutMs);
         }
         // Text may contain the strict JSON fallback understood by the Studio
         // model protocol. An empty response, however, proves this endpoint
         // cannot participate and should fall through to the next live model.
         if (text.trim()) {
-          return { type: 'text', modelId, attempts: index + 1, text };
+          if (jsonTransport) {
+            const envelope = parseJsonToolEnvelope(text, tools);
+            if (envelope) {
+              return {
+                type: 'tool',
+                modelId,
+                attempts,
+                toolTransport: 'json',
+                callId: randomUUID(),
+                ...envelope,
+              };
+            }
+          }
+          return {
+            type: 'text',
+            modelId,
+            attempts,
+            ...(jsonTransport ? { toolTransport: 'json' as const } : {}),
+            text,
+          };
         }
         lastError = new Error(`Model ${modelId} returned no tool call or text.`);
       } catch (error) {
+        if (timedOut && !token?.isCancellationRequested) {
+          throw new AIModelRequestTimeoutError(timeoutMs);
+        }
         lastError = error;
         if (
           token?.isCancellationRequested ||
           requestTokenSource.token.isCancellationRequested ||
-          !isRetryableToolModelError(error)
+          (!isRetryableToolModelError(error) &&
+            !(
+              needsImages &&
+              /(?:image|vision|multimodal).*(?:unsupported|not support)|(?:not support|cannot process).*image/i.test(
+                error instanceof Error ? error.message : String(error)
+              )
+            ))
         ) {
           throw error;
         }
@@ -444,7 +559,7 @@ export async function streamAIResponse(
       // Continue to raw model registry fallback.
     }
 
-    const all = await vscode.lm.selectChatModels();
+    const all = (await vscode.lm.selectChatModels()).filter(languageModelSupportsExtensionRequests);
     const alternative = all.find((candidate) => !isSameModel(candidate, failedModel));
     if (!alternative) {
       return undefined;
@@ -514,6 +629,9 @@ export async function streamAIResponse(
         new vscode.LanguageModelToolResultPart(message.toolResult.callId, [
           new vscode.LanguageModelTextPart(
             sanitizePromptText(message.toolResult.content, 96 * 1024)
+          ),
+          ...(message.toolResult.images ?? []).map((image) =>
+            vscode.LanguageModelDataPart.image(Buffer.from(image.base64, 'base64'), image.mimeType)
           ),
         ]),
       ]);
@@ -1995,7 +2113,7 @@ Required JSON schema (return EXACTLY this):
 Rules:
 - For fastapi/nestjs, ALWAYS include "free/essentials/settings" in suggestedModules
 - For go/springboot/dotnet/rust/laravel/frontend/desktop/agent/gateway/extension frameworks, set suggestedModules to []
-- AI agent requests use framework "microsoft-agent-framework" with "agent.microsoft.python" or "agent.microsoft.dotnet", or framework "openai-agents" with "agent.openai.python" or "agent.openai.typescript"
+- AI agent requests use framework "microsoft-agent-framework" with "agent.microsoft.python" or "agent.microsoft.dotnet", framework "openai-agents" with "agent.openai.python" or "agent.openai.typescript", or framework "google-adk" with "agent.google-adk.python" or "agent.google-adk.typescript"
 - OpenRouter gateway requests use framework "openrouter" and "gateway.openrouter.typescript" or "gateway.openrouter.python". These kits are source-ready: do not call them qualified or stable. Attach is unsupported and Go is not available. Do not assign a synthetic HTTP port
 - Agent dependency versions are governed by Workspai release admission; never invent or upgrade them in the creation plan
 - Use fastapi.ddd kit when: DDD / clean-arch / domain / layered / complex mentioned

@@ -24,6 +24,7 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
       'sidebarStudioQuery',
       'sidebarStudioAction',
       'sidebarStudioToolApprovalDecision',
+      'sidebarReconcileStudioSessions',
     ]) {
       expect(secondary, `React should post "${command}"`).toContain(`'${command}'`);
       expect(dispatcher, `host should handle "${command}"`).toContain(`command: '${command}'`);
@@ -39,11 +40,36 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(provider).toContain("action === 'agent-steer'");
     expect(provider).toContain("action === 'agent-cancel'");
     expect(provider).toContain('_activeStudioAgentSessions');
-    expect(provider).toContain('session.steer(message)');
+    expect(provider).toContain('session.steer(message, images)');
     expect(provider).toContain('session.cancel()');
-    expect(chatTab).toContain('props.onSteer(trimmed)');
-    expect(composer).toContain("? 'Stop' : 'Send'");
+    expect(chatTab).toContain('props.onSteer(');
+    expect(chatTab).toContain('requestWithAttachments(trimmed, attachments)');
+    expect(composer).toContain('aria-label="Stop"');
+    expect(composer).toContain('aria-label="Send"');
     expect(sessions).toContain('steerSession');
+  });
+
+  it('cancels any streaming Assistant session before removing it from either chat surface', () => {
+    const deleteHandler = secondary.slice(
+      secondary.indexOf('const deleteStudioSession ='),
+      secondary.indexOf('const decideStudioToolApproval =')
+    );
+    expect(deleteHandler).toContain("deletingSession?.status === 'streaming'");
+    expect(deleteHandler).toContain('cancelStudioSession(sessionId)');
+    expect(deleteHandler.indexOf('cancelStudioSession(sessionId)')).toBeLessThan(
+      deleteHandler.indexOf('studio.deleteSession(sessionId)')
+    );
+    expect(secondary).toContain('onDeleteSession={deleteStudioSession}');
+    expect(secondary).toContain('onCancel={stopStudioAgent}');
+    expect(secondary).toContain("'sidebarReconcileStudioSessions'");
+    expect(secondary).toContain("'sidebarStudioSessionReconciliation'");
+    expect(provider).toContain('_reconcileSidebarStudioSessions');
+    expect(provider).toContain('_pendingInlineStudioSessionIds');
+    expect(provider).toContain('_cancelledInlineStudioSessionIds');
+    expect(provider).toContain('_inlineStudioCancellationTokens.get(sessionId)?.cancel()');
+    expect(provider).toContain('No live Assistant process owns this session.');
+    expect(provider).toContain("event.type === 'session.completed'");
+    expect(secondary).toContain('studio.finishStreaming(');
   });
 
   it('routes repair decisions to the CLI transaction instead of prompting the model', () => {
@@ -100,9 +126,8 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     );
     expect(cliClient).toContain('Repair checkpoint integrity failed');
     expect(secondary).toContain("case 'sidebarStudioAgentEvent'");
-    expect(provider).toContain("event.type !== 'session.created'");
-    expect(provider).toContain("event.type !== 'session.status'");
-    expect(provider).toContain('.slice(-120)');
+    expect(provider).toContain('activityLog: persisted.activityLog');
+    expect(provider).toContain('receiptReplay: receipt');
     expect(secondary).toContain("eventType === 'model.message'");
     expect(secondary).toContain("eventType === 'model.checkpoint'");
     expect(secondary).toContain(
@@ -134,10 +159,13 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
 
     // The rollup is derived from the durable timeline, so it cannot drift from
     // the transactions the host actually reported.
-    expect(secondary).toContain('buildStudioChangedFilesSummary(activeStudioRepairTimeline)');
+    expect(secondary).toContain('buildStudioChangedFilesSummary(');
+    expect(secondary).toContain('studioReviewTurn?.activity ?? []');
+    expect(secondary).toContain('visibleStudioIncidentKey ? activeStudioRepairTimeline');
     expect(secondary).toContain('<StudioChangedFilesSummary');
-    expect(secondary.match(/<StudioChangedFilesSummary/g)).toHaveLength(2);
-    expect(changeset).toContain('Edited {summary.files.length}');
+    expect(secondary.match(/<StudioChangedFilesSummary/g)).toHaveLength(1);
+    expect(secondary).toContain('composerReview={studioReviewDock}');
+    expect(changeset).toContain("? 'Created' : 'Edited'");
     expect(changeset).toContain('+{summary.addedLines}');
     expect(changeset).toContain('-{summary.removedLines}');
     expect(changeset).toContain('Show ${hiddenCount} more files');
@@ -293,7 +321,11 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(provider).toContain('_runAutonomousStudioAgent');
     expect(provider).toContain('new StudioAgentSession');
     expect(provider).toContain('createStudioAgentWorkspaiToolRegistry');
-    expect(provider).toContain('studioHostLanguageModelToolAdapters()');
+    expect(provider).toContain('studioHostLanguageModelToolAdapters(undefined, undefined, { root:');
+    expect(provider).toContain(
+      'this._context.storageUri?.fsPath ?? this._context.globalStorageUri.fsPath'
+    );
+    expect(provider).toContain('registerStudioResearchCapability({');
     expect(provider).toContain("'sidebarStudioDone'");
     expect(provider).toContain('_runUnifiedAssistantSession');
     expect(provider).toContain("input.assistantMode === 'agent' && input.handoff");
@@ -310,7 +342,10 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(app).toContain("options?.shipLoopIntent === 'release'");
     expect(app).toContain("shipLoopIntent: 'release'");
     expect(creationNavigation).toContain("payload?.shipLoopIntent === 'release'");
-    expect(provider).toContain('ContractStudioAgentModelAdapter');
+    expect(provider).toContain('createConfiguredStudioAgentModel');
+    expect(read('src/core/configuredStudioAgentModel.ts')).toContain(
+      'new ContractStudioAgentModelAdapter('
+    );
     expect(provider).toContain('refreshDashboardAfterStudioVerify');
     expect(provider).toContain('cardId?: string');
     expect(provider).toContain('cardId: input.handoff?.cardId.trim()');
@@ -556,9 +591,9 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(chatTab).toContain('hasChromeContent');
     expect(chatTab).toContain('repairMode || hasChromeContent ? null');
     expect(chatTab).toContain('allowNewSession={!repairMode}');
-    expect(chatTab).toContain('toolbar={repairMode ? undefined : props.toolbar}');
-    expect(chatTab).toContain('footerActions={repairMode ? undefined : props.footerActions}');
-    expect(chatTab).toContain('suggestions={repairMode ? [] : props.suggestions}');
+    expect(chatTab).toContain('title="Chat actions"');
+    expect(chatTab).toContain('props.footerActions');
+    expect(chatTab).toContain('ws-chat-starters');
     expect(secondary).toContain("useChatSessions('workspaiImpact'");
     expect(secondary).toContain("useChatSessions('workspaiStudio'");
     expect(secondary).toContain('openStudioIncidentSession');
@@ -633,12 +668,11 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(sessionHook).toContain('session.incident?.key');
     const drawer = read('webview-ui/src/sidebar/drawers/ChatToolsDrawer.tsx');
     expect(drawer).toContain('sessionMetaLabel');
-    expect(drawer).toContain('chatSessionWorkspaceKey');
-    expect(drawer).toContain('groupSessionsByWorkspace');
-    expect(drawer).toContain('session.incident.repairStatus');
-    expect(drawer).toContain('props.suggestions.length > 0');
-    expect(drawer).toContain("mainTab === 'questions' && props.footerActions");
-    expect(drawer).toContain('sizing="compact"');
+    expect(drawer).toContain('chatSessionContextLabel');
+    expect(drawer).toContain('session.incident?.repairStatus');
+    expect(drawer).toContain('Search recent chats');
+    expect(drawer).not.toContain('Questions');
+    expect(drawer).not.toContain('<Drawer');
     const sidebarCss = read('webview-ui/src/sidebar/sidebar.css');
     expect(sidebarCss).toContain('.ws-drawer-session-list');
     expect(sidebarCss).toContain('overflow-y: auto');

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import path from 'path';
 import { Logger } from '../utils/logger';
 import { runGatedRapidkitCommandsInTerminal } from '../core/gatedRapidkitTerminal';
+import { projectModuleRegistryCandidates } from '../utils/workspaceCanonicalPaths';
 
 type ProjectExplorerLike = {
   getSelectedProject?: () => { path?: string; name?: string } | null | undefined;
@@ -76,11 +77,14 @@ function isDashboardAction(item: unknown): boolean {
 export async function readInstalledModules(projectPath: string): Promise<InstalledModuleEntry[]> {
   try {
     const fs = await import('fs-extra');
-    const primaryPath = path.join(projectPath, 'registry.json');
-    const legacyPath = path.join(projectPath, '.rapidkit', 'registry.json');
-    const registryPath = (await fs.default.pathExists(primaryPath)) ? primaryPath : legacyPath;
-
-    if (!(await fs.default.pathExists(registryPath))) {
+    let registryPath: string | undefined;
+    for (const candidate of projectModuleRegistryCandidates(projectPath)) {
+      if (await fs.default.pathExists(candidate)) {
+        registryPath = candidate;
+        break;
+      }
+    }
+    if (!registryPath) {
       return [];
     }
 

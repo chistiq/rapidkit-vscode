@@ -6,21 +6,14 @@
  *   /ask   — freeform Q&A with full project context (architecture, modules, conventions)
  *   /debug — structured debug flow: root cause + fix + prevention
  *
- * Both commands reuse the same AI infrastructure as the WelcomePanel modal
- * (prepareAIConversation → streamAIResponse) so the quality is identical.
+ * Ask and Debug use the shared routed Studio runtime; repair retains its CLI-owned scope.
  */
 
 import * as vscode from 'vscode';
-import {
-  prepareAIConversation,
-  streamAIResponse,
-  type AIModalContext,
-  type AIConversationMode,
-  type AIConversationHistoryEntry,
-} from '../core/aiService';
+import { runNativeAssistantQuestion } from '../core/nativeAssistantQuestion.js';
+import type { AIConversationHistoryEntry } from '../core/aiService';
 import { resolvePreferredAIModalContext } from '../core/aiContextResolver';
 import { collectDebugPrefillQuestion } from './aiDebugger';
-import { WorkspaceUsageTracker } from '../utils/workspaceUsageTracker';
 import { runNativeChatRepair } from '../core/nativeChatRepair.js';
 import { isGoalPlanResult, runGoalCommand, type GoalPlanResult } from '../core/workspaceGoals.js';
 
@@ -91,6 +84,26 @@ function extractHistory(chatContext: vscode.ChatContext): AIConversationHistoryE
   return entries.slice(-8);
 }
 
+/** Metadata is supplied by this participant, not parsed from user prose. */
+function previousQuestionSession(chatContext: vscode.ChatContext): string | undefined {
+  for (const turn of [...chatContext.history].reverse()) {
+    if (!(turn instanceof vscode.ChatResponseTurn) || turn.participant !== PARTICIPANT_ID) {
+      continue;
+    }
+    const metadata = turn.result?.metadata as
+      | { command?: unknown; sessionId?: unknown }
+      | undefined;
+    if (
+      (metadata?.command === 'ask' || metadata?.command === 'debug') &&
+      typeof metadata.sessionId === 'string' &&
+      metadata.sessionId.length <= 200
+    ) {
+      return metadata.sessionId;
+    }
+  }
+  return undefined;
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Request handler
 // ────────────────────────────────────────────────────────────────────────────
@@ -104,7 +117,7 @@ async function handleWorkspaiRequest(
 ): Promise<vscode.ChatResult> {
   // Determine mode from slash command; default to 'ask'
   const rawCommand = request.command?.toLowerCase();
-  const mode: AIConversationMode = rawCommand === 'debug' ? 'debug' : 'ask';
+  const mode: 'ask' | 'debug' = rawCommand === 'debug' ? 'debug' : 'ask';
 
   // Handle /recipe — delegate to the recipe packs command and confirm in chat
   if (rawCommand === 'recipe') {
@@ -156,6 +169,7 @@ async function handleWorkspaiRequest(
         token,
         extensionContext,
         requestedModelId: request.model?.id,
+        toolInvocationToken: request.toolInvocationToken,
         history: extractHistory(chatContext),
       });
       return { metadata: { command: 'repair', repair } };
@@ -232,180 +246,43 @@ async function handleWorkspaiRequest(
   // Build question
   const question: string = mode === 'debug' ? collectDebugContext(request.prompt) : request.prompt;
 
-  const ctx: AIModalContext = await resolvePreferredAIModalContext();
-  const history = extractHistory(chatContext);
-  const canTrackTelemetry =
-    typeof (vscode.window as { createOutputChannel?: unknown }).createOutputChannel === 'function';
-
-  const trackChatOutcome = async (
-    result: 'success' | 'empty' | 'prepare-error' | 'clarification-needed' | 'cancelled' | 'error',
-    extraProps?: Record<string, unknown>
-  ) => {
-    if (!canTrackTelemetry) {
-      return;
-    }
-
-    try {
-      await WorkspaceUsageTracker.getInstance().trackCommandEvent(
-        `workspai.chat.${mode}`,
-        ctx.path,
-        {
-          source: 'chat-participant',
-          result,
-          historyTurns: history.length,
-          hasPrompt: Boolean(request.prompt?.trim()),
-          ...extraProps,
-        }
-      );
-    } catch {
-      // Telemetry should never interrupt chat UX.
-    }
-  };
-
-  // Guard: empty question
   if (!question.trim()) {
-    await trackChatOutcome('empty');
-    stream.markdown(EMPTY_PROMPT_MSG[mode] ?? EMPTY_PROMPT_MSG.ask);
-    return {};
+    stream.markdown(EMPTY_PROMPT_MSG[mode]);
+    return { metadata: { command: mode } };
   }
-
-  // Show progress while scanning project context
-  stream.progress('Scanning project context…');
-
-  let prepared: Awaited<ReturnType<typeof prepareAIConversation>>;
+  if (!extensionContext) {
+    throw new Error('The Assistant extension context is unavailable.');
+  }
+  const ctx = await resolvePreferredAIModalContext();
   try {
-    prepared = await prepareAIConversation(mode, question, ctx, history);
-  } catch (err: unknown) {
-    await trackChatOutcome('prepare-error', {
-      error: err instanceof Error ? err.message.slice(0, 180) : String(err).slice(0, 180),
-    });
-    const msg = err instanceof Error ? err.message : String(err);
-    stream.markdown(`**Workspai:** Failed to prepare context — ${msg}`);
-    return {};
-  }
-
-  if (token.isCancellationRequested) {
-    await trackChatOutcome('cancelled', { stage: 'before-stream' });
-    return {};
-  }
-
-  if (prepared.projectBootstrap.status === 'blocked') {
-    await trackChatOutcome('clarification-needed', {
-      missingFields: ['project-agent-entry'],
-    });
-    stream.markdown(
-      `### Project grounding required\n\n${prepared.projectBootstrap.reason ?? 'The canonical project entry receipt is blocked.'}\n\n` +
-        'Refresh adoption and run Workspace Intelligence, then retry. Workspai did not begin broad source analysis.'
-    );
-    stream.button({
-      command: 'workspai.workspaceIntelligenceChain',
-      title: '$(refresh) Refresh Intelligence',
+    const result = await runNativeAssistantQuestion({
+      context: extensionContext,
+      scope: ctx,
+      task: question,
+      history: extractHistory(chatContext),
+      previousSessionId: previousQuestionSession(chatContext),
+      token,
+      stream,
+      modelId: request.model?.id,
+      toolInvocationToken: request.toolInvocationToken,
     });
     return {
       metadata: {
         command: mode,
-        clarificationNeeded: true,
-        groundingStatus: 'blocked',
-      },
-    };
-  }
-
-  if (prepared.validation.clarificationNeeded) {
-    if (canTrackTelemetry) {
-      try {
-        await WorkspaceUsageTracker.getInstance().trackCommandEvent(
-          'workspai.chat.clarification_gate',
-          ctx.path,
-          {
-            source: 'chat-participant',
-            mode,
-            missingFields: prepared.validation.missing,
-          }
-        );
-      } catch {
-        // Telemetry should never interrupt chat UX.
-      }
-    }
-
-    await trackChatOutcome('clarification-needed', {
-      missingFields: prepared.validation.missing,
-    });
-    stream.markdown(
-      `**Workspai:** ${
-        prepared.validation.clarificationReason ??
-        'I need workspace evidence first to give a safe answer.'
-      }\n\n` +
-        'Please select the workspace/project and run `npx workspai doctor workspace`, then retry your request.'
-    );
-    return {
-      metadata: {
-        command: mode,
-        clarificationNeeded: true,
+        ...result,
         ctx: { type: ctx.type, name: ctx.name, path: ctx.path },
       },
     };
-  }
-
-  // Stream the AI response
-  let hasContent = false;
-  try {
-    await streamAIResponse(
-      prepared.messages,
-      (chunk) => {
-        if (chunk.text) {
-          stream.markdown(chunk.text);
-          hasContent = true;
-        }
-      },
-      token
-    );
-  } catch (err: unknown) {
-    if (token.isCancellationRequested) {
-      await trackChatOutcome('cancelled', { stage: 'during-stream' });
-      return {};
-    }
-    await trackChatOutcome('error', {
-      error: err instanceof Error ? err.message.slice(0, 180) : String(err).slice(0, 180),
-    });
-    const msg = err instanceof Error ? err.message : String(err);
-
-    if (!hasContent) {
+  } catch (error) {
+    if (!token.isCancellationRequested) {
       stream.markdown(
-        `**Workspai:** The AI request failed.\n\n` +
-          `> ${msg}\n\n` +
-          `Make sure you have an active Copilot or compatible language model subscription.`
+        `Workspai could not finish this request: ${error instanceof Error ? error.message : String(error)}`
       );
     }
-    return {};
+    return {
+      metadata: { command: mode, status: token.isCancellationRequested ? 'cancelled' : 'failed' },
+    };
   }
-
-  await trackChatOutcome('success', {
-    responseHasContent: hasContent,
-  });
-
-  // Append context-aware follow-up buttons
-  if (!token.isCancellationRequested) {
-    stream.button({
-      command: 'workspai.debugWithAI',
-      title: '$(bug) Debug in Modal',
-      tooltip: 'Open the full Workspai debug modal for this file',
-    });
-
-    if (mode === 'debug' && prepared.scanned?.projectRoot) {
-      stream.button({
-        command: 'workspai.workspaceBrain',
-        title: '$(brain) Workspace Brain',
-        tooltip: 'Open the Workspace Brain for a broader project overview',
-      });
-    }
-  }
-
-  return {
-    metadata: {
-      command: mode,
-      ctx: { type: ctx.type, name: ctx.name, path: ctx.path },
-    },
-  };
 }
 
 // ────────────────────────────────────────────────────────────────────────────

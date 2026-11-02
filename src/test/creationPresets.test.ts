@@ -32,6 +32,7 @@ describe('creationPresets manual workspace helpers', () => {
 
   it('provides lane-specific guidance and name placeholders', () => {
     expect(stackLaneGuidance('frontend')).toContain('frontend generators');
+    expect(stackLaneGuidance('agent')).toContain('Google ADK');
     expect(resolveManualWorkspaceNamePlaceholder('frontend')).toBe('web-platform-wsp');
     expect(resolveManualWorkspaceNamePlaceholder('enterprise')).toBe('enterprise-platform-wsp');
   });

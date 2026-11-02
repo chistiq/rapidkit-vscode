@@ -39,8 +39,16 @@ describe('aiCoreModuleCatalog', () => {
   it('kit registry includes governed agent runtimes without widening module support', () => {
     const kits = listAllKitBlueprints();
     expect(kits.map((kit) => kit.id)).toEqual(
-      expect.arrayContaining(['agent.microsoft.python', 'agent.microsoft.dotnet'])
+      expect.arrayContaining([
+        'agent.microsoft.python',
+        'agent.microsoft.dotnet',
+        'agent.google-adk.python',
+        'agent.google-adk.typescript',
+      ])
     );
+    expect(kits.find((kit) => kit.id === 'agent.microsoft.python')?.stability).toBe('preview');
+    expect(kits.find((kit) => kit.id === 'agent.openai.python')?.stability).toBe('stable');
+    expect(kits.find((kit) => kit.id === 'agent.google-adk.python')?.stability).toBe('preview');
     expect(kits.filter((k) => k.moduleSupport)).toHaveLength(3);
   });
 

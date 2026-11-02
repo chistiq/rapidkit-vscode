@@ -131,6 +131,70 @@ describe('service timeout config', () => {
     );
   });
 
+  it('returns stale-cache fallback status and CLI failure details', async () => {
+    mockPathExists.mockResolvedValue(true);
+    mockReadJson.mockResolvedValue({
+      kits: [
+        {
+          name: 'fastapi.cached',
+          display_name: 'Cached FastAPI Kit',
+          category: 'fastapi',
+          version: '1.0.0',
+          description: 'Cached kit fixture',
+        },
+      ],
+      timestamp: 0,
+    });
+    mockRun.mockRejectedValue(new Error('CLI executable unavailable'));
+
+    const service = KitsService.initialize(context);
+    const result = await service.getKitsWithStatus({ forceRefresh: true });
+
+    expect(result).toMatchObject({
+      source: 'stale-cache',
+      error: 'CLI executable unavailable',
+    });
+    expect(result.kits).toContainEqual(expect.objectContaining({ name: 'fastapi.cached' }));
+    expect(mockRun).toHaveBeenCalledOnce();
+  });
+
+  it('returns bundled fallback status and CLI failure details when no cache exists', async () => {
+    mockRun.mockRejectedValue(new Error('CLI timed out'));
+
+    const service = KitsService.initialize(context);
+    const result = await service.getKitsWithStatus({ forceRefresh: true });
+
+    expect(result).toMatchObject({
+      source: 'bundled-fallback',
+      error: 'CLI timed out',
+    });
+    expect(result.kits.length).toBeGreaterThan(0);
+  });
+
+  it('bypasses a fresh kits cache when a forced retry is requested', async () => {
+    mockPathExists.mockResolvedValue(true);
+    mockReadJson.mockResolvedValue({
+      kits: [],
+      timestamp: Date.now(),
+    });
+    mockRun.mockResolvedValue({
+      exitCode: 0,
+      stdout: JSON.stringify({
+        schema_version: 1,
+        ok: true,
+        count: 0,
+        kits: [],
+      }),
+      stderr: '',
+    });
+
+    const service = KitsService.initialize(context);
+    const result = await service.getKitsWithStatus({ forceRefresh: true });
+
+    expect(result.source).toBe('live');
+    expect(mockRun).toHaveBeenCalledOnce();
+  });
+
   it('uses clamped network timeout for examples metadata fetch', async () => {
     mockConfigGet.mockImplementation((key: string, fallback: number) => {
       if (key === 'networkTimeoutMs') {

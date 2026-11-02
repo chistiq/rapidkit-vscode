@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import {
+  isStudioAgentSessionActive,
+  type StudioAgentSessionStatus,
+} from '../core/studioAgentEvents.js';
 
 import {
   describeStudioCliRepairPhase,
@@ -19,6 +23,37 @@ const runningProgress = {
 };
 
 describe('Studio session lifecycle', () => {
+  it.each([
+    'running',
+    'waiting-permission',
+    'waiting-input',
+    'verifying',
+  ] as StudioAgentSessionStatus[])('keeps a live %s session owned and cancellable', (status) =>
+    expect(isStudioAgentSessionActive(status)).toBe(true)
+  );
+  it.each(['idle', 'completed', 'failed', 'cancelled', undefined] as Array<
+    StudioAgentSessionStatus | undefined
+  >)('does not report %s as an active model process', (status) =>
+    expect(isStudioAgentSessionActive(status)).toBe(false)
+  );
+  it('presents a model deadline without asking the user to reconnect their internet', () => {
+    const result = describeStudioTerminalFailure({
+      terminalReason: 'ai-provider-timeout',
+      error: 'AI model request timed out after 180000ms.',
+    });
+    expect(result.title).toBe('Model request timed out');
+    expect(result.summary).toContain('Continue this session');
+    expect(result.summary).not.toContain('reconnect');
+  });
+  it('presents an unanswered question without suggesting repair or verification work', () => {
+    const presentation = describeStudioTerminalFailure({
+      terminalReason: 'question-incomplete',
+      error: 'The documentation source returned HTTP 404.',
+    });
+    expect(presentation.title).toBe('Answer incomplete');
+    expect(presentation.summary).toContain('HTTP 404');
+    expect(presentation.summary).not.toMatch(/repair|verification/i);
+  });
   it('never presents terminal or hydrated inactive sessions as running', () => {
     expect(
       isStudioRepairActivelyOwned({
@@ -140,7 +175,7 @@ describe('Studio session lifecycle', () => {
       })
     ).toMatchObject({
       title: 'AI connection needed',
-      summary: expect.stringContaining('latest CLI repair outcome is retained'),
+      summary: expect.stringContaining('Recorded work is retained'),
       terminalReason: 'ai-provider-unavailable',
       connectionFailure: false,
     });
@@ -204,6 +239,11 @@ describe('Studio session lifecycle', () => {
   it('keeps protocol payloads out of user-facing narration', () => {
     expect(isStudioUserFacingNarration('The CI workflow is missing for commerce-api.')).toBe(true);
     expect(isStudioUserFacingNarration('{"toolName":"inspect-source"}')).toBe(false);
+    expect(
+      isStudioUserFacingNarration(
+        '\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0631\u0633\u06cc \u0633\u0627\u062e\u062a\u0627\u0631 \u067e\u0631\u0648\u0698\u0647 \u0648 \u0627\u062c\u0631\u0627\u06cc \u0622\u0632\u0645\u0648\u0646‌\u0647\u0627 \u0647\u0633\u062a\u0645.'
+      )
+    ).toBe(true);
   });
 
   it('settles persisted live evidence before hydration renders history', () => {

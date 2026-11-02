@@ -25,6 +25,14 @@ type ProjectInputCandidate = {
   isValid?: unknown;
   workspacePath?: unknown;
   project?: unknown;
+  kind?: unknown;
+  runtime?: unknown;
+  framework?: unknown;
+  runtimeCandidates?: unknown;
+  runtime_candidates?: unknown;
+  projectType?: unknown;
+  project_type?: unknown;
+  category?: unknown;
 };
 
 type WorkspaceExplorerLike = {
@@ -73,12 +81,36 @@ const PROJECT_TYPES: ReadonlySet<ProjectLike['type']> = new Set([
   'springboot',
   'rails',
   'dotnet',
+  'rust',
+  'laravel',
+  'tauri',
+  'electron',
+  'vscode-extension',
+  'agent',
+  'gateway',
+  'nextjs',
+  'react',
+  'vite',
+  'vue',
+  'nuxt',
+  'remix',
+  'sveltekit',
+  'svelte',
+  'angular',
+  'astro',
+  'solid',
   'unknown',
 ]);
 
 function normalizeProjectType(value: unknown): ProjectLike['type'] {
-  if (typeof value === 'string' && PROJECT_TYPES.has(value as ProjectLike['type'])) {
-    return value as ProjectLike['type'];
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'google-adk' || normalized.includes('agent-framework')) {
+      return 'agent';
+    }
+    if (PROJECT_TYPES.has(normalized as ProjectLike['type'])) {
+      return normalized as ProjectLike['type'];
+    }
   }
   return 'unknown';
 }
@@ -130,15 +162,29 @@ function resolveProjectFromItem(item: unknown): ProjectLike | undefined {
   }
   const projectCandidate = projectCandidateRaw as ProjectInputCandidate;
 
+  const projectTypeCandidates = [
+    projectCandidate.type,
+    projectCandidate.projectType,
+    projectCandidate.project_type,
+    projectCandidate.category,
+    projectCandidate.kind,
+    projectCandidate.framework,
+  ];
+  const projectType =
+    projectTypeCandidates.find(
+      (candidate) => typeof candidate === 'string' && normalizeProjectType(candidate) !== 'unknown'
+    ) ?? projectTypeCandidates.find((candidate) => typeof candidate === 'string');
+  const runtimeCandidates =
+    projectCandidate.runtimeCandidates ?? projectCandidate.runtime_candidates;
   if (
     typeof projectCandidate.path === 'string' &&
     typeof projectCandidate.name === 'string' &&
-    typeof projectCandidate.type === 'string'
+    typeof projectType === 'string'
   ) {
     return {
       path: projectCandidate.path,
       name: projectCandidate.name,
-      type: normalizeProjectType(projectCandidate.type),
+      type: normalizeProjectType(projectType),
       kit: typeof projectCandidate.kit === 'string' ? projectCandidate.kit : '',
       managed: typeof projectCandidate.managed === 'boolean' ? projectCandidate.managed : undefined,
       modules: Array.isArray(projectCandidate.modules)
@@ -149,6 +195,13 @@ function resolveProjectFromItem(item: unknown): ProjectLike | undefined {
         typeof projectCandidate.workspacePath === 'string'
           ? projectCandidate.workspacePath
           : undefined,
+      kind: typeof projectCandidate.kind === 'string' ? projectCandidate.kind : undefined,
+      runtime: typeof projectCandidate.runtime === 'string' ? projectCandidate.runtime : undefined,
+      framework:
+        typeof projectCandidate.framework === 'string' ? projectCandidate.framework : undefined,
+      runtimeCandidates: Array.isArray(runtimeCandidates)
+        ? runtimeCandidates.filter((runtime): runtime is string => typeof runtime === 'string')
+        : undefined,
     };
   }
 

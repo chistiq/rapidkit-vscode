@@ -108,7 +108,7 @@ export function stackLaneGuidance(lane: CreationStackLane): string {
     case 'backend':
       return 'Pick the runtime profile that matches your first API service. You can add other runtimes later with polyglot.';
     case 'agent':
-      return 'Choose a governed Microsoft Agent Framework or OpenAI Agents SDK project. OpenRouter gateway projects are a separate source-ready kit.';
+      return 'Choose a governed Microsoft Agent Framework, OpenAI Agents SDK, or Google ADK project. OpenRouter gateway projects are a separate source-ready kit.';
     case 'polyglot':
       return 'Polyglot profile keeps frontend and backend projects under one governed workspace boundary.';
     case 'enterprise':
@@ -300,6 +300,16 @@ export const WORKSPACE_PRESET_CATEGORIES: PresetCategory[] = [
         id: 'agent-openai-typescript',
         text: 'TypeScript AI agent with the OpenAI Agents SDK and Workspai verification',
         tags: ['agent', 'ai', 'typescript', 'openai-agents', 'verification'],
+      },
+      {
+        id: 'agent-google-adk-python',
+        text: 'Python AI agent with Google ADK and Workspai verification',
+        tags: ['agent', 'ai', 'python', 'google-adk', 'verification'],
+      },
+      {
+        id: 'agent-google-adk-typescript',
+        text: 'TypeScript AI agent with Google ADK and Workspai verification',
+        tags: ['agent', 'ai', 'typescript', 'google-adk', 'verification'],
       },
     ],
   },

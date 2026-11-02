@@ -147,4 +147,26 @@ describe('creationStackIntent', () => {
       )
     ).toBe('python-only');
   });
+
+  it('selects Google ADK kits by requested runtime', () => {
+    const pythonPrompt = 'Create a Google ADK agent in Python';
+    const typescriptPrompt = 'Create a Google ADK agent with TypeScript';
+
+    expect(inferFrameworkFromCreationPrompt(pythonPrompt.toLowerCase())).toBe('google-adk');
+    expect(defaultKitForFramework('google-adk', pythonPrompt.toLowerCase())).toBe(
+      'agent.google-adk.python'
+    );
+    expect(defaultKitForFramework('google-adk', typescriptPrompt.toLowerCase())).toBe(
+      'agent.google-adk.typescript'
+    );
+    expect(
+      inferWorkspaceProfileFromCreationPrompt(
+        'google-adk',
+        pythonPrompt.toLowerCase(),
+        undefined,
+        undefined,
+        'agent.google-adk.python'
+      )
+    ).toBe('python-only');
+  });
 });

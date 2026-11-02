@@ -162,6 +162,7 @@ export async function buildProjectExecutionBlock(
     framework === 'agent' ||
     framework === 'microsoft-agent-framework' ||
     framework === 'openai-agents' ||
+    framework === 'google-adk' ||
     framework.startsWith('agent.');
   const isGatewayFramework =
     framework === 'gateway' || framework === 'openrouter' || framework.startsWith('gateway.');

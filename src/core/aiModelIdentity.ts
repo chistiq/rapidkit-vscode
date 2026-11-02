@@ -12,7 +12,14 @@ export function languageModelSelectionIdentifier(model: { id: string; vendor?: s
  * Showing those entries in Workspai's picker creates a session that can never
  * produce a tool call.
  */
-export function languageModelSupportsExtensionRequests(model: { vendor?: string }): boolean {
+export function languageModelSupportsExtensionRequests(model: {
+  vendor?: string;
+  id?: string;
+}): boolean {
   const vendor = model.vendor?.trim().toLowerCase();
-  return vendor !== 'copilotcli' && vendor !== 'claude-code';
+  return (
+    vendor !== 'copilotcli' &&
+    vendor !== 'claude-code' &&
+    !(vendor === 'copilot' && /^copilot-dictation-cleanup(?:-|$)/i.test(model.id ?? ''))
+  );
 }

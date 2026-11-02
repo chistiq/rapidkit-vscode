@@ -9,15 +9,19 @@ interface SidebarMessageProps {
 export function SidebarMessage({ role, children }: SidebarMessageProps) {
   if (role === 'user') {
     return (
-      <div className="ws-sidebar__msg ws-sidebar__msg--user">
-        <div className="ws-sidebar__bubble">{children}</div>
-      </div>
+      <article className="ws-sidebar__msg ws-sidebar__msg--user" aria-label="Your message">
+        <div className="ws-sidebar__bubble" dir="auto">
+          {children}
+        </div>
+      </article>
     );
   }
 
   return (
-    <div className="ws-sidebar__msg ws-sidebar__msg--ai">
-      <div className="ws-sidebar__bubble">{children}</div>
-    </div>
+    <article className="ws-sidebar__msg ws-sidebar__msg--ai" aria-label="Assistant response">
+      <div className="ws-sidebar__bubble" dir="auto">
+        {children}
+      </div>
+    </article>
   );
 }

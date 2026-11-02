@@ -45,6 +45,15 @@ vi.mock('vscode', () => ({
       this.value = value;
     }
   },
+  LanguageModelDataPart: class {
+    constructor(
+      public data: Uint8Array,
+      public mimeType: string
+    ) {}
+    static image(data: Uint8Array, mimeType: string) {
+      return new this(data, mimeType);
+    }
+  },
   LanguageModelToolCallPart: class {
     constructor(
       public callId: string,
@@ -575,6 +584,225 @@ describe('aiService', () => {
 
     expect(chunks).toEqual(['first chunk']);
     expect(done).toBe(0);
+  });
+
+  it('preserves VS Code image parts and tries another registered model when image input is unsupported', async () => {
+    const unsupported = {
+      id: 'text-only',
+      vendor: 'copilot',
+      name: 'Text only',
+      sendRequest: vi.fn(async () => {
+        throw new Error('Image input is not supported by this model');
+      }),
+    };
+    const vision = {
+      id: 'vision',
+      vendor: 'copilot',
+      name: 'Vision',
+      sendRequest: vi.fn(async () => ({
+        stream: (async function* () {
+          yield new vscode.LanguageModelToolCallPart('answer', 'workspai-complete', {
+            summary: 'A button is visible.',
+          });
+        })(),
+      })),
+    };
+    mockSelectChatModels.mockResolvedValue([unsupported, vision]);
+    const result = await requestAIModelToolAction(
+      [
+        {
+          role: 'tool',
+          toolResult: {
+            callId: 'screenshot',
+            name: 'invoke-host-tool',
+            content: 'Screenshot',
+            images: [{ mimeType: 'image/jpeg', base64: '/9j/4AAQ' }],
+          },
+        },
+      ],
+      [{ name: 'workspai-complete', description: 'Answer', inputSchema: {} }],
+      undefined,
+      'copilot/text-only'
+    );
+    expect(result).toMatchObject({ type: 'tool', modelId: 'copilot/vision', attempts: 2 });
+    const messages = vision.sendRequest.mock.calls[0][0] as Array<{
+      content: Array<{ content: Array<{ data?: Uint8Array; mimeType?: string }> }>;
+    }>;
+    expect(messages[0].content[0].content[1]).toMatchObject({
+      mimeType: 'image/jpeg',
+      data: Buffer.from('/9j/4AAQ', 'base64'),
+    });
+  });
+
+  it.each([false, 1])(
+    'keeps the chosen model and all capabilities when its native tool limit is %s',
+    async (toolCalling) => {
+      const model = {
+        id: 'json-only',
+        vendor: 'byok',
+        name: 'JSON model',
+        capabilities: { toolCalling },
+        sendRequest: vi.fn(async () => ({
+          stream: (async function* () {
+            yield new vscode.LanguageModelTextPart(
+              JSON.stringify({ toolName: 'inspect-source', input: { paths: ['source.zig'] } })
+            );
+          })(),
+        })),
+      };
+      mockSelectChatModels.mockResolvedValue([model]);
+      const tools = [
+        { name: 'inspect-source', description: 'Read source' },
+        { name: 'apply-workspace-patch', description: 'Edit source' },
+      ];
+      await expect(
+        requestAIModelToolAction(
+          [{ role: 'user', content: 'Read source.zig' }],
+          tools,
+          undefined,
+          'byok/json-only'
+        )
+      ).resolves.toMatchObject({
+        type: 'tool',
+        modelId: 'byok/json-only',
+        toolTransport: 'json',
+        attempts: 1,
+        toolName: 'inspect-source',
+      });
+      const args = model.sendRequest.mock.calls[0] as unknown as [unknown, Record<string, unknown>];
+      expect(args[1].tools).toBeUndefined();
+      expect(JSON.stringify(args[0])).toContain('apply-workspace-patch');
+    }
+  );
+
+  it('adapts a native-tool rejection once without switching the selected model', async () => {
+    const sendRequest = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Tool calling is not supported'))
+      .mockImplementation(async () => ({
+        stream: (async function* () {
+          yield new vscode.LanguageModelTextPart('{"toolName":"verify-blocker","input":{}}');
+        })(),
+      }));
+    const model = { id: 'compat', vendor: 'byok', name: 'Compatible model', sendRequest };
+    mockSelectChatModels.mockResolvedValue([model]);
+    const tools = [{ name: 'verify-blocker', description: 'Verify' }];
+    await expect(
+      requestAIModelToolAction([], tools, undefined, 'byok/compat')
+    ).resolves.toMatchObject({
+      toolName: 'verify-blocker',
+      modelId: 'byok/compat',
+      attempts: 2,
+      toolTransport: 'json',
+    });
+    await expect(
+      requestAIModelToolAction([], tools, undefined, 'byok/compat')
+    ).resolves.toMatchObject({ attempts: 1, toolTransport: 'json' });
+    expect(sendRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('honors the configured provider Auto when the caller omits a picker model', async () => {
+    mockPreferredModelGet.mockReturnValue('copilot/auto');
+    const restricted = {
+      id: 'copilot-dictation-cleanup-nano',
+      vendor: 'copilot',
+      name: 'Internal',
+      sendRequest: vi.fn(),
+    };
+    const model = {
+      id: 'auto',
+      vendor: 'copilot',
+      name: 'Auto',
+      sendRequest: vi.fn(async () => ({
+        stream: (async function* () {
+          yield new vscode.LanguageModelToolCallPart('call', 'verify-blocker', {});
+        })(),
+      })),
+    };
+    mockSelectChatModels.mockResolvedValue([restricted, model]);
+    await expect(
+      requestAIModelToolAction(
+        [{ role: 'user', content: 'Hello' }],
+        [{ name: 'verify-blocker', description: 'Verify' }]
+      )
+    ).resolves.toMatchObject({ modelId: 'copilot/auto' });
+    expect(restricted.sendRequest).not.toHaveBeenCalled();
+    expect(model.sendRequest).toHaveBeenCalledOnce();
+  });
+
+  it('lets an Agent decision run beyond the text-stream deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      mockPreferredModelGet.mockImplementation((key: string, fallback: unknown) =>
+        key === 'preferredModel' ? 'copilot/auto' : key === 'aiStreamTimeoutMs' ? 45000 : fallback
+      );
+      let requestToken: vscode.CancellationToken | undefined;
+      const model = {
+        id: 'auto',
+        vendor: 'copilot',
+        name: 'Auto',
+        sendRequest: vi.fn(async (_messages, _options, token) => {
+          requestToken = token;
+          await new Promise((resolve) => setTimeout(resolve, 70_000));
+          return {
+            stream: (async function* () {
+              yield new vscode.LanguageModelToolCallPart('edit', 'apply-workspace-edits', {});
+            })(),
+          };
+        }),
+      };
+      mockSelectChatModels.mockResolvedValue([model]);
+      const pending = requestAIModelToolAction(
+        [],
+        [{ name: 'apply-workspace-edits', description: 'Edit' }]
+      );
+      await vi.advanceTimersByTimeAsync(45_001);
+      expect(requestToken?.isCancellationRequested).toBe(false);
+      await vi.advanceTimersByTimeAsync(25_000);
+      await expect(pending).resolves.toMatchObject({
+        type: 'tool',
+        toolName: 'apply-workspace-edits',
+        attempts: 1,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reports its own deadline instead of the provider cancellation transport error', async () => {
+    vi.useFakeTimers();
+    try {
+      mockPreferredModelGet.mockImplementation((key: string, fallback: unknown) =>
+        key === 'preferredModel'
+          ? 'copilot/auto'
+          : key === 'aiToolRequestTimeoutMs'
+            ? 8000
+            : fallback
+      );
+      const model = {
+        id: 'auto',
+        vendor: 'copilot',
+        name: 'Auto',
+        sendRequest: vi.fn(
+          (_messages, _options, token) =>
+            new Promise((_resolve, reject) =>
+              token.onCancellationRequested(() => reject(new Error('network request aborted')))
+            )
+        ),
+      };
+      mockSelectChatModels.mockResolvedValue([model]);
+      const pending = requestAIModelToolAction([], [{ name: 'read', description: 'Read' }]).catch(
+        (error) => error
+      );
+      await vi.advanceTimersByTimeAsync(8000);
+      const error = await pending;
+      expect(error.code).toBe('AI_MODEL_REQUEST_TIMEOUT');
+      expect(error.message).toContain('8000ms');
+      expect(error.message).not.toContain('network request aborted');
+      expect(model.sendRequest).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('passes Studio tools through the native LM API and returns a structured tool call', async () => {
@@ -1311,6 +1539,22 @@ describe('aiService', () => {
 
     expect(selected.model).toBe(legacyMappedModel);
     expect(selected.modelId).toBe('Claude Sonnet 4.6');
+    expect(mockSelectChatModels).toHaveBeenCalledTimes(1);
+  });
+
+  it('honors provider-qualified model identities persisted by the sidebar picker', async () => {
+    mockPreferredModelGet.mockReturnValue('copilot/gpt-5.4');
+    const selectedModel = {
+      id: 'gpt-5.4',
+      name: 'GPT-5.4',
+      vendor: 'copilot',
+      sendRequest: vi.fn(),
+    };
+    mockSelectChatModels.mockResolvedValue([selectedModel]);
+
+    const selected = await selectModelWithPreference();
+
+    expect(selected.model).toBe(selectedModel);
     expect(mockSelectChatModels).toHaveBeenCalledTimes(1);
   });
 

@@ -8,13 +8,14 @@ import {
 
 describe('Assistant execution policy', () => {
   it.each([
-    ['agent', 'question', 'evidence-answer', 'agent'],
+    ['agent', 'question', 'evidence-answer', 'ask'],
     ['agent', 'engineering-task', 'autonomous-change', 'agent'],
     ['agent', 'goal', 'autonomous-change', 'agent'],
     ['ask', 'question', 'evidence-answer', 'ask'],
     ['plan', 'engineering-task', 'implementation-plan', 'plan'],
     ['goal', 'engineering-task', 'governed-goal', 'goal'],
     ['goal', 'goal', 'governed-goal', 'goal'],
+    ['goal', 'question', 'evidence-answer', 'ask'],
   ] as const)(
     'maps %s + %s to %s with %s tools',
     (selectedMode, requestIntent, profile, toolMode) => {
@@ -78,7 +79,7 @@ describe('Assistant execution policy', () => {
     expect(policy.suggestion).toBeUndefined();
   });
 
-  it('rejects a persisted Agent question policy that silently narrows the selected mode', () => {
+  it('rejects a legacy Agent question policy that exposes mutation tools', () => {
     expect(
       parseAssistantExecutionPolicy(
         {
@@ -87,7 +88,7 @@ describe('Assistant execution policy', () => {
           requestIntent: 'question',
           routeConfidence: 'high',
           profile: 'evidence-answer',
-          toolMode: 'ask',
+          toolMode: 'agent',
         },
         'agent'
       )

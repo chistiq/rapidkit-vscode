@@ -10,9 +10,15 @@ describe('native Chat and Incident Studio orchestration parity', () => {
   it('uses the shared durable model/tool session instead of a second agent loop', () => {
     const nativeAgent = read('src/core/nativeChatStudioAgent.ts');
     expect(nativeAgent).toContain('new StudioAgentSession(');
-    expect(nativeAgent).toContain('new ContractStudioAgentModelAdapter(');
+    expect(nativeAgent).toContain('createConfiguredStudioAgentModel({');
     expect(nativeAgent).toContain('createStudioAgentWorkspaiToolRegistry({');
-    expect(nativeAgent).toContain('studioHostLanguageModelToolAdapters(input.token)');
+    expect(nativeAgent).toContain(
+      'studioHostLanguageModelToolAdapters(input.token, input.toolInvocationToken, { root:'
+    );
+    expect(nativeAgent).toContain(
+      'input.extensionContext.storageUri?.fsPath ?? input.extensionContext.globalStorageUri.fsPath'
+    );
+    expect(nativeAgent).toContain('registerStudioResearchCapability({');
     expect(nativeAgent).toContain('new VSCodeStudioAgentSessionStore(input.extensionContext)');
     expect(nativeAgent).not.toContain('while (');
   });

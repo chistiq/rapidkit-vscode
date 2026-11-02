@@ -13,6 +13,16 @@ if (channel !== 'release' && channel !== 'local-candidate') {
 
 const corepack = process.platform === 'win32' ? 'corepack.cmd' : 'corepack';
 const buildScript = channel === 'release' ? 'build:release' : 'build';
+const knowledge = spawnSync(process.execPath, [path.join(repositoryRoot, 'scripts/sync-assistant-knowledge.mjs'), '--verify'], {
+  encoding: 'utf8',
+  stdio: 'inherit',
+});
+if (knowledge.error) {
+  throw knowledge.error;
+}
+if (knowledge.status !== 0) {
+  throw new Error('Bundled assistant knowledge failed verification.');
+}
 const result = spawnSync(corepack, ['npm', 'run', buildScript], {
   env: process.env,
   encoding: 'utf8',

@@ -160,7 +160,12 @@ export function buildIncidentFirstResponseRules(input: {
     );
   }
 
-  if (input.framework === 'agent' || input.framework === 'microsoft-agent-framework') {
+  if (
+    input.framework === 'agent' ||
+    input.framework === 'microsoft-agent-framework' ||
+    input.framework === 'openai-agents' ||
+    input.framework === 'google-adk'
+  ) {
     rules.push(
       'For a governed agent project, treat Workspai context sync and offline adapter verification as prerequisites. Do not recommend a provider call until both pass and explicit network access is granted.'
     );

@@ -138,9 +138,14 @@ export class ProjectWizard {
           label: `$(hubot) ${
             definition.framework === 'openai-agents'
               ? 'OpenAI Agents SDK'
-              : 'Microsoft Agent Framework'
+              : definition.framework === 'google-adk'
+                ? 'Google ADK'
+                : 'Microsoft Agent Framework'
           }`,
-          description: 'Governed AI agent',
+          description:
+            definition.framework === 'openai-agents'
+              ? 'Stable Workspai integration'
+              : 'Preview Workspai integration · upstream framework stable',
           detail: definition.description,
           framework: definition.framework,
           category: 'agent' as const,

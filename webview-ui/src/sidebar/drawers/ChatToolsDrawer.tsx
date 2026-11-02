@@ -1,327 +1,196 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { History, Lightbulb, Trash2 } from 'lucide-react';
-import { Drawer } from '../drawer/Drawer';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, MessageSquarePlus, Search, Trash2, X } from 'lucide-react';
 import {
-  basenameFromPath,
   chatSessionContextLabel,
+  chatSessionFailureLabel,
   chatSessionGroupLabel,
   chatSessionKind,
-  chatSessionProjectLabel,
-  chatSessionWorkspaceKey,
-  chatSessionWorkspaceLabel,
+  pendingChatApprovals,
   type ChatSession,
-  type ChatSessionKind,
 } from '../sidebarSessions';
-import type { SidebarScope } from '../sidebarTypes';
 
 interface ChatToolsDrawerProps {
   open: boolean;
-  contextLabel: string;
-  scope: SidebarScope;
   sessions: ChatSession[];
   activeSessionId: string | null;
-  suggestions: string[];
   onClose: () => void;
   onNewSession: () => void;
   onSelectSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
-  onPickSuggestion: (text: string) => void;
-  toolbar?: ReactNode;
-  footerActions?: ReactNode;
 }
 
-type DrawerMainTab = 'sessions' | 'questions';
-
-function sessionMetaLabel(session: ChatSession, fallback: string): string {
-  if (!session.incident) {
-    const context = chatSessionContextLabel(session);
-    return context === 'No workspace selected' ? fallback : `${fallback} · ${context}`;
-  }
-  const statusLabels: Record<string, string> = {
-    ready: 'Ready',
-    running: 'Running',
-    review: 'Review',
-    done: 'Done',
-    blocked: 'Blocked',
-  };
-  const status = session.incident.repairStatus
-    ? (statusLabels[session.incident.repairStatus] ?? session.incident.repairStatus)
-    : fallback;
-  const affectedCount = session.incident.affectedProjectNames?.length ?? 0;
-  const project = chatSessionProjectLabel(session);
-  const scope = project
-    ? project
-    : `Workspace${affectedCount > 0 ? ` · ${affectedCount} project${affectedCount === 1 ? '' : 's'}` : ''}`;
-  const seen = session.incident.lastSeenAt
-    ? new Date(session.incident.lastSeenAt).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    : '';
-  return `${scope} · ${status}${seen ? ` · ${seen}` : ''}`;
+function sessionMetaLabel(session: ChatSession): string {
+  const status =
+    session.status === 'streaming'
+      ? pendingChatApprovals(session).length
+        ? 'Waiting for approval'
+        : session.waitingForInput
+          ? 'Waiting for your input'
+          : 'Working…'
+      : session.status === 'error'
+        ? chatSessionFailureLabel(session)
+        : session.incident?.repairStatus || '';
+  return [chatSessionContextLabel(session), status].filter(Boolean).join(' · ');
 }
 
-function workspacePathForSession(session: ChatSession): string | undefined {
-  return session.incident?.workspacePath || session.scope?.workspacePath;
-}
-
-function groupSessionsByWorkspace(sessions: ChatSession[]): Array<{
-  key: string;
-  label: string;
-  path?: string;
-  sessions: ChatSession[];
-}> {
-  const groups = new Map<
-    string,
-    { key: string; label: string; path?: string; sessions: ChatSession[] }
-  >();
-  for (const session of sessions) {
-    const key = chatSessionWorkspaceKey(session);
-    const existing = groups.get(key);
-    if (existing) {
-      existing.sessions.push(session);
-      continue;
-    }
-    groups.set(key, {
-      key,
-      label: chatSessionWorkspaceLabel(session),
-      path: workspacePathForSession(session),
-      sessions: [session],
-    });
-  }
-  return [...groups.values()];
-}
-
-function groupedSessions(sessions: ChatSession[]): Array<{
-  kind: ChatSessionKind;
-  label: string;
-  sessions: ChatSession[];
-}> {
-  const order: ChatSessionKind[] = ['editor-issue', 'artifact', 'scope', 'global'];
-  return order
-    .map((kind) => ({
-      kind,
-      label: chatSessionGroupLabel(kind),
-      sessions: sessions.filter((session) => chatSessionKind(session) === kind),
-    }))
-    .filter((group) => group.sessions.length > 0);
-}
-
-function firstSessionKind(sessions: ChatSession[]): ChatSessionKind | null {
-  return groupedSessions(sessions)[0]?.kind ?? null;
-}
-
-/** Advisor / Studio tools drawer: sessions, suggestions, modes, actions. */
+/** Non-modal history picker anchored to the chat header; never covers the composer. */
 export function ChatToolsDrawer(props: ChatToolsDrawerProps) {
-  const sessionGroups = useMemo(() => groupedSessions(props.sessions), [props.sessions]);
-  const [mainTab, setMainTab] = useState<DrawerMainTab>('sessions');
-  const [sessionKind, setSessionKind] = useState<ChatSessionKind | null>(() =>
-    firstSessionKind(props.sessions)
-  );
-  const activeGroup =
-    sessionGroups.find((group) => group.kind === sessionKind) ?? sessionGroups[0] ?? null;
-  const activeIncident = props.sessions.find(
-    (session) => session.sessionId === props.activeSessionId
-  )?.incident;
-  const activeIncidentAffectedCount = activeIncident?.affectedProjectNames?.length ?? 0;
-  const scopeTitle = activeIncident
-    ? activeIncident.scope === 'project'
-      ? activeIncident.projectName ||
-        basenameFromPath(activeIncident.projectPath) ||
-        'Project repair'
-      : activeIncident.workspaceName ||
-        basenameFromPath(activeIncident.workspacePath) ||
-        'Workspace repair'
-    : props.scope.projectName
-      ? props.scope.projectName
-      : props.scope.workspaceName || basenameFromPath(props.scope.workspacePath) || 'Workspace';
-  const scopeSubtitle = activeIncident
-    ? activeIncident.scope === 'project'
-      ? 'Project repair'
-      : `Workspace repair${activeIncidentAffectedCount > 0 ? ` · ${activeIncidentAffectedCount} affected project${activeIncidentAffectedCount === 1 ? '' : 's'}` : ''}`
-    : props.scope.projectName
-      ? 'Project-scoped questions'
-      : 'Workspace-level questions';
+  const [query, setQuery] = useState('');
+  const panel = useRef<HTMLDivElement>(null);
+  const search = useRef<HTMLInputElement>(null);
+  const close = useRef(props.onClose);
+  close.current = props.onClose;
+  const sessions = useMemo(() => {
+    const term = query.trim().toLocaleLowerCase();
+    return props.sessions.filter(
+      (session) =>
+        !term ||
+        `${session.title} ${chatSessionContextLabel(session)} ${chatSessionGroupLabel(chatSessionKind(session))}`
+          .toLocaleLowerCase()
+          .includes(term)
+    );
+  }, [props.sessions, query]);
 
   useEffect(() => {
-    if (mainTab === 'questions' || sessionGroups.length === 0) {
-      return;
+    if (!props.open) return;
+    setQuery('');
+    const trigger = document.activeElement as HTMLElement | null;
+    search.current?.focus();
+    const fit = () => {
+      const picker = panel.current;
+      const composer = picker
+        ?.closest('.ws-sidebar__tabpanel--chat')
+        ?.querySelector('.ws-composer-dock');
+      if (picker && composer) {
+        picker.style.maxHeight = `${Math.max(70, Math.min(360, composer.getBoundingClientRect().top - picker.getBoundingClientRect().top - 8))}px`;
+      }
+    };
+    fit();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(fit) : undefined;
+    const host = panel.current?.closest('.ws-sidebar__tabpanel--chat');
+    if (host) {
+      observer?.observe(host);
     }
-    if (!sessionGroups.some((group) => group.kind === sessionKind)) {
-      setSessionKind(sessionGroups[0].kind);
+    const composer = host?.querySelector('.ws-composer-dock');
+    if (composer) {
+      observer?.observe(composer);
     }
-  }, [mainTab, sessionGroups, sessionKind]);
+    window.addEventListener('resize', fit);
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!panel.current?.contains(target) && !trigger?.contains(target)) close.current();
+    };
+    document.addEventListener('pointerdown', dismiss);
+    return () => {
+      document.removeEventListener('pointerdown', dismiss);
+      observer?.disconnect();
+      window.removeEventListener('resize', fit);
+      if (
+        document.activeElement === document.body ||
+        panel.current?.contains(document.activeElement)
+      ) {
+        trigger?.focus();
+      }
+    };
+  }, [props.open]);
+
+  if (!props.open) return null;
 
   return (
-    <Drawer
-      open={props.open}
-      sizing="compact"
-      title={mainTab === 'sessions' ? 'Chats' : 'Questions'}
-      subtitle={`${scopeTitle} · ${scopeSubtitle}`}
-      onClose={props.onClose}
+    <div
+      ref={panel}
+      id="workspai-chat-history"
+      className="ws-chat-history"
+      role="dialog"
+      aria-label="Chat history"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          props.onClose();
+        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          const rows = Array.from(
+            panel.current?.querySelectorAll<HTMLButtonElement>('.ws-chat-history__select') ?? []
+          );
+          if (!rows.length) return;
+          event.preventDefault();
+          const index = rows.findIndex((row) => row === document.activeElement);
+          rows[
+            index < 0
+              ? event.key === 'ArrowDown'
+                ? 0
+                : rows.length - 1
+              : (index + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length
+          ]?.focus();
+        }
+      }}
     >
-      <div className="ws-drawer-tabs" role="tablist" aria-label={`${props.contextLabel} tools`}>
-        <button
-          type="button"
-          className="ws-drawer-tab"
-          aria-selected={mainTab === 'sessions'}
-          onClick={() => setMainTab('sessions')}
-        >
-          Sessions
-        </button>
-        <button
-          type="button"
-          className="ws-drawer-tab"
-          aria-selected={mainTab === 'questions'}
-          onClick={() => setMainTab('questions')}
-        >
-          Questions
+      <div className="ws-chat-history__search">
+        <Search size={13} aria-hidden="true" />
+        <input
+          ref={search}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          type="search"
+          placeholder="Search recent chats"
+          aria-label="Search recent chats"
+        />
+        <button type="button" aria-label="Close chat history" onClick={props.onClose}>
+          <X size={14} aria-hidden="true" />
         </button>
       </div>
-
-      {mainTab === 'sessions' ? (
-        <section className="ws-drawer-section ws-drawer-section--flush">
-          <div className="ws-drawer-section__head">
-            <span className="ws-drawer-section__label">
-              <History size={11} aria-hidden={true} /> Sessions
-            </span>
-            <button type="button" className="ws-drawer__link" onClick={props.onNewSession}>
-              New chat
+      <div className="ws-chat-history__head">
+        <span>All chats · {sessions.length}</span>
+        <button
+          type="button"
+          onClick={() => {
+            props.onNewSession();
+            props.onClose();
+          }}
+        >
+          <MessageSquarePlus size={13} aria-hidden="true" /> New chat
+        </button>
+      </div>
+      <div className="ws-chat-history__list" role="list" aria-label="Saved chats">
+        {sessions.map((session) => (
+          <div
+            role="listitem"
+            key={session.sessionId}
+            className={`ws-chat-history__row${session.sessionId === props.activeSessionId ? ' is-active' : ''}`}
+          >
+            <button
+              type="button"
+              className="ws-chat-history__select"
+              aria-current={session.sessionId === props.activeSessionId ? 'true' : undefined}
+              onClick={() => {
+                props.onSelectSession(session.sessionId);
+                props.onClose();
+              }}
+            >
+              <span className="ws-chat-history__title" dir="auto">
+                {session.title}
+              </span>
+              <small>{sessionMetaLabel(session)}</small>
+            </button>
+            {session.sessionId === props.activeSessionId ? (
+              <Check size={13} aria-label="Current chat" />
+            ) : null}
+            <button
+              type="button"
+              className="ws-chat-history__delete"
+              aria-label={`Delete chat: ${session.title}`}
+              onClick={() => props.onDeleteSession(session.sessionId)}
+            >
+              <Trash2 size={12} aria-hidden="true" />
             </button>
           </div>
-          {props.sessions.length === 0 ? (
-            <p className="ws-drawer-hint">No saved sessions yet.</p>
-          ) : (
-            <>
-              <div
-                className="ws-drawer-category-tabs"
-                role="tablist"
-                aria-label="Session categories"
-              >
-                {sessionGroups.map((group) => (
-                  <button
-                    key={group.kind}
-                    type="button"
-                    className="ws-drawer-category-tab"
-                    aria-selected={group.kind === activeGroup?.kind}
-                    onClick={() => setSessionKind(group.kind)}
-                  >
-                    <span>{group.label}</span>
-                    <small>{group.sessions.length}</small>
-                  </button>
-                ))}
-              </div>
-              <div className="ws-drawer-session-list">
-                {activeGroup ? (
-                  <div key={activeGroup.kind} className="ws-drawer-session-group">
-                    {groupSessionsByWorkspace(activeGroup.sessions).map((workspaceGroup) => (
-                      <section
-                        key={workspaceGroup.key}
-                        className="ws-drawer-session-workspace"
-                        aria-label={`${workspaceGroup.label} sessions`}
-                      >
-                        <header
-                          className="ws-drawer-session-workspace__head"
-                          title={workspaceGroup.path}
-                        >
-                          <span>Workspace</span>
-                          <strong>{workspaceGroup.label}</strong>
-                          <small>{workspaceGroup.sessions.length}</small>
-                        </header>
-                        {workspaceGroup.sessions.map((session) => {
-                          const turnCount = Math.ceil(
-                            session.messages.filter((m) => m.content.trim().length > 0).length / 2
-                          );
-                          const statusLabel =
-                            session.status === 'streaming'
-                              ? 'Working…'
-                              : session.status === 'error'
-                                ? 'Stopped'
-                                : turnCount > 0
-                                  ? `${turnCount} turn${turnCount === 1 ? '' : 's'}`
-                                  : 'Draft';
-                          return (
-                            <div
-                              key={session.sessionId}
-                              className={`ws-drawer-session${
-                                session.sessionId === props.activeSessionId ? ' is-active' : ''
-                              }`}
-                            >
-                              <button
-                                type="button"
-                                className="ws-drawer-session__select"
-                                onClick={() => {
-                                  props.onSelectSession(session.sessionId);
-                                  props.onClose();
-                                }}
-                              >
-                                <span className="ws-drawer-session__title">{session.title}</span>
-                                <small className="ws-drawer-session__meta">
-                                  {sessionMetaLabel(session, statusLabel)}
-                                </small>
-                              </button>
-                              <button
-                                type="button"
-                                className="ws-drawer-session__delete"
-                                aria-label="Delete session"
-                                onClick={() => props.onDeleteSession(session.sessionId)}
-                              >
-                                <Trash2 size={11} aria-hidden={true} />
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </section>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </>
-          )}
-        </section>
-      ) : (
-        <>
-          {props.toolbar ? (
-            <section className="ws-drawer-section ws-drawer-section--flush">
-              <span className="ws-drawer-section__label">Mode</span>
-              {props.toolbar}
-            </section>
-          ) : null}
-
-          {props.suggestions.length > 0 ? (
-            <section className="ws-drawer-section ws-drawer-section--flush">
-              <span className="ws-drawer-section__label">
-                <Lightbulb size={11} aria-hidden={true} /> Questions
-              </span>
-              <div className="ws-drawer-menu">
-                {props.suggestions.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    className="ws-drawer-menu__item ws-drawer-menu__item--compact"
-                    onClick={() => props.onPickSuggestion(suggestion)}
-                  >
-                    <span>
-                      <strong>{suggestion}</strong>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          ) : (
-            <section className="ws-drawer-section ws-drawer-section--flush">
-              <p className="ws-drawer-hint">No suggested questions for this scope.</p>
-            </section>
-          )}
-        </>
-      )}
-
-      {mainTab === 'questions' && props.footerActions ? (
-        <section className="ws-drawer-section">
-          <span className="ws-drawer-section__label">Actions</span>
-          <div className="ws-drawer-inline-actions">{props.footerActions}</div>
-        </section>
-      ) : null}
-    </Drawer>
+        ))}
+        {!sessions.length ? (
+          <p className="ws-chat-history__empty">
+            {query.trim() ? 'No matching chats.' : 'No saved chats yet.'}
+          </p>
+        ) : null}
+      </div>
+    </div>
   );
 }

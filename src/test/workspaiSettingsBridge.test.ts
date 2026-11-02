@@ -1,23 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockGet, mockUpdate, mockExecuteCommand, mockResetModelSelectionCache } = vi.hoisted(
-  () => ({
+const { mockGet, mockUpdate, mockInspect, mockExecuteCommand, mockResetModelSelectionCache } =
+  vi.hoisted(() => ({
     mockGet: vi.fn(),
     mockUpdate: vi.fn(),
+    mockInspect: vi.fn(),
     mockExecuteCommand: vi.fn(),
     mockResetModelSelectionCache: vi.fn(),
-  })
-);
+  }));
 
 vi.mock('vscode', () => ({
   workspace: {
     getConfiguration: () => ({
       get: mockGet,
       update: mockUpdate,
+      inspect: mockInspect,
     }),
   },
   ConfigurationTarget: {
     Global: 1,
+    Workspace: 2,
+    WorkspaceFolder: 3,
   },
   commands: {
     executeCommand: mockExecuteCommand,
@@ -41,6 +44,7 @@ describe('workspaiSettingsBridge', () => {
   beforeEach(() => {
     mockGet.mockReset();
     mockUpdate.mockReset();
+    mockInspect.mockReset();
     mockExecuteCommand.mockReset();
     mockResetModelSelectionCache.mockReset();
     mockGet.mockImplementation((key: string, defaultValue: unknown) => {
@@ -174,5 +178,62 @@ describe('workspaiSettingsBridge', () => {
       'workbench.action.openSettings',
       '@ext:rapidkit.rapidkit-vscode workspai'
     );
+  });
+  it('binds saves to their explicit provider even after selection changes', async () => {
+    await setWorkspaiCustomAIConfig({
+      provider: 'ollama',
+      baseUrl: 'http://[::1]:11434/v1',
+      model: 'local-model',
+    });
+    expect(mockUpdate).toHaveBeenCalledWith(
+      'aiProviderProfiles',
+      {
+        ollama: { baseUrl: 'http://[::1]:11434/v1', model: 'local-model' },
+      },
+      1
+    );
+  });
+
+  it.each([
+    'http://remote.example.test/v1',
+    'https://example.test/v1?key=fixture',
+    'https://example.test/v1#fragment',
+  ])('rejects invalid endpoints before writing settings: %s', async (baseUrl) => {
+    await expect(
+      setWorkspaiCustomAIConfig({ provider: 'openai-compatible', baseUrl, model: 'model' })
+    ).rejects.toThrow(/Base URL|localhost/);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('keeps official provider credentials on the catalog endpoint', async () => {
+    const previous = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation((key, fallback) =>
+      key === 'aiProvider'
+        ? 'gemini'
+        : key === 'aiProviderProfiles'
+          ? {
+              gemini: { baseUrl: 'https://unrelated.example.test/v1', model: 'chosen-model' },
+            }
+          : previous(key, fallback)
+    );
+    expect(readWorkspaiSettings().customAIBaseUrl).toBe(
+      'https://generativelanguage.googleapis.com/v1beta/openai'
+    );
+    await setWorkspaiCustomAIConfig({
+      provider: 'gemini',
+      baseUrl: 'https://unrelated.example.test',
+      model: 'chosen-model',
+    });
+    expect(mockUpdate.mock.calls[0][1].gemini.baseUrl).toBe(
+      'https://generativelanguage.googleapis.com/v1beta/openai'
+    );
+  });
+
+  it('updates the effective workspace setting instead of an overridden global value', async () => {
+    mockInspect.mockImplementation((key) =>
+      key === 'aiProvider' ? { workspaceValue: 'vscode-lm' } : undefined
+    );
+    await setWorkspaiAIProvider('ollama');
+    expect(mockUpdate).toHaveBeenCalledWith('aiProvider', 'ollama', 2);
   });
 });

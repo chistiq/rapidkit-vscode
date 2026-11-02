@@ -40,6 +40,60 @@ export function mergeEvidenceCardPatch(
   };
 }
 
+export function filterEvidencePatchToLatestCardRequests(
+  incoming: DashboardEvidencePayload,
+  latestRequestIds: ReadonlyMap<DashboardEvidenceCardId, number>
+): DashboardEvidencePayload | null {
+  if (incoming.requestId == null) {
+    return incoming;
+  }
+
+  const requestedCardIds = incoming.patchCardIds ?? incoming.cards.map((card) => card.id);
+  const currentCardIds = requestedCardIds.filter(
+    (cardId) => latestRequestIds.get(cardId) === incoming.requestId
+  );
+  if (currentCardIds.length === 0) {
+    return null;
+  }
+
+  const currentCardIdSet = new Set(currentCardIds);
+  return {
+    ...incoming,
+    cards: incoming.cards.filter((card) => currentCardIdSet.has(card.id)),
+    patchCardIds: currentCardIds,
+  };
+}
+
+export function preserveNewerEvidenceCardRequests(
+  current: DashboardEvidencePayload | null,
+  incoming: DashboardEvidencePayload,
+  latestRequestIds: ReadonlyMap<DashboardEvidenceCardId, number>
+): DashboardEvidencePayload {
+  if (incoming.requestId == null) {
+    return incoming;
+  }
+
+  const requestId = incoming.requestId;
+  const newerCardIds = new Set(
+    [...latestRequestIds.entries()]
+      .filter(([, latestRequestId]) => latestRequestId > requestId)
+      .map(([cardId]) => cardId)
+  );
+  if (newerCardIds.size === 0) {
+    return incoming;
+  }
+
+  const cards = incoming.cards.filter((card) => !newerCardIds.has(card.id));
+  for (const cardId of newerCardIds) {
+    const currentCard = current?.cards.find((card) => card.id === cardId);
+    if (currentCard) {
+      cards.push(currentCard);
+    }
+  }
+
+  return { ...incoming, cards };
+}
+
 function preserveActiveProjectEvidence(
   current: DashboardEvidencePayload | null,
   incoming: DashboardEvidencePayload,
@@ -93,6 +147,14 @@ export function isStaleEvidenceResponse(
     return true;
   }
 
+  if (
+    options.activeProjectPath &&
+    payload.projectPath &&
+    payload.projectPath !== options.activeProjectPath
+  ) {
+    return true;
+  }
+
   if (options.expectedRequestId == null) {
     return false;
   }
@@ -117,6 +179,7 @@ export function applyDashboardEvidenceMessage(
     isStaleEvidenceResponse(incoming, {
       expectedRequestId: options.expectedRequestId,
       activeWorkspacePath: options.activeWorkspacePath,
+      activeProjectPath: options.activeProjectPath,
       allowMissingRequestId: options.allowMissingRequestId,
     })
   ) {

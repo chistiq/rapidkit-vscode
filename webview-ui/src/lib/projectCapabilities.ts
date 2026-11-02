@@ -81,6 +81,7 @@ export function isPortlessDashboardProject(
     framework === 'gateway' ||
     framework === 'microsoft-agent-framework' ||
     framework === 'openai-agents' ||
+    framework === 'google-adk' ||
     framework === 'openrouter' ||
     framework.startsWith('agent.') ||
     framework.startsWith('gateway.')

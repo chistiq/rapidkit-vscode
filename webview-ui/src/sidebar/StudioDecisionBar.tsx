@@ -74,7 +74,8 @@ export function StudioDecisionBar({
     terminalReason === 'repair-toolchain-unavailable' ||
     terminalReason === 'environment-prerequisite-required';
   const connectionFailure = terminalReason === 'cli-repair-contract-mismatch';
-  const providerFailure = terminalReason === 'ai-provider-unavailable';
+  const providerTimeout = terminalReason === 'ai-provider-timeout';
+  const providerFailure = terminalReason === 'ai-provider-unavailable' || providerTimeout;
   if (
     !reviewRequired &&
     !resumable &&
@@ -92,7 +93,9 @@ export function StudioDecisionBar({
       : connectionFailure
         ? 'Reconnect Workspai CLI'
         : providerFailure
-          ? 'Reconnect the AI provider'
+          ? providerTimeout
+            ? 'Model request timed out'
+            : 'Reconnect the AI provider'
           : 'Repair paused';
 
   return (

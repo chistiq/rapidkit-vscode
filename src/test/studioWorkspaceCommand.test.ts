@@ -2,7 +2,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import fs from 'fs-extra';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { promises as nativeFs } from 'node:fs';
 
 import {
   assertStudioWorkspaceCommandApproval,
@@ -18,6 +19,31 @@ afterEach(async () => {
 });
 
 describe('Studio workspace command capability policy', () => {
+  it('reports executable startup failure separately from cancellation and refuses a missing cwd', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-startup-'));
+    roots.push(root);
+    const request = {
+      executable: 'workspai-nonexistent-test-executable',
+      args: [],
+      purpose: 'inspect' as const,
+    };
+    const result = await runStudioWorkspaceCommand(
+      resolveStudioWorkspaceCommandPlan({ workspacePath: root, request })
+    );
+    expect(result).toMatchObject({
+      exitCode: null,
+      startupError: { code: 'ENOENT' },
+      timedOut: false,
+    });
+    expect(describeStudioWorkspaceCommandFailure(result)).toContain('could not start (ENOENT)');
+    expect(describeStudioWorkspaceCommandFailure(result)).not.toContain('terminated before');
+    await expect(
+      runStudioWorkspaceCommand(
+        resolveStudioWorkspaceCommandPlan({ workspacePath: path.join(root, 'missing'), request })
+      )
+    ).rejects.toThrow('not an empty workspace');
+    expect(await fs.pathExists(path.join(root, 'missing'))).toBe(false);
+  });
   it.each([
     ['npm', ['test'], 'test'],
     ['python3', ['-m', 'pytest'], 'test'],
@@ -179,6 +205,52 @@ describe('Studio workspace command capability policy', () => {
       },
     });
     expect(changedProposal.authorizationFingerprint).not.toBe(plan.authorizationFingerprint);
+  });
+
+  it('binds a source-producing build declaration to separate approval without changing its purpose', () => {
+    const request = { executable: 'npm', args: ['run', 'build'], purpose: 'build' as const };
+    const plain = resolveStudioWorkspaceCommandPlan({ workspacePath: '/workspace', request });
+    const declared = resolveStudioWorkspaceCommandPlan({
+      workspacePath: '/workspace',
+      request: { ...request, allowSourceChanges: true },
+    });
+    expect(plain.requiresExplicitApproval).toBe(false);
+    expect(declared).toMatchObject({
+      purpose: 'build',
+      mutatesSource: true,
+      requiresExplicitApproval: true,
+    });
+    expect(declared.authorizationFingerprint).not.toBe(plain.authorizationFingerprint);
+    expect(() => assertStudioWorkspaceCommandApproval({ plan: declared })).toThrow(
+      'scoped user approval'
+    );
+    expect(() =>
+      assertStudioWorkspaceCommandApproval({
+        plan: declared,
+        approval: {
+          fingerprint: plain.authorizationFingerprint,
+          approvedBy: 'fixture',
+          approvedAt: '2026-11-02T00:00:00Z',
+        },
+      })
+    ).toThrow('does not match');
+    expect(
+      resolveStudioWorkspaceCommandPlan({
+        workspacePath: '/workspace',
+        request: {
+          executable: 'npm',
+          args: ['install'],
+          purpose: 'dependency',
+          allowSourceChanges: false,
+        },
+      }).mutatesSource
+    ).toBe(true);
+    expect(() =>
+      resolveStudioWorkspaceCommandPlan({
+        workspacePath: '/workspace',
+        request: { ...request, allowSourceChanges: 'true' as never },
+      })
+    ).toThrow('must be a boolean');
   });
 
   it.each([
@@ -451,6 +523,52 @@ describe('Studio workspace command capability policy', () => {
         },
       })
     ).toThrow('escapes');
+  });
+
+  it('does not let a stalled progress consumer block process completion or cancellation setup', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-command-progress-'));
+    roots.push(root);
+    await fs.writeFile(path.join(root, 'probe.js'), 'console.log("done")');
+    const result = await runStudioWorkspaceCommand(
+      resolveStudioWorkspaceCommandPlan({
+        workspacePath: root,
+        request: { executable: 'node', args: ['probe.js'], purpose: 'diagnose' },
+      }),
+      { onProcessEvent: () => new Promise<void>(() => {}) }
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('done');
+  });
+
+  it('reports exit before output-file reading so postprocessing cannot display an exited process as running', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-command-exit-'));
+    roots.push(root);
+    await fs.writeFile(path.join(root, 'probe.js'), 'console.log("completed-output")');
+    let completed = false;
+    let outputReadAfterCompletion = false;
+    const originalRead = nativeFs.readFile.bind(nativeFs);
+    const read = vi.spyOn(nativeFs, 'readFile').mockImplementation((...args) => {
+      if (String(args[0]).endsWith('stdout.log')) outputReadAfterCompletion = completed;
+      return originalRead(...args);
+    });
+    try {
+      const result = await runStudioWorkspaceCommand(
+        resolveStudioWorkspaceCommandPlan({
+          workspacePath: root,
+          request: { executable: 'node', args: ['probe.js'], purpose: 'diagnose' },
+        }),
+        {
+          onProcessEvent: (event) => {
+            if (event.phase === 'completed') completed = true;
+          },
+        }
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('completed-output');
+      expect(outputReadAfterCompletion).toBe(true);
+    } finally {
+      read.mockRestore();
+    }
   });
 
   it('executes without a shell and strips sensitive extension environment values', async () => {

@@ -40,6 +40,12 @@ export interface KitsListResult {
   kits: Kit[];
 }
 
+export interface KitsLoadResult {
+  kits: Kit[];
+  source: 'live' | 'cache' | 'stale-cache' | 'bundled-fallback';
+  error?: string;
+}
+
 interface KitsCache {
   kits: Kit[];
   timestamp: number;
@@ -90,12 +96,20 @@ export class KitsService {
    * Get available kits (with caching)
    */
   async getKits(): Promise<Kit[]> {
+    const result = await this.getKitsWithStatus();
+    return result.kits;
+  }
+
+  async getKitsWithStatus(options?: { forceRefresh?: boolean }): Promise<KitsLoadResult> {
     try {
       // Check cache first
       const cached = await this._loadCache();
-      if (cached && Date.now() - cached.timestamp < this.ttlMs) {
+      if (!options?.forceRefresh && cached && Date.now() - cached.timestamp < this.ttlMs) {
         console.log('[KitsService] Using cached kits');
-        return this._mergeWithFallback(cached.kits);
+        return {
+          kits: this._mergeWithFallback(cached.kits),
+          source: 'cache',
+        };
       }
 
       // Fetch from CLI
@@ -126,7 +140,7 @@ export class KitsService {
       await this._saveCache({ kits, timestamp: Date.now() });
       console.log('[KitsService] Kits fetched and cached:', kits.length);
 
-      return kits;
+      return { kits, source: 'live' };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('[KitsService] Failed to fetch kits:', message);
@@ -135,11 +149,19 @@ export class KitsService {
       const cached = await this._loadCache();
       if (cached && cached.kits.length > 0) {
         console.log('[KitsService] Using stale cache as fallback');
-        return this._mergeWithFallback(cached.kits);
+        return {
+          kits: this._mergeWithFallback(cached.kits),
+          source: 'stale-cache',
+          error: message,
+        };
       }
 
       // Ultimate fallback: return hardcoded kits
-      return this._getFallbackKits();
+      return {
+        kits: this._getFallbackKits(),
+        source: 'bundled-fallback',
+        error: message,
+      };
     }
   }
 

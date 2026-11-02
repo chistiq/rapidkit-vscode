@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
+import type { DashboardEvidenceCardId } from '@workspai-contracts/dashboardEvidenceCards';
 import type { DashboardEvidencePayload } from '../../webview-ui/src/lib/dashboardEvidence';
 import {
   applyDashboardEvidenceMessage,
   emptyEvidencePayloadForWorkspace,
+  filterEvidencePatchToLatestCardRequests,
   isStaleEvidenceResponse,
   mergeEvidenceCardPatch,
+  preserveNewerEvidenceCardRequests,
 } from '../../webview-ui/src/lib/dashboardEvidenceSession';
 
 const basePayload = (overrides?: Partial<DashboardEvidencePayload>): DashboardEvidencePayload => ({
@@ -64,6 +67,15 @@ describe('dashboardEvidenceSession', () => {
     ).toBe(true);
   });
 
+  it('rejects evidence scoped to a previously selected project', () => {
+    expect(
+      isStaleEvidenceResponse(basePayload({ projectPath: '/repo/project-a' }), {
+        activeWorkspacePath: '/ws/a',
+        activeProjectPath: '/repo/project-b',
+      })
+    ).toBe(true);
+  });
+
   it('applies patch mode incrementally', () => {
     const current = basePayload();
     const next = applyDashboardEvidenceMessage(
@@ -86,6 +98,125 @@ describe('dashboardEvidenceSession', () => {
 
     expect(next?.cards.find((card) => card.id === 'bootstrap')?.status).toBe('warn');
     expect(next?.cards.find((card) => card.id === 'doctor')?.status).toBe('pass');
+  });
+
+  it('orders concurrent card patches independently', () => {
+    const latestRequestIds = new Map<DashboardEvidenceCardId, number>([
+      ['doctor', 4],
+      ['bootstrap', 5],
+    ]);
+    const doctorResponse = basePayload({
+      refreshMode: 'patch',
+      requestId: 4,
+      patchCardIds: ['doctor'],
+      cards: [
+        {
+          id: 'doctor',
+          label: 'Doctor',
+          status: 'warn',
+          summary: 'updated',
+          scope: 'workspace',
+        },
+      ],
+    });
+
+    expect(
+      filterEvidencePatchToLatestCardRequests(doctorResponse, latestRequestIds)?.cards
+    ).toEqual(doctorResponse.cards);
+    expect(
+      filterEvidencePatchToLatestCardRequests({ ...doctorResponse, requestId: 3 }, latestRequestIds)
+    ).toBeNull();
+    const mixedResponse = basePayload({
+      refreshMode: 'patch',
+      requestId: 5,
+      patchCardIds: ['doctor', 'bootstrap'],
+      cards: [
+        {
+          id: 'doctor',
+          label: 'Doctor',
+          status: 'fail',
+          summary: 'superseded',
+          scope: 'workspace',
+        },
+        {
+          id: 'bootstrap',
+          label: 'Bootstrap',
+          status: 'pass',
+          summary: 'current',
+          scope: 'workspace',
+        },
+      ],
+    });
+    expect(
+      filterEvidencePatchToLatestCardRequests(mixedResponse, latestRequestIds)?.cards.map(
+        (card) => card.id
+      )
+    ).toEqual(['bootstrap']);
+  });
+
+  it('keeps newer card refreshes when a full response arrives later', () => {
+    const current = basePayload({
+      cards: [
+        {
+          id: 'doctor',
+          label: 'Doctor',
+          status: 'warn',
+          summary: 'latest card refresh',
+          scope: 'workspace',
+        },
+      ],
+    });
+    const incoming = basePayload({
+      requestId: 7,
+      refreshMode: 'full',
+      cards: [
+        {
+          id: 'doctor',
+          label: 'Doctor',
+          status: 'missing',
+          summary: 'stale full response',
+          scope: 'workspace',
+        },
+        {
+          id: 'bootstrap',
+          label: 'Bootstrap',
+          status: 'pass',
+          summary: 'full response',
+          scope: 'workspace',
+        },
+      ],
+    });
+    const ordered = preserveNewerEvidenceCardRequests(
+      current,
+      incoming,
+      new Map<DashboardEvidenceCardId, number>([
+        ['doctor', 8],
+        ['bootstrap', 7],
+      ])
+    );
+
+    expect(ordered.cards.find((card) => card.id === 'doctor')?.summary).toBe('latest card refresh');
+    expect(ordered.cards.find((card) => card.id === 'bootstrap')?.summary).toBe('full response');
+  });
+
+  it('rejects patch evidence from a previously selected project', () => {
+    const current = basePayload({ projectPath: '/repo/project-b' });
+    const next = applyDashboardEvidenceMessage(
+      current,
+      basePayload({
+        projectPath: '/repo/project-a',
+        refreshMode: 'patch',
+        requestId: 6,
+        patchCardIds: ['doctor'],
+      }),
+      {
+        activeWorkspacePath: '/ws/a',
+        activeProjectPath: '/repo/project-b',
+        expectedRequestId: 6,
+      }
+    );
+
+    expect(next).toBe(current);
   });
 
   it('preserves active project evidence when a workspace-only full payload arrives', () => {

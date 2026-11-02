@@ -167,17 +167,32 @@ export async function refreshModulesCatalog(
   }
 }
 
-export async function sendAvailableKits(host: ModulesCatalogHost): Promise<void> {
+export async function sendAvailableKits(
+  host: Pick<ModulesCatalogHost, 'postWebviewMessage'>,
+  requestId?: string,
+  options?: { forceRefresh?: boolean }
+): Promise<void> {
   try {
     const kitsService = KitsService.getInstance();
-    const kits = await kitsService.getKits();
+    const result = await kitsService.getKitsWithStatus(options);
 
-    host.postWebviewMessage('updateAvailableKits', kits);
+    host.postWebviewMessage('updateAvailableKits', {
+      kits: result.kits,
+      ...(requestId ? { requestId } : {}),
+      ...(result.error ? { loadError: result.error } : {}),
+    });
 
-    console.log('[WelcomePanel] ✅ Available kits sent to webview:', kits.length);
+    console.log(
+      '[WelcomePanel] Available kits sent to webview:',
+      result.kits.length,
+      `(${result.source})`
+    );
   } catch (error) {
     console.error('[WelcomePanel] Failed to send available kits:', error);
-    host.postWebviewMessage('updateAvailableKits', []);
+    host.postWebviewMessage('availableKitsLoadError', {
+      error: error instanceof Error ? error.message : String(error),
+      ...(requestId ? { requestId } : {}),
+    });
   }
 }
 
@@ -283,9 +298,17 @@ export async function tryDispatchCatalogWebviewMessage(
         refreshModulesCatalog(host, { forceRefresh: true }),
       ]);
       break;
-    case 'requestAvailableKits':
-      await sendAvailableKits(host);
+    case 'requestAvailableKits': {
+      const request =
+        typeof data === 'object' && data !== null && !Array.isArray(data) ? data : undefined;
+      const requestId =
+        request && 'requestId' in request && typeof request.requestId === 'string'
+          ? request.requestId
+          : undefined;
+      const forceRefresh = request && 'forceRefresh' in request && request.forceRefresh === true;
+      await sendAvailableKits(host, requestId, { forceRefresh });
       break;
+    }
     case 'installModule': {
       if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
         const moduleData = data as Record<string, unknown>;

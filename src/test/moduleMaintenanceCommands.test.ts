@@ -282,6 +282,7 @@ describe('readInstalledModules', () => {
     await expect(readInstalledModules('/tmp/team-ws/api')).resolves.toEqual([
       { slug: 'free/core/health', version: undefined },
     ]);
+    expect(readJsonMock).toHaveBeenCalledWith('/tmp/team-ws/api/.workspai/registry.json');
   });
 
   it('swallows registry read failures', async () => {

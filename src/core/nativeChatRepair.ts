@@ -171,6 +171,7 @@ export async function runNativeChatRepair(input: {
   context: AIModalContext;
   stream: NativeRepairStream;
   token: vscode.CancellationToken;
+  toolInvocationToken?: vscode.ChatParticipantToolToken;
   extensionContext?: vscode.ExtensionContext;
   requestedModelId?: string;
   history?: AIConversationHistoryEntry[];
@@ -271,6 +272,7 @@ export async function runNativeChatRepair(input: {
       task: `Resolve ${card.label}: ${card.blockers?.[0] ?? card.summary}`,
       stream: input.stream,
       token: input.token,
+      toolInvocationToken: input.toolInvocationToken,
       requestedModelId: input.requestedModelId,
       initialConversation: input.history,
       initialSourceRepairDirective: {

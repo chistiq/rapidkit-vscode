@@ -36,6 +36,7 @@ interface CreateTabProps {
   onSelectSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
   models: SidebarModel[];
+  modelLoadError?: string | null;
   selectedModelId: string | null;
   onSelectModel: (id: string | null) => void;
   onRefreshModels?: () => void;
@@ -268,9 +269,10 @@ export function CreateTab(props: CreateTabProps) {
 
   return (
     <section
+      id="workspai-sidebar-panel-create"
       className="ws-sidebar__tabpanel ws-sidebar__tabpanel--chat"
       role="tabpanel"
-      aria-label="Create with AI"
+      aria-labelledby="workspai-sidebar-tab-create"
       hidden={!active}
     >
       <ChatSessionBar
@@ -347,6 +349,7 @@ export function CreateTab(props: CreateTabProps) {
         running={planningActive}
         onCancel={planningActive ? props.onCancelPlanning : undefined}
         models={models}
+        modelLoadError={props.modelLoadError}
         selectedModelId={selectedModelId}
         onSelectModel={onSelectModel}
         onRefreshModels={props.onRefreshModels}

@@ -8,6 +8,7 @@ import {
   resolveWorkspaceReportsDir,
 } from '../../core/workspaceIntelligencePaths';
 import { hasRapidkitProjectMarkers } from '../../core/workspacePaths';
+import type { WelcomePanelProjectType } from './welcomePanelProjectTypeDetection';
 
 export type RecentWorkspaceProjectStats = {
   fastapi?: number;
@@ -54,9 +55,7 @@ export type RecentWorkspaceEntry = {
 };
 
 export type RecentWorkspacesHost = {
-  detectProjectType: (
-    projectPath: string
-  ) => Promise<'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet' | null>;
+  detectProjectType: (projectPath: string) => Promise<WelcomePanelProjectType>;
 };
 
 export async function buildRecentWorkspaces(

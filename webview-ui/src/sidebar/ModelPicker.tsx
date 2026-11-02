@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, RefreshCw } from 'lucide-react';
 import { vscode } from '@/vscode';
@@ -10,6 +17,7 @@ const SIDEBAR_META = { source: 'workspai-sidebar-react', version: '1' } as const
 interface ModelPickerProps {
   models: SidebarModel[];
   selectedId: string | null;
+  loadError?: string | null;
   onSelect: (id: string | null) => void;
   onRefreshModels?: () => void;
 }
@@ -22,12 +30,19 @@ interface MenuPosition {
 }
 
 /** AI model dropdown (Auto + entitled models), portal-mounted so the list is never clipped. */
-export function ModelPicker({ models, selectedId, onSelect, onRefreshModels }: ModelPickerProps) {
+export function ModelPicker({
+  models,
+  selectedId,
+  loadError,
+  onSelect,
+  onRefreshModels,
+}: ModelPickerProps) {
   const [open, setOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const initializedMenuFocusRef = useRef(false);
   const listId = useId();
   const label = modelLabel(models, selectedId);
 
@@ -77,6 +92,7 @@ export function ModelPicker({ models, selectedId, onSelect, onRefreshModels }: M
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setOpen(false);
+        triggerRef.current?.focus();
       }
     };
 
@@ -88,9 +104,68 @@ export function ModelPicker({ models, selectedId, onSelect, onRefreshModels }: M
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!open) {
+      initializedMenuFocusRef.current = false;
+      return;
+    }
+    if (!menuPosition || initializedMenuFocusRef.current) {
+      return;
+    }
+    initializedMenuFocusRef.current = true;
+    const options = menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]');
+    const selectedIndex = Array.from(options ?? []).findIndex(
+      (option) => option.getAttribute('aria-selected') === 'true'
+    );
+    options?.[selectedIndex < 0 ? 0 : selectedIndex]?.focus();
+  }, [menuPosition, open]);
+
   const choose = (id: string | null) => {
     onSelect(id);
     setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  const handleMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      return;
+    }
+    const options = Array.from(
+      menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? []
+    );
+    if (options.length === 0) {
+      return;
+    }
+    const currentIndex = options.findIndex((option) => option === document.activeElement);
+    const nextIndex =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? options.length - 1
+          : currentIndex < 0
+            ? event.key === 'ArrowDown'
+              ? 0
+              : options.length - 1
+            : (currentIndex + (event.key === 'ArrowDown' ? 1 : options.length - 1)) %
+              options.length;
+    event.preventDefault();
+    options[nextIndex < 0 ? 0 : nextIndex]?.focus();
+  };
+
+  const handleTriggerKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
+      return;
+    }
+    event.preventDefault();
+    if (!open) {
+      setOpen(true);
+      return;
+    }
+    const options = Array.from(
+      menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? []
+    );
+    const selected = options.find((option) => option.getAttribute('aria-selected') === 'true');
+    (selected ?? options[0])?.focus();
   };
 
   const refreshModels = () => {
@@ -127,10 +202,12 @@ export function ModelPicker({ models, selectedId, onSelect, onRefreshModels }: M
               minWidth: menuPosition.minWidth,
               transform: menuPosition.placement === 'up' ? 'translateY(-100%)' : undefined,
             }}
+            onKeyDown={handleMenuKeyDown}
           >
             <button
               type="button"
               role="option"
+              tabIndex={-1}
               aria-selected={selectedId === null}
               className="ws-sidebar__model-option"
               onClick={() => choose(null)}
@@ -143,6 +220,7 @@ export function ModelPicker({ models, selectedId, onSelect, onRefreshModels }: M
                 key={model.id}
                 type="button"
                 role="option"
+                tabIndex={-1}
                 aria-selected={selectedId === model.id}
                 className="ws-sidebar__model-option"
                 onClick={() => choose(model.id)}
@@ -158,10 +236,14 @@ export function ModelPicker({ models, selectedId, onSelect, onRefreshModels }: M
             ))}
             {models.length === 0 ? (
               <div className="ws-sidebar__model-empty" role="note">
-                <p>No entitled models in this VS Code session.</p>
+                <p>
+                  {loadError
+                    ? `Could not load available models: ${loadError}`
+                    : 'No compatible AI models are available in this VS Code session.'}
+                </p>
                 <button type="button" className="ws-sidebar__model-refresh" onClick={refreshModels}>
                   <RefreshCw size={11} aria-hidden={true} />
-                  Refresh models
+                  {loadError ? 'Retry loading models' : 'Refresh models'}
                 </button>
               </div>
             ) : null}
@@ -180,6 +262,7 @@ export function ModelPicker({ models, selectedId, onSelect, onRefreshModels }: M
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         onClick={toggleOpen}
+        onKeyDown={handleTriggerKeyDown}
       >
         <span>{label}</span>
         <ChevronDown size={12} aria-hidden={true} className={open ? 'is-open' : ''} />

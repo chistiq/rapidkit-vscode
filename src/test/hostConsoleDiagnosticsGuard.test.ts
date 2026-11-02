@@ -18,7 +18,8 @@ describe('host console diagnostics guard', () => {
     expect(source).toContain('postCatalog(MODULES, {');
     expect(source).toContain("source: 'fallback'");
     expect(source).toContain('loadError:');
-    expect(source).toContain("host.postWebviewMessage('updateAvailableKits', [])");
+    expect(source).toContain("host.postWebviewMessage('availableKitsLoadError', {");
+    expect(source).toContain("console.error('[WelcomePanel] Failed to send available kits:'");
     expect(source).toContain("vscode.window.showErrorMessage('Failed to load module details')");
     expect(source).toContain(
       'Module details are not available for this catalog item. Refresh the catalog and try again.'
@@ -92,8 +93,11 @@ describe('host console diagnostics guard', () => {
     expect(examples).toContain('profileWorkspaces');
     expect(examples).toContain('return this._getFallbackExamples()');
     expect(kits).toContain('Using stale cache as fallback');
-    expect(kits).toContain('return this._mergeWithFallback(cached.kits)');
-    expect(kits).toContain('return this._getFallbackKits()');
+    expect(kits).toContain("source: 'stale-cache'");
+    expect(kits).toContain("source: 'bundled-fallback'");
+    expect(kits).toContain('kits: this._mergeWithFallback(cached.kits)');
+    expect(kits).toContain('kits: this._getFallbackKits()');
+    expect(kits).toContain('error: message');
   });
 
   it('keeps dashboard evidence refresh failures mapped into webview state', () => {

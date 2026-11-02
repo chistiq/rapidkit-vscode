@@ -22,4 +22,26 @@ describe('AI model picker identity', () => {
     expect(languageModelSupportsExtensionRequests({ vendor: 'copilotcli' })).toBe(false);
     expect(languageModelSupportsExtensionRequests({ vendor: 'claude-code' })).toBe(false);
   });
+
+  it('excludes Copilot core-only dictation aliases without hiding other providers', () => {
+    expect(
+      languageModelSupportsExtensionRequests({
+        vendor: 'copilot',
+        id: 'copilot-dictation-cleanup-nano',
+      })
+    ).toBe(false);
+    expect(
+      languageModelSupportsExtensionRequests({
+        vendor: 'copilot',
+        id: 'copilot-dictation-cleanup-luna',
+      })
+    ).toBe(false);
+    expect(languageModelSupportsExtensionRequests({ vendor: 'copilot', id: 'auto' })).toBe(true);
+    expect(
+      languageModelSupportsExtensionRequests({
+        vendor: 'byok',
+        id: 'copilot-dictation-cleanup-nano',
+      })
+    ).toBe(true);
+  });
 });

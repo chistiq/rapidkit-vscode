@@ -1,3 +1,4 @@
+import type { AIImageContent } from './aiImageContent.js';
 export type StudioAgentToolRisk = 'read' | 'safe-write' | 'guarded-write' | 'invasive';
 export type StudioAgentPermissionLevel = 'default' | 'autopilot';
 export type StudioAgentApprovalExecution = 'once' | 'session' | 'project';
@@ -8,9 +9,25 @@ export type StudioAgentToolContext = {
   toolCallId: string;
   workspacePath: string;
   projectPath?: string;
+  /** Genuine user locators, supplied by the session host, never by tool arguments. */
+  userRequestedPaths?: readonly string[];
+  declinedProjectOnboarding?: readonly string[];
   evidenceGeneration?: string;
   approval?: StudioAgentToolApprovalGrant;
   signal: AbortSignal;
+  /** Host-only delegation bridge. Never supplied by model arguments or passed to an external tool. */
+  delegate?: {
+    tools: ReadonlyArray<
+      Pick<StudioAgentToolDefinition, 'name' | 'title' | 'description' | 'inputSchema'>
+    >;
+    remainingProviderRequests: number;
+    remainingTokens: number;
+    parentContext: string;
+    subscribeToSteering?(
+      listener: (message: string, images?: AIImageContent[]) => void
+    ): () => void;
+    invoke(name: string, input: unknown, reason: string): Promise<StudioAgentToolResult>;
+  };
   reportProgress?(data: Record<string, unknown>): Promise<void>;
 };
 
@@ -24,6 +41,8 @@ export type StudioAgentToolApprovalDescriptor = {
   reasons: string[];
   execution: StudioAgentApprovalExecution;
   allowedExecutions?: StudioAgentApprovalExecution[];
+  /** Optional onboarding may be declined while the original task continues unchanged. */
+  optionalProjectOnboarding?: { projectPath: string };
 };
 
 export type StudioAgentToolApprovalRequest = StudioAgentToolApprovalDescriptor & {
@@ -55,6 +74,10 @@ export type StudioAgentToolAuthorization = {
 
 export type StudioAgentToolResult<T = unknown> = {
   ok: boolean;
+  /** Host-validated execution directory, separate from optional canonical Workspai ownership. */
+  executionTarget?: import('./studioProjectTarget.js').StudioExecutionTarget;
+  /** Transient multimodal observations; never persist image bytes in session events. */
+  images?: AIImageContent[];
   output?: T;
   error?: string;
   changed?: boolean;
@@ -73,6 +96,10 @@ export type StudioAgentToolDefinition<TInput = unknown, TOutput = unknown> = {
   inputSchema: Record<string, unknown>;
   activity: 'inspect' | 'change' | 'verify' | 'complete';
   risk: StudioAgentToolRisk;
+  /** Can run without validating the current execution target, e.g. selecting a replacement. */
+  scopeIndependent?: boolean;
+  /** Reject before authorization/execution if a governed Goal pins a different scope. */
+  selectsExecutionTarget?: boolean;
   authorize?(
     input: TInput,
     context: Omit<StudioAgentToolContext, 'approval' | 'reportProgress'>

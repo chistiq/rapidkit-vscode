@@ -111,6 +111,8 @@ describe('React Create tab ↔ host protocol parity (roadmap 2.11d)', () => {
     expect(createTypes).toContain('CREATE_KIT_OPTIONS');
     expect(createTypes).toContain("'agent.microsoft.python'");
     expect(createTypes).toContain("'agent.microsoft.dotnet'");
+    expect(createTypes).toContain("'agent.google-adk.python'");
+    expect(createTypes).toContain("'agent.google-adk.typescript'");
     expect(projectDrawer).toContain('CREATE_KIT_OPTIONS.filter');
     expect(projectDrawer).toContain("id: 'agent'");
     expect(secondary).toContain('kit: input.kit');

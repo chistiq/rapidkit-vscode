@@ -1,12 +1,80 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
+import type { WorkspaiProjectType } from '../../types';
 
-export type WelcomePanelProjectType = 'fastapi' | 'nestjs' | 'go' | 'springboot' | 'dotnet' | null;
+export type WelcomePanelProjectType = WorkspaiProjectType | null;
+
+const PROJECT_TYPES: ReadonlySet<WorkspaiProjectType> = new Set([
+  'fastapi',
+  'django',
+  'flask',
+  'nestjs',
+  'express',
+  'koa',
+  'go',
+  'springboot',
+  'rails',
+  'dotnet',
+  'rust',
+  'laravel',
+  'tauri',
+  'electron',
+  'vscode-extension',
+  'agent',
+  'gateway',
+  'nextjs',
+  'react',
+  'vite',
+  'vue',
+  'nuxt',
+  'remix',
+  'sveltekit',
+  'svelte',
+  'angular',
+  'astro',
+  'solid',
+  'unknown',
+]);
+
+function canonicalProjectType(metadata: unknown): WorkspaiProjectType | undefined {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return undefined;
+  }
+  const record = metadata as Record<string, unknown>;
+  const candidates = [
+    record.project_type,
+    record.type,
+    record.kind,
+    record.category,
+    record.framework,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+    const normalized = candidate.trim().toLowerCase();
+    if (normalized === 'google-adk' || normalized.includes('agent-framework')) {
+      return 'agent';
+    }
+    if (normalized !== 'unknown' && PROJECT_TYPES.has(normalized as WorkspaiProjectType)) {
+      return normalized as WorkspaiProjectType;
+    }
+  }
+  return undefined;
+}
 
 export async function detectProjectTypeFromPath(
   projectPath: string
 ): Promise<WelcomePanelProjectType> {
   try {
+    const canonicalProjectPath = path.join(projectPath, '.workspai', 'project.json');
+    if (await fs.pathExists(canonicalProjectPath)) {
+      const canonicalType = canonicalProjectType(await fs.readJson(canonicalProjectPath));
+      if (canonicalType) {
+        return canonicalType;
+      }
+    }
+
     const goModPath = path.join(projectPath, 'go.mod');
     if (await fs.pathExists(goModPath)) {
       return 'go';

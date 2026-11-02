@@ -2,10 +2,17 @@ import type {
   SidebarStudioActionProgressView,
   SidebarStudioFileChangeView,
 } from './sidebarStudioActionProgress';
-import { studioFileChangeLineCounts } from './sidebarStudioActionProgress';
+import {
+  studioFileChangeLineCounts,
+  studioFileChangeHasLineCounts,
+} from './sidebarStudioActionProgress';
 
 export type StudioChangedFileSummaryEntry = {
   relativePath: string;
+  workspaceId?: string;
+  workspaceName?: string;
+  binary?: boolean;
+  afterBytes?: number;
   status: string;
   added: number;
   removed: number;
@@ -13,6 +20,7 @@ export type StudioChangedFileSummaryEntry = {
   transactionId: string;
   /** True when an exact before/after comparison is available for this file. */
   comparable: boolean;
+  countsKnown?: boolean;
   failReason?: string;
 };
 
@@ -24,19 +32,30 @@ export type StudioChangedFilesSummary = {
   undoTransactionId?: string;
   /** Live transactions contributing to this summary. */
   transactionCount: number;
+  unknownFileCount?: number;
 };
 
 type FileContribution = {
+  relativePath: string;
+  workspaceId?: string;
+  workspaceName?: string;
+  binary?: boolean;
+  afterBytes?: number;
   added: number;
   removed: number;
   status: string;
   comparable: boolean;
+  countsKnown?: boolean;
   failReason?: string;
   order: number;
 };
 
 function isComparable(file: SidebarStudioFileChangeView): boolean {
-  return file.stale !== true && file.binary !== true && !file.failReason;
+  return (
+    file.stale !== true &&
+    (file.binary !== true || file.byteComparison === true) &&
+    !file.failReason
+  );
 }
 
 /**
@@ -70,7 +89,11 @@ export function buildStudioChangedFilesSummary(
     // A durable transaction is reviewable and undoable only after the CLI has
     // closed it. Applied/running/failed snapshots are intermediate control
     // state and must never survive hydration as a live change summary.
-    if (entry.transactionState !== 'closed') {
+    if (
+      entry.transactionState !== 'closed' &&
+      !(transactionId.startsWith('scaffold-') && entry.transactionState === 'observed') &&
+      !(transactionId.startsWith('native-') && entry.transactionState === 'applied')
+    ) {
       continue;
     }
     liveTransactionOrder.set(transactionId, order);
@@ -80,23 +103,30 @@ export function buildStudioChangedFilesSummary(
         continue;
       }
       const counts = studioFileChangeLineCounts(file);
-      const perTransaction = contributions.get(relativePath) ?? new Map<string, FileContribution>();
+      const key = file.workspaceId ? `${file.workspaceId}:${relativePath}` : relativePath;
+      const perTransaction = contributions.get(key) ?? new Map<string, FileContribution>();
       perTransaction.set(transactionId, {
+        relativePath,
+        ...(file.binary ? { binary: true, afterBytes: file.afterBytes } : {}),
+        ...(file.workspaceId
+          ? { workspaceId: file.workspaceId, workspaceName: file.workspaceName }
+          : {}),
         added: counts.added,
         removed: counts.removed,
         status: file.status,
+        ...(!studioFileChangeHasLineCounts(file) ? { countsKnown: false } : {}),
         comparable: isComparable(file),
         ...(file.failReason ? { failReason: file.failReason } : {}),
         order,
       });
-      contributions.set(relativePath, perTransaction);
+      contributions.set(key, perTransaction);
     }
   }
 
   const files: StudioChangedFileSummaryEntry[] = [];
   const liveTransactions = new Set<string>();
 
-  for (const [relativePath, perTransaction] of contributions) {
+  for (const perTransaction of contributions.values()) {
     const live = [...perTransaction.entries()].filter(
       ([transactionId]) => !rolledBackTransactions.has(transactionId)
     );
@@ -110,21 +140,29 @@ export function buildStudioChangedFilesSummary(
       liveTransactions.add(transactionId);
     }
     files.push({
-      relativePath,
+      relativePath: latest[1].relativePath,
+      ...(latest[1].binary ? { binary: true, afterBytes: latest[1].afterBytes } : {}),
+      ...(latest[1].workspaceId
+        ? { workspaceId: latest[1].workspaceId, workspaceName: latest[1].workspaceName }
+        : {}),
       status: latest[1].status,
       added: live.reduce((total, [, contribution]) => total + contribution.added, 0),
       removed: live.reduce((total, [, contribution]) => total + contribution.removed, 0),
       transactionId: latest[0],
       comparable: latest[1].comparable,
+      ...(live.some(([, entry]) => entry.countsKnown === false) ? { countsKnown: false } : {}),
       ...(latest[1].failReason ? { failReason: latest[1].failReason } : {}),
     });
   }
 
   files.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
 
-  const undoTransactionId = [...liveTransactions].sort(
-    (left, right) => (liveTransactionOrder.get(right) ?? 0) - (liveTransactionOrder.get(left) ?? 0)
-  )[0];
+  const undoTransactionId = [...liveTransactions]
+    .filter((id) => !id.startsWith('scaffold-'))
+    .sort(
+      (left, right) =>
+        (liveTransactionOrder.get(right) ?? 0) - (liveTransactionOrder.get(left) ?? 0)
+    )[0];
 
   return {
     files,
@@ -132,5 +170,8 @@ export function buildStudioChangedFilesSummary(
     removedLines: files.reduce((total, file) => total + file.removed, 0),
     ...(undoTransactionId ? { undoTransactionId } : {}),
     transactionCount: liveTransactions.size,
+    ...(files.some((file) => file.countsKnown === false)
+      ? { unknownFileCount: files.filter((file) => file.countsKnown === false).length }
+      : {}),
   };
 }

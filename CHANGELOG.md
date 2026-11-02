@@ -5,7 +5,61 @@ All notable changes to the **Workspai** extension (formerly RapidKit) will be do
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.49.0] - 2026-11-02
+
+### Added
+
+- A conversational Assistant across the sidebar and native chat: answer questions,
+  investigate code, prepare plans, edit source, and run project checks with the
+  configured model and available tools.
+- Work on existing projects across opened IDE folders without requiring Workspai
+  registration. Offer in-place adoption or copied import into a managed or custom
+  workspace only with user approval.
+- Scoped Workspai Graph and Intelligence reads, searchable CLI architecture guides,
+  public web research, optional host tools, and focused research/execution delegation.
+- Interactive terminal commands with approval, output, input, and Stop controls.
+- Durable chat attachments, image thumbnails and full-size previews, request-owned
+  file checkpoints, and Keep/Restore controls above the composer.
+- Reviewed inline edits and user-triggered **Suggest Next Edit (Preview)**.
+- Google ADK Python and TypeScript starter kits, alongside the admitted Microsoft
+  Agent Framework and OpenAI Agents SDK kits.
+
+### Changed
+
+- Temporarily hide the Dashboard Review Changes tab and suspend its panel mount.
+  Assistant file review and Keep/Restore controls remain available.
+- Align creation, architecture knowledge, and runtime contracts with Workspai CLI
+  0.80.0. Download and integrity-check the pinned official runtime on first use,
+  then reuse its cache offline; no global CLI install is required.
+- Replace the large Sessions/Questions drawer with a searchable chat-history picker.
+  Group activity by response and retain expanded tool output during live updates.
+- Bound repeated context and page long transcripts while preserving owned history,
+  command receipts, approvals, and resumable work.
+- Validate structured plans independently of the user's language and improve
+  bidirectional text, keyboard navigation, focus, and high-contrast presentation.
+
+### Fixed
+
+- Show exact command approvals and repair activity for Dashboard-origin fixes,
+  including sessions without an initial chat message. Make Stop cancel pending
+  approvals and reconcile stale running states without executing late approvals.
+- Bind provider configuration, credential writes, and connection tests to their
+  selected provider and request. Preserve unsaved drafts, acknowledge storage
+  failures, reject invalid endpoints, retain official provider URLs, and avoid
+  stale connection results or endless pending controls in Dashboard Settings.
+- Keep greetings and informational questions out of unrelated execution and Goal
+  verification loops, including in Agent mode.
+- Preserve explicit workspace/project destinations through creation, continuation,
+  file review, and Resume; distinguish source directories from workspace ownership.
+- Report actual edited/generated file and line totals, retain exact comparisons,
+  and open changed files at their recorded destination.
+- Preserve concurrent user edits during checkpoint review and restoration; reject
+  stale replacements instead of overwriting newer content.
+- Keep Stop, pending approvals, terminal state, and per-request activity consistent.
+  Distinguish provider interruptions, command startup failures, and user cancellation.
+- Keep explanatory prose out of runnable command cards and avoid duplicate final
+  answers. Retain completed command receipts when reporting unfinished work.
+- Exclude development capture instructions and archived screenshots from the VSIX.
 
 ## [0.48.0] - 2026-09-22
 

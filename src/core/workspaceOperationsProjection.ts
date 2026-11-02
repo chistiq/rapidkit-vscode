@@ -368,17 +368,19 @@ export function projectStudioActivity(
             : prior?.completedAt;
         const status: WorkspaceActivityBoardStatus = rollback
           ? 'rolled-back'
-          : event.type === 'tool.failed' || event.type === 'tool.approval.rejected'
-            ? 'failed'
-            : event.type === 'tool.completed'
-              ? 'succeeded'
-              : event.type === 'tool.started' || event.type === 'tool.progress'
-                ? 'running'
-                : event.type === 'tool.approval.requested'
-                  ? 'blocked'
-                  : event.type === 'tool.approval.approved'
-                    ? 'pending'
-                    : (prior?.status ?? 'pending');
+          : event.type === 'tool.approval.rejected' && data.optional === true
+            ? 'succeeded'
+            : event.type === 'tool.failed' || event.type === 'tool.approval.rejected'
+              ? 'failed'
+              : event.type === 'tool.completed'
+                ? 'succeeded'
+                : event.type === 'tool.started' || event.type === 'tool.progress'
+                  ? 'running'
+                  : event.type === 'tool.approval.requested'
+                    ? 'blocked'
+                    : event.type === 'tool.approval.approved'
+                      ? 'pending'
+                      : (prior?.status ?? 'pending');
         const startMs = startedAt ? Date.parse(startedAt) : Number.NaN;
         const endMs = completedAt ? Date.parse(completedAt) : Number.NaN;
         stages.set(event.toolCallId, {

@@ -25,6 +25,7 @@ export type StudioPublicWebFetchResult = {
     contentType: string;
     truncated: boolean;
     text: string;
+    links?: Array<{ title: string; url: string }>;
   };
   error?: string;
 };
@@ -223,7 +224,44 @@ export async function fetchStudioPublicWeb(
       );
     }
     const contentType = response.headers.get('content-type') ?? 'text/plain';
-    const body = decodePublicBody(await readLimitedBody(response), contentType);
+    const bytes = await readLimitedBody(response);
+    const raw = new TextDecoder().decode(bytes);
+    const links: Array<{ title: string; url: string }> = [];
+    if (contentType.includes('html')) {
+      for (const match of raw.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+        try {
+          const url = new URL(match[1].replace(/&amp;/g, '&'), current);
+          let target = url.searchParams.get('uddg');
+          const bingTarget =
+            url.hostname.endsWith('bing.com') && url.pathname === '/ck/a'
+              ? url.searchParams.get('u')
+              : null;
+          if (bingTarget?.startsWith('a1')) {
+            target = Buffer.from(bingTarget.slice(2), 'base64url').toString('utf8');
+          }
+          const final = target ? new URL(target, url) : url;
+          if (
+            final.protocol === 'https:' &&
+            !isBlockedHostname(final.hostname) &&
+            !final.username &&
+            !final.password
+          ) {
+            if (!links.some((link) => link.url === final.toString())) {
+              links.push({
+                title: htmlToPublicText(match[2]).slice(0, 200),
+                url: final.toString(),
+              });
+            }
+          }
+        } catch {
+          /* Ignore malformed page links. */
+        }
+        if (links.length >= 60) {
+          break;
+        }
+      }
+    }
+    const body = decodePublicBody(bytes, contentType);
     const truncated = body.length > MAX_OUTPUT_CHARS;
     return {
       ok: true,
@@ -232,6 +270,7 @@ export async function fetchStudioPublicWeb(
         requestedUrl: request.url,
         finalUrl: response.url || current.toString(),
         status: response.status,
+        ...(links.length ? { links } : {}),
         contentType,
         truncated,
         text: truncated ? `${body.slice(0, MAX_OUTPUT_CHARS)}\n[truncated]` : body,

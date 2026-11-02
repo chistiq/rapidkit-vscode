@@ -1,15 +1,18 @@
+import { studioSessionHistoryTool } from './studioSessionHistoryTool.js';
+import { registerStudioResearchCapability } from './studioResearchCapabilities.js';
+import { studioToolImageRetention } from './studioHostToolOutputStore.js';
+import { studioAssistantIdeCapabilities } from './studioAssistantIdeCapabilities.js';
+import { createConfiguredStudioAgentModel } from './configuredStudioAgentModel.js';
 import * as path from 'node:path';
 import fs from 'fs-extra';
 import * as vscode from 'vscode';
 
 import type { StudioBlockerHandoff } from '../contracts/studio-blocker-handoff-contract.js';
 import type { AIConversationHistoryEntry } from './aiService.js';
-import { askConfiguredAIProviderForToolAction } from './aiProviderService.js';
 import { normalizePatchesForWorkspaceScope, type FilePatch } from './patchApplyEngine.js';
 import { collectSidebarStudioRepairEvidence } from './sidebarStudioPatchBridge.js';
 import { inspectStudioAgentFiles } from './sidebarStudioAgentRuntime.js';
 import { StudioAgentSession } from './studioAgentSession.js';
-import { ContractStudioAgentModelAdapter } from './studioAgentModelProtocol.js';
 import type { StudioAgentToolApprovalGrant } from './studioAgentToolRegistry.js';
 import { VSCodeStudioAgentSessionStore } from './studioAgentSessionStore.js';
 import {
@@ -30,7 +33,7 @@ import {
   searchStudioWorkspaceSource,
 } from './studioWorkspaceInspection.js';
 import { runRapidkitStreaming } from './streamingRapidkitRunner.js';
-import { buildWorkspaceGraphSearchCommand } from './workspaceGraphSearchCommand.js';
+import { studioWorkspaceIntelligenceReaders } from './studioWorkspaceIntelligenceReads.js';
 import {
   resolveStudioWorkspaceCommandPlan,
   type StudioWorkspaceCommandRequest,
@@ -137,6 +140,7 @@ export async function runNativeChatStudioAgent(input: {
   task: string;
   stream: NativeAgentStream;
   token: vscode.CancellationToken;
+  toolInvocationToken?: vscode.ChatParticipantToolToken;
   requestedModelId?: string;
   initialSourceRepairDirective?: Record<string, unknown>;
   initialConversation?: AIConversationHistoryEntry[];
@@ -288,7 +292,10 @@ export async function runNativeChatStudioAgent(input: {
   };
 
   const host: StudioAgentWorkspaiToolHost = {
-    ...studioHostLanguageModelToolAdapters(input.token),
+    ...studioHostLanguageModelToolAdapters(input.token, input.toolInvocationToken, {
+      root:
+        input.extensionContext.storageUri?.fsPath ?? input.extensionContext.globalStorageUri.fsPath,
+    }),
     recoverActiveBlocker: async (request) => {
       const producerRoute = resolveStudioCausalProducerRoute(activeHandoff);
       const recovery = await ensureStudioRemediationRecovery({
@@ -380,34 +387,7 @@ export async function runNativeChatStudioAgent(input: {
       };
     },
     search: async (request) => ({ ok: true, output: await searchStudioWorkspaceSource(request) }),
-    graphSearch: async (request) => {
-      const limit = Math.min(Math.max(Math.trunc(request.limit ?? 12), 1), 50);
-      const execution = await runRapidkitStreaming<unknown>({
-        command: buildWorkspaceGraphSearchCommand({
-          query: request.query,
-          limit,
-          ...(request.projectPath
-            ? { scope: `project:${path.basename(request.projectPath)}` }
-            : {}),
-        }),
-        cwd: request.workspacePath,
-        featureLabel: 'Workspace graph retrieval',
-        timeoutMs: 2 * 60_000,
-      });
-      const ok = execution.failed === false && execution.exitCode === 0;
-      return {
-        ok,
-        output: { query: request.query, limit, result: execution.result },
-        ...(ok
-          ? {}
-          : {
-              error:
-                execution.stderr ||
-                execution.stdout ||
-                `Workspace graph search exited with ${execution.exitCode}.`,
-            }),
-      };
-    },
+    ...studioWorkspaceIntelligenceReaders(),
     diagnostics: async (request) => ({
       ok: true,
       output: { diagnostics: inspectStudioWorkspaceDiagnostics(request) },
@@ -1027,44 +1007,31 @@ export async function runNativeChatStudioAgent(input: {
     goalId: governedChangeGoal.goalPackId,
     goalCompletionMode: governedChangeGoal.governedGoal.completionMode,
   });
-  const model = new ContractStudioAgentModelAdapter(
+  registry.register(studioSessionHistoryTool(input.extensionContext));
+  studioAssistantIdeCapabilities(input.extensionContext).register(registry, false);
+  registerStudioResearchCapability({
+    context: input.extensionContext,
+    registry,
+    host,
+    token: input.token,
+    modelId: input.requestedModelId,
+  });
+  const model = createConfiguredStudioAgentModel({
+    context: input.extensionContext,
     objective,
-    async (_prompt, request) => {
-      const response = await askConfiguredAIProviderForToolAction(
-        input.extensionContext,
-        request.messages,
-        request.tools,
-        input.token,
-        input.requestedModelId,
-        [
-          { path: input.projectPath, token: '$PROJECT' },
-          { path: input.workspacePath, token: '$WORKSPACE' },
-        ]
-      );
-      const resolution = {
-        provider: response.provider,
-        modelId: response.modelId,
-        ...(response.requestedModelId ? { requestedModelId: response.requestedModelId } : {}),
-        fallback: response.fallback,
-        attempts: response.attempts,
-        ...(response.inputTokens !== undefined ? { inputTokens: response.inputTokens } : {}),
-        ...(response.outputTokens !== undefined ? { outputTokens: response.outputTokens } : {}),
-        ...(response.tokenUsageSource ? { tokenUsageSource: response.tokenUsageSource } : {}),
-      };
-      return response.type === 'tool'
-        ? {
-            callId: response.callId,
-            toolName: response.toolName,
-            input: response.input,
-            resolution,
-          }
-        : { type: 'text' as const, text: response.text, resolution };
-    },
-    undefined,
-    input.initialConversation
-  );
+    token: input.token,
+    modelId: input.requestedModelId,
+    pathIdentities: [
+      { path: input.projectPath, token: '$PROJECT' },
+      { path: input.workspacePath, token: '$WORKSPACE' },
+    ],
+    history: input.initialConversation,
+  });
   const session = new StudioAgentSession(
     {
+      retainToolImages: studioToolImageRetention(
+        input.extensionContext.storageUri?.fsPath ?? input.extensionContext.globalStorageUri.fsPath
+      ),
       workspacePath: input.workspacePath,
       ...(input.projectPath ? { projectPath: input.projectPath } : {}),
       cardId: activeHandoff.cardId,
@@ -1094,7 +1061,9 @@ export async function runNativeChatStudioAgent(input: {
   if (input.token.isCancellationRequested) {
     session.cancel();
   }
-  const completed = await session.run(objective).finally(() => cancellation.dispose());
+  const completed = await session
+    .run(objective, { userRequest: input.task })
+    .finally(() => cancellation.dispose());
   const receipt = buildStudioVerifiedRepairReceipt(completed);
   if (completed.status === 'completed') {
     input.stream.markdown(`### Source repair verified\n\n${receipt.answer}`);

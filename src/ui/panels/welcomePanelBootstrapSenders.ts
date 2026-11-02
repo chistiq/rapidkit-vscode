@@ -77,15 +77,19 @@ export async function sendWelcomePanelWorkspaceToolStatus(
   await sendWorkspaceToolStatus(bootstrapHost);
 }
 
+const settingsSendRevisions = new WeakMap<vscode.ExtensionContext, number>();
+
 export async function sendWelcomePanelWorkspaiSettings(
   context: vscode.ExtensionContext,
   postWebviewMessage: (command: string, data?: unknown) => void,
   preferredModelOverride?: string
 ): Promise<void> {
-  postWebviewMessage(
-    'workspaiSettings',
-    await buildWorkspaiSettingsPayload(context, preferredModelOverride)
-  );
+  const revision = (settingsSendRevisions.get(context) ?? 0) + 1;
+  settingsSendRevisions.set(context, revision);
+  const payload = await buildWorkspaiSettingsPayload(context, preferredModelOverride);
+  if (settingsSendRevisions.get(context) === revision) {
+    postWebviewMessage('workspaiSettings', payload);
+  }
 }
 
 export function readWelcomePanelUiPreferences(

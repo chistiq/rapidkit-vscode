@@ -5,8 +5,14 @@ export const STUDIO_REPAIR_TIMELINE_LIMIT = 40;
 export function studioTimelineActivityKind(
   progress: Pick<SidebarStudioActionProgressView, 'action' | 'phase' | 'title'>
 ): 'inspect' | 'fix' | 'verify' | 'complete' {
+  if (progress.action === 'start-terminal' || progress.action === 'terminal-command') {
+    return 'fix';
+  }
   if (progress.action === 'cli-repair-engine' || (progress.phase ?? '').startsWith('cli-repair-')) {
     return 'fix';
+  }
+  if (/^(inspect|read|search|list|discover|delegate)-/.test(progress.action)) {
+    return 'inspect';
   }
   const phase = `${progress.phase ?? ''} ${progress.action}`;
   if (/verif|readiness|contract/i.test(phase)) {
@@ -170,10 +176,74 @@ function progressIdentity(progress: SidebarStudioActionProgressView): string {
  */
 export function appendStudioRepairTimelineEntry(
   timeline: SidebarStudioActionProgressView[],
-  progress: SidebarStudioActionProgressView
+  progress: SidebarStudioActionProgressView,
+  coalesce = true,
+  limit = STUDIO_REPAIR_TIMELINE_LIMIT
 ): SidebarStudioActionProgressView[] {
+  // Permission, approval, start and completion are phases of the same call.
+  // Match by invocation before the activity-kind coalescer: changing from
+  // "command-approved" to a tool's own phase must not strand an old spinner.
+  const invocationIndex = progress.invocationId
+    ? timeline.findIndex(
+        (entry) =>
+          entry.invocationId === progress.invocationId &&
+          (entry.requestId === progress.requestId ||
+            (Boolean(entry.receipt) && entry.receipt?.eventId === progress.receipt?.eventId))
+      )
+    : -1;
+  if (invocationIndex >= 0) {
+    const existing = timeline[invocationIndex];
+    const phaseHistory = [
+      ...new Map(
+        [
+          ...(existing.phaseHistory ?? []),
+          ...(existing.receipt ? [existing.receipt] : []),
+          ...(progress.receipt ? [progress.receipt] : []),
+        ].map((receipt) => [receipt.eventId, receipt])
+      ).values(),
+    ].sort((a, b) => a.sequence - b.sequence);
+    if ((existing.eventSequence ?? 0) > (progress.eventSequence ?? Number.MAX_SAFE_INTEGER)) {
+      return phaseHistory.length
+        ? timeline.map((entry, index) =>
+            index === invocationIndex ? { ...entry, phaseHistory } : entry
+          )
+        : timeline;
+    }
+    return timeline.map((entry, index) =>
+      index === invocationIndex
+        ? {
+            ...progress,
+            ...(phaseHistory.length ? { phaseHistory } : {}),
+            receipt: progress.receipt ?? entry.receipt,
+            fileChanges:
+              progress.fileChanges?.length || progress.transactionState === 'rolled-back'
+                ? progress.fileChanges
+                : entry.fileChanges,
+            changedPaths:
+              progress.changedPaths?.length || progress.transactionState === 'rolled-back'
+                ? progress.changedPaths
+                : entry.changedPaths,
+            activityPaths: progress.activityPaths?.length
+              ? progress.activityPaths
+              : entry.activityPaths,
+            transactionId: progress.transactionId ?? entry.transactionId,
+            transactionState: progress.transactionState ?? entry.transactionState,
+            outputText: progress.outputText ?? entry.outputText,
+            outputWarning: progress.outputWarning ?? entry.outputWarning,
+            contentParts: progress.contentParts ?? entry.contentParts,
+            transcriptId: entry.transcriptId ?? progress.transcriptId,
+            commandText: progress.commandText ?? entry.commandText,
+          }
+        : entry
+    );
+  }
   const previous = timeline[timeline.length - 1];
-  if (previous && progressIdentity(previous) === progressIdentity(progress)) {
+  if (
+    coalesce &&
+    previous &&
+    previous.requestId === progress.requestId &&
+    progressIdentity(previous) === progressIdentity(progress)
+  ) {
     const repeatedInvocation =
       previous.invocationId !== progress.invocationId &&
       Boolean(progress.invocationId) &&
@@ -182,11 +252,19 @@ export function appendStudioRepairTimelineEntry(
       ...timeline.slice(0, -1),
       {
         ...progress,
+        transcriptId: previous.transcriptId ?? progress.transcriptId,
+        ...(previous.activityPaths?.length || progress.activityPaths?.length
+          ? {
+              activityPaths: [
+                ...new Set([...(previous.activityPaths ?? []), ...(progress.activityPaths ?? [])]),
+              ].slice(-100),
+            }
+          : {}),
         occurrences: repeatedInvocation
           ? (previous.occurrences ?? 1) + 1
           : (progress.occurrences ?? previous.occurrences),
       },
     ];
   }
-  return [...timeline, progress].slice(-STUDIO_REPAIR_TIMELINE_LIMIT);
+  return [...timeline, progress].slice(-limit);
 }

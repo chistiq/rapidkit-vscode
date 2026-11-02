@@ -80,6 +80,15 @@ export const AGENT_STARTERS: Array<{
         },
       ]
     : []),
+  ...(EXECUTABLE_CREATE_ENTRIES.some((entry) => entry.plannerFramework === 'google-adk')
+    ? [
+        {
+          framework: 'google-adk' as const,
+          title: 'Google ADK',
+          detail: 'Governed Python or TypeScript agent',
+        },
+      ]
+    : []),
 ];
 
 export const GATEWAY_STARTERS: Array<{

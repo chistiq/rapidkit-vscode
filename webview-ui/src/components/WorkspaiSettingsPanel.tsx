@@ -7,10 +7,11 @@ import {
   Settings2,
   Sparkles,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ModelSelect } from '@/components/ModelSelect';
 import type { ThemeMode } from '@/components/StudioRedesign/styles/themeSystem';
 import { vscode } from '@/vscode';
+import type { ProviderSettingsNotice } from '@/lib/useAIProviderSettingsActions';
 
 export interface WorkspaiSettingsModel {
   id: string;
@@ -56,6 +57,8 @@ interface WorkspaiSettingsPanelProps {
     reason?: string;
   } | null;
   providerHealthChecking: boolean;
+  providerSettingsPending?: string | null;
+  providerSettingsNotice?: ProviderSettingsNotice | null;
   modelsLoading: boolean;
   onPreferredModelChange: (modelId: string) => void;
   onProviderChange: (provider: string) => void;
@@ -78,6 +81,8 @@ export function WorkspaiSettingsPanel({
   aiProviderStatus,
   aiProviderHealthCheck,
   providerHealthChecking,
+  providerSettingsPending,
+  providerSettingsNotice,
   modelsLoading,
   onPreferredModelChange,
   onProviderChange,
@@ -100,11 +105,71 @@ export function WorkspaiSettingsPanel({
   const [customModelDraft, setCustomModelDraft] = useState(customAIModel);
   const [apiKeyDraft, setApiKeyDraft] = useState('');
 
+  const savedConfig = useRef({
+    provider: aiProvider,
+    baseUrl: customAIBaseUrl,
+    model: customAIModel,
+  });
+  const busy = Boolean(providerSettingsPending) || providerHealthChecking;
+  const configDirty =
+    customBaseUrlDraft.trim() !== customAIBaseUrl || customModelDraft.trim() !== customAIModel;
+  const unsaved = configDirty || Boolean(apiKeyDraft.trim());
+
   useEffect(() => {
-    setCustomBaseUrlDraft(customAIBaseUrl);
-    setCustomModelDraft(customAIModel);
-    setApiKeyDraft('');
+    const previous = savedConfig.current;
+    const changedProvider = previous.provider !== aiProvider;
+    setCustomBaseUrlDraft((draft) =>
+      changedProvider || draft.trim() === previous.baseUrl || draft.trim() === customAIBaseUrl
+        ? customAIBaseUrl
+        : draft
+    );
+    setCustomModelDraft((draft) =>
+      changedProvider || draft.trim() === previous.model || draft.trim() === customAIModel
+        ? customAIModel
+        : draft
+    );
+    if (changedProvider) {
+      setApiKeyDraft('');
+    }
+    savedConfig.current = { provider: aiProvider, baseUrl: customAIBaseUrl, model: customAIModel };
   }, [aiProvider, customAIBaseUrl, customAIModel]);
+
+  useEffect(() => {
+    if (
+      providerSettingsNotice?.ok &&
+      providerSettingsNotice.provider === aiProvider &&
+      providerSettingsNotice.command === 'setCustomAIAPIKey'
+    ) {
+      setApiKeyDraft('');
+    }
+  }, [providerSettingsNotice, aiProvider]);
+
+  const testProviderRow = (
+    <div className="ws-settings-row">
+      <button
+        type="button"
+        className="ws-btn"
+        onClick={onTestAIProvider}
+        disabled={busy || unsaved || !aiProviderStatus?.ready}
+      >
+        {providerHealthChecking ? (
+          <Loader2 size={13} className="workspai-spinner" />
+        ) : (
+          <RefreshCw size={13} />
+        )}
+        Test provider
+      </button>
+      <span className="ws-settings-meta">
+        {unsaved
+          ? 'Save your config and API key before testing.'
+          : aiProviderHealthCheck
+            ? aiProviderHealthCheck.ok
+              ? `Healthy${aiProviderHealthCheck.latencyMs ? ` · ${aiProviderHealthCheck.latencyMs}ms` : ''}`
+              : aiProviderHealthCheck.reason || 'Health check failed'
+            : 'Tests the saved configuration with a minimal live request.'}
+      </span>
+    </div>
+  );
 
   return (
     <section className="ws-settings-shell" aria-label="Workspai settings">
@@ -113,7 +178,7 @@ export function WorkspaiSettingsPanel({
           <div className="ws-kicker">Configuration</div>
           <h2 className="ws-settings-title">Workspai Settings</h2>
           <p className="ws-settings-subtitle">
-            Manage AI defaults and extension preferences. More workspace controls will land here.
+            Choose your AI provider, connection, model, and appearance.
           </p>
         </div>
         <button
@@ -138,7 +203,14 @@ export function WorkspaiSettingsPanel({
 
           <label className="ws-field">
             <span className="ws-field__label">Provider</span>
-            <select value={aiProvider} onChange={(event) => onProviderChange(event.target.value)}>
+            <select
+              value={aiProvider}
+              disabled={busy || aiProviderCatalog.length === 0}
+              onChange={(event) => onProviderChange(event.target.value)}
+            >
+              {aiProviderCatalog.length === 0 ? (
+                <option value={aiProvider}>Loading providers...</option>
+              ) : null}
               {aiProviderCatalog.map((provider) => (
                 <option key={provider.id} value={provider.id}>
                   {provider.label}
@@ -157,7 +229,7 @@ export function WorkspaiSettingsPanel({
                   aiProviderStatus?.ready ? 'is-ready' : 'needs-setup'
                 }`}
               >
-                {aiProviderStatus?.ready ? 'Ready' : 'Setup required'}
+                {aiProviderStatus?.ready ? 'Configured' : 'Setup required'}
               </span>
               <strong>{selectedProvider?.shortLabel ?? aiProviderStatus?.label}</strong>
             </div>
@@ -195,22 +267,39 @@ export function WorkspaiSettingsPanel({
             </div>
           </div>
 
+          {aiProviderStatus?.reason ? (
+            <p className="ws-field__hint" role="status">
+              {aiProviderStatus.reason}
+            </p>
+          ) : null}
+          {providerSettingsPending ? (
+            <p className="ws-field__hint" role="status">
+              {providerHealthChecking ? 'Testing provider...' : 'Saving provider settings...'}
+            </p>
+          ) : null}
+          {providerSettingsNotice && providerSettingsNotice.provider === aiProvider ? (
+            <p className="ws-field__hint" role={providerSettingsNotice.ok ? 'status' : 'alert'}>
+              {providerSettingsNotice.message}
+            </p>
+          ) : null}
+
           {usesVSCodeModels ? (
             <>
               <label className="ws-field">
                 <span className="ws-field__label">Default model</span>
                 <ModelSelect
+                  disabled={busy}
                   value={preferredModelId === 'auto' ? null : preferredModelId}
                   models={availableModels}
                   orphanValue={preferredModelId}
                   showVendor
-                  autoLabel="Auto — best available Copilot / LM model"
+                  autoLabel="Auto — available VS Code model"
                   ariaLabel="Default AI model"
                   onChange={(modelId) => onPreferredModelChange(modelId ?? 'auto')}
                 />
                 <small className="ws-field__hint">
                   {preferredModelId === 'auto'
-                    ? 'Workspai picks the best entitled model registered in VS Code.'
+                    ? 'Use provider Auto when available, otherwise an available VS Code model.'
                     : selectedModel
                       ? `Using ${selectedModel.name}${selectedModel.vendor ? ` · ${selectedModel.vendor}` : ''}.`
                       : 'Selected model is not currently entitled in this VS Code session.'}
@@ -222,14 +311,14 @@ export function WorkspaiSettingsPanel({
                   type="button"
                   className="ws-btn"
                   onClick={onRefreshModels}
-                  disabled={modelsLoading}
+                  disabled={busy || modelsLoading}
                 >
                   {modelsLoading ? (
                     <Loader2 size={13} className="workspai-spinner" />
                   ) : (
                     <RefreshCw size={13} />
                   )}
-                  Refresh entitled models
+                  Refresh available models
                 </button>
                 <span className="ws-settings-meta">
                   {availableModels.length === 0
@@ -237,6 +326,7 @@ export function WorkspaiSettingsPanel({
                     : `${availableModels.length} entitled model(s) in this VS Code session`}
                 </span>
               </div>
+              {testProviderRow}
             </>
           ) : null}
         </article>
@@ -257,6 +347,9 @@ export function WorkspaiSettingsPanel({
               <span className="ws-field__label">Base URL</span>
               <input
                 value={customBaseUrlDraft}
+                disabled={busy}
+                autoComplete="off"
+                spellCheck={false}
                 onChange={(event) => setCustomBaseUrlDraft(event.target.value)}
                 placeholder={selectedProvider?.defaultBaseUrl || 'https://api.example.com/v1'}
                 readOnly={!selectedProvider?.configurableBaseUrl}
@@ -272,6 +365,9 @@ export function WorkspaiSettingsPanel({
               <span className="ws-field__label">Model</span>
               <input
                 value={customModelDraft}
+                disabled={busy}
+                autoComplete="off"
+                spellCheck={false}
                 onChange={(event) => setCustomModelDraft(event.target.value)}
                 placeholder={selectedProvider?.defaultModel || 'provider-model-id'}
                 list={`workspai-provider-models-${aiProvider}`}
@@ -293,6 +389,7 @@ export function WorkspaiSettingsPanel({
               <button
                 type="button"
                 className="ws-btn"
+                disabled={busy || !configDirty}
                 onClick={() =>
                   onCustomAIConfigSave({
                     baseUrl: customBaseUrlDraft,
@@ -311,6 +408,9 @@ export function WorkspaiSettingsPanel({
               <span className="ws-field__label">{selectedProvider?.apiKeyLabel ?? 'API key'}</span>
               <input
                 type="password"
+                disabled={busy}
+                autoComplete="new-password"
+                spellCheck={false}
                 value={apiKeyDraft}
                 onChange={(event) => setApiKeyDraft(event.target.value)}
                 placeholder={
@@ -329,9 +429,8 @@ export function WorkspaiSettingsPanel({
                 className="ws-btn"
                 onClick={() => {
                   onCustomAIAPIKeySave(apiKeyDraft);
-                  setApiKeyDraft('');
                 }}
-                disabled={!apiKeyDraft.trim()}
+                disabled={busy || !apiKeyDraft.trim()}
               >
                 Save API key
               </button>
@@ -339,33 +438,13 @@ export function WorkspaiSettingsPanel({
                 type="button"
                 className="ws-btn ws-btn--ghost"
                 onClick={onCustomAIAPIKeyClear}
+                disabled={busy || !aiProviderStatus?.hasApiKey}
               >
                 Clear key
               </button>
             </div>
 
-            <div className="ws-settings-row">
-              <button
-                type="button"
-                className="ws-btn"
-                onClick={onTestAIProvider}
-                disabled={providerHealthChecking}
-              >
-                {providerHealthChecking ? (
-                  <Loader2 size={13} className="workspai-spinner" />
-                ) : (
-                  <RefreshCw size={13} />
-                )}
-                Test provider
-              </button>
-              <span className="ws-settings-meta">
-                {aiProviderHealthCheck
-                  ? aiProviderHealthCheck.ok
-                    ? `Healthy${aiProviderHealthCheck.latencyMs ? ` · ${aiProviderHealthCheck.latencyMs}ms` : ''}`
-                    : aiProviderHealthCheck.reason || 'Health check failed'
-                  : 'Runs a minimal live request without storing response content.'}
-              </span>
-            </div>
+            {testProviderRow}
           </article>
         )}
 

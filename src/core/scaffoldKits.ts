@@ -29,7 +29,7 @@ export type FrontendScaffoldFramework =
 
 export type DesktopScaffoldFramework = 'tauri' | 'electron';
 export type ExtensionScaffoldFramework = 'vscode-extension';
-export type AgentScaffoldFramework = 'microsoft-agent-framework' | 'openai-agents';
+export type AgentScaffoldFramework = 'microsoft-agent-framework' | 'openai-agents' | 'google-adk';
 export type GatewayScaffoldFramework = 'openrouter';
 
 export type ScaffoldFramework =
@@ -286,23 +286,37 @@ const AGENT_KIT_PRESENTATION: Record<
     framework: 'microsoft-agent-framework',
     displayName: 'Microsoft Agent Framework · Python',
     description:
-      'Governed Python agent with bounded Workspai context and deterministic verification.',
+      'Preview Workspai integration; Microsoft Agent Framework itself is stable. Governed Python agent with bounded context and deterministic verification.',
   },
   'agent.microsoft.dotnet': {
     framework: 'microsoft-agent-framework',
     displayName: 'Microsoft Agent Framework · .NET',
     description:
-      'Governed .NET agent with bounded Workspai context and deterministic verification.',
+      'Preview Workspai integration; Microsoft Agent Framework itself is stable. Governed .NET agent with bounded context and deterministic verification.',
   },
   'agent.openai.python': {
     framework: 'openai-agents',
     displayName: 'OpenAI Agents SDK · Python',
-    description: 'Governed Python agent on the admitted OpenAI Agents SDK baseline.',
+    description:
+      'Stable Workspai integration. Governed Python agent on the admitted OpenAI Agents SDK baseline.',
   },
   'agent.openai.typescript': {
     framework: 'openai-agents',
     displayName: 'OpenAI Agents SDK · TypeScript',
-    description: 'Governed TypeScript agent on the admitted OpenAI Agents SDK baseline.',
+    description:
+      'Stable Workspai integration. Governed TypeScript agent on the admitted OpenAI Agents SDK baseline.',
+  },
+  'agent.google-adk.python': {
+    framework: 'google-adk',
+    displayName: 'Google ADK · Python',
+    description:
+      'Preview Workspai integration; Google ADK itself is stable. Governed Python agent on the admitted baseline (Python 3.11+).',
+  },
+  'agent.google-adk.typescript': {
+    framework: 'google-adk',
+    displayName: 'Google ADK · TypeScript',
+    description:
+      'Preview Workspai integration; Google ADK itself is stable. Governed TypeScript agent on the admitted baseline.',
   },
 };
 
@@ -466,7 +480,11 @@ export function isExtensionScaffoldFramework(
 export function isAgentScaffoldFramework(
   framework: string | undefined
 ): framework is AgentScaffoldFramework {
-  return framework === 'microsoft-agent-framework' || framework === 'openai-agents';
+  return (
+    framework === 'microsoft-agent-framework' ||
+    framework === 'openai-agents' ||
+    framework === 'google-adk'
+  );
 }
 
 export function isGatewayScaffoldFramework(

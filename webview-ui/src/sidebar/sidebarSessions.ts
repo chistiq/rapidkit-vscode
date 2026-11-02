@@ -1,4 +1,5 @@
 import { vscode } from '@/vscode';
+import { truncateChatResponse, type ChatResponsePart } from './chatResponseParts';
 
 /**
  * Chat session model shared by the Advisor (2.11e) and Studio (2.11f) tabs,
@@ -7,8 +8,22 @@ import { vscode } from '@/vscode';
  */
 
 export interface ChatTurn {
+  executionTarget?: { ref: string; name: string };
+  id?: string;
+  attachmentStored?: boolean;
+  attachmentError?: string;
+  checkpointReview?: 'kept' | 'restored' | 'reapplied';
+  checkpointError?: string;
+  /** Arrival order of public text and tool activity for this response. */
+  parts?: ChatResponsePart[];
   role: 'user' | 'assistant';
   content: string;
+  /** In-memory previews; image bytes are omitted from synchronous webview persistence. */
+  images?: Array<{ mimeType: string; base64: string }>;
+  hasImage?: boolean;
+  /** Host request identities and public tool activity owned by this assistant response. */
+  requestIds?: string[];
+  activity?: import('@/lib/sidebarStudioActionProgress').SidebarStudioActionProgressView[];
 }
 
 export type ChatSessionStatus = 'idle' | 'streaming' | 'done' | 'error';
@@ -84,14 +99,18 @@ export interface ChatModeSuggestion {
 }
 
 export interface ChatSession {
+  executionTarget?: { ref: string; name: string };
   sessionId: string;
   title: string;
   messages: ChatTurn[];
   status: ChatSessionStatus;
   /** Short host-authored description of the current model operation. */
   activityLabel?: string;
+  /** The live host session is suspended until the user replies; no model work is running. */
+  waitingForInput?: boolean;
   modelId?: string;
   error?: string;
+  terminalReason?: string;
   /** Studio-only: the active mode for the session. */
   mode?: string;
   /** Immutable Assistant capability boundary for this conversation. */
@@ -106,25 +125,88 @@ export interface ChatSession {
   editorIssue?: ChatSessionEditorIssue;
 }
 
+/** Approval ownership follows the running request across steering turns. */
+export function pendingChatApprovals(session: ChatSession | null) {
+  if (session?.status !== 'streaming') {
+    return [];
+  }
+  const currentRequests = new Set(
+    session.messages.filter((turn) => turn.role === 'assistant').at(-1)?.requestIds ?? []
+  );
+  const latest = new Map<
+    string,
+    import('@/lib/sidebarStudioActionProgress').SidebarStudioActionProgressView
+  >();
+  for (const turn of session.messages) {
+    for (const entry of turn.role === 'assistant' ? (turn.activity ?? []) : []) {
+      if (entry.requestId && currentRequests.size && !currentRequests.has(entry.requestId)) {
+        continue;
+      }
+      const key = `${entry.requestId ?? ''}:${entry.invocationId ?? entry.approvalRequest?.toolCallId ?? ''}`;
+      if (!entry.invocationId && !entry.approvalRequest) {
+        continue;
+      }
+      const previous = latest.get(key);
+      if (
+        previous &&
+        (previous.eventSequence ?? 0) > (entry.eventSequence ?? Number.MAX_SAFE_INTEGER)
+      ) {
+        continue;
+      }
+      latest.set(key, entry);
+    }
+  }
+  return [...latest.values()].filter(
+    (entry) => entry.status === 'review' && entry.approvalRequest?.sessionId === session.sessionId
+  );
+}
+
 export interface SidebarPersistedState {
   workspaiImpact?: { sessions: ChatSession[]; activeId: string | null };
   workspaiStudio?: { sessions: ChatSession[]; activeId: string | null };
 }
 
+export function chatSessionFailureLabel(session: ChatSession): string {
+  return session.terminalReason === 'cancelled'
+    ? 'Stopped'
+    : session.terminalReason === 'ai-provider-timeout'
+      ? 'Model request timed out'
+      : session.terminalReason === 'ai-provider-unavailable'
+        ? 'AI connection needed'
+        : 'Needs attention';
+}
+
 const MAX_PERSISTED_SESSIONS = 24;
 const MAX_PERSISTED_MESSAGES_PER_SESSION = 24;
 const MAX_PERSISTED_MESSAGE_CHARS = 24_000;
+const RESTORED_TRUNCATION_NOTE =
+  '[Earlier text was truncated in this restored chat. Request the missing context if needed.]\n';
 
 function compactPersistedSessions(sessions: ChatSession[]): ChatSession[] {
   return sessions.slice(0, MAX_PERSISTED_SESSIONS).map((session) => ({
     ...session,
-    messages: session.messages.slice(-MAX_PERSISTED_MESSAGES_PER_SESSION).map((message) => ({
-      ...message,
-      content:
-        message.content.length > MAX_PERSISTED_MESSAGE_CHARS
-          ? message.content.slice(-MAX_PERSISTED_MESSAGE_CHARS)
-          : message.content,
-    })),
+    messages: session.messages.slice(-MAX_PERSISTED_MESSAGES_PER_SESSION).map((original) => {
+      const message = truncateChatResponse(
+        original,
+        MAX_PERSISTED_MESSAGE_CHARS,
+        RESTORED_TRUNCATION_NOTE
+      );
+      return {
+        ...message,
+        images: undefined,
+        activity: message.activity?.map((entry) => ({
+          ...entry,
+          outputText: entry.outputText
+            ? '[Output is available in the durable host session; not retained in restored chat.]'
+            : undefined,
+          technicalDetail: undefined,
+          summary: entry.summary?.slice(0, 1000),
+          fileChanges: entry.fileChanges?.map((file) => ({ ...file, diffLines: undefined })),
+        })),
+        ...(message.hasImage || message.images?.length ? { hasImage: true } : {}),
+        content: message.content,
+      };
+    }),
   }));
 }
 
@@ -178,6 +260,9 @@ export function chatSessionGroupLabel(kind: ChatSessionKind): string {
 }
 
 export function chatSessionWorkspaceLabel(session: ChatSession): string {
+  if (session.executionTarget) {
+    return session.executionTarget.name;
+  }
   if (session.incident) {
     return (
       session.incident.workspaceName ||
@@ -196,6 +281,9 @@ export function chatSessionWorkspaceLabel(session: ChatSession): string {
 }
 
 export function chatSessionWorkspaceKey(session: ChatSession): string {
+  if (session.executionTarget) {
+    return `created:${session.executionTarget.ref}`;
+  }
   if (session.incident?.workspacePath) {
     return `workspace:${session.incident.workspacePath}`;
   }
@@ -206,6 +294,9 @@ export function chatSessionWorkspaceKey(session: ChatSession): string {
 }
 
 export function chatSessionProjectLabel(session: ChatSession): string | undefined {
+  if (session.executionTarget) {
+    return undefined;
+  }
   if (session.incident) {
     return session.incident.projectName || basenameFromPath(session.incident.projectPath);
   }
@@ -216,6 +307,9 @@ export function chatSessionProjectLabel(session: ChatSession): string | undefine
 }
 
 export function chatSessionContextLabel(session: ChatSession): string {
+  if (session.executionTarget) {
+    return `${session.executionTarget.name} / workspace`;
+  }
   if (session.editorIssue) {
     const file =
       session.editorIssue.fileName ||
@@ -244,10 +338,23 @@ export function toHistory(session: ChatSession | undefined): ChatTurn[] {
   if (!session) {
     return [];
   }
-  return session.messages
-    .filter((m) => m.content.trim().length > 0)
-    .slice(-8)
-    .map((m) => ({ role: m.role, content: m.content }));
+  const turns = session.messages.filter((m) => m.content.trim().length > 0).slice(-8);
+  let latestImage = -1;
+  turns.forEach((turn, index) => {
+    if (turn.images?.length) {
+      latestImage = index;
+    }
+  });
+  return turns.map((turn, index) => ({
+    role: turn.role,
+    ...(turn.id ? { id: turn.id } : {}),
+    ...(turn.attachmentStored ? { attachmentStored: true } : {}),
+    content:
+      turn.hasImage && !turn.images?.length && !turn.attachmentStored
+        ? `${turn.content}\n[Earlier image bytes were not retained after reload. Request reattachment if visual inspection is needed.]`
+        : turn.content,
+    ...(index === latestImage ? { images: turn.images } : {}),
+  }));
 }
 
 function readState(): SidebarPersistedState {
@@ -270,7 +377,7 @@ export function loadSessions(key: 'workspaiImpact' | 'workspaiStudio'): {
   activeId: string | null;
 } {
   const state = readState();
-  const slice = state[key];
+  const slice = state[key] ?? (key === 'workspaiStudio' ? state.workspaiImpact : undefined);
   if (slice && Array.isArray(slice.sessions)) {
     return { sessions: slice.sessions, activeId: slice.activeId ?? null };
   }

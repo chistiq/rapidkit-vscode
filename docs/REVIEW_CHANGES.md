@@ -1,5 +1,8 @@
 # Review Changes
 
+> The Dashboard tab is temporarily hidden in 0.49.0. The workflow below
+> describes the retained implementation. Assistant file review remains available.
+
 Review Changes is a local, pre-handoff view of working-tree changes and
 CLI-authored impact. It is not an AI code reviewer or a completed verification.
 

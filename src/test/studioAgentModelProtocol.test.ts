@@ -11,6 +11,132 @@ import {
 import type { StudioAgentModelContext } from '../core/studioAgentSession.js';
 
 describe('Studio Agent model protocol', () => {
+  it('preserves an explicit managed destination and sends a compact scaffold receipt instead of every generated file', async () => {
+    let prompt = '';
+    const adapter = new ContractStudioAgentModelAdapter(
+      'Add a test to /opt/fixtures/private/.workspai/workspaces/article-blog-workspace',
+      async (text) => {
+        prompt = text;
+        return {
+          toolName: STUDIO_AGENT_COMPLETE_TOOL_NAME,
+          input: { summary: 'Observed generated source files.' },
+        };
+      }
+    );
+    await adapter.next({
+      session: {
+        schemaVersion: 'workspai.studio-agent-session.v1',
+        id: 's',
+        workspacePath: '/workspace',
+        cardId: 'assistant:ask',
+        assistantMode: 'ask',
+        status: 'running',
+        createdAt: '2026-11-01',
+        updatedAt: '2026-11-01',
+        sequence: 0,
+        events: [],
+      },
+      tools: [],
+      steering: [],
+      latestObservation: {
+        ok: true,
+        output: {
+          scaffoldSummary: { fileCount: 2000, addedLines: 30000 },
+          changedPaths: Array.from({ length: 2000 }, (_, index) => `src/generated-${index}.ts`),
+          fileChanges: [
+            {
+              relativePath: 'large.ts',
+              diffLines: [{ content: 'GENERATED-SOURCE-BODY'.repeat(2000) }],
+            },
+          ],
+        },
+      },
+    });
+    expect(prompt).toContain('managed workspace "article-blog-workspace"');
+    expect(prompt).not.toContain('/opt/fixtures/private');
+    expect(prompt).toContain('"addedLines":30000');
+    expect(prompt).not.toContain('generated-1999.ts');
+    expect(prompt).not.toContain('GENERATED-SOURCE-BODY');
+  });
+  it('forwards image observations and arbitrary host result fields to the model', async () => {
+    const responses: string[] = [];
+    const images = [{ mimeType: 'image/jpeg', base64: '/9j/4AAQ' }];
+    let turn = 0;
+    const adapter = new ContractStudioAgentModelAdapter(
+      'Inspect the browser screenshot',
+      async (_prompt, request) => {
+        if (turn++ === 0)
+          return {
+            callId: 'image-call',
+            toolName: 'invoke-host-tool',
+            input: { name: 'screenshot' },
+          };
+        expect(request.messages).toContainEqual({
+          role: 'user',
+          content: 'Inspect the attached design',
+          images,
+        });
+        const result = request.messages.find((message) => 'toolResult' in message);
+        expect(result && 'toolResult' in result ? result.toolResult.images : undefined).toEqual(
+          images
+        );
+        responses.push(JSON.stringify(result));
+        return {
+          toolName: STUDIO_AGENT_COMPLETE_TOOL_NAME,
+          input: { summary: 'The screenshot contains a button.' },
+        };
+      }
+    );
+    const session = {
+      schemaVersion: 'workspai.studio-agent-session.v1' as const,
+      id: 'images',
+      workspacePath: '/workspace',
+      cardId: 'assistant:ask',
+      assistantMode: 'ask' as const,
+      status: 'running' as const,
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-01',
+      sequence: 0,
+      events: [],
+    };
+    const tools = [
+      {
+        name: 'invoke-host-tool',
+        title: 'Host',
+        description: 'Host tool',
+        inputSchema: {},
+        activity: 'inspect',
+        risk: 'read',
+      },
+    ];
+    await adapter.next({ session, tools, steering: [] });
+    await adapter.next({
+      session,
+      tools,
+      steering: [],
+      steeringAttachment: { content: 'Inspect the attached design', images },
+      recentObservations: [
+        {
+          toolCallId: 'image-call',
+          toolName: 'invoke-host-tool',
+          input: { name: 'screenshot' },
+          result: {
+            ok: true,
+            images,
+            output: {
+              text: 'Screenshot captured.',
+              customHostField: 'preserved',
+              links: [{ title: 'Docs', url: 'https://example.test/docs' }],
+            },
+          },
+        },
+      ],
+    });
+    expect(responses[0]).toContain('customHostField');
+    expect(responses[0]).toContain('https://example.test/docs');
+    expect(responses[0]).toContain('/9j/4AAQ');
+  });
+
   it('accepts only exact allowlisted tool actions', () => {
     expect(
       parseStudioAgentModelAction({
@@ -79,7 +205,7 @@ describe('Studio Agent model protocol', () => {
     });
   });
 
-  it('exposes structured user input only to autonomous modes', async () => {
+  it('exposes structured user input to both autonomous and read-only modes', async () => {
     const observedTools: string[][] = [];
     const complete = async (_prompt: string, request: { tools: Array<{ name: string }> }) => {
       observedTools.push(request.tools.map((tool) => tool.name));
@@ -108,7 +234,7 @@ describe('Studio Agent model protocol', () => {
     });
 
     expect(observedTools[0]).toContain(STUDIO_AGENT_REQUEST_INPUT_TOOL_NAME);
-    expect(observedTools[1]).not.toContain(STUDIO_AGENT_REQUEST_INPUT_TOOL_NAME);
+    expect(observedTools[1]).toContain(STUDIO_AGENT_REQUEST_INPUT_TOOL_NAME);
   });
 
   it('grounds every turn in objective, tools, observations, and durable events', async () => {

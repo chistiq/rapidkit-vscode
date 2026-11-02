@@ -7,6 +7,7 @@ import {
   type EvidenceAgentContextBundle,
 } from './evidenceAgentContextBundle.js';
 import type { EvidenceFreshnessAssessment } from './workspaceEvidenceFreshness.js';
+import { STUDIO_INTELLIGENCE_USAGE_HINT } from './studioIntelligenceKnowledge.js';
 
 /**
  * Ground every Assistant mode in the same CLI-authored artifact inventory.
@@ -16,9 +17,26 @@ import type { EvidenceFreshnessAssessment } from './workspaceEvidenceFreshness.j
 export function buildAssistantEvidenceObjective(input: {
   task: string;
   assistantMode: WorkspaiAssistantMode;
+  executionAuthority?: 'workspace';
   evidence: EvidenceAgentContextBundle;
   freshness: EvidenceFreshnessAssessment;
 }): string {
+  if (input.executionAuthority === 'workspace') {
+    const present = input.evidence.attachments
+      .filter((attachment) => attachment.exists)
+      .map(evidenceAttachmentLocator);
+    return [
+      input.task,
+      'Workspace-native task: inspect applicable repository instructions and relevant source, perform the requested change, test the result and review the diff. Workspai reports, an active Goal, generated skills and intelligence refresh are optional context, not prerequisites for an ordinary coding or scaffolding request.',
+      'When the user delegates project type, stack or name, choose reasonable defaults and an unused directory, state the choice and proceed. Ask only for essential information that cannot be inferred safely. Use the Workspai CLI for a request to scaffold with Workspai: inspect its create command syntax, choose a supported kit, and use an available command or terminal tool. Never overwrite an existing project or bypass exact tool approvals.',
+      ...(present.length
+        ? [
+            STUDIO_INTELLIGENCE_USAGE_HINT,
+            `Optional existing intelligence: ${JSON.stringify({ freshness: input.freshness.verdict, locators: present.slice(0, 6), available: present.length, omitted: Math.max(0, present.length - 6) })}. Read locators only when relevant; availability is not freshness or execution authorization.`,
+          ]
+        : []),
+    ].join('\n\n');
+  }
   const availablePaths = input.evidence.attachments
     .filter((attachment) => attachment.exists)
     .map(evidenceAttachmentLocator);

@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { readStudioWorkingBytes } from './studioNativeDocuments.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -274,7 +275,15 @@ export async function inspectStudioAgentFiles(input: {
       (input.kind === 'source' && Boolean(studioSourcePathDenialReason(normalized))) ||
       (input.kind === 'evidence' && !authorized.has(requested))
     ) {
-      throw new Error(`Studio agent path is not authorized: ${requested}`);
+      throw new Error(
+        `Studio agent path is not authorized: ${requested}. ${
+          input.kind === 'source'
+            ? /(?:^|\/)node_modules\//.test(normalized)
+              ? 'For dependency guides use inspect-project-docs with the package and registered project; dependencies remain read-only. If not installed, inspect the manifest and use applicable installation or vendor-documentation tools.'
+              : 'Workspai reports and canonical metadata are evidence, not editable source. Use inspect-evidence with its returned locators; keep successful source observations and inspect protected documents separately.'
+            : 'Use the exact current evidence locators for this scope. In workspace-authority chats omit paths to discover them and select the registered project when needed.'
+        }`
+      );
     }
     const lexicalPath = path.resolve(sourceRoot, normalized);
     if (!isInside(sourceRoot, lexicalPath)) {
@@ -309,7 +318,10 @@ export async function inspectStudioAgentFiles(input: {
     if (!stat.isFile()) {
       throw new Error(`Studio agent target is not a regular file: ${normalized}`);
     }
-    const full = await fs.readFile(realPath);
+    const full =
+      input.kind === 'source'
+        ? await readStudioWorkingBytes(realPath)
+        : await fs.readFile(realPath);
     if (full.subarray(0, STUDIO_AGENT_MAX_FILE_BYTES).includes(0)) {
       throw new Error(`Studio agent target is not UTF-8 text: ${normalized}`);
     }

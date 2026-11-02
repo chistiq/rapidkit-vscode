@@ -165,6 +165,8 @@ const KIT_LABELS: Record<string, string> = {
   'agent.microsoft.dotnet': 'Microsoft Agent Framework · .NET',
   'agent.openai.python': 'OpenAI Agents SDK · Python',
   'agent.openai.typescript': 'OpenAI Agents SDK · TypeScript',
+  'agent.google-adk.python': 'Google ADK · Python',
+  'agent.google-adk.typescript': 'Google ADK · TypeScript',
   'gateway.openrouter.typescript': 'OpenRouter AI Gateway · TypeScript',
   'gateway.openrouter.python': 'OpenRouter AI Gateway · Python',
   'frontend.nextjs': 'Next.js',

@@ -56,3 +56,37 @@ scripts/**
 
 # Exclude documentation (available online)
 docs/**
+
+# Keep local configuration, private material, and development assets out of releases.
+media/README.md
+media/screenshots/archive/**
+CONTRIBUTING.md
+review-artifacts/**
+.agents/**
+.codex/**
+.workspai/**
+.rapidkit/**
+.env
+.env.*
+*.pem
+*.key
+.npmrc
+
+**/.npmrc
+**/.netrc
+**/id_rsa
+**/id_ed25519
+**/credentials.json
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+
+.claude/**
+.cursor/**
+.idea/**
+AGENTS.md
+.mcp.json
+.DS_Store
+**/.env
+**/.env.*

@@ -13,7 +13,8 @@ describe('Assistant mode suggestion contract', () => {
     const chat = read('webview-ui/src/sidebar/ChatTab.tsx');
 
     expect(provider).toContain("'sidebarStudioModeSuggestion'");
-    expect(provider).toContain('resolveAssistantExecutionPolicy');
+    expect(provider).toContain('dispatchAssistantTurn');
+    expect(read('src/core/assistantTurn.ts')).toContain('resolveAssistantExecutionPolicy');
     expect(sidebar).toContain("case 'sidebarStudioModeSuggestion'");
     expect(sidebar).toContain('studio.setModeSuggestion(sessionId');
     expect(sidebar).toContain('const acceptModeSuggestion');

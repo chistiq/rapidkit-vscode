@@ -16,6 +16,7 @@ function host(): ActionsWebviewMessageDispatchHost {
     runInlineImpactQuery: vi.fn(async () => undefined),
     runSidebarAdvisorAction: vi.fn(async () => undefined),
     runInlineStudioQuery: vi.fn(async () => undefined),
+    reconcileSidebarStudioSessions: vi.fn(async () => undefined),
     runSidebarStudioAction: vi.fn(async () => undefined),
     resolveStudioToolApproval: vi.fn(async () => undefined),
     focusPrimarySidebarView: vi.fn(async () => undefined),
@@ -65,6 +66,18 @@ describe('actions webview message dispatcher', () => {
     expect(target.resolveStudioToolApproval).toHaveBeenCalledWith(decision);
     expect(target.runSidebarStudioAction).not.toHaveBeenCalled();
     expect(listActionsWebviewMessageCommands()).toContain('sidebarStudioToolApprovalDecision');
+  });
+
+  it('reconciles persisted streaming sessions against host-owned live sessions', async () => {
+    const target = host();
+    const sessionIds = ['studio-1'];
+
+    await dispatchActionsWebviewMessage(target, {
+      command: 'sidebarReconcileStudioSessions',
+      data: { sessionIds },
+    });
+
+    expect(target.reconcileSidebarStudioSessions).toHaveBeenCalledWith({ sessionIds });
   });
 
   it('routes an exact repair receipt to the native transaction diff lane', async () => {

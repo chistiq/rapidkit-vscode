@@ -8,6 +8,7 @@ const COLLAPSED_FILE_LIMIT = 3;
 type StudioChangedFilesSummaryProps = {
   summary: StudioChangedFilesSummary;
   busy?: boolean;
+  onOpenFile?: (relativePath: string, transactionId: string) => void;
   onOpenDiff?: (relativePath: string, transactionId: string) => void;
   onReview?: () => void;
   onUndo?: (transactionId: string) => void;
@@ -23,6 +24,7 @@ type StudioChangedFilesSummaryProps = {
 export function StudioChangedFilesSummary({
   summary,
   busy = false,
+  onOpenFile,
   onOpenDiff,
   onReview,
   onUndo,
@@ -34,6 +36,10 @@ export function StudioChangedFilesSummary({
   const hiddenCount = Math.max(0, summary.files.length - COLLAPSED_FILE_LIMIT);
   const visibleFiles = expanded ? summary.files : summary.files.slice(0, COLLAPSED_FILE_LIMIT);
   const comparableCount = summary.files.filter((file) => file.comparable).length;
+  const pathCounts = new Map<string, number>();
+  for (const file of summary.files) {
+    pathCounts.set(file.relativePath, (pathCounts.get(file.relativePath) ?? 0) + 1);
+  }
 
   return (
     <section className="ws-sidebar__studio-changeset" aria-label="Files changed by the agent">
@@ -43,11 +49,21 @@ export function StudioChangedFilesSummary({
         </span>
         <div className="ws-sidebar__studio-changeset-title">
           <strong>
-            Edited {summary.files.length} {summary.files.length === 1 ? 'file' : 'files'}
+            {summary.files.every((file) => file.status === 'added') ? 'Created' : 'Edited'}{' '}
+            {summary.files.length} {summary.files.length === 1 ? 'file' : 'files'}
           </strong>
           <span className="ws-sidebar__studio-changeset-counts">
-            <span data-kind="added">+{summary.addedLines}</span>
-            <span data-kind="removed">-{summary.removedLines}</span>
+            {summary.files.length > (summary.unknownFileCount ?? 0) ? (
+              <>
+                <span data-kind="added">+{summary.addedLines}</span>
+                <span data-kind="removed">-{summary.removedLines}</span>
+              </>
+            ) : null}
+            {summary.unknownFileCount ? (
+              <span title="Line totals exclude binary files and files with unavailable counts">
+                {summary.unknownFileCount} uncounted
+              </span>
+            ) : null}
           </span>
         </div>
         <div className="ws-sidebar__studio-changeset-actions">
@@ -84,23 +100,48 @@ export function StudioChangedFilesSummary({
       </header>
       <ul className="ws-sidebar__studio-changeset-files">
         {visibleFiles.map((file) => (
-          <li key={file.relativePath} data-status={file.status}>
+          <li key={`${file.workspaceId ?? ''}:${file.relativePath}`} data-status={file.status}>
             <button
               type="button"
-              disabled={!file.comparable || !onOpenDiff}
-              onClick={() => onOpenDiff?.(file.relativePath, file.transactionId)}
+              disabled={
+                file.status === 'deleted'
+                  ? !file.comparable || !onOpenDiff
+                  : !onOpenFile && (!file.comparable || !onOpenDiff)
+              }
+              onClick={() =>
+                file.status !== 'deleted' && onOpenFile
+                  ? onOpenFile(file.relativePath, file.transactionId)
+                  : onOpenDiff?.(file.relativePath, file.transactionId)
+              }
               title={
                 file.failReason ??
-                (file.comparable
-                  ? `Compare ${file.relativePath}`
-                  : `${file.relativePath} has no exact comparison`)
+                (file.status !== 'deleted' && onOpenFile
+                  ? `Open ${file.relativePath}`
+                  : file.comparable
+                    ? `Compare ${file.relativePath}`
+                    : `${file.relativePath} has no exact comparison`)
               }
             >
-              <code>{compactStudioPathText(file.relativePath)}</code>
+              <code>
+                {(pathCounts.get(file.relativePath) ?? 0) > 1
+                  ? `${file.workspaceName ?? 'Workspace'} · `
+                  : ''}
+                {compactStudioPathText(file.relativePath)}
+              </code>
             </button>
             <span className="ws-sidebar__studio-changeset-counts">
-              <span data-kind="added">+{file.added}</span>
-              <span data-kind="removed">-{file.removed}</span>
+              {file.countsKnown === false ? (
+                <span>
+                  {file.binary
+                    ? `Binary${file.afterBytes !== undefined ? ` · ${file.afterBytes.toLocaleString()} bytes` : ''}`
+                    : 'Counts unavailable'}
+                </span>
+              ) : (
+                <>
+                  <span data-kind="added">+{file.added}</span>
+                  <span data-kind="removed">-{file.removed}</span>
+                </>
+              )}
             </span>
           </li>
         ))}

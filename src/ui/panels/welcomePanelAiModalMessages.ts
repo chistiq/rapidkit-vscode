@@ -9,13 +9,19 @@ import { handleAiModalQueryMessage, type AiModalQueryHost } from './welcomePanel
 const DEFAULT_AI_MODULE_SUGGEST_TIMEOUT_MS = 20_000;
 const MIN_AI_MODULE_SUGGEST_TIMEOUT_MS = 1_000;
 const MAX_AI_MODULE_SUGGEST_TIMEOUT_MS = 60_000;
+const activeModuleSuggestionRequests = new Map<string, vscode.CancellationTokenSource>();
 
 export type AiModalMessageHost = AiModalQueryHost & {
   getModulesCatalog: () => ModuleData[];
   ensureModulesCatalogLoaded: () => Promise<void>;
 };
 
-const AI_MODAL_WEBVIEW_COMMANDS = new Set(['aiSuggestModules', 'aiCancelQuery', 'aiQuery']);
+const AI_MODAL_WEBVIEW_COMMANDS = new Set([
+  'aiSuggestModules',
+  'aiCancelModuleSuggestions',
+  'aiCancelQuery',
+  'aiQuery',
+]);
 
 export function isAiModalWebviewCommand(command: string): boolean {
   return AI_MODAL_WEBVIEW_COMMANDS.has(command);
@@ -43,25 +49,45 @@ export async function handleAiSuggestModulesMessage(
   const payload = asRecord(messageData);
   const fw = typeof payload?.framework === 'string' ? payload.framework : undefined;
   const pn = typeof payload?.projectName === 'string' ? payload.projectName : undefined;
-  if (!fw) {
+  const requestId = typeof payload?.requestId === 'string' ? payload.requestId : undefined;
+  if (!fw || !requestId) {
     return;
   }
 
+  const requestTokenSource = new vscode.CancellationTokenSource();
+  activeModuleSuggestionRequests.set(requestId, requestTokenSource);
+  let timedOut = false;
+  const postResult = (data: {
+    loading: boolean;
+    modelId?: string;
+    suggestions?: unknown[];
+    error?: string;
+  }) => host.postWebviewMessage('aiModuleSuggestions', { ...data, requestId });
+
   if (fw !== 'fastapi' && fw !== 'nestjs') {
-    host.postWebviewMessage('aiModuleSuggestions', {
+    postResult({
       loading: false,
       suggestions: [],
       error: 'AI module suggestions are available only for FastAPI and NestJS projects.',
     });
+    activeModuleSuggestionRequests.delete(requestId);
+    requestTokenSource.dispose();
     return;
   }
 
   try {
+    postResult({ loading: true });
     const { selectModelWithPreference } = await import('../../core/aiService.js');
     const { model, modelId } = await selectModelWithPreference();
-    host.postWebviewMessage('aiModuleSuggestions', { loading: true, modelId });
+    if (requestTokenSource.token.isCancellationRequested) {
+      return;
+    }
+    postResult({ loading: true, modelId });
 
     await host.ensureModulesCatalogLoaded();
+    if (requestTokenSource.token.isCancellationRequested) {
+      return;
+    }
     const modulesCatalog = host.getModulesCatalog();
     const moduleList = modulesCatalog.length
       ? modulesCatalog
@@ -80,9 +106,9 @@ Reply ONLY with a JSON array of objects like: [{"slug": "free/auth/core", "reaso
 Use ONLY slugs from the list above. Prefer modules that fit the framework and avoid deprecated or invented slugs.
 No markdown, no explanation outside the JSON.`;
 
-    const requestTokenSource = new vscode.CancellationTokenSource();
     const requestTimeoutMs = getAIModuleSuggestTimeoutMs();
     const timeoutHandle = setTimeout(() => {
+      timedOut = true;
       requestTokenSource.cancel();
     }, requestTimeoutMs);
 
@@ -110,9 +136,11 @@ No markdown, no explanation outside the JSON.`;
       }
     } finally {
       clearTimeout(timeoutHandle);
-      requestTokenSource.dispose();
     }
 
+    if (requestTokenSource.token.isCancellationRequested) {
+      return;
+    }
     const allowedSlugs = new Set(modulesCatalog.map((m) => m.slug));
     const suggestions = Array.isArray(parsed)
       ? parsed
@@ -130,13 +158,30 @@ No markdown, no explanation outside the JSON.`;
           .filter((item) => allowedSlugs.has(item.slug))
           .slice(0, 5)
       : [];
-    host.postWebviewMessage('aiModuleSuggestions', { loading: false, modelId, suggestions });
+    postResult({ loading: false, modelId, suggestions });
   } catch (err: unknown) {
-    host.postWebviewMessage('aiModuleSuggestions', {
+    if (requestTokenSource.token.isCancellationRequested && !timedOut) {
+      return;
+    }
+    postResult({
       loading: false,
       error: safeErrorMessage(err) || 'AI unavailable',
     });
+  } finally {
+    if (activeModuleSuggestionRequests.get(requestId) === requestTokenSource) {
+      activeModuleSuggestionRequests.delete(requestId);
+    }
+    requestTokenSource.dispose();
   }
+}
+
+export function handleAiCancelModuleSuggestionsMessage(messageData: unknown): void {
+  const payload = asRecord(messageData);
+  const requestId = typeof payload?.requestId === 'string' ? payload.requestId : undefined;
+  if (!requestId) {
+    return;
+  }
+  activeModuleSuggestionRequests.get(requestId)?.cancel();
 }
 
 export function handleAiCancelQueryMessage(host: AiModalMessageHost, messageData: unknown): void {
@@ -172,6 +217,9 @@ export async function tryDispatchAiModalWebviewMessage(
   switch (command) {
     case 'aiSuggestModules':
       await handleAiSuggestModulesMessage(host, data);
+      break;
+    case 'aiCancelModuleSuggestions':
+      handleAiCancelModuleSuggestionsMessage(data);
       break;
     case 'aiCancelQuery':
       handleAiCancelQueryMessage(host, data);
