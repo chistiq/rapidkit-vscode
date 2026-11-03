@@ -15,12 +15,12 @@ describe('Create tab durable session contract', () => {
   const provider = read('src/ui/webviews/actionsWebviewProvider.ts');
   const createExecution = read('src/core/createExecutionCapability.ts');
   const targetSelector = read('webview-ui/src/sidebar/composer/CreateTargetSelector.tsx');
-  const createDrawer = read('webview-ui/src/sidebar/drawers/CreateSessionsDrawer.tsx');
+  const createDrawer = read('webview-ui/src/sidebar/CreateHistoryPicker.tsx');
   const lifecycle = read('webview-ui/src/lib/createSessionLifecycle.ts');
 
   it('reuses the shared session chrome and persists operation-scoped creation history', () => {
     expect(createTab).toContain("import { ChatSessionBar } from './composer/ChatSessionBar'");
-    expect(createTab).toContain('<CreateSessionsDrawer');
+    expect(createTab).toContain('<CreateHistoryPicker');
     expect(createTab).toContain('<ChatSessionBar');
     expect(createHook).toContain('workspaiCreate');
     expect(createHook).toContain('startSession');

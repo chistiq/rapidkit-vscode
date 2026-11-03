@@ -77,6 +77,24 @@ async function approved(f: Awaited<ReturnType<typeof fixture>>) {
   };
 }
 describe('Owned workspace creation', () => {
+  it('explains invalid project directory names before authorization without blaming a valid kit', async () => {
+    const f = await fixture();
+    const request = {
+      ...f.request,
+      projects: [{ name: 'Focusboard', kit: 'frontend.vite-react' }],
+    };
+    await expect(f.tool.authorize!(request, f.context)).rejects.toThrow('lowercase slugs');
+    expect(f.calls).toEqual([]);
+    const corrected = {
+      ...request,
+      projects: [{ name: 'focusboard', kit: 'frontend.vite-react' }],
+    };
+    const auth = await f.tool.authorize!(corrected, f.context);
+    expect(auth.approval?.displayCommand).toContain('frontend.vite-react');
+    expect(auth.approval?.displayCommand).toContain('focusboard');
+    expect(f.calls).toEqual([]);
+  });
+
   it('creates and binds projects in the approved custom parent instead of managed home or the selected workspace', async () => {
     const f = await fixture();
     const outputParent = path.join(f.root, 'custom parent', 'systems');

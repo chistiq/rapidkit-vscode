@@ -101,6 +101,11 @@ export function isNativeToolTransportUnsupported(raw: string): boolean {
   ) {
     return false;
   }
+  // Some Auto routers cannot route a native turn containing only tool-result
+  // parts. JSON transport supplies textual observations with the same toolset.
+  if (/^auto mode needs a prompt or a command to route a request\.?$/i.test(raw.trim())) {
+    return true;
+  }
   return (
     /tools?\b|tool[_ -]?choice|function[_ -]?call/i.test(raw) &&
     /not support|unsupported|does not|unknown (?:field|parameter)|unrecognized|not permitted|unexpected (?:argument|parameter)|not available/i.test(

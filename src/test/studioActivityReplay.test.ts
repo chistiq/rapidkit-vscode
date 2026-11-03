@@ -528,7 +528,7 @@ describe('Assistant activity event replay', () => {
         expect.anything()
       );
       const button = [...dom.window.document.querySelectorAll('button')].find(
-        (entry) => entry.textContent === 'Restore checkpoint'
+        (entry) => entry.textContent === 'Restore'
       );
       expect(button).toBeDefined();
       const dock = dom.window.document.querySelector('.ws-sidebar__review-dock');

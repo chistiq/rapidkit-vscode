@@ -511,6 +511,9 @@ export async function runNativeChatStudioAgent(input: {
             : undefined,
           isExpectedDiagnosticFindingExit,
         });
+        if (execution.output?.executed === false) {
+          return execution;
+        }
         const commandOutput = execution.output;
         const observedEffect = Boolean(
           commandOutput &&

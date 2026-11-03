@@ -57,6 +57,61 @@ describe('Create intent router', () => {
     expect(complete).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    [
+      '\u062f\u0631 \u06cc\u06a9 \u0648\u0631\u06a9 \u0627\u0633\u067e\u06cc\u0633 \u062c\u062f\u0627 \u06cc\u06a9 \u067e\u0631\u0648\u0698\u0647 \u0628\u0631\u0627\u06cc \u0648\u0628\u0633\u0627\u06cc\u062a \u0634\u062e\u0635\u06cc \u0645\u06cc\u062e\u0627\u0645',
+      'project',
+      'workspace',
+    ],
+    ['Create a personal website in a separate workspace.', 'project', 'workspace'],
+    [
+      '\u0628\u0647 \u0647\u0645\u06cc\u0646 \u0648\u0631\u06a9 \u0627\u0633\u067e\u06cc\u0633 \u0641\u0639\u0627\u0644 \u06cc\u06a9 \u0633\u0627\u06cc\u062a \u0634\u062e\u0635\u06cc \u0627\u0636\u0627\u0641\u0647 \u06a9\u0646',
+      'workspace',
+      'project',
+    ],
+  ] as const)(
+    'lets explicit destination intent override the selector: %s',
+    async (request, selectedTarget, creationTarget) => {
+      const route = await routeCreateIntent({
+        request,
+        selectedTarget,
+        workspaceName: 'focusboard-wsp',
+        complete: async ({ prompt, toolSchema }) => {
+          expect(prompt).toContain('Explicit user intent takes precedence over the selector');
+          expect(toolSchema.required).toContain('creationTarget');
+          return {
+            type: 'tool',
+            toolName: CREATE_INTENT_ROUTE_TOOL,
+            input: {
+              intent: 'create',
+              confidence: 'high',
+              normalizedRequest: request,
+              userResponse: '',
+              reason: 'Explicit destination supplied by the user.',
+              recommendedAction: 'none',
+              creationTarget,
+            },
+          };
+        },
+      });
+      expect(route).toMatchObject({ intent: 'create', creationTarget, normalizedRequest: request });
+    }
+  );
+
+  it('rejects invented destination targets without accepting mutation authority', () => {
+    expect(
+      parseCreateIntentRoute({
+        intent: 'create',
+        confidence: 'high',
+        normalizedRequest: 'Create a website',
+        userResponse: '',
+        reason: 'Create request',
+        recommendedAction: 'none',
+        creationTarget: 'any-workspace',
+      })
+    ).toBeNull();
+  });
+
   it('canonicalizes navigation actions instead of trusting model-selected authority', () => {
     expect(
       parseCreateIntentRoute({

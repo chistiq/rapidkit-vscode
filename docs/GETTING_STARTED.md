@@ -2,7 +2,7 @@
 
 <!-- WORKSPAI:CLI-RELEASE-POLICY:START -->
 
-> Extension 0.49.0 · verified with Workspai CLI 0.80.0 · minimum compatible CLI 0.80.0
+> Extension 0.49.1 · verified with Workspai CLI 0.80.0 · minimum compatible CLI 0.80.0
 
 <!-- WORKSPAI:CLI-RELEASE-POLICY:END -->
 
@@ -126,7 +126,7 @@ retrieval evidence without installing dependencies or running repository code.
 See [Analyze Repo](./REPOSITORY_ANALYSIS.md) for the evidence, cache, and safety
 boundaries.
 
-The separate Dashboard **Review Changes** tab is temporarily hidden in 0.49.0.
+The separate Dashboard **Review Changes** tab is temporarily hidden.
 Its retained working-tree comparison and CLI evidence workflow is documented in
 [Review Changes](./REVIEW_CHANGES.md). File review inside Assistant chats,
 including Keep/Restore controls, remains available.
@@ -213,6 +213,13 @@ npx workspai create project desktop.tauri my-desktop
 
 After create, adopt, or import, Workspai refreshes the workspace model, graph,
 agent context, and related consumer surfaces.
+
+Use **Continue in Agent** on the creation receipt to continue implementation and
+run project checks with the selected model and the Assistant's available tools.
+The handoff retains the created workspace and project destination; it starts a
+fresh conversation without an unrelated repair or editor issue. For multiple
+created projects, the Agent receives workspace scope. Non-native stacks can also
+continue in Agent using the appropriate project toolchain.
 
 Create intentionally stops at that synchronized foundation. It does not
 silently run host dependency initialization or claim that Doctor, Analyze,

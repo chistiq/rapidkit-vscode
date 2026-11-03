@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import fs from 'fs-extra';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   beginStudioWorkspaceSourceTransaction,
@@ -20,6 +20,37 @@ afterEach(async () => {
 });
 
 describe('Studio workspace source snapshots', () => {
+  it('rejects an over-limit inventory with a diagnostic before reading or backing up source', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-source-limit-'));
+    roots.push(root);
+    const entries = Array.from({ length: 30_001 }, (_, index) => ({
+      name: `file-${index}.ts`,
+      isDirectory: () => false,
+      isFile: () => true,
+      isSymbolicLink: () => false,
+    }));
+    const readdir = vi.spyOn(fs, 'readdir').mockResolvedValueOnce(entries as never);
+    const readFile = vi.spyOn(fs, 'readFile');
+    const diagnostic = vi.fn();
+    try {
+      expect(
+        await beginStudioWorkspaceSourceTransaction({
+          workspacePath: root,
+          onUnavailable: diagnostic,
+        })
+      ).toBeUndefined();
+      expect(diagnostic).toHaveBeenCalledExactlyOnceWith({
+        code: 'file-limit',
+        limit: 30_000,
+        observed: 30_001,
+      });
+      expect(readFile).not.toHaveBeenCalled();
+    } finally {
+      readdir.mockRestore();
+      readFile.mockRestore();
+    }
+  });
+
   it('detects real project source changes while ignoring governed evidence churn', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-source-snapshot-'));
     roots.push(root);
@@ -54,6 +85,20 @@ describe('Studio workspace source snapshots', () => {
     expect(diffStudioWorkspaceSourceSnapshots(evidenceOnly, sourceChanged)).toEqual([
       'api/package.json',
     ]);
+  });
+
+  it('excludes only Python bytecode within __pycache__ while covering source in the same folder', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-bytecode-'));
+    roots.push(root);
+    await fs.writeFile(path.join(root, 'main.py'), 'print(1)\n');
+    const before = await captureStudioWorkspaceSourceSnapshot({ workspacePath: root });
+    await fs.outputFile(
+      path.join(root, '__pycache__', 'main.cpython-313.pyc'),
+      Buffer.from([0, 1, 2])
+    );
+    await fs.outputFile(path.join(root, '__pycache__', 'source.py'), 'print(2)\n');
+    const after = await captureStudioWorkspaceSourceSnapshot({ workspacePath: root });
+    expect(diffStudioWorkspaceSourceSnapshots(before, after)).toEqual(['__pycache__/source.py']);
   });
 
   it('detects new and removed source files in an untracked workspace', async () => {

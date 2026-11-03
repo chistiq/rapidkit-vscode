@@ -2,7 +2,7 @@
   "name": "rapidkit-vscode",
   "displayName": "Workspai – Workspace Intelligence",
   "description": "AI coding assistant for VS Code. Chat, plan, edit, test, and scaffold projects with workspace intelligence, Graph context, and verified CLI tools.",
-  "version": "0.49.0",
+  "version": "0.49.1",
   "packageManager": "npm@10.8.2",
   "publisher": "rapidkit",
   "icon": "media/icons/icon.png",

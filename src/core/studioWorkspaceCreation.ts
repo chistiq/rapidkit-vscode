@@ -39,13 +39,15 @@ function plan(raw: unknown): Plan {
     throw new Error('Provide a new workspace name and up to eight named projects.');
   }
   const projects = value.projects.map((project) => {
-    if (
-      !project ||
-      !name(project.name) ||
-      typeof project.kit !== 'string' ||
-      !/^[a-z0-9][a-z0-9._-]{0,100}$/.test(project.kit)
-    ) {
-      throw new Error('Each project needs a safe name and a supported Workspai kit identifier.');
+    if (!project || !name(project.name)) {
+      throw new Error(
+        'Project directory names must be lowercase slugs of 1-63 letters, digits or hyphens (for example focusboard). Keep a title such as Focusboard separate from its filesystem name.'
+      );
+    }
+    if (typeof project.kit !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,100}$/.test(project.kit)) {
+      throw new Error(
+        'Each project needs a Workspai kit identifier. Discover exact ids with inspect-cli-commands topic=architecture and a focused query; do not infer an id from its display label.'
+      );
     }
     return { name: project.name, kit: project.kit };
   });
@@ -219,7 +221,8 @@ export function studioWorkspaceCreationTool(input: {
       properties: {
         name: {
           type: 'string',
-          description: 'Choose an unused workspace name, e.g. shop-workspace.',
+          pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$',
+          description: 'Choose an unused lowercase workspace directory name, e.g. shop-workspace.',
         },
         outputParent: {
           type: 'string',
@@ -247,7 +250,12 @@ export function studioWorkspaceCreationTool(input: {
             additionalProperties: false,
             required: ['name', 'kit'],
             properties: {
-              name: { type: 'string' },
+              name: {
+                type: 'string',
+                pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$',
+                description:
+                  'Lowercase project directory slug, e.g. focusboard; distinct from its display title.',
+              },
               kit: {
                 type: 'string',
                 description:

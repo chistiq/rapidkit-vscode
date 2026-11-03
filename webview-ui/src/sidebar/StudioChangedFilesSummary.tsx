@@ -34,7 +34,14 @@ export function StudioChangedFilesSummary({
     return null;
   }
   const hiddenCount = Math.max(0, summary.files.length - COLLAPSED_FILE_LIMIT);
-  const visibleFiles = expanded ? summary.files : summary.files.slice(0, COLLAPSED_FILE_LIMIT);
+  const orderedFiles = [...summary.files].sort(
+    (left, right) => Number(Boolean(left.binary)) - Number(Boolean(right.binary))
+  );
+  const visibleFiles = expanded ? orderedFiles : orderedFiles.slice(0, COLLAPSED_FILE_LIMIT);
+  const binaryCount = summary.files.filter(
+    (file) => file.binary && file.countsKnown === false
+  ).length;
+  const unavailableCount = (summary.unknownFileCount ?? 0) - binaryCount;
   const comparableCount = summary.files.filter((file) => file.comparable).length;
   const pathCounts = new Map<string, number>();
   for (const file of summary.files) {
@@ -59,9 +66,14 @@ export function StudioChangedFilesSummary({
                 <span data-kind="removed">-{summary.removedLines}</span>
               </>
             ) : null}
-            {summary.unknownFileCount ? (
-              <span title="Line totals exclude binary files and files with unavailable counts">
-                {summary.unknownFileCount} uncounted
+            {binaryCount > 0 ? (
+              <span title="Binary files are included in the file count and excluded from line totals">
+                {binaryCount} binary {binaryCount === 1 ? 'file' : 'files'}
+              </span>
+            ) : null}
+            {unavailableCount > 0 ? (
+              <span title="Line counts are unavailable for these files">
+                {unavailableCount} uncounted
               </span>
             ) : null}
           </span>

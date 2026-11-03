@@ -396,11 +396,26 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
         if (value.query !== undefined && typeof value.query !== 'string') {
           throw new Error('Invalid architecture query.');
         }
+        const query = typeof value.query === 'string' ? value.query.trim() : '';
+        const architecture = buildStudioWorkspaiArchitecture(query);
         return {
           ok: true,
-          output: buildStudioWorkspaiArchitecture(
-            typeof value.query === 'string' ? value.query : ''
-          ),
+          output:
+            query && architecture.kits.length > 0
+              ? {
+                  schemaVersion: architecture.schemaVersion,
+                  source: architecture.source,
+                  version: architecture.version,
+                  kits: architecture.kits,
+                  categories: architecture.categories,
+                  canonicalCommands: architecture.canonicalCommands,
+                  ownership: architecture.ownership,
+                  coverage: architecture.coverage,
+                  guidance:
+                    'Use the returned exact kit id with create-workspace or documented CLI syntax. Filesystem names must be lowercase slugs; keep display titles separate. An empty match is not a language restriction: inspect relevant official knowledge/help or use applicable ecosystem tools. Read topic=architecture without a query for complete scope and intelligence guidance.',
+                  knowledge: architecture.knowledge,
+                }
+              : architecture,
         };
       }
       if (value.topic !== undefined && value.topic !== 'commands') {

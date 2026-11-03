@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   CreateExecutionCapabilityError,
+  describeCreateExecutionFailure,
   EXECUTE_APPROVED_CREATE_PLAN_TOOL,
   executeApprovedCreatePlan,
   resolveCreatePlanWorkspaceProfile,
@@ -287,6 +288,31 @@ describe('approved Create execution capability', () => {
       phase: 'project',
       safeToRetry: false,
     } satisfies Partial<CreateExecutionCapabilityError>);
+    expect(runtime.syncIntelligence).not.toHaveBeenCalled();
+  });
+  it('reports ENOSPC through the execution wrapper and preserves completed work without blind retry', async () => {
+    const runtime = host({
+      createProject: vi.fn(async () => {
+        throw Object.assign(new Error('npm: no space left on device'), { code: 'ENOSPC' });
+      }),
+    });
+    let failure: unknown;
+    try {
+      await executeApprovedCreatePlan({ plan: basePlan, host: runtime });
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(CreateExecutionCapabilityError);
+    const described = describeCreateExecutionFailure(
+      failure as CreateExecutionCapabilityError,
+      basePlan.projectName
+    );
+    expect(described).toMatchObject({ code: 'disk-space-exhausted', retryable: false });
+    expect(described.message).toContain('ENOSPC');
+    expect(described.message).toContain('Free space');
+    expect(described.message).toContain('Stopped during project');
+    expect(runtime.createWorkspace).toHaveBeenCalledTimes(1);
+    expect(runtime.createProject).toHaveBeenCalledTimes(1);
     expect(runtime.syncIntelligence).not.toHaveBeenCalled();
   });
 });

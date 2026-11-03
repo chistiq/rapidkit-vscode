@@ -1,10 +1,10 @@
-import { Check } from 'lucide-react';
+import { ArrowDown, Check } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { ComposerShell } from './composer/ComposerShell';
 import { ChatSessionBar } from './composer/ChatSessionBar';
 import { CreateTargetSelector, type CreateTarget } from './composer/CreateTargetSelector';
 import { CreateAddDrawer, type CreateDrawerId } from './drawers/CreateAddDrawer';
-import { CreateSessionsDrawer } from './drawers/CreateSessionsDrawer';
+import { CreateHistoryPicker } from './CreateHistoryPicker';
 import { ManualProjectDrawer } from './drawers/ManualProjectDrawer';
 import { ManualWorkspaceDrawer, type ManualWorkspaceInput } from './drawers/ManualWorkspaceDrawer';
 import { SidebarMessage } from './SidebarMessage';
@@ -12,6 +12,7 @@ import type { SidebarModel } from './sidebarModels';
 import type { SidebarScope } from './sidebarTypes';
 import type {
   CreateGuidanceAction,
+  CreateAgentScope,
   CreateMessage,
   CreationPlan,
   CreateSession,
@@ -50,7 +51,7 @@ interface CreateTabProps {
   onAdoptProject: () => void;
   onImportProject: () => void;
   onImportWorkspace: () => void;
-  onContinueInAgent: (request: string) => void;
+  onContinueInAgent: (request: string, scope?: CreateAgentScope | null) => void;
   onBootstrapWorkspace: (input: {
     workspacePath: string;
     workspaceName?: string;
@@ -70,6 +71,67 @@ export function CreateTab(props: CreateTabProps) {
   const createTargetExplicitRef = useRef(false);
   const [drawer, setDrawer] = useState<CreateDrawerId>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const streamRef = useRef<HTMLDivElement>(null);
+  const followStream = useRef(true);
+  const [showJump, setShowJump] = useState(false);
+
+  useEffect(() => {
+    if (!active) {
+      setHistoryOpen(false);
+    }
+  }, [active]);
+
+  useEffect(() => {
+    followStream.current = true;
+    setShowJump(false);
+  }, [props.activeSessionId]);
+
+  useEffect(() => {
+    if (followStream.current && streamRef.current) {
+      streamRef.current.scrollTop = streamRef.current.scrollHeight;
+    }
+  }, [messages, props.activeSessionId, active]);
+
+  const continueInAgent = (message?: CreateMessage, requestOverride?: string) => {
+    const relevantMessages = message ? messages.slice(0, messages.indexOf(message) + 1) : messages;
+    const request = [...relevantMessages]
+      .reverse()
+      .find((entry) => entry.kind === 'text' && entry.role === 'user');
+    const original =
+      requestOverride ??
+      (request?.kind === 'text'
+        ? request.text
+        : message?.kind === 'manual-done'
+          ? 'Inspect the created destination and run applicable project checks. Report verified results.'
+          : prompt.trim());
+    if (!original || busy) {
+      return;
+    }
+    if ((message?.kind === 'done' || message?.kind === 'manual-done') && message.workspacePath) {
+      const project =
+        message.kind === 'done' && message.projects?.length === 1 ? message.projects[0] : undefined;
+      const projectPath = message.kind === 'manual-done' ? message.projectPath : project?.path;
+      props.onContinueInAgent(
+        `${original}\n\nContinue in the created destination below. The scaffold already exists: inspect its instructions and current files before editing. Implement any remaining requested behavior, run applicable checks, and report verified results. Do not recreate the workspace or projects, and do not invent extra product requirements.`,
+        {
+          workspacePath: message.workspacePath,
+          workspaceName: displayNameFromPath(message.workspacePath),
+          ...(projectPath
+            ? { projectPath, projectName: project?.name ?? displayNameFromPath(projectPath) }
+            : {}),
+        }
+      );
+      return;
+    }
+    props.onContinueInAgent(
+      original,
+      createTarget === 'workspace'
+        ? null
+        : scope.workspacePath
+          ? { workspacePath: scope.workspacePath, workspaceName: scope.workspaceName }
+          : null
+    );
+  };
 
   useEffect(() => {
     const activeSession = props.sessions.find(
@@ -84,6 +146,14 @@ export function CreateTab(props: CreateTabProps) {
       })
     );
   }, [contextualTarget, props.activeSessionId, props.sessions]);
+
+  const latestPlan = [...messages].reverse().find((message) => message.kind === 'plan');
+  useEffect(() => {
+    if (latestPlan?.plan.type === 'workspace' || latestPlan?.plan.type === 'project') {
+      createTargetExplicitRef.current = false;
+      setCreateTarget(latestPlan.plan.type);
+    }
+  }, [latestPlan?.id, latestPlan?.plan.type, props.activeSessionId]);
 
   const selectCreateTarget = (target: CreateTarget) => {
     createTargetExplicitRef.current = true;
@@ -129,7 +199,7 @@ export function CreateTab(props: CreateTabProps) {
       return;
     }
     if (action === 'continue-in-agent') {
-      props.onContinueInAgent(request);
+      continueInAgent(undefined, request);
     }
   };
 
@@ -148,6 +218,7 @@ export function CreateTab(props: CreateTabProps) {
   };
 
   const startNewSession = () => {
+    setHistoryOpen(false);
     props.onNewSession();
     setPrompt('');
     createTargetExplicitRef.current = false;
@@ -192,26 +263,6 @@ export function CreateTab(props: CreateTabProps) {
         scope={scope}
         onClose={closeDrawer}
         onCreate={handleProjectCreate}
-      />
-      <CreateSessionsDrawer
-        open={historyOpen}
-        sessions={props.sessions}
-        activeSessionId={props.activeSessionId}
-        activeOperationSessionId={props.activeOperationSessionId}
-        onClose={() => setHistoryOpen(false)}
-        onNewSession={() => {
-          startNewSession();
-          setHistoryOpen(false);
-        }}
-        onSelectSession={(sessionId) => {
-          const session = props.sessions.find((entry) => entry.sessionId === sessionId);
-          if (session) {
-            createTargetExplicitRef.current = false;
-            setCreateTarget(session.target);
-          }
-          props.onSelectSession(sessionId);
-        }}
-        onDeleteSession={props.onDeleteSession}
       />
     </>
   );
@@ -270,74 +321,136 @@ export function CreateTab(props: CreateTabProps) {
   return (
     <section
       id="workspai-sidebar-panel-create"
-      className="ws-sidebar__tabpanel ws-sidebar__tabpanel--chat"
+      className="ws-sidebar__tabpanel ws-sidebar__tabpanel--chat ws-sidebar__tabpanel--create"
       role="tabpanel"
       aria-labelledby="workspai-sidebar-tab-create"
       hidden={!active}
     >
-      <ChatSessionBar
-        activeSession={activeBarSession}
-        sessionCount={props.sessions.length}
-        statusText={activeStatusText}
-        onNewSession={startNewSession}
-        onOpenHistory={() => setHistoryOpen(true)}
-      />
+      <div className="ws-chat-header">
+        <ChatSessionBar
+          activeSession={activeBarSession}
+          sessionCount={props.sessions.length}
+          statusText={activeStatusText}
+          onNewSession={startNewSession}
+          onOpenHistory={() => {
+            setHistoryOpen((value) => !value);
+            closeDrawer();
+          }}
+          historyOpen={historyOpen}
+          historyId="workspai-create-history"
+          newSessionLabel="New creation"
+        />
 
-      <div className="ws-sidebar__stream" aria-live="polite">
-        {messages.length === 0 ? (
-          <div className="ws-sidebar__create-empty">
-            <div>
-              <strong>What do you want to build?</strong>
-              <span>
-                Describe the outcome. Workspai will propose the workspace and stack first.
-              </span>
-            </div>
-            <div className="ws-sidebar__create-starters" aria-label="Creation starters">
-              <button
-                type="button"
-                className="ws-sidebar__inline ws-sidebar__inline--primary"
-                onClick={() => {
-                  selectCreateTarget('workspace');
-                  setPrompt('Create a workspace for my product');
-                }}
-              >
-                New workspace
-              </button>
-              <button
-                type="button"
-                className="ws-sidebar__inline"
-                onClick={() => {
-                  selectCreateTarget('project');
-                  setPrompt('Create a project in this workspace');
-                }}
-              >
-                New project
-              </button>
-              <button type="button" className="ws-sidebar__inline" onClick={() => setDrawer('add')}>
-                Manual setup
-              </button>
-            </div>
-          </div>
-        ) : null}
-        {messages.map((message, index) => (
-          <CreateMessageView
-            key={message.id}
-            message={message}
-            agentActive={
-              busy &&
-              index === messages.length - 1 &&
-              (message.kind === 'thinking' || message.kind === 'progress')
+        <CreateHistoryPicker
+          open={historyOpen}
+          sessions={props.sessions}
+          activeSessionId={props.activeSessionId}
+          activeOperationSessionId={props.activeOperationSessionId}
+          onClose={() => setHistoryOpen(false)}
+          onNewSession={() => {
+            startNewSession();
+            setHistoryOpen(false);
+          }}
+          onSelectSession={(sessionId) => {
+            const session = props.sessions.find((entry) => entry.sessionId === sessionId);
+            if (session) {
+              createTargetExplicitRef.current = false;
+              setCreateTarget(session.target);
             }
-            onApprove={(plan) => props.onApprovePlan(plan, props.activeSessionId ?? '')}
-            onRevise={props.onRevisePlan}
-            onFocus={props.onFocusView}
-            onCreateManual={() => setDrawer('workspace')}
-            onBootstrapWorkspace={props.onBootstrapWorkspace}
-            onGuidanceAction={handleGuidanceAction}
-            onOpenSetup={props.onOpenSetup}
-            onRedraft={redraftActivePlan}
-          />
-        ))}
+            props.onSelectSession(sessionId);
+          }}
+          onDeleteSession={props.onDeleteSession}
+        />
+      </div>
+
+      <div className="ws-sidebar__stream-wrap">
+        <div
+          className="ws-sidebar__stream"
+          ref={streamRef}
+          aria-live="polite"
+          onScroll={(event) => {
+            const node = event.currentTarget;
+            followStream.current = node.scrollHeight - node.scrollTop - node.clientHeight < 64;
+            setShowJump(!followStream.current);
+          }}
+        >
+          {messages.length === 0 ? (
+            <div className="ws-sidebar__create-empty">
+              <div>
+                <strong>What do you want to build?</strong>
+                <span>
+                  Describe the outcome. Workspai will propose the workspace and stack first.
+                </span>
+              </div>
+              <div className="ws-sidebar__create-starters" aria-label="Creation starters">
+                <button
+                  type="button"
+                  className="ws-sidebar__inline ws-sidebar__inline--primary"
+                  onClick={() => {
+                    selectCreateTarget('workspace');
+                    setPrompt('Create a workspace for my product');
+                  }}
+                >
+                  New workspace
+                </button>
+                <button
+                  type="button"
+                  className="ws-sidebar__inline"
+                  onClick={() => {
+                    selectCreateTarget('project');
+                    setPrompt('Create a project in this workspace');
+                  }}
+                >
+                  New project
+                </button>
+                <button
+                  type="button"
+                  className="ws-sidebar__inline"
+                  onClick={() => setDrawer('add')}
+                >
+                  Manual setup
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {messages.map((message, index) => (
+            <CreateMessageView
+              key={message.id}
+              message={message}
+              agentActive={
+                busy &&
+                index === messages.length - 1 &&
+                (message.kind === 'thinking' || message.kind === 'progress')
+              }
+              onApprove={(plan) => props.onApprovePlan(plan, props.activeSessionId ?? '')}
+              onRevise={props.onRevisePlan}
+              onFocus={props.onFocusView}
+              onCreateManual={() => setDrawer('workspace')}
+              onBootstrapWorkspace={props.onBootstrapWorkspace}
+              onGuidanceAction={handleGuidanceAction}
+              onOpenSetup={props.onOpenSetup}
+              onRedraft={redraftActivePlan}
+              onContinueInAgent={() => continueInAgent(message)}
+            />
+          ))}
+        </div>
+        {showJump ? (
+          <button
+            type="button"
+            className="ws-sidebar__inline ws-sidebar__jump-latest"
+            title="Scroll to latest"
+            aria-label="Scroll to latest"
+            onClick={() => {
+              followStream.current = true;
+              setShowJump(false);
+              if (streamRef.current) {
+                streamRef.current.scrollTop = streamRef.current.scrollHeight;
+              }
+            }}
+          >
+            <ArrowDown size={14} aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
 
       <ComposerShell
@@ -399,6 +512,7 @@ function CreateMessageView({
   onGuidanceAction,
   onOpenSetup,
   onRedraft,
+  onContinueInAgent,
 }: {
   message: CreateMessage;
   agentActive?: boolean;
@@ -414,6 +528,7 @@ function CreateMessageView({
   onGuidanceAction: (action: CreateGuidanceAction, request: string) => void;
   onOpenSetup: () => void;
   onRedraft: () => void;
+  onContinueInAgent: () => void;
 }) {
   const role = message.role === 'user' ? 'user' : 'ai';
 
@@ -430,6 +545,7 @@ function CreateMessageView({
           onGuidanceAction,
           onOpenSetup,
           onRedraft,
+          onContinueInAgent,
         },
         agentActive
       )}
@@ -452,6 +568,7 @@ function renderCreateBody(
     onGuidanceAction: (action: CreateGuidanceAction, request: string) => void;
     onOpenSetup: () => void;
     onRedraft: () => void;
+    onContinueInAgent: () => void;
   },
   agentActive = false
 ) {
@@ -483,7 +600,7 @@ function renderCreateBody(
             </strong>
           </p>
           {message.detail && !looksLikeFilesystemPath(message.detail) ? (
-            <p>{message.detail}</p>
+            <p className="ws-sidebar__create-progress-detail">{message.detail}</p>
           ) : null}
         </>
       );
@@ -522,37 +639,39 @@ function renderCreateBody(
           : 'No optional modules selected';
       return (
         <>
-          <strong>I inferred this creation plan.</strong>
-          {message.planSource === 'heuristic' ? (
-            <p className="ws-sidebar__plan-note">
-              Local planner — AI was unavailable; review the stack before continuing.
-            </p>
-          ) : null}
-          <div className="ws-sidebar__plan ws-sidebar__artifact-card">
-            <PlanItem
-              label="Target"
-              value={plan.type === 'project' ? 'New project' : 'New workspace and first project'}
-            />
-            {plan.type === 'project' ? (
-              <PlanItem label="Destination" value={`${plan.workspaceName} · active workspace`} />
-            ) : (
-              <>
-                <PlanItem label="Profile" value={plan.profile} />
-                <PlanItem label="Workspace" value={`${plan.workspaceName} · will be created`} />
-              </>
-            )}
-            <PlanItem
-              label="Project"
-              value={`${plan.projectName} · ${plan.framework} · ${plan.kit}`}
-            />
-            {plan.secondaryProject ? (
-              <PlanItem
-                label="Companion"
-                value={`${plan.secondaryProject.projectName} · ${plan.secondaryProject.framework}`}
-              />
+          <details className="ws-sidebar__create-plan" open={!message.resolved}>
+            <summary>{message.resolved ? 'Creation plan' : 'Review creation plan'}</summary>
+            {message.planSource === 'heuristic' ? (
+              <p className="ws-sidebar__plan-note">
+                Local planner — AI was unavailable; review the stack before continuing.
+              </p>
             ) : null}
-            <PlanItem label="Modules" value={modules} />
-          </div>
+            <div className="ws-sidebar__plan ws-sidebar__artifact-card">
+              <PlanItem
+                label="Target"
+                value={plan.type === 'project' ? 'New project' : 'New workspace and first project'}
+              />
+              {plan.type === 'project' ? (
+                <PlanItem label="Destination" value={`${plan.workspaceName} · active workspace`} />
+              ) : (
+                <>
+                  <PlanItem label="Profile" value={plan.profile} />
+                  <PlanItem label="Workspace" value={`${plan.workspaceName} · will be created`} />
+                </>
+              )}
+              <PlanItem
+                label="Project"
+                value={`${plan.projectName} · ${plan.framework} · ${plan.kit}`}
+              />
+              {plan.secondaryProject ? (
+                <PlanItem
+                  label="Companion"
+                  value={`${plan.secondaryProject.projectName} · ${plan.secondaryProject.framework}`}
+                />
+              ) : null}
+              <PlanItem label="Modules" value={modules} />
+            </div>
+          </details>
           {message.resolved ? null : (
             <div className="ws-sidebar__inline-actions">
               <button
@@ -577,11 +696,20 @@ function renderCreateBody(
           <div className="ws-sidebar__creation-receipt" role="status">
             <Check size={14} strokeWidth={2.2} aria-hidden="true" />
             <div>
-              <strong>Creation complete</strong>
+              <strong>Scaffold created</strong>
               <span>Workspace Intelligence is synced and the created projects are registered.</span>
             </div>
           </div>
           <div className="ws-sidebar__inline-actions">
+            {message.workspacePath ? (
+              <button
+                type="button"
+                className="ws-sidebar__inline ws-sidebar__inline--primary"
+                onClick={actions.onContinueInAgent}
+              >
+                Continue in Agent
+              </button>
+            ) : null}
             <button
               type="button"
               className="ws-sidebar__inline"
@@ -656,6 +784,15 @@ function renderCreateBody(
                 Initialize dependencies
               </button>
             ) : null}
+            {message.workspacePath ? (
+              <button
+                type="button"
+                className="ws-sidebar__inline"
+                onClick={actions.onContinueInAgent}
+              >
+                Continue in Agent
+              </button>
+            ) : null}
             <button
               type="button"
               className="ws-sidebar__inline"
@@ -676,6 +813,13 @@ function renderCreateBody(
             <strong>This stack is not a native scaffold yet.</strong>
             <p>{message.error}</p>
             <div className="ws-sidebar__inline-actions">
+              <button
+                type="button"
+                className="ws-sidebar__inline ws-sidebar__inline--primary"
+                onClick={actions.onContinueInAgent}
+              >
+                Continue in Agent
+              </button>
               <button type="button" className="ws-sidebar__inline" onClick={actions.onCreateManual}>
                 Create governed workspace
               </button>

@@ -10,6 +10,61 @@ import {
 } from '../core/studioAgentWorkspaiTools.js';
 
 describe('Source-backed Workspai knowledge', () => {
+  it.each([
+    'React + Vite',
+    'React Vite frontend project kits supported',
+    'supported project kits Vite React frontend kit identifier',
+  ])('finds the exact create lane from the natural-language query %j', async (query) => {
+    const reference = buildStudioWorkspaiArchitecture(query);
+    expect(reference.kits.map((kit) => kit.id)).toContain('frontend.vite-react');
+    expect(reference.kits.every((kit) => kit.framework === 'vite-react')).toBe(true);
+    const registry = createStudioAgentWorkspaiToolRegistry({
+      host: {} as StudioAgentWorkspaiToolHost,
+      cardId: 'assistant:agent',
+      assistantMode: 'agent',
+    });
+    const result = await registry.get('inspect-cli-commands')!.execute(
+      { topic: 'architecture', query },
+      {
+        sessionId: 's',
+        requestId: 'r',
+        toolCallId: 't',
+        workspacePath: '/fixture',
+        signal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        kits: expect.arrayContaining([expect.objectContaining({ id: 'frontend.vite-react' })]),
+      },
+    });
+    expect(JSON.stringify(result.output).length).toBeLessThan(4000);
+    expect(result.output).not.toHaveProperty('scopeModel');
+  });
+  it('does not advertise a supported kit for an unknown query', () => {
+    expect(buildStudioWorkspaiArchitecture('unsupported-unknown-generator').kits).toEqual([]);
+  });
+  it('preserves complete scope guidance for queries unrelated to starter kits', async () => {
+    const registry = createStudioAgentWorkspaiToolRegistry({
+      host: {} as StudioAgentWorkspaiToolHost,
+      cardId: 'assistant:agent',
+      assistantMode: 'agent',
+    });
+    const result = await registry.get('inspect-cli-commands')!.execute(
+      { topic: 'architecture', query: 'adopt external workspace ownership' },
+      {
+        sessionId: 's',
+        requestId: 'r',
+        toolCallId: 't',
+        workspacePath: '/fixture',
+        signal: new AbortController().signal,
+      }
+    );
+    expect(result.output).toHaveProperty('scopeModel');
+    expect(result.output).toHaveProperty('intelligence');
+  });
+
   it('binds the complete document snapshot to the reference version and content digests', () => {
     expect(snapshot.version).toBe(closure.cli.version);
     expect(snapshot.documents.map((document) => document.id)).toEqual(

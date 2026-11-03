@@ -5,6 +5,45 @@ All notable changes to the **Workspai** extension (formerly RapidKit) will be do
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.49.1] - 2026-11-03
+
+### Added
+
+- Continue in Agent from AI or manual creation receipts, preserving the created
+  destination, original request, and selected model. Non-native stacks can also
+  continue with the Assistant's available tools.
+- Searchable creation history beneath the Create header, with keyboard navigation
+  and protection against deleting an active creation.
+
+### Changed
+
+- Compact chat spacing and creation receipts, collapse reviewed creation plans,
+  and follow live Create progress while respecting manual scrolling.
+- Show text files before binary files in change review and label binary files
+  separately from unavailable line counts.
+
+### Fixed
+
+- Resolve explicit workspace/project destinations before planning and approval,
+  rather than imposing the default target selector. Keep the reviewed plan,
+  selector, and saved creation history aligned.
+- Count activity changes and line totals from owned live transactions, excluding
+  unrelated files seen during inspection and withdrawing rolled-back changes.
+- Show completed requests accurately after recovered tool failures while retaining
+  failed attempts in activity history.
+- Exclude regenerable Python bytecode caches from source-mutation detection while
+  keeping actual source files in cache directories protected.
+- Recover from incomplete pre-command checkpoints without ending the session or
+  starting an unsafe command; report unstarted commands accurately.
+- Clarify project-name validation and improve starter-kit discovery for
+  natural-language queries.
+- Report filesystem space exhaustion and the failed creation phase instead of
+  hiding the cause behind a generic mutation error.
+- Adapt Auto model tool-result routing through the existing JSON transport while
+  retaining the selected model and full tool catalog.
+- Keep right-to-left list markers within chat messages and tables independently
+  scrollable; prevent long creation-plan values from overlapping their labels.
+
 ## [0.49.0] - 2026-11-02
 
 ### Added
@@ -3266,6 +3305,8 @@ Thank you for using RapidKit! 🚀
 ---
 
 [Unreleased]: https://github.com/chistiq/rapidkit-vscode/compare/v0.48.0...HEAD
+[0.49.1]: https://github.com/chistiq/rapidkit-vscode/compare/v0.49.0...v0.49.1
+[0.49.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.47.1...v0.48.0
 [0.47.1]: https://github.com/chistiq/rapidkit-vscode/compare/v0.47.0...v0.47.1
 [0.47.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.46.0...v0.47.0

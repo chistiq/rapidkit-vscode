@@ -26,6 +26,7 @@ import {
   studioFileChangeHasLineCounts,
 } from '@/lib/sidebarStudioActionProgress';
 import { StudioActionProgress } from './StudioActionProgress';
+import { buildStudioChangedFilesSummary } from '@/lib/studioChangedFilesSummary';
 
 type Props = {
   entries: SidebarStudioActionProgressView[];
@@ -134,9 +135,22 @@ export function StudioActivityTranscript({
   );
   const failedCount = displayed.filter((entry) => entry.status === 'failed').length;
   const reviewCount = displayed.filter((entry) => entry.status === 'review').length;
-  const changedPaths = new Set(
-    displayed.flatMap((entry) => (entry.fileChanges ?? []).map((file) => file.relativePath))
-  );
+  // Inspection output may describe pre-existing changes belonging to the user.
+  // Attribute only live, owned transactions, exactly as the file-review dock does.
+  const changes = buildStudioChangedFilesSummary(displayed);
+  const outcomeBoundary = displayed
+    .map((entry, index) => ({ entry, order: entry.eventSequence ?? index }))
+    .filter(({ entry }) =>
+      ['request.started', 'session.completed', 'session.failed', 'session.cancelled'].includes(
+        entry.eventType ?? ''
+      )
+    )
+    .sort((left, right) => left.order - right.order)
+    .at(-1)?.entry;
+  const completed =
+    !active &&
+    outcomeBoundary?.eventType === 'session.completed' &&
+    outcomeBoundary.status === 'done';
   const readCount = displayed.reduce(
     (count, entry) => count + (entry.activityPaths?.length ?? 0),
     0
@@ -145,7 +159,8 @@ export function StudioActivityTranscript({
     (entry) =>
       Boolean(entry.commandText) || /run-workspace-command|run-governed-command/.test(entry.action)
   ).length;
-  const needsAttention = failedCount > 0 || reviewCount > actionableApprovals.length;
+  const needsAttention =
+    !completed && (failedCount > 0 || reviewCount > actionableApprovals.length);
   const waitingForApproval =
     active && displayed.some((entry) => entry.status === 'review' && entry.approvalRequest);
   const transcriptLabel = waitingForApproval
@@ -200,11 +215,18 @@ export function StudioActivityTranscript({
             <span className="ws-activity__group-label">{transcriptLabel}</span>
             <span className="ws-activity__group-meta">
               {displayed.length} {displayed.length === 1 ? 'step' : 'steps'}
-              {changedPaths.size > 0 && ` · ${changedPaths.size} files changed`}
+              {changes.files.length > 0 && ` · ${changes.files.length} files changed`}
               {readCount > 0 && ` · ${readCount} reads`}
               {commandCount > 0 && ` · ${commandCount} commands`}
-              {failedCount > 0 && ` · ${failedCount} failed`}
+              {failedCount > 0 &&
+                ` · ${failedCount} failed${completed ? (failedCount === 1 ? ' attempt' : ' attempts') : ''}`}
             </span>
+            {changes.files.length > (changes.unknownFileCount ?? 0) ? (
+              <>
+                <span className="ws-activity__added">+{changes.addedLines}</span>
+                <span className="ws-activity__removed">−{changes.removedLines}</span>
+              </>
+            ) : null}
             <ChevronRight size={12} className="ws-activity__group-chevron" aria-hidden="true" />
           </button>
         </div>

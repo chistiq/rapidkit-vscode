@@ -28,6 +28,21 @@ export type StudioWorkspaceSourceRollback = {
   restoredFingerprint: string;
 };
 
+export type StudioSourceCheckpointFailure = {
+  code:
+    | 'outside-scope'
+    | 'source-unavailable'
+    | 'directory-unreadable'
+    | 'file-limit'
+    | 'file-size-limit'
+    | 'total-size-limit'
+    | 'source-unreadable';
+  limit?: number;
+  observed?: number;
+};
+
+type CheckpointDiagnostic = (failure: StudioSourceCheckpointFailure) => void;
+
 const EXCLUDED_DIRECTORY_NAMES = new Set([
   '.git',
   '.hg',
@@ -71,7 +86,10 @@ function isGeneratedAgentSurface(relativePath: string): boolean {
   );
 }
 
-async function traversalSnapshotCandidates(scopePath: string): Promise<string[] | undefined> {
+async function traversalSnapshotCandidates(
+  scopePath: string,
+  onUnavailable?: CheckpointDiagnostic
+): Promise<string[] | undefined> {
   const candidates: string[] = [];
   const pending = [scopePath];
   let visitedFiles = 0;
@@ -79,6 +97,7 @@ async function traversalSnapshotCandidates(scopePath: string): Promise<string[] 
     const current = pending.pop()!;
     const entries = await fs.readdir(current, { withFileTypes: true }).catch(() => undefined);
     if (!entries) {
+      onUnavailable?.({ code: 'directory-unreadable' });
       return undefined;
     }
     for (const entry of entries) {
@@ -93,8 +112,15 @@ async function traversalSnapshotCandidates(scopePath: string): Promise<string[] 
       if (!entry.isFile() && !entry.isSymbolicLink()) {
         continue;
       }
+      // Python tests write regenerable bytecode even when source is read-only.
+      // Keep real source inside a cache directory covered by the checkpoint.
+      const relativePath = path.relative(scopePath, absolutePath).replace(/\\/g, '/');
+      if (/(?:^|\/)__pycache__\/[^/]+\.py[co]$/i.test(relativePath)) {
+        continue;
+      }
       visitedFiles += 1;
       if (visitedFiles > MAX_SOURCE_FILES) {
+        onUnavailable?.({ code: 'file-limit', limit: MAX_SOURCE_FILES, observed: visitedFiles });
         return undefined;
       }
       candidates.push(absolutePath);
@@ -106,19 +132,22 @@ async function traversalSnapshotCandidates(scopePath: string): Promise<string[] 
 export async function captureStudioWorkspaceSourceSnapshot(input: {
   workspacePath: string;
   scopePath?: string;
+  onUnavailable?: CheckpointDiagnostic;
 }): Promise<StudioWorkspaceSourceSnapshot | undefined> {
   const workspacePath = path.resolve(input.workspacePath);
   const scopePath = path.resolve(input.scopePath ?? workspacePath);
   if (!isInside(workspacePath, scopePath)) {
+    input.onUnavailable?.({ code: 'outside-scope' });
     return undefined;
   }
   if ((await inspectStudioWorkspaceAvailability(scopePath)).status !== 'available') {
+    input.onUnavailable?.({ code: 'source-unavailable' });
     return undefined;
   }
 
   // Git-ignored source (for example a local .env) still belongs to the
   // checkpoint. Traverse bounded source rather than silently omitting it.
-  const candidates = await traversalSnapshotCandidates(scopePath);
+  const candidates = await traversalSnapshotCandidates(scopePath, input.onUnavailable);
   if (!candidates || candidates.length > MAX_SOURCE_FILES) {
     return undefined;
   }
@@ -145,6 +174,7 @@ export async function captureStudioWorkspaceSourceSnapshot(input: {
     if (stat?.isSymbolicLink()) {
       const target = await fs.readlink(absolutePath).catch(() => undefined);
       if (target === undefined) {
+        input.onUnavailable?.({ code: 'source-unreadable' });
         return undefined;
       }
       symlinks[relativePath] = target;
@@ -157,10 +187,18 @@ export async function captureStudioWorkspaceSourceSnapshot(input: {
       stat.size > MAX_SOURCE_FILE_BYTES ||
       totalBytes > MAX_SOURCE_TOTAL_BYTES
     ) {
+      input.onUnavailable?.(
+        stat.size > MAX_SOURCE_FILE_BYTES
+          ? { code: 'file-size-limit', limit: MAX_SOURCE_FILE_BYTES, observed: stat.size }
+          : totalBytes > MAX_SOURCE_TOTAL_BYTES
+            ? { code: 'total-size-limit', limit: MAX_SOURCE_TOTAL_BYTES, observed: totalBytes }
+            : { code: 'source-unreadable' }
+      );
       return undefined;
     }
     const content = await fs.readFile(absolutePath).catch(() => undefined);
     if (!content || content.length !== stat.size) {
+      input.onUnavailable?.({ code: 'source-unreadable' });
       return undefined;
     }
     files[relativePath] = crypto.createHash('sha256').update(content).digest('hex');
@@ -211,13 +249,19 @@ export function diffStudioWorkspaceSourceSnapshots(
 export async function beginStudioWorkspaceSourceTransaction(input: {
   workspacePath: string;
   scopePath?: string;
+  onUnavailable?: CheckpointDiagnostic;
 }): Promise<StudioWorkspaceSourceTransaction | undefined> {
   const workspacePath = path.resolve(input.workspacePath);
   const scopePath = path.resolve(input.scopePath ?? workspacePath);
   if (!isInside(workspacePath, scopePath)) {
+    input.onUnavailable?.({ code: 'outside-scope' });
     return undefined;
   }
-  const before = await captureStudioWorkspaceSourceSnapshot({ workspacePath, scopePath });
+  const before = await captureStudioWorkspaceSourceSnapshot({
+    workspacePath,
+    scopePath,
+    onUnavailable: input.onUnavailable,
+  });
   if (!before) {
     return undefined;
   }

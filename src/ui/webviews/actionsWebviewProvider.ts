@@ -115,6 +115,7 @@ import {
 import { bindCreatePlanDestination } from '../../core/createPlanDestination.js';
 import {
   CreateExecutionCapabilityError,
+  describeCreateExecutionFailure,
   executeApprovedCreatePlan,
 } from '../../core/createExecutionCapability.js';
 import {
@@ -1956,7 +1957,8 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         : undefined;
     const sessionId =
       typeof payloadRecord.sessionId === 'string' ? payloadRecord.sessionId.trim() : undefined;
-    const createTarget = payloadRecord.target === 'project' ? 'project' : 'workspace';
+    let createTarget: 'workspace' | 'project' =
+      payloadRecord.target === 'project' ? 'project' : 'workspace';
     const history = Array.isArray(payloadRecord.history)
       ? payloadRecord.history
           .filter(
@@ -2010,21 +2012,11 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           void this._sendInlineScope();
         }
       }
-      if (createTarget === 'project' && !workspacePath) {
-        this._postInlineCreate('sidebarAiCreateError', {
-          error:
-            'Select the workspace that should own this project, then draft the project plan again.',
-          failureCode: 'workspace-selection-required',
-          retryable: false,
-          sessionId,
-        });
-        return;
-      }
       const route = await routeCreateIntent({
         request: prompt,
         selectedTarget: createTarget,
         stackFocus,
-        workspaceName,
+        workspaceName: workspaceName ?? scope.workspaceName,
         projectName: undefined,
         history,
         complete: async ({ prompt: routePrompt, toolName, toolSchema }) => {
@@ -2063,6 +2055,29 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           confidence: route.confidence,
           action: route.recommendedAction,
           request: route.normalizedRequest,
+          sessionId,
+        });
+        return;
+      }
+      // The selector is a default. Resolve the user's destination before the
+      // planner or approval binding can turn that default into mutation authority.
+      createTarget = route.creationTarget ?? createTarget;
+      if (createTarget === 'workspace') {
+        workspacePath = undefined;
+        workspaceName = undefined;
+      } else if (!workspacePath) {
+        const selected = scope.workspacePath
+          ? { path: scope.workspacePath, name: scope.workspaceName }
+          : await this._readSelectedWorkspaceScope();
+        workspacePath = selected?.path?.trim();
+        workspaceName = selected?.name?.trim();
+      }
+      if (createTarget === 'project' && !workspacePath) {
+        this._postInlineCreate('sidebarAiCreateError', {
+          error:
+            'Select the workspace that should own this project, then draft the project plan again.',
+          failureCode: 'workspace-selection-required',
+          retryable: false,
           sessionId,
         });
         return;
@@ -2354,21 +2369,24 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       this._createPlanApprovals.complete(approval.authorization.planId);
     } catch (error) {
       const planName =
-        approval.plan.workspaceName || approval.plan.projectName || 'the requested resource';
-      const failure = describePortableCreationFailure(error, planName);
+        error instanceof CreateExecutionCapabilityError && error.phase === 'project'
+          ? approval.plan.projectName
+          : error instanceof CreateExecutionCapabilityError && error.phase === 'companion'
+            ? (approval.plan.secondaryProject?.projectName ?? approval.plan.workspaceName)
+            : approval.plan.workspaceName || approval.plan.projectName || 'the requested resource';
+      const failure =
+        error instanceof CreateExecutionCapabilityError
+          ? describeCreateExecutionFailure(error, planName)
+          : describePortableCreationFailure(error, planName);
       Logger.getInstance().error(`AI creation stopped (${failure.code})`, failure.technicalMessage);
-      const retryable =
-        error instanceof CreateExecutionCapabilityError ? error.safeToRetry : failure.retryable;
+      const retryable = failure.retryable;
       if (retryable) {
         this._createPlanApprovals.markRetryable(approval.authorization.planId);
       } else {
         this._createPlanApprovals.complete(approval.authorization.planId);
       }
       this._postInlineCreate('sidebarAiCreateError', {
-        error:
-          error instanceof CreateExecutionCapabilityError
-            ? 'Creation stopped after a controlled mutation phase began. Review the partial result, then draft a fresh plan.'
-            : failure.message,
+        error: failure.message,
         failureCode: failure.code,
         setupRequired: failure.code === 'runtime-unavailable',
         retryable,
@@ -4513,6 +4531,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               : undefined,
             isExpectedDiagnosticFindingExit,
           });
+          if (execution.output?.executed === false) {
+            return execution;
+          }
           const commandOutput = execution.output;
           const observedEffect = Boolean(
             commandOutput &&
@@ -5881,6 +5902,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               : undefined,
             isExpectedDiagnosticFindingExit,
           });
+          if (execution.output?.executed === false) {
+            return execution;
+          }
           const commandOutput = execution.output;
           const observedEffect = Boolean(
             commandOutput &&

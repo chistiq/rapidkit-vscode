@@ -37,12 +37,13 @@ On first use, the extension downloads and integrity-checks its pinned Workspai
 CLI runtime, then reuses the cached copy offline. A separate global CLI install
 is not required for extension-owned operations.
 
-## New in 0.49.0 · November 2, 2026
+## New in 0.49.1 · November 3, 2026
 
-Work on existing projects without mandatory adoption, preview attached images,
-and review each task's file changes above the composer. A compact chat picker
-and activity grouped by response keep conversations focused.
-[Read the release notes](RELEASE_NOTES.md).
+Create in the intended workspace, then continue in Agent with the created
+project and selected model. Browse compact creation history above chat and
+reconcile activity totals with the files the Assistant actually changed.
+Checkpoint, Python test-cache, and Auto tool recovery are improved.
+[Read the release notes](releases/RELEASE_NOTES_v0.49.1.md).
 
 ## One assistant, four ways to work
 

@@ -51,8 +51,8 @@ describe('Workspai chat session contract', () => {
     expect(secondary).toContain(
       'scope: activeAskSession?.editorIssue ? null : sessionScopeSnapshot'
     );
-    expect(secondary).toContain(
-      'scope: activeStudioSession?.editorIssue ? null : sessionScopeSnapshot'
+    expect(secondary).toMatch(
+      /scope:\s*options\?\.scope !== undefined\s*\? options\.scope\s*: activeStudioSession\?\.editorIssue && !options\?\.forceNew\s*\? null\s*: sessionScopeSnapshot/
     );
     expect(sessionHook).toContain('existing.incident || existing.editorIssue || existing.scope');
     expect(secondary).toContain('scope: scopePayloadForSession(session, scope)');
@@ -112,7 +112,9 @@ describe('Workspai chat session contract', () => {
 
   it('opens history from the header and keeps it out of the composer drawer', () => {
     expect(chatTab).toContain('className="ws-chat-header"');
-    expect(drawer).toContain('aria-label="Chat history"');
+    expect(drawer).toContain("history: 'Chat history'");
+    const picker = read('webview-ui/src/sidebar/SessionHistoryPicker.tsx');
+    expect(picker).toContain('aria-label={props.labels.history}');
     expect(drawer).not.toContain('DrawerMainTab');
     expect(drawer).not.toContain('Questions');
   });

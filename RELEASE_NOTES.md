@@ -1,5 +1,26 @@
 # Release Notes
 
+## v0.49.1 (November 3, 2026)
+
+### Clearer creation, accurate activity, better recovery
+
+This release is validated against Workspai CLI 0.80.0.
+
+- Resolve explicit creation destinations before planning and approval, and continue
+  in Agent with the created destination and selected model.
+- Browse searchable creation history above chat, review compact plans, and follow
+  live progress without losing manual scroll position.
+- Reconcile activity file counts and line totals with owned transactions; distinguish
+  binary files and retain recovered failures without mislabeling completed requests.
+- Recover from checkpoint limits and Auto tool-result routing, avoid Python
+  bytecode-cache false alarms, and report filesystem space errors clearly.
+
+VS Code 1.106.0 or newer and Workspai CLI 0.80.0+ are required. The verified runtime
+remains 0.80.0. Scaffolding does not imply that implementation, build, or tests are
+complete; Continue in Agent can perform the remaining work and applicable checks.
+
+[Full release notes](https://github.com/chistiq/rapidkit-vscode/blob/main/releases/RELEASE_NOTES_v0.49.1.md)
+
 ## v0.49.0 (November 2, 2026)
 
 ### A more capable, reviewable Assistant
@@ -1455,7 +1476,7 @@ Improved readability of Maximize and Lite/Full view toggle buttons in header:
 
 | Version                                      | Release Date | Highlights                                                                                                             |
 | -------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| [v0.49.0](releases/RELEASE_NOTES_v0.49.0.md) | Nov 2, 2026 | Conversational Assistant, project scope, durable file review, compact history, and CLI 0.80.0 |
+| [v0.49.0](releases/RELEASE_NOTES_v0.49.0.md) | Nov 2, 2026  | Conversational Assistant, project scope, durable file review, compact history, and CLI 0.80.0                          |
 | [v0.28.0](releases/RELEASE_NOTES_v0.28.0.md) | May 13, 2026 | ✦ E1/E2 enterprise stabilization (E2.1-E2.5), memory-policy boundaries, audit timeline linkage, release-gate hardening |
 | [v0.27.3](releases/RELEASE_NOTES_v0.27.3.md) | May 12, 2026 | ✦ Incident Studio trust hardening, deterministic verify/release gating, parity snapshot and CI guardrails              |
 | [v0.27.2](releases/RELEASE_NOTES_v0.27.2.md) | May 10, 2026 | ✦ Setup panel disposal safety, guarded postMessage flow, webview lifecycle stability                                   |

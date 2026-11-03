@@ -30,14 +30,50 @@ export const STUDIO_WORKSPAI_PROJECT_POLICY = [
 
 /** Versioned architecture knowledge is available without a folder or running CLI. */
 export function buildStudioWorkspaiArchitecture(query = '') {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const kits = listExecutableScaffoldKitCapabilities().filter((kit) =>
-    terms.every((term) => JSON.stringify(kit).toLowerCase().includes(term))
+  const catalog = listExecutableScaffoldKitCapabilities();
+  const filler = new Set([
+    'kit',
+    'kits',
+    'project',
+    'projects',
+    'supported',
+    'support',
+    'create',
+    'creation',
+    'identifier',
+    'identifiers',
+    'framework',
+    'frameworks',
+    'available',
+    'starter',
+    'starters',
+    'for',
+    'with',
+    'and',
+    'using',
+  ]);
+  const terms = [
+    ...new Set(
+      query
+        .toLowerCase()
+        .split(/[^a-z0-9._-]+/)
+        .filter((term) => Boolean(term) && !filler.has(term))
+    ),
+  ];
+  // Natural-language filler such as "supported project kits" is not a kit
+  // filter. Retain actual catalog terms, so "React + Vite" finds its contract.
+  const searchable = (kit: (typeof catalog)[number]) => JSON.stringify(kit).toLowerCase();
+  const meaningful = terms.filter((term) => catalog.some((kit) => searchable(kit).includes(term)));
+  const kits = catalog.filter(
+    (kit) =>
+      terms.length === 0 ||
+      (meaningful.length > 0 && meaningful.every((term) => searchable(kit).includes(term)))
   );
   return {
     schemaVersion: 'workspai.studio-architecture.v1',
     source: 'bundled-create-contract',
     version: closure.cli.version,
+    kits,
     ownership: {
       workspace:
         'Related registered projects, shared contracts, intelligence and verification evidence.',
@@ -90,9 +126,6 @@ export function buildStudioWorkspaiArchitecture(query = '') {
       'polyglot',
       'enterprise',
     ],
-    kits: kits.filter((kit) =>
-      terms.every((term) => JSON.stringify(kit).toLowerCase().includes(term))
-    ),
     coverage:
       'Executable kits from the bundled contract, not proof of locally installed generators or toolchains. Inspect installed help when selecting exact CLI syntax. Existing/import lanes do not imply native create support.',
   };

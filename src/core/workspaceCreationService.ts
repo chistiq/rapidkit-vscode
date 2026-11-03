@@ -1,3 +1,4 @@
+import { describePortableCreationFailure } from './portableCreationFailure.js';
 import * as fs from 'fs-extra';
 
 import { createWorkspaceCommand } from '../commands/createWorkspace';
@@ -27,6 +28,7 @@ export type WorkspaceCreationFailureCode =
   | 'runtime-integrity-failed'
   | 'runtime-cache-conflict'
   | 'permission-denied'
+  | 'disk-space-exhausted'
   | 'partial-workspace'
   | 'workspace-invalid'
   | 'creation-failed';
@@ -50,105 +52,6 @@ export type WorkspaceCreationSuccess = {
 export type WorkspaceCreationResult = WorkspaceCreationSuccess | WorkspaceCreationFailure;
 
 const activeCreations = new Map<string, Promise<WorkspaceCreationResult>>();
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function portableFailure(
-  error: unknown,
-  workspaceName: string,
-  phase: WorkspaceCreationFailure['phase']
-): WorkspaceCreationFailure {
-  const technicalMessage = errorText(error);
-  const normalized = technicalMessage.toLowerCase();
-  const errorCode =
-    error && typeof error === 'object' && 'code' in error
-      ? String((error as { code?: unknown }).code ?? '').toLowerCase()
-      : '';
-
-  if (
-    errorCode === 'runtime-missing' ||
-    errorCode === 'runtime-unsupported-host' ||
-    (normalized.includes('bundled workspai cli') && normalized.includes('missing'))
-  ) {
-    return {
-      ok: false,
-      code: 'runtime-unavailable',
-      message:
-        'The verified Workspai runtime is unavailable. Reload VS Code, then retry this creation.',
-      technicalMessage,
-      retryable: true,
-      phase: 'runtime',
-    };
-  }
-  if (
-    errorCode === 'python-runtime-unavailable' ||
-    errorCode === 'python-version-unsupported' ||
-    errorCode === 'python-venv-unavailable' ||
-    normalized.includes('python venv support') ||
-    normalized.includes('python venv package') ||
-    normalized.includes('pipx is not installed') ||
-    normalized.includes('poetry is not installed')
-  ) {
-    return {
-      ok: false,
-      code: 'runtime-unavailable',
-      message: technicalMessage,
-      technicalMessage,
-      retryable: false,
-      phase: 'preflight',
-    };
-  }
-  if (
-    errorCode === 'runtime-corrupt' ||
-    errorCode === 'runtime-incompatible' ||
-    normalized.includes('integrity verification')
-  ) {
-    return {
-      ok: false,
-      code: 'runtime-integrity-failed',
-      message:
-        'The bundled Workspai runtime failed its integrity check. Reinstall the extension before retrying.',
-      technicalMessage,
-      retryable: false,
-      phase: 'runtime',
-    };
-  }
-  if (normalized.includes('enotempty') && normalized.includes('_npx')) {
-    return {
-      ok: false,
-      code: 'runtime-cache-conflict',
-      message:
-        'The legacy npm runtime cache was busy. Retry once; the extension will reuse one serialized runtime operation.',
-      technicalMessage,
-      retryable: true,
-      phase: 'runtime',
-    };
-  }
-  if (
-    errorCode === 'eacces' ||
-    errorCode === 'eperm' ||
-    /\b(eacces|eperm)\b/i.test(technicalMessage)
-  ) {
-    return {
-      ok: false,
-      code: 'permission-denied',
-      message: `Workspai could not create “${workspaceName}” with the current filesystem permissions.`,
-      technicalMessage,
-      retryable: false,
-      phase,
-    };
-  }
-  return {
-    ok: false,
-    code: 'creation-failed',
-    message: `Workspai could not finish creating “${workspaceName}”. Review any partial output, then start a fresh creation plan.`,
-    technicalMessage,
-    retryable: false,
-    phase,
-  };
-}
 
 async function runCreation(input: ManagedWorkspaceCreationInput): Promise<WorkspaceCreationResult> {
   const logger = Logger.getInstance();
@@ -178,7 +81,7 @@ async function runCreation(input: ManagedWorkspaceCreationInput): Promise<Worksp
     });
   } catch (error) {
     logger.error(`Managed workspace creation failed for ${workspaceName}`, error);
-    return portableFailure(error, workspaceName, 'create');
+    return describePortableCreationFailure(error, workspaceName);
   }
 
   if (!hasWorkspaceRootMarkers(workspacePath)) {
@@ -223,9 +126,4 @@ export function createManagedWorkspace(
   return operation;
 }
 
-export function describePortableCreationFailure(
-  error: unknown,
-  resourceName: string
-): WorkspaceCreationFailure {
-  return portableFailure(error, resourceName, 'create');
-}
+export { describePortableCreationFailure } from './portableCreationFailure.js';

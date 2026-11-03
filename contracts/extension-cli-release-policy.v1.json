@@ -1,6 +1,6 @@
 {
   "schemaVersion": "workspai-vscode-cli-release-policy.v1",
-  "extensionVersion": "0.49.0",
+  "extensionVersion": "0.49.1",
   "minimumCliVersion": "0.80.0",
   "verifiedCliVersion": "0.80.0",
   "upstreamContractSchemaVersion": "rapidkit-extension-cli-compatibility.v1",

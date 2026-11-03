@@ -40,6 +40,13 @@ export interface CreatedProject {
   path?: string;
 }
 
+export type CreateAgentScope = {
+  workspacePath: string;
+  workspaceName?: string;
+  projectPath?: string;
+  projectName?: string;
+};
+
 export type CreateGuidanceAction =
   | 'none'
   | 'plan-workspace'

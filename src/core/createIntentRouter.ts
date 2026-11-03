@@ -29,6 +29,7 @@ export type CreateIntentRoute = {
   userResponse: string;
   reason: string;
   recommendedAction: CreateGuidanceAction;
+  creationTarget?: 'workspace' | 'project';
 };
 
 export type CreateIntentModelResult =
@@ -45,6 +46,7 @@ export const CREATE_INTENT_ROUTE_TOOL_SCHEMA = {
     'userResponse',
     'reason',
     'recommendedAction',
+    'creationTarget',
   ],
   properties: {
     intent: {
@@ -64,6 +66,12 @@ export const CREATE_INTENT_ROUTE_TOOL_SCHEMA = {
     normalizedRequest: { type: 'string', minLength: 1, maxLength: 2_000 },
     userResponse: { type: 'string', maxLength: 1_000 },
     reason: { type: 'string', minLength: 1, maxLength: 500 },
+    creationTarget: {
+      type: 'string',
+      enum: ['workspace', 'project', 'unspecified'],
+      description:
+        'For create: resolve the destination from the user request; use the selector only when the request leaves it unspecified. For other intents use unspecified.',
+    },
     recommendedAction: {
       type: 'string',
       enum: [
@@ -126,7 +134,9 @@ export function parseCreateIntentRoute(value: unknown): CreateIntentRoute | null
     typeof value.userResponse !== 'string' ||
     typeof value.reason !== 'string' ||
     !value.reason.trim() ||
-    !CREATE_ACTIONS.has(value.recommendedAction as CreateGuidanceAction)
+    !CREATE_ACTIONS.has(value.recommendedAction as CreateGuidanceAction) ||
+    (value.creationTarget !== undefined &&
+      !['workspace', 'project', 'unspecified'].includes(String(value.creationTarget)))
   ) {
     return null;
   }
@@ -156,6 +166,10 @@ export function parseCreateIntentRoute(value: unknown): CreateIntentRoute | null
     userResponse: bounded(value.userResponse, 1_000),
     reason: bounded(value.reason, 500),
     recommendedAction,
+    ...(intent === 'create' &&
+    (value.creationTarget === 'workspace' || value.creationTarget === 'project')
+      ? { creationTarget: value.creationTarget }
+      : {}),
   };
 }
 
@@ -186,7 +200,7 @@ export function buildCreateIntentRoutingPrompt(input: {
     '- A creation plan is always previewed and requires explicit approval before mutation.',
     '',
     'Current Create context:',
-    `- Selected target: ${input.selectedTarget}. This selector is authoritative; do not silently change it.`,
+    `- Selected target: ${input.selectedTarget}. This selector is a default, not authority over an explicit destination in the user request.`,
     `- Selected workspace: ${safeName(input.workspaceName)}.`,
     `- Selected project: ${safeName(input.projectName)}.`,
     `- Stack focus: ${safeName(input.stackFocus)}.`,
@@ -208,7 +222,8 @@ export function buildCreateIntentRoutingPrompt(input: {
     '- Never repeat a clarification already present in Recent Create conversation. Ask at most one question in the entire Create session; after that, use explicit user intent plus conservative executable defaults and produce a reviewable plan.',
     '- For create, normalizedRequest must be a self-contained creation brief using the current conversation; use high confidence only when a trustworthy plan can be drafted.',
     '- A request to add or fix a feature inside existing source is assistant-task, even if it uses words such as build or create.',
-    '- Respect the selected target. If it conflicts with explicit intent, explain the mismatch and recommend plan-workspace or plan-project rather than silently changing it.',
+    '- For create, set creationTarget from the user request in any language: a separate/new workspace is workspace; a project in the current/active workspace is project. Preserve this destination in normalizedRequest. Explicit user intent takes precedence over the selector, which may have been chosen automatically.',
+    '- If the user leaves the destination unspecified, use the selected target as the default. Do not invent a different existing workspace. For non-create intents set creationTarget to unspecified.',
     '- Project creation requires an active selected workspace. Never silently fall back to another or default workspace.',
     '- userResponse must be concise, natural, and useful. Ask at most one focused question for clarification.',
     '- For social conversation, respond as the Workspai Create guide. Never echo the user message verbatim and never describe yourself as just a program, AI, language model, or bot.',

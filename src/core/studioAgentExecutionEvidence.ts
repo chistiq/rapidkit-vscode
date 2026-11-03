@@ -21,7 +21,7 @@ export function studioAgentExecutionEvidence(session: StudioAgentPersistedSessio
       exitCode: unknown;
       timedOut: boolean;
       supersedesFailure: boolean;
-      processOutcome: 'passed' | 'failed' | 'unknown';
+      processOutcome: 'passed' | 'failed' | 'unknown' | 'not-started';
       sourceRestored: boolean;
       toolError?: string;
     }
@@ -116,11 +116,14 @@ export function studioAgentExecutionEvidence(session: StudioAgentPersistedSessio
         timedOut: output.timedOut === true,
         supersedesFailure: previous?.ok === false || previous?.supersedesFailure === true,
         processOutcome:
-          output.exitCode === 0
-            ? 'passed'
-            : typeof output.exitCode === 'number'
-              ? 'failed'
-              : 'unknown',
+          output.executed === false ||
+          data.terminalReason === 'workspace-command-checkpoint-unavailable'
+            ? 'not-started'
+            : output.exitCode === 0
+              ? 'passed'
+              : typeof output.exitCode === 'number'
+                ? 'failed'
+                : 'unknown',
         sourceRestored: Boolean(output.rollback),
         ...(typeof data.error === 'string' ? { toolError: data.error.slice(0, 400) } : {}),
       });
@@ -175,9 +178,10 @@ export function describeStudioExecutionReceipts(
       .map(
         (terminal) => `- ${terminal.command} [${terminal.cwd}]: exit ${String(terminal.exitCode)}.`
       ),
-    ...evidence.commands.map(
-      (command) =>
-        `- ${command.command} [${command.cwd}]: ${command.ok ? 'passed' : command.processOutcome === 'passed' ? 'process passed; tool outcome not accepted' : 'failed'}, exit ${String(command.exitCode)}${command.sourceRestored ? '; source changes restored, verification remains open' : ''}${command.timedOut ? ', timed out' : ''}${command.supersedesFailure && command.ok ? '; supersedes an earlier failure' : ''}.`
+    ...evidence.commands.map((command) =>
+      command.processOutcome === 'not-started'
+        ? `- ${command.command} [${command.cwd}]: not started; no process exit code.`
+        : `- ${command.command} [${command.cwd}]: ${command.ok ? 'passed' : command.processOutcome === 'passed' ? 'process passed; tool outcome not accepted' : 'failed'}, exit ${String(command.exitCode)}${command.sourceRestored ? '; source changes restored, verification remains open' : ''}${command.timedOut ? ', timed out' : ''}${command.supersedesFailure && command.ok ? '; supersedes an earlier failure' : ''}.`
     ),
   ];
   return lines.length ? `Recorded command results:\n${lines.join('\n')}` : undefined;

@@ -132,6 +132,13 @@ export function useCreateSessions() {
     [updateSession]
   );
 
+  const setTarget = useCallback(
+    (sessionId: string, target: CreateSession['target']) => {
+      updateSession(sessionId, (session) => ({ ...session, target }));
+    },
+    [updateSession]
+  );
+
   const selectSession = useCallback((sessionId: string) => {
     stateRef.current = { ...stateRef.current, activeId: sessionId };
     setActiveId(sessionId);
@@ -162,6 +169,7 @@ export function useCreateSessions() {
     appendMessage,
     replaceMessages,
     setStatus,
+    setTarget,
     selectSession,
     deleteSession,
     newSession,

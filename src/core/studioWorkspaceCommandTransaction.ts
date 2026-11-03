@@ -20,6 +20,7 @@ import {
   type StudioWorkspaceSourceRollback,
   type StudioWorkspaceSourceTransaction,
   type StudioWorkspaceSourceSnapshot,
+  type StudioSourceCheckpointFailure,
 } from './studioWorkspaceSourceSnapshot.js';
 
 const workspaceCommandTails = new Map<string, Promise<void>>();
@@ -47,7 +48,8 @@ async function withWorkspaceCommandTransactionLock<T>(
   }
 }
 
-export type StudioWorkspaceCommandTransactionOutput = StudioWorkspaceCommandExecution & {
+type ExecutedWorkspaceCommandOutput = StudioWorkspaceCommandExecution & {
+  executed?: true;
   transactionId: string;
   /** Temporary execution checkpoint identity, distinct from a durable native review receipt. */
   commandTransactionId?: string;
@@ -81,6 +83,14 @@ export type StudioWorkspaceCommandTransactionOutput = StudioWorkspaceCommandExec
   };
 };
 
+export type StudioWorkspaceCommandTransactionOutput =
+  | ExecutedWorkspaceCommandOutput
+  | (Partial<Omit<ExecutedWorkspaceCommandOutput, 'executed'>> & {
+      executed: false;
+      checkpointFailure?: StudioSourceCheckpointFailure;
+      recovery: { kind: 'source-scope'; instruction: string };
+    });
+
 export async function executeStudioWorkspaceCommandTransaction(input: {
   workspacePath: string;
   projectPath?: string;
@@ -113,15 +123,30 @@ export async function executeStudioWorkspaceCommandTransaction(input: {
   // is therefore the selected project when present, not the registry root.
   const sourceRoot = input.projectPath ?? input.workspacePath;
   return withWorkspaceCommandTransactionLock(sourceRoot, async () => {
+    let checkpointFailure: StudioSourceCheckpointFailure | undefined;
     const transaction = await beginStudioWorkspaceSourceTransaction({
       workspacePath: sourceRoot,
+      onUnavailable: (failure) => {
+        checkpointFailure = failure;
+      },
     });
     if (!transaction) {
       return {
         ok: false,
-        terminalReason: 'workspace-command-checkpoint-unavailable',
-        error:
-          'Studio could not create a complete source checkpoint, so the workspace command was not started.',
+        changed: false,
+        error: `The command was not started: its source checkpoint is incomplete${checkpointFailure ? ` (${checkpointFailure.code}${checkpointFailure.limit ? `; observed ${checkpointFailure.observed ?? 'unknown'}, limit ${checkpointFailure.limit}` : ''})` : ''}. Select an appropriate narrower source directory or an independent creation target, then use an approved tool there. Do not retry this unchanged broad scope or bypass checkpoint coverage.`,
+        output: {
+          executed: false,
+          displayCommand: plan.displayCommand,
+          cwd: plan.cwd,
+          exitCode: null,
+          checkpointFailure,
+          recovery: {
+            kind: 'source-scope',
+            instruction:
+              'No process ran and no files changed. Reassess the requested destination. Use select-project for an existing project, create-workspace for a suitable new owned workspace, or another applicable scoped tool. Preserve explicit user destinations; obtain exact approval for a changed destination/action. If no safe route exists, explain the specific checkpoint limitation and ask only for essential input.',
+          },
+        },
       };
     }
 

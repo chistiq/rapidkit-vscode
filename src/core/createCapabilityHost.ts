@@ -300,7 +300,7 @@ function capabilityPrompt(context: CreateCapabilityContext): string {
     '',
     'Enterprise boundaries:',
     '- Tools in this planning loop are read-only. submit-create-plan is a proposal, not execution.',
-    '- The selected workspace/project target is authoritative.',
+    '- The resolved workspace/project target reflects the user request and is authoritative for this draft. Do not switch it while choosing a stack.',
     '- A project plan belongs only to the active canonical workspace selected by the user; never choose or imply a hidden default workspace.',
     '- Use only executable framework and kit pairs returned by list-create-capabilities.',
     '- Choose sensible conservative defaults when the user delegates technical choices; do not ask the user to understand frameworks.',

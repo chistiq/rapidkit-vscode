@@ -576,12 +576,14 @@ body {
 }
 
 .ws-sidebar__plan-key {
-  flex: 0 0 64px;
+  flex: 0 0 11ch;
+  overflow-wrap: anywhere;
   color: var(--vscode-descriptionForeground);
 }
 
 .ws-sidebar__plan-value {
   flex: 1;
+  min-width: 0;
   word-break: break-word;
 }
 
@@ -2276,8 +2278,8 @@ body {
 }
 
 .ws-sidebar--secondary .ws-sidebar__tabpanel--chat .ws-sidebar__stream {
-  padding: 8px var(--ws-sidebar-edge-inset) 16px;
-  gap: 18px;
+  padding: 8px var(--ws-sidebar-edge-inset) 10px;
+  gap: 14px;
 }
 
 .ws-sidebar--secondary .ws-sidebar__msg {
@@ -2285,7 +2287,7 @@ body {
 }
 
 .ws-sidebar--secondary .ws-sidebar__msg--user {
-  padding: 0 var(--ws-sidebar-edge-inset);
+  padding: 0;
 }
 
 .ws-sidebar--secondary .ws-sidebar__bubble {
@@ -2296,21 +2298,42 @@ body {
 
 .ws-sidebar--secondary .ws-sidebar__msg--ai .ws-sidebar__bubble {
   max-width: 100%;
-  padding: 0 var(--ws-sidebar-edge-inset);
+  padding: 0;
   background: transparent;
   border: 0;
   border-radius: 0;
 }
 
-.ws-sidebar--secondary .ws-sidebar__msg--ai .ws-sidebar__bubble > p:first-child,
+.ws-sidebar--secondary .ws-sidebar__bubble > p:first-child,
 .ws-sidebar--secondary .ws-sidebar__msg--ai .md-body > *:first-child {
   margin-top: 0;
 }
 
 .ws-sidebar--secondary .ws-sidebar__msg--ai .md-body {
   font-size: var(--ws-sidebar-text-md);
-  line-height: 1.7;
+  line-height: var(--ws-sidebar-leading-normal);
   letter-spacing: 0.005em;
+}
+
+.ws-sidebar--secondary .ws-sidebar__bubble .md-p {
+  line-height: inherit;
+}
+
+/* List markers must stay inside the message in both writing directions. */
+.ws-sidebar__bubble .md-ul,
+.ws-sidebar__bubble .md-ol {
+  padding: 0;
+  padding-inline-start: 1.4em;
+}
+
+.ws-sidebar__bubble .md-li {
+  padding: 0;
+  padding-inline-start: 0.15em;
+}
+
+.ws-sidebar__bubble .md-table-scroll {
+  direction: ltr;
+  unicode-bidi: isolate;
 }
 
 .ws-sidebar--secondary .ws-sidebar__msg--ai .md-h1,
@@ -2357,6 +2380,29 @@ body {
 .ws-sidebar--secondary .ws-sidebar__plan {
   gap: 5px;
   margin: 8px 0;
+}
+
+/* Keep creation receipts compact while retaining the full approved plan on demand. */
+.ws-sidebar__create-plan > summary {
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+  line-height: var(--ws-sidebar-leading-normal);
+}
+
+.ws-sidebar__create-plan > summary:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 3px;
+}
+
+.ws-sidebar__tabpanel--create .ws-sidebar__plan {
+  padding: 8px 10px;
+}
+
+.ws-sidebar--secondary .ws-sidebar__bubble .ws-sidebar__create-progress-detail {
+  margin-top: 2px;
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--ws-sidebar-text-sm);
+  line-height: var(--ws-sidebar-leading-normal);
 }
 
 .ws-sidebar--secondary .ws-sidebar__plan-item,
@@ -4797,6 +4843,7 @@ body {
 .ws-chat-history__select small { color: var(--vscode-descriptionForeground); font-size: 10px; }
 .ws-chat-history__delete { display: flex; flex: 0 0 auto; margin-right: 4px; padding: 5px; opacity: .65; }
 .ws-chat-history__delete:hover, .ws-chat-history__delete:focus-visible { opacity: 1; }
+.ws-chat-history__delete:disabled { opacity: .3; cursor: not-allowed; }
 .ws-chat-history__empty { margin: 12px 8px; font-size: 12px; color: var(--vscode-descriptionForeground); }
 .ws-chat-starters { display: flex; flex-direction: column; gap: 6px; width: min(100%, 400px); max-width: 100%; margin-top: 12px; }
 .ws-chat-starters button { padding: 5px 8px; border: 1px solid var(--vscode-widget-border); border-radius: 4px; background: transparent; color: var(--vscode-descriptionForeground); font: inherit; font-size: 11px; text-align: start; overflow-wrap: anywhere; cursor: pointer; }

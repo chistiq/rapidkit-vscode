@@ -228,7 +228,16 @@ describe('Command-produced request checkpoints', () => {
     expect(await captureStudioWorkspaceSourceSnapshot({ workspacePath })).toBeUndefined();
     expect(await beginStudioWorkspaceSourceTransaction({ workspacePath })).toBeUndefined();
     const result = await executeStudioWorkspaceCommandTransaction(request());
-    expect(result.terminalReason).toBe('workspace-command-checkpoint-unavailable');
+    expect(result.terminalReason).toBeUndefined();
+    expect(result).toMatchObject({
+      ok: false,
+      changed: false,
+      output: {
+        executed: false,
+        checkpointFailure: { code: 'file-size-limit' },
+        recovery: { kind: 'source-scope' },
+      },
+    });
     expect(execute).not.toHaveBeenCalled();
     await fs.remove(path.join(workspacePath, 'large.bin'));
     await fs.writeFile(path.join(workspacePath, 'moving.txt'), 'before');

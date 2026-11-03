@@ -135,6 +135,22 @@ describe('studio changed files summary', () => {
     expect(summary.undoTransactionId).toBe('transaction-bbbbbbbb');
   });
 
+  it('withdraws a rolled-back transaction even when its final receipt omits file details', () => {
+    const summary = buildStudioChangedFilesSummary([
+      progress({
+        transactionId: 'native-edit',
+        transactionState: 'applied',
+        fileChanges: [
+          { relativePath: 'file.py', status: 'added', addedLines: 133, removedLines: 0 },
+        ],
+      }),
+      progress({ transactionId: 'native-edit', transactionState: 'rolled-back' }),
+    ]);
+    expect(summary.files).toEqual([]);
+    expect(summary.addedLines).toBe(0);
+    expect(summary.undoTransactionId).toBeUndefined();
+  });
+
   it('marks stale, binary, and failed files as not comparable so review cannot promise an exact diff', () => {
     const summary = buildStudioChangedFilesSummary([
       progress({

@@ -84,6 +84,37 @@ function session() {
 }
 
 describe('Durable execution receipts', () => {
+  it.each(['legacy', 'current'])(
+    'reports a %s preflight checkpoint rejection as not started',
+    (kind) => {
+      const state = session();
+      state.events.push({
+        ...state.events[0],
+        sequence: 30,
+        type: 'tool.failed',
+        data: {
+          toolName: 'run-workspace-command',
+          ok: false,
+          input: {
+            executable: 'npm',
+            args: ['create', 'vite@latest', 'focusboard'],
+            purpose: 'build',
+          },
+          ...(kind === 'legacy'
+            ? { terminalReason: 'workspace-command-checkpoint-unavailable' }
+            : { output: { executed: false, exitCode: null } }),
+        },
+      });
+      expect(studioAgentExecutionEvidence(state).commands.at(-1)?.processOutcome).toBe(
+        'not-started'
+      );
+      expect(describeStudioExecutionReceipts(state)).toContain(
+        'npm create vite@latest focusboard [scope root]: not started; no process exit code.'
+      );
+      expect(describeStudioExecutionReceipts(state)).not.toContain('failed, exit null');
+    }
+  );
+
   it('distinguishes an exit-zero build with restored source from a compiler failure', () => {
     const state = session();
     state.events.push({

@@ -70,6 +70,7 @@ describe('Governed JSON tool transport', () => {
     '400: This model does not support tools',
     'Unrecognized request argument: tool_choice',
     'Tool calling is not supported',
+    'Auto mode needs a prompt or a command to route a request.',
   ])('recognizes explicit transport incompatibility: %s', (error) =>
     expect(isNativeToolTransportUnsupported(error)).toBe(true)
   );

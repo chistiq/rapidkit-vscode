@@ -1,4 +1,5 @@
 import type { AICreationPlan } from './aiService.js';
+import { describePortableCreationFailure } from './portableCreationFailure.js';
 import type {
   ManagedWorkspaceCreationInput,
   WorkspaceCreationResult,
@@ -36,6 +37,19 @@ export class CreateExecutionCapabilityError extends Error {
     );
     this.name = 'CreateExecutionCapabilityError';
   }
+}
+
+/** Keep the real cause visible without authorizing a blind replay of partial work. */
+export function describeCreateExecutionFailure(
+  error: CreateExecutionCapabilityError,
+  resourceName: string
+) {
+  const failure = describePortableCreationFailure(error.cause ?? error, resourceName);
+  return {
+    ...failure,
+    message: `${failure.message} Stopped during ${error.phase}; earlier steps may have completed.`,
+    retryable: error.safeToRetry && failure.retryable,
+  };
 }
 
 export type CreateExecutionResult =

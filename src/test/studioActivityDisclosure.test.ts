@@ -7,6 +7,9 @@ vi.mock('@/vscode', () => ({
 }));
 import { StudioActivityTranscript } from '../../webview-ui/src/sidebar/StudioActivityTranscript';
 import { ChatTab } from '../../webview-ui/src/sidebar/ChatTab';
+import { StudioChangedFilesSummary } from '../../webview-ui/src/sidebar/StudioChangedFilesSummary';
+import { buildStudioChangedFilesSummary } from '../../webview-ui/src/lib/studioChangedFilesSummary';
+import type { SidebarStudioActionProgressView } from '../../webview-ui/src/lib/sidebarStudioActionProgress';
 
 const entries = Array.from({ length: 45 }, (_, index) => ({
   transcriptId: `activity-${index}`,
@@ -39,6 +42,109 @@ describe('Stable activity disclosure', () => {
     vi.unstubAllGlobals();
   });
   const summary = () => document.querySelector<HTMLButtonElement>('.ws-activity__group-summary')!;
+  it('counts owned changes consistently with the dock and retains recovered failures without marking completion blocked', async () => {
+    const owned: SidebarStudioActionProgressView[] = [
+      ...entries.slice(0, 5),
+      {
+        action: 'inspect-workspace-changes',
+        title: 'Review existing changes',
+        summary: '',
+        status: 'done',
+        fileChanges: Array.from({ length: 42 }, (_, i) => ({
+          relativePath: `preexisting-${i}.ts`,
+          status: 'modified',
+          addedLines: 100,
+        })),
+      },
+      {
+        action: 'apply-workspace-patch',
+        title: 'Apply edit',
+        summary: '',
+        status: 'done',
+        transactionId: 'native-source',
+        transactionState: 'applied',
+        fileChanges: [
+          { relativePath: 'todo/main.py', status: 'added', addedLines: 80, removedLines: 0 },
+          { relativePath: 'todo/test_main.py', status: 'added', addedLines: 53, removedLines: 0 },
+        ],
+      },
+      {
+        action: 'run-workspace-command',
+        title: 'Failed first attempt',
+        summary: 'Missing executable',
+        status: 'failed',
+      },
+      {
+        action: 'run-workspace-command',
+        title: 'Run tests',
+        summary: '',
+        status: 'done',
+        transactionId: 'native-cache',
+        transactionState: 'applied',
+        fileChanges: [
+          { relativePath: 'todo/__pycache__/main.pyc', status: 'added', binary: true },
+          { relativePath: 'todo/__pycache__/test_main.pyc', status: 'added', binary: true },
+        ],
+      },
+      {
+        action: 'assistant-session',
+        title: 'Completed',
+        summary: 'Done',
+        status: 'done',
+        eventType: 'session.completed',
+        eventSequence: 20,
+      },
+    ];
+    await act(async () =>
+      root.render(
+        createElement(
+          'div',
+          {},
+          createElement(StudioActivityTranscript, { entries: owned }),
+          createElement(StudioChangedFilesSummary, {
+            summary: buildStudioChangedFilesSummary(owned),
+          })
+        )
+      )
+    );
+    expect(summary().textContent).toContain('Completed');
+    expect(summary().textContent).toContain('4 files changed');
+    expect(summary().textContent).not.toContain('46 files changed');
+    expect(summary().querySelector('.ws-activity__added')?.textContent).toBe('+133');
+    expect(summary().querySelector('.ws-activity__removed')?.textContent).toBe('\u22120');
+    expect(summary().textContent).toContain('1 failed attempt');
+    const fileRows = document.querySelectorAll('.ws-sidebar__studio-changeset-files li');
+    expect(fileRows[0].textContent).toContain('todo/main.py');
+    expect(fileRows[1].textContent).toContain('todo/test_main.py');
+    expect(document.querySelector('.ws-sidebar__studio-changeset-title')?.textContent).toContain(
+      'Created 4 files'
+    );
+    expect(document.querySelector('.ws-sidebar__studio-changeset-title')?.textContent).toContain(
+      '2 binary files'
+    );
+    expect(
+      document.querySelector('.ws-sidebar__studio-changeset-title')?.textContent
+    ).not.toContain('uncounted');
+    await act(async () =>
+      root.render(
+        createElement(StudioActivityTranscript, {
+          entries: [
+            ...owned,
+            {
+              action: 'assistant-session',
+              title: 'New request',
+              summary: '',
+              status: 'done',
+              eventType: 'request.started',
+              eventSequence: 21,
+            },
+          ],
+        })
+      )
+    );
+    expect(summary().textContent).toContain('Needs attention');
+  });
+
   it('keeps live steps visible and preserves explicit expansion choices through completion and resume', async () => {
     const render = async (active: boolean) =>
       act(async () => root.render(createElement(StudioActivityTranscript, { entries, active })));

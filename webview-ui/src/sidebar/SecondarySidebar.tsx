@@ -25,6 +25,7 @@ import {
   type CreateMessage,
   type CreationPlan,
   type CreatedProject,
+  type CreateAgentScope,
 } from './createTypes';
 import { normalizeModels, resolveSelectedModelId, type SidebarModel } from './sidebarModels';
 import type { SidebarScope, SidebarTab } from './sidebarTypes';
@@ -1945,6 +1946,9 @@ export function SecondarySidebar() {
         create.setStatus(sessionId, 'ready');
         const plan = (data.plan as CreationPlan) || null;
         if (plan) {
+          if (plan.type === 'workspace' || plan.type === 'project') {
+            create.setTarget(sessionId, plan.type);
+          }
           appendCreate(
             {
               id: nextId(),
@@ -3317,7 +3321,12 @@ export function SecondarySidebar() {
   const submitStudioWithMode = (
     task: string,
     requestedMode: AssistantMode,
-    options?: { forceNew?: boolean; images?: Array<{ mimeType: string; base64: string }> }
+    options?: {
+      forceNew?: boolean;
+      images?: Array<{ mimeType: string; base64: string }>;
+      scope?: CreateAgentScope | null;
+      modelId?: string | null;
+    }
   ) => {
     const activeStudioSession =
       studio.sessions.find((session) => session.sessionId === studio.activeId) ?? null;
@@ -3325,7 +3334,12 @@ export function SecondarySidebar() {
     const { sessionId, history, session } = studio.startQuery(task, requestedStudioMode, {
       ...options,
       assistantMode: requestedMode,
-      scope: activeStudioSession?.editorIssue ? null : sessionScopeSnapshot,
+      scope:
+        options?.scope !== undefined
+          ? options.scope
+          : activeStudioSession?.editorIssue && !options?.forceNew
+            ? null
+            : sessionScopeSnapshot,
     });
     vscode.postMessage(
       'sidebarStudioQuery',
@@ -3337,12 +3351,17 @@ export function SecondarySidebar() {
         sessionId,
         assistantMode: requestedMode,
         mode: requestedStudioMode,
-        modelId: assistantModelsRef.current[requestedMode] ?? undefined,
+        modelId:
+          (options?.modelId !== undefined
+            ? options.modelId
+            : assistantModelsRef.current[requestedMode]) ?? undefined,
         history,
-        scope: scopePayloadForSession(session, scope),
-        scopeMode: sessionScopeMode(session),
+        scope: scopePayloadForSession(session, options?.scope === null ? {} : scope),
+        scopeMode: options?.scope === null ? 'none' : sessionScopeMode(session),
         ...(session.editorIssue ? { editorIssue: session.editorIssue } : {}),
-        ...(activeBlockerHandoff ? { blockerHandoff: activeBlockerHandoff } : {}),
+        ...(!options?.forceNew && activeBlockerHandoff
+          ? { blockerHandoff: activeBlockerHandoff }
+          : {}),
       },
       META
     );
@@ -3375,12 +3394,16 @@ export function SecondarySidebar() {
     submitStudioWithMode(task, assistantMode, options);
   };
 
-  const handleContinueCreateInAgent = (request: string) => {
+  const handleContinueCreateInAgent = (request: string, destination?: CreateAgentScope | null) => {
     setActiveTab('studio');
     setAssistantMode('agent');
     setStudioMode('investigate');
-    setSelectedModelId(assistantModelsRef.current.agent ?? null);
-    submitStudioWithMode(request, 'agent', { forceNew: true });
+    assistantModelsRef.current = { ...assistantModelsRef.current, agent: selectedModelId };
+    submitStudioWithMode(request, 'agent', {
+      forceNew: true,
+      scope: destination ?? null,
+      modelId: selectedModelId,
+    });
   };
 
   const acceptModeSuggestion = (suggestion: ChatModeSuggestion) => {
@@ -3871,14 +3894,14 @@ export function SecondarySidebar() {
               disabled={activeStudioRepairRunning || busy || turn.checkpointReview === 'kept'}
               onClick={() => submit('checkpoint-keep')}
             >
-              Keep changes
+              Keep
             </button>
             <button
               type="button"
               disabled={activeStudioRepairRunning || busy}
               onClick={() => submit('checkpoint-restore')}
             >
-              Restore checkpoint
+              Restore
             </button>
           </>
         )}

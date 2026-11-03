@@ -78,12 +78,15 @@ export function buildStudioChangedFilesSummary(
 
   for (const entry of timeline) {
     const transactionId = entry.transactionId?.trim();
-    if (!transactionId || !entry.fileChanges?.length) {
+    if (!transactionId) {
       continue;
     }
     order += 1;
     if (entry.transactionState === 'rolled-back') {
       rolledBackTransactions.add(transactionId);
+      continue;
+    }
+    if (!entry.fileChanges?.length) {
       continue;
     }
     // A durable transaction is reviewable and undoable only after the CLI has

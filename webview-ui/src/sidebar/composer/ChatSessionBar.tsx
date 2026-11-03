@@ -16,6 +16,8 @@ interface ChatSessionBarProps {
   onNewSession: () => void;
   onOpenHistory: () => void;
   historyOpen?: boolean;
+  historyId?: string;
+  newSessionLabel?: string;
 }
 
 function sessionStatusLabel(session: ChatSession | null): string | null {
@@ -62,6 +64,8 @@ export function ChatSessionBar({
   onNewSession,
   onOpenHistory,
   historyOpen = false,
+  historyId = 'workspai-chat-history',
+  newSessionLabel = 'New chat',
 }: ChatSessionBarProps) {
   const title = activeSession?.title ?? 'New conversation';
   const status = statusText === undefined ? sessionStatusLabel(activeSession) : statusText;
@@ -86,7 +90,7 @@ export function ChatSessionBar({
         title={`Browse saved sessions (${sessionCount})`}
         aria-haspopup="dialog"
         aria-expanded={historyOpen}
-        aria-controls={historyOpen ? 'workspai-chat-history' : undefined}
+        aria-controls={historyOpen ? historyId : undefined}
       >
         {context ? <small className="ws-session-bar__scope">{context}</small> : null}
         <span className="ws-session-bar__summary">
@@ -99,12 +103,16 @@ export function ChatSessionBar({
           <button
             type="button"
             className="ws-session-bar__action"
-            aria-label="New chat"
+            aria-label={newSessionLabel}
             onClick={onNewSession}
-            title="Start a new chat for a different topic"
+            title={
+              newSessionLabel === 'New chat'
+                ? 'Start a new chat for a different topic'
+                : 'Start a new creation'
+            }
           >
             <MessageSquarePlus size={13} aria-hidden={true} />
-            <span className="ws-session-bar__new-label">{compact ? 'New' : 'New chat'}</span>
+            <span className="ws-session-bar__new-label">{compact ? 'New' : newSessionLabel}</span>
           </button>
         ) : null}
         <button
@@ -114,7 +122,7 @@ export function ChatSessionBar({
           aria-label="Switch session or workspace context"
           aria-haspopup="dialog"
           aria-expanded={historyOpen}
-          aria-controls={historyOpen ? 'workspai-chat-history' : undefined}
+          aria-controls={historyOpen ? historyId : undefined}
           title="Switch session or workspace context"
         >
           <History size={13} aria-hidden={true} />

@@ -675,31 +675,37 @@ describe('aiService', () => {
     }
   );
 
-  it('adapts a native-tool rejection once without switching the selected model', async () => {
-    const sendRequest = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('Tool calling is not supported'))
-      .mockImplementation(async () => ({
-        stream: (async function* () {
-          yield new vscode.LanguageModelTextPart('{"toolName":"verify-blocker","input":{}}');
-        })(),
-      }));
-    const model = { id: 'compat', vendor: 'byok', name: 'Compatible model', sendRequest };
-    mockSelectChatModels.mockResolvedValue([model]);
-    const tools = [{ name: 'verify-blocker', description: 'Verify' }];
-    await expect(
-      requestAIModelToolAction([], tools, undefined, 'byok/compat')
-    ).resolves.toMatchObject({
-      toolName: 'verify-blocker',
-      modelId: 'byok/compat',
-      attempts: 2,
-      toolTransport: 'json',
-    });
-    await expect(
-      requestAIModelToolAction([], tools, undefined, 'byok/compat')
-    ).resolves.toMatchObject({ attempts: 1, toolTransport: 'json' });
-    expect(sendRequest).toHaveBeenCalledTimes(3);
-  });
+  it.each([
+    'Tool calling is not supported',
+    'Auto mode needs a prompt or a command to route a request.',
+  ])(
+    'adapts a native-tool rejection once without switching the selected model: %s',
+    async (rejection) => {
+      const sendRequest = vi
+        .fn()
+        .mockRejectedValueOnce(new Error(rejection))
+        .mockImplementation(async () => ({
+          stream: (async function* () {
+            yield new vscode.LanguageModelTextPart('{"toolName":"verify-blocker","input":{}}');
+          })(),
+        }));
+      const model = { id: 'compat', vendor: 'byok', name: 'Compatible model', sendRequest };
+      mockSelectChatModels.mockResolvedValue([model]);
+      const tools = [{ name: 'verify-blocker', description: 'Verify' }];
+      await expect(
+        requestAIModelToolAction([], tools, undefined, 'byok/compat')
+      ).resolves.toMatchObject({
+        toolName: 'verify-blocker',
+        modelId: 'byok/compat',
+        attempts: 2,
+        toolTransport: 'json',
+      });
+      await expect(
+        requestAIModelToolAction([], tools, undefined, 'byok/compat')
+      ).resolves.toMatchObject({ attempts: 1, toolTransport: 'json' });
+      expect(sendRequest).toHaveBeenCalledTimes(3);
+    }
+  );
 
   it('honors the configured provider Auto when the caller omits a picker model', async () => {
     mockPreferredModelGet.mockReturnValue('copilot/auto');
