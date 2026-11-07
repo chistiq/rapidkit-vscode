@@ -70,7 +70,7 @@ export function buildStudioIncompleteAnswer(
     input.summary?.trim().slice(0, 1_000),
     findings ? `Unverified research findings:\n${findings}` : undefined,
     describeStudioExecutionReceipts(session),
-    !input.summary ? `Reason: ${input.reason.slice(0, 400)}` : undefined,
+    `Reason: ${input.reason.slice(0, 400)}`,
     transaction?.transaction?.state
       ? `Latest source transaction: ${transaction.transaction.state}.`
       : undefined,

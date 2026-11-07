@@ -404,11 +404,12 @@ describe('Interactive terminal tools', () => {
   });
 
   it.each([true, false])(
-    'counts actual terminal output as progress, while retaining loop detection when output advances=%s',
+    'counts actual terminal output as progress and reorients a stalled native loop without forcing verification when output advances=%s',
     async (advances) => {
       const registry = new StudioAgentToolRegistry();
       let cursor = 0;
       let decisions = 0;
+      const verify = vi.fn(async () => ({ ok: true, cardBlocking: false }));
       registry.register({
         name: 'read-terminal',
         title: 'Read',
@@ -428,7 +429,7 @@ describe('Interactive terminal tools', () => {
         inputSchema: {},
         activity: 'verify',
         risk: 'read',
-        execute: async () => ({ ok: true, cardBlocking: false }),
+        execute: verify,
       });
       const result = await new StudioAgentSession(
         {
@@ -452,10 +453,13 @@ describe('Interactive terminal tools', () => {
       ).run('Observe command output');
       const breaker = result.events.some(
         (event) =>
-          event.type === 'model.checkpoint' &&
-          event.data.recovery === 'provider-call-circuit-breaker'
+          event.type === 'model.checkpoint' && event.data.recovery === 'observation-reorientation'
       );
       expect(breaker).toBe(!advances);
+      expect(verify).not.toHaveBeenCalled();
+      expect(
+        result.events.some((event) => event.data.recovery === 'provider-call-circuit-breaker')
+      ).toBe(false);
       if (advances) expect(decisions).toBe(9);
     }
   );

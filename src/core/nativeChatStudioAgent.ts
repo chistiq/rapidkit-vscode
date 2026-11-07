@@ -48,6 +48,7 @@ import {
   requestVSCodeStudioToolApproval,
 } from './studioToolApproval.js';
 import { runStudioCodeIntelligenceTool } from './studioCodeIntelligence.js';
+import { prepareStudioSymbolRename } from './studioSymbolRename.js';
 import {
   authorizeStudioWorkspacePatchTargets,
   compileInspectedStudioDeletePatches,
@@ -393,6 +394,7 @@ export async function runNativeChatStudioAgent(input: {
       output: { diagnostics: inspectStudioWorkspaceDiagnostics(request) },
     }),
     codeIntelligence: runStudioCodeIntelligenceTool,
+    prepareSymbolRename: prepareStudioSymbolRename,
     inspectChanges: async (request) => ({
       ok: true,
       output: await inspectStudioWorkspaceChanges(request),

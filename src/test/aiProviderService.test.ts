@@ -1,17 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockGet, mockRedactAIMessageRuntimePaths, mockRequestAIModelToolAction } = vi.hoisted(
-  () => ({
+const { mockGet, mockInspect, mockRedactAIMessageRuntimePaths, mockRequestAIModelToolAction } =
+  vi.hoisted(() => ({
     mockGet: vi.fn(),
+    mockInspect: vi.fn(),
     mockRedactAIMessageRuntimePaths: vi.fn((messages: unknown[]) => messages),
     mockRequestAIModelToolAction: vi.fn(),
-  })
-);
+  }));
 
 vi.mock('vscode', () => ({
   workspace: {
     getConfiguration: () => ({
       get: mockGet,
+      inspect: mockInspect,
     }),
   },
   lm: {
@@ -41,6 +42,7 @@ vi.mock('../core/aiService.js', () => ({
 import {
   askConfiguredAIProvider,
   askConfiguredAIProviderForToolAction,
+  configuredStudioEmbeddingProvider,
   clearCustomAIAPIKey,
   getAIProviderStatus,
   runConfiguredAIProviderHealthCheck,
@@ -63,6 +65,385 @@ function createMockContext() {
 }
 
 describe('aiProviderService', () => {
+  it('retains a real model fallback in an Auto-provider decision receipt', async () => {
+    mockGet.mockImplementation((key: string, fallback: unknown) =>
+      key === 'aiProvider' ? 'vscode-lm' : fallback
+    );
+    mockRequestAIModelToolAction.mockResolvedValueOnce({
+      type: 'tool',
+      modelId: 'copilot/alternate',
+      fallback: true,
+      attempts: 2,
+      callId: 'fallback',
+      toolName: 'inspect-source',
+      input: { paths: ['a.ts'] },
+    });
+    expect(
+      await askConfiguredAIProviderForToolAction(
+        createMockContext(),
+        [{ role: 'user', content: 'Inspect source' }],
+        [{ name: 'inspect-source', description: 'Read' }]
+      )
+    ).toMatchObject({ modelId: 'copilot/alternate', fallback: true, attempts: 2 });
+  });
+  it('uses only the user-owned current API embedding endpoint and saved key', async () => {
+    const context = createMockContext();
+    await setCustomAIAPIKey(context, 'fixture-embedding-key');
+    mockGet.mockImplementation(
+      (key: string, fallback: unknown) =>
+        ({
+          aiProvider: 'openai-compatible',
+          customAIBaseUrl: 'https://api.example.test/v1',
+          'semanticSearch.enabled': true,
+          'semanticSearch.provider': 'current-api',
+          'semanticSearch.model': 'embedding-fixture',
+        })[key] ?? fallback
+    );
+    mockInspect.mockImplementation((key: string) =>
+      key === 'semanticSearch.enabled' ? { globalValue: true } : undefined
+    );
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ data: [{ index: 0, embedding: [1, 0] }] }))
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = await configuredStudioEmbeddingProvider(context);
+    await provider.embed(['code'], new AbortController().signal);
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.example.test/v1/embeddings');
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      redirect: 'error',
+      headers: { authorization: 'Bearer fixture-embedding-key' },
+    });
+    fetchMock.mockClear();
+    context.secrets.get.mockClear();
+    mockInspect.mockImplementation((key: string) =>
+      key === 'semanticSearch.enabled'
+        ? { globalValue: true }
+        : key === 'customAIBaseUrl'
+          ? { workspaceValue: 'https://repo.example.test' }
+          : undefined
+    );
+    await expect(configuredStudioEmbeddingProvider(context)).rejects.toThrow('repository endpoint');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(context.secrets.get).not.toHaveBeenCalled();
+  });
+  it('requires user opt-in rather than an enable flag supplied by a repository', async () => {
+    mockGet.mockImplementation((key: string, fallback: unknown) =>
+      key === 'semanticSearch.enabled' ? true : fallback
+    );
+    mockInspect.mockReturnValue({ workspaceValue: true });
+    await expect(configuredStudioEmbeddingProvider(createMockContext())).rejects.toThrow(
+      'disabled'
+    );
+  });
+  it('uses an explicitly enabled local embedding route without sending or reading the cloud API key', async () => {
+    mockGet.mockImplementation(
+      (key: string, fallback: unknown) =>
+        ({
+          'semanticSearch.enabled': true,
+          'semanticSearch.model': 'fixture-embedding',
+          'semanticSearch.provider': 'local',
+          'semanticSearch.localBaseUrl': 'http://127.0.0.1:11434/v1',
+        })[key] ?? fallback
+    );
+    const context = createMockContext();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              { index: 1, embedding: [0, 1] },
+              { index: 0, embedding: [1, 0] },
+            ],
+            usage: { total_tokens: 9 },
+          })
+        )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const provider = await configuredStudioEmbeddingProvider(context);
+    expect(
+      await provider.embed(['source one', 'source two'], new AbortController().signal)
+    ).toEqual({
+      vectors: [
+        [1, 0],
+        [0, 1],
+      ],
+      inputTokens: 9,
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:11434/v1/embeddings');
+    expect(fetchMock.mock.calls[0][1].headers.authorization).toBeUndefined();
+    expect(context.secrets.get).not.toHaveBeenCalled();
+  });
+  it('rejects a non-loopback local embedding endpoint and a disabled index before fetching source embeddings', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(configuredStudioEmbeddingProvider(createMockContext())).rejects.toThrow(
+      'disabled'
+    );
+    mockGet.mockImplementation(
+      (key: string, fallback: unknown) =>
+        ({
+          'semanticSearch.enabled': true,
+          'semanticSearch.model': 'fixture-embedding',
+          'semanticSearch.provider': 'local',
+          'semanticSearch.localBaseUrl': 'https://unapproved.example.test/v1',
+        })[key] ?? fallback
+    );
+    await expect(configuredStudioEmbeddingProvider(createMockContext())).rejects.toThrow(
+      'loopback'
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('consumes real SSE tool arguments and provider usage before returning an executable action', async () => {
+    const context = createMockContext();
+    await setCustomAIAPIKey(context, 'sk-test');
+    const frames =
+      [
+        {
+          choices: [
+            {
+              index: 0,
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'stream-call',
+                    function: { name: 'inspect-source', arguments: '{"paths":' },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        {
+          choices: [
+            {
+              index: 0,
+              delta: { tool_calls: [{ index: 0, function: { arguments: '["src/index.ts"]}' } }] },
+              finish_reason: 'tool_calls',
+            },
+          ],
+        },
+        { choices: [], usage: { prompt_tokens: 100, completion_tokens: 12 } },
+      ]
+        .map((frame) => 'data: ' + JSON.stringify(frame) + '\n\n')
+        .join('') + 'data: [DONE]\n\n';
+    const fetchMock = vi.fn(
+      async () => new Response(frames, { headers: { 'content-type': 'text/event-stream' } })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const progress = vi.fn();
+    const result = await askConfiguredAIProviderForToolAction(
+      context,
+      [{ role: 'user', content: 'Inspect' }],
+      [{ name: 'inspect-source', description: 'Read' }],
+      undefined,
+      undefined,
+      [],
+      progress
+    );
+    expect(result).toMatchObject({
+      type: 'tool',
+      callId: 'stream-call',
+      input: { paths: ['src/index.ts'] },
+      inputTokens: 100,
+      outputTokens: 12,
+      tokenUsageSource: 'provider',
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toMatchObject({
+      stream: true,
+      stream_options: { include_usage: true },
+      parallel_tool_calls: false,
+    });
+    expect(progress).toHaveBeenCalled();
+  });
+
+  it('negotiates a non-streaming endpoint once and retains compatibility for following decisions', async () => {
+    const context = createMockContext();
+    await setCustomAIAPIKey(context, 'sk-test');
+    const fetchMock = vi.fn(async (_url, init) =>
+      JSON.parse(String(init.body)).stream
+        ? new Response('{"error":{"message":"stream is not supported"}}', { status: 400 })
+        : new Response(
+            '{"choices":[{"message":{"tool_calls":[{"id":"single","function":{"name":"inspect-source","arguments":"{}"}}]}}]}'
+          )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const request = () =>
+      askConfiguredAIProviderForToolAction(
+        context,
+        [{ role: 'user', content: 'Read' }],
+        [{ name: 'inspect-source', description: 'Read' }]
+      );
+    expect(await request()).toMatchObject({ type: 'tool', attempts: 2 });
+    expect(await request()).toMatchObject({ type: 'tool', attempts: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('retries a transient SSE error without exposing the preceding partial tool decision', async () => {
+    const context = createMockContext();
+    await setCustomAIAPIKey(context, 'sk-test');
+    const frames = [
+      {
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'discarded',
+                  function: { name: 'apply-workspace-edits', arguments: '{}' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      { type: 'error', error: { type: 'server_error', message: 'temporary secret' } },
+    ]
+      .map((frame) => `data: ${JSON.stringify(frame)}\n\n`)
+      .join('');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(frames, { headers: { 'content-type': 'text/event-stream' } })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  tool_calls: [
+                    { id: 'safe', function: { name: 'inspect-source', arguments: '{}' } },
+                  ],
+                },
+              },
+            ],
+          })
+        )
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await askConfiguredAIProviderForToolAction(
+      context,
+      [{ role: 'user', content: 'Inspect' }],
+      [
+        { name: 'inspect-source', description: 'Read' },
+        { name: 'apply-workspace-edits', description: 'Edit' },
+      ]
+    );
+    expect(result).toMatchObject({
+      type: 'tool',
+      toolName: 'inspect-source',
+      callId: 'safe',
+      attempts: 2,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(result)).not.toMatch(/discarded|temporary secret/);
+  });
+
+  it('does not silently select the first of multiple native calls and accounts for the corrective decision', async () => {
+    const context = createMockContext();
+    await setCustomAIAPIKey(context, 'sk-test');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            usage: { prompt_tokens: 40, completion_tokens: 5 },
+            choices: [
+              {
+                message: {
+                  tool_calls: ['first', 'second'].map((name) => ({
+                    id: name,
+                    function: { name, arguments: '{}' },
+                  })),
+                },
+              },
+            ],
+          })
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            usage: { prompt_tokens: 50, completion_tokens: 8 },
+            choices: [
+              {
+                message: { content: '{"toolName":"inspect-source","input":{"paths":["src.ts"]}}' },
+              },
+            ],
+          })
+        )
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    expect(
+      await askConfiguredAIProviderForToolAction(
+        context,
+        [{ role: 'user', content: 'Inspect' }],
+        [{ name: 'inspect-source', description: 'Read' }]
+      )
+    ).toMatchObject({
+      type: 'tool',
+      toolName: 'inspect-source',
+      attempts: 2,
+      inputTokens: 90,
+      outputTokens: 13,
+      tokenUsageSource: 'provider',
+    });
+    const retry = JSON.parse(String(fetchMock.mock.calls[1][1].body));
+    expect(retry.messages.some((message) => message.content?.includes('None were executed'))).toBe(
+      true
+    );
+  });
+  it('estimates the full corrective output when a multiple-call provider omits usage', async () => {
+    const context = createMockContext();
+    await setCustomAIAPIKey(context, 'sk-test');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  tool_calls: ['a', 'b'].map((name) => ({
+                    id: name,
+                    function: { name, arguments: '{}' },
+                  })),
+                },
+              },
+            ],
+          })
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    toolName: 'inspect-source',
+                    input: { note: 'x'.repeat(4000) },
+                  }),
+                },
+              },
+            ],
+          })
+        )
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    const action = await askConfiguredAIProviderForToolAction(
+      context,
+      [{ role: 'user', content: 'Inspect' }],
+      [{ name: 'inspect-source', description: 'Read' }]
+    );
+    expect(action.tokenUsageSource).toBe('estimated');
+    expect(action.outputTokens).toBeGreaterThan(900);
+    expect(action.attempts).toBe(2);
+  });
+
   it('uses the configured LM model when no per-turn picker override was supplied', async () => {
     mockGet.mockImplementation((key: string, fallback: unknown) =>
       key === 'aiProvider' ? 'vscode-lm' : key === 'preferredModel' ? 'copilot/auto' : fallback
@@ -92,6 +473,7 @@ describe('aiProviderService', () => {
   });
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockInspect.mockReset();
     mockRedactAIMessageRuntimePaths.mockImplementation((messages: unknown[]) => messages);
     mockGet.mockImplementation((key: string, defaultValue: unknown) => {
       if (key === 'aiProvider') {
@@ -785,7 +1167,7 @@ describe('aiProviderService', () => {
     );
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body.tool_choice).toEqual({ type: 'any' });
+    expect(body.tool_choice).toEqual({ type: 'any', disable_parallel_tool_use: true });
     expect(body.messages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

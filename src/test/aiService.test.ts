@@ -624,7 +624,12 @@ describe('aiService', () => {
       undefined,
       'copilot/text-only'
     );
-    expect(result).toMatchObject({ type: 'tool', modelId: 'copilot/vision', attempts: 2 });
+    expect(result).toMatchObject({
+      type: 'tool',
+      modelId: 'copilot/vision',
+      attempts: 2,
+      fallback: true,
+    });
     const messages = vision.sendRequest.mock.calls[0][0] as Array<{
       content: Array<{ content: Array<{ data?: Uint8Array; mimeType?: string }> }>;
     }>;
@@ -707,6 +712,75 @@ describe('aiService', () => {
     }
   );
 
+  it('consumes the complete native stream before accepting a tool and discards calls followed by a transport failure', async () => {
+    const model = {
+      id: 'auto',
+      vendor: 'copilot',
+      name: 'Auto',
+      sendRequest: vi.fn(async () => ({
+        stream: (async function* () {
+          yield new vscode.LanguageModelToolCallPart('first', 'apply-workspace-edits', {});
+          throw new Error('network request aborted');
+        })(),
+      })),
+    };
+    mockSelectChatModels.mockResolvedValue([model]);
+    await expect(
+      requestAIModelToolAction(
+        [],
+        [{ name: 'apply-workspace-edits', description: 'Edit' }],
+        undefined,
+        'copilot/auto'
+      )
+    ).rejects.toThrow('network request aborted');
+  });
+
+  it('corrects multiple native calls on the same model without dispatching either discarded call', async () => {
+    const model = {
+      id: 'auto',
+      vendor: 'copilot',
+      name: 'Auto',
+      sendRequest: vi
+        .fn()
+        .mockResolvedValueOnce({
+          stream: (async function* () {
+            yield new vscode.LanguageModelToolCallPart('first', 'apply-workspace-edits', {
+              path: 'first',
+            });
+            yield new vscode.LanguageModelToolCallPart('second', 'apply-workspace-edits', {
+              path: 'second',
+            });
+          })(),
+        })
+        .mockResolvedValueOnce({
+          stream: (async function* () {
+            yield new vscode.LanguageModelTextPart(
+              JSON.stringify({ toolName: 'inspect-source', input: { paths: ['src/a.ts'] } })
+            );
+          })(),
+        }),
+    };
+    mockSelectChatModels.mockResolvedValue([model]);
+    const result = await requestAIModelToolAction(
+      [],
+      [
+        { name: 'apply-workspace-edits', description: 'Edit' },
+        { name: 'inspect-source', description: 'Read' },
+      ],
+      undefined,
+      'copilot/auto'
+    );
+    expect(result).toMatchObject({
+      type: 'tool',
+      modelId: 'copilot/auto',
+      attempts: 2,
+      toolName: 'inspect-source',
+      input: { paths: ['src/a.ts'] },
+      toolTransport: 'json',
+    });
+    expect(JSON.stringify(model.sendRequest.mock.calls[1][0])).toContain('None were executed');
+  });
+
   it('honors the configured provider Auto when the caller omits a picker model', async () => {
     mockPreferredModelGet.mockReturnValue('copilot/auto');
     const restricted = {
@@ -774,6 +848,49 @@ describe('aiService', () => {
       vi.useRealTimers();
     }
   });
+
+  it.each(['send', 'stream'])(
+    'releases Stop when the provider ignores cancellation during %s',
+    async (phase) => {
+      let enter!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve;
+      });
+      const source = new vscode.CancellationTokenSource();
+      const model = {
+        id: 'auto',
+        vendor: 'copilot',
+        name: 'Auto',
+        sendRequest: vi.fn(async () => {
+          if (phase === 'send') {
+            enter();
+            return new Promise<never>(() => undefined);
+          }
+          return {
+            stream: (async function* () {
+              yield new vscode.LanguageModelToolCallPart('partial', 'apply-workspace-edits', {});
+              enter();
+              await new Promise<never>(() => undefined);
+            })(),
+          };
+        }),
+      };
+      mockSelectChatModels.mockResolvedValue([model]);
+      const pending = requestAIModelToolAction(
+        [],
+        [{ name: 'apply-workspace-edits', description: 'Edit' }],
+        source.token,
+        'copilot/auto'
+      ).catch((error) => error);
+      await entered;
+      source.cancel();
+      const error = await pending;
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toContain('cancelled');
+      expect(model.sendRequest).toHaveBeenCalledOnce();
+      source.dispose();
+    }
+  );
 
   it('reports its own deadline instead of the provider cancellation transport error', async () => {
     vi.useFakeTimers();

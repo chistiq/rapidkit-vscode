@@ -38,15 +38,30 @@ import {
 import { collectAssistantUserPaths, redactLocalPathsForConsumer } from './consumerPathRedaction.js';
 import { selectStudioSourceRepairCandidates } from './studioRepairReceipt.js';
 import { buildStudioIncompleteAnswer } from './studioAgentOutcome.js';
+import { projectStudioReadResult } from './studioReadProjection.js';
+import { rememberStudioReadCoverage } from './studioReadCoverage.js';
+import { studioDurableEventValue as durableEventValue } from './studioDurableEvidence.js';
+import { rememberStudioProjectOperation } from './studioProjectOperationReceipts.js';
 
 export type StudioAgentModelAction =
   | { type: 'tool'; callId?: string; toolName: string; input: unknown; reason: string }
   | { type: 'input'; question: string; reason: string }
   | { type: 'message'; text: string }
+  | {
+      type: 'feedback';
+      text: string;
+      review: import('./studioTaskCompletionReview.js').StudioTaskCompletionReview;
+    }
   | { type: 'report'; summary: string; nextSteps: string[] }
-  | { type: 'complete'; summary: string; plan?: StudioImplementationPlan };
+  | {
+      type: 'complete';
+      summary: string;
+      plan?: StudioImplementationPlan;
+      review?: import('./studioTaskCompletionReview.js').StudioTaskCompletionReview;
+    };
 
 export type StudioAgentModelContext = {
+  reportProgress?: import('./aiProviderStream.js').AIProviderStreamObserver;
   session: StudioAgentPersistedSession;
   tools: Array<{
     name: string;
@@ -63,6 +78,7 @@ export type StudioAgentModelContext = {
   finalAnswerOnly?: boolean;
   /** One final evidence-based report when a protected execution budget ends. */
   finalOutcomeOnly?: boolean;
+  executionAllowance?: { remainingRequests: number; remainingTokens: number; estimated: boolean };
   /**
    * Bounded in-memory observations for the active causal epoch.
    *
@@ -98,12 +114,11 @@ export interface StudioAgentSessionStore {
   track?(session: StudioAgentSession): () => void;
 }
 
-const DURABLE_EVENT_STRING_LIMIT = 2_000;
-const DURABLE_EVENT_ARRAY_LIMIT = 50;
 const CLI_REPAIR_MUTATION_TOOL_NAMES = new Set([
   'recover-active-blocker',
   'apply-workspace-patch',
   'apply-workspace-edits',
+  'rename-workspace-symbol',
   'delete-workspace-files',
   'execute-remediation-step',
   // These aliases stay readable for older durable sessions, but successful
@@ -470,37 +485,6 @@ function sourceRepairInspectionCandidates(result: StudioAgentToolResult): string
   );
 }
 
-function durableEventValue(value: unknown, depth = 0): unknown {
-  if (depth > 5) {
-    return '[depth-limited]';
-  }
-  if (typeof value === 'string') {
-    const redacted = redactLocalPathsForConsumer(value);
-    return redacted.length > DURABLE_EVENT_STRING_LIMIT
-      ? `${redacted.slice(0, DURABLE_EVENT_STRING_LIMIT)}…`
-      : redacted;
-  }
-  if (Array.isArray(value)) {
-    return value
-      .slice(0, DURABLE_EVENT_ARRAY_LIMIT)
-      .map((entry) => durableEventValue(entry, depth + 1));
-  }
-  if (!value || typeof value !== 'object') {
-    return value;
-  }
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .filter(([key]) => !/^(?:fileChanges|diffLines|images)$/i.test(key))
-      .slice(0, 80)
-      .map(([key, entry]) => [
-        key,
-        /^(?:content|originalContent|patchedContent)$/i.test(key)
-          ? '[omitted from durable session]'
-          : durableEventValue(entry, depth + 1),
-      ])
-  );
-}
-
 function durableToolResult(result: StudioAgentToolResult): StudioAgentToolResult {
   return durableEventValue(result) as StudioAgentToolResult;
 }
@@ -737,6 +721,8 @@ export type StudioAgentSessionOptions = {
   cardId: string;
   assistantMode: WorkspaiAssistantMode;
   executionAuthority?: 'workspace' | 'workspai-cli';
+  /** Seed multi-outcome tracking from the existing intent decision, without another model call. */
+  initialOutcomes?: { objective: string; requirements: readonly string[] };
   executionPolicy?: AssistantExecutionPolicy;
   selectedModelId?: string;
   blockerSignature?: string;
@@ -822,6 +808,7 @@ export class StudioAgentSession {
   private latestBlockerSignature: string | undefined;
   private goalVerificationAttempts = 0;
   private running: Promise<StudioAgentPersistedSession> | undefined;
+  private activeRequestId: string | undefined;
   private state: StudioAgentPersistedSession;
 
   constructor(
@@ -885,6 +872,35 @@ export class StudioAgentSession {
     // Execution authority is selected by the host, never by a persisted model/session field.
     this.state.executionAuthority = options.executionAuthority;
     if (
+      !options.restoredSession &&
+      this.state.executionAuthority === 'workspace' &&
+      options.assistantMode === 'agent' &&
+      options.initialOutcomes
+    ) {
+      const steps = [
+        ...new Set(
+          options.initialOutcomes.requirements
+            .map((value) => value.trim().slice(0, 300))
+            .filter(Boolean)
+        ),
+      ]
+        .slice(0, 16)
+        .map((description, index) => ({
+          id: `outcome-${index + 1}`,
+          description,
+          status: 'pending' as const,
+        }));
+      if (steps.length > 1) {
+        this.state.taskLedger = {
+          schemaVersion: 'workspai.studio-task-ledger.v1',
+          objective: options.initialOutcomes.objective.trim().slice(0, 2_000),
+          steps,
+          updatedAt: createdAt,
+          updatedSequence: 0,
+        };
+      }
+    }
+    if (
       this.state.executionAuthority === 'workspace' &&
       (this.state.goal || this.state.governedGoal)
     ) {
@@ -920,6 +936,22 @@ export class StudioAgentSession {
         this.rememberWorkspaceCommandEffectVerification(data as StudioAgentToolResult);
       }
       const result = data as StudioAgentToolResult | undefined;
+      if (
+        result &&
+        event.requestId &&
+        ['tool.completed', 'tool.failed'].includes(event.type) &&
+        !this.state.projectOperations?.some(
+          (entry) => entry.sequence === event.sequence && entry.requestId === event.requestId
+        )
+      ) {
+        rememberStudioProjectOperation(
+          this.state,
+          String(data?.toolName ?? ''),
+          result,
+          event.requestId,
+          event.sequence
+        );
+      }
       if (result && requestsGeneralSourceRepair(result)) {
         this.generalSourceRepairActive = true;
         this.sourceRepairDirective = toolOutputRecord(result);
@@ -1032,6 +1064,7 @@ export class StudioAgentSession {
     const stopTracking = this.store.track?.(this);
     this.running = this.execute(request, input?.userRequest ?? request).finally(() => {
       this.running = undefined;
+      this.activeRequestId = undefined;
       stopTracking?.();
     });
     return this.running;
@@ -1043,6 +1076,7 @@ export class StudioAgentSession {
   ): Promise<StudioAgentPersistedSession> {
     this.rememberUserPaths(userRequest);
     const requestId = crypto.randomUUID();
+    this.activeRequestId = requestId;
     const executionMode = this.executionMode();
     const budgetLedger = this.budgetLedger();
     budgetLedger.attemptsStarted += 1;
@@ -1155,7 +1189,7 @@ export class StudioAgentSession {
                 error: 'The execution allowance ended before the requested outcome was completed.',
                 terminalReason: 'incomplete-outcome',
                 answer: buildStudioIncompleteAnswer(this.state, {
-                  reason: 'Execution allowance ended.',
+                  reason: `Execution allowance ended: ${this.providerRequestsThisAttempt}/${this.providerRequestBudget} provider requests; ${this.tokensThisAttempt}/${this.tokenBudget} accumulated tokens (${this.budgetLedger().estimatedTokenMeasurements ? 'includes estimates; not a provider bill' : 'reported usage'}).`,
                   summary: outcome.summary,
                   nextSteps: outcome.nextSteps,
                 }),
@@ -1199,6 +1233,21 @@ export class StudioAgentSession {
         const modelDecisionLimit = this.options.maxModelDecisionsWithoutSourceProgress ?? 12;
         if (this.skipProgressBreakerOnce) {
           this.skipProgressBreakerOnce = false;
+        } else if (
+          this.state.executionAuthority === 'workspace' &&
+          this.usesEvidenceReviewCompletion() &&
+          consecutiveModelDecisionsWithoutSemanticProgress >= modelDecisionLimit
+        ) {
+          await this.emit(
+            'model.checkpoint',
+            {
+              summary:
+                'Review the open outcomes and returned read coverage before choosing the next tool. Workspace diagnostics alone do not establish completion.',
+              recovery: 'observation-reorientation',
+            },
+            requestId
+          );
+          consecutiveModelDecisionsWithoutSemanticProgress = 0;
         } else if (
           isAutonomousWorkspaiAssistantMode(executionMode) &&
           consecutiveModelDecisionsWithoutSemanticProgress >= modelDecisionLimit
@@ -1508,6 +1557,27 @@ export class StudioAgentSession {
                 'The user answered your structured clarification. Proceed within the selected scope and mode contract.',
             },
           };
+        } else if (action.type === 'feedback') {
+          this.state.requirementReview = structuredClone(action.review);
+          consecutiveProtocolMisses = 0;
+          await this.emit(
+            'model.checkpoint',
+            {
+              summary: action.text,
+              recovery: 'task-coverage-open',
+              requirementReview: action.review,
+            },
+            requestId
+          );
+          latestObservation = {
+            ok: false,
+            error: action.text,
+            output: {
+              requirementReview: action.review,
+              instruction:
+                'The request remains active. Choose an applicable tool or report the concrete blocker and actual effects.',
+            },
+          };
         } else if (action.type === 'message') {
           consecutiveProtocolMisses += 1;
           this.budgetLedger().totalProtocolMisses += 1;
@@ -1524,6 +1594,9 @@ export class StudioAgentSession {
               'The session is still active. Select a governed tool, request user input through the structured input action, or complete only after the mode contract is satisfied.',
           };
         } else if (action.type === 'complete') {
+          if (action.review) {
+            this.state.requirementReview = structuredClone(action.review);
+          }
           const plan =
             executionMode === 'plan' ? parseStudioImplementationPlan(action.plan) : undefined;
           if (plan) {
@@ -1531,6 +1604,7 @@ export class StudioAgentSession {
           }
           consecutiveProtocolMisses = 0;
           const completionData = {
+            ...(action.review ? { requirementReview: action.review } : {}),
             ...(plan ? { plan } : {}),
             verificationAuthority:
               this.state.executionAuthority === 'workspace'
@@ -2476,7 +2550,36 @@ export class StudioAgentSession {
           if (this.abortController.signal.aborted) {
             throw new Error('Model request cancelled before execution.');
           }
-          const result = await this.model.next(context);
+          let lastProgress = 0;
+          let progressEvents = 0;
+          const result = await this.model.next({
+            ...context,
+            reportProgress: async (progress) => {
+              if (
+                decisionFinished ||
+                this.abortController.signal.aborted ||
+                progressEvents >= 60 ||
+                (lastProgress && Date.now() - lastProgress < 1000)
+              ) {
+                return;
+              }
+              lastProgress = Date.now();
+              progressEvents++;
+              await this.emit(
+                'model.request.progress',
+                {
+                  decisionId,
+                  durationMs: Date.now() - startedAt,
+                  receivedBytes: progress.receivedBytes,
+                  textCharacters: progress.textCharacters,
+                  argumentCharacters: progress.argumentCharacters,
+                  toolCalls: progress.toolCalls,
+                  summary: `Receiving model response: ${progress.receivedBytes} bytes. No partial tool has been dispatched.`,
+                },
+                requestId
+              );
+            },
+          });
           observedDecision = { decisionId, durationMs: Date.now() - startedAt };
           if (!this.abortController.signal.aborted) {
             decisionFinished = true;
@@ -3195,7 +3298,9 @@ export class StudioAgentSession {
     let delegatedControl: StudioAgentToolResult | undefined;
     if (
       tool.name === 'delegate-research' ||
-      (tool.name === 'delegate-task' &&
+      (['delegate-task', 'delegate-isolated-tasks', 'integrate-isolated-task'].includes(
+        tool.name
+      ) &&
         isAutonomousWorkspaiAssistantMode(
           this.state.executionPolicy?.toolMode ?? this.state.assistantMode
         ))
@@ -3203,6 +3308,8 @@ export class StudioAgentSession {
       const excluded = new Set([
         'delegate-task',
         'delegate-research',
+        'delegate-isolated-tasks',
+        'integrate-isolated-task',
         'create-workspace',
         'bind-workspace',
         'select-project',
@@ -3211,7 +3318,7 @@ export class StudioAgentSession {
         'recover-active-blocker',
       ]);
       const allowed =
-        tool.name === 'delegate-task'
+        tool.name === 'delegate-task' || tool.name === 'integrate-isolated-task'
           ? this.registry.list().filter((entry) => !excluded.has(entry.name))
           : [];
       let executing = false;
@@ -3357,7 +3464,7 @@ export class StudioAgentSession {
       };
     }
     const terminalOutput = toolOutputRecord(result);
-    if (tool.name === 'delegate-research' || tool.name === 'delegate-task') {
+    if (['delegate-research', 'delegate-task', 'delegate-isolated-tasks'].includes(tool.name)) {
       const usage = terminalOutput?.budgetUsage as Record<string, unknown> | undefined;
       const measure = (name: string) =>
         typeof usage?.[name] === 'number' && Number.isFinite(usage[name])
@@ -3481,6 +3588,7 @@ export class StudioAgentSession {
       this.lastIdenticalToolSignature = undefined;
       this.consecutiveIdenticalToolAttempts = 0;
     }
+    result = projectStudioReadResult(tool.name, result, action.input);
     this.recentObservations.push({
       toolCallId,
       toolName: tool.name,
@@ -3538,7 +3646,21 @@ export class StudioAgentSession {
         toolCallId
       );
     }
+    rememberStudioReadCoverage(this.state, {
+      toolName: tool.name,
+      toolInput: action.input,
+      result,
+      requestId,
+      sequence: this.state.sequence + 1,
+    });
     const durableResult = durableToolResult(result);
+    rememberStudioProjectOperation(
+      this.state,
+      tool.name,
+      result,
+      requestId,
+      this.state.sequence + 1
+    );
     const transientResult = liveToolResult(result);
     if (tool.name === 'update-task-ledger') {
       this.rememberTaskLedger(result, this.state.sequence + 1);
@@ -3613,7 +3735,7 @@ export class StudioAgentSession {
       }
     }
     if (
-      input.toolName === 'delegate-task' &&
+      ['delegate-task', 'integrate-isolated-task'].includes(input.toolName) &&
       toolOutputRecord(input.result)?.delegatedEffects === true
     ) {
       // Child verification cannot discharge the parent's review of the combined outcome.
@@ -4045,6 +4167,14 @@ export class StudioAgentSession {
         input: structuredClone(observation.input),
         result: observation.result,
       })),
+      executionAllowance: {
+        remainingRequests: Math.max(
+          0,
+          this.providerRequestBudget - this.providerRequestsThisAttempt
+        ),
+        remainingTokens: Math.max(0, this.tokenBudget - this.tokensThisAttempt),
+        estimated: this.budgetLedger().estimatedTokenMeasurements > 0,
+      },
       ...(this.generalSourceRepairActive && this.sourceRepairDirective
         ? { sourceRepairDirective: this.sourceRepairDirective }
         : {}),
@@ -4167,13 +4297,46 @@ export class StudioAgentSession {
       sequence,
       type,
       data,
-      requestId,
+      requestId: requestId ?? this.activeRequestId,
       toolCallId,
       now: this.now,
     });
     this.state.sequence = sequence;
     this.state.updatedAt = event.timestamp;
     this.state.events.push(event as StudioAgentEvent);
+    if (type === 'tool.completed' || type === 'tool.failed' || type === 'tool.progress') {
+      const output = (data as { output?: Record<string, unknown> }).output;
+      const transaction = output?.transaction as
+        | { transactionId?: string; state?: string }
+        | undefined;
+      if (typeof transaction?.transactionId === 'string' && typeof transaction.state === 'string') {
+        const previous = this.state.sourceChangeReceipts?.find(
+          (entry) => entry.transactionId === transaction.transactionId
+        );
+        const paths = Array.isArray(output?.fileChanges)
+          ? output.fileChanges.map((file) => (file as { relativePath?: unknown })?.relativePath)
+          : Array.isArray(output?.changedPaths)
+            ? output.changedPaths
+            : [];
+        const receipt = {
+          transactionId: transaction.transactionId,
+          requestId: event.requestId,
+          sequence,
+          state: transaction.state,
+          paths: paths.length
+            ? [
+                ...new Set(paths.filter((value): value is string => typeof value === 'string')),
+              ].slice(0, 128)
+            : (previous?.paths ?? []),
+        };
+        this.state.sourceChangeReceipts = [
+          ...(this.state.sourceChangeReceipts ?? []).filter(
+            (entry) => entry.transactionId !== receipt.transactionId
+          ),
+          receipt,
+        ].slice(-128);
+      }
+    }
     if (this.state.events.length > StudioAgentSession.MAX_IN_MEMORY_EVENTS) {
       this.state.events = this.state.events.slice(-StudioAgentSession.MAX_IN_MEMORY_EVENTS);
     }

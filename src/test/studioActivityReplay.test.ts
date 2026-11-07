@@ -20,6 +20,151 @@ import { StudioActivityTranscript } from '../../webview-ui/src/sidebar/StudioAct
 import { isStudioAgentSessionActive } from '../core/studioAgentEvents.js';
 
 describe('Assistant activity event replay', () => {
+  it('keeps net change counts and workspace identity through live events and saved chat hydration', async () => {
+    saved.value = {
+      workspaiStudio: {
+        activeId: 'net-counts',
+        sessions: [
+          {
+            sessionId: 'net-counts',
+            title: 'Fix setup',
+            status: 'streaming',
+            mode: 'investigate',
+            messages: [],
+            incident: {
+              key: 'doctor',
+              cardId: 'doctor',
+              repairStatus: 'running',
+              firstSeenAt: new Date().toISOString(),
+              lastSeenAt: new Date().toISOString(),
+            },
+          },
+        ],
+      },
+    };
+    const dom = new JSDOM('<div id="root"></div>');
+    vi.stubGlobal('window', dom.window);
+    vi.stubGlobal('document', dom.window.document);
+    vi.stubGlobal('navigator', dom.window.navigator);
+    vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    let root = createRoot(dom.window.document.getElementById('root')!);
+    let sequence = 0;
+    const send = async (type: string, data: object, toolCallId?: string) =>
+      act(async () => {
+        dom.window.dispatchEvent(
+          new dom.window.MessageEvent('message', {
+            data: {
+              command: 'sidebarStudioAgentEvent',
+              data: {
+                event: {
+                  type,
+                  sessionId: 'net-counts',
+                  requestId: 'repair',
+                  sequence: ++sequence,
+                  toolCallId,
+                  data,
+                },
+              },
+            },
+          })
+        );
+      });
+    try {
+      await act(async () => root.render(createElement(SecondarySidebar)));
+      await act(async () =>
+        dom.window.dispatchEvent(
+          new dom.window.MessageEvent('message', {
+            data: { command: 'sidebarActivateTab', data: { tab: 'studio' } },
+          })
+        )
+      );
+      await send('request.started', { objective: 'Fix setup' });
+      const file = {
+        relativePath: 'setup.sh',
+        status: 'modified',
+        workspaceId: 'a'.repeat(64),
+        workspaceName: 'core',
+        addedLines: 27,
+        removedLines: 47,
+        diffLines: [],
+      };
+      await send(
+        'tool.completed',
+        {
+          toolName: 'apply-workspace-edits',
+          ok: true,
+          changed: true,
+          output: {
+            transactionId: 'native-first',
+            transaction: { transactionId: 'native-first', state: 'applied' },
+            changedPaths: ['setup.sh'],
+            fileChanges: [file],
+          },
+        },
+        'first'
+      );
+      await send(
+        'tool.completed',
+        {
+          toolName: 'apply-workspace-edits',
+          ok: true,
+          changed: true,
+          output: {
+            transactionId: 'native-second',
+            transaction: { transactionId: 'native-second', state: 'applied' },
+            changedPaths: ['setup.sh'],
+            fileChanges: [
+              {
+                ...file,
+                addedLines: 1,
+                removedLines: 1,
+                netChange: {
+                  transactionIds: ['native-first', 'native-second'],
+                  addedLines: 27,
+                  removedLines: 47,
+                  status: 'modified',
+                  unchanged: false,
+                },
+              },
+            ],
+          },
+        },
+        'second'
+      );
+      for (let phase = 0; phase < 2; phase++) {
+        const state = saved.value.workspaiStudio as { sessions: ChatSession[] };
+        const changes = state.sessions[0].messages
+          .flatMap((turn) => turn.activity ?? [])
+          .flatMap((entry) => entry.fileChanges ?? []);
+        expect(
+          changes.some(
+            (entry) => entry.netChange?.addedLines === 27 && entry.workspaceId === 'a'.repeat(64)
+          )
+        ).toBe(true);
+        const dock = dom.window.document.querySelector('[aria-label="Current request changes"]');
+        expect(dock?.textContent).toContain('+27');
+        expect(dock?.textContent).not.toContain('+28');
+        if (!phase) {
+          await act(async () => root.unmount());
+          saved.value = JSON.parse(JSON.stringify(saved.value));
+          root = createRoot(dom.window.document.getElementById('root')!);
+          await act(async () => root.render(createElement(SecondarySidebar)));
+          await act(async () =>
+            dom.window.dispatchEvent(
+              new dom.window.MessageEvent('message', {
+                data: { command: 'sidebarActivateTab', data: { tab: 'studio' } },
+              })
+            )
+          );
+        }
+      }
+    } finally {
+      await act(async () => root.unmount());
+      dom.window.close();
+      vi.unstubAllGlobals();
+    }
+  });
   it.each(['event', 'state'])(
     'shows an exact dashboard Fix approval in an empty incident session and settles Stop through %s',
     async (terminal) => {

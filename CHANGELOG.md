@@ -5,6 +5,113 @@ All notable changes to the **Workspai** extension (formerly RapidKit) will be do
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.50.0] - 2026-11-07
+
+### Added
+
+- Search an independent incremental embedding index with explicit User Settings,
+  a local or current-API embedding provider, current-source hashes, ignore rules,
+  bounded storage and separately reported embedding usage. Ordinary search remains
+  available without embeddings or Workspai adoption.
+- Delegate disjoint edits to parallel private source forks, retain child sessions,
+  and integrate selected proposals through the parent's protected transaction and
+  checkpoint. Combined project checks remain the parent's responsibility.
+- Optionally preview exact current-line replacements through native inline
+  suggestions, and reuse insertion previews while typing their exact prefix.
+- Retrieve bounded, current code snippets with source hashes and line ranges through
+  hybrid lexical, Workspai Graph and installed language-provider context search.
+  Ordinary projects remain usable without adoption or an intelligence build.
+- Rename symbols through installed language providers and existing protected edit
+  transactions, checkpoints and Undo, without copying complete files through the model.
+- Preview code insertions as native editor ghost text using the configured provider.
+  Automatic suggestions are optional; explicit suggestions, cancellation and stale
+  document checks use stable VS Code APIs.
+- Expose read-only Workspai workspace inventory and Graph search to compatible
+  VS Code agents, with open-folder scope validation and explicit evidence coverage.
+- Receive streamed tool decisions from OpenAI-compatible and Anthropic providers,
+  with visible receiving progress, cancellation, usage receipts and compatibility
+  fallback for endpoints without streaming support.
+- Retain bounded, labeled historical conversation excerpts during context
+  compaction, alongside current scope, effects and outstanding verification.
+- Inspect bounded console and network observations in an owned browser, hover
+  elements, send supported keys and handle JavaScript dialogs through approved actions.
+- Track returned source ranges and instruction pages across batches and Resume,
+  with observed hashes, bounded metadata and precise continuation locations.
+- Retain distinct requested outcomes from the initial intent decision for multi-part
+  workspace Agent tasks, without an additional model request or mandatory planning
+  ceremony for a single focused fix.
+
+### Changed
+
+- Reduce duplicate workspace Agent context and reference identical source previews
+  within each model request while preserving tool discovery, scope and approval rules.
+- Require an evidence-linked review of requested outcomes before workspace Agent
+  completion. Successful observations alone do not prove the requested behavior;
+  unresolved outcomes keep applicable tools available.
+
+### Fixed
+
+- Preserve net change counts, binary comparison metadata and workspace identity
+  through live chat events and saved chat hydration instead of summing intermediate edits.
+- Classify ShellCheck and Hadolint as analysis commands without inventing external
+  effect obligations. Preserve source-read history across non-source effects and
+  flag uncertain terminal effects for fresh observation rather than erasing history.
+- Retain nested batch hashes, failures and paging metadata in durable receipts while
+  omitting source bodies and diff hunks. Mark shortened evidence explicitly.
+- Keep onboarding provenance separate from request-owned source diffs and other Git
+  observations. Show the actual execution allowance reason even when an unfinished
+  response includes a model summary; distinguish estimated usage from billed usage.
+- Keep semantic completion feedback separate from malformed transport decisions,
+  retain unresolved outcomes in subsequent reviews, and make workspace read-loop
+  recovery advisory instead of forcing verification or automatic completion.
+- Preserve the end of long logs during intent routing, bound source previews with
+  continuation locations, and recognize valid registered-tool JSON envelopes
+  without spending another model request solely on transport correction.
+- Keep approval waits and session/checkpoint telemetry inside their owning activity
+  details while preserving all public receipts and separate tool invocations.
+- Return bounded project context and only remaining instruction pages after
+  adoption/import, without duplicating successful CLI stdout in model context.
+- Give the Assistant successful observation/check references with source-generation
+  invalidation, and guidance to test runtime failure paths rather than relying only
+  on lint/type checks. General source work remains available without Graph setup.
+- Label completed native workspace responses as response readiness, distinct from
+  canonical CLI verification or proof that an untested workflow succeeds.
+- Recognize project paths pasted directly after non-English prose in terminal
+  prompts, and rediscover freshly generated project instructions after onboarding.
+- Preserve actual alternate-model fallback in Auto decision receipts rather than
+  labeling a response from a different model as no fallback.
+- Reject sensitive or ignored canonical aliases before source embedding, and prevent
+  repository settings from enabling or redirecting the embedding route.
+- Wait for complete provider responses before accepting tool decisions; discard
+  incomplete streams and resolve multiple proposed tools without silently executing
+  only the first. Preserve the selected model and available tool catalog.
+- Keep streamed model activity attached to its decision, without inflating work
+  steps or reviving a completed request's loading indicator after a late update.
+- Rebase reviewed next-edit proposals across unrelated typing only when the target
+  block and surrounding anchors remain exact and unique.
+- Remove expired retained tool outputs durably, with reads serialized against
+  replacement and deletion so expired data cannot reappear after clock correction.
+- Keep sibling-folder tasks outside selected-project catalogs; show inherited task
+  scope and configured working directories accurately, and invalidate stale task ids.
+- Reject sensitive environment files and escaped source aliases in source inspection,
+  search and language-provider results. Exclude regenerable caches from source search.
+- Filter workspace symbols by selected source scope before limiting results, bound
+  oversized hover output, and release cancelled or unresponsive provider requests.
+- Keep standard Python analysis caches outside source checkpoints, so large mypy
+  databases do not prevent project checks. Oversized actual source still fails closed.
+- Resolve project directories copied from shell prompts without treating the prompt
+  marker as part of the path. Guide source selection before inspecting sibling repositories.
+- Keep optional project onboarding directly available to the model, with clearer
+  consent guidance before unmanaged source work and continued coding after a decline.
+- Check the selected source's Workspai signature and ownership before project work.
+  Suppress repeated adoption offers for existing metadata or registered ownership;
+  retain native scaffolding for frameworks without a supported Workspai kit.
+- Group successful model transport receipts with their selected action, count work
+  steps separately from lifecycle metadata, and label inspected diffs as observations.
+  Full activity history remains available.
+
 ## [0.49.1] - 2026-11-03
 
 ### Added
@@ -3304,7 +3411,8 @@ Thank you for using RapidKit! 🚀
 
 ---
 
-[Unreleased]: https://github.com/chistiq/rapidkit-vscode/compare/v0.48.0...HEAD
+[Unreleased]: https://github.com/chistiq/rapidkit-vscode/compare/v0.50.0...HEAD
+[0.50.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.49.1...v0.50.0
 [0.49.1]: https://github.com/chistiq/rapidkit-vscode/compare/v0.49.0...v0.49.1
 [0.49.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.47.1...v0.48.0

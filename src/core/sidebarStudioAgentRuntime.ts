@@ -314,6 +314,12 @@ export async function inspectStudioAgentFiles(input: {
     if (!isInside(workspaceReal, realPath)) {
       throw new Error(`Studio agent path resolves outside the workspace: ${normalized}`);
     }
+    if (
+      input.kind === 'source' &&
+      studioSourcePathDenialReason(path.relative(workspaceReal, realPath))
+    ) {
+      throw new Error(`Studio agent source resolves to a protected path: ${normalized}`);
+    }
     const stat = await fs.stat(realPath);
     if (!stat.isFile()) {
       throw new Error(`Studio agent target is not a regular file: ${normalized}`);

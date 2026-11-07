@@ -27,6 +27,7 @@ import {
 } from '@/lib/sidebarStudioActionProgress';
 import { StudioActionProgress } from './StudioActionProgress';
 import { buildStudioChangedFilesSummary } from '@/lib/studioChangedFilesSummary';
+import { compactStudioActivityEntries, isStudioChangeObservation } from '@/lib/studioActivityView';
 
 type Props = {
   entries: SidebarStudioActionProgressView[];
@@ -100,7 +101,7 @@ export function StudioActivityTranscript({
       )
       .map((entry) => `${entry.requestId}:${entry.invocationId}`)
   );
-  const displayed = entries
+  const displayed = compactStudioActivityEntries(entries)
     .filter(
       (entry) =>
         !(entry.status === 'review' && approvals.has(`${entry.requestId}:${entry.invocationId}`))
@@ -120,7 +121,7 @@ export function StudioActivityTranscript({
       }
       return entry;
     });
-  const canCollapseTranscript = displayed.length >= 8;
+  const canCollapseTranscript = entries.length >= 8;
   const actionableApprovals = displayed
     .map((entry, index) => ({ entry, index }))
     .filter(
@@ -133,7 +134,16 @@ export function StudioActivityTranscript({
   const actionableApprovalIds = new Set(
     actionableApprovals.map(({ entry, index }) => activityId(entry, index))
   );
-  const failedCount = displayed.filter((entry) => entry.status === 'failed').length;
+  const failedCount = displayed.filter(
+    (entry) => entry.status === 'failed' && entry.receipt?.kind !== 'outcome'
+  ).length;
+  const stepCount = displayed.filter(
+    (entry) =>
+      !entry.receipt ||
+      !['session', 'request', 'checkpoint', 'scope', 'outcome', 'model'].includes(
+        entry.receipt.kind
+      )
+  ).length;
   const reviewCount = displayed.filter((entry) => entry.status === 'review').length;
   // Inspection output may describe pre-existing changes belonging to the user.
   // Attribute only live, owned transactions, exactly as the file-review dock does.
@@ -160,7 +170,9 @@ export function StudioActivityTranscript({
       Boolean(entry.commandText) || /run-workspace-command|run-governed-command/.test(entry.action)
   ).length;
   const needsAttention =
-    !completed && (failedCount > 0 || reviewCount > actionableApprovals.length);
+    !completed &&
+    (displayed.some((entry) => entry.status === 'failed') ||
+      reviewCount > actionableApprovals.length);
   const waitingForApproval =
     active && displayed.some((entry) => entry.status === 'review' && entry.approvalRequest);
   const transcriptLabel = waitingForApproval
@@ -171,7 +183,9 @@ export function StudioActivityTranscript({
         ? 'Needs attention'
         : actionableApprovals.length > 0
           ? 'Needs your input'
-          : 'Completed';
+          : outcomeBoundary?.receipt?.verificationAuthority === 'workspace-evidence'
+            ? 'Response ready'
+            : 'Completed';
   const transcriptExpanded =
     expansionChoice ?? (active || !canCollapseTranscript || expandedIds.size > 0);
   const choosingNextAction =
@@ -214,7 +228,7 @@ export function StudioActivityTranscript({
             )}
             <span className="ws-activity__group-label">{transcriptLabel}</span>
             <span className="ws-activity__group-meta">
-              {displayed.length} {displayed.length === 1 ? 'step' : 'steps'}
+              {stepCount} {stepCount === 1 ? 'step' : 'steps'}
               {changes.files.length > 0 && ` · ${changes.files.length} files changed`}
               {readCount > 0 && ` · ${readCount} reads`}
               {commandCount > 0 && ` · ${commandCount} commands`}
@@ -278,6 +292,7 @@ export function StudioActivityTranscript({
         {visible.map(({ entry, index }) => {
           if (actionableApprovalIds.has(activityId(entry, index))) return null;
           const files = entry.fileChanges ?? [];
+          const observingChanges = isStudioChangeObservation(entry);
           const reads = entry.activityPaths ?? [];
           const Icon =
             entry.status === 'running'
@@ -338,7 +353,11 @@ export function StudioActivityTranscript({
                     className={entry.status === 'running' ? 'ws-activity__spinner' : ''}
                     aria-hidden="true"
                   />
-                  <span className="ws-activity__title">{entry.title}</span>
+                  <span className="ws-activity__title">
+                    {observingChanges && files.length
+                      ? `Reviewed changes in ${files.length} file${files.length === 1 ? '' : 's'}`
+                      : entry.title}
+                  </span>
                   {entry.outputWarning || entry.contentParts?.some((part) => !part.supported) ? (
                     <Info
                       size={12}
@@ -457,11 +476,13 @@ export function StudioActivityTranscript({
                       <div className="ws-activity__file" key={file.relativePath}>
                         <FileEdit size={13} aria-hidden="true" />
                         <span>
-                          {file.status === 'deleted'
-                            ? 'Deleted'
-                            : file.status === 'added'
-                              ? 'Created'
-                              : 'Edited'}
+                          {observingChanges
+                            ? 'Observed'
+                            : file.status === 'deleted'
+                              ? 'Deleted'
+                              : file.status === 'added'
+                                ? 'Created'
+                                : 'Edited'}
                         </span>
                         <button
                           type="button"
@@ -507,7 +528,11 @@ export function StudioActivityTranscript({
                   )}
                   {entry.phaseHistory && entry.phaseHistory.length > 1 ? (
                     <details className="ws-activity__phases">
-                      <summary>Activity history · {entry.phaseHistory.length} events</summary>
+                      <summary
+                        aria-label={`Execution details: ${entry.phaseHistory.length} events`}
+                      >
+                        Execution details
+                      </summary>
                       <ol>
                         {entry.phaseHistory.map((receipt) => (
                           <li key={receipt.eventId}>

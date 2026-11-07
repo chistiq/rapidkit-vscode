@@ -10,6 +10,45 @@ import {
 } from '../core/assistantIntentRouter.js';
 
 describe('Assistant intent router', () => {
+  it('retains distinct requested outcomes without requiring an execution plan or another routing call', async () => {
+    const complete = vi.fn(async () => ({
+      type: 'tool' as const,
+      toolName: ASSISTANT_INTENT_ROUTE_TOOL,
+      input: {
+        intent: 'engineering-task',
+        confidence: 'high',
+        normalizedRequest: 'Fix setup and lint',
+        userResponse: '',
+        reason: 'Two failures',
+        outcomes: ['Fix setup tool failures', 'Fix lint error', 'Fix lint error', '', null],
+      },
+    }));
+    const route = await routeAssistantIntent({
+      task: 'Fix setup and lint',
+      selectedMode: 'agent',
+      hasProjectScope: true,
+      complete,
+    });
+    expect(route.outcomes).toEqual(['Fix setup tool failures', 'Fix lint error']);
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(
+      parseAssistantIntentRoute({ ...route, intent: 'conversation', outcomes: ['invented task'] })
+        ?.outcomes
+    ).toBeUndefined();
+  });
+
+  it('keeps the final failure of long logs in routing while explicitly bounding an oversized request', () => {
+    for (const length of [6_000, 60_000]) {
+      const prompt = buildAssistantIntentRoutingPrompt({
+        task: `Fix setup\n${'log '.repeat(length)}\nFINAL FAILURE: tool invocation failed`,
+        selectedMode: 'agent',
+        hasProjectScope: true,
+      });
+      expect(prompt).toContain('Fix setup');
+      expect(prompt).toContain('FINAL FAILURE: tool invocation failed');
+      expect(prompt.length).toBeLessThan(50_000);
+    }
+  });
   it('retains independent-workspace intent as structured policy input', () => {
     expect(
       parseAssistantIntentRoute({

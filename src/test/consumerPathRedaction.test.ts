@@ -1,8 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
-import { redactKnownRuntimePathsForConsumer } from '../core/consumerPathRedaction.js';
+import {
+  collectAssistantUserPaths,
+  redactKnownRuntimePathsForConsumer,
+} from '../core/consumerPathRedaction.js';
 
 describe('known runtime path redaction', () => {
+  it('recognizes a pasted shell directory immediately after non-Latin prose without treating its command as a path', () => {
+    const paths = collectAssistantUserPaths(
+      '\u0628\u0631\u0637\u0631\u0641\u0634 \u06a9\u0646InWork/core$ make dev-setuppoetry install'
+    );
+    expect(paths).toContain('InWork/core');
+    expect(paths).not.toContain('InWork/core$');
+    expect(paths.some((path) => path.includes('make'))).toBe(false);
+    expect(collectAssistantUserPaths('Use "folder with spaces/project$"')).toContain(
+      'folder with spaces/project$'
+    );
+  });
   it('removes session roots while preserving API route evidence', () => {
     const value = [
       'workspace=/srv/team/workspai',

@@ -2,7 +2,7 @@
 
 <!-- WORKSPAI:CLI-RELEASE-POLICY:START -->
 
-> Extension 0.49.1 · verified with Workspai CLI 0.80.0 · minimum compatible CLI 0.80.0
+> Extension 0.50.0 · verified with Workspai CLI 0.80.0 · minimum compatible CLI 0.80.0
 
 <!-- WORKSPAI:CLI-RELEASE-POLICY:END -->
 
@@ -60,6 +60,18 @@ Existing diagnostics are reported separately from newly introduced errors. Nativ
 workspace checks do not claim Workspai CLI canonical verification. Explicit Goal
 and dashboard repair sessions retain their CLI contracts and verification rules.
 
+Tool decisions from compatible API providers stream into a receiving status while
+the response is assembled. Tool execution starts after a complete validated
+decision. Stop cancels the request, and compatible endpoints without streaming
+support can use the JSON response path. Receiving byte counts are transport
+progress, not token usage or proof that the task is complete. Usage receipts use
+provider measurements where available and label estimates separately.
+
+Longer conversations retain bounded historical excerpts when the active context
+is compacted. Excerpts identify truncation and omitted entries; current execution
+receipts control destinations, approvals, changes and pending checks. Saved
+request history remains available when an omitted detail matters.
+
 ### Existing projects and file review
 
 You can work on an existing repository across the folders open in VS Code without
@@ -70,6 +82,14 @@ workspace ownership are separate and remain attached to the request on Resume.
 For an unmanaged project, the Assistant can offer adoption in place or import of
 a copy into the managed default or a custom workspace. This requires your
 approval. Declining onboarding keeps ordinary work available at the source path.
+After registration, the Assistant receives refreshed repository rules and bounded
+project context. Graph retrieval can help locate relevant dependencies, tests and
+proofs; ordinary source, language and command tools remain available when Graph
+evidence is missing or stale. Registration itself does not verify a code change.
+
+Activity rows keep permission waits and checkpoints under **Execution details**.
+**Response ready** means the native workspace response is available; inspect its
+reported checks and limits before treating the complete workflow as verified.
 
 Changed files appear in a review panel above the composer. Open a file or its
 comparison, then Keep changes or Restore the request checkpoint. Restoration
@@ -97,6 +117,102 @@ suggestion. Review the diff, then use **Accept Workspai edit** or **Discard**.
 Acceptance rejects changed documents and ambiguous source matches. This is a
 user-triggered preview, not automatic next-edit completion or verified code;
 run the relevant checks after accepting. Ordinary editor Undo remains available.
+
+### Code context, symbol renaming and editor suggestions
+
+The Assistant can retrieve focused source snippets with paths, line ranges and
+content hashes. When available, the same retrieval can include Workspai Graph
+proofs and installed language-provider symbols. Each source retains its coverage
+and provenance; a missing Graph or language provider does not prevent ordinary
+source work. The default retrieval is bounded and uses lexical ranking. An optional,
+independent embedding index is available through `search-semantic-code`.
+
+Configure embeddings in **User Settings**, not repository settings:
+
+```json
+{
+  "workspai.semanticSearch.enabled": true,
+  "workspai.semanticSearch.provider": "local",
+  "workspai.semanticSearch.localBaseUrl": "http://127.0.0.1:11434/v1",
+  "workspai.semanticSearch.model": "your-installed-embedding-model"
+}
+```
+
+The local route requires an already running OpenAI-compatible loopback embedding
+server and never sends a saved cloud API key. Alternatively, `current-api` uses
+your selected OpenAI-compatible API provider and saved key; that endpoint must
+support the embedding model you specify. The VS Code chat-model API does not
+provide embeddings by itself. Nothing is downloaded or enabled automatically.
+Embedding requests send bounded source chunks and have separate usage and costs.
+The private cache stores vectors, hashes and source locators rather than raw source;
+vectors should still be treated as derived project data. Source collection observes
+local `.gitignore` and `.workspaiignore` chains and excludes sensitive/generated
+paths. Results report partial coverage and recheck current source hashes; they
+do not prove exhaustive recall or code correctness. Ask the tool to `clear` to
+delete all embedding-provider indexes for the selected source, including while
+the feature is disabled. Ordinary source and Graph tools remain available.
+
+For a symbol rename in Agent or Goal mode, the Assistant can use the installed
+language provider and apply its text edits through the existing protected edit
+transaction. The review panel and request checkpoint support review and restoration.
+This changes text only; file moves and notebook operations are separate. Inspect
+affected references and run the relevant project checks before treating a refactor
+as complete. Provider availability depends on the language extensions installed.
+
+For insertion suggestions, run **Trigger Inline Suggestion** in a source editor.
+Workspai previews ghost text using your configured AI provider; accepting it uses
+the editor's normal Undo. In-flight suggestions are discarded if the document
+changes or the request is cancelled. A cached insertion can continue without a
+new model request when the only change is typing its exact prefix.
+Set `workspai.inlineCompletions.enabled` to `false` to
+disable this provider. Automatic suggestions after a typing pause are controlled
+separately by `workspai.inlineCompletions.automatic` and are off by default; enabling
+them sends bounded source and repository instructions to the configured provider
+and can increase model usage. Ghost-text insertions and the reviewed next-edit
+command above are separate features. Set `workspai.inlineCompletions.replacements`
+to `true` to allow native previews of exact current-line replacements that preserve
+the text before the cursor. Arbitrary multi-line next edits still use the reviewed
+command; this does not implement Copilot's proposed native next-edit APIs.
+Neither feature establishes that code was tested.
+
+Reviewed next-edit proposals can survive unrelated typing that shifts the target
+block. Acceptance checks that the block and surrounding context still match
+uniquely; edits inside that context require a fresh proposal.
+
+### Parallel source proposals
+
+For independent changes, Agent can choose `delegate-isolated-tasks` with up to three
+disjoint sets of exact writable paths. Each child receives a private copy of bounded
+text source, including current unsaved buffers and applicable instructions. It can
+inspect and edit its claimed files. These are source forks, not Git worktrees or an
+OS sandbox: private children have no terminal, host-tool, adoption or scope-switch
+capabilities. The parent and sequential delegation retain those capabilities.
+
+The parent reviews proposals and uses `integrate-isolated-task` to apply selected
+completed segments through its normal permissions, inspected-source hashes and
+request checkpoint. Conflicting user edits are preserved. Child completion does not
+verify the combined result: the parent still runs applicable checks and reviews it.
+Status and Resume retain completed child work; discard removes a private job.
+Forks are limited to 8 MiB of seed text and 3,000 files, four retained jobs per chat
+and sixteen per storage area. Old jobs expire after seven days; deleting the parent
+chat deletes its retained forks and child-session family. Larger work can use direct
+tools or sequential delegation without creating a source fork.
+
+When a local supported Chromium, Chrome or Edge browser is installed, Agent can
+open an isolated browser, inspect text or screenshots, and read bounded console
+and network observations. Network observations exclude headers, bodies, URL
+credentials and query strings. Hover, click, type, supported keys and dialog
+responses use approved interactions; the Assistant must observe the resulting
+page before reporting an outcome. These observations are a limited recent
+history, not a complete network trace or an application test suite.
+
+Compatible VS Code agents can also use Workspai's contributed read-only tools:
+**Workspai Workspace Inventory** (`#workspaiInventory`) and **Workspai Graph Search**
+(`#workspaiGraph`). Enable them in the host agent's tool picker when needed. They
+accept one open filesystem folder; with several folders open, provide its exact
+path or unique name. These tools do not create, adopt or edit projects. Graph reads
+use the CLI's freshness behavior and may refresh its derived Graph cache. Their
+availability and selection in another agent depend on that host's tool support.
 
 ## Install
 
@@ -247,19 +363,33 @@ successful result.
 
 ## Use the Assistant
 
-The secondary sidebar Assistant supports three modes:
+The secondary sidebar Assistant supports four modes:
 
 | Mode      | What it does                                                                    |
 | --------- | ------------------------------------------------------------------------------- |
 | **Ask**   | Reads bounded workspace context and explains without changing source.           |
 | **Plan**  | Investigates the task and produces a grounded implementation plan.              |
 | **Agent** | Changes source, runs scoped checks, reviews the diff, and verifies the outcome. |
+| **Goal**  | Pursues a defined outcome with explicit checks and durable progress.            |
 
 Agent mode works for ordinary requests and blocker cards. Examples:
 
 - “Prepare this workspace for release.”
 - “Fix dependency vulnerabilities without a breaking upgrade.”
 - “Raise test coverage to 75% and keep the build green.”
+
+For multi-part workspace Agent tasks, requested outcomes are retained from intent
+routing without another model request. The Assistant tracks observed source
+ranges and instruction pages, can reuse identical previews within a request, and
+provides continuation locations for bounded reads. Resume retains this metadata;
+it does not turn historical observations into current filesystem validation.
+
+Completion includes a review of requested outcomes against recorded observations
+and checks. Unresolved work keeps applicable tools available; read-loop feedback
+does not force verification or declare success. Ask for the original failing
+workflow or a focused behavioral check when static checks alone are insufficient.
+Ordinary workspace verification remains distinct from canonical CLI verification,
+and no fixed token-saving percentage is guaranteed.
 
 For dependency changes, Studio does not treat a manifest edit as completion. It
 must reconcile the lockfile and installed tree, rerun the focused audit, run

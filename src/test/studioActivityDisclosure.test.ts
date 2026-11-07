@@ -10,6 +10,8 @@ import { ChatTab } from '../../webview-ui/src/sidebar/ChatTab';
 import { StudioChangedFilesSummary } from '../../webview-ui/src/sidebar/StudioChangedFilesSummary';
 import { buildStudioChangedFilesSummary } from '../../webview-ui/src/lib/studioChangedFilesSummary';
 import type { SidebarStudioActionProgressView } from '../../webview-ui/src/lib/sidebarStudioActionProgress';
+import { studioEventProgress } from '../../webview-ui/src/lib/studioActivityView';
+import { appendStudioRepairTimelineEntry } from '../../webview-ui/src/lib/studioRepairTimeline';
 
 const entries = Array.from({ length: 45 }, (_, index) => ({
   transcriptId: `activity-${index}`,
@@ -42,6 +44,131 @@ describe('Stable activity disclosure', () => {
     vi.unstubAllGlobals();
   });
   const summary = () => document.querySelector<HTMLButtonElement>('.ws-activity__group-summary')!;
+  it('labels workspace evidence as response readiness rather than full workflow verification', async () => {
+    const outcome = studioEventProgress({
+      id: 'end',
+      sessionId: 's',
+      requestId: 'r',
+      sequence: 100,
+      timestamp: '2026-11-06T19:00:00Z',
+      type: 'session.completed',
+      data: {
+        verificationAuthority: 'workspace-evidence',
+        summary: 'Static checks passed; setup was not rerun.',
+      },
+    })!;
+    await act(async () =>
+      root.render(
+        createElement(StudioActivityTranscript, { entries: [...entries.slice(0, 9), outcome] })
+      )
+    );
+    expect(summary().textContent).toContain('Response ready');
+    expect(summary().textContent).not.toContain('Completed');
+  });
+  it('coalesces streamed model progress into its decision and never revives a spinner after a late update', async () => {
+    const event = (sequence: number, type: string, data: object = {}) =>
+      studioEventProgress({
+        id: `stream:${sequence}`,
+        sessionId: 's',
+        requestId: 'r',
+        sequence,
+        timestamp: '2026-11-04T18:00:00Z',
+        type,
+        data: { decisionId: 'decision', ...data },
+      })!;
+    const started = event(1, 'model.request.started');
+    const progress = event(2, 'model.request.progress', {
+      receivedBytes: 300,
+      summary: 'Receiving response',
+    });
+    const stopped = event(3, 'model.request.finished', { outcome: 'cancelled' });
+    let timeline: SidebarStudioActionProgressView[] = [];
+    for (const entry of [started, progress, stopped, progress]) {
+      timeline = appendStudioRepairTimelineEntry(timeline, entry);
+    }
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0]).toMatchObject({
+      title: 'Model request cancelled',
+      status: 'review',
+      eventSequence: 3,
+    });
+    expect(timeline[0].phaseHistory).toHaveLength(3);
+    await act(async () =>
+      root.render(createElement(StudioActivityTranscript, { entries: timeline, active: false }))
+    );
+    expect(document.querySelector('.ws-activity__spinner')).toBeNull();
+    expect(document.body.textContent).toContain('Model request cancelled');
+  });
+  it('counts work operations separately from lifecycle telemetry and a repeated failure outcome', async () => {
+    const types = [
+      'request.started',
+      'session.status',
+      'model.checkpoint',
+      'tool.completed',
+      'tool.completed',
+      'tool.completed',
+      'tool.completed',
+      'tool.completed',
+      'model.request.finished',
+      'session.failed',
+    ];
+    const progress = types.map(
+      (type, sequence) =>
+        studioEventProgress({
+          id: `s:${sequence}`,
+          sessionId: 's',
+          requestId: 'r',
+          sequence,
+          timestamp: '2026-11-04T18:00:00Z',
+          type,
+          ...(type.startsWith('tool.') ? { toolCallId: `call-${sequence}` } : {}),
+          data: type.startsWith('tool.')
+            ? { toolName: 'inspect-source' }
+            : type.startsWith('model.')
+              ? { decisionId: 'failed-model', outcome: 'failed' }
+              : {},
+        })!
+    );
+    await act(async () =>
+      root.render(createElement(StudioActivityTranscript, { entries: progress }))
+    );
+    expect(summary().textContent).toContain('5 steps');
+    expect(summary().textContent).toContain('1 failed');
+    expect(summary().textContent).not.toContain('2 failed');
+    expect(summary().textContent).toContain('Needs attention');
+  });
+  it('labels inspected diffs as observations rather than newly authored edits', async () => {
+    await act(async () =>
+      root.render(
+        createElement(StudioActivityTranscript, {
+          entries: [
+            {
+              action: 'inspect-workspace-changes',
+              status: 'done',
+              title: 'Changed 1 file',
+              summary: '',
+              fileChanges: [
+                {
+                  relativePath: 'poetry.lock',
+                  status: 'modified',
+                  addedLines: 66,
+                  removedLines: 68,
+                },
+              ],
+            },
+          ],
+        })
+      )
+    );
+    const row = document.querySelector<HTMLDetailsElement>('.ws-activity__step')!;
+    expect(row.querySelector('summary')!.textContent).toContain('Reviewed changes in 1 file');
+    await act(async () => {
+      row.open = true;
+      row.dispatchEvent(new dom.window.Event('toggle'));
+    });
+    expect(row.querySelector('.ws-activity__file')!.textContent).toContain('Observed');
+    expect(row.querySelector('.ws-activity__file')!.textContent).not.toContain('Edited');
+  });
   it('counts owned changes consistently with the dock and retains recovered failures without marking completion blocked', async () => {
     const owned: SidebarStudioActionProgressView[] = [
       ...entries.slice(0, 5),

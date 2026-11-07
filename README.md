@@ -37,13 +37,20 @@ On first use, the extension downloads and integrity-checks its pinned Workspai
 CLI runtime, then reuses the cached copy offline. A separate global CLI install
 is not required for extension-owned operations.
 
-## New in 0.49.1 · November 3, 2026
+## New in 0.50.0 · November 7, 2026
 
-Create in the intended workspace, then continue in Agent with the created
-project and selected model. Browse compact creation history above chat and
-reconcile activity totals with the files the Assistant actually changed.
-Checkpoint, Python test-cache, and Auto tool recovery are improved.
-[Read the release notes](releases/RELEASE_NOTES_v0.49.1.md).
+Find relevant code with hybrid source, Graph and language-provider retrieval,
+or enable an incremental embedding index in User Settings. Delegate independent
+edits to private source forks and review their integration through the parent
+request. Preview inline suggestions, rename symbols with installed language
+providers, and follow clearer streamed activity and optional project onboarding.
+Ordinary coding remains available without Workspai registration or embeddings.
+
+Workspace Agent also retains multi-part requested outcomes and observed source
+coverage, reuses identical context within a model request, and reports unresolved
+work explicitly. Tools remain available; check results and their coverage define
+what was actually verified.
+[Read the release notes](releases/RELEASE_NOTES_v0.50.0.md).
 
 ## One assistant, four ways to work
 

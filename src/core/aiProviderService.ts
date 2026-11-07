@@ -1,6 +1,163 @@
 import { AIModelRequestTimeoutError, getAIToolRequestTimeoutMs } from './aiRequestTimeout.js';
+import { readAIProviderResponse, type AIProviderStreamObserver } from './aiProviderStream.js';
 import { randomUUID } from 'node:crypto';
 import * as vscode from 'vscode';
+
+/** Explicit semantic-search configuration; never infer an embedding model from a chat model. */
+export async function configuredStudioEmbeddingProvider(
+  context: vscode.ExtensionContext
+): Promise<import('./studioSemanticIndex.js').StudioEmbeddingProvider> {
+  const configuration = vscode.workspace.getConfiguration('workspai');
+  const explicit =
+    typeof configuration.inspect === 'function'
+      ? configuration.inspect<boolean>('semanticSearch.enabled')
+      : undefined;
+  if (
+    !configuration.get('semanticSearch.enabled', false) ||
+    (explicit && explicit.globalValue !== true)
+  ) {
+    throw new Error(
+      'Semantic search is disabled. Enable workspai.semanticSearch.enabled and configure an embedding model; ordinary source search remains available.'
+    );
+  }
+  for (const key of [
+    'semanticSearch.enabled',
+    'semanticSearch.provider',
+    'semanticSearch.model',
+    'semanticSearch.localBaseUrl',
+  ]) {
+    const setting =
+      typeof configuration.inspect === 'function' ? configuration.inspect(key) : undefined;
+    if (setting?.workspaceValue !== undefined || setting?.workspaceFolderValue !== undefined) {
+      throw new Error(
+        'Configure semantic search in User Settings. Repository settings cannot enable or redirect source embeddings.'
+      );
+    }
+  }
+  const model = configuration.get<string>('semanticSearch.model', '').trim();
+  if (!model || model.length > 200) {
+    throw new Error('Set workspai.semanticSearch.model to an actual embedding model.');
+  }
+  const route = configuration.get<string>('semanticSearch.provider', 'local');
+  const settings = readWorkspaiSettings();
+  let baseUrl: string, apiKey: string | undefined;
+  if (route === 'current-api') {
+    for (const key of ['aiProvider', 'customAIBaseUrl', 'aiProviderProfiles']) {
+      const setting =
+        typeof configuration.inspect === 'function' ? configuration.inspect(key) : undefined;
+      if (setting?.workspaceValue !== undefined || setting?.workspaceFolderValue !== undefined) {
+        throw new Error(
+          'The embedding API route must use provider settings owned by the user, not repository endpoint overrides.'
+        );
+      }
+    }
+    const provider = getAIProviderDefinition(settings.aiProvider);
+    if (provider.protocol !== 'openai-compatible') {
+      throw new Error(
+        'The selected chat provider does not expose OpenAI-compatible embeddings. Configure a local embedding endpoint or a compatible API provider.'
+      );
+    }
+    baseUrl = settings.customAIBaseUrl;
+    apiKey = await getActiveProviderAPIKey(context, settings.aiProvider);
+    if (provider.requiresApiKey && !apiKey) {
+      throw new Error('The selected API provider needs its saved API key for embeddings.');
+    }
+  } else if (route === 'local') {
+    baseUrl = configuration.get<string>('semanticSearch.localBaseUrl', 'http://127.0.0.1:11434/v1');
+    let endpoint: URL;
+    try {
+      endpoint = new URL(baseUrl);
+    } catch {
+      throw new Error('Invalid local embedding endpoint.');
+    }
+    if (!['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname)) {
+      throw new Error(
+        'The local embedding route requires a loopback endpoint. Remote embeddings use the explicitly configured current API provider.'
+      );
+    }
+  } else {
+    throw new Error('Unknown semantic-search provider route.');
+  }
+  const error = validateAIProviderBaseUrl(baseUrl);
+  if (error) {
+    throw new Error(error);
+  }
+  const endpoint = resolveOpenAIChatCompletionsUrl(baseUrl).replace(
+    /\/chat\/completions$/i,
+    '/embeddings'
+  );
+  return {
+    identity: `${route}|${endpoint}|${model}`,
+    async embed(texts, signal) {
+      if (
+        !texts.length ||
+        texts.length > 8 ||
+        texts.some((text) => typeof text !== 'string' || !text.trim() || text.length > 6500) ||
+        Buffer.byteLength(JSON.stringify(texts)) > 160_000
+      ) {
+        throw new Error('Embedding batch exceeds its bounded input allowance.');
+      }
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      signal.addEventListener('abort', abort, { once: true });
+      if (signal.aborted) {
+        abort();
+      }
+      const timer = setTimeout(abort, 30_000);
+      try {
+        if (controller.signal.aborted) {
+          throw new Error('Embedding request was cancelled.');
+        }
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          redirect: 'error',
+          signal: controller.signal,
+          headers: {
+            'content-type': 'application/json',
+            ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+          },
+          body: JSON.stringify({ model, input: texts, encoding_format: 'float' }),
+        });
+        const raw = await readAIProviderResponse({
+          response,
+          signal: controller.signal,
+          protocol: 'openai-compatible',
+        });
+        if (!response.ok) {
+          throw new Error(
+            `Embedding request failed (HTTP ${response.status}); check the endpoint, model and provider configuration.`
+          );
+        }
+        const payload = recordProviderPayload(raw),
+          data = payload.data;
+        if (!Array.isArray(data) || data.length !== texts.length) {
+          throw new Error('Embedding provider returned an incomplete batch.');
+        }
+        const ordered: number[][] = Array(texts.length);
+        for (const item of data) {
+          const value = recordProviderValue(item);
+          if (
+            !Number.isInteger(value.index) ||
+            Number(value.index) < 0 ||
+            Number(value.index) >= texts.length ||
+            ordered[Number(value.index)] ||
+            !Array.isArray(value.embedding)
+          ) {
+            throw new Error('Embedding provider returned invalid or duplicate batch indices.');
+          }
+          ordered[Number(value.index)] = value.embedding;
+        }
+        return {
+          vectors: ordered,
+          inputTokens: finiteTokenCount(recordProviderValue(payload.usage).total_tokens),
+        };
+      } finally {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', abort);
+      }
+    },
+  };
+}
 import {
   jsonToolMessages,
   parseJsonToolEnvelope,
@@ -324,6 +481,62 @@ function parseErrorPayload(raw: string): unknown {
     return null;
   }
 }
+function recordProviderValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+function recordProviderPayload(raw: string): Record<string, unknown> {
+  return recordProviderValue(parseErrorPayload(raw));
+}
+function providerToolInput(raw: unknown, encoded: boolean): Record<string, unknown> {
+  let input: unknown;
+  try {
+    input = encoded ? JSON.parse(typeof raw === 'string' && raw.trim() ? raw : '{}') : raw;
+  } catch {
+    throw new Error(
+      'AI provider returned incomplete or invalid tool arguments; no tool was dispatched.'
+    );
+  }
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('AI provider tool arguments must be an object; no tool was dispatched.');
+  }
+  return input as Record<string, unknown>;
+}
+function withDiscardedDecisionUsage(
+  current: Pick<
+    ConfiguredAIProviderResolution,
+    'inputTokens' | 'outputTokens' | 'tokenUsageSource'
+  >,
+  discarded:
+    | {
+        inputTokens?: number;
+        outputTokens?: number;
+        estimatedInput: number;
+        estimatedOutput: number;
+      }
+    | undefined,
+  currentEstimate: { inputTokens: number; outputTokens: number }
+): typeof current {
+  if (!discarded) {
+    return current;
+  }
+  return {
+    inputTokens:
+      (discarded.inputTokens ?? discarded.estimatedInput) +
+      (current.inputTokens ?? currentEstimate.inputTokens),
+    outputTokens:
+      (discarded.outputTokens ?? discarded.estimatedOutput) +
+      (current.outputTokens ?? currentEstimate.outputTokens),
+    tokenUsageSource:
+      discarded.inputTokens !== undefined &&
+      discarded.outputTokens !== undefined &&
+      current.inputTokens !== undefined &&
+      current.outputTokens !== undefined
+        ? 'provider'
+        : 'estimated',
+  };
+}
 
 function providerErrorMessage(label: string, status: number, raw: string, apiKey?: string): string {
   if (apiKey) {
@@ -426,6 +639,8 @@ async function fetchProviderResponseWithRetry(input: {
   url: string;
   init: RequestInit;
   signal: AbortSignal;
+  protocol?: 'openai-compatible' | 'anthropic-messages';
+  onProgress?: AIProviderStreamObserver;
 }): Promise<{ response: Response; raw: string; attempts: number }> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_TRANSIENT_PROVIDER_ATTEMPTS; attempt += 1) {
@@ -439,7 +654,14 @@ async function fetchProviderResponseWithRetry(input: {
         redirect: 'error',
         signal: input.signal,
       });
-      const raw = await response.text();
+      const raw = input.protocol
+        ? await readAIProviderResponse({
+            response,
+            protocol: input.protocol,
+            signal: input.signal,
+            onProgress: input.onProgress,
+          })
+        : await response.text();
       if (
         response.ok ||
         attempt === MAX_TRANSIENT_PROVIDER_ATTEMPTS ||
@@ -702,6 +924,15 @@ async function askExternalProvider(
 }
 
 const jsonTransportCache = new WeakMap<vscode.ExtensionContext, Map<string, number>>();
+const streamingFallbacks = new WeakMap<vscode.ExtensionContext, Set<string>>();
+function disableStreaming(context: vscode.ExtensionContext, key: string): void {
+  const entries = streamingFallbacks.get(context) ?? new Set<string>();
+  entries.add(key);
+  while (entries.size > 32) {
+    entries.delete(entries.values().next().value!);
+  }
+  streamingFallbacks.set(context, entries);
+}
 function usesJsonTransport(context: vscode.ExtensionContext, key: string): boolean {
   const cache = jsonTransportCache.get(context);
   const at = cache?.get(key);
@@ -728,7 +959,8 @@ async function askOpenAICompatibleToolAction(
   context: vscode.ExtensionContext,
   messages: AIMessage[],
   tools: ConfiguredAIProviderTool[],
-  token?: vscode.CancellationToken
+  token?: vscode.CancellationToken,
+  onProgress?: AIProviderStreamObserver
 ): Promise<ConfiguredAIProviderAction> {
   const settings = readWorkspaiSettings();
   const provider = getAIProviderDefinition(settings.aiProvider);
@@ -750,6 +982,9 @@ async function askOpenAICompatibleToolAction(
   try {
     const transportKey = `${provider.id}|${settings.customAIBaseUrl}|${settings.customAIModel}`;
     let jsonTransport = usesJsonTransport(context, transportKey);
+    let streaming = !streamingFallbacks.get(context)?.has(transportKey);
+    let correction: string | undefined;
+    let discarded: Parameters<typeof withDiscardedDecisionUsage>[1];
     const send = (json: boolean) =>
       fetchProviderResponseWithRetry({
         url: resolveOpenAIChatCompletionsUrl(settings.customAIBaseUrl),
@@ -758,9 +993,17 @@ async function askOpenAICompatibleToolAction(
           headers: createOpenAIHeaders(provider.id, apiKey),
           body: JSON.stringify({
             model: settings.customAIModel,
-            messages: toOpenAIMessages(json ? jsonToolMessages(messages, tools) : messages),
+            messages: toOpenAIMessages(
+              json
+                ? jsonToolMessages(
+                    correction ? [...messages, { role: 'user', content: correction }] : messages,
+                    tools
+                  )
+                : messages
+            ),
             temperature: 0.1,
-            stream: false,
+            stream: streaming,
+            ...(streaming ? { stream_options: { include_usage: true } } : {}),
             ...(!json
               ? {
                   tools: tools.map((tool) => ({
@@ -772,14 +1015,29 @@ async function askOpenAICompatibleToolAction(
                     },
                   })),
                   tool_choice: 'required',
+                  ...(streaming ? { parallel_tool_calls: false } : {}),
                 }
               : {}),
           }),
         },
         signal: lifecycle.signal,
+        protocol: 'openai-compatible',
+        onProgress,
       });
     let result = await send(jsonTransport);
     let attempts = result.attempts;
+    if (
+      streaming &&
+      !result.response.ok &&
+      [400, 422].includes(result.response.status) &&
+      /(stream|parallel_tool_calls)/i.test(result.raw) &&
+      /(unsupported|not supported|unknown|unrecognized|unexpected|not allowed)/i.test(result.raw)
+    ) {
+      streaming = false;
+      disableStreaming(context, transportKey);
+      result = await send(jsonTransport);
+      attempts += result.attempts;
+    }
     if (
       !jsonTransport &&
       !result.response.ok &&
@@ -790,6 +1048,23 @@ async function askOpenAICompatibleToolAction(
       result = await send(true);
       attempts += result.attempts;
     }
+    if (!jsonTransport && result.response.ok) {
+      const candidate = recordProviderPayload(result.raw);
+      const choices = Array.isArray(candidate.choices) ? candidate.choices : [];
+      const message = recordProviderValue(recordProviderValue(choices[0]).message);
+      if (Array.isArray(message.tool_calls) && message.tool_calls.length > 1) {
+        discarded = {
+          ...openAICompatibleTokenUsage(candidate),
+          estimatedInput: estimatedTokenCount({ messages, tools }),
+          estimatedOutput: estimatedTokenCount(candidate),
+        };
+        jsonTransport = true;
+        correction =
+          'The previous response proposed multiple tool calls. None were executed. Select exactly one next action. Use inspect-workspace-batch for independent supported reads, or choose the next necessary individual tool. Return the actual final answer through the completion tool when ready.';
+        result = await send(true);
+        attempts += result.attempts;
+      }
+    }
     const { response, raw } = result;
     if (!response.ok) {
       throw new Error(
@@ -799,7 +1074,10 @@ async function askOpenAICompatibleToolAction(
       );
     }
     const payload = (parseErrorPayload(raw) ?? {}) as Record<string, unknown>;
-    const tokenUsage = openAICompatibleTokenUsage(payload);
+    const tokenUsage = withDiscardedDecisionUsage(openAICompatibleTokenUsage(payload), discarded, {
+      inputTokens: estimatedTokenCount({ messages, tools, correction }),
+      outputTokens: estimatedTokenCount(payload),
+    });
     if (jsonTransport) {
       rememberJsonTransport(context, transportKey);
       const text = extractOpenAICompatibleText(payload);
@@ -828,13 +1106,7 @@ async function askOpenAICompatibleToolAction(
     const name = first?.function?.name;
     if (typeof name === 'string') {
       const args = first?.function?.arguments;
-      let parsed: Record<string, unknown> = {};
-      if (typeof args === 'string' && args.trim()) {
-        const value = JSON.parse(args) as unknown;
-        if (value && typeof value === 'object' && !Array.isArray(value)) {
-          parsed = value as Record<string, unknown>;
-        }
-      }
+      const parsed = providerToolInput(args, true);
       return {
         type: 'tool',
         provider: provider.id,
@@ -865,7 +1137,8 @@ async function askAnthropicToolAction(
   context: vscode.ExtensionContext,
   messages: AIMessage[],
   tools: ConfiguredAIProviderTool[],
-  token?: vscode.CancellationToken
+  token?: vscode.CancellationToken,
+  onProgress?: AIProviderStreamObserver
 ): Promise<ConfiguredAIProviderAction> {
   const settings = readWorkspaiSettings();
   const provider = getAIProviderDefinition(settings.aiProvider);
@@ -883,6 +1156,9 @@ async function askAnthropicToolAction(
   try {
     const transportKey = `${provider.id}|${settings.customAIBaseUrl}|${settings.customAIModel}`;
     let jsonTransport = usesJsonTransport(context, transportKey);
+    let streaming = !streamingFallbacks.get(context)?.has(transportKey);
+    let correction: string | undefined;
+    let discarded: Parameters<typeof withDiscardedDecisionUsage>[1];
     const send = (json: boolean) =>
       fetchProviderResponseWithRetry({
         url: resolveAnthropicMessagesUrl(settings.customAIBaseUrl),
@@ -896,7 +1172,15 @@ async function askAnthropicToolAction(
           body: JSON.stringify({
             model: settings.customAIModel,
             max_tokens: 4096,
-            ...toAnthropicMessages(json ? jsonToolMessages(messages, tools) : messages),
+            stream: streaming,
+            ...toAnthropicMessages(
+              json
+                ? jsonToolMessages(
+                    correction ? [...messages, { role: 'user', content: correction }] : messages,
+                    tools
+                  )
+                : messages
+            ),
             ...(!json
               ? {
                   tools: tools.map((tool) => ({
@@ -904,15 +1188,32 @@ async function askAnthropicToolAction(
                     description: tool.description,
                     input_schema: tool.inputSchema ?? { type: 'object' },
                   })),
-                  tool_choice: { type: 'any' },
+                  tool_choice: {
+                    type: 'any',
+                    ...(streaming ? { disable_parallel_tool_use: true } : {}),
+                  },
                 }
               : {}),
           }),
         },
         signal: lifecycle.signal,
+        protocol: 'anthropic-messages',
+        onProgress,
       });
     let result = await send(jsonTransport);
     let attempts = result.attempts;
+    if (
+      streaming &&
+      !result.response.ok &&
+      [400, 422].includes(result.response.status) &&
+      /(stream|disable_parallel_tool_use)/i.test(result.raw) &&
+      /(unsupported|not supported|unknown|unrecognized|unexpected|not allowed)/i.test(result.raw)
+    ) {
+      streaming = false;
+      disableStreaming(context, transportKey);
+      result = await send(jsonTransport);
+      attempts += result.attempts;
+    }
     if (
       !jsonTransport &&
       !result.response.ok &&
@@ -923,6 +1224,25 @@ async function askAnthropicToolAction(
       result = await send(true);
       attempts += result.attempts;
     }
+    if (!jsonTransport && result.response.ok) {
+      const candidate = recordProviderPayload(result.raw);
+      if (
+        Array.isArray(candidate.content) &&
+        candidate.content.filter((block) => recordProviderValue(block).type === 'tool_use').length >
+          1
+      ) {
+        discarded = {
+          ...anthropicTokenUsage(candidate),
+          estimatedInput: estimatedTokenCount({ messages, tools }),
+          estimatedOutput: estimatedTokenCount(candidate),
+        };
+        jsonTransport = true;
+        correction =
+          'The previous response proposed multiple tool calls. None were executed. Select exactly one next action. Use inspect-workspace-batch for independent supported reads, or choose the next necessary individual tool. Return the actual final answer through the completion tool when ready.';
+        result = await send(true);
+        attempts += result.attempts;
+      }
+    }
     const { response, raw } = result;
     if (!response.ok) {
       throw new Error(
@@ -932,7 +1252,10 @@ async function askAnthropicToolAction(
       );
     }
     const payload = (parseErrorPayload(raw) ?? {}) as Record<string, unknown>;
-    const tokenUsage = anthropicTokenUsage(payload);
+    const tokenUsage = withDiscardedDecisionUsage(anthropicTokenUsage(payload), discarded, {
+      inputTokens: estimatedTokenCount({ messages, tools, correction }),
+      outputTokens: estimatedTokenCount(payload),
+    });
     if (jsonTransport) {
       rememberJsonTransport(context, transportKey);
       const text = extractAnthropicText(payload);
@@ -965,10 +1288,7 @@ async function askAnthropicToolAction(
         ...tokenUsage,
         callId: typeof toolUse.id === 'string' && toolUse.id.trim() ? toolUse.id : randomUUID(),
         toolName: toolUse.name,
-        input:
-          toolUse.input && typeof toolUse.input === 'object' && !Array.isArray(toolUse.input)
-            ? (toolUse.input as Record<string, unknown>)
-            : {},
+        input: providerToolInput(toolUse.input, false),
       };
     }
     return {
@@ -991,7 +1311,8 @@ export async function askConfiguredAIProviderForToolAction(
   tools: ConfiguredAIProviderTool[],
   token?: vscode.CancellationToken,
   preferredModelId?: string,
-  pathIdentities: ReadonlyArray<AIMessagePathIdentity> = []
+  pathIdentities: ReadonlyArray<AIMessagePathIdentity> = [],
+  onProgress?: AIProviderStreamObserver
 ): Promise<ConfiguredAIProviderAction> {
   const safeMessages = redactAIMessageRuntimePaths(messages, pathIdentities);
   const settings = readWorkspaiSettings();
@@ -1031,20 +1352,24 @@ export async function askConfiguredAIProviderForToolAction(
   };
   if (provider.protocol === 'openai-compatible') {
     return withRequestedModel(
-      await askOpenAICompatibleToolAction(context, safeMessages, tools, token)
+      await askOpenAICompatibleToolAction(context, safeMessages, tools, token, onProgress)
     );
   }
   if (provider.protocol === 'anthropic-messages') {
-    return withRequestedModel(await askAnthropicToolAction(context, safeMessages, tools, token));
+    return withRequestedModel(
+      await askAnthropicToolAction(context, safeMessages, tools, token, onProgress)
+    );
   }
-  const response = await requestAIModelToolAction(safeMessages, tools, token, requestedModelId);
+  const response = onProgress
+    ? await requestAIModelToolAction(safeMessages, tools, token, requestedModelId, [], onProgress)
+    : await requestAIModelToolAction(safeMessages, tools, token, requestedModelId);
   return withRequestedModel(
     response.type === 'tool'
       ? {
           type: 'tool',
           provider: 'vscode-lm',
           modelId: response.modelId,
-          fallback: false,
+          fallback: response.fallback ?? false,
           attempts: response.attempts ?? 1,
           ...(response.toolTransport ? { toolTransport: response.toolTransport } : {}),
           callId: response.callId,
@@ -1055,7 +1380,7 @@ export async function askConfiguredAIProviderForToolAction(
           type: 'text',
           provider: 'vscode-lm',
           modelId: response.modelId,
-          fallback: false,
+          fallback: response.fallback ?? false,
           attempts: response.attempts ?? 1,
           ...(response.toolTransport ? { toolTransport: response.toolTransport } : {}),
           text: response.text,

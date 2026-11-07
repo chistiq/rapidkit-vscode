@@ -19,8 +19,15 @@ export function collectAssistantUserPaths(value: string): string[] {
       result.add(candidate);
     }
   };
+  // Pasted terminal transcripts often lose their newline after non-Latin prose.
+  // A prompt terminator still delimits the exact directory, never the command/log.
+  for (const match of value.matchAll(
+    /[\u0080-\uFFFF]((?:\/(?!\/)|[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[A-Za-z0-9_.-]+[\\/])[A-Za-z0-9_.~\\/ -]*?)\$\s+(?=[A-Za-z0-9_.])/g
+  )) {
+    add(match[1].trim());
+  }
   const unquoted = value.replace(
-    /(["'`])((?:\/(?!\/)|[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[A-Za-z0-9_.-]+[\\/])[^"'`\r\n]+?)\1/g,
+    /(["'`])((?:\/(?!\/)|[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[A-Za-z0-9_.-][A-Za-z0-9_. -]*[\\/])[^"'`\r\n]+?)\1/g,
     (_match, _quote: string, candidate: string) => {
       add(candidate);
       return ' ';
@@ -29,7 +36,17 @@ export function collectAssistantUserPaths(value: string): string[] {
   for (const match of unquoted.matchAll(
     /(?:^|[\s(=])((?:\/(?!\/)|[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[A-Za-z0-9_.-]+[\\/])[^\s"'`<>),;]+)/g
   )) {
-    add(match[1].replace(/[.!?:]+$/, ''));
+    // A pasted shell prompt identifies its working directory, not a directory
+    // whose name ends in "$". Quoted paths above retain their exact spelling.
+    const candidate = match[1];
+    const after = unquoted.slice(match.index! + match[0].length);
+    const linePrefix = unquoted.slice(0, match.index).split('\n').at(-1) ?? '';
+    add(
+      (candidate.endsWith('$') && !linePrefix.trim() && /^\s+\S/.test(after)
+        ? candidate.slice(0, -1)
+        : candidate
+      ).replace(/[.!?:]+$/, '')
+    );
   }
   return [...result].slice(0, 64);
 }
@@ -50,7 +67,7 @@ export function redactAssistantRequestForConsumer(
     .sort((a, b) => b.length - a.length)
     .slice(0, 64)) {
     const token = `${prefix}${saved.length}__`;
-    const matcher = new RegExp(`${escapeRegExp(localPath)}(?=$|[\\s"'\x60<>),;:/\\\\])`, 'g');
+    const matcher = new RegExp(`${escapeRegExp(localPath)}(?=$|[\\s"'\x60<>),;:/$\\\\])`, 'g');
     protectedValue = protectedValue.replace(matcher, () => token);
     saved.push({ token, path: localPath });
   }

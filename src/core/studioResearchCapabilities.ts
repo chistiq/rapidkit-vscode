@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { studioSemanticSearchTool } from './studioSemanticTools.js';
+import { StudioIsolatedTasks } from './studioIsolatedTasks.js';
 import { createConfiguredStudioAgentModel } from './configuredStudioAgentModel.js';
 import { studioResearchSubagentTool } from './studioResearchSubagent.js';
 import { studioExecutionSubagentTool } from './studioExecutionSubagent.js';
@@ -22,6 +24,7 @@ export function registerStudioResearchCapability(input: {
   token?: vscode.CancellationToken;
   modelId?: string;
 }): void {
+  input.registry.register(studioSemanticSearchTool(input.context));
   for (const tool of studioWorkspaceAssetTools(input.context, (id) =>
     input.host.rememberNativeTransaction?.(id)
   )) {
@@ -54,6 +57,7 @@ export function registerStudioResearchCapability(input: {
           executionAuthority: 'workspace',
         });
         studioAssistantIdeCapabilities(input.context).register(child, true);
+        child.register(studioSemanticSearchTool(input.context));
         child.register(studioToolSearchTool(child));
         for (const tool of studioWorkspaceAssetTools(input.context).filter(
           (tool) => tool.risk === 'read'
@@ -66,6 +70,20 @@ export function registerStudioResearchCapability(input: {
   );
   // Read-only registries never acquire execution authority through delegation.
   if (input.registry.get('apply-workspace-patch') || input.registry.get('run-workspace-command')) {
+    const isolated = new StudioIsolatedTasks({
+      storageRoot: input.context.storageUri?.fsPath ?? input.context.globalStorageUri.fsPath,
+      store: new VSCodeStudioAgentSessionStore(input.context),
+      createModel: (objective, restoredSession) =>
+        createConfiguredStudioAgentModel({
+          context: input.context,
+          objective,
+          restoredSession,
+          token: input.token,
+          modelId: input.modelId,
+          reviewAnswerDelivery: true,
+        }),
+    });
+    isolated.tools().forEach((tool) => input.registry.register(tool));
     input.registry.register(
       studioExecutionSubagentTool({
         store: new VSCodeStudioAgentSessionStore(input.context),

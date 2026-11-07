@@ -28,6 +28,14 @@ export type SidebarStudioFileChangeView = {
    */
   addedLines?: number;
   removedLines?: number;
+  /** Host-computed net diff for an uninterrupted chain of request-owned edits. */
+  netChange?: {
+    transactionIds: string[];
+    addedLines: number;
+    removedLines: number;
+    status: string;
+    unchanged: boolean;
+  };
   diffLines?: SidebarStudioDiffLineView[];
 };
 
@@ -231,6 +239,16 @@ const STUDIO_AGENT_TOOL_LABELS: Record<
     completed: 'Applied source edit',
     failed: 'Source edit was not applied',
   },
+  'rename-workspace-symbol': {
+    running: 'Renaming symbol',
+    completed: 'Applied symbol rename',
+    failed: 'Symbol rename was not applied',
+  },
+  'search-code-context': {
+    running: 'Finding relevant code context',
+    completed: 'Found code context',
+    failed: 'Code context needs another approach',
+  },
   'delete-workspace-files': {
     running: 'Removing inspected source',
     completed: 'Removed inspected source',
@@ -347,7 +365,35 @@ function stringList(value: unknown): string[] | undefined {
   return entries.length > 0 ? entries : undefined;
 }
 
-function fileChangeList(value: unknown): SidebarStudioActionProgressView['fileChanges'] {
+function netFileChange(value: unknown): SidebarStudioFileChangeView['netChange'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const net = value as Record<string, unknown>;
+  if (
+    !Array.isArray(net.transactionIds) ||
+    !net.transactionIds.length ||
+    net.transactionIds.length > 100 ||
+    net.transactionIds.some((id) => typeof id !== 'string') ||
+    countOrLineNumber(net.addedLines) === undefined ||
+    countOrLineNumber(net.removedLines) === undefined ||
+    !['added', 'modified', 'deleted'].includes(String(net.status))
+  ) {
+    return undefined;
+  }
+  return {
+    transactionIds: net.transactionIds as string[],
+    addedLines: net.addedLines as number,
+    removedLines: net.removedLines as number,
+    status: net.status as string,
+    unchanged: net.unchanged === true,
+  };
+}
+
+export function parseSidebarStudioFileChanges(
+  value: unknown,
+  defaultStatus = 'modified'
+): SidebarStudioActionProgressView['fileChanges'] {
   if (!Array.isArray(value)) {
     return undefined;
   }
@@ -365,7 +411,8 @@ function fileChangeList(value: unknown): SidebarStudioActionProgressView['fileCh
       ...(typeof entry.workspaceName === 'string'
         ? { workspaceName: entry.workspaceName.slice(0, 200) }
         : {}),
-      status: typeof entry.status === 'string' ? entry.status : 'modified',
+      status: typeof entry.status === 'string' ? entry.status : defaultStatus,
+      ...(netFileChange(entry.netChange) ? { netChange: netFileChange(entry.netChange) } : {}),
       ...(entry.isNewFile === true ? { isNewFile: true } : {}),
       ...(typeof entry.binary === 'boolean' ? { binary: entry.binary } : {}),
       ...(entry.byteComparison === true ? { byteComparison: true } : {}),
@@ -620,7 +667,7 @@ export function parseSidebarStudioActionProgress(
       ? (record.transaction as Record<string, unknown>)
       : undefined;
 
-  const fileChanges = fileChangeList(record.fileChanges);
+  const fileChanges = parseSidebarStudioFileChanges(record.fileChanges);
   const validationStages = validationStageList(record.validationStages ?? transaction?.stages);
   return {
     sessionId: optionalTrimmedString(record.sessionId),

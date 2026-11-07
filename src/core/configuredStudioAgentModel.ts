@@ -27,7 +27,8 @@ export function createConfiguredStudioAgentModel(input: {
         request.tools,
         input.token,
         input.modelId,
-        input.pathIdentities
+        input.pathIdentities,
+        request.onProgress
       );
       const resolution = {
         provider: response.provider,
@@ -53,6 +54,7 @@ export function createConfiguredStudioAgentModel(input: {
     input.history
   );
   model.enableToolDeferral();
+  model.enableEfficientContext();
   if (input.reviewAnswerDelivery) {
     model.enableAnswerDeliveryReview();
   }

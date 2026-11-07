@@ -112,6 +112,7 @@ describe('Native editor capability adapters', () => {
     const id = (output(listed).tasks as Array<{ id: string }>)[0].id;
     await expect(tool.execute({ operation: 'run', id }, context())).rejects.toThrow('approval');
     const started = await approved(tool, { operation: 'run', id });
+    expect(output(started)).toMatchObject({ state: 'ended', exitCode: 0 });
     const runId = output(started).id;
     expect(output(await tool.execute({ operation: 'status', id: runId }, context()))).toMatchObject(
       { state: 'ended', exitCode: 0, observationScopes: [`editor-task:${runId}`] }
@@ -122,6 +123,87 @@ describe('Native editor capability adapters', () => {
     task.definition.command = 'npm publish';
     await expect(approved(tool, { operation: 'run', id })).rejects.toThrow('Refresh');
     expect(fake.executeTask).toHaveBeenCalledOnce();
+  });
+
+  it('excludes sibling task folders and exposes the broader scope of inherited and workspace tasks', async () => {
+    const folderTask = (name: string, folder: string, cwd?: string) => ({
+      name,
+      source: 'workspace',
+      scope: { uri: { fsPath: folder, toString: () => folder } },
+      definition: { type: 'shell' },
+      execution: { options: { cwd, env: { SECRET: 'private-value' } } },
+    });
+    const project = path.join(root, 'core');
+    const sibling = path.join(root, 'sibling');
+    fake.fetchTasks.mockResolvedValue([
+      folderTask('Core', project),
+      folderTask('Core tests', path.join(project, 'tests')),
+      folderTask('Sibling', sibling),
+      folderTask('Inherited', root),
+      folderTask('External cwd', project, sibling),
+      folderTask('Variable cwd', project, '${workspaceFolder:sibling}'),
+      { name: 'Workspace', source: 'workspace', scope: 2, definition: { type: 'shell' } },
+      { name: 'Global', source: 'user', scope: 1, definition: { type: 'shell' } },
+    ]);
+    const scope = { ...context(), projectPath: project };
+    const tool = manager.tools(false).find((entry) => entry.name === 'editor-task')!;
+    const listed = await tool.execute({ operation: 'list' }, scope);
+    const tasks = output(listed).tasks as Array<{ id: string; name: string; scope: string }>;
+    expect(tasks.map((task) => task.name)).toEqual([
+      'Core',
+      'Core tests',
+      'Inherited',
+      'External cwd',
+      'Variable cwd',
+      'Workspace',
+    ]);
+    expect(JSON.stringify(listed)).not.toContain('private-value');
+    for (const task of tasks) {
+      const auth = await tool.authorize!({ operation: 'run', id: task.id }, scope);
+      expect(auth.approval?.scope).toBe(task.name.startsWith('Core') ? 'project' : 'workspace');
+      expect(auth.approval?.summary).toContain('Working directory:');
+    }
+    expect(fake.executeTask).not.toHaveBeenCalled();
+    // A catalog id obtained at workspace scope cannot authorize a sibling task at project scope.
+    const broad = output(await tool.execute({ operation: 'list' }, context())).tasks as Array<{
+      id: string;
+      name: string;
+    }>;
+    await expect(
+      tool.authorize!(
+        { operation: 'run', id: broad.find((task) => task.name === 'Sibling')!.id },
+        scope
+      )
+    ).rejects.toThrow('Refresh');
+  });
+
+  it('invalidates a task approval when its working directory changes', async () => {
+    const task = {
+      name: 'Check',
+      source: 'workspace',
+      scope: 2,
+      definition: { type: 'shell' },
+      execution: { options: { cwd: root } },
+    };
+    fake.fetchTasks.mockResolvedValue([task]);
+    const tool = manager.tools(false).find((entry) => entry.name === 'editor-task')!;
+    const id = (
+      output(await tool.execute({ operation: 'list' }, context())).tasks as Array<{ id: string }>
+    )[0].id;
+    const request = { operation: 'run', id };
+    const auth = await tool.authorize!(request, context());
+    task.execution.options.cwd = path.join(root, 'other');
+    await expect(
+      tool.execute(request, {
+        ...context(),
+        approval: {
+          fingerprint: auth.approval!.fingerprint,
+          approvedBy: 'user',
+          approvedAt: new Date().toISOString(),
+        },
+      })
+    ).rejects.toThrow('Task changed');
+    expect(fake.executeTask).not.toHaveBeenCalled();
   });
 
   it('does not grant execution in a read-only tool set and terminates only owned active tasks', async () => {

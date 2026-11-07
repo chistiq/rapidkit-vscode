@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import { askConfiguredAIProviderForToolAction } from './aiProviderService.js';
 import { studioAgentInstructionsTool } from './studioAgentInstructions.js';
 import { studioSourcePathDenialReason } from './studioWorkspacePathPolicy.js';
-import { resolveStudioNextEdit } from './studioNextEdit.js';
+import { resolveStudioNextEdit, rebaseStudioNextEdit } from './studioNextEdit.js';
 
 type Proposal = {
   id: string;
@@ -16,6 +16,7 @@ type Proposal = {
   after: string;
   replacement: string;
   workspaceRoot: string;
+  nextEdit?: { start: number; end: number; replacement: string };
 };
 export class StudioInlineEdit
   implements vscode.Disposable, vscode.TextDocumentContentProvider, vscode.CodeLensProvider
@@ -149,18 +150,27 @@ export class StudioInlineEdit
       void vscode.window.showWarningMessage(error instanceof Error ? error.message : String(error));
       return;
     }
-    if (
-      proposal.document.isClosed ||
-      proposal.document.version !== proposal.version ||
-      proposal.document.getText() !== proposal.before
-    ) {
+    const current = proposal.document.getText();
+    let range = proposal.range;
+    const changed = proposal.document.version !== proposal.version || current !== proposal.before;
+    const rebased =
+      changed && proposal.nextEdit
+        ? rebaseStudioNextEdit(proposal.before, current, proposal.nextEdit)
+        : undefined;
+    if (proposal.document.isClosed || (changed && !rebased)) {
       void vscode.window.showWarningMessage(
         'The document changed after this proposal. Discard it and request a fresh edit.'
       );
       return;
     }
+    if (rebased) {
+      range = new vscode.Range(
+        proposal.document.positionAt(rebased.start),
+        proposal.document.positionAt(rebased.end)
+      );
+    }
     const edit = new vscode.WorkspaceEdit();
-    edit.replace(proposal.document.uri, proposal.range, proposal.replacement);
+    edit.replace(proposal.document.uri, range, proposal.replacement);
     if (!(await vscode.workspace.applyEdit(edit))) {
       throw new Error('VS Code could not apply the edit.');
     }
@@ -354,6 +364,7 @@ export class StudioInlineEdit
             after,
             replacement,
             workspaceRoot: folder.uri.fsPath,
+            ...(prediction ? { nextEdit: prediction } : {}),
           });
           this.change.fire();
           await vscode.commands.executeCommand(

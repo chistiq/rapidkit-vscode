@@ -174,6 +174,23 @@ describe('Inline edit review', () => {
     expect(fake.apply).not.toHaveBeenCalled();
     expect(fake.choice).toHaveBeenCalledWith('No useful next edit was suggested.');
   });
+  it('rebases an accepted next-edit after unrelated typing and preserves the user prefix', async () => {
+    const source = '// initial\n' + 'a'.repeat(80) + '\nlet value = 1;\n';
+    document.getText = () => source;
+    fake.ask.mockResolvedValue({
+      type: 'tool',
+      toolName: 'propose-next-edit',
+      input: { action: 'edit', oldText: 'let', replacement: 'const' },
+    });
+    await fake.commands.get('workspai.assistant.nextEdit')!();
+    const accept = controller.provideCodeLenses(document as never)[0].command!;
+    const prefix = '// user typing\n';
+    document.version++;
+    document.getText = () => prefix + source;
+    await fake.commands.get(accept.command)!(...(accept.arguments ?? []));
+    const start = (prefix + source).indexOf('let');
+    expect(fake.apply.mock.calls[0][0].args.slice(1)).toEqual([{ start, end: start + 3 }, 'const']);
+  });
   it('discards a late prediction after cancellation', async () => {
     fake.ask.mockImplementationOnce(async () => {
       fake.cancelled = true;

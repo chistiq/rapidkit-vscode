@@ -11,6 +11,59 @@ import {
 import type { StudioAgentModelContext } from '../core/studioAgentSession.js';
 
 describe('Studio Agent model protocol', () => {
+  it('gives a free-form repair task-scoped Workspai navigation, reusable check receipts and behavioral verification guidance', async () => {
+    let prompt = '';
+    const adapter = new ContractStudioAgentModelAdapter(
+      'Fix setup error handling',
+      async (text) => {
+        prompt = text;
+        return {
+          toolName: STUDIO_AGENT_COMPLETE_TOOL_NAME,
+          input: { summary: 'Findings reported.' },
+        };
+      }
+    );
+    await adapter.next({
+      session: {
+        schemaVersion: 'workspai.studio-agent-session.v1',
+        id: 'repair',
+        workspacePath: '/workspace',
+        cardId: 'assistant:agent',
+        assistantMode: 'agent',
+        executionAuthority: 'workspace',
+        status: 'running',
+        createdAt: '2026-11-06',
+        updatedAt: '2026-11-06',
+        sequence: 2,
+        events: [
+          {
+            schemaVersion: 'workspai.studio-agent-event.v1',
+            id: 'check',
+            sessionId: 'repair',
+            sequence: 2,
+            timestamp: '2026-11-06',
+            type: 'tool.completed',
+            data: {
+              toolName: 'run-workspace-command',
+              ok: true,
+              input: { executable: 'poetry', args: ['run', 'mypy', 'src'], purpose: 'test' },
+              output: { exitCode: 0, sourceFingerprint: 'f'.repeat(64) },
+            },
+          },
+        ],
+      },
+      tools: [],
+      steering: [],
+    });
+    expect(prompt).toContain('compact project context already returned');
+    expect(prompt).toContain('task-specific query-workspace-graph');
+    expect(prompt).toContain('isolated harness');
+    expect(prompt).toContain('exact untested portion');
+    expect(prompt).toContain('successfulCommands');
+    expect(prompt).toContain('f'.repeat(64));
+    expect(prompt).not.toContain('Canonical Workspace Intelligence stages:');
+    expect(prompt.length).toBeLessThan(16000);
+  });
   it('preserves an explicit managed destination and sends a compact scaffold receipt instead of every generated file', async () => {
     let prompt = '';
     const adapter = new ContractStudioAgentModelAdapter(
@@ -470,6 +523,53 @@ describe('Studio Agent model protocol', () => {
       role: 'user',
       content: expect.stringContaining('Continue the investigation'),
     });
+  });
+
+  it('retains older user constraints as labeled excerpts when restoring a long conversation', async () => {
+    let sent: StudioAgentConversationMessage[] = [];
+    const history: StudioAgentConversationMessage[] = [
+      { role: 'user', content: 'Use Python; never adopt this project.' },
+      ...Array.from(
+        { length: 15 },
+        (_, i): StudioAgentConversationMessage => ({
+          role: 'user',
+          content: `Unrelated question ${i}`,
+        })
+      ),
+    ];
+    const adapter = new ContractStudioAgentModelAdapter(
+      'Continue the test',
+      async (_prompt, request) => {
+        sent = request.messages;
+        return { toolName: STUDIO_AGENT_COMPLETE_TOOL_NAME, input: { summary: 'Explained' } };
+      },
+      undefined,
+      history
+    );
+    await adapter.next({
+      session: {
+        schemaVersion: 'workspai.studio-agent-session.v1',
+        id: 'memory',
+        workspacePath: '/workspace',
+        cardId: 'assistant:ask',
+        assistantMode: 'ask',
+        status: 'running',
+        createdAt: '2026-11-04',
+        updatedAt: '2026-11-04',
+        sequence: 0,
+        events: [],
+      },
+      tools: [],
+      steering: [],
+    });
+    const excerpt = sent.find(
+      (message) =>
+        'content' in message && message.content.startsWith('Historical conversation excerpts')
+    );
+    expect(excerpt && 'content' in excerpt && excerpt.content).toContain(
+      'never adopt this project'
+    );
+    expect(excerpt && 'content' in excerpt && excerpt.content).toContain('not authorization');
   });
 
   it('never emits an orphaned tool result when the provider conversation window is bounded', async () => {

@@ -6,6 +6,7 @@ export const STUDIO_ACTIVITY_EVENTS = {
   'request.steered': 'request',
   'workspace.target.bound': 'scope',
   'model.request.started': 'model',
+  'model.request.progress': 'model',
   'model.request.finished': 'model',
   'model.message': 'narration',
   'model.resolved': 'model',
@@ -45,6 +46,7 @@ export interface StudioActivityReceipt {
   /** Observation references only; never approval or execution grants. */
   toolName?: string;
   transactionId?: string;
+  verificationAuthority?: 'workspace-evidence' | 'workspai-cli';
 }
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
@@ -72,13 +74,15 @@ export function studioActivityReceipt(value: unknown): StudioActivityReceipt | u
       title =
         stage === 'started'
           ? 'Requesting model response'
-          : stage === 'finished'
-            ? 'Model response received'
-            : data.decisionId
+          : stage === 'progress'
+            ? 'Receiving model response'
+            : stage === 'finished'
               ? 'Model response received'
-              : 'Model selected';
+              : data.decisionId
+                ? 'Model response received'
+                : 'Model selected';
       status =
-        stage === 'started'
+        stage === 'started' || stage === 'progress'
           ? 'running'
           : data.outcome === 'failed'
             ? 'failed'
@@ -120,7 +124,9 @@ export function studioActivityReceipt(value: unknown): StudioActivityReceipt | u
     case 'outcome':
       title =
         stage === 'completed'
-          ? 'Response completed'
+          ? data.verificationAuthority === 'workspace-evidence'
+            ? 'Response ready'
+            : 'Response completed'
           : stage === 'cancelled'
             ? 'Request stopped'
             : 'Request needs attention';
@@ -205,6 +211,13 @@ export function studioActivityReceipt(value: unknown): StudioActivityReceipt | u
     status,
     ...(tool ? { toolName: tool } : {}),
     ...(transactionId ? { transactionId } : {}),
+    ...(['workspace-evidence', 'workspai-cli'].includes(String(data.verificationAuthority))
+      ? {
+          verificationAuthority: data.verificationAuthority as
+            | 'workspace-evidence'
+            | 'workspai-cli',
+        }
+      : {}),
     ...(typeof data.durationMs === 'number' && Number.isFinite(data.durationMs)
       ? { durationMs: Math.max(0, data.durationMs) }
       : {}),
@@ -242,6 +255,8 @@ export function isStudioActivityReceipt(value: unknown): value is StudioActivity
       (typeof item.toolName === 'string' && item.toolName.length <= 160)) &&
     (item.transactionId === undefined ||
       (typeof item.transactionId === 'string' && item.transactionId.length <= 200)) &&
+    (item.verificationAuthority === undefined ||
+      ['workspace-evidence', 'workspai-cli'].includes(String(item.verificationAuthority))) &&
     ['running', 'review', 'done', 'failed'].includes(String(item.status)) &&
     [...Object.values(STUDIO_ACTIVITY_EVENTS), 'unknown'].includes(item.kind as StudioActivityKind)
   );

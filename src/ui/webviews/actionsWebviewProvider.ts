@@ -284,6 +284,7 @@ import {
   requestStudioToolApproval,
 } from '../../core/studioToolApproval.js';
 import { runStudioCodeIntelligenceTool } from '../../core/studioCodeIntelligence.js';
+import { prepareStudioSymbolRename } from '../../core/studioSymbolRename.js';
 import {
   discoverStudioWorkspaceFiles,
   inspectStudioWorkspaceChanges,
@@ -4103,6 +4104,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         },
       }),
       codeIntelligence: runStudioCodeIntelligenceTool,
+      prepareSymbolRename: prepareStudioSymbolRename,
       inspectChanges: async (request: {
         paths?: string[];
         workspacePath: string;
@@ -5077,6 +5079,14 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       cardId: scopeId,
       assistantMode: input.assistantMode,
       executionPolicy,
+      ...(intentRoute.outcomes?.length
+        ? {
+            initialOutcomes: {
+              objective: intentRoute.normalizedRequest,
+              requirements: intentRoute.outcomes,
+            },
+          }
+        : {}),
       ...(input.requestedModelId ? { selectedModelId: input.requestedModelId } : {}),
       permissionLevel: mode.permissionLevel,
       requiresVerifiedCompletion: mode.requiresVerifiedCompletion,
@@ -5520,6 +5530,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         ...(await runStudioCodeIntelligenceTool(request)),
         evidenceGeneration: repairEvidence.evidenceFingerprint,
       }),
+      prepareSymbolRename: prepareStudioSymbolRename,
       inspectChanges: async (request: { paths?: string[]; workspacePath: string }) => {
         try {
           return {

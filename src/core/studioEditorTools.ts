@@ -184,12 +184,12 @@ export class StudioEditorTools implements vscode.Disposable {
     return (await vscode.tasks.fetchTasks())
       .filter((task) =>
         typeof task.scope === 'object'
-          ? inside(context.workspacePath, task.scope.uri.fsPath) ||
-            inside(task.scope.uri.fsPath, root)
+          ? inside(root, task.scope.uri.fsPath) || inside(task.scope.uri.fsPath, root)
           : task.scope === vscode.TaskScope.Workspace
       )
       .map((task) => ({
         task,
+        ...this.taskScope(task, root),
         id: fingerprint(
           'editor-task',
           {
@@ -203,6 +203,32 @@ export class StudioEditorTools implements vscode.Disposable {
           root
         ),
       }));
+  }
+  private taskScope(task: vscode.Task, root: string) {
+    const folder = typeof task.scope === 'object' ? task.scope.uri.fsPath : undefined;
+    const options =
+      task.execution && 'options' in task.execution ? task.execution.options : undefined;
+    const configuredCwd = options?.cwd;
+    const cwd = typeof configuredCwd === 'string' ? configuredCwd : undefined;
+    // VS Code resolves variables at execution time. Do not invent a resolved cwd or expose env.
+    const cwdResolved =
+      cwd && !cwd.includes('${') && path.isAbsolute(cwd) ? path.resolve(cwd) : undefined;
+    const scope =
+      folder && inside(root, folder) && (!cwd || (cwdResolved && inside(root, cwdResolved)))
+        ? ('project' as const)
+        : ('workspace' as const);
+    return {
+      scope,
+      folder,
+      configuredCwd: cwd,
+      cwdResolution: cwd
+        ? cwdResolved
+          ? 'absolute'
+          : 'editor-resolved'
+        : folder
+          ? 'folder-default'
+          : 'editor-default',
+    };
   }
   tools(readOnly: boolean): StudioAgentToolDefinition[] {
     const make = (
@@ -266,9 +292,15 @@ export class StudioEditorTools implements vscode.Disposable {
             fingerprint: this.actionFingerprint(name, input, context),
             title: `Run ${name}: ${operation}`,
             summary: selectedTask
-              ? `Run task ${selectedTask.task.name} from ${selectedTask.task.source}. Definition: ${selectedTask.id}`
+              ? `Run task ${selectedTask.task.name} from ${selectedTask.task.source}. Folder: ${selectedTask.folder ?? 'workspace-wide'}. Working directory: ${selectedTask.configuredCwd ?? selectedTask.folder ?? 'resolved by VS Code'} (${selectedTask.cwdResolution}). Definition: ${selectedTask.id}`
               : JSON.stringify(input),
-            scope: context.projectPath ? 'project' : 'workspace',
+            scope: selectedTask
+              ? context.projectPath
+                ? selectedTask.scope
+                : 'workspace'
+              : context.projectPath
+                ? 'project'
+                : 'workspace',
             reasons: [
               'Editor tasks, debug requests and notebook cells can execute project code and affect external systems.',
             ],
@@ -332,7 +364,7 @@ export class StudioEditorTools implements vscode.Disposable {
     return [
       make(
         'editor-task',
-        'List scoped VS Code tasks, run an exact catalog task id, inspect execution status/exit code, or stop a task owned by this session. A started task is not a successful task. Use run-workspace-command or terminal for captured process output.',
+        'List tasks belonging to the selected project and inherited/workspace-wide tasks with their actual folder and configured cwd. Sibling folder tasks are excluded. Run an exact catalog task id, inspect execution status/exit code, or stop a task owned by this session. A started task is not a successful task. Use run-workspace-command or terminal for captured process output.',
         ['list', 'run', 'status', 'stop'],
         ['list', 'status'],
         async (input, context) => {
@@ -341,10 +373,14 @@ export class StudioEditorTools implements vscode.Disposable {
             return {
               ok: true,
               output: {
-                tasks: catalog.map(({ task, id }) => ({
+                tasks: catalog.map(({ task, id, scope, folder, configuredCwd, cwdResolution }) => ({
                   id,
                   name: task.name,
                   source: task.source,
+                  scope: context.projectPath ? scope : 'workspace',
+                  folder,
+                  configuredCwd,
+                  cwdResolution,
                 })),
               },
             };
@@ -376,7 +412,8 @@ export class StudioEditorTools implements vscode.Disposable {
               ok: true,
               output: {
                 id,
-                state: 'running',
+                state: this.taskEnds.get(execution)?.ended ? 'ended' : 'running',
+                exitCode: this.taskEnds.get(execution)?.exitCode,
                 effects: { verificationScopes: [`editor-task:${id}`] },
               },
             };
@@ -428,7 +465,7 @@ export class StudioEditorTools implements vscode.Disposable {
                     program: configuration.program,
                   })),
                 sessions: [...this.debug.values()]
-                  .filter((entry) => entry.owner === context.sessionId)
+                  .filter((entry) => entry.owner === context.sessionId && entry.scope === root)
                   .map(({ session }) => ({
                     id: session.id,
                     name: session.name,

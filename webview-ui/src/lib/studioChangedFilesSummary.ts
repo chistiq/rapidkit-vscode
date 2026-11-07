@@ -36,6 +36,7 @@ export type StudioChangedFilesSummary = {
 };
 
 type FileContribution = {
+  netChange?: SidebarStudioFileChangeView['netChange'];
   relativePath: string;
   workspaceId?: string;
   workspaceName?: string;
@@ -64,7 +65,7 @@ function isComparable(file: SidebarStudioFileChangeView): boolean {
  *
  * Contributions are keyed by file and transaction so a replayed or repeated
  * event for the same transaction cannot double-count, while two transactions
- * touching the same file still sum into the cumulative work the user sees. A
+ * touching the same file use the host's net diff when its complete chain is live. A
  * transaction that reached `rolled-back` withdraws its own contributions
  * instead of leaving reverted files in the summary.
  */
@@ -117,6 +118,7 @@ export function buildStudioChangedFilesSummary(
         added: counts.added,
         removed: counts.removed,
         status: file.status,
+        ...(file.netChange ? { netChange: file.netChange } : {}),
         ...(!studioFileChangeHasLineCounts(file) ? { countsKnown: false } : {}),
         comparable: isComparable(file),
         ...(file.failReason ? { failReason: file.failReason } : {}),
@@ -142,18 +144,32 @@ export function buildStudioChangedFilesSummary(
     for (const [transactionId] of live) {
       liveTransactions.add(transactionId);
     }
+    const net = latest[1].netChange;
+    const useNet =
+      net &&
+      latest[1].comparable &&
+      net.transactionIds.includes(latest[0]) &&
+      !net.transactionIds.some((id) => rolledBackTransactions.has(id));
+    const uncovered = useNet ? live.filter(([id]) => !net.transactionIds.includes(id)) : live;
+    if (useNet && net.unchanged && !uncovered.length) {
+      continue;
+    }
     files.push({
       relativePath: latest[1].relativePath,
       ...(latest[1].binary ? { binary: true, afterBytes: latest[1].afterBytes } : {}),
       ...(latest[1].workspaceId
         ? { workspaceId: latest[1].workspaceId, workspaceName: latest[1].workspaceName }
         : {}),
-      status: latest[1].status,
-      added: live.reduce((total, [, contribution]) => total + contribution.added, 0),
-      removed: live.reduce((total, [, contribution]) => total + contribution.removed, 0),
+      status: useNet ? net.status : latest[1].status,
+      added:
+        (useNet ? net.addedLines : 0) +
+        uncovered.reduce((total, [, contribution]) => total + contribution.added, 0),
+      removed:
+        (useNet ? net.removedLines : 0) +
+        uncovered.reduce((total, [, contribution]) => total + contribution.removed, 0),
       transactionId: latest[0],
       comparable: latest[1].comparable,
-      ...(live.some(([, entry]) => entry.countsKnown === false) ? { countsKnown: false } : {}),
+      ...(uncovered.some(([, entry]) => entry.countsKnown === false) ? { countsKnown: false } : {}),
       ...(latest[1].failReason ? { failReason: latest[1].failReason } : {}),
     });
   }

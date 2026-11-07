@@ -87,6 +87,7 @@ describe('Workspai assistant mode contract', () => {
       'view-workspace-image',
       'inspect-agent-instructions',
       'inspect-project-docs',
+      'search-code-context',
       'inspect-cli-commands',
       'inspect-workspace',
       'search-public-web',

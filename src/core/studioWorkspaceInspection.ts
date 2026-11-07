@@ -13,9 +13,32 @@ import {
   filterStudioSourceDiff,
 } from './studioWorkspaceChangeReview.js';
 import { isStudioModelOwnedSourcePath } from './studioWorkspacePathPolicy.js';
+import { readStudioWorkingBytes } from './studioNativeDocuments.js';
 
 const STUDIO_WORKSPACE_FILE_EXCLUDE =
-  '{**/.git/**,**/node_modules/**,**/vendor/**,**/dist/**,**/build/**,**/target/**,**/.venv/**,**/.workspai/cache/**,**/.workspai/snapshots/**,**/*.tmp}';
+  '{**/.git/**,**/node_modules/**,**/vendor/**,**/dist/**,**/build/**,**/target/**,**/.venv/**,**/.mypy_cache/**,**/.pytest_cache/**,**/.ruff_cache/**,**/__pycache__/**,**/.next/**,**/.svelte-kit/**,**/.angular/**,**/.turbo/**,**/.workspai/cache/**,**/.workspai/snapshots/**,**/*.tmp}';
+
+async function readableSourceTarget(
+  root: string,
+  realRoot: string,
+  target: string
+): Promise<string | undefined> {
+  const admitted = (base: string, file: string) => {
+    const relative = path.relative(base, file).replace(/\\/g, '/');
+    return (
+      relative &&
+      relative !== '..' &&
+      !relative.startsWith('../') &&
+      !path.isAbsolute(relative) &&
+      isStudioModelOwnedSourcePath(relative)
+    );
+  };
+  if (!admitted(root, target)) {
+    return undefined;
+  }
+  const real = await fs.realpath(target).catch(() => undefined);
+  return real && admitted(realRoot, real) ? real : undefined;
+}
 const MAX_FINGERPRINT_FILES = 2_000;
 const MAX_FINGERPRINT_FILE_BYTES = 16 * 1024 * 1024;
 const MAX_FINGERPRINT_TOTAL_BYTES = 128 * 1024 * 1024;
@@ -40,6 +63,7 @@ export async function discoverStudioWorkspaceFiles(input: {
   }
   const sourceRoot = input.projectPath?.trim() || input.workspacePath;
   await requireStudioWorkspaceDirectory(sourceRoot);
+  const realRoot = await fs.realpath(sourceRoot);
   const uris = await vscode.workspace.findFiles(
     new vscode.RelativePattern(sourceRoot, requestedGlob),
     STUDIO_WORKSPACE_FILE_EXCLUDE,
@@ -48,6 +72,9 @@ export async function discoverStudioWorkspaceFiles(input: {
   const files: Array<{ path: string; size: number }> = [];
   for (const uri of uris) {
     try {
+      if (!(await readableSourceTarget(sourceRoot, realRoot, uri.fsPath))) {
+        continue;
+      }
       const stat = await vscode.workspace.fs.stat(uri);
       if ((stat.type & vscode.FileType.File) !== 0) {
         files.push({
@@ -350,6 +377,7 @@ export async function searchStudioWorkspaceSource(input: {
   }
   const sourceRoot = input.projectPath?.trim() || input.workspacePath;
   const plan = planStudioWorkspaceSearch(query);
+  const realRoot = await fs.realpath(sourceRoot);
   const pathGlobs = input.paths?.length ? input.paths : plan.pathGlobs;
   const matches: StudioWorkspaceSearchMatch[] = [];
   const seen = new Set<string>();
@@ -373,6 +401,9 @@ export async function searchStudioWorkspaceSource(input: {
       MAX_SEARCH_PATH_MATCHES
     );
     for (const uri of uris) {
+      if (!(await readableSourceTarget(sourceRoot, realRoot, uri.fsPath))) {
+        continue;
+      }
       pushMatch({
         path: path.relative(sourceRoot, uri.fsPath).replace(/\\/g, '/'),
         line: 1,
@@ -403,7 +434,11 @@ export async function searchStudioWorkspaceSource(input: {
     }
     scanned += 1;
     try {
-      const raw = await vscode.workspace.fs.readFile(uri);
+      const real = await readableSourceTarget(sourceRoot, realRoot, uri.fsPath);
+      if (!real || (await fs.stat(real)).size > MAX_SEARCH_FILE_BYTES) {
+        continue;
+      }
+      const raw = await readStudioWorkingBytes(real);
       if (raw.byteLength > MAX_SEARCH_FILE_BYTES || raw.subarray(0, 512).includes(0)) {
         continue;
       }

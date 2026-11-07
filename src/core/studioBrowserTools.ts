@@ -9,8 +9,104 @@ import type {
 } from './studioAgentToolRegistry.js';
 
 type RecordValue = Record<string, unknown>;
+const READ_OPERATIONS = ['read', 'screenshot', 'console', 'network', 'close'];
+const OPERATIONS = [
+  'open',
+  'navigate',
+  ...READ_OPERATIONS,
+  'click',
+  'type',
+  'hover',
+  'press-key',
+  'dialog',
+];
 function value(raw: unknown): RecordValue {
   return raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as RecordValue) : {};
+}
+
+/** Keep only bounded diagnostic fields; never retain network bodies or headers. */
+export function studioBrowserObservation(method: string, raw: unknown): RecordValue | undefined {
+  const params = value(raw);
+  const text = (raw: unknown, max = 500) =>
+    typeof raw === 'string' ? raw.slice(0, max) : undefined;
+  const number = (raw: unknown) =>
+    typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined;
+  const url = (raw: unknown) => {
+    try {
+      const parsed = new URL(String(raw));
+      return ['http:', 'https:'].includes(parsed.protocol)
+        ? `${parsed.origin}${parsed.pathname}`.slice(0, 2000)
+        : `${parsed.protocol}<omitted>`;
+    } catch {
+      return undefined;
+    }
+  };
+  if (method === 'Page.lifecycleEvent') {
+    return { method, params: { loaderId: text(params.loaderId), name: text(params.name) } };
+  }
+  if (method === 'Runtime.consoleAPICalled') {
+    return {
+      method,
+      params: {
+        type: text(params.type),
+        timestamp: number(params.timestamp),
+        args: Array.isArray(params.args)
+          ? params.args.slice(0, 12).map((arg) => {
+              const item = value(arg);
+              return {
+                value: String(item.value ?? item.description ?? item.type ?? '').slice(0, 800),
+              };
+            })
+          : [],
+      },
+    };
+  }
+  if (method === 'Runtime.exceptionThrown') {
+    return {
+      method,
+      params: {
+        timestamp: number(params.timestamp),
+        exceptionDetails: { text: text(value(params.exceptionDetails).text, 2000) },
+      },
+    };
+  }
+  if (method === 'Network.requestWillBeSent') {
+    const request = value(params.request);
+    return {
+      method,
+      params: {
+        requestId: text(params.requestId),
+        type: text(params.type),
+        request: { url: url(request.url), method: text(request.method) },
+      },
+    };
+  }
+  if (method === 'Network.responseReceived') {
+    const response = value(params.response);
+    return {
+      method,
+      params: {
+        requestId: text(params.requestId),
+        type: text(params.type),
+        response: {
+          url: url(response.url),
+          status: number(response.status),
+          mimeType: text(response.mimeType),
+        },
+      },
+    };
+  }
+  if (method === 'Network.loadingFailed') {
+    return {
+      method,
+      params: {
+        requestId: text(params.requestId),
+        type: text(params.type),
+        errorText: text(params.errorText),
+      },
+    };
+  }
+  return undefined;
 }
 export class StudioBrowserTools {
   private readonly browsers = new Map<
@@ -205,7 +301,7 @@ export class StudioBrowserTools {
         name: 'browser-page',
         title: 'Inspect and interact with a local browser',
         description:
-          'Independent Chromium/Chrome/Edge browser automation, without Copilot or MCP. Open a new session, navigate HTTP(S), read page text, capture a screenshot, click a CSS selector, type into an input, or close the owned session. Use id returned by open. Navigation/interactions require exact approval; read/screenshot operate on the session’s already approved page. External effects require observing the resulting page. Browser installation is required.',
+          'Independent Chromium/Chrome/Edge automation. Open/navigate HTTP(S), read text/screenshots or bounded console/network observations, click/type/hover a CSS selector, press a supported key, handle a JavaScript dialog, or close an owned session. Use id returned by open. Interactions require exact approval; reads stay in the owned page. Network observations omit headers, bodies and URL queries. Event history is bounded and not exhaustive. Observe resulting page state after effects. An installed browser is required.',
         inputSchema: {
           type: 'object',
           required: ['operation'],
@@ -213,14 +309,32 @@ export class StudioBrowserTools {
           properties: {
             operation: {
               type: 'string',
-              enum: readOnly
-                ? ['read', 'screenshot', 'close']
-                : ['open', 'navigate', 'read', 'screenshot', 'click', 'type', 'close'],
+              enum: readOnly ? READ_OPERATIONS : OPERATIONS,
             },
             id: { type: 'string' },
             url: { type: 'string' },
             selector: { type: 'string' },
             text: { type: 'string', maxLength: 10_000 },
+            key: {
+              type: 'string',
+              enum: [
+                'Enter',
+                'Escape',
+                'Tab',
+                'ArrowUp',
+                'ArrowDown',
+                'ArrowLeft',
+                'ArrowRight',
+                'Backspace',
+                'Delete',
+                'Home',
+                'End',
+                'PageUp',
+                'PageDown',
+                ' ',
+              ],
+            },
+            accept: { type: 'boolean' },
             width: { type: 'integer', minimum: 200, maximum: 3840 },
             height: { type: 'integer', minimum: 200, maximum: 2160 },
           },
@@ -229,7 +343,10 @@ export class StudioBrowserTools {
         risk: 'read',
         authorize: (raw, context) => {
           const input = value(raw);
-          if (['read', 'screenshot', 'close'].includes(String(input.operation))) {
+          if (!OPERATIONS.includes(String(input.operation))) {
+            throw new Error('Unknown browser operation.');
+          }
+          if (READ_OPERATIONS.includes(String(input.operation))) {
             this.owned(String(input.id), context);
             return { risk: 'read' };
           }
@@ -254,15 +371,11 @@ export class StudioBrowserTools {
         execute: async (raw, context) => {
           const input = value(raw);
           const operation = String(input.operation);
-          if (
-            !['open', 'navigate', 'read', 'screenshot', 'click', 'type', 'close'].includes(
-              operation
-            )
-          ) {
+          if (!OPERATIONS.includes(operation)) {
             throw new Error('Unknown browser operation.');
           }
           if (
-            !['read', 'screenshot', 'close'].includes(operation) &&
+            !READ_OPERATIONS.includes(operation) &&
             context.approval?.fingerprint !== fingerprint(input, context.workspacePath)
           ) {
             throw new Error('Exact browser action approval is required.');
@@ -270,7 +383,7 @@ export class StudioBrowserTools {
           if (context.signal.aborted) {
             return { ok: false, error: 'Browser request was cancelled.' };
           }
-          if (readOnly && !['read', 'screenshot', 'close'].includes(operation)) {
+          if (readOnly && !READ_OPERATIONS.includes(operation)) {
             throw new Error('This browser operation requires Agent or Goal mode.');
           }
           let navigationUrl: URL | undefined;
@@ -420,9 +533,12 @@ export class StudioBrowserTools {
                   return;
                 }
                 if (result.method) {
-                  browser.events.push({ method: result.method, params: result.params });
-                  if (browser.events.length > 100) {
-                    browser.events.shift();
+                  const observation = studioBrowserObservation(result.method, result.params);
+                  if (observation) {
+                    browser.events.push(observation);
+                    if (browser.events.length > 100) {
+                      browser.events.shift();
+                    }
                   }
                   for (const listener of browser.listeners) {
                     listener();
@@ -456,6 +572,12 @@ export class StudioBrowserTools {
           }
           if (operation === 'open' || operation === 'navigate') {
             await this.call(id, context, 'Page.enable');
+            await this.call(id, context, 'Runtime.enable');
+            await this.call(id, context, 'Network.enable', {
+              maxTotalBufferSize: 256_000,
+              maxResourceBufferSize: 16_000,
+              maxPostDataSize: 0,
+            });
             await this.call(id, context, 'Page.setLifecycleEventsEnabled', { enabled: true });
             const result = value(
               await this.call(id, context, 'Page.navigate', { url: navigationUrl!.toString() })
@@ -481,6 +603,178 @@ export class StudioBrowserTools {
             return {
               ok: true,
               output: { id, state: 'closed', observationScopes: [`browser:${id}`] },
+            };
+          }
+          if (operation === 'console' || operation === 'network') {
+            const browser = this.owned(id, context);
+            const events = browser.events.filter((event) =>
+              operation === 'console'
+                ? ['Runtime.consoleAPICalled', 'Runtime.exceptionThrown'].includes(
+                    String(event.method)
+                  )
+                : [
+                    'Network.requestWillBeSent',
+                    'Network.responseReceived',
+                    'Network.loadingFailed',
+                  ].includes(String(event.method))
+            );
+            const entries = events.slice(-50).map((event) => {
+              const params = value(event.params);
+              if (operation === 'console') {
+                return {
+                  type: params.type ?? event.method,
+                  timestamp: params.timestamp,
+                  message: Array.isArray(params.args)
+                    ? params.args
+                        .slice(0, 12)
+                        .map((arg) => {
+                          const item = value(arg);
+                          return String(item.value ?? item.description ?? item.type ?? '').slice(
+                            0,
+                            800
+                          );
+                        })
+                        .join(' ')
+                        .slice(0, 2000)
+                    : String(value(params.exceptionDetails).text ?? '').slice(0, 2000),
+                };
+              }
+              const request = value(params.request),
+                response = value(params.response);
+              let url: string | undefined;
+              try {
+                const parsed = new URL(String(request.url ?? response.url));
+                url = ['http:', 'https:'].includes(parsed.protocol)
+                  ? `${parsed.origin}${parsed.pathname}`.slice(0, 2000)
+                  : `${parsed.protocol}<omitted>`;
+              } catch {
+                /* Loading failures may have only a request id. */
+              }
+              return {
+                event: event.method,
+                requestId: params.requestId,
+                url,
+                method: request.method,
+                status: response.status,
+                mimeType: response.mimeType,
+                resourceType: params.type,
+                error:
+                  typeof params.errorText === 'string' ? params.errorText.slice(0, 500) : undefined,
+              };
+            });
+            return {
+              ok: true,
+              output: {
+                id,
+                entries,
+                coverage: {
+                  retainedEvents: browser.events.length,
+                  matchedEvents: events.length,
+                  returnedEvents: entries.length,
+                  boundedHistory: true,
+                },
+                instruction:
+                  'Bounded observations from this owned browser only, not a complete console/network trace or verified application outcome.',
+              },
+            };
+          }
+          if (operation === 'dialog') {
+            if (
+              typeof input.accept !== 'boolean' ||
+              (input.text !== undefined &&
+                (typeof input.text !== 'string' || input.text.length > 1000))
+            ) {
+              throw new Error(
+                'Dialog requires an explicit accept boolean and optional bounded prompt text.'
+              );
+            }
+            await this.call(id, context, 'Page.handleJavaScriptDialog', {
+              accept: input.accept,
+              ...(input.text !== undefined ? { promptText: input.text } : {}),
+            });
+            return {
+              ok: true,
+              output: {
+                id,
+                state: 'dialog-handled',
+                effects: { verificationScopes: [`browser:${id}`] },
+              },
+            };
+          }
+          if (operation === 'press-key') {
+            const keys = [
+              'Enter',
+              'Escape',
+              'Tab',
+              'ArrowUp',
+              'ArrowDown',
+              'ArrowLeft',
+              'ArrowRight',
+              'Backspace',
+              'Delete',
+              'Home',
+              'End',
+              'PageUp',
+              'PageDown',
+              ' ',
+            ];
+            if (typeof input.key !== 'string' || !keys.includes(input.key)) {
+              throw new Error('Select a supported browser key.');
+            }
+            await this.call(id, context, 'Input.dispatchKeyEvent', {
+              type: 'keyDown',
+              key: input.key,
+              ...(input.key === 'Enter' ? { text: '\r' } : input.key === ' ' ? { text: ' ' } : {}),
+            });
+            await this.call(id, context, 'Input.dispatchKeyEvent', {
+              type: 'keyUp',
+              key: input.key,
+            });
+            return {
+              ok: true,
+              output: {
+                id,
+                state: 'key-dispatched',
+                effects: { verificationScopes: [`browser:${id}`] },
+              },
+            };
+          }
+          if (operation === 'hover') {
+            if (
+              typeof input.selector !== 'string' ||
+              !input.selector.trim() ||
+              input.selector.length > 2000
+            ) {
+              throw new Error('A CSS selector is required.');
+            }
+            const response = value(
+              await this.call(id, context, 'Runtime.evaluate', {
+                expression: `(()=>{const e=document.querySelector(${JSON.stringify(input.selector)});if(!e)throw Error('Element not found');e.scrollIntoView({block:'center',inline:'center'});const r=e.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`,
+                returnByValue: true,
+              })
+            );
+            const point = value(value(response.result).value);
+            if (
+              response.exceptionDetails ||
+              typeof point.x !== 'number' ||
+              typeof point.y !== 'number' ||
+              !Number.isFinite(point.x) ||
+              !Number.isFinite(point.y)
+            ) {
+              return { ok: false, error: 'Could not locate an element for hover.' };
+            }
+            await this.call(id, context, 'Input.dispatchMouseEvent', {
+              type: 'mouseMoved',
+              x: point.x,
+              y: point.y,
+            });
+            return {
+              ok: true,
+              output: {
+                id,
+                state: 'hover-dispatched',
+                effects: { verificationScopes: [`browser:${id}`] },
+              },
             };
           }
           if (operation === 'screenshot') {

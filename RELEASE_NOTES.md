@@ -1,5 +1,41 @@
 # Release Notes
 
+## v0.50.0 (November 7, 2026)
+
+### Better context, less repetition, clearer outcomes
+
+This release is validated against Workspai CLI 0.80.0.
+
+- Retrieve bounded code context through source, Graph and installed language
+  providers. Optionally enable incremental semantic search with a local or
+  configured API embedding provider in User Settings.
+- Delegate independent edits to private source forks, then review and integrate
+  proposals through the parent request's protected transactions and checkpoint.
+- Preview native inline suggestions and optional current-line replacements;
+  rename symbols through installed language providers and review exact changes.
+- Follow streamed provider progress and compact activity with approval waits and
+  checkpoints under their owning action. Native workspace outcomes say
+  **Response ready** and retain the actual checks and their limits.
+- Adopt or import an existing project with exact consent, receive scoped project
+  context and refreshed instructions, and keep ordinary coding available without
+  mandatory registration or a full intelligence refresh.
+- Improve source-path protection, Python cache handling, task scope, provider
+  cancellation, conversation continuity and retained tool-output expiry.
+- Retain multi-part requested outcomes without another routing request, track
+  source-read coverage across batches and Resume, and reuse identical previews
+  within each model request. Continue after unresolved completion reviews without
+  treating them as transport errors or forcing automatic verification.
+
+VS Code 1.106.0 or newer and Workspai CLI 0.80.0+ are required; the verified runtime
+remains 0.80.0. Automatic inline suggestions and semantic indexing are opt-in.
+Embedding requests have separate provider usage. Private source forks do not
+include terminals or constitute an operating-system sandbox. Multi-line next-edit
+proposals use the reviewed command. Reported checks define verification coverage;
+registration, a successful tool or **Response ready** alone does not prove the
+entire application or a workflow was tested.
+
+[Full release notes](https://github.com/chistiq/rapidkit-vscode/blob/main/releases/RELEASE_NOTES_v0.50.0.md)
+
 ## v0.49.1 (November 3, 2026)
 
 ### Clearer creation, accurate activity, better recovery

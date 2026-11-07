@@ -116,17 +116,25 @@ export function describeStudioWorkspaceCommandFailure(
   if (execution.startupError) {
     return `Workspace command could not start${execution.startupError.code ? ` (${execution.startupError.code})` : ''}: ${execution.startupError.message}`;
   }
-  if (execution.stderr.trim()) {
-    return execution.stderr;
-  }
-  if (execution.stdout.trim()) {
-    return execution.stdout;
-  }
+  const output = execution.stderr.trim() || execution.stdout.trim();
   if (execution.timedOut) {
-    return `Workspace command timed out after ${execution.timeoutMs}ms.`;
+    return [`Workspace command timed out after ${execution.timeoutMs}ms.`, output]
+      .filter(Boolean)
+      .join('\n');
   }
   if (execution.terminationSignal) {
-    return `Workspace command was terminated by ${execution.terminationSignal}.`;
+    return [
+      `Workspace command was terminated by ${execution.terminationSignal}.`,
+      output,
+      ['SIGSEGV', 'SIGABRT', 'SIGBUS', 'SIGILL'].includes(execution.terminationSignal)
+        ? 'This signal identifies the launched process outcome, not the failing child or root cause. Inspect the toolchain and environment; use an exact-approved terminal when a shell or environment comparison is needed. Do not infer the crashing dependency solely from the last stdout line.'
+        : undefined,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+  if (output) {
+    return output;
   }
   return execution.exitCode === null
     ? 'Workspace command was terminated before it returned an exit code.'
@@ -182,6 +190,7 @@ export const STUDIO_WORKSPACE_EXECUTABLE_FAMILIES = {
   native: ['make', 'cmake', 'ctest', 'ninja', 'meson', 'gcc', 'g++', 'clang', 'clang++'],
   functional: ['mix', 'elixir', 'erl', 'rebar3', 'clojure', 'lein'],
   build: ['bazel', 'bazelisk', 'buck2', 'just', 'task'],
+  analysis: ['shellcheck', 'hadolint'],
   infrastructure: ['docker', 'docker-compose', 'podman', 'terraform', 'kubectl', 'helm'],
   sourceControl: ['git'],
 } as const;
@@ -366,6 +375,9 @@ function assessCommandSemantics(
   let repositoryMetadataEffects = false;
   const effectScopes = new Set<StudioWorkspaceCommandEffectScope>();
   const observationScopes = new Set<StudioWorkspaceCommandEffectScope>();
+  if (['shellcheck', 'hadolint'].includes(executableName)) {
+    observationScopes.add(`command:${executableName}`);
+  }
   if (executableName === 'git') {
     const action = (args[0] ?? '').toLowerCase();
     observationScopes.add('git-repository');

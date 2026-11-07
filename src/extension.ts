@@ -1,4 +1,6 @@
 import { StudioInlineEdit } from './core/studioInlineEdit';
+import { StudioInlineCompletions } from './core/studioInlineCompletions';
+import { registerStudioPublicIntelligenceTools } from './core/studioPublicIntelligenceTools';
 import { registerStudioNativeDocuments } from './core/studioVSCodeDocuments';
 import { registerStudioNativeBinaryDocuments } from './core/studioNativeBinaryDocuments';
 import { registerStudioSubagentDocuments } from './core/studioSubagentDocuments';
@@ -631,8 +633,12 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(registerStudioNativeBinaryDocuments());
   configureBundledCliRuntimeStorage(context.globalStorageUri.fsPath);
   const logger = Logger.getInstance();
+  void runOptionalActivationLane(logger, 'public-intelligence-tools', async () => {
+    context.subscriptions.push(registerStudioPublicIntelligenceTools());
+  });
   void runOptionalActivationLane(logger, 'inline-edit', async () => {
     context.subscriptions.push(new StudioInlineEdit(context));
+    context.subscriptions.push(new StudioInlineCompletions(context));
   });
   if (context.extensionMode === vscode.ExtensionMode.Production) {
     try {

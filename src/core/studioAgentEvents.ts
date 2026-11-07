@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type {
   StudioActivityEventType,
   StudioActivityReceipt,
@@ -135,8 +136,19 @@ export type StudioAgentPersistedSession = {
   declinedProjectOnboarding?: { requestId: string; projectPath: string }[];
   /** User-authored path requests; host-private context, never inferred from tool observations. */
   userRequestedPaths?: string[];
+  readCoverage?: import('./studioReadCoverage.js').StudioReadCoverage;
+  /** Model-assessed request outcomes; retained when completion is still open. */
+  requirementReview?: import('./studioTaskCompletionReview.js').StudioTaskCompletionReview;
   /** Native receipts needed for final review after event compaction or Resume. */
   nativeTransactionIds?: string[];
+  /** Compact effects retained when raw tool events leave the in-memory window. */
+  sourceChangeReceipts?: Array<{
+    transactionId: string;
+    requestId?: string;
+    sequence: number;
+    state: string;
+    paths: string[];
+  }>;
   /** Immutable per-request policy derived from selected mode and model-classified intent. */
   executionPolicy?: AssistantExecutionPolicy;
   selectedModelId?: string;
@@ -245,6 +257,8 @@ export type StudioAgentPersistedSession = {
   completionObligations?: StudioAgentCompletionObligations;
   /** Model-maintained durable progress for multi-step autonomous work. */
   taskLedger?: StudioAgentTaskLedger;
+  /** Ownership operations remain distinguishable from requested source edits after compaction. */
+  projectOperations?: import('./studioProjectOperationReceipts.js').StudioProjectOperationReceipt[];
   /** Durable request-count telemetry; Resume starts a new bounded attempt. */
   budgetLedger?: StudioAgentBudgetLedger;
   createdAt: string;
@@ -268,7 +282,8 @@ export function createStudioAgentEvent<T>(input: {
   const timestamp = (input.now ?? (() => new Date()))().toISOString();
   return {
     schemaVersion: STUDIO_AGENT_EVENT_SCHEMA_VERSION,
-    id: `${input.sessionId}:${input.sequence}`,
+    // A new runtime can reuse the chat ID and restart its sequence at one.
+    id: `${input.sessionId}:${input.requestId ?? randomUUID()}:${input.sequence}`,
     sessionId: input.sessionId,
     sequence: input.sequence,
     timestamp,

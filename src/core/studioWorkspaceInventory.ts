@@ -12,6 +12,26 @@ import {
   studioRegisteredProjectPath,
 } from './studioInventoryScope.js';
 
+/** A cheap signature check at the requested source, never a recursive disk search. */
+async function inspectWorkspaiSignature(root: string) {
+  try {
+    const stat = await fs.lstat(path.join(root, '.workspai'));
+    return {
+      path: '.workspai',
+      status:
+        stat.isDirectory() && !stat.isSymbolicLink() ? ('present' as const) : ('invalid' as const),
+    };
+  } catch (error) {
+    return {
+      path: '.workspai',
+      status:
+        (error as NodeJS.ErrnoException).code === 'ENOENT'
+          ? ('absent' as const)
+          : ('unavailable' as const),
+    };
+  }
+}
+
 export async function inspectStudioWorkspaceInventory(workspacePath: string) {
   const availability = await inspectStudioWorkspaceAvailability(workspacePath);
   if (availability.status !== 'available') {
@@ -19,6 +39,8 @@ export async function inspectStudioWorkspaceInventory(workspacePath: string) {
       observedAt: new Date().toISOString(),
       workspace: { name: path.basename(workspacePath), path: workspacePath },
       availability,
+      workspaiSignature: { path: '.workspai', status: 'unavailable' as const },
+      onboardingAdvice: 'resolve-availability' as const,
       management: 'unknown' as const,
       projects: [],
       sources: [],
@@ -26,18 +48,32 @@ export async function inspectStudioWorkspaceInventory(workspacePath: string) {
       instruction: studioWorkspaceUnavailableMessage(availability),
     };
   }
-  const scope = await resolveStudioInventoryScope(workspacePath);
-  if (scope.resolution === 'unresolved') {
+  const workspaiSignature = await inspectWorkspaiSignature(workspacePath);
+  const scope =
+    workspaiSignature.status === 'invalid' || workspaiSignature.status === 'unavailable'
+      ? {
+          entryPath: workspacePath,
+          resolution: 'unresolved' as const,
+          error: 'The Workspai signature is not an accessible regular directory.',
+        }
+      : await resolveStudioInventoryScope(workspacePath);
+  if (
+    scope.resolution === 'unresolved' ||
+    workspaiSignature.status === 'invalid' ||
+    workspaiSignature.status === 'unavailable'
+  ) {
     return {
       observedAt: new Date().toISOString(),
       workspace: null,
       availability,
+      workspaiSignature,
+      onboardingAdvice: 'inspect-existing-metadata' as const,
       scope,
       management: 'unknown' as const,
       projects: [],
       sources: [],
       completeness: 'unresolved-ownership',
-      instruction: `${scope.error} Inspect workspai project workspace status --json or the canonical registry. No workspace was selected and no execution permissions changed. An unresolved binding is not an empty or unmanaged workspace.`,
+      instruction: `${scope.error ?? 'The Workspai signature is not an accessible regular directory.'} Inspect workspai project workspace status --json or the canonical registry. No workspace was selected and no execution permissions changed. An unresolved binding is not an empty or unmanaged workspace. Do not propose adoption again or treat signature presence as verified ownership. Ordinary source work can continue without changing Workspai metadata.`,
     };
   }
   workspacePath = scope.workspacePath ?? scope.entryPath;
@@ -104,6 +140,12 @@ export async function inspectStudioWorkspaceInventory(workspacePath: string) {
     observedAt: new Date().toISOString(),
     workspace: { name, path: workspacePath },
     availability,
+    workspaiSignature,
+    onboardingAdvice: managed
+      ? ('continue-managed' as const)
+      : workspaiSignature.status === 'absent'
+        ? ('offer-optional-adoption' as const)
+        : ('inspect-existing-metadata' as const),
     scope: {
       ...scope,
       kind: entryProject
@@ -125,6 +167,8 @@ export async function inspectStudioWorkspaceInventory(workspacePath: string) {
       'These are current registry entries read from disk, independent of cached health reports. Workspace ownership and project source location are distinct; adopted projects may be external. Observation does not switch the execution scope. For ordinary project edits stay in that project; use an exact-approved destination selection only when the task requires changing workspace scope. If no registry exists, discover relevant manifests instead of claiming there are no projects. ' +
       (managed
         ? 'This scope already has Workspai metadata; inspect its ownership before proposing adoption again.'
-        : 'If useful for the requested work, offer Workspai adopt/import as a nonblocking suggestion with concrete benefits. Do not adopt without user acceptance or exact adoption-command approval, block the original task, or repeat a declined offer. Respect an explicit choice to work independently.'),
+        : workspaiSignature.status === 'present'
+          ? 'A .workspai directory already exists at the selected source, but canonical ownership is unverified. Do not repeat an adoption offer merely because registration is unresolved. Inspect the existing metadata when relevant and continue ordinary source work without silently rewriting it.'
+          : 'For a create/change request, offer optional Workspai adoption once with concrete benefits before modifying this existing project, or after native scaffolding of an unsupported stack. An ordinary coding request does not authorize adoption or import. Continue the task while consent is undecided or declined; do not block the original task or repeat a declined offer. Respect an explicit choice to work independently.'),
   };
 }

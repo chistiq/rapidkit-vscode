@@ -15,7 +15,10 @@ import {
   type StudioAgentToolContext,
 } from '../core/studioAgentToolRegistry.js';
 import { StudioAgentSession, type StudioAgentModelAction } from '../core/studioAgentSession.js';
-import { collectAssistantUserPaths } from '../core/consumerPathRedaction.js';
+import {
+  collectAssistantUserPaths,
+  redactAssistantRequestForConsumer,
+} from '../core/consumerPathRedaction.js';
 import {
   configureStudioNativeStorage,
   createStudioNativeWorkspaceCapabilities,
@@ -96,7 +99,7 @@ async function registered(
 }
 function onboarding(
   f: Awaited<ReturnType<typeof fixture>>,
-  behavior: 'normal' | 'fail' | 'wrong-receipt' = 'normal'
+  behavior: 'normal' | 'fail' | 'wrong-receipt' | 'new-instructions' = 'normal'
 ) {
   const calls: Array<{ args: string[]; cwd: string }> = [];
   const tool = studioProjectOnboardingTool({
@@ -116,6 +119,11 @@ function onboarding(
       const source = args[0] === 'adopt' ? args[1] : path.join(workspace, name);
       if (args[0] === 'import') await fs.copy(args[1], source);
       await registered(workspace, source, name, args[0] === 'adopt' ? 'adopted' : 'imported');
+      if (behavior === 'new-instructions')
+        await fs.outputFile(
+          path.join(source, 'AGENTS.md'),
+          'New onboarding instructions: inspect the agent entry before source changes.'
+        );
       const receipt = {
         workspacePath: workspace,
         [args[0] === 'adopt' ? 'adoptedProject' : 'importedProject']: { path: source },
@@ -154,6 +162,41 @@ async function approve(
 }
 
 describe('External project resolution independent of Workspai membership', () => {
+  it('resolves a pasted shell prompt as an explicitly requested source without another selection approval', async () => {
+    const f = await fixture();
+    const paths = collectAssistantUserPaths('InWork/Reference/knowledge-catalog$ make dev-setup');
+    expect(paths).toEqual(['InWork/Reference/knowledge-catalog']);
+    expect(collectAssistantUserPaths('Edit "Reference/project$"')).toEqual(['Reference/project$']);
+    expect(collectAssistantUserPaths('Edit Reference/project$')).toEqual(['Reference/project$']);
+    expect(collectAssistantUserPaths('Edit Reference/project$ now')).toEqual([
+      'Reference/project$',
+    ]);
+    const absolutePrompt = `${f.source}$ make dev-setup`;
+    expect(
+      redactAssistantRequestForConsumer(absolutePrompt, collectAssistantUserPaths(absolutePrompt))
+    ).toBe(absolutePrompt);
+    const tool = studioProjectSelectionTool({ ideRoots: [f.ideRoot] });
+    const context = { ...f.context, userRequestedPaths: paths };
+    expect((await tool.authorize!({ projectPath: paths[0] }, context)).risk).toBe('read');
+    const result = await tool.execute({ projectPath: paths[0] }, context);
+    expect(result.output).toMatchObject({
+      inventory: { management: 'unmanaged' },
+      onboarding: {
+        optional: true,
+        toolName: 'onboard-project',
+        input: { operation: 'adopt', offer: true },
+      },
+    });
+    expect(await fs.readdir(f.source)).toEqual(['source.mjs']);
+    const declined = await tool.execute(
+      { projectPath: paths[0] },
+      {
+        ...context,
+        declinedProjectOnboarding: [f.source],
+      }
+    );
+    expect(declined.output).not.toHaveProperty('onboarding');
+  });
   it('captures genuine relative project locators, including quoted spaces, without capturing URLs', () => {
     expect(
       collectAssistantUserPaths(
@@ -349,6 +392,68 @@ describe('External project resolution independent of Workspai membership', () =>
 });
 
 describe('Optional exact-approved adoption and import', () => {
+  it('returns instructions created by onboarding instead of relying on instruction reads from before adoption', async () => {
+    const f = await fixture();
+    const { tool } = onboarding(f, 'new-instructions');
+    const context = { ...f.context, workspacePath: f.source };
+    const result = await tool.execute(
+      { operation: 'adopt' },
+      await approve(tool, { operation: 'adopt' }, context)
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        refreshedInstructions: { ok: true },
+        nextReads: [],
+      },
+    });
+    expect(JSON.stringify(result.output)).toContain('New onboarding instructions');
+    expect(JSON.stringify(result.output)).not.toContain('run.started');
+    expect(
+      (result.output as { commands: object[] }).commands.every((command) => !('stdout' in command))
+    ).toBe(true);
+  });
+  it('continues the refreshed instruction page instead of requesting the same prefix after adoption', async () => {
+    const f = await fixture();
+    await fs.outputFile(
+      path.join(f.source, '.github/copilot-instructions.md'),
+      'Repository instructions. '.repeat(400)
+    );
+    const { tool } = onboarding(f, 'new-instructions');
+    const context = { ...f.context, workspacePath: f.source };
+    const raw = { operation: 'adopt' };
+    const result = await tool.execute(raw, await approve(tool, raw, context));
+    const output = result.output as {
+      refreshedInstructions: { output: { nextReads: unknown[] } };
+      nextReads: Array<{ input: { document: string; offset: number } }>;
+    };
+    expect(output.nextReads).toEqual(output.refreshedInstructions.output.nextReads);
+    expect(output.nextReads).toHaveLength(1);
+    expect(output.nextReads[0].input.document).toBe('workspace:.github/copilot-instructions.md');
+    expect(output.nextReads[0].input.offset).toBeGreaterThan(0);
+  });
+  it('suppresses a repeated optional offer for existing metadata without claiming the project is registered', async () => {
+    const f = await fixture();
+    await fs.ensureDir(path.join(f.source, '.workspai'));
+    const { tool, calls } = onboarding(f);
+    const context = { ...f.context, workspacePath: f.source };
+    expect(await tool.authorize!({ operation: 'adopt', offer: true }, context)).toEqual({
+      risk: 'read',
+    });
+    expect(await tool.execute({ operation: 'adopt', offer: true }, context)).toMatchObject({
+      ok: true,
+      changed: false,
+      output: { status: 'metadata-present' },
+    });
+    const select = studioProjectSelectionTool({ ideRoots: [f.ideRoot] });
+    const selection = await select.execute(
+      { projectPath: f.source },
+      { ...context, userRequestedPaths: [f.source] }
+    );
+    expect(selection.output).not.toHaveProperty('onboarding');
+    expect(calls).toEqual([]);
+    expect(await fs.readdir(path.join(f.source, '.workspai'))).toEqual([]);
+  });
   it('creates the default workspace, adopts in place, and verifies actual canonical membership', async () => {
     const f = await fixture();
     const { tool, calls } = onboarding(f);

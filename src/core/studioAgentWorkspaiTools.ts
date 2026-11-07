@@ -29,6 +29,7 @@ import type {
   StudioCodeIntelligenceResult,
 } from './studioCodeIntelligence.js';
 import { fetchStudioPublicWeb } from './studioPublicWebFetch.js';
+import { studioCodeContextTool } from './studioCodeContextTool.js';
 
 export type StudioAgentSearchMatch = {
   path: string;
@@ -43,6 +44,9 @@ export type StudioAgentTextEdit = {
 };
 
 export interface StudioAgentWorkspaiToolHost {
+  prepareSymbolRename?(
+    input: import('./studioSymbolRename.js').StudioSymbolRenameRequest
+  ): Promise<FilePatch[]>;
   inspectCliCommands?(input: {
     workspacePath: string;
     signal: AbortSignal;
@@ -97,6 +101,7 @@ export interface StudioAgentWorkspaiToolHost {
     query?: string;
     workspacePath: string;
     projectPath?: string;
+    signal?: AbortSignal;
   }): Promise<StudioAgentToolResult<StudioCodeIntelligenceResult>>;
   inspectChanges(input: {
     paths?: string[];
@@ -323,6 +328,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
   register(studioWorkspaceImageTool);
   register(studioAgentInstructionsTool);
   register(studioProjectDocsTool);
+  register(studioCodeContextTool(input.host));
 
   register({
     name: 'inspect-cli-commands',
@@ -494,12 +500,14 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
     scopeIndependent: true,
     title: 'Inspect current workspace and project inventory',
     description:
-      'Read the current workspace name and complete registered project list directly from local contracts/registries. Prefer this over health reports for project names and workspace identity.',
+      'Quickly inspect the selected project/source .workspai signature, canonical ownership, current workspace name and registered projects. Use once at the start of a create/change request, or reuse the current select-project inventory. This is a local metadata check, not a recursive source search. Missing metadata permits an optional adoption offer; existing metadata is not proof of valid ownership. Prefer this over health reports for project names and workspace identity.',
     inputSchema: { type: 'object', additionalProperties: false },
     activity: 'inspect',
     risk: 'read',
     async execute(_raw, context) {
-      const output = await inspectStudioWorkspaceInventory(context.workspacePath);
+      const output = await inspectStudioWorkspaceInventory(
+        context.projectPath ?? context.workspacePath
+      );
       return {
         ok: output.availability.status === 'available',
         output,
@@ -1061,6 +1069,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
         }
         return input.host.codeIntelligence!({
           operation,
+          signal: context.signal,
           ...(typeof value.path === 'string' ? { path: value.path.trim() } : {}),
           ...(typeof value.line === 'number' ? { line: value.line } : {}),
           ...(typeof value.column === 'number' ? { column: value.column } : {}),
@@ -1068,6 +1077,116 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
           workspacePath: context.workspacePath,
           ...optionalScope(context),
         });
+      },
+    });
+  }
+
+  if (input.host.prepareSymbolRename) {
+    register({
+      name: 'rename-workspace-symbol',
+      title: 'Rename symbol with language intelligence',
+      description:
+        'Ask the installed language provider for textual symbol rename edits across the selected source scope, then apply them through the existing SHA-protected transaction, checkpoint and Undo path. This applies text edits only: file operations and notebook operations are not applied. All proposed text files must remain in scope; an unavailable provider or stale source applies nothing. Inspect affected references and run relevant checks afterwards; this is not proof of a complete refactor.',
+      activity: 'change',
+      risk: 'guarded-write',
+      inputSchema: {
+        type: 'object',
+        required: ['path', 'line', 'column', 'newName'],
+        additionalProperties: false,
+        properties: {
+          path: { type: 'string', minLength: 1 },
+          line: { type: 'integer', minimum: 1 },
+          column: { type: 'integer', minimum: 1 },
+          newName: { type: 'string', minLength: 1, maxLength: 200 },
+        },
+      },
+      async execute(raw, context) {
+        const value = asRecord(raw);
+        const patches = await input.host.prepareSymbolRename!({
+          path: value.path as string,
+          line: value.line as number,
+          column: value.column as number,
+          newName: value.newName as string,
+          workspacePath: context.workspacePath,
+          ...optionalScope(context),
+          signal: context.signal,
+        });
+        if (!patches.length) {
+          return {
+            ok: true,
+            changed: false,
+            output: { summary: 'The language rename produced no source changes.' },
+          };
+        }
+        // Populate the same inspected-source ledger as ordinary edits, then prove every file is
+        // still exactly the provider's base. Do not return file bodies through model context.
+        for (let offset = 0; offset < patches.length; offset += 16) {
+          if (context.signal.aborted) {
+            return {
+              ok: false,
+              changed: false,
+              error: 'Language rename was cancelled before application.',
+            };
+          }
+          const batch = patches.slice(offset, offset + 16);
+          const inspection = await input.host.inspect({
+            paths: batch.map((patch) => patch.relativePath),
+            kind: 'source',
+            lineStart: 1,
+            lineEnd: 1,
+            workspacePath: context.workspacePath,
+            ...optionalScope(context),
+          });
+          const observations = Array.isArray(inspection.output)
+            ? (inspection.output as Array<{ path?: string; sha256?: string }>)
+            : [];
+          if (
+            !inspection.ok ||
+            batch.some(
+              (patch) =>
+                !observations.some(
+                  (observation) =>
+                    observation.path === patch.relativePath &&
+                    observation.sha256 === patch.baseSha256
+                )
+            )
+          ) {
+            return {
+              ok: false,
+              changed: false,
+              error:
+                'Rename sources changed or could not be inspected. No rename was applied; refresh language intelligence.',
+            };
+          }
+        }
+        if (context.signal.aborted) {
+          return {
+            ok: false,
+            changed: false,
+            error: 'Language rename was cancelled before application.',
+          };
+        }
+        const applied = await input.host.applyPatches({
+          sessionId: context.sessionId,
+          requestId: context.requestId,
+          patches,
+          transactionId: context.toolCallId,
+          workspacePath: context.workspacePath,
+          ...optionalScope(context),
+          reportProgress: context.reportProgress,
+        });
+        return {
+          ...applied,
+          output: {
+            ...asRecord(applied.output),
+            rename: {
+              kind: 'language-provider-text-edits',
+              resourceOperationsApplied: false,
+              instruction:
+                'Inspect affected references and run project checks. Textual rename application alone does not verify the full requested refactor.',
+            },
+          },
+        };
       },
     });
   }
@@ -1252,6 +1371,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
               }
               result = await input.host.codeIntelligence({
                 operation: operation.operation as StudioCodeIntelligenceOperation,
+                signal: context.signal,
                 ...(typeof operation.path === 'string' ? { path: operation.path.trim() } : {}),
                 ...(typeof operation.line === 'number' ? { line: operation.line } : {}),
                 ...(typeof operation.column === 'number' ? { column: operation.column } : {}),

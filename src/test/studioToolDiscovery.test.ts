@@ -76,6 +76,75 @@ function context(tools: StudioAgentToolRegistry): StudioAgentModelContext {
 }
 
 describe('Portable Studio capability discovery', () => {
+  it('loads and executes a deferred capability in efficient Agent mode and retains the final coverage review', async () => {
+    const tools = registry();
+    let turn = 0;
+    let runtime: StudioAgentSession;
+    const model = new ContractStudioAgentModelAdapter(
+      'Inspect notebook status',
+      async (_prompt, request) => {
+        expect(request.tools.some((tool) => tool.name === 'search-studio-tools')).toBe(true);
+        if (turn++ === 0)
+          return { toolName: 'search-studio-tools', input: { names: ['inspect-notebook'] } };
+        expect(request.tools.some((tool) => tool.name === 'inspect-notebook')).toBe(true);
+        if (turn === 2) return { toolName: 'inspect-notebook', input: {} };
+        const receipt = runtime
+          .snapshot()
+          .events.find(
+            (event) => event.type === 'tool.completed' && event.data.toolName === 'inspect-notebook'
+          )!;
+        return {
+          toolName: STUDIO_AGENT_COMPLETE_TOOL_NAME,
+          input: {
+            summary: 'Notebook status inspected.',
+            review: [
+              {
+                requirement: 'Inspect notebook status',
+                status: 'verified',
+                evidenceSequences: [receipt.sequence],
+                detail: 'Read the notebook through its available adapter.',
+              },
+            ],
+          },
+        };
+      }
+    )
+      .enableToolDeferral()
+      .enableEfficientContext();
+    runtime = new StudioAgentSession(
+      {
+        workspacePath: '/workspace',
+        cardId: 'assistant:agent',
+        assistantMode: 'agent',
+        executionAuthority: 'workspace',
+        permissionLevel: 'default',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: false,
+      },
+      model,
+      tools,
+      { save: async () => {} }
+    );
+    const result = await runtime.run('Inspect notebook status');
+    expect(result.status).toBe('completed');
+    expect(tools.get('inspect-notebook')!.execute).toHaveBeenCalledOnce();
+    expect(
+      result.events.find((event) => event.type === 'session.completed')?.data.requirementReview
+    ).toEqual([
+      expect.objectContaining({ requirement: 'Inspect notebook status', status: 'verified' }),
+    ]);
+  });
+  it('keeps the consent offer directly callable alongside project selection in a large catalog', () => {
+    const tools = registry();
+    tools.register(capability('select-project'));
+    tools.register(capability('onboard-project'));
+    const selected = new StudioToolDeferral().select(context(tools));
+    expect(selected.tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(['select-project', 'onboard-project'])
+    );
+    expect(selected.deferredNames).not.toContain('onboard-project');
+    expect(tools.get('onboard-project')!.execute).not.toHaveBeenCalled();
+  });
   it('pages the complete live catalog without executing capabilities or repeating their schemas', async () => {
     const tools = registry();
     const search = tools.get('search-studio-tools')!;

@@ -19,6 +19,56 @@ afterEach(async () => {
 });
 
 describe('Studio workspace command capability policy', () => {
+  it.each(['shellcheck', 'hadolint'])(
+    'classifies %s as analysis without inventing an external-effect obligation',
+    (executable) => {
+      for (const purpose of ['test', 'inspect', 'diagnose'] as const) {
+        const plan = resolveStudioWorkspaceCommandPlan({
+          workspacePath: '/workspace',
+          request: { executable, args: ['scripts/setup.sh'], purpose },
+        });
+        expect(plan).toMatchObject({
+          externalSideEffects: false,
+          repositoryMetadataEffects: false,
+          unclassifiedCommand: false,
+          mutatesSource: false,
+          effectScopes: [],
+          observationScopes: [`command:${executable}`],
+        });
+      }
+      const writes = resolveStudioWorkspaceCommandPlan({
+        workspacePath: '/workspace',
+        request: {
+          executable,
+          args: ['scripts/setup.sh'],
+          purpose: 'test',
+          allowSourceChanges: true,
+        },
+      });
+      expect(writes).toMatchObject({ mutatesSource: true, requiresExplicitApproval: true });
+    }
+  );
+  it.each([
+    { timedOut: false, terminationSignal: 'SIGSEGV', expected: 'terminated by SIGSEGV' },
+    { timedOut: true, terminationSignal: 'SIGTERM', expected: 'timed out after' },
+  ])(
+    'preserves the process failure despite partial stdout: $expected',
+    ({ expected, ...failure }) => {
+      const plan = resolveStudioWorkspaceCommandPlan({
+        workspacePath: '/workspace',
+        request: { executable: 'make', args: ['dev-setup'], purpose: 'build' },
+      });
+      const message = describeStudioWorkspaceCommandFailure({
+        ...plan,
+        exitCode: null,
+        stdout: 'poetry install\n',
+        stderr: '',
+        ...failure,
+      });
+      expect(message).toContain(expected);
+      expect(message).toContain('poetry install');
+    }
+  );
   it('reports executable startup failure separately from cancellation and refuses a missing cwd', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-startup-'));
     roots.push(root);

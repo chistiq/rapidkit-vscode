@@ -106,6 +106,130 @@ function closedCliRepairResult(input?: {
 }
 
 describe('Studio Agent session runtime', () => {
+  it('keeps three requests in the same chat distinct when each runtime restarts its sequence', async () => {
+    const snapshots: StudioAgentPersistedSession[] = [];
+    for (let index = 0; index < 3; index++) {
+      const runtime = new StudioAgentSession(
+        {
+          id: 'same-chat',
+          workspacePath: '/workspace',
+          cardId: 'assistant:ask',
+          assistantMode: 'ask',
+          workspaceTrusted: true,
+          requiresVerifiedCompletion: false,
+          now: () => new Date('2026-11-06T00:00:00Z'),
+        },
+        sequenceModel([{ type: 'complete', summary: 'Hello' }]),
+        new StudioAgentToolRegistry(),
+        new MemoryStore()
+      );
+      snapshots.push(await runtime.run('hello'));
+    }
+    const events = snapshots.flatMap((state) => state.events);
+    expect(new Set(events.map((event) => event.id)).size).toBe(events.length);
+    for (const state of snapshots) {
+      const request = state.events.find((event) => event.type === 'request.started')!;
+      expect(
+        state.events
+          .filter((event) => event.type === 'session.status')
+          .every((event) => event.requestId === request.requestId)
+      ).toBe(true);
+    }
+  });
+  it('retains compact mutation effects separately from the disposable raw event window', async () => {
+    const registry = new StudioAgentToolRegistry();
+    registry.register({
+      name: 'apply-workspace-edits',
+      title: 'Edit source',
+      description: 'Edit source',
+      inputSchema: { type: 'object' },
+      activity: 'change',
+      risk: 'safe-write',
+      execute: async () => ({
+        ok: true,
+        changed: true,
+        output: {
+          transaction: { transactionId: 'native-owned', state: 'applied' },
+          changedPaths: ['service.ts'],
+        },
+      }),
+    });
+    const store = new MemoryStore();
+    const runtime = new StudioAgentSession(
+      {
+        workspacePath: '/workspace',
+        cardId: 'assistant:agent',
+        assistantMode: 'agent',
+        executionAuthority: 'workspace',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: false,
+      },
+      sequenceModel([
+        { type: 'tool', toolName: 'apply-workspace-edits', input: {} },
+        {
+          type: 'report',
+          summary: 'Changes retained; verification remains open.',
+          nextSteps: ['Run checks'],
+        },
+      ]),
+      registry,
+      store
+    );
+    const state = await runtime.run('Update service');
+    expect(state.sourceChangeReceipts).toEqual([
+      expect.objectContaining({
+        transactionId: 'native-owned',
+        state: 'applied',
+        paths: ['service.ts'],
+        requestId: state.events.find((event) => event.type === 'request.started')!.requestId,
+      }),
+    ]);
+    expect(store.saved.at(-1)?.sourceChangeReceipts).toEqual(state.sourceChangeReceipts);
+  });
+  it('retains correlated stream progress without inventing a tool execution and ignores late progress after Stop', async () => {
+    let notify!: NonNullable<
+      import('../core/studioAgentSession.js').StudioAgentModelContext['reportProgress']
+    >;
+    const session = new StudioAgentSession(
+      {
+        id: 'stream-progress',
+        workspacePath: '/workspace',
+        cardId: 'assistant:agent',
+        assistantMode: 'agent',
+        workspaceTrusted: true,
+        requiresVerifiedCompletion: false,
+      },
+      {
+        next: async (context) => {
+          notify = context.reportProgress!;
+          await notify({
+            receivedBytes: 50,
+            textCharacters: 0,
+            argumentCharacters: 10,
+            toolCalls: 1,
+          });
+          session.cancel();
+          return { type: 'complete', summary: 'Late response' };
+        },
+      },
+      new StudioAgentToolRegistry(),
+      new MemoryStore()
+    );
+    const result = await session.run('Explain this source');
+    expect(result.status).toBe('cancelled');
+    const progress = result.events.filter((event) => event.type === 'model.request.progress');
+    expect(progress).toHaveLength(1);
+    expect(progress[0].data).toMatchObject({
+      receivedBytes: 50,
+      toolCalls: 1,
+      decisionId: expect.any(String),
+    });
+    expect(result.events.some((event) => event.type === 'tool.started')).toBe(false);
+    await notify({ receivedBytes: 100, textCharacters: 10, argumentCharacters: 10, toolCalls: 1 });
+    expect(
+      session.snapshot().events.filter((event) => event.type === 'model.request.progress')
+    ).toHaveLength(1);
+  });
   it('does not start the provider when Stop arrives while the start receipt is being saved', async () => {
     let calls = 0;
     const session = new StudioAgentSession(

@@ -747,16 +747,87 @@ export async function reviewStudioNativeCheckpoint(input: {
   });
 }
 
+/** Collapse only a continuous, request-owned chain; never absorb intervening user edits. */
+async function summarizeNativeReceiptFiles(receipt: StudioNativeTransaction) {
+  const history: StudioNativeTransaction[] = [];
+  try {
+    const ids =
+      receipt.sessionId && receipt.requestId
+        ? await checkpointIds(checkpointIndexPath(receipt.sessionId, receipt.requestId))
+        : [];
+    const end = ids.indexOf(receipt.transactionId);
+    if (receipt.state === 'applied' && end > 0 && end < 100) {
+      for (const id of ids.slice(0, end)) {
+        const prior = await transactionInRoot(receipt.workspacePath, id);
+        if (
+          prior?.state === 'applied' &&
+          prior.sessionId === receipt.sessionId &&
+          prior.requestId === receipt.requestId
+        ) {
+          history.push(prior);
+        }
+      }
+    }
+  } catch {
+    // Counts are presentation metadata. A damaged older receipt must not turn
+    // this already-persisted mutation into a misleading tool failure.
+    return receipt.files.map((file) => summarizeFile(file, receipt.workspacePath));
+  }
+  return receipt.files.map((file) => {
+    const summary = summarizeFile(file, receipt.workspacePath);
+    if (file.encoding || file.checkpointOnly || !history.length) {
+      return summary;
+    }
+    const chain = history.flatMap((prior) =>
+      prior.files
+        .filter((entry) => entry.relativePath === file.relativePath)
+        .map((entry) => ({ entry, id: prior.transactionId }))
+    );
+    if (!chain.length) {
+      return summary;
+    }
+    const all = [...chain.map(({ entry }) => entry), file];
+    if (
+      all.some(
+        (entry, index) =>
+          entry.encoding ||
+          entry.checkpointOnly ||
+          (index > 0 && all[index - 1].after !== entry.before)
+      )
+    ) {
+      return summary;
+    }
+    const net = summarizeStudioTextChange({ ...file, before: all[0].before });
+    if (net.addedLines === undefined || net.removedLines === undefined) {
+      return summary;
+    }
+    return {
+      ...summary,
+      netChange: {
+        transactionIds: [...chain.map(({ id }) => id), receipt.transactionId],
+        addedLines: net.addedLines,
+        removedLines: net.removedLines,
+        status: net.status,
+        unchanged: all[0].before === file.after,
+      },
+    };
+  });
+}
+
 export async function readStudioNativeFileChanges(root: string, id: string) {
   const receipt = await readStudioNativeTransaction(root, id);
+  const summaries = await summarizeNativeReceiptFiles(receipt);
   return Promise.all(
-    receipt.files.map(async (file) => {
+    receipt.files.map(async (file, index) => {
       const current = await currentContent(
         await safeTarget(root, file.relativePath, file.checkpointOnly),
         file.encoding
       );
       const expected = receipt.state === 'rolled-back' ? file.before : file.after;
-      return summarizeFile({ ...file, stale: current !== expected }, root);
+      return {
+        ...summaries[index],
+        ...summarizeFile({ ...file, stale: current !== expected }, root),
+      };
     })
   );
 }
@@ -984,6 +1055,12 @@ export function createStudioNativeWorkspaceCapabilities(input: {
         nativeTransactionIds: ownTransactions,
         nativeDiff: nativeDiff.slice(0, 24_000),
         nativeDiffTruncated: nativeDiff.length > 24_000,
+        requestChangeReview: {
+          ownedPaths: [...files.keys()],
+          requestedPaths: request.paths ?? null,
+          attribution:
+            "Native diffs cover this request's still-applied transactions. Other Git changes are observations, not attributed effects. Ownership/grounding operations have separate receipts. Preserve unrelated changes; investigate them only if they affect the requested outcome.",
+        },
         authority: 'workspace-evidence',
       },
     };
@@ -1085,7 +1162,7 @@ export function createStudioNativeWorkspaceCapabilities(input: {
             .filter((file) => file.before !== file.after)
             .map((file) => file.relativePath),
           patches: patches.map((patch) => ({ ...patch, status: 'applied' })),
-          fileChanges: files.map((file) => summarizeFile(file, request.workspacePath)),
+          fileChanges: await summarizeNativeReceiptFiles(receipt),
           verificationAuthority: 'workspace-evidence',
           instruction:
             'Changes are applied, not yet verified. Run relevant native checks, inspect the final changes, then verify-blocker for workspace diagnostics. No CLI Goal or canonical closure is implied.',
@@ -1190,7 +1267,7 @@ export function createStudioNativeWorkspaceCapabilities(input: {
         transactionId: receipt.transactionId,
         state: receipt.state,
       },
-      fileChanges: files.map((file) => summarizeFile(file, receipt.workspacePath)),
+      fileChanges: await summarizeNativeReceiptFiles(receipt),
     };
   };
   return {
@@ -1302,7 +1379,7 @@ export function createStudioNativeWorkspaceCapabilities(input: {
               state: 'applied',
             },
             changedPaths: files.map((file) => file.relativePath),
-            fileChanges: files.map((file) => summarizeFile(file, request.workspacePath)),
+            fileChanges: await summarizeNativeReceiptFiles(receipt),
             instruction:
               'Inspect save-hook changes and run relevant disk-based checks. Saving is not verification.',
           },

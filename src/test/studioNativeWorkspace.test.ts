@@ -63,6 +63,58 @@ async function fixture() {
   return { root, workspacePath, native, request, diagnostics, inspectedSource };
 }
 describe('Workspace-native Assistant execution', () => {
+  it('provides replayable net counts for repeated edits without absorbing concurrent user changes', async () => {
+    const { workspacePath, native, request, inspectedSource } = await fixture();
+    const edit = async (text: string) => {
+      const before = await fs.readFile(path.join(workspacePath, 'service.ts'), 'utf8');
+      inspectedSource.set('service.ts', crypto.createHash('sha256').update(before).digest('hex'));
+      return native.applyPatches({
+        ...request,
+        sessionId: 'chat',
+        requestId: 'request',
+        patches: [{ ...request.patches[0], patchedContent: text }],
+      });
+    };
+    const first = await edit('middle\n');
+    const second = await edit('final\nextra\n');
+    const firstId = (first.output as { transactionId: string }).transactionId;
+    const secondId = (second.output as { transactionId: string }).transactionId;
+    const files = (second.output as { fileChanges: unknown[] }).fileChanges;
+    expect(files[0]).toMatchObject({
+      addedLines: 2,
+      removedLines: 1,
+      netChange: {
+        transactionIds: [firstId, secondId],
+        addedLines: 2,
+        removedLines: 1,
+        status: 'modified',
+        unchanged: false,
+      },
+    });
+    expect((await readStudioNativeFileChanges(workspacePath, secondId))[0]).toMatchObject({
+      netChange: { addedLines: 2, removedLines: 1 },
+    });
+    await fs.writeFile(path.join(workspacePath, 'service.ts'), 'user changed it\n');
+    const third = await edit('preserved separately\n');
+    expect(
+      (third.output as { fileChanges: Array<{ netChange?: unknown }> }).fileChanges[0].netChange
+    ).toBeUndefined();
+  });
+  it('recognizes edits that return a file to its request baseline', async () => {
+    const { workspacePath, native, request, inspectedSource } = await fixture();
+    await native.applyPatches({ ...request, sessionId: 'chat', requestId: 'request' });
+    inspectedSource.set('service.ts', crypto.createHash('sha256').update('after\n').digest('hex'));
+    const result = await native.applyPatches({
+      ...request,
+      sessionId: 'chat',
+      requestId: 'request',
+      patches: [{ ...request.patches[0], patchedContent: 'before\n' }],
+    });
+    expect((result.output as { fileChanges: unknown[] }).fileChanges[0]).toMatchObject({
+      netChange: { addedLines: 0, removedLines: 0, unchanged: true },
+    });
+    expect(await fs.readFile(path.join(workspacePath, 'service.ts'), 'utf8')).toBe('before\n');
+  });
   it('restores an entire request from the earliest originals, preserving unrelated user changes', async () => {
     const { workspacePath, native, request, inspectedSource } = await fixture();
     const first = await native.applyPatches({

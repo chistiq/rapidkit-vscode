@@ -1,6 +1,6 @@
 # Workspai UI surface guide
 
-> Extension 0.49.1 · Workspai CLI 0.80.0+
+> Extension 0.50.0 · Workspai CLI 0.80.0+
 
 This guide documents the current user-facing surfaces. It is a review aid for
 maintainers; it is not a second command reference.
@@ -57,7 +57,7 @@ Create supports two equivalent paths:
 - **Manual** — choose create/adopt/import and provide explicit values.
 
 Both paths use the canonical create-planner contract. Current project kinds are
-backend, frontend, desktop, and extension. The visible kit list is derived from
+backend, frontend, desktop, AI agent, AI gateway, and extension. The visible kit list is derived from
 the contract's available entries; planned entries are not presented as runnable.
 
 Create actions:
@@ -76,7 +76,14 @@ The Assistant owns questions, planning, and Studio repair sessions.
 Ask   → inspect and explain
 Plan  → inspect and prepare a grounded plan
 Agent → inspect → change → focused checks → governed evidence → verify
+Goal  → pursue a defined outcome with explicit checks and durable progress
 ```
+
+Workspace Agent retains multi-part outcomes, observed read coverage and exact
+read continuation locations. Repeated-read guidance does not disable tools or
+force automatic completion. Unresolved completion reviews remain feedback for
+the active task, while the final response distinguishes recorded changes,
+successful checks and work still unverified.
 
 A plus/new-chat action and scope selector must create a session with the same
 workspace/project scope shown in the composer. A project-scoped label must not

@@ -39,6 +39,8 @@ export type StudioSourceCheckpointFailure = {
     | 'source-unreadable';
   limit?: number;
   observed?: number;
+  /** Relative to the source root; never expose a machine-specific absolute path. */
+  relativePath?: string;
 };
 
 type CheckpointDiagnostic = (failure: StudioSourceCheckpointFailure) => void;
@@ -54,6 +56,9 @@ const EXCLUDED_DIRECTORY_NAMES = new Set([
   '.output',
   '.turbo',
   '.cache',
+  '.mypy_cache',
+  '.pytest_cache',
+  '.ruff_cache',
   '.venv',
   'venv',
   'node_modules',
@@ -189,7 +194,12 @@ export async function captureStudioWorkspaceSourceSnapshot(input: {
     ) {
       input.onUnavailable?.(
         stat.size > MAX_SOURCE_FILE_BYTES
-          ? { code: 'file-size-limit', limit: MAX_SOURCE_FILE_BYTES, observed: stat.size }
+          ? {
+              code: 'file-size-limit',
+              limit: MAX_SOURCE_FILE_BYTES,
+              observed: stat.size,
+              relativePath,
+            }
           : totalBytes > MAX_SOURCE_TOTAL_BYTES
             ? { code: 'total-size-limit', limit: MAX_SOURCE_TOTAL_BYTES, observed: totalBytes }
             : { code: 'source-unreadable' }

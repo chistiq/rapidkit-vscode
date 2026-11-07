@@ -120,6 +120,13 @@ export class StudioHostToolOutputStore {
     owner: string,
     ref: string
   ): Promise<{ text: string; totalChars: number; images?: AIImageContent[] }> {
+    // Expiry deletes durable bytes, so serialize it with replacement and chat deletion.
+    return this.serialize(() => this.readRetained(owner, ref));
+  }
+  private async readRetained(
+    owner: string,
+    ref: string
+  ): Promise<{ text: string; totalChars: number; images?: AIImageContent[] }> {
     await assertStudioSessionRetained(this.storageRoot, owner);
     const file = this.file(owner, ref);
     if (!(await this.rootExists())) {
@@ -145,10 +152,13 @@ export class StudioHostToolOutputStore {
       !Number.isSafeInteger(record.totalChars) ||
       record.totalChars < record.text.length ||
       !Number.isFinite(record.createdAt) ||
-      Date.now() - record.createdAt > MAX_AGE ||
       this.digest(content) !== digest
     ) {
       throw new Error('Output integrity, ownership or retention check failed.');
+    }
+    if (Date.now() - record.createdAt > MAX_AGE) {
+      await fs.remove(file);
+      throw new Error('Output retention check failed; the expired record was removed.');
     }
     const images = parseAttachedImages(record.images);
     return {

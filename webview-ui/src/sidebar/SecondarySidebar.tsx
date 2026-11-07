@@ -72,6 +72,7 @@ import {
   enrichSidebarStudioActionProgressWithHandoff,
   isCanonicalStudioRepairDecision,
   parseSidebarStudioActionProgress,
+  parseSidebarStudioFileChanges,
   studioApprovalCommandLabel,
   studioAgentToolProgressCopy,
   studioAgentObservationSummary,
@@ -291,45 +292,7 @@ function advisorSuggestions(scope: SidebarScope): string[] {
 }
 
 function parseSidebarPatchReviewItems(value: unknown): SidebarPatchReviewItem[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
-    .map((entry) => entry as Record<string, unknown>)
-    .filter((entry) => typeof entry.relativePath === 'string')
-    .map((entry) => ({
-      relativePath: entry.relativePath as string,
-      status: typeof entry.status === 'string' ? entry.status : 'pending',
-      isNewFile: entry.isNewFile === true,
-      binary: entry.binary === true,
-      stale: entry.stale === true,
-      failReason: typeof entry.failReason === 'string' ? entry.failReason : undefined,
-      ...(typeof entry.addedLines === 'number' &&
-      Number.isFinite(entry.addedLines) &&
-      entry.addedLines >= 0
-        ? { addedLines: entry.addedLines }
-        : {}),
-      ...(typeof entry.removedLines === 'number' &&
-      Number.isFinite(entry.removedLines) &&
-      entry.removedLines >= 0
-        ? { removedLines: entry.removedLines }
-        : {}),
-      diffLines: Array.isArray(entry.diffLines)
-        ? entry.diffLines
-            .filter((line) => line && typeof line === 'object' && !Array.isArray(line))
-            .map((line) => line as Record<string, unknown>)
-            .filter(
-              (line) =>
-                (line.type === 'added' || line.type === 'removed' || line.type === 'unchanged') &&
-                typeof line.content === 'string'
-            )
-            .map((line) => ({
-              type: line.type as 'added' | 'removed' | 'unchanged',
-              content: line.content as string,
-            }))
-        : [],
-    }));
+  return parseSidebarStudioFileChanges(value, 'pending') ?? [];
 }
 
 function parseSidebarShipLoopCards(value: unknown): Array<{
@@ -873,14 +836,20 @@ export function SecondarySidebar() {
         const recordToolProgress = (progress: SidebarStudioActionProgressView) => {
           if (replay) {
             if (eventSessionId) {
-              studio.recordActivity(eventSessionId,
+              studio.recordActivity(
+                eventSessionId,
                 progress.status === 'running'
                   ? {
-                      ...progress, status: 'review', phase: 'historical-process',
+                      ...progress,
+                      status: 'review',
+                      phase: 'historical-process',
                       title: 'Recorded process start',
-                      summary: 'This historical event recorded a process start, not its current state or successful completion.',
+                      summary:
+                        'This historical event recorded a process start, not its current state or successful completion.',
                     }
-                  : progress, true);
+                  : progress,
+                true
+              );
             }
           } else {
             startStudioActionProgress(progress);
@@ -889,37 +858,78 @@ export function SecondarySidebar() {
         if (replay && isStudioActivityReceipt(eventData.receiptReplay)) {
           const receipt = eventData.receiptReplay;
           if (receipt.sessionId === eventSessionId) {
-            const output = eventData.output && typeof eventData.output === 'object'
-              ? eventData.output as Record<string, unknown> : {};
+            const output =
+              eventData.output && typeof eventData.output === 'object'
+                ? (eventData.output as Record<string, unknown>)
+                : {};
             const fileChanges = parseSidebarPatchReviewItems(output.fileChanges);
-            studio.recordActivity(receipt.sessionId, {
-              ...studioReceiptProgress(receipt, true),
-              ...(receipt.toolName ? {action: receipt.toolName} : {}),
-              ...(fileChanges.length ? {
-                fileChanges, changedPaths: fileChanges.map(file => file.relativePath),
-                title: `Changed ${fileChanges.length} file${fileChanges.length === 1 ? '' : 's'}`,
-                transactionId: receipt.transactionId,
-              } : {}),
-            }, true);
+            studio.recordActivity(
+              receipt.sessionId,
+              {
+                ...studioReceiptProgress(receipt, true),
+                ...(receipt.toolName ? { action: receipt.toolName } : {}),
+                ...(fileChanges.length
+                  ? {
+                      fileChanges,
+                      changedPaths: fileChanges.map((file) => file.relativePath),
+                      title: `Changed ${fileChanges.length} file${fileChanges.length === 1 ? '' : 's'}`,
+                      transactionId: receipt.transactionId,
+                    }
+                  : {}),
+              },
+              true
+            );
           }
           break;
         }
         // Replay hydrates history. It must never stop, narrate into, or select a
         // destination for the new response currently being submitted.
-        if (replay && eventType !== 'request.started' && eventType !== 'tool.completed' && eventType !== 'tool.failed') {
+        if (
+          replay &&
+          eventType !== 'request.started' &&
+          eventType !== 'tool.completed' &&
+          eventType !== 'tool.failed'
+        ) {
           const historical = studioEventProgress(event, true);
           if (historical && eventSessionId) studio.recordActivity(eventSessionId, historical, true);
           break;
         }
-        if (!replay && !['request.started', 'tool.started', 'tool.completed', 'tool.failed', 'tool.approval.requested', 'tool.approval.approved', 'tool.approval.rejected', 'verify.completed', 'session.completed', 'session.failed', 'session.cancelled', 'model.request.started', 'model.request.finished', 'model.resolved'].includes(eventType)) {
+        if (
+          !replay &&
+          ![
+            'request.started',
+            'tool.started',
+            'tool.completed',
+            'tool.failed',
+            'tool.approval.requested',
+            'tool.approval.approved',
+            'tool.approval.rejected',
+            'verify.completed',
+            'session.completed',
+            'session.failed',
+            'session.cancelled',
+            'model.request.started',
+            'model.request.finished',
+            'model.resolved',
+          ].includes(eventType)
+        ) {
           const progress = studioEventProgress(event);
           if (progress && eventSessionId) studio.recordActivity(eventSessionId, progress);
         }
-        const eventSession = studio.sessions.find((session) => session.sessionId === eventSessionId);
-        const ownerIndex = typeof event?.requestId === 'string'
-          ? eventSession?.messages.map((turn) => Boolean(turn.requestIds?.includes(event.requestId as string))).lastIndexOf(true) ?? -1 : -1;
-        if (ownerIndex >= 0 && ownerIndex !== (eventSession?.messages.length ?? 0) - 1 &&
-          !['tool.completed', 'tool.failed', 'request.started'].includes(eventType)) {
+        const eventSession = studio.sessions.find(
+          (session) => session.sessionId === eventSessionId
+        );
+        const ownerIndex =
+          typeof event?.requestId === 'string'
+            ? (eventSession?.messages
+                .map((turn) => Boolean(turn.requestIds?.includes(event.requestId as string)))
+                .lastIndexOf(true) ?? -1)
+            : -1;
+        if (
+          ownerIndex >= 0 &&
+          ownerIndex !== (eventSession?.messages.length ?? 0) - 1 &&
+          !['tool.completed', 'tool.failed', 'request.started'].includes(eventType)
+        ) {
           const historical = studioEventProgress(event, true);
           if (historical && eventSessionId) studio.recordActivity(eventSessionId, historical, true);
           break;
@@ -973,9 +983,16 @@ export function SecondarySidebar() {
                 : 'Studio is executing a durable engineering goal.',
             ...eventMeta,
           });
-        } else if (eventType === 'model.request.started' || eventType === 'model.request.finished' || eventType === 'model.resolved') {
+        } else if (
+          eventType === 'model.request.started' ||
+          eventType === 'model.request.finished' ||
+          eventType === 'model.resolved'
+        ) {
           const progress = studioEventProgress(event);
-          if (progress && eventSessionId) {studio.recordActivity(eventSessionId, progress); studio.setActivity(eventSessionId, progress.title);}
+          if (progress && eventSessionId) {
+            studio.recordActivity(eventSessionId, progress);
+            studio.setActivity(eventSessionId, progress.title);
+          }
         } else if (eventType === 'model.message') {
           const text = typeof eventData.text === 'string' ? eventData.text.trim() : '';
           if (text && eventSessionId) {
@@ -1010,7 +1027,9 @@ export function SecondarySidebar() {
             action: 'agent-steering',
             status: 'done',
             phase: 'request-steered',
-            title: pendingChatApprovals(eventSession ?? null).length ? 'Instructions queued · approval pending' : 'Instructions updated',
+            title: pendingChatApprovals(eventSession ?? null).length
+              ? 'Instructions queued · approval pending'
+              : 'Instructions updated',
             summary:
               typeof eventData.message === 'string'
                 ? eventData.message
@@ -1112,13 +1131,14 @@ export function SecondarySidebar() {
             action: String(eventData.toolName ?? 'studio-agent'),
             status: eventData.optional === true ? 'done' : 'failed',
             phase: 'command-rejected',
-            title: eventData.optional === true ? 'Optional onboarding skipped' : 'Command not approved',
+            title:
+              eventData.optional === true ? 'Optional onboarding skipped' : 'Command not approved',
             summary:
               eventData.optional === true
                 ? 'Continuing your original task in the source project.'
                 : typeof eventData.error === 'string'
-                ? eventData.error
-                : 'The exact invasive command was declined.',
+                  ? eventData.error
+                  : 'The exact invasive command was declined.',
             ...eventMeta,
           });
         } else if (eventType === 'tool.started') {
@@ -1159,7 +1179,14 @@ export function SecondarySidebar() {
                 : `${processId} · ${String(process.elapsedMs ?? 0)} ms · ${String(process.stdoutBytes ?? 0)}B stdout · ${String(process.stderrBytes ?? 0)}B stderr`;
           startStudioActionProgress({
             action: String(eventData.toolName ?? 'run-workspace-command'),
-            status: processPhase === 'completed' ? process.exitCode === 0 ? 'done' : typeof process.exitCode === 'number' ? 'failed' : 'review' : 'running',
+            status:
+              processPhase === 'completed'
+                ? process.exitCode === 0
+                  ? 'done'
+                  : typeof process.exitCode === 'number'
+                    ? 'failed'
+                    : 'review'
+                : 'running',
             phase: `process-${processPhase}`,
             title: processPhase === 'completed' ? 'Process completed' : 'Process running',
             summary,
@@ -1355,7 +1382,12 @@ export function SecondarySidebar() {
                 .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
                 .slice(0, 12)
             : [];
-          const outputText = [toolOutput?.stdout, toolOutput?.stderr, toolOutput?.output, toolOutput?.text]
+          const outputText = [
+            toolOutput?.stdout,
+            toolOutput?.stderr,
+            toolOutput?.output,
+            toolOutput?.text,
+          ]
             .filter(
               (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
             )
@@ -1397,8 +1429,27 @@ export function SecondarySidebar() {
             changedPaths,
             fileChanges,
             activityPaths,
-            ...(Array.isArray(toolOutput?.contentParts) ? {contentParts: toolOutput.contentParts.filter((part): part is {kind: string; mimeType?: string; supported: boolean} => Boolean(part && typeof part === 'object' && typeof (part as Record<string, unknown>).kind === 'string' && typeof (part as Record<string, unknown>).supported === 'boolean'))} : {}),
-            ...(toolOutput?.imageError || toolOutput?.retentionError ? {outputWarning: String(toolOutput.imageError || toolOutput.retentionError).slice(0, 800)} : {}),
+            ...(Array.isArray(toolOutput?.contentParts)
+              ? {
+                  contentParts: toolOutput.contentParts.filter(
+                    (part): part is { kind: string; mimeType?: string; supported: boolean } =>
+                      Boolean(
+                        part &&
+                        typeof part === 'object' &&
+                        typeof (part as Record<string, unknown>).kind === 'string' &&
+                        typeof (part as Record<string, unknown>).supported === 'boolean'
+                      )
+                  ),
+                }
+              : {}),
+            ...(toolOutput?.imageError || toolOutput?.retentionError
+              ? {
+                  outputWarning: String(toolOutput.imageError || toolOutput.retentionError).slice(
+                    0,
+                    800
+                  ),
+                }
+              : {}),
             commandText,
             ...(outputText ? { outputText } : {}),
             intelligencePhase,
@@ -1688,9 +1739,15 @@ export function SecondarySidebar() {
       }
       case 'sidebarStudioToolApprovalUnavailable': {
         const sessionId = typeof data.sessionId === 'string' ? data.sessionId : undefined;
-        const previous = studio.sessions.find((session) => session.sessionId === sessionId)?.messages
-          .flatMap((turn) => turn.activity ?? [])
-          .find((entry) => entry.approvalRequest && entry.approvalRequest.toolCallId === data.toolCallId && entry.approvalRequest.fingerprint === data.fingerprint);
+        const previous = studio.sessions
+          .find((session) => session.sessionId === sessionId)
+          ?.messages.flatMap((turn) => turn.activity ?? [])
+          .find(
+            (entry) =>
+              entry.approvalRequest &&
+              entry.approvalRequest.toolCallId === data.toolCallId &&
+              entry.approvalRequest.fingerprint === data.fingerprint
+          );
         startStudioActionProgress({
           ...previous,
           sessionId,
@@ -1705,7 +1762,8 @@ export function SecondarySidebar() {
           requiresApproval: false,
           approvalRequest: undefined,
         });
-        if (sessionId) vscode.postMessage('sidebarStudioAction', { action: 'agent-status', sessionId }, META);
+        if (sessionId)
+          vscode.postMessage('sidebarStudioAction', { action: 'agent-status', sessionId }, META);
         break;
       }
       case 'sidebarStudioSessionState': {
@@ -1716,7 +1774,13 @@ export function SecondarySidebar() {
         if (data.active === true) {
           setStudioAutoFixBusy(true);
           if (data.status === 'waiting-input') studio.setWaitingForInput(statusSessionId, true);
-          else studio.setActivity(statusSessionId, data.status === 'waiting-permission' ? 'Waiting for command approval…' : 'Continuing the active request…');
+          else
+            studio.setActivity(
+              statusSessionId,
+              data.status === 'waiting-permission'
+                ? 'Waiting for command approval…'
+                : 'Continuing the active request…'
+            );
           break;
         }
         setStudioAutoFixBusy(false);
@@ -2264,13 +2328,27 @@ export function SecondarySidebar() {
         break;
       }
       case 'sidebarStudioCheckpoint': {
-        if (typeof data.sessionId === 'string' && Array.isArray(data.requestIds) && Array.isArray(data.transactionIds)) {
-          const checkpointRequestIds = data.requestIds.filter((id): id is string => typeof id === 'string');
-          setCheckpointPending((pending) => ({ ...pending, [JSON.stringify([data.sessionId, ...checkpointRequestIds])]: false }));
-          studio.reviewCheckpoint(data.sessionId, checkpointRequestIds,
+        if (
+          typeof data.sessionId === 'string' &&
+          Array.isArray(data.requestIds) &&
+          Array.isArray(data.transactionIds)
+        ) {
+          const checkpointRequestIds = data.requestIds.filter(
+            (id): id is string => typeof id === 'string'
+          );
+          setCheckpointPending((pending) => ({
+            ...pending,
+            [JSON.stringify([data.sessionId, ...checkpointRequestIds])]: false,
+          }));
+          studio.reviewCheckpoint(
+            data.sessionId,
+            checkpointRequestIds,
             data.transactionIds.filter((id): id is string => typeof id === 'string'),
-            data.state === 'kept' || data.state === 'restored' || data.state === 'reapplied' ? data.state : undefined,
-            typeof data.error === 'string' ? data.error : undefined);
+            data.state === 'kept' || data.state === 'restored' || data.state === 'reapplied'
+              ? data.state
+              : undefined,
+            typeof data.error === 'string' ? data.error : undefined
+          );
         }
         break;
       }
@@ -2284,7 +2362,8 @@ export function SecondarySidebar() {
               ? (data.images as Array<{ mimeType: string; base64: string }>)
               : undefined,
             typeof data.text === 'string' ? data.text : undefined,
-            typeof data.error === 'string' ? data.error : undefined);
+            typeof data.error === 'string' ? data.error : undefined
+          );
         }
         break;
       }
@@ -3511,7 +3590,8 @@ export function SecondarySidebar() {
   const hideContinuingRepairResult =
     activeStudioRepairRunning ||
     activeStudioActionProgress?.status === 'failed' ||
-    (activeStudioTerminalReason === 'ai-provider-unavailable' || activeStudioTerminalReason === 'ai-provider-timeout');
+    activeStudioTerminalReason === 'ai-provider-unavailable' ||
+    activeStudioTerminalReason === 'ai-provider-timeout';
   const visibleStudioVerifyFailureForResult = hideContinuingRepairResult
     ? null
     : activeStudioVerifyFailure;
@@ -3670,7 +3750,9 @@ export function SecondarySidebar() {
   const openDashboardRepairFlow = () => {
     vscode.postMessage('sidebarOpenDashboard', { section: 'repair' }, META);
   };
-  const studioReviewTarget = (target: { ref: string; name: string } | null | undefined = activeStudio?.executionTarget) => ({
+  const studioReviewTarget = (
+    target: { ref: string; name: string } | null | undefined = activeStudio?.executionTarget
+  ) => ({
     sessionId: studio.activeId ?? undefined,
     ...(target ? { targetRef: target.ref } : {}),
   });
@@ -3849,16 +3931,31 @@ export function SecondarySidebar() {
   };
   const renderStudioTurnActions = (turn: import('./sidebarSessions').ChatTurn) => {
     const requestIds = turn.requestIds ?? [];
-    const related = activeStudio?.messages.filter((message) => message.role === 'assistant' && message.requestIds?.some((id) => requestIds.includes(id))) ?? [];
+    const related =
+      activeStudio?.messages.filter(
+        (message) =>
+          message.role === 'assistant' && message.requestIds?.some((id) => requestIds.includes(id))
+      ) ?? [];
     if (!requestIds.length || related.at(-1) !== turn) return null;
-    const transactionIds = [...new Set(related.flatMap((message) => message.activity ?? []).map((entry) => entry.transactionId).filter((id): id is string => Boolean(id?.startsWith('native-'))))];
+    const transactionIds = [
+      ...new Set(
+        related
+          .flatMap((message) => message.activity ?? [])
+          .map((entry) => entry.transactionId)
+          .filter((id): id is string => Boolean(id?.startsWith('native-')))
+      ),
+    ];
     if (!transactionIds.length) return null;
     const pendingKey = JSON.stringify([studio.activeId, ...requestIds]);
     const busy = checkpointPending[pendingKey] === true;
     const submit = (action: string) => {
       if (busy) return;
       setCheckpointPending((pending) => ({ ...pending, [pendingKey]: true }));
-      vscode.postMessage('sidebarStudioAction', { action, sessionId: studio.activeId, requestIds, transactionIds }, META);
+      vscode.postMessage(
+        'sidebarStudioAction',
+        { action, sessionId: studio.activeId, requestIds, transactionIds },
+        META
+      );
     };
     return (
       <div
@@ -3932,7 +4029,11 @@ export function SecondarySidebar() {
           )
         }
         onReview={reviewStudioChangedFiles}
-        onUndo={activeStudioChangedFiles.undoTransactionId?.startsWith('native-') ? undefined : undoStudioAgentPatch}
+        onUndo={
+          activeStudioChangedFiles.undoTransactionId?.startsWith('native-')
+            ? undefined
+            : undoStudioAgentPatch
+        }
         busy={activeStudioRepairRunning}
       />
       {renderStudioTurnActions(studioReviewTurn)}
@@ -4363,7 +4464,9 @@ export function SecondarySidebar() {
                 )
               }
               active={
-                isCurrentPart && activeStudio?.status === 'streaming' && !activeStudio?.waitingForInput
+                isCurrentPart &&
+                activeStudio?.status === 'streaming' &&
+                !activeStudio?.waitingForInput
               }
               onOpenFile={(file, transaction) =>
                 openStudioChangedFile(
@@ -4387,7 +4490,13 @@ export function SecondarySidebar() {
         onSteer={steerStudio}
         onCancel={stopStudioAgent}
         onApprovalDecision={decideStudioToolApproval}
-        onRestoreAttachment={(turnId) => vscode.postMessage('sidebarStudioAction', { action: 'attachments-read', sessionId: studio.activeId, turnId }, META)}
+        onRestoreAttachment={(turnId) =>
+          vscode.postMessage(
+            'sidebarStudioAction',
+            { action: 'attachments-read', sessionId: studio.activeId, turnId },
+            META
+          )
+        }
         models={models}
         modelLoadError={modelsLoadError}
         selectedModelId={selectedModelId}
@@ -4549,7 +4658,13 @@ export function SecondarySidebar() {
         onSteer={steerStudio}
         onCancel={stopStudioAgent}
         onApprovalDecision={decideStudioToolApproval}
-        onRestoreAttachment={(turnId) => vscode.postMessage('sidebarStudioAction', { action: 'attachments-read', sessionId: studio.activeId, turnId }, META)}
+        onRestoreAttachment={(turnId) =>
+          vscode.postMessage(
+            'sidebarStudioAction',
+            { action: 'attachments-read', sessionId: studio.activeId, turnId },
+            META
+          )
+        }
         models={models}
         modelLoadError={modelsLoadError}
         selectedModelId={selectedModelId}

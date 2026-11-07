@@ -1,7 +1,7 @@
 const PORTABLE_SEPARATORS = /\\/g;
 
 const SENSITIVE_OR_GENERATED_SEGMENT =
-  /(?:^|\/)(?:\.git|node_modules|vendor|dist|build|coverage|\.env(?:\.|$)|\.npmrc$|\.pypirc$|[^/]*(?:secret|credential)[^/]*)(?:\/|$)/i;
+  /(?:^|\/)(?:\.git|node_modules|vendor|dist|build|coverage|\.env(?:\.[^/]*)?|\.npmrc|\.pypirc|[^/]*(?:secret|credential)[^/]*)(?:\/|$)/i;
 
 const WORKSPAI_CONTROL_PLANE =
   /(?:^|\/)(?:\.workspai|\.rapidkit)\/(?:reports|repair|cache|snapshots|transactions|goals)(?:\/|$)/i;

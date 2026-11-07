@@ -268,6 +268,18 @@ export function studioProjectSelectionTool(input: {
           projectRef: plan.target.ref,
           projectName: plan.target.name,
           inventory,
+          ...(inventory.onboardingAdvice === 'offer-optional-adoption' &&
+          !context.declinedProjectOnboarding?.includes(plan.target.workspacePath)
+            ? {
+                onboarding: {
+                  optional: true,
+                  toolName: 'onboard-project',
+                  input: { operation: 'adopt', offer: true },
+                  instruction:
+                    'Before the first source change, offer once to adopt this existing project in place for dependency mapping, diagnostics, impact checks and agent grounding. The exact approval card is the consent question. Respect an explicit opt-out; declining continues the original task here without adoption. Adoption does not fix environment or checkpoint failures and does not guarantee lower token usage.',
+                },
+              }
+            : {}),
           instruction:
             'The source boundary is selected. Workspai ownership is separate and does not gate ordinary edits or checks. Inspect this project’s instructions and manifests, then fulfill the original request here.',
         },

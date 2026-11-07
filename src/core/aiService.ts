@@ -206,7 +206,7 @@ export interface AIModelToolDefinition {
   inputSchema?: Record<string, unknown>;
 }
 
-export type AIModelToolActionResponse = { toolTransport?: 'json' } & (
+export type AIModelToolActionResponse = { toolTransport?: 'json'; fallback?: boolean } & (
   | {
       type: 'tool';
       modelId: string;
@@ -251,7 +251,8 @@ export async function requestAIModelToolAction(
   tools: AIModelToolDefinition[],
   token?: vscode.CancellationToken,
   preferredModelId?: string,
-  pathIdentities: ReadonlyArray<AIMessagePathIdentity> = []
+  pathIdentities: ReadonlyArray<AIMessagePathIdentity> = [],
+  onProgress?: import('./aiProviderStream.js').AIProviderStreamObserver
 ): Promise<AIModelToolActionResponse> {
   const all = (await vscode.lm.selectChatModels()).filter(languageModelSupportsExtensionRequests);
   const preferred = preferredModelId?.trim();
@@ -318,6 +319,36 @@ export async function requestAIModelToolAction(
     timedOut = true;
     requestTokenSource.cancel();
   }, timeoutMs);
+  const waitForProvider = async <T>(operation: () => PromiseLike<T>): Promise<T> => {
+    const cancelledError = () =>
+      timedOut
+        ? new AIModelRequestTimeoutError(timeoutMs)
+        : new Error('AI tool request was cancelled.');
+    if (requestTokenSource.token.isCancellationRequested) {
+      throw cancelledError();
+    }
+    let listener: vscode.Disposable | undefined;
+    try {
+      return await Promise.race([
+        Promise.resolve().then(() => {
+          if (requestTokenSource.token.isCancellationRequested) {
+            throw cancelledError();
+          }
+          return operation();
+        }),
+        new Promise<never>((_resolve, reject) => {
+          listener = requestTokenSource.token.onCancellationRequested(() =>
+            reject(cancelledError())
+          );
+          if (requestTokenSource.token.isCancellationRequested) {
+            reject(cancelledError());
+          }
+        }),
+      ]);
+    } finally {
+      listener?.dispose();
+    }
+  };
   const fallbackModels = all.filter(
     (candidate) =>
       languageModelSelectionIdentifier(candidate) !== languageModelSelectionIdentifier(model)
@@ -354,6 +385,7 @@ export async function requestAIModelToolAction(
     let attempts = 0;
     for (const [index, candidateModel] of candidates.entries()) {
       const modelId = languageModelSelectionIdentifier(candidateModel);
+      const fallback = modelId !== languageModelSelectionIdentifier(model);
       let text = '';
       try {
         if (requestTokenSource.token.isCancellationRequested) {
@@ -368,22 +400,34 @@ export async function requestAIModelToolAction(
           capability === false ||
           (typeof capability === 'number' && tools.length > capability) ||
           jsonOnlyLanguageModels.has(candidateModel);
+        let correction: string | undefined;
         const send = (json: boolean) => {
           attempts++;
-          return candidateModel.sendRequest(
-            json ? toLmMessages(jsonToolMessages(safeMessages, tools)) : lmMessages,
-            json
-              ? {}
-              : {
-                  justification: 'Resolve the Workspai user request through governed tools.',
-                  tools: tools.map((tool) => ({
-                    name: tool.name,
-                    description: tool.description,
-                    ...(tool.inputSchema ? { inputSchema: tool.inputSchema } : {}),
-                  })),
-                  toolMode,
-                },
-            requestTokenSource.token
+          return waitForProvider(() =>
+            candidateModel.sendRequest(
+              json
+                ? toLmMessages(
+                    jsonToolMessages(
+                      correction
+                        ? [...safeMessages, { role: 'user', content: correction }]
+                        : safeMessages,
+                      tools
+                    )
+                  )
+                : lmMessages,
+              json
+                ? {}
+                : {
+                    justification: 'Resolve the Workspai user request through governed tools.',
+                    tools: tools.map((tool) => ({
+                      name: tool.name,
+                      description: tool.description,
+                      ...(tool.inputSchema ? { inputSchema: tool.inputSchema } : {}),
+                    })),
+                    toolMode,
+                  },
+              requestTokenSource.token
+            )
           );
         };
         let response: vscode.LanguageModelChatResponse;
@@ -406,50 +450,120 @@ export async function requestAIModelToolAction(
           jsonOnlyLanguageModels.add(candidateModel);
         }
 
-        for await (const part of response.stream) {
-          if (requestTokenSource.token.isCancellationRequested) {
-            break;
+        let selectedCall: AIModelToolActionResponse | undefined;
+        for (let decisionAttempt = 0; decisionAttempt < 2; decisionAttempt++) {
+          text = '';
+          const calls: Array<{ callId: string; toolName: string; input: Record<string, unknown> }> =
+            [];
+          let argumentCharacters = 0;
+          const iterator = response.stream[Symbol.asyncIterator]();
+          try {
+            for (;;) {
+              const next = await waitForProvider(() => iterator.next());
+              if (next.done) {
+                break;
+              }
+              const part = next.value;
+              if (requestTokenSource.token.isCancellationRequested) {
+                break;
+              }
+              const candidate = part as {
+                name?: unknown;
+                input?: unknown;
+                callId?: unknown;
+                value?: unknown;
+              };
+              const isNativeToolCall =
+                (typeof vscode.LanguageModelToolCallPart === 'function' &&
+                  part instanceof vscode.LanguageModelToolCallPart) ||
+                (typeof candidate.name === 'string' &&
+                  typeof candidate.callId === 'string' &&
+                  candidate.input !== null &&
+                  typeof candidate.input === 'object');
+              if (isNativeToolCall && typeof candidate.name === 'string') {
+                if (
+                  !candidate.input ||
+                  typeof candidate.input !== 'object' ||
+                  Array.isArray(candidate.input)
+                ) {
+                  throw new Error(
+                    'AI provider tool arguments must be an object; no tool was dispatched.'
+                  );
+                }
+                argumentCharacters += JSON.stringify(candidate.input).length;
+                if (argumentCharacters > 8 * 1024 * 1024 || calls.length >= 64) {
+                  throw new Error('AI provider tool response exceeds the bounded action limit.');
+                }
+                calls.push({
+                  callId:
+                    typeof candidate.callId === 'string' && candidate.callId.trim()
+                      ? candidate.callId
+                      : randomUUID(),
+                  toolName: candidate.name,
+                  input: candidate.input as Record<string, unknown>,
+                });
+                await onProgress?.({
+                  receivedBytes: Buffer.byteLength(text) + argumentCharacters,
+                  textCharacters: text.length,
+                  argumentCharacters,
+                  toolCalls: calls.length,
+                });
+                continue;
+              }
+              if (part instanceof vscode.LanguageModelTextPart) {
+                text += part.value;
+              } else if (typeof candidate.value === 'string') {
+                text += candidate.value;
+              }
+              if (text.length > 8 * 1024 * 1024) {
+                throw new Error('AI provider text exceeds the bounded action limit.');
+              }
+              await onProgress?.({
+                receivedBytes: Buffer.byteLength(text) + argumentCharacters,
+                textCharacters: text.length,
+                argumentCharacters,
+                toolCalls: calls.length,
+              });
+            }
+          } finally {
+            // A non-cooperative provider may never settle return(); do not delay Stop.
+            void Promise.resolve()
+              .then(() => iterator.return?.())
+              .catch(() => undefined);
           }
-          const candidate = part as {
-            name?: unknown;
-            input?: unknown;
-            callId?: unknown;
-            value?: unknown;
-          };
-          const isNativeToolCall =
-            (typeof vscode.LanguageModelToolCallPart === 'function' &&
-              part instanceof vscode.LanguageModelToolCallPart) ||
-            (typeof candidate.name === 'string' &&
-              typeof candidate.callId === 'string' &&
-              candidate.input !== null &&
-              typeof candidate.input === 'object');
-          if (isNativeToolCall && typeof candidate.name === 'string') {
-            return {
+          if (requestTokenSource.token.isCancellationRequested) {
+            if (!token?.isCancellationRequested) {
+              throw new AIModelRequestTimeoutError(timeoutMs);
+            }
+            throw new Error('AI tool request was cancelled.');
+          }
+          if (calls.length > 1) {
+            if (decisionAttempt > 0) {
+              throw new Error(
+                'AI provider repeatedly proposed multiple tool calls; none were dispatched.'
+              );
+            }
+            correction =
+              'The previous response proposed multiple tool calls. None were executed. Select exactly one next action. Use inspect-workspace-batch for independent supported reads, or choose the next necessary individual tool. Return the actual final answer through the completion tool when ready.';
+            jsonTransport = true;
+            response = await send(true);
+            jsonOnlyLanguageModels.add(candidateModel);
+            continue;
+          }
+          if (calls.length === 1) {
+            selectedCall = {
               type: 'tool',
               modelId,
               attempts,
+              ...(fallback ? { fallback: true } : {}),
               ...(jsonTransport ? { toolTransport: 'json' as const } : {}),
-              callId:
-                typeof candidate.callId === 'string' && candidate.callId.trim()
-                  ? candidate.callId
-                  : randomUUID(),
-              toolName: candidate.name,
-              input:
-                candidate.input &&
-                typeof candidate.input === 'object' &&
-                !Array.isArray(candidate.input)
-                  ? (candidate.input as Record<string, unknown>)
-                  : {},
+              ...calls[0],
             };
           }
-          if (part instanceof vscode.LanguageModelTextPart) {
-            text += part.value;
-          } else if (typeof candidate.value === 'string') {
-            text += candidate.value;
-          }
+          break;
         }
-        if (requestTokenSource.token.isCancellationRequested && !token?.isCancellationRequested) {
-          throw new AIModelRequestTimeoutError(timeoutMs);
+        if (selectedCall) {
+          return selectedCall;
         }
         // Text may contain the strict JSON fallback understood by the Studio
         // model protocol. An empty response, however, proves this endpoint
@@ -462,6 +576,7 @@ export async function requestAIModelToolAction(
                 type: 'tool',
                 modelId,
                 attempts,
+                ...(fallback ? { fallback: true } : {}),
                 toolTransport: 'json',
                 callId: randomUUID(),
                 ...envelope,
@@ -472,6 +587,7 @@ export async function requestAIModelToolAction(
             type: 'text',
             modelId,
             attempts,
+            ...(fallback ? { fallback: true } : {}),
             ...(jsonTransport ? { toolTransport: 'json' as const } : {}),
             text,
           };

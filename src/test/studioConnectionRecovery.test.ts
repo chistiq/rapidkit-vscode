@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { StudioAgentSession } from '../core/studioAgentSession.js';
 import { StudioAgentToolRegistry } from '../core/studioAgentToolRegistry.js';
-import { studioReadProgress } from '../core/studioReadProgress.js';
+import { studioReadProgress, studioObservationReuse } from '../core/studioReadProgress.js';
 import { buildStudioIncompleteAnswer } from '../core/studioAgentOutcome.js';
 
 function create(
@@ -24,6 +24,85 @@ function create(
   );
 }
 describe('Connection recovery and read progress', () => {
+  it('does not advertise a stale successful command after failure, rollback, or a different source fingerprint', () => {
+    const state = create(async () => ({ type: 'complete', summary: 'answer' })).snapshot();
+    const input = { executable: 'node', args: ['--test'] };
+    const event = (sequence: number, ok: boolean, output: Record<string, unknown>) => ({
+      schemaVersion: 'workspai.studio-agent-event.v1' as const,
+      id: String(sequence),
+      sessionId: state.id,
+      sequence,
+      timestamp: new Date().toISOString(),
+      type: ok ? ('tool.completed' as const) : ('tool.failed' as const),
+      data: { toolName: 'run-workspace-command', input, ok, output },
+    });
+    state.events = [event(1, true, { exitCode: 0, sourceFingerprint: 'a'.repeat(64) })];
+    expect(studioObservationReuse(state)?.successfulCommands).toHaveLength(1);
+    state.events.push(event(2, false, { exitCode: 1 }));
+    expect(studioObservationReuse(state)).toBeUndefined();
+    state.events = [
+      event(1, true, { exitCode: 0, sourceFingerprint: 'a'.repeat(64) }),
+      {
+        ...event(2, true, { exitCode: 0, sourceFingerprint: 'b'.repeat(64) }),
+        data: {
+          ...event(2, true, { exitCode: 0, sourceFingerprint: 'b'.repeat(64) }).data,
+          input: { executable: 'other-check' },
+        },
+      },
+    ];
+    expect(studioObservationReuse(state)?.successfulCommands).toEqual([
+      expect.objectContaining({ sequence: 2, sourceFingerprint: 'b'.repeat(64) }),
+    ]);
+    state.events = [
+      event(1, true, {
+        exitCode: 0,
+        sourceFingerprint: 'a'.repeat(64),
+        sourceRecovery: { state: 'restored' },
+      }),
+    ];
+    expect(studioObservationReuse(state)).toBeUndefined();
+  });
+  it('keeps successful observation/check references beyond alternating tools and invalidates them after mutation or scope changes', () => {
+    const state = create(async () => ({ type: 'complete', summary: 'answer' })).snapshot();
+    const event = (sequence: number, data: Record<string, unknown>) => ({
+      schemaVersion: 'workspai.studio-agent-event.v1' as const,
+      id: String(sequence),
+      sessionId: state.id,
+      sequence,
+      timestamp: new Date().toISOString(),
+      type: 'tool.completed' as const,
+      data,
+    });
+    state.events = [
+      event(1, {
+        toolName: 'inspect-agent-instructions',
+        ok: true,
+        input: { path: 'src/file.py' },
+      }),
+      event(2, {
+        toolName: 'run-workspace-command',
+        ok: true,
+        input: { executable: 'poetry', args: ['run', 'mypy', 'src'] },
+        output: { exitCode: 0, sourceFingerprint: 'a'.repeat(64) },
+      }),
+      event(3, { toolName: 'inspect-workspace-changes', ok: true, input: {} }),
+      event(4, {
+        toolName: 'run-workspace-command',
+        ok: false,
+        input: { executable: 'false' },
+        output: { exitCode: 1 },
+      }),
+    ];
+    expect(studioObservationReuse(state)).toMatchObject({
+      observations: [{ sequence: 1 }, { sequence: 3 }],
+      successfulCommands: [{ sequence: 2, sourceFingerprint: 'a'.repeat(64) }],
+    });
+    state.events.push(event(5, { toolName: 'apply-workspace-edits', changed: true, ok: true }));
+    expect(studioObservationReuse(state)).toBeUndefined();
+    state.events.push(event(6, { toolName: 'inspect-source', ok: true, input: {} }));
+    state.events.push({ ...event(7, {}), type: 'workspace.target.bound' });
+    expect(studioObservationReuse(state)).toBeUndefined();
+  });
   it('retries a transient model decision once without repeating a successful tool', async () => {
     const execute = vi.fn(async () => ({ ok: true, output: 'Current source' }));
     const registry = new StudioAgentToolRegistry();
@@ -122,9 +201,23 @@ describe('Connection recovery and read progress', () => {
     );
     expect(studioReadProgress(state)).toMatchObject({
       readsSinceChange: 3,
-      repeated: [{ tool: 'inspect-source', count: 3 }],
+      repeated: [
+        { tool: 'inspect-source', input: { paths: ['page.tsx'] }, count: 3, lastSequence: 3 },
+      ],
     });
-    state.events.push(event(4, { toolName: 'apply-workspace-edits', changed: true }));
+    state.events.push({ ...event(4, {}), type: 'workspace.target.bound' });
+    expect(studioReadProgress(state)).toBeUndefined();
+    state.events.push(
+      event(5, { toolName: 'inspect-source', input: { paths: ['page.tsx'], lineStart: 1 } })
+    );
+    state.events.push(
+      event(6, { toolName: 'inspect-source', input: { lineStart: 1, paths: ['page.tsx'] } })
+    );
+    expect(studioReadProgress(state)).toMatchObject({
+      readsSinceChange: 2,
+      repeated: [{ count: 2 }],
+    });
+    state.events.push(event(7, { toolName: 'apply-workspace-edits', changed: true }));
     expect(studioReadProgress(state)).toBeUndefined();
   });
 });

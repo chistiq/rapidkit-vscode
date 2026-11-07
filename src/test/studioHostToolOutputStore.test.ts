@@ -20,6 +20,7 @@ describe('Durable host output ownership and lifecycle', () => {
   });
   afterEach(async () => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     await fs.remove(root);
   });
   it('reads from a new instance, isolates owners, and deletes one chat without affecting others', async () => {
@@ -59,6 +60,9 @@ describe('Durable host output ownership and lifecycle', () => {
     vi.setSystemTime(Date.now() + 8 * 24 * 3600 * 1000);
     await expect(store.read('a', first)).rejects.toThrow('retention');
     vi.useRealTimers();
+    // Clock correction/reload must not resurrect bytes already observed as expired.
+    expect(await fs.pathExists(file('a', first))).toBe(false);
+    await expect(new StudioHostToolOutputStore(root).read('a', first)).rejects.toThrow();
     for (let at = 0; at < 9; at++) await store.save('a', ref(), 'Report', 6);
     expect(await fs.readdir(path.dirname(file('a', first)))).toHaveLength(8);
     await expect(store.read('a', first)).rejects.toThrow();
@@ -83,6 +87,41 @@ describe('Durable host output ownership and lifecycle', () => {
     await store.save('a', id, '', 0, images);
     await store.delete('a');
     await expect(reloaded.read('a', id)).rejects.toThrow();
+  });
+  it('does not delete a concurrent replacement while expiring an older version of the same output', async () => {
+    const store = new StudioHostToolOutputStore(root);
+    const id = ref();
+    await store.save('a', id, 'old', 3);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 8 * 24 * 3600 * 1000);
+    const readJSON = fs.readJSON.bind(fs);
+    let entered!: () => void, release!: () => void;
+    const reading = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let held = false;
+    vi.spyOn(fs, 'readJSON').mockImplementation(async (...args: Parameters<typeof fs.readJSON>) => {
+      const data = await readJSON(...args);
+      if (!held && String(args[0]) === file('a', id)) {
+        held = true;
+        entered();
+        await gate;
+      }
+      return data;
+    });
+    const expiry = store.read('a', id).catch((error) => error);
+    await reading;
+    const replacement = new StudioHostToolOutputStore(root).save('a', id, 'fresh', 5);
+    release();
+    expect((await expiry).message).toContain('retention');
+    await replacement;
+    expect(await new StudioHostToolOutputStore(root).read('a', id)).toEqual({
+      text: 'fresh',
+      totalChars: 5,
+    });
   });
   it('rejects invalid images and aggregate image budgets without leaving a saved record', async () => {
     const store = new StudioHostToolOutputStore(root);

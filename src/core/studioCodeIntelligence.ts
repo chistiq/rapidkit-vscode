@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 
 import { studioSourcePathDenialReason } from './studioWorkspacePathPolicy.js';
 import type { StudioAgentToolResult } from './studioAgentToolRegistry.js';
+import { waitForStudioLanguageProvider } from './studioLanguageProvider.js';
 
 export type StudioCodeIntelligenceOperation =
   | 'definition'
@@ -22,6 +23,7 @@ export type StudioCodeIntelligenceRequest = {
   query?: string;
   workspacePath: string;
   projectPath?: string;
+  signal?: AbortSignal;
 };
 
 type PortableLocation = {
@@ -49,17 +51,31 @@ export type StudioCodeIntelligenceResult = {
 };
 
 const MAX_CODE_INTELLIGENCE_RESULTS = 100;
+const MAX_PROVIDER_ITEMS = 10_000;
+const MAX_HOVER_CHARACTERS = 24_000;
+const OPERATIONS: readonly StudioCodeIntelligenceOperation[] = [
+  'definition',
+  'references',
+  'implementation',
+  'hover',
+  'document-symbols',
+  'workspace-symbols',
+];
 
 function isInside(root: string, candidate: string): boolean {
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+  return (
+    relative === '' ||
+    (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+  );
 }
 
 function portablePath(root: string, uri: vscode.Uri): string | undefined {
   if (uri.scheme !== 'file' || !isInside(root, uri.fsPath)) {
     return undefined;
   }
-  return path.relative(root, uri.fsPath).replace(/\\/g, '/') || '.';
+  const relative = path.relative(root, uri.fsPath).replace(/\\/g, '/');
+  return relative && !studioSourcePathDenialReason(relative) ? relative : undefined;
 }
 
 function portableLocation(
@@ -87,38 +103,76 @@ function markdownText(value: vscode.MarkedString | vscode.MarkdownString): strin
   return 'language' in value ? value.value : value.value;
 }
 
-function flattenDocumentSymbols(
+async function flattenDocumentSymbols(
   root: string,
   uri: vscode.Uri,
   symbols: readonly (vscode.DocumentSymbol | vscode.SymbolInformation)[],
-  output: PortableSymbol[]
-): void {
-  for (const symbol of symbols) {
-    if (output.length >= MAX_CODE_INTELLIGENCE_RESULTS) {
-      return;
-    }
-    const location =
-      'location' in symbol
+  output: PortableSymbol[],
+  admit: (uri: vscode.Uri) => Promise<boolean>
+): Promise<boolean> {
+  const pending = [...symbols].reverse();
+  let inspected = 0;
+  let truncated = false;
+  while (pending.length && inspected++ < MAX_PROVIDER_ITEMS) {
+    const symbol = pending.pop()!;
+    const target = 'location' in symbol ? symbol.location.uri : uri;
+    const location = !(await admit(target))
+      ? undefined
+      : 'location' in symbol
         ? portableLocation(root, symbol.location)
         : portableLocation(root, new vscode.Location(uri, symbol.range));
-    if (location) {
+    if (location && output.length < MAX_CODE_INTELLIGENCE_RESULTS) {
       output.push({
         ...location,
-        name: symbol.name,
-        ...('detail' in symbol && symbol.detail ? { detail: symbol.detail } : {}),
+        name: symbol.name.slice(0, 500),
+        ...('detail' in symbol && symbol.detail ? { detail: symbol.detail.slice(0, 1000) } : {}),
         kind: symbol.kind,
       });
+    } else {
+      truncated = true;
     }
     if ('children' in symbol && symbol.children.length > 0) {
-      flattenDocumentSymbols(root, uri, symbol.children, output);
+      const remaining = Math.max(0, MAX_PROVIDER_ITEMS - inspected - pending.length);
+      pending.push(...symbol.children.slice(0, remaining).reverse());
+      truncated ||= symbol.children.length > remaining;
     }
   }
+  return truncated || pending.length > 0;
 }
 
 export async function inspectStudioCodeIntelligence(
   input: StudioCodeIntelligenceRequest
 ): Promise<StudioCodeIntelligenceResult> {
+  if (!OPERATIONS.includes(input.operation)) {
+    throw new Error('Code intelligence operation is invalid.');
+  }
   const root = path.resolve(input.projectPath ?? input.workspacePath);
+  const realRoot = await fs.realpath(root);
+  const admitted = new Map<string, Promise<boolean>>();
+  const admit = (uri: vscode.Uri): Promise<boolean> => {
+    if (input.signal?.aborted) {
+      return Promise.reject(new Error('Language intelligence retrieval was cancelled.'));
+    }
+    if (!portablePath(root, uri)) {
+      return Promise.resolve(false);
+    }
+    const key = uri.fsPath;
+    if (!admitted.has(key)) {
+      admitted.set(
+        key,
+        fs
+          .realpath(key)
+          .then(
+            async (real) =>
+              isInside(realRoot, real) &&
+              !studioSourcePathDenialReason(path.relative(realRoot, real)) &&
+              (await fs.stat(real)).isFile()
+          )
+          .catch(() => false)
+      );
+    }
+    return admitted.get(key)!;
+  };
   const result: StudioCodeIntelligenceResult = {
     operation: input.operation,
     locations: [],
@@ -129,22 +183,29 @@ export async function inspectStudioCodeIntelligence(
 
   if (input.operation === 'workspace-symbols') {
     const query = input.query?.trim();
-    if (!query) {
-      throw new Error('Workspace symbol lookup requires a non-empty query.');
+    if (!query || query.length > 500 || /[\0\r\n]/.test(query)) {
+      throw new Error(
+        'Workspace symbol lookup requires a non-empty query of at most 500 characters.'
+      );
     }
     result.query = query;
     const symbols =
-      (await vscode.commands.executeCommand<vscode.SymbolInformation[]>(
-        'vscode.executeWorkspaceSymbolProvider',
-        query
+      (await waitForStudioLanguageProvider(
+        () =>
+          vscode.commands.executeCommand<vscode.SymbolInformation[]>(
+            'vscode.executeWorkspaceSymbolProvider',
+            query
+          ),
+        input.signal
       )) ?? [];
-    flattenDocumentSymbols(
+    result.truncated = await flattenDocumentSymbols(
       root,
       vscode.Uri.file(root),
-      symbols.slice(0, MAX_CODE_INTELLIGENCE_RESULTS + 1),
-      result.symbols
+      symbols.slice(0, MAX_PROVIDER_ITEMS),
+      result.symbols,
+      admit
     );
-    result.truncated = symbols.length > result.symbols.length;
+    result.truncated ||= symbols.length > MAX_PROVIDER_ITEMS;
     return result;
   }
 
@@ -157,40 +218,73 @@ export async function inspectStudioCodeIntelligence(
     throw new Error(`Code intelligence source path is blocked: ${relativePath} (${denial}).`);
   }
   const absolutePath = path.resolve(root, relativePath);
-  const sourceStat = isInside(root, absolutePath)
-    ? await fs.stat(absolutePath).catch(() => undefined)
-    : undefined;
-  if (!sourceStat?.isFile()) {
+  const uri = vscode.Uri.file(absolutePath);
+  if (!(await admit(uri))) {
     throw new Error(`Code intelligence source path is unavailable: ${relativePath}`);
   }
-  const line = Math.max(1, Math.trunc(input.line ?? 1));
-  const column = Math.max(1, Math.trunc(input.column ?? 1));
-  const uri = vscode.Uri.file(absolutePath);
+  const line = input.line ?? 1;
+  const column = input.column ?? 1;
+  if (!Number.isSafeInteger(line) || line < 1 || !Number.isSafeInteger(column) || column < 1) {
+    throw new Error('Code intelligence line and column must be positive integers.');
+  }
   const position = new vscode.Position(line - 1, column - 1);
   result.source = { path: relativePath, line, column };
 
   if (input.operation === 'hover') {
     const hovers =
-      (await vscode.commands.executeCommand<vscode.Hover[]>(
-        'vscode.executeHoverProvider',
-        uri,
-        position
+      (await waitForStudioLanguageProvider(
+        () =>
+          vscode.commands.executeCommand<vscode.Hover[]>(
+            'vscode.executeHoverProvider',
+            uri,
+            position
+          ),
+        input.signal
       )) ?? [];
-    result.hover = hovers
-      .flatMap((hover) => hover.contents.map(markdownText))
-      .filter(Boolean)
-      .slice(0, 20);
-    result.truncated = hovers.length > 20;
+    let remaining = MAX_HOVER_CHARACTERS;
+    for (const hover of hovers.slice(0, 20)) {
+      for (const content of hover.contents) {
+        const text = markdownText(content);
+        if (!text) {
+          continue;
+        }
+        const fragment = text.slice(0, remaining);
+        if (fragment) {
+          result.hover.push(fragment);
+        }
+        remaining -= fragment.length;
+        result.truncated ||= fragment.length < text.length;
+        if (!remaining || result.hover.length >= 20) {
+          result.truncated = true;
+          break;
+        }
+      }
+      if (!remaining || result.hover.length >= 20) {
+        break;
+      }
+    }
+    result.truncated ||= hovers.length > 20;
     return result;
   }
 
   if (input.operation === 'document-symbols') {
     const symbols =
-      (await vscode.commands.executeCommand<
-        Array<vscode.DocumentSymbol | vscode.SymbolInformation>
-      >('vscode.executeDocumentSymbolProvider', uri)) ?? [];
-    flattenDocumentSymbols(root, uri, symbols, result.symbols);
-    result.truncated = result.symbols.length >= MAX_CODE_INTELLIGENCE_RESULTS;
+      (await waitForStudioLanguageProvider(
+        () =>
+          vscode.commands.executeCommand<Array<vscode.DocumentSymbol | vscode.SymbolInformation>>(
+            'vscode.executeDocumentSymbolProvider',
+            uri
+          ),
+        input.signal
+      )) ?? [];
+    result.truncated = await flattenDocumentSymbols(
+      root,
+      uri,
+      symbols.slice(0, MAX_PROVIDER_ITEMS),
+      result.symbols,
+      admit
+    );
+    result.truncated ||= symbols.length > MAX_PROVIDER_ITEMS;
     return result;
   }
 
@@ -201,15 +295,25 @@ export async function inspectStudioCodeIntelligence(
         ? 'vscode.executeReferenceProvider'
         : 'vscode.executeImplementationProvider';
   const locations =
-    (await vscode.commands.executeCommand<Array<vscode.Location | vscode.LocationLink>>(
-      command,
-      uri,
-      position
+    (await waitForStudioLanguageProvider(
+      () =>
+        vscode.commands.executeCommand<Array<vscode.Location | vscode.LocationLink>>(
+          command,
+          uri,
+          position
+        ),
+      input.signal
     )) ?? [];
-  result.locations = locations
-    .map((location) => portableLocation(root, location))
-    .filter((location): location is PortableLocation => Boolean(location))
-    .slice(0, MAX_CODE_INTELLIGENCE_RESULTS);
+  for (const location of locations.slice(0, MAX_PROVIDER_ITEMS)) {
+    const uri = 'targetUri' in location ? location.targetUri : location.uri;
+    const portable = (await admit(uri)) ? portableLocation(root, location) : undefined;
+    if (portable) {
+      result.locations.push(portable);
+    }
+    if (result.locations.length >= MAX_CODE_INTELLIGENCE_RESULTS) {
+      break;
+    }
+  }
   result.truncated = locations.length > result.locations.length;
   return result;
 }

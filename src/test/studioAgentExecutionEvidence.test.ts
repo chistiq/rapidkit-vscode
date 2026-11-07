@@ -6,6 +6,7 @@ import {
 import { ContractStudioAgentModelAdapter } from '../core/studioAgentModelProtocol.js';
 import { StudioAgentSession } from '../core/studioAgentSession.js';
 import { StudioAgentToolRegistry } from '../core/studioAgentToolRegistry.js';
+import { buildStudioIncompleteAnswer } from '../core/studioAgentOutcome.js';
 
 function session() {
   const state = new StudioAgentSession(
@@ -84,6 +85,74 @@ function session() {
 }
 
 describe('Durable execution receipts', () => {
+  it('preserves applied changes through compaction and later stale-edit failures in the final prompt and report', async () => {
+    const state = session();
+    state.sourceChangeReceipts = [
+      {
+        transactionId: 'native-retained',
+        requestId: 'current',
+        sequence: 2,
+        state: 'applied',
+        paths: ['setup.sh', 'service.py'],
+      },
+    ];
+    state.events = [
+      state.events[0],
+      {
+        ...state.events[0],
+        type: 'tool.failed',
+        sequence: 40,
+        data: {
+          toolName: 'apply-workspace-edits',
+          ok: false,
+          error: 'Exact edit context is stale',
+        },
+      },
+    ];
+    const report = buildStudioIncompleteAnswer(state, { reason: 'Budget exhausted' });
+    expect(report).toContain('native-retained: applied; setup.sh, service.py');
+    const adapter = new ContractStudioAgentModelAdapter('Repair setup', async (prompt) => {
+      expect(prompt).toContain('native-retained');
+      expect(prompt).toContain('Applied/closed mutation receipts remain real effects');
+      return {
+        toolName: 'workspai-report-outcome',
+        input: { summary: 'Edits applied; checks remain open.', nextSteps: ['Run setup'] },
+      };
+    });
+    await adapter.next({
+      session: state,
+      tools: [],
+      steering: [],
+      recentObservations: [],
+      finalOutcomeOnly: true,
+    });
+    state.sourceChangeReceipts[0].state = 'rolled-back';
+    expect(buildStudioIncompleteAnswer(state, { reason: 'Cancelled' })).toContain(
+      'native-retained: rolled-back'
+    );
+    expect(buildStudioIncompleteAnswer(state, { reason: 'Cancelled' })).not.toContain(
+      'native-retained: applied'
+    );
+  });
+  it('identifies signalled commands in durable outcome receipts', () => {
+    const state = session();
+    state.events.push({
+      ...state.events[0],
+      type: 'tool.failed',
+      sequence: 40,
+      data: {
+        toolName: 'run-workspace-command',
+        input: { executable: 'make', args: ['dev-setup'] },
+        output: { exitCode: null, terminationSignal: 'SIGSEGV' },
+      },
+    });
+    expect(studioAgentExecutionEvidence(state).commands.at(-1)).toMatchObject({
+      processOutcome: 'failed',
+      terminationSignal: 'SIGSEGV',
+    });
+    expect(describeStudioExecutionReceipts(state)).toContain('terminated by SIGSEGV');
+    expect(describeStudioExecutionReceipts(state)).not.toContain('failed, exit null');
+  });
   it.each(['legacy', 'current'])(
     'reports a %s preflight checkpoint rejection as not started',
     (kind) => {

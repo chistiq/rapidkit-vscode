@@ -1,6 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { resolveStudioNextEdit } from '../core/studioNextEdit.js';
+import { resolveStudioNextEdit, rebaseStudioNextEdit } from '../core/studioNextEdit.js';
 describe('Next edit source matching', () => {
+  it('rebases unrelated typing without overwriting it, while rejecting changed or ambiguous local context', () => {
+    const source = '// preface\n' + 'a'.repeat(80) + '\nconst value = 1;\n' + 'z'.repeat(80);
+    const start = source.indexOf('value');
+    const edit = { start, end: start + 5, replacement: 'count' };
+    const current = '// added by user\n' + source;
+    const rebased = rebaseStudioNextEdit(source, current, edit)!;
+    expect(current.slice(0, rebased.start) + rebased.replacement + current.slice(rebased.end)).toBe(
+      '// added by user\n' + source.replace('value', 'count')
+    );
+    expect(
+      rebaseStudioNextEdit(source, current.replace('value', 'userValue'), edit)
+    ).toBeUndefined();
+    expect(rebaseStudioNextEdit(source, source + '\n' + source, edit)).toBeUndefined();
+    // Deleting the reviewed copy must not redirect acceptance to an identical sibling.
+    expect(rebaseStudioNextEdit(source + '\n' + source, source, edit)).toBeUndefined();
+    expect(rebaseStudioNextEdit(source, source.replace('= 1', '= 2'), edit)).toBeUndefined();
+  });
   it('maps a bounded unique block to exact file offsets, preserving surrounding source', () => {
     const source = 'prefix\nconst x = 1;\nsuffix';
     const edit = resolveStudioNextEdit(source, 7, 20, {

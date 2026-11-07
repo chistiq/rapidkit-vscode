@@ -221,6 +221,7 @@ export const STUDIO_GENERAL_SOURCE_REPAIR_RECOMMENDED_TOOLS = [
   'run-workspace-command',
   'apply-workspace-patch',
   'apply-workspace-edits',
+  'rename-workspace-symbol',
   'inspect-workspace-changes',
 ] as const;
 

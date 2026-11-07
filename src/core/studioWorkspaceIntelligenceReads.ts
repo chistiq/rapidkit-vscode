@@ -6,6 +6,7 @@ import { buildWorkspaceGraphSearchCommand } from './workspaceGraphSearchCommand.
 import { projectStudioGraphObservation } from './studioGraphObservation.js';
 import type { StudioAgentToolResult } from './studioAgentToolRegistry.js';
 import { resolveStudioReadProject, type StudioReadScope } from './studioReadProject.js';
+import { readStudioProjectContext } from './studioProjectContext.js';
 
 export type StudioGraphReadRequest = {
   query: string;
@@ -140,6 +141,11 @@ export function studioWorkspaceIntelligenceReaders(run: StudioIntelligenceReadRu
             summary: `Project agent grounding: ${receipt.status}. Feature, environment and release checks remain separate.`,
             exitCode: execution.exitCode,
             groundingReady: receipt.status === 'ready',
+            projectContext: await readStudioProjectContext({
+              projectPath: selected.projectPath,
+              projectName: String(identity.name),
+              workspaceName: selected.inventory.workspace.name,
+            }),
             receipt: {
               ...receipt,
               checks: findings.slice(0, 20),

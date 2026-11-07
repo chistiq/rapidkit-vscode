@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { readStudioProjectContext } from './studioProjectContext.js';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'fs-extra';
@@ -15,6 +16,7 @@ import type {
   StudioAgentToolDefinition,
 } from './studioAgentToolRegistry.js';
 import { studioPathWithin } from './studioInventoryScope.js';
+import { studioAgentInstructionsTool } from './studioAgentInstructions.js';
 
 const MARKERS = [
   '.workspai-workspace',
@@ -194,6 +196,13 @@ export function studioProjectOnboardingTool(input: {
     ) {
       return { source, noOp: 'declined' as const };
     }
+    if (
+      value.operation === 'adopt' &&
+      value.offer !== false &&
+      inventory.workspaiSignature.status === 'present'
+    ) {
+      return { source, noOp: 'metadata-present' as const };
+    }
     let destination: string;
     if (value.workspacePath !== undefined) {
       destination = resolveStudioScopePath(context, value.workspacePath as string);
@@ -328,7 +337,7 @@ export function studioProjectOnboardingTool(input: {
         offer: {
           type: 'boolean',
           description:
-            'Defaults to true for an optional suggestion. Set false only when the user now explicitly requests onboarding after a previous decline. This never bypasses exact approval.',
+            'Defaults to true for an optional suggestion. Existing .workspai metadata or a prior decline suppresses another suggestion. Set false only when the user now explicitly requests onboarding; this never bypasses exact approval.',
         },
         workspacePath: {
           type: 'string',
@@ -435,7 +444,14 @@ export function studioProjectOnboardingTool(input: {
             signal: context.signal,
           });
           commandInFlight = false;
-          recorded.push({ args, cwd: plan.source.workspacePath, ...result });
+          recorded.push({
+            args,
+            cwd: plan.source.workspacePath,
+            exitCode: result.exitCode,
+            ...(result.exitCode !== 0
+              ? { stdout: result.stdout?.slice(0, 4000), stderr: result.stderr?.slice(0, 4000) }
+              : {}),
+          });
           await context.reportProgress?.({
             commandReceipt: { args, cwd: plan.source.workspacePath, exitCode: result.exitCode },
           });
@@ -502,6 +518,24 @@ export function studioProjectOnboardingTool(input: {
         if (target) {
           await input.onTargetReady?.(target);
         }
+        // Adoption/import can create new mandatory AGENTS.md and grounding files.
+        // Earlier instruction reads are no longer a complete view of this source.
+        const refreshedInstructions = await studioAgentInstructionsTool.execute(
+          {},
+          {
+            ...context,
+            workspacePath: expectedPath,
+            projectPath: undefined,
+          }
+        );
+        const instructionOutput = refreshedInstructions.output as
+          | { nextReads?: unknown[] }
+          | undefined;
+        const projectContext = await readStudioProjectContext({
+          projectPath: expectedPath,
+          projectName: plan.name!,
+          workspaceName: inventory.workspace.name,
+        });
         return {
           ok: true,
           changed: true,
@@ -513,8 +547,11 @@ export function studioProjectOnboardingTool(input: {
             projectPath: expectedPath,
             commands: recorded,
             inventory,
+            refreshedInstructions,
+            projectContext,
+            nextReads: instructionOutput?.nextReads ?? [],
             instruction:
-              'Canonical membership was checked. Continue the user’s original task at this selected source. Registration alone does not verify the requested code change or application behavior.',
+              'Canonical membership was checked. refreshedInstructions supersede prior root instruction discovery; read only their remaining nextReads and any nested rules for a new target directory, not the same prefix again. Use inspect-project-agent-entry when grounding is relevant and task-scoped Graph retrieval when it can improve navigation. Continue the original task at this selected source with the best applicable tools. Registration and generated context do not verify the requested code change or application behavior.',
           },
         };
       } catch (error) {

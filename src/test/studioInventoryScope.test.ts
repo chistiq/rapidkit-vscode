@@ -5,6 +5,10 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { inspectStudioWorkspaceInventory } from '../core/studioWorkspaceInventory.js';
 import {
+  createStudioAgentWorkspaiToolRegistry,
+  type StudioAgentWorkspaiToolHost,
+} from '../core/studioAgentWorkspaiTools.js';
+import {
   studioWorkspaceBindingTool,
   validateStudioCreatedWorkspaceTarget,
 } from '../core/studioWorkspaceCreation.js';
@@ -72,6 +76,107 @@ async function fixture() {
 }
 
 describe('Assistant workspace versus project ownership', () => {
+  it('checks the selected project signature instead of an unrelated open workspace', async () => {
+    const f = await fixture();
+    const unrelated = path.join(f.root, 'unrelated');
+    await fs.ensureDir(unrelated);
+    const registry = createStudioAgentWorkspaiToolRegistry({
+      host: {} as StudioAgentWorkspaiToolHost,
+      cardId: 'assistant:agent',
+      assistantMode: 'agent',
+    });
+    const result = await registry.get('inspect-workspace')!.execute(
+      {},
+      {
+        workspacePath: unrelated,
+        projectPath: f.external,
+        sessionId: 's',
+        requestId: 'r',
+        toolCallId: 't',
+        signal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        workspaiSignature: { path: '.workspai', status: 'present' },
+        onboardingAdvice: 'continue-managed',
+        workspace: { path: f.workspace },
+      },
+    });
+    expect(await fs.readdir(unrelated)).toEqual([]);
+  });
+
+  it('distinguishes absent metadata from a bare directory without claiming ownership or offering adoption again', async () => {
+    const f = await fixture();
+    const source = path.join(f.root, 'independent');
+    await fs.ensureDir(source);
+    expect(await inspectStudioWorkspaceInventory(source)).toMatchObject({
+      workspaiSignature: { status: 'absent' },
+      management: 'unmanaged',
+      onboardingAdvice: 'offer-optional-adoption',
+    });
+    await fs.ensureDir(path.join(source, '.workspai'));
+    expect(await inspectStudioWorkspaceInventory(source)).toMatchObject({
+      workspaiSignature: { status: 'present' },
+      management: 'unmanaged',
+      onboardingAdvice: 'inspect-existing-metadata',
+    });
+    expect(await fs.readdir(path.join(source, '.workspai'))).toEqual([]);
+  });
+
+  it('recognizes registered parent and legacy ownership even without a local signature', async () => {
+    const f = await fixture();
+    await fs.remove(path.join(f.internal, '.workspai'));
+    expect(await inspectStudioWorkspaceInventory(f.internal)).toMatchObject({
+      workspaiSignature: { status: 'absent' },
+      management: 'workspai',
+      onboardingAdvice: 'continue-managed',
+      scope: { kind: 'project' },
+    });
+    const legacy = path.join(f.root, 'legacy');
+    await fs.outputJSON(path.join(legacy, '.rapidkit/workspace.json'), {
+      workspace_name: 'legacy',
+    });
+    expect(await inspectStudioWorkspaceInventory(legacy)).toMatchObject({
+      workspaiSignature: { status: 'absent' },
+      management: 'workspai',
+      onboardingAdvice: 'continue-managed',
+    });
+  });
+
+  it('does not treat a file or corrupt signature as permission to re-adopt', async () => {
+    const f = await fixture();
+    const source = path.join(f.root, 'invalid');
+    await fs.outputFile(path.join(source, '.workspai'), 'not a directory');
+    expect(await inspectStudioWorkspaceInventory(source)).toMatchObject({
+      workspaiSignature: { status: 'invalid' },
+      management: 'unknown',
+      onboardingAdvice: 'inspect-existing-metadata',
+    });
+    await fs.remove(path.join(source, '.workspai'));
+    await fs.outputFile(path.join(source, '.workspai/workspace.json'), '{broken');
+    expect(await inspectStudioWorkspaceInventory(source)).toMatchObject({
+      workspaiSignature: { status: 'present' },
+      management: 'unknown',
+      onboardingAdvice: 'inspect-existing-metadata',
+    });
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'does not follow a symbolic-link signature as verified ownership',
+    async () => {
+      const f = await fixture();
+      const source = path.join(f.root, 'linked-signature');
+      await fs.ensureDir(source);
+      await fs.symlink(path.join(f.workspace, '.workspai'), path.join(source, '.workspai'));
+      expect(await inspectStudioWorkspaceInventory(source)).toMatchObject({
+        workspaiSignature: { status: 'invalid' },
+        management: 'unknown',
+        onboardingAdvice: 'inspect-existing-metadata',
+      });
+    }
+  );
   it('selects the canonical workspace through an external project entry without assuming the managed directory', async () => {
     const f = await fixture();
     const context = {

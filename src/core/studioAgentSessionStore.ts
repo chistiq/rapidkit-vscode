@@ -20,6 +20,7 @@ import { StudioSubagentStore } from './studioSubagentStore.js';
 import { StudioAttachmentStore } from './studioAttachmentStore.js';
 import { StudioHostToolOutputStore } from './studioHostToolOutputStore.js';
 import { deleteStudioNativeSessionCheckpoints } from './studioNativeCheckpointLifecycle.js';
+import { deleteStudioIsolatedTaskData } from './studioIsolatedTaskStorage.js';
 import {
   isStudioSessionDeleted,
   markStudioSessionDeleted,
@@ -82,7 +83,7 @@ function childReferences(
     const kind =
       event.data.toolName === 'delegate-research'
         ? 'research'
-        : event.data.toolName === 'delegate-task'
+        : ['delegate-task', 'delegate-isolated-tasks'].includes(String(event.data.toolName))
           ? 'execution'
           : undefined;
     if (!kind) {
@@ -92,6 +93,7 @@ function childReferences(
       | {
           childSessionId?: unknown;
           results?: Array<{ childSessionId?: unknown; objective?: unknown }>;
+          segments?: Array<{ childSessionId?: unknown; objective?: unknown }>;
         }
       | undefined;
     const input = event.data.input as { objective?: unknown } | undefined;
@@ -101,6 +103,7 @@ function childReferences(
         objective: input?.objective,
       },
       ...(Array.isArray(output?.results) ? output.results : []),
+      ...(Array.isArray(output?.segments) ? output.segments : []),
     ];
     for (const child of candidates) {
       if (
@@ -518,6 +521,7 @@ export class VSCodeStudioAgentSessionStore implements StudioAgentSessionStore {
           await new StudioHostToolOutputStore(root).delete(id);
           await new StudioAttachmentStore(root).delete(id);
           await deleteStudioNativeSessionCheckpoints(root, id);
+          await deleteStudioIsolatedTaskData(root, id);
         }
       }
     });

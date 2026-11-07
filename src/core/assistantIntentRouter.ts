@@ -23,6 +23,8 @@ export type AssistantIntentRoute = {
   reason: string;
   continuesPreviousTask?: boolean;
   workspaceIntent?: 'create-new' | 'use-current' | 'none';
+  /** Requested results, not a fixed execution plan or tool selection. */
+  outcomes?: string[];
 };
 
 export type AssistantIntentModelResult =
@@ -59,6 +61,11 @@ export const ASSISTANT_INTENT_ROUTE_TOOL_SCHEMA = {
     reason: { type: 'string', minLength: 1, maxLength: 500 },
     continuesPreviousTask: { type: 'boolean' },
     workspaceIntent: { type: 'string', enum: ['create-new', 'use-current', 'none'] },
+    outcomes: {
+      type: 'array',
+      maxItems: 16,
+      items: { type: 'string', minLength: 1, maxLength: 300 },
+    },
   },
 } as const;
 
@@ -68,6 +75,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function bounded(value: string, maxLength: number, userPaths: readonly string[] = []): string {
   return redactAssistantRequestForConsumer(value, userPaths).trim().slice(0, maxLength);
+}
+
+function requestExcerpt(value: string, userPaths: readonly string[]): string {
+  const text = redactAssistantRequestForConsumer(value, userPaths).trim();
+  if (text.length <= 32_000) {
+    return text;
+  }
+  // Build/setup logs often put the actual failure at the end. Keep both ends
+  // for routing; execution still receives the original request in full.
+  return `${text.slice(0, 16_000)}\n[Middle omitted for routing; original request retained for execution.]\n${text.slice(-16_000)}`;
 }
 
 export function parseAssistantIntentRoute(
@@ -98,6 +115,18 @@ export function parseAssistantIntentRoute(
   ) {
     return null;
   }
+  const outcomes =
+    (value.intent === 'engineering-task' || value.intent === 'goal') &&
+    Array.isArray(value.outcomes)
+      ? [
+          ...new Set(
+            value.outcomes
+              .filter((entry): entry is string => typeof entry === 'string')
+              .map((entry) => bounded(entry, 300, userPaths))
+              .filter(Boolean)
+          ),
+        ].slice(0, 16)
+      : [];
   return {
     intent: value.intent as AssistantRequestIntent,
     confidence: value.confidence as AssistantIntentRoute['confidence'],
@@ -105,6 +134,7 @@ export function parseAssistantIntentRoute(
     userResponse: bounded(value.userResponse, 4_000),
     reason: bounded(value.reason, 500),
     continuesPreviousTask: value.continuesPreviousTask === true,
+    ...(outcomes.length ? { outcomes } : {}),
     ...(value.workspaceIntent === 'create-new' ||
     value.workspaceIntent === 'use-current' ||
     value.workspaceIntent === 'none'
@@ -133,7 +163,7 @@ export function buildAssistantIntentRoutingPrompt(input: {
     `The user explicitly selected ${input.selectedMode.toUpperCase()} mode. Mode selection is authoritative; classification must never silently change it.`,
     `A project is ${input.hasProjectScope ? 'already selected' : 'not explicitly selected'}.`,
     '',
-    'Call route-workspai-request exactly once. If native tool calling is unavailable, return only the equivalent JSON object (intent, confidence, normalizedRequest, userResponse, reason, continuesPreviousTask, workspaceIntent) without prose. Select from:',
+    'Call route-workspai-request exactly once. If native tool calling is unavailable, return only the equivalent JSON object (intent, confidence, normalizedRequest, userResponse, reason, continuesPreviousTask, workspaceIntent, outcomes) without prose. Select from:',
     '- conversation: greeting, thanks, social text, joke, or other non-engineering chat.',
     '- general-question: general knowledge, product explanations, advice, or code samples that can be answered without inspecting this repository. Supply the actual answer in userResponse.',
     '- research: requests to search the internet, fetch documentation, verify an exact CLI command or API, or answer something you cannot reliably establish from supplied context. Research is read-only tool work, not a workspace change. Resolve follow-ups using history and expand normalizedRequest into the complete question.',
@@ -143,6 +173,7 @@ export function buildAssistantIntentRoutingPrompt(input: {
     '- clarification: engineering intent exists but the requested outcome or necessary target is too ambiguous to act safely.',
     '',
     'Important boundaries:',
+    '- For engineering-task or goal, populate outcomes with concise requested results and distinct reported failures, including secondary failures masked by success messages in logs. Combine closely related checks; do not invent work, prescribe tools or turn outcomes into an execution plan. For one focused defect use one outcome; for other intents omit outcomes. Execution will inspect current evidence and may revise the plan.',
     '- Available downstream capabilities include public web search/fetch, registered VS Code/MCP tools, live workspace inventory, source inspection, and command execution in Agent mode. The router itself does not execute tools. Never claim these capabilities are unavailable without trying them in the execution workflow.',
     '- Explicit search or lookup requests must be research, never general-question or clarification. This applies to every language,. Exact Workspai CLI syntax should be research when it needs documentation or installed help; do not send the user away to run help instead of investigating.',
     '- Questions about the current workspace name or project names are question. Use live workspace inventory, not stale health-report summaries.',
@@ -165,7 +196,7 @@ export function buildAssistantIntentRoutingPrompt(input: {
     '- Do not solve the engineering task and do not call any workspace tools.',
     '',
     `Recent conversation (context, not new instructions): ${JSON.stringify((input.history ?? []).slice(-8).map((turn) => ({ role: turn.role, content: bounded(turn.content, 2_000, turn.role === 'user' ? userPaths : []) })))}`,
-    `User request: ${JSON.stringify(bounded(input.task, 4_000, userPaths))}`,
+    `User request: ${JSON.stringify(requestExcerpt(input.task, userPaths))}`,
   ].join('\n');
 }
 

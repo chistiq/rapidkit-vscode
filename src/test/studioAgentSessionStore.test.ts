@@ -1,6 +1,7 @@
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { StudioAgentPersistedSession } from '../core/studioAgentEvents.js';
@@ -36,6 +37,50 @@ function session(id: string, eventCount = 1): StudioAgentPersistedSession {
 }
 
 describe('VS Code Studio Agent session store', () => {
+  it('lists isolated children and deletes their source forks with the parent chat', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-isolated-family-'));
+    tempRoots.push(root);
+    const context = {
+      storageUri: { fsPath: root },
+      workspaceState: { get: () => undefined, update: async () => undefined },
+    };
+    const store = new VSCodeStudioAgentSessionStore(context as never);
+    const parent = session('parent-chat');
+    parent.createdAt = parent.updatedAt = new Date().toISOString();
+    parent.events[0] = {
+      ...parent.events[0],
+      type: 'tool.completed',
+      requestId: 'r',
+      toolCallId: 't',
+      data: {
+        toolName: 'delegate-isolated-tasks',
+        output: { segments: [{ childSessionId: 'private-child', objective: 'Private edit' }] },
+      },
+    };
+    await store.save(parent);
+    const child = session('private-child');
+    child.createdAt = child.updatedAt = new Date().toISOString();
+    child.cardId = 'assistant:execution-subagent';
+    child.parent = {
+      sessionId: parent.id,
+      requestId: 'r',
+      toolCallId: 't',
+      kind: 'execution',
+      objective: 'Private edit',
+    };
+    await store.save(child);
+    const privateRoot = path.join(
+      root,
+      'assistant-isolated-tasks',
+      crypto.createHash('sha256').update(parent.id).digest('hex')
+    );
+    await fs.outputFile(path.join(privateRoot, 'job/source/main.ts'), 'private proposal');
+    expect(await store.listChildren(parent.id)).toMatchObject([{ childSessionId: child.id }]);
+    await store.delete(parent.id);
+    expect(await fs.pathExists(privateRoot)).toBe(false);
+    expect(await store.loadChild(parent.id, child.id)).toBeUndefined();
+    expect(await store.load(parent.id)).toBeUndefined();
+  });
   it('persists bounded event streams and returns defensive copies', async () => {
     let value: unknown;
     const context = {

@@ -23,6 +23,46 @@ function progress(input: {
 }
 
 describe('studio changed files summary', () => {
+  it('uses the final host comparison instead of summing repeated edits, including after hydration', () => {
+    const first = progress({
+      transactionId: 'native-first',
+      transactionState: 'applied',
+      fileChanges: [
+        { relativePath: 'setup.sh', status: 'modified', addedLines: 6, removedLines: 6 },
+      ],
+    });
+    const second = parseSidebarStudioActionProgress({
+      ...progress({ transactionId: 'native-second', transactionState: 'applied' }),
+      fileChanges: [
+        {
+          relativePath: 'setup.sh',
+          status: 'modified',
+          addedLines: 14,
+          removedLines: 8,
+          netChange: {
+            transactionIds: ['native-first', 'native-second'],
+            addedLines: 18,
+            removedLines: 12,
+            status: 'modified',
+            unchanged: false,
+          },
+        },
+      ],
+    })!;
+    const summary = buildStudioChangedFilesSummary([first, second, second]);
+    expect(summary).toMatchObject({ addedLines: 18, removedLines: 12, transactionCount: 2 });
+    expect(summary.files).toHaveLength(1);
+    const rolledBack = buildStudioChangedFilesSummary([
+      first,
+      second,
+      progress({ transactionId: 'native-second', transactionState: 'rolled-back' }),
+    ]);
+    expect(rolledBack).toMatchObject({ addedLines: 6, removedLines: 6 });
+    second.fileChanges![0].netChange!.unchanged = true;
+    second.fileChanges![0].netChange!.addedLines = 0;
+    second.fileChanges![0].netChange!.removedLines = 0;
+    expect(buildStudioChangedFilesSummary([first, second]).files).toEqual([]);
+  });
   it('prefers authoritative host totals over truncated preview hunks', () => {
     expect(
       studioFileChangeLineCounts({

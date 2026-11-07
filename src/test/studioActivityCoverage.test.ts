@@ -5,7 +5,10 @@ import {
   isStudioActivityReceipt,
   correlateStudioActivityReceipts,
 } from '../contracts/studioActivity.js';
-import { studioEventProgress } from '../../webview-ui/src/lib/studioActivityView';
+import {
+  studioEventProgress,
+  compactStudioActivityEntries,
+} from '../../webview-ui/src/lib/studioActivityView';
 import { appendStudioRepairTimelineEntry } from '../../webview-ui/src/lib/studioRepairTimeline';
 import { renderNativeStudioAgentEvent } from '../core/nativeChatToolEventRenderer';
 
@@ -20,6 +23,135 @@ const event = (type: string, sequence = 1, data: Record<string, unknown> = {}) =
   data,
 });
 describe('Complete public activity coverage', () => {
+  it('keeps approval waits and checkpoints under their chronological action without losing receipts or approval controls', () => {
+    const raw = [
+      {
+        ...event('session.status', 1, { status: 'running' }),
+        requestId: undefined,
+        toolCallId: undefined,
+      },
+      { ...event('request.started', 2), toolCallId: undefined },
+      event('tool.requested', 3, { toolName: 'onboard-project' }),
+      event('tool.approval.requested', 4, { toolName: 'onboard-project' }),
+      {
+        ...event('session.status', 5, { status: 'waiting-permission' }),
+        requestId: undefined,
+        toolCallId: undefined,
+      },
+      {
+        ...event('session.status', 6, { status: 'running' }),
+        requestId: undefined,
+        toolCallId: undefined,
+      },
+      event('tool.completed', 7, { toolName: 'onboard-project', ok: true }),
+      {
+        ...event('model.checkpoint', 8, { summary: 'Checkpoint persisted' }),
+        toolCallId: undefined,
+      },
+      { ...event('tool.completed', 9, { toolName: 'inspect-source' }), toolCallId: 'read' },
+      {
+        ...event('session.completed', 10, { verificationAuthority: 'workspace-evidence' }),
+        toolCallId: undefined,
+      },
+      {
+        ...event('session.status', 11, { status: 'completed' }),
+        requestId: undefined,
+        toolCallId: undefined,
+      },
+    ];
+    let rows: NonNullable<ReturnType<typeof studioEventProgress>>[] = [];
+    for (const item of raw)
+      rows = appendStudioRepairTimelineEntry(rows, studioEventProgress(item)!, false);
+    const compact = compactStudioActivityEntries(rows);
+    expect(compact.map((row) => row.eventSequence)).toEqual([7, 9, 10]);
+    expect(compact[0].title).toBe('Register project with Workspai');
+    const represented = new Set(
+      compact
+        .flatMap((row) => [row.receipt, ...(row.phaseHistory ?? [])])
+        .filter(Boolean)
+        .map((receipt) => receipt!.eventId)
+    );
+    expect([...represented].sort()).toEqual(raw.map((item) => item.id).sort());
+    expect(compact.at(-1)?.receipt?.verificationAuthority).toBe('workspace-evidence');
+    const pending = {
+      ...studioEventProgress(raw[3])!,
+      approvalRequest: { fingerprint: 'exact' },
+    } as never;
+    const live = compactStudioActivityEntries([
+      studioEventProgress(raw[0])!,
+      pending,
+      studioEventProgress(raw[4])!,
+    ]);
+    expect(live).toHaveLength(1);
+    expect(live[0].approvalRequest).toEqual({ fingerprint: 'exact' });
+  });
+  it('never attaches metadata to another request/session or hides an unsupported activity', () => {
+    const entries = [
+      studioEventProgress({ ...event('tool.completed', 1), toolCallId: 'old', requestId: 'old' })!,
+      studioEventProgress({
+        ...event('request.started', 2),
+        toolCallId: undefined,
+        requestId: 'new',
+      })!,
+      studioEventProgress({ ...event('tool.completed', 3), toolCallId: 'new', requestId: 'new' })!,
+      studioEventProgress({
+        ...event('session.status', 4),
+        sessionId: 'other-session',
+        toolCallId: undefined,
+      })!,
+      studioEventProgress({ ...event('future.event', 5), toolCallId: undefined })!,
+    ];
+    const compact = compactStudioActivityEntries(entries);
+    expect(compact[0].phaseHistory).toBeUndefined();
+    expect(
+      compact[1].phaseHistory?.some((receipt) => receipt.eventType === 'request.started')
+    ).toBe(true);
+    expect(compact.some((row) => row.sessionId === 'other-session')).toBe(true);
+    expect(compact.some((row) => row.receipt?.unsupported)).toBe(true);
+  });
+  it('shows one chosen tool row while preserving every model and tool lifecycle receipt', () => {
+    let rows: NonNullable<ReturnType<typeof studioEventProgress>>[] = [];
+    const types = [
+      'model.request.started',
+      'model.request.finished',
+      'model.resolved',
+      'tool.requested',
+      'tool.permission',
+      'tool.started',
+      'tool.completed',
+    ];
+    for (const [index, type] of types.entries()) {
+      const raw = {
+        ...event(type, index + 1, {
+          decisionId: type.startsWith('model.') ? 'decision-1' : undefined,
+          toolName: 'inspect-source',
+          allowed: true,
+        }),
+        toolCallId: type.startsWith('model.') ? undefined : 'read-1',
+      };
+      rows = appendStudioRepairTimelineEntry(rows, studioEventProgress(raw)!, false);
+    }
+    const compact = compactStudioActivityEntries(rows);
+    expect(rows).toHaveLength(2);
+    expect(compact).toHaveLength(1);
+    expect(compact[0].receipt?.toolName).toBe('inspect-source');
+    expect(compact[0].phaseHistory?.map((receipt) => receipt.eventType)).toEqual(types);
+    expect(rows[0].phaseHistory).toHaveLength(3); // Presentation never rewrites evidence.
+    const second = { ...rows[1], invocationId: 'read-2' };
+    expect(compactStudioActivityEntries([...rows, second])).toHaveLength(2);
+    expect(compactStudioActivityEntries([{ ...rows[0], status: 'failed' }, rows[1]])).toHaveLength(
+      2
+    );
+    expect(compactStudioActivityEntries([{ ...rows[0], status: 'running' }, rows[1]])).toHaveLength(
+      2
+    );
+    expect(
+      compactStudioActivityEntries([rows[0], { ...rows[1], requestId: 'other' }])
+    ).toHaveLength(2);
+    expect(
+      compactStudioActivityEntries([rows[0], { ...rows[1], sessionId: 'other' }])
+    ).toHaveLength(2);
+  });
   it('retains a comparison reference after raw edit events are evicted without storing source or granting Undo', () => {
     const receipt = studioActivityReceipt(
       event('tool.completed', 1, {

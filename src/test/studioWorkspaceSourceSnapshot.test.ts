@@ -20,6 +20,56 @@ afterEach(async () => {
 });
 
 describe('Studio workspace source snapshots', () => {
+  it('checkpoints Python source with a large mypy database while keeping caches outside rollback', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-python-caches-'));
+    roots.push(root);
+    await fs.outputFile(path.join(root, 'src/main.py'), 'original\n');
+    for (const cache of ['.mypy_cache', '.pytest_cache', '.ruff_cache']) {
+      const file = path.join(root, cache, '3.10/cache.db');
+      await fs.outputFile(file, '');
+      await fs.truncate(file, 22_200_320);
+    }
+    const transaction = await beginStudioWorkspaceSourceTransaction({ workspacePath: root });
+    expect(transaction?.before.files['src/main.py']).toBeTruthy();
+    expect(Object.keys(transaction!.before.files)).toEqual(['src/main.py']);
+    try {
+      await fs.outputFile(path.join(root, 'src/main.py'), 'changed\n');
+      await fs.outputFile(path.join(root, '.mypy_cache/new-result.json'), 'regenerable');
+      const inspected = await inspectStudioWorkspaceSourceTransaction(transaction!);
+      expect(inspected?.changedPaths).toEqual(['src/main.py']);
+      await rollbackStudioWorkspaceSourceTransaction(
+        transaction!,
+        inspected!.changedPaths,
+        inspected!.after
+      );
+      expect(await fs.readFile(path.join(root, 'src/main.py'), 'utf8')).toBe('original\n');
+      expect(await fs.readFile(path.join(root, '.mypy_cache/new-result.json'), 'utf8')).toBe(
+        'regenerable'
+      );
+    } finally {
+      await disposeStudioWorkspaceSourceTransaction(transaction!);
+    }
+  });
+
+  it('still rejects oversized actual source and identifies the relative file', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-large-source-'));
+    roots.push(root);
+    await fs.outputFile(path.join(root, 'src/large.py'), '');
+    await fs.truncate(path.join(root, 'src/large.py'), 22_200_320);
+    const diagnostic = vi.fn();
+    expect(
+      await beginStudioWorkspaceSourceTransaction({
+        workspacePath: root,
+        onUnavailable: diagnostic,
+      })
+    ).toBeUndefined();
+    expect(diagnostic).toHaveBeenCalledExactlyOnceWith({
+      code: 'file-size-limit',
+      limit: 16 * 1024 * 1024,
+      observed: 22_200_320,
+      relativePath: 'src/large.py',
+    });
+  });
   it('rejects an over-limit inventory with a diagnostic before reading or backing up source', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-source-limit-'));
     roots.push(root);
